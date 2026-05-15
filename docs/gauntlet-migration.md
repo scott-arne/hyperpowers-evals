@@ -93,7 +93,11 @@ Reasoning:
 3. Most scenarios will pass on `gauntlet AC ∧ assertions` alone — assertions cover the load-bearing claims. The external LLM verifier is opt-in per scenario (drop a `verifier.md` next to the card) for cases where semantic judgment over the tool log matters and assertions can't express it cleanly.
 4. Preserves Drill's confirmation-bias discipline: the external verifier sees evidence (tool log, filesystem, screen) but not the AC prose or scenario narrative.
 
-The combined verdict the harness reports is a tuple, not a flat pass/fail: `{gauntlet: pass|fail|investigate, assertions: pass|fail, verifier: pass|fail|n/a}`. The scenario declares the composition rule (default: all-must-pass; some scenarios may want "gauntlet=pass OR verifier=pass" for cases where the agent's screen-side narration is unreliable). This is a small extension, not a complication.
+The combined verdict the harness reports is a tuple, not a flat pass/fail: `{gauntlet: pass|fail|investigate, assertions: pass|fail, verifier: pass|fail|n/a}`. **Composition is fixed: all-must-pass.** A scenario passes iff Gauntlet's verdict is `pass` AND every assertion exits 0 AND (if a verifier is declared) the verifier returns `pass`. No per-scenario composition DSL — that path leads to incomparable scenarios with bespoke pass criteria, which defeats the benchmark.
+
+If a future scenario genuinely needs a different composition (e.g., "screen-side bluffed but logs prove correctness"), add it as a documented exception with the cost spelled out, not as a knob.
+
+**Honest cost note:** This is three judges (Gauntlet AC, deterministic assertions, optional LLM verifier) instead of Drill's two (semantic verifier + assertions). The trade is the disagreement signal — Gauntlet's screen-side verdict diverging from the log-side verifier *is* the finding, not a bug. We accept the per-scenario authoring cost of deciding which judges apply.
 
 ## Architecture
 
@@ -159,21 +163,28 @@ Multi-target × multi-trial via `superpowers-evals/harness sweep <scenario> --ta
 
 **In Gauntlet (no changes):** TUI adapter, agent loop, AC verdict, evidence pipeline, run-sets, batch mode, fanout, `--passes`.
 
-**In the harness (new code in `superpowers-evals/`):** workdir setup, session-log capture, per-target normalizers, deterministic assertions, optional external LLM verifier, per-scenario target configuration, sweep orchestration, the `bin/` helpers (ported verbatim).
+**In the harness (new code in `superpowers-evals/`):** workdir setup, session-log capture, per-target normalizers, deterministic assertions, optional external LLM verifier, per-scenario target configuration, sweep orchestration, the `bin/` helpers (ported verbatim), per-target token-usage capture (Drill's `token_capture.py` lifts cleanly — reads the same session logs the normalizers do).
 
 **Not built (yet):** cross-run-set comparison view (Drill's `compare` command). One-off scripts cover this for now; promote if friction warrants.
 
 ## Migration phases
 
-### Phase 1 — Build the harness, no Gauntlet changes
+### Phase 1 — Build the harness, prove parity on three scenarios
 
-Goal: prove end-to-end parity with Drill on one representative scenario.
+Goal: prove end-to-end parity with Drill on a *representative* slice. One scenario is not enough — `triggering-writing-plans` exercises only the Claude happy path. To exercise the surfaces that actually break in migration, Phase 1 covers three scenarios chosen to exercise different code paths:
 
-1. Pick `triggering-writing-plans` (single turn, single assertion `skill-called superpowers:writing-plans`). It's the smallest possible parity test.
-2. Build the per-run flow above as a Python CLI (`harness/runner.py`). Use Drill's `normalizer.py` near-verbatim for the Claude Code normalizer.
-3. Port the `bin/` assertion helpers verbatim — they're already framework-agnostic.
-4. Convert the scenario: `scenarios/triggering-writing-plans.yaml` → `scenarios/triggering-writing-plans/{story.md, setup.sh, assertions/skill-called.sh, target.yaml}`.
-5. Run both the old Drill version and the new harness version against the same backend, compare verdicts and tool-call captures. Document any divergence.
+1. **`triggering-writing-plans`** (Claude, single turn, single assertion `skill-called superpowers:writing-plans`, single setup helper). Smallest parity test.
+2. **`worktree-already-inside`** (Claude, multi-helper setup, `workdir_override` for the existing-worktree subdir). Exercises non-trivial setup and the workdir-override path.
+3. **One Codex scenario** (e.g., `codex-subagent-wait-mapping` or `codex-tool-mapping-comprehension`). Exercises the Codex normalizer's cwd-filtering logic, which is where the per-target log capture is most likely to break.
+
+Steps:
+
+1. Build the per-run flow as a Python CLI (`harness/runner.py`). Use Drill's `normalizer.py` near-verbatim for the Claude Code and Codex normalizers. Lift `token_capture.py` alongside.
+2. Port the `bin/` assertion helpers verbatim — they're already framework-agnostic.
+3. Convert all three scenarios. Each becomes `scenarios/<name>/{story.md, setup.sh, assertions/*.sh, target.yaml}`.
+4. Run both the old Drill version and the new harness version against the same backends, compare verdicts and tool-call captures. Document any divergence.
+
+A successful Phase 1 means: harness verdict matches Drill verdict on all three (or any divergence is explained and accepted), `tool_calls.jsonl` is byte-equivalent (or schema-equivalent) between the two, and the assertion `bin/` scripts exit identically.
 
 ### Phase 2 — Port scenarios incrementally
 
@@ -185,6 +196,8 @@ Order by leverage and risk:
 4. The `cost-*` scenarios — these may need external-verifier-only runs if cost can't be derived from tool calls.
 
 Each port is mechanical-ish: scenario YAML body → `story.md` (rewritten per `writing-gauntlet-stories`), setup helper → `setup.sh`, verify section → `assertions/*.sh` and optionally `verifier.md`. Where the AC rewrite resists a clean translation, that's a signal the original criterion was testing implementation rather than outcome — flag those for redesign rather than forced translation.
+
+**Forcing function for skipped scenarios.** "Hard to translate" is also how implementers ship migrations by quietly dropping the awkward cases. Every scenario that gets skipped, deferred, or materially redesigned must be recorded in `docs/migration-notes.md` with: the original Drill scenario name, the reason it didn't translate cleanly, and what (if anything) replaced it. This file gets reviewed before Phase 3 — any skipped scenario without a justification blocks decommission.
 
 ### Phase 3 — Decommission
 
@@ -202,7 +215,13 @@ When all ported scenarios run green in the harness and CI confirms parity (or ac
 
 See `QUESTIONS.md` for items needing Matt's input. Risks tracked here:
 
-- **Idle detection.** Drill has per-backend `idle.quiescence_seconds` and `ready_pattern`. Gauntlet's QA agent decides "is the target ready" by reading the screen — looser, model-dependent. Empirical risk: the QA agent may type while the target is still rendering, causing input loss. Mitigation: the QA agent's system prompt already instructs it to wait; if this proves flaky, add a per-scenario hint to the prompt (e.g., "the target is Claude Code; wait for the `❯` prompt before typing").
+- **Idle detection (real, not theoretical).** Drill's `_wait_for_ready` (`drill/engine.py:292–344`) does more than `quiescence_seconds + ready_pattern`. It does **busy-aware deadline extension** (`max_busy_seconds: 1800` in `backends/claude.yaml`), spinner+timer normalization so animated frames don't reset the quiescence timer, and a busy-pattern guard that prevents the actor from interrupting subagent work. Gauntlet's QA agent has none of this — it reads the screen and decides. A naive QA agent will interrupt 4-minute thinking blocks because every screen capture differs from the last (animated spinners, ticking timers). The mitigation has two stages, escalating only if the prior stage is empirically insufficient:
+
+  **Stage 1 (try first, no Gauntlet change):** per-target system-prompt augmentation via Gauntlet's `--project-prompt` flag. The harness writes a `harness/target_prompts/<target>.md` that includes target-specific busy patterns and explicit instructions ("Claude Code shows animated spinners with elapsed-time counters when thinking; do not type while these are visible; wait until you see `❯` at the start of a line"). The patterns lift from Drill's backend YAMLs. Phase 1 explicitly tests whether this is sufficient on the worktree scenario, which has long agent-thinking turns.
+
+  **Stage 2 (only if stage 1 proves flaky):** propose a Gauntlet feature — a `wait_for_quiescence` tool exposed by the TUI adapter that takes a regex and a quiescence-seconds parameter, with the busy-pattern normalization Drill does today. The QA agent decides *when* to call it; the deterministic logic owns *how* to detect quiescence. This is a real Gauntlet change, not a harness add — file a separate proposal and don't block migration on it.
+
+  We do **not** silently accept this risk. Phase 1's three-scenario coverage is chosen partly to surface this — `worktree-already-inside` typically involves long agent-think turns where interruption is most likely.
 - **Cost control.** Each Gauntlet-driven run uses two LLMs in tandem (Gauntlet's QA agent + the agent under test). Drill is similar (actor + agent + verifier). Net change probably neutral; flag if it spikes.
 - **Naive vs spec-aware as separate cards** vs same card with a posture flag: chosen separate cards (the wording difference *is* the test, want it author-controlled). Mild duplication is the cost.
 - **Per-target normalizer drift.** When Claude Code or Codex changes its session-log format, normalizers break silently. Mitigation: schema test per normalizer that asserts the common-schema invariants on a recorded fixture log.
