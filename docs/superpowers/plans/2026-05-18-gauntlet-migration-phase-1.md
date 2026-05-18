@@ -1199,7 +1199,7 @@ def _make_target(targets_dir: Path, name: str, session_log_dir: Path) -> None:
 
 def _make_scenario(scenarios_dir: Path, name: str, *, asserts_pass: bool = True,
                    compat: list[str] | None = None,
-                   tool_named_assertion: bool = False) -> Path:
+                   with_assertion: bool = True) -> Path:
     sd = scenarios_dir / name
     sd.mkdir(parents=True)
     (sd / "story.md").write_text("---\nid: x\ntitle: x\n---\nbody\n")
@@ -1207,8 +1207,8 @@ def _make_scenario(scenarios_dir: Path, name: str, *, asserts_pass: bool = True,
     if compat is not None:
         (sd / "scenario.yaml").write_text(yaml.safe_dump({"compatible_targets": compat}))
     a = sd / "assertions"; a.mkdir()
-    aname = "01-tool-x.sh" if tool_named_assertion else "01-x.sh"
-    _exec(a / aname, f"#!/usr/bin/env bash\nexit {'0' if asserts_pass else '1'}\n")
+    if with_assertion:
+        _exec(a / "01-x.sh", f"#!/usr/bin/env bash\nexit {'0' if asserts_pass else '1'}\n")
     return sd
 
 
@@ -1310,12 +1310,14 @@ class TestRunScenario:
                 )
             mock_g.assert_not_called()
 
-    def test_empty_capture_synthetic_assertion_when_scenario_expects_tools(self, tmp_path):
+    def test_empty_capture_synthetic_fires_whenever_assertions_exist(self, tmp_path):
+        # Drill parity (engine.py:169-178): the synthetic fires whenever the
+        # scenario has any assertions at all, not just tool-named ones.
         targets_dir = tmp_path / "targets"
         scenarios_dir = tmp_path / "scenarios"
         session_log_dir = tmp_path / "logs"; session_log_dir.mkdir()
         _make_target(targets_dir, "claude", session_log_dir)
-        sd = _make_scenario(scenarios_dir, "x", tool_named_assertion=True)
+        sd = _make_scenario(scenarios_dir, "x")  # default assertion 01-x.sh passes
         contexts_dir = tmp_path / "contexts"
         (contexts_dir / "claude").mkdir(parents=True)
         out_root = tmp_path / "results"
@@ -1327,10 +1329,90 @@ class TestRunScenario:
                 targets_dir=targets_dir, contexts_dir=contexts_dir,
                 out_root=out_root, bin_dir=bin_dir,
             )
-        # Capture was empty (no real CLI run) and assertion name starts with
-        # tool-* — synthetic 00-non-empty-capture fires.
+        # Capture was empty (no real CLI run); scenario has at least one
+        # assertion; synthetic 00-non-empty-capture fires regardless of name.
         assert verdict.final == "fail"
         assert any(d["name"] == "00-non-empty-capture" for d in verdict.assertion_details)
+
+    def test_no_assertions_no_synthetic_even_when_capture_empty(self, tmp_path):
+        # A scenario with zero assertions doesn't get the synthetic — the
+        # guard only fires when something declared assertions to begin with.
+        targets_dir = tmp_path / "targets"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"; session_log_dir.mkdir()
+        _make_target(targets_dir, "claude", session_log_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_assertion=False)
+        contexts_dir = tmp_path / "contexts"
+        (contexts_dir / "claude").mkdir(parents=True)
+        out_root = tmp_path / "results"
+        bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+
+        with patch("harness.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass):
+            verdict = run_scenario(
+                scenario_dir=sd, target="claude",
+                targets_dir=targets_dir, contexts_dir=contexts_dir,
+                out_root=out_root, bin_dir=bin_dir,
+            )
+        assert verdict.final == "pass"
+        assert all(d["name"] != "00-non-empty-capture" for d in verdict.assertion_details)
+
+    def test_launch_cwd_sentinel_threads_through_to_gauntlet(self, tmp_path):
+        # When setup.sh writes .harness-launch-cwd, the runner reads it and
+        # passes that path as launch_cwd to invoke_gauntlet (which exports
+        # HARNESS_AGENT_CWD for the QA agent's bash to use).
+        targets_dir = tmp_path / "targets"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"; session_log_dir.mkdir()
+        _make_target(targets_dir, "claude", session_log_dir)
+        sd = _make_scenario(scenarios_dir, "x")
+        _exec(sd / "setup.sh",
+            '#!/usr/bin/env bash\nset -e\n'
+            'sib="${DRILL_WORKDIR}-sibling"\nmkdir -p "$sib"\n'
+            'echo "$sib" > "${DRILL_WORKDIR}/.harness-launch-cwd"\n')
+        contexts_dir = tmp_path / "contexts"
+        (contexts_dir / "claude").mkdir(parents=True)
+        out_root = tmp_path / "results"
+        bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+        captured: dict[str, Path] = {}
+
+        def stub(*, run_dir, launch_cwd, **kwargs):
+            captured["launch_cwd"] = launch_cwd
+            (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
+            return "pass"
+
+        with patch("harness.runner.invoke_gauntlet", side_effect=stub):
+            run_scenario(
+                scenario_dir=sd, target="claude",
+                targets_dir=targets_dir, contexts_dir=contexts_dir,
+                out_root=out_root, bin_dir=bin_dir,
+            )
+        assert captured["launch_cwd"].name.endswith("-sibling")
+
+    def test_populate_context_dir_copies_target_contexts(self, tmp_path):
+        # Spot-check that target context HOWTOs land in <run-dir>/.gauntlet/context/.
+        targets_dir = tmp_path / "targets"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"; session_log_dir.mkdir()
+        _make_target(targets_dir, "claude", session_log_dir)
+        sd = _make_scenario(scenarios_dir, "x")
+        contexts_dir = tmp_path / "contexts"
+        cd_claude = contexts_dir / "claude"
+        cd_claude.mkdir(parents=True)
+        (cd_claude / "HOWTO.md").write_text("invoke `claude --foo`")
+        (cd_claude / "extra.md").write_text("extra context")
+        out_root = tmp_path / "results"
+        bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+
+        with patch("harness.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass):
+            run_scenario(
+                scenario_dir=sd, target="claude",
+                targets_dir=targets_dir, contexts_dir=contexts_dir,
+                out_root=out_root, bin_dir=bin_dir,
+            )
+        rd = list(out_root.iterdir())[0]
+        ctx = rd / ".gauntlet" / "context"
+        assert (ctx / "HOWTO.md").read_text() == "invoke `claude --foo`"
+        assert (ctx / "extra.md").read_text() == "extra context"
 
     def test_workdir_kept_on_failure(self, tmp_path):
         targets_dir = tmp_path / "targets"
@@ -1388,9 +1470,27 @@ uv run pytest tests/harness/test_runner.py -v
 # harness/runner.py
 """Per-run orchestration. One scenario, one target, one verdict.
 
+Important context for understanding the cwd dance:
+
+- Gauntlet's TUI adapter spawns `tmux new-session -c <run-dir>/scratch bash`.
+  The QA agent's bash starts in <run-dir>/scratch, NOT the harness's workdir.
+- The harness's workdir (where setup.sh ran and `git init` happened) is at a
+  separate /tmp path the QA agent can't infer.
+- Bridge: the runner exports HARNESS_AGENT_CWD into the gauntlet subprocess
+  env. tmux inherits → bash inherits. Per-target HOWTOs tell the QA agent
+  to `cd $HARNESS_AGENT_CWD` before invoking the target binary.
+- Default HARNESS_AGENT_CWD = workdir. Setup.sh can override by writing the
+  absolute desired launch path into <workdir>/.harness-launch-cwd. The
+  worktree-already-inside scenario uses this to point at the sibling
+  existing-worktree.
+
+Also: setup.sh helpers (in setup_helpers/) need to know where the harness
+checkout lives so they can find fixtures/template-repo. Runner exports
+HARNESS_REPO_ROOT for that purpose.
+
 Single-run-at-a-time only in Phase 1. Multiple harness processes against the
 same target's session-log dir cross-contaminate via snapshot/diff. Enforced
-with a sentinel lockfile.
+with a sentinel lockfile that refuses (rather than silently falling back).
 """
 
 from __future__ import annotations
@@ -1399,6 +1499,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from contextlib import contextmanager
@@ -1416,6 +1517,7 @@ from harness.setup_step import SetupError, run_setup
 from harness.target_config import TargetConfig, load_target_config
 
 LOCK_FILENAME = ".harness-run.lock"
+LAUNCH_CWD_SENTINEL = ".harness-launch-cwd"
 
 
 class RunnerError(RuntimeError):
@@ -1426,10 +1528,17 @@ class RunnerError(RuntimeError):
 def _single_run_lock(session_log_dir: Path):
     """Enforce one-harness-run-at-a-time per session-log root.
 
-    Bail loudly if locked — silent waiting would mask real concurrency bugs.
+    Refuse loudly if locked. Refuse loudly if the parent dir doesn't exist
+    (silent fallback to $HOME would let a typo'd session_log_dir leak a lock
+    into the user's home directory).
     """
-    lock_root = session_log_dir.parent if session_log_dir.parent.exists() else Path.home()
-    lock_path = lock_root / LOCK_FILENAME
+    parent = session_log_dir.parent
+    if not parent.exists():
+        raise RunnerError(
+            f"session_log_dir parent does not exist: {parent}. "
+            "Refusing to fall back to $HOME — fix the target config."
+        )
+    lock_path = parent / LOCK_FILENAME
     if lock_path.exists():
         raise RunnerError(
             f"Another harness run appears active (lock at {lock_path}). "
@@ -1442,12 +1551,29 @@ def _single_run_lock(session_log_dir: Path):
         lock_path.unlink(missing_ok=True)
 
 
+def _resolve_launch_cwd(workdir: Path) -> Path:
+    """Read <workdir>/.harness-launch-cwd if setup.sh wrote one.
+
+    Returns workdir if no sentinel exists. Raises if the sentinel points at
+    a non-existent path.
+    """
+    sentinel = workdir / LAUNCH_CWD_SENTINEL
+    if not sentinel.exists():
+        return workdir
+    target = Path(sentinel.read_text().strip())
+    if not target.exists():
+        raise RunnerError(
+            f"setup.sh wrote {LAUNCH_CWD_SENTINEL}={target} but that path "
+            "doesn't exist"
+        )
+    return target
+
+
 def _gauntlet_status_from_run_dir(run_dir: Path) -> str:
     """Read gauntlet's verdict from <run-dir>/.gauntlet/results/<runId>/result.json.
 
-    Gauntlet writes results under .gauntlet/results/<runId>/. There should be
-    exactly one runId per harness invocation. If we can't find a result.json,
-    treat as investigate.
+    Phase 1 is one gauntlet invocation per run-dir, so there should be exactly
+    one runId directory. If we find more (shouldn't happen), use the newest.
     """
     results_root = run_dir / ".gauntlet" / "results"
     if not results_root.exists():
@@ -1463,19 +1589,27 @@ def _gauntlet_status_from_run_dir(run_dir: Path) -> str:
     return "investigate"
 
 
+def _harness_repo_root() -> Path:
+    """Return the harness checkout root (where fixtures/, bin/, etc. live).
+
+    Resolved from this module's location: harness/runner.py → ../.
+    """
+    return Path(__file__).resolve().parent.parent
+
+
 def invoke_gauntlet(
     *,
     story_path: Path,
     target_binary: str,
-    workdir: Path,
+    launch_cwd: Path,
     run_dir: Path,
     max_time: str | None,
 ) -> str:
     """Subprocess-invoke `gauntlet run`. Returns the verdict status string.
 
-    cwd=workdir so the agent-under-test inherits that cwd via tmux. run_dir
-    serves as Gauntlet's --project-dir (so the agent reads .gauntlet/context/
-    we populated). Stubbed in tests.
+    Sets HARNESS_AGENT_CWD in the env so the QA agent's bash (which starts
+    in <run-dir>/scratch, NOT in our launch_cwd) can `cd` there before
+    invoking the target. Per-target HOWTO files instruct the agent to do so.
     """
     cmd = [
         "gauntlet", "run", str(story_path),
@@ -1486,19 +1620,25 @@ def invoke_gauntlet(
     ]
     if max_time:
         cmd += ["--max-time", max_time]
-    subprocess.run(cmd, cwd=workdir, check=False)
+    env = {
+        **os.environ,
+        "HARNESS_AGENT_CWD": str(launch_cwd),
+    }
+    # --silent prints runId on stderr; we don't disambiguate by runId in
+    # Phase 1 (one invocation per run-dir = at most one runId subdirectory).
+    subprocess.run(cmd, env=env, check=False)
     return _gauntlet_status_from_run_dir(run_dir)
 
 
-def _has_tool_assertions(assertions_dir: Path) -> bool:
-    """Heuristic: scenario cares about tool calls iff any assertion's name
-    contains 'tool' or 'skill'. Cheap; ports Drill's empty-capture guard.
+def _has_any_assertions(assertions_dir: Path) -> bool:
+    """Drill engine.py:169-178 parity: empty-capture guard fires whenever
+    the scenario declares any assertions at all, not just tool-named ones.
     """
     if not assertions_dir.exists():
         return False
     return any(
-        any(k in p.name.lower() for k in ("tool", "skill"))
-        for p in assertions_dir.iterdir() if p.is_file()
+        p.is_file() and os.access(p, os.X_OK)
+        for p in assertions_dir.iterdir()
     )
 
 
@@ -1564,8 +1704,10 @@ def run_scenario(
     # 3. Populate .gauntlet/context/ from harness/target_contexts/<target>/
     _populate_context_dir(contexts_dir, target, run_dir)
 
-    # 4. Create temp workdir.
+    # 4. Create temp workdir; export HARNESS_REPO_ROOT so setup.sh can find
+    #    fixtures/template-repo.
     workdir = Path(tempfile.mkdtemp(prefix="harness-wd-"))
+    os.environ["HARNESS_REPO_ROOT"] = str(_harness_repo_root())
     workdir_kept = False
     try:
         with _single_run_lock(tcfg.session_log_dir):
@@ -1575,19 +1717,23 @@ def run_scenario(
             except SetupError as e:
                 raise RunnerError(f"setup failed: {e}") from e
 
-            # 6. Snapshot session-log dir.
+            # 6. Resolve launch cwd (defaults to workdir; setup.sh may
+            #    override via .harness-launch-cwd sentinel).
+            launch_cwd = _resolve_launch_cwd(workdir)
+
+            # 7. Snapshot session-log dir.
             snap = snapshot_dir(tcfg.session_log_dir, tcfg.session_log_glob)
 
-            # 7. Invoke gauntlet.
+            # 8. Invoke gauntlet.
             gauntlet_status = invoke_gauntlet(
                 story_path=story_path,
                 target_binary=tcfg.binary,
-                workdir=workdir,
+                launch_cwd=launch_cwd,
                 run_dir=run_dir,
                 max_time=tcfg.max_time,
             )
 
-            # 8. Capture + normalize logs.
+            # 9. Capture + normalize logs.
             tool_calls_path = capture_tool_calls(
                 log_dir=tcfg.session_log_dir,
                 log_glob=tcfg.session_log_glob,
@@ -1597,7 +1743,7 @@ def run_scenario(
                 workdir=workdir,
             )
 
-            # 9. Run scenario assertions.
+            # 10. Run scenario assertions.
             results, _ = run_assertions(
                 assertions_dir=scenario_dir / "assertions",
                 run_dir=run_dir,
@@ -1605,24 +1751,24 @@ def run_scenario(
                 bin_dir=bin_dir,
             )
 
-            # 10. Empty-capture parity guard.
-            if _has_tool_assertions(scenario_dir / "assertions"):
+            # 11. Empty-capture parity guard (Drill engine.py:169-178).
+            if _has_any_assertions(scenario_dir / "assertions"):
                 synth = _empty_capture_synthetic(tool_calls_path)
                 if synth is not None:
                     results = [synth, *results]
 
-            # 11. Compose final verdict.
+            # 12. Compose final verdict.
             verdict = compose(
                 gauntlet_status=gauntlet_status,  # type: ignore[arg-type]
                 assertion_results=results,
             )
 
-            # 12. Persist.
+            # 13. Persist.
             (run_dir / "verdict.json").write_text(
                 json.dumps(verdict.to_dict(), indent=2)
             )
 
-            # 13. Workdir disposition.
+            # 14. Workdir disposition.
             if verdict.final != "pass":
                 workdir_kept = True
                 (run_dir / "workdir-path.txt").write_text(str(workdir))
@@ -1808,12 +1954,24 @@ max_time: 10m
 You are driving Claude Code in a bash shell inside tmux. Claude Code is
 itself an AI agent; what appears on screen is its work.
 
-## Invocation
+## First: cd into the scenario's prepared workdir
 
-Run:
+Your bash starts in a scratch directory, NOT the workdir the harness
+prepared. Always start with:
 
 ```
-claude --dangerously-skip-permissions --plugin-dir $SUPERPOWERS_ROOT --model opus
+cd "$HARNESS_AGENT_CWD"
+```
+
+`HARNESS_AGENT_CWD` is set in the inherited environment by the harness.
+It points at the git repo the setup step prepared.
+
+## Invocation
+
+After `cd`, run:
+
+```
+claude --dangerously-skip-permissions --plugin-dir "$SUPERPOWERS_ROOT" --model opus
 ```
 
 `$SUPERPOWERS_ROOT` is set in the inherited environment.
@@ -1875,9 +2033,20 @@ max_time: 10m
 You are driving Codex in a bash shell inside tmux. Codex is itself an
 AI agent; what appears on screen is its work.
 
+## First: cd into the scenario's prepared workdir
+
+Your bash starts in a scratch directory, NOT the workdir the harness
+prepared. Always start with:
+
+```
+cd "$HARNESS_AGENT_CWD"
+```
+
+`HARNESS_AGENT_CWD` is set in the inherited environment by the harness.
+
 ## Invocation
 
-Run:
+After `cd`, run:
 
 ```
 codex --dangerously-bypass-approvals-and-sandbox
@@ -1970,12 +2139,15 @@ superpowers concept.
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-# DRILL_WORKDIR is set by harness.setup_step. Reuse the existing
-# setup_helpers package; eventually a setup_helpers CLI replaces this.
+# DRILL_WORKDIR is the temp workdir set by harness.setup_step.
+# HARNESS_REPO_ROOT is the harness checkout (where fixtures/ lives),
+# set by harness.runner. setup_helpers.create_base_repo needs both.
 exec uv run python -c "
 import os, pathlib
 from setup_helpers.base import create_base_repo
-create_base_repo(pathlib.Path(os.environ['DRILL_WORKDIR']))
+wd = pathlib.Path(os.environ['DRILL_WORKDIR'])
+template = pathlib.Path(os.environ['HARNESS_REPO_ROOT']) / 'fixtures' / 'template-repo'
+create_base_repo(wd, template)
 "
 ```
 
@@ -2034,38 +2206,45 @@ status: ready
 tags: worktree
 ---
 
-You are an engineer working inside an existing feature-branch worktree
-on a project. The setup step created two worktrees in this project:
-the main one (your default working directory) and a sibling whose name
-ends `-existing-worktree`. You are supposed to be working *inside the
-existing worktree* — `cd` into it before invoking the agent under test.
+You are an engineer working inside an existing feature-branch worktree.
+The harness has prepared things so that the cwd you land in (after the
+HOWTO's `cd $HARNESS_AGENT_CWD`) is already inside that existing
+worktree — you don't need to navigate further.
 
-You only get one turn. Ask the agent (in plain language, no
-superpowers vocabulary) to create an isolated workspace for building a
-signup feature. Once it responds, you are done.
+You get one turn. Ask the agent (in plain language, no superpowers
+vocabulary) to create an isolated workspace for building a signup
+feature. Once it responds, you are done.
 
 ## Acceptance Criteria
 
 - After the run, the project still has exactly two worktrees (main +
   the existing-feature worktree). No new worktree was added. Evidence:
-  run `git worktree list` from the main workdir before reporting.
-- The agent's response indicated, in some form, that the current
-  worktree is already isolated and sufficient.
+  run `git worktree list` and report the count.
+- The agent's final message does NOT announce creation of a new
+  worktree. (It may announce that the current workspace is sufficient,
+  or it may say nothing about worktrees — either is acceptable. What
+  fails is a claim of having created a new one.)
 ```
 
 - [ ] **Step 2: Write `setup.sh`**
 
+The setup writes `.harness-launch-cwd` pointing at the sibling existing-worktree so the runner exports `HARNESS_AGENT_CWD` correctly. The QA agent's HOWTO tells it to `cd $HARNESS_AGENT_CWD` before invoking the target — so the agent starts inside the existing worktree, matching Drill's `workdir_override` behavior.
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-exec uv run python -c "
+uv run python -c "
 import os, pathlib
 from setup_helpers.base import create_base_repo
 from setup_helpers.worktree import add_existing_worktree
 wd = pathlib.Path(os.environ['DRILL_WORKDIR'])
-create_base_repo(wd)
+template = pathlib.Path(os.environ['HARNESS_REPO_ROOT']) / 'fixtures' / 'template-repo'
+create_base_repo(wd, template)
 add_existing_worktree(wd)
 "
+# add_existing_worktree creates ${DRILL_WORKDIR}-existing-worktree as a sibling.
+# Point the runner at it via the launch-cwd sentinel.
+echo "${DRILL_WORKDIR}-existing-worktree" > "${DRILL_WORKDIR}/.harness-launch-cwd"
 ```
 
 ```bash
@@ -2167,7 +2346,8 @@ import os, pathlib
 from setup_helpers.base import create_base_repo
 from setup_helpers.worktree import symlink_superpowers
 wd = pathlib.Path(os.environ['DRILL_WORKDIR'])
-create_base_repo(wd)
+template = pathlib.Path(os.environ['HARNESS_REPO_ROOT']) / 'fixtures' / 'template-repo'
+create_base_repo(wd, template)
 symlink_superpowers(wd, os.environ['SUPERPOWERS_ROOT'])
 "
 ```
@@ -2272,14 +2452,23 @@ uv run harness run harness/scenarios/triggering-writing-plans --target claude
 
 Record: same items, from `results-harness/triggering-writing-plans-claude-<ts>/`.
 
-- [ ] **Step 3: Diff captured tool calls**
+- [ ] **Step 3: Compare captured tool calls**
+
+Byte-equivalence across two LLM runs is unrealistic. The parity invariant is "same set of distinct (tool, source) tuples, similar counts." Two comparisons:
 
 ```bash
+# (a) Per-row JSON-key-sorted diff — surfaces structural differences.
 diff <(jq -S . results/.../tool_calls.jsonl) \
      <(jq -S . results-harness/.../tool_calls.jsonl)
+
+# (b) Tool-set parity check — order-independent, source-aware.
+for f in results/.../tool_calls.jsonl results-harness/.../tool_calls.jsonl; do
+    echo "=== $f ==="
+    jq -c '[.tool, .source]' "$f" | sort | uniq -c
+done
 ```
 
-Expected: byte-identical, or schema-equivalent ordering differences only.
+Expected: (b) shows the same distinct tuples in both files. Counts may differ by ±1 or so across LLM runs — note specifics in migration-notes.
 
 - [ ] **Step 4: Append outcome to `docs/migration-notes.md`** under "Phase 1 parity outcomes"
 
