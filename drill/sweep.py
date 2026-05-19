@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import glob as glob_mod
 import json
 import shutil
 import time
@@ -120,6 +119,7 @@ class Sweep:
         run_dir = group_dir / f"run-{index:02d}"
         start = time.time()
 
+        engine: Engine | None = None
         try:
             engine = Engine(
                 scenario_path=self.scenario_path,
@@ -144,11 +144,10 @@ class Sweep:
                 error=str(e),
             )
         finally:
-            pattern = f"/tmp/drill-*-{timestamp}{run_suffix}"
-            for d in glob_mod.glob(pattern):
-                p = Path(d)
-                if p.is_dir():
-                    shutil.rmtree(p, ignore_errors=True)
+            if engine is not None:
+                for d in (engine.workdir, engine.claude_home):
+                    if d is not None and d.is_dir():
+                        shutil.rmtree(d, ignore_errors=True)
 
     @property
     def scenario_name(self) -> str:

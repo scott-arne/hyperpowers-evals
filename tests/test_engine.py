@@ -4,6 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from drill.backend import Backend
 from drill.engine import Engine, RunResult, ScenarioConfig, VerifyConfig, snapshot_filesystem
 
@@ -114,6 +116,94 @@ class TestEngineLogDirs:
         monkeypatch.setenv("DRILL_CODEX_HOME", str(codex_home))
 
         assert engine._resolve_log_dir(tmp_path / "workdir") == codex_home / "sessions"
+
+    def test_claude_uses_claude_config_dir_for_session_logs(self, tmp_path, monkeypatch):
+        engine = object.__new__(Engine)
+        engine.backend = Backend(
+            name="claude-opus-4-7",
+            cli="claude",
+            args=[],
+            required_env=[],
+            hooks={"pre_run": []},
+            shutdown="/exit",
+            idle={},
+            startup_timeout=30,
+            terminal={},
+            session_logs={},
+        )
+        claude_home = tmp_path / "claude-home"
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
+        workdir = tmp_path / "workdir"
+        workdir.mkdir()
+        encoded = str(workdir.resolve()).replace("/", "-")
+
+        assert engine._resolve_log_dir(workdir) == claude_home / "projects" / encoded
+
+    def test_claude_falls_back_to_home_when_config_dir_unset(self, tmp_path, monkeypatch):
+        engine = object.__new__(Engine)
+        engine.backend = Backend(
+            name="claude-opus-4-7",
+            cli="claude",
+            args=[],
+            required_env=[],
+            hooks={"pre_run": []},
+            shutdown="/exit",
+            idle={},
+            startup_timeout=30,
+            terminal={},
+            session_logs={},
+        )
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+        workdir = tmp_path / "workdir"
+        workdir.mkdir()
+        encoded = str(workdir.resolve()).replace("/", "-")
+
+        assert engine._resolve_log_dir(workdir) == Path.home() / ".claude" / "projects" / encoded
+
+
+class TestSeedClaudeHome:
+    def _skeleton(self, root: Path) -> Path:
+        skel = root / "skeleton"
+        skel.mkdir()
+        (skel / ".claude.json").write_text(json.dumps({"hasCompletedOnboarding": True}))
+        (skel / "settings.json").write_text('{"theme": "dark"}')
+        return skel
+
+    def test_copies_skeleton_and_pre_trusts_workdir(self, tmp_path):
+        from drill.engine import _seed_claude_home
+        skel = self._skeleton(tmp_path)
+        dest = tmp_path / "claude-home"
+        workdir = tmp_path / "workdir"
+        workdir.mkdir()
+
+        _seed_claude_home(skel, dest, workdir)
+
+        assert (dest / "settings.json").read_text() == '{"theme": "dark"}'
+        cfg = json.loads((dest / ".claude.json").read_text())
+        assert cfg["hasCompletedOnboarding"] is True
+        entry = cfg["projects"][str(workdir.resolve())]
+        assert entry["hasTrustDialogAccepted"] is True
+        assert entry["projectOnboardingSeenCount"] == 1
+
+    def test_uses_resolved_workdir_path_as_key(self, tmp_path):
+        # Claude keys projects by canonical (symlink-resolved) cwd; the trust
+        # entry must use the resolved path to match.
+        from drill.engine import _seed_claude_home
+        skel = self._skeleton(tmp_path)
+        real = tmp_path / "real"
+        real.mkdir()
+        link = tmp_path / "link"
+        link.symlink_to(real)
+
+        _seed_claude_home(skel, tmp_path / "claude-home", link)
+
+        cfg = json.loads((tmp_path / "claude-home" / ".claude.json").read_text())
+        assert str(real.resolve()) in cfg["projects"]
+
+    def test_raises_when_skeleton_missing(self, tmp_path):
+        from drill.engine import _seed_claude_home
+        with pytest.raises(FileNotFoundError, match="refresh-skeleton-claude-home"):
+            _seed_claude_home(tmp_path / "missing", tmp_path / "dest", tmp_path)
 
 
 class TestRunResult:

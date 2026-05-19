@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -128,13 +130,25 @@ class Engine:
         self.backend = load_backend(backend_name, backends_dir)
         self.fixtures_dir = fixtures_dir
         self.results_dir = results_dir
+        # Populated during run() so Sweep can clean up ephemeral dirs in
+        # finally even if the run raised. Opaque names (token_hex) avoid
+        # scenario-name semantics leaking into the agent's view of cwd.
+        self.workdir: Path | None = None
+        self.claude_home: Path | None = None
 
     def run(self, *, output_dir: Path | None = None, run_suffix: str = "") -> RunResult:
         start_time = time.time()
         timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
         os.environ.pop("DRILL_CODEX_HOME", None)
+        os.environ.pop("CLAUDE_CONFIG_DIR", None)
         self.backend.validate_env()
-        workdir = Path(f"/tmp/drill-{self.scenario.scenario}-{timestamp}{run_suffix}")
+        workdir = Path(f"/tmp/drill-{secrets.token_hex(4)}")
+        self.workdir = workdir
+        if self.backend.family == "claude":
+            claude_home = workdir.parent / f"{workdir.name}-claude-home"
+            self.claude_home = claude_home
+            _seed_claude_home(self.fixtures_dir / "skeleton-claude-home", claude_home, workdir)
+            os.environ["CLAUDE_CONFIG_DIR"] = str(claude_home)
         self._setup(workdir)
         actual_workdir = workdir
         override = self.scenario.setup.get("workdir_override")
@@ -346,14 +360,17 @@ class Engine:
     def _resolve_log_dir(self, workdir: Path) -> Path | None:
         """Resolve the log directory for the given backend and workdir.
 
-        Claude Code stores logs at ~/.claude/projects/<encoded-path>/
-        where the path is the real workdir with / replaced by -.
-        Codex stores logs at ~/.codex/sessions/.
+        Claude Code stores logs at $CLAUDE_CONFIG_DIR/projects/<encoded-path>/
+        (defaults to ~/.claude when unset) where the path is the real workdir
+        with / replaced by -. Codex stores logs at $CODEX_HOME/sessions/.
         """
         if self.backend.family == "claude":
             real_workdir = workdir.resolve()
             encoded = str(real_workdir).replace("/", "-")
-            log_dir = Path.home() / ".claude" / "projects" / encoded
+            claude_home = Path(
+                os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude")
+            )
+            log_dir = claude_home / "projects" / encoded
             return log_dir
         elif self.backend.family == "codex":
             # Codex stores at ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
@@ -404,3 +421,27 @@ class Engine:
 def _git_cmd(workdir: Path, cmd: list[str]) -> str:
     result = subprocess.run(cmd, cwd=workdir, capture_output=True, text=True)
     return result.stdout.strip()
+
+
+def _seed_claude_home(skeleton: Path, dest: Path, workdir: Path) -> None:
+    """Copy the skeleton .claude dir to dest and pre-trust the workdir.
+
+    The skeleton is per-clone (gitignored): rebuild with
+    bin/refresh-skeleton-claude-home. Without it, claude blocks at the
+    workspace-trust dialog on every run.
+    """
+    if not skeleton.exists():
+        raise FileNotFoundError(
+            f"Claude skeleton not found at {skeleton}. "
+            "Run bin/refresh-skeleton-claude-home to build it."
+        )
+    shutil.copytree(skeleton, dest)
+    config_path = dest / ".claude.json"
+    config = json.loads(config_path.read_text())
+    config.setdefault("projects", {})[str(workdir.resolve())] = {
+        "hasTrustDialogAccepted": True,
+        "projectOnboardingSeenCount": 1,
+        "hasClaudeMdExternalIncludesApproved": True,
+        "hasClaudeMdExternalIncludesWarningShown": True,
+    }
+    config_path.write_text(json.dumps(config))
