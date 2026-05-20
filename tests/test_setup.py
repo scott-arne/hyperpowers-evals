@@ -223,9 +223,10 @@ class TestWorktreeHelpers:
             _select_codex_superpowers_hook(response)
 
     def test_select_codex_superpowers_hook_accepts_revised_matcher(self):
-        # Superpowers revises which lifecycle events the hook fires on
-        # (was startup|resume|clear, later startup|clear|compact). Only
-        # `startup` is load-bearing; the rest must not pin drill.
+        # The Superpowers hooks.json matcher churns (it has been
+        # startup|resume, then startup|resume|clear|compact, now
+        # startup|clear|compact). Only `startup` is load-bearing; the
+        # rest must not pin drill.
         response = {
             "result": {
                 "data": [

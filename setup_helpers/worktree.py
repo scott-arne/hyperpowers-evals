@@ -240,9 +240,10 @@ def _select_codex_superpowers_hook(response: dict[str, Any]) -> dict[str, str]:
 
     hook = hooks[0]
     # The hook must fire on session startup for the bootstrap scenario to
-    # exercise anything. Don't pin the full matcher set — Superpowers
-    # revises which other lifecycle events it hooks (was startup|resume|
-    # clear, later startup|clear|compact); only `startup` is load-bearing.
+    # exercise anything. Don't pin the full matcher set — it churns: the
+    # Superpowers hooks.json matcher has carried "startup|resume", then
+    # "startup|resume|clear|compact", now "startup|clear|compact". Only
+    # `startup` has been constant, and it is the only event drill needs.
     matcher = hook.get("matcher") or ""
     if "startup" not in matcher.split("|"):
         raise RuntimeError(
