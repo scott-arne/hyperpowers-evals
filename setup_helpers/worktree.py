@@ -251,10 +251,15 @@ def _select_codex_superpowers_hook(response: dict[str, Any]) -> dict[str, str]:
             f"(matcher: {matcher!r})"
         )
     command = hook.get("command") or ""
-    if "hooks/run-hook.cmd" not in command or "session-start-codex" not in command:
+    # Confirm the hook goes through the Superpowers run-hook.cmd wrapper.
+    # Don't pin the dispatched script name: Superpowers unified its Codex
+    # hook entrypoint (the separate `session-start-codex` was merged into
+    # the shared `session-start`), so pinning the arg breaks on that
+    # change. run-hook.cmd is the stable part.
+    if "run-hook.cmd" not in command:
         raise RuntimeError(
             "Unexpected Superpowers Codex hook command "
-            f"(expected run-hook.cmd session-start-codex): {hook.get('command')}"
+            f"(expected a run-hook.cmd invocation): {hook.get('command')}"
         )
     if hook.get("trustStatus") not in {"untrusted", "trusted"}:
         raise RuntimeError(

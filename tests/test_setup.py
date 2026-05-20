@@ -166,120 +166,55 @@ class TestWorktreeHelpers:
         assert kwargs["env"]["CODEX_HOME"] == str(codex_home)
         assert kwargs["env"]["OPENAI_API_KEY"] == "sk-test"
 
-    def test_select_codex_superpowers_hook_requires_codex_entrypoint(self):
-        response = {
-            "result": {
-                "data": [
-                    {
-                        "hooks": [
-                            {
-                                "pluginId": "superpowers@debug",
-                                "source": "plugin",
-                                "eventName": "sessionStart",
-                                "matcher": "startup|resume|clear",
-                                "command": (
-                                    '"${PLUGIN_ROOT}/hooks/run-hook.cmd" session-start-codex'
-                                ),
-                                "trustStatus": "untrusted",
-                                "key": "superpowers@debug:hooks/hooks-codex.json:session_start:0:0",
-                                "currentHash": "sha256:abc123",
-                            }
-                        ]
-                    }
-                ]
-            }
+    def _codex_hook_response(self, **overrides):
+        """A hooks/list response with one Superpowers Codex SessionStart
+        hook. Fields mirror current Superpowers reality (hooks.json,
+        run-hook.cmd session-start); override per-test."""
+        hook = {
+            "pluginId": "superpowers@debug",
+            "source": "plugin",
+            "eventName": "sessionStart",
+            "matcher": "startup|clear|compact",
+            "command": '"${PLUGIN_ROOT}/hooks/run-hook.cmd" session-start',
+            "trustStatus": "untrusted",
+            "key": "superpowers@debug:hooks/hooks.json:session_start:0:0",
+            "currentHash": "sha256:abc123",
         }
+        hook.update(overrides)
+        return {"result": {"data": [{"hooks": [hook]}]}}
 
-        hook = _select_codex_superpowers_hook(response)
-
+    def test_select_codex_superpowers_hook_accepts_current_hook(self):
+        hook = _select_codex_superpowers_hook(self._codex_hook_response())
         assert hook == {
-            "key": "superpowers@debug:hooks/hooks-codex.json:session_start:0:0",
+            "key": "superpowers@debug:hooks/hooks.json:session_start:0:0",
             "currentHash": "sha256:abc123",
         }
 
-    def test_select_codex_superpowers_hook_rejects_shared_entrypoint(self):
-        response = {
-            "result": {
-                "data": [
-                    {
-                        "hooks": [
-                            {
-                                "pluginId": "superpowers@debug",
-                                "source": "plugin",
-                                "eventName": "sessionStart",
-                                "matcher": "startup|resume|clear",
-                                "command": '"${PLUGIN_ROOT}/hooks/run-hook.cmd" session-start',
-                                "trustStatus": "untrusted",
-                                "key": "superpowers@debug:hooks/hooks-codex.json:session_start:0:0",
-                                "currentHash": "sha256:abc123",
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
+    def test_select_codex_superpowers_hook_rejects_non_run_hook_command(self):
+        # A SessionStart hook that doesn't go through the run-hook.cmd
+        # wrapper isn't the Superpowers hook drill expects to trust.
+        resp = self._codex_hook_response(command="/bin/echo hello")
+        with pytest.raises(RuntimeError, match="run-hook.cmd"):
+            _select_codex_superpowers_hook(resp)
 
-        with pytest.raises(RuntimeError, match="session-start-codex"):
-            _select_codex_superpowers_hook(response)
-
-    def test_select_codex_superpowers_hook_accepts_revised_matcher(self):
+    def test_select_codex_superpowers_hook_accepts_matcher_churn(self):
         # The Superpowers hooks.json matcher churns (it has been
         # startup|resume, then startup|resume|clear|compact, now
-        # startup|clear|compact). Only `startup` is load-bearing; the
-        # rest must not pin drill.
-        response = {
-            "result": {
-                "data": [
-                    {
-                        "hooks": [
-                            {
-                                "pluginId": "superpowers@debug",
-                                "source": "plugin",
-                                "eventName": "sessionStart",
-                                "matcher": "startup|clear|compact",
-                                "command": (
-                                    '"${PLUGIN_ROOT}/hooks/run-hook.cmd" session-start-codex'
-                                ),
-                                "trustStatus": "untrusted",
-                                "key": "superpowers@debug:hooks/hooks-codex.json:session_start:0:0",
-                                "currentHash": "sha256:abc123",
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-
-        hook = _select_codex_superpowers_hook(response)
-
-        assert hook["key"].startswith("superpowers@debug:")
+        # startup|clear|compact). Only `startup` is load-bearing.
+        for matcher in (
+            "startup|resume",
+            "startup|resume|clear|compact",
+            "startup|clear|compact",
+        ):
+            hook = _select_codex_superpowers_hook(
+                self._codex_hook_response(matcher=matcher)
+            )
+            assert hook["key"].startswith("superpowers@debug:")
 
     def test_select_codex_superpowers_hook_rejects_matcher_without_startup(self):
-        response = {
-            "result": {
-                "data": [
-                    {
-                        "hooks": [
-                            {
-                                "pluginId": "superpowers@debug",
-                                "source": "plugin",
-                                "eventName": "sessionStart",
-                                "matcher": "resume|clear",
-                                "command": (
-                                    '"${PLUGIN_ROOT}/hooks/run-hook.cmd" session-start-codex'
-                                ),
-                                "trustStatus": "untrusted",
-                                "key": "superpowers@debug:hooks/hooks-codex.json:session_start:0:0",
-                                "currentHash": "sha256:abc123",
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-
+        resp = self._codex_hook_response(matcher="resume|clear")
         with pytest.raises(RuntimeError, match="session startup"):
-            _select_codex_superpowers_hook(response)
+            _select_codex_superpowers_hook(resp)
 
     def test_create_caller_consent_plan(self, fixtures_dir, work_dir):
         create_base_repo(work_dir, fixtures_dir / "template-repo")
