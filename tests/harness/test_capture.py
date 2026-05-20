@@ -3,7 +3,12 @@ from pathlib import Path
 
 import yaml
 
-from harness.capture import capture_tool_calls, new_files_since, snapshot_dir
+from harness.capture import (
+    capture_token_usage,
+    capture_tool_calls,
+    new_files_since,
+    snapshot_dir,
+)
 
 
 def _mkdir(p: Path) -> Path:
@@ -127,3 +132,63 @@ class TestCaptureToolCalls:
         )
         assert out.exists()
         assert out.read_text() == ""
+
+
+def _claude_session_line(input_tokens: int, output_tokens: int) -> str:
+    return json.dumps({
+        "type": "assistant",
+        "message": {
+            "model": "claude-opus-4-7",
+            "role": "assistant",
+            "content": [{"type": "text", "text": "x"}],
+            "usage": {
+                "input_tokens": input_tokens,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
+                "output_tokens": output_tokens,
+            },
+        },
+    }) + "\n"
+
+
+class TestCaptureTokenUsage:
+    def test_writes_token_usage_json(self, tmp_path):
+        log_dir = _mkdir(tmp_path / "logs")
+        snap = snapshot_dir(log_dir, "*.jsonl")
+        (log_dir / "session.jsonl").write_text(_claude_session_line(100, 40))
+        run_dir = _mkdir(tmp_path / "run")
+        out = capture_token_usage(
+            log_dir=log_dir, log_glob="*.jsonl", snapshot=snap,
+            normalizer="claude", run_dir=run_dir,
+        )
+        assert out is not None
+        assert out == run_dir / "token_usage.json"
+        usage = json.loads(out.read_text())
+        assert usage["total_input"] == 100
+        assert usage["total_output"] == 40
+        assert usage["est_cost_usd"] > 0
+
+    def test_no_new_logs_writes_nothing(self, tmp_path):
+        # Measurement is best-effort: no logs -> no file, not an empty one.
+        log_dir = _mkdir(tmp_path / "logs")
+        snap = snapshot_dir(log_dir, "*.jsonl")
+        run_dir = _mkdir(tmp_path / "run")
+        out = capture_token_usage(
+            log_dir=log_dir, log_glob="*.jsonl", snapshot=snap,
+            normalizer="claude", run_dir=run_dir,
+        )
+        assert out is None
+        assert not (run_dir / "token_usage.json").exists()
+
+    def test_unparseable_backend_writes_nothing(self, tmp_path):
+        # token_usage.py has no gemini parser; capture must no-op cleanly.
+        log_dir = _mkdir(tmp_path / "logs")
+        snap = snapshot_dir(log_dir, "*.jsonl")
+        (log_dir / "s.jsonl").write_text("{}\n")
+        run_dir = _mkdir(tmp_path / "run")
+        out = capture_token_usage(
+            log_dir=log_dir, log_glob="*.jsonl", snapshot=snap,
+            normalizer="gemini", run_dir=run_dir,
+        )
+        assert out is None
+        assert not (run_dir / "token_usage.json").exists()

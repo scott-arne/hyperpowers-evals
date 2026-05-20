@@ -34,7 +34,7 @@ import time
 from pathlib import Path
 
 from harness.assertions import AssertionResult, run_assertions
-from harness.capture import capture_tool_calls, snapshot_dir
+from harness.capture import capture_token_usage, capture_tool_calls, snapshot_dir
 from harness.composer import FinalVerdict, GauntletStatus, compose
 from harness.scenario_config import (
     ScenarioConfigError,
@@ -388,6 +388,18 @@ def run_scenario(
 
         # 9. Capture + normalize logs.
         tool_calls_path = capture_tool_calls(
+            log_dir=session_log_dir,
+            log_glob=tcfg.session_log_glob,
+            snapshot=snap,
+            normalizer=tcfg.normalizer,
+            run_dir=run_dir,
+            launch_cwd=launch_cwd,
+        )
+
+        # 9b. Capture token usage — measurement only, written to
+        #     token_usage.json. Does not affect the verdict (see
+        #     docs/migration-notes.md, cost / measurement decision).
+        capture_token_usage(
             log_dir=session_log_dir,
             log_glob=tcfg.session_log_glob,
             snapshot=snap,

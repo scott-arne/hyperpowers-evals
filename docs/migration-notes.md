@@ -5,10 +5,10 @@ migration. Reviewed before Phase 3 decommission.
 
 ## Phase 1 deferrals
 
-- **Token-cost wiring.** `harness/token_usage.py` is lifted from Drill but
-  the runner doesn't yet call it. Wire when the first cost-* scenario
-  ports. See "Decision: cost / measurement model" below for the agreed
-  shape.
+- ~~**Token-cost wiring.**~~ **Resolved 2026-05-20.** The runner now calls
+  `harness/token_usage.py` after every run via `capture_token_usage`
+  (`harness/capture.py`), writing `token_usage.json` into the run dir.
+  See "Decision: cost / measurement model" below.
 - ~~**`setup.sh` shell-out latency.**~~ **Resolved 2026-05-20.** The
   `setup-helpers run <name>` CLI landed (ergonomics study item #3);
   `setup.sh` is no longer an inline `uv run python -c` block.
@@ -35,8 +35,11 @@ so the verdict model does not have to change:
 - No "measurements channel" inside `verdict.json`; keeping the verdict
   purely binary is worth more than co-locating the number.
 
-This is a decision, not yet code — the `token_usage.py` call is wired
-at cost-* port time.
+Wired 2026-05-20: `harness/runner.py` step 9b calls `capture_token_usage`
+after every run, so `token_usage.json` lands in the run dir for all
+targets (claude/codex; gemini/pi produce no file — no parser). Still to
+do at cost-* port time: a `tokens-under <N>` style assertion helper in
+`bin/` that reads `token_usage.json` and exits 0/1.
 
 ## Phase 1 first-run findings (2026-05-18)
 
