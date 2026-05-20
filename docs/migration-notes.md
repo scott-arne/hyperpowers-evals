@@ -75,6 +75,22 @@ Logged here for Phase 2 attention; none block Phase 1 ship.
   have a test for malformed JSON / unexpected status string. Both raise
   cleanly; tests would lock in current behavior.
 
+## Skipped scenarios
+
+Drill scenarios deliberately not ported, with the reason.
+
+- **`worktree-codex-app-detached-head`, `worktree-codex-app-detached-head-spec-aware`**
+  (skipped 2026-05-20). Both are `manual: true` / `backend: codex-app`
+  in Drill — they require the Codex *App* (the hosted product), where a
+  human creates a task and the App hands the agent a detached-HEAD
+  worktree under `$CODEX_HOME/worktrees/`. The harness automates via
+  Gauntlet + a CLI; it cannot drive the Codex App. The behavior they
+  test — an agent recognizing an externally-managed detached-HEAD
+  worktree and not creating a new one — is covered automatably by
+  `worktree-codex-detached-head` (+ `-spec-aware`), which synthesize
+  the same detached-HEAD condition with setup helpers. No coverage
+  lost.
+
 ## Phase 1 parity outcomes
 
 To be filled in by the manual parity runs (Tasks 18–20).
