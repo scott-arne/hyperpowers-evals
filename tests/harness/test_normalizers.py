@@ -173,6 +173,20 @@ class TestNormalizePiLogs:
 
         assert filter_pi_logs_by_cwd([match, other, malformed], target) == [match]
 
+    def test_filter_by_cwd_resolves_symlinked_paths(self, tmp_path):
+        # Same macOS /var -> /private/var divergence as the codex filter:
+        # the session header records the resolved realpath, the target may
+        # be a symlinked path. Compare resolved paths, not raw strings.
+        real = tmp_path / "real-workdir"
+        real.mkdir()
+        link = tmp_path / "linked-workdir"
+        link.symlink_to(real)
+        session = tmp_path / "session.jsonl"
+        session.write_text(
+            json.dumps({"type": "session", "cwd": os.path.realpath(real)}) + "\n"
+        )
+        assert filter_pi_logs_by_cwd([session], str(link)) == [session]
+
     def test_normalizes_assistant_tool_calls_from_session_entries(self):
         lines = [
             json.dumps({"type": "session", "cwd": "/tmp/project"}),

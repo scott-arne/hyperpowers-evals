@@ -393,7 +393,7 @@ def run_scenario(
             snapshot=snap,
             normalizer=tcfg.normalizer,
             run_dir=run_dir,
-            workdir=workdir,
+            launch_cwd=launch_cwd,
         )
 
         # 10. Run scenario assertions.

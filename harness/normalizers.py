@@ -81,7 +81,12 @@ def filter_codex_logs_by_cwd(paths: list[Path], target_cwd: str) -> list[Path]:
 
 
 def filter_pi_logs_by_cwd(paths: list[Path], target_cwd: str) -> list[Path]:
-    """Drop Pi sessions whose header cwd doesn't match target_cwd."""
+    """Drop Pi sessions whose header cwd doesn't match target_cwd.
+
+    Paths are realpath-resolved before comparison — see
+    filter_codex_logs_by_cwd for why raw string equality fails on macOS.
+    """
+    target = os.path.realpath(target_cwd)
     matched: list[Path] = []
     for path in paths:
         try:
@@ -92,7 +97,8 @@ def filter_pi_logs_by_cwd(paths: list[Path], target_cwd: str) -> list[Path]:
             continue
         if entry.get("type") != "session":
             continue
-        if entry.get("cwd") == target_cwd:
+        cwd = entry.get("cwd", "")
+        if cwd and os.path.realpath(cwd) == target:
             matched.append(path)
     return matched
 

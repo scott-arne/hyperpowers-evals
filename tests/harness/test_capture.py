@@ -6,6 +6,11 @@ import yaml
 from harness.capture import capture_tool_calls, new_files_since, snapshot_dir
 
 
+def _mkdir(p: Path) -> Path:
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
 class TestSnapshotAndDiff:
     def test_identifies_only_new_files(self, tmp_path):
         log_dir = tmp_path / "logs"
@@ -74,6 +79,40 @@ class TestCaptureToolCalls:
         assert len(rows) == 1
         assert rows[0]["tool"] == "Bash"
         assert rows[0]["source"] == "shell"
+
+    def test_codex_filter_uses_launch_cwd(self, tmp_path):
+        # capture_tool_calls attributes codex rollouts by the launch cwd
+        # passed in. A scenario may launch the agent in a subdir via
+        # .harness-launch-cwd, so this must be launch_cwd, not the workdir.
+        log_dir = tmp_path / "sessions"
+        log_dir.mkdir()
+        snap = snapshot_dir(log_dir, "*.jsonl")
+        launch_cwd = tmp_path / "launch-here"
+        launch_cwd.mkdir()
+        rollout = log_dir / "rollout-1.jsonl"
+        rollout.write_text(
+            json.dumps({"type": "session_meta",
+                        "payload": {"cwd": str(launch_cwd)}}) + "\n"
+            + json.dumps({"type": "response_item",
+                          "payload": {"type": "function_call",
+                                      "name": "spawn_agent", "arguments": "{}"}}) + "\n"
+        )
+
+        matched = capture_tool_calls(
+            log_dir=log_dir, log_glob="*.jsonl", snapshot=snap,
+            normalizer="codex", run_dir=_mkdir(tmp_path / "run-match"),
+            launch_cwd=launch_cwd,
+        )
+        rows = [json.loads(x) for x in matched.read_text().splitlines() if x.strip()]
+        assert [r["tool"] for r in rows] == ["spawn_agent"]
+
+        # A non-matching launch_cwd drops the rollout entirely.
+        dropped = capture_tool_calls(
+            log_dir=log_dir, log_glob="*.jsonl", snapshot=snap,
+            normalizer="codex", run_dir=_mkdir(tmp_path / "run-miss"),
+            launch_cwd=tmp_path / "elsewhere",
+        )
+        assert dropped.read_text() == ""
 
     def test_empty_capture_writes_empty_file(self, tmp_path):
         # File must always exist so assertions can rely on its presence.
