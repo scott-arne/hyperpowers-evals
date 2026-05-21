@@ -57,27 +57,157 @@ trusted local environment:
 Results are written under `results/<scenario>/<backend>/<timestamp>/`, which is
 gitignored because those artifacts can contain sensitive transcripts.
 
-## Harness (Drill → Gauntlet migration in progress)
+## The Harness (Drill → Gauntlet migration)
 
-`harness/` is a Python harness that wraps the
-[Gauntlet](../gauntlet) QA framework to reproduce Drill's eval-lab
-capabilities. Gauntlet drives the target (the agent under test) via
-its TUI adapter and reads both the screen and the agent's session log
-via bash. The harness handles per-scenario workdir setup and post-run
-deterministic assertions that regression-test the acceptance criteria.
+Drill is being replaced. `harness/` is its successor: a small Python
+harness that wraps **Gauntlet** — a general-purpose QA-agent framework
+(a separate repo; its `gauntlet` CLI must be on `PATH`).
 
-Phase 1 ports three representative scenarios; Phase 2 ports the rest;
-Phase 3 deletes Drill. See [`docs/gauntlet-migration.md`](docs/gauntlet-migration.md).
+The rationale: Drill rebuilt infrastructure Gauntlet already has — a
+tmux-driven target loop, evidence capture, multi-trial aggregation — and
+once Gauntlet's QA agent gained a `bash` tool it could read the
+agent-under-test's own session log directly, collapsing Drill's separate
+actor and verifier LLMs into one. The harness keeps only what is
+genuinely Drill-specific: per-scenario workdir setup, and post-run
+deterministic assertions. Full rationale and phasing live in
+[`docs/gauntlet-migration.md`](docs/gauntlet-migration.md); decisions and
+deferrals in [`docs/migration-notes.md`](docs/migration-notes.md).
 
-Run a harness scenario:
+**Status:** the harness is built and scenarios are ported under
+`harness/scenarios/`. Drill still works and is unchanged in behavior;
+Phase 3 will delete it. Until then both run side by side.
+
+### How the Harness Works
+
+A `harness run` drives one scenario against one target:
+
+1. **Target config** — `harness/targets/<target>.yaml` is parsed and its
+   required env vars validated. An optional per-scenario `scenario.yaml`
+   may restrict which targets a scenario accepts.
+2. **Run dir** — a per-run directory is created under `results-harness/`.
+   It doubles as Gauntlet's `--project-dir` and the evidence root.
+3. **Isolation** — a fresh per-run agent-config dir (`CLAUDE_CONFIG_DIR`
+   for Claude, `CODEX_HOME` for Codex) is seeded from a skeleton, so the
+   agent under test never sees the host's real `~/.claude` / `~/.codex`,
+   installed plugins, or prior sessions.
+4. **Setup** — a temp workdir is created; the scenario's `setup.sh`
+   builds the fixture and `preflight.sh` verifies its invariants. A
+   non-zero exit from either aborts the run with a clear error.
+5. **Context** — the per-target HOWTO (`harness/target_contexts/<target>/`)
+   is copied into the run's `.gauntlet/context/` so the QA agent learns
+   how to launch and observe the target.
+6. **Drive** — `gauntlet run story.md --adapter tui --target <binary>`
+   launches. Gauntlet's QA agent reads the screen *and* the agent's
+   session log via bash, role-plays the user, and issues a verdict
+   against the story's `## Acceptance Criteria`.
+7. **Capture** — the agent's session-log dir is diffed (snapshot before,
+   diff after), normalized per-target into `tool_calls.jsonl`, and token
+   usage is written to `token_usage.json` (measurement only — it does
+   not affect the verdict).
+8. **Assert** — the scenario's `assertions/*.sh` run against the
+   captured evidence, with `bin/` on `PATH` and `$HARNESS_WORKDIR`
+   pointing at the scenario workdir.
+9. **Compose** — the final verdict is `pass` iff Gauntlet's verdict is
+   `pass` **and** every assertion exits 0. `verdict.json` is written to
+   the run dir; the workdir is kept on failure (its path recorded in
+   `workdir-path.txt`) and wiped on success.
+
+The deterministic assertions are not a second verifier. Gauntlet's
+agent, reading the same evidence, is authoritative for any single run.
+The assertions are a frozen regression test that an acceptance criterion
+still catches what it should — a guard that survives model updates and
+verdict noise.
+
+### Running Harness Scenarios
+
+Run one scenario against one target:
 
 ```bash
 uv run harness run harness/scenarios/triggering-writing-plans --target claude
+```
+
+List scenarios:
+
+```bash
 uv run harness list
 ```
 
-Per-target config lives in `harness/targets/<name>.yaml`; per-target
-HOWTO context in `harness/target_contexts/<name>/`.
+Scaffold a new scenario, then validate its structure:
+
+```bash
+uv run harness new my-new-scenario
+uv run harness check my-new-scenario
+```
+
+`harness check` with no arguments validates every scenario. It catches
+the common authoring miss — a `setup.sh`, `preflight.sh`, or assertion
+script without the executable bit, which the runner would otherwise skip
+silently; `--fix` repairs the bit.
+
+Harness runs are **live evals** — they launch real agent CLIs in
+permissive modes. The [Safety Model](#safety-model) and
+[Live Eval Risk](#live-eval-risk) sections apply unchanged; never run
+them on public CI. The per-run config-dir isolation (step 3 above)
+narrows the blast radius but is not a sandbox. `results-harness/` is
+gitignored because run artifacts can contain sensitive transcripts.
+
+### Targets
+
+A target is one agent CLI under test. Its config is
+`harness/targets/<name>.yaml`; its companion HOWTO,
+`harness/target_contexts/<name>/HOWTO.md`, is prose the QA agent reads to
+learn how to launch and observe that CLI. Both are authored once per CLI
+and shared across scenarios.
+
+| Target | CLI | Required environment |
+| --- | --- | --- |
+| `claude` | Claude Code | `ANTHROPIC_API_KEY`, `SUPERPOWERS_ROOT` |
+| `codex` | Codex CLI | `OPENAI_API_KEY`, `SUPERPOWERS_ROOT` |
+
+A target YAML declares the binary, the per-run config-dir env var, where
+the CLI writes session logs, which normalizer parses them, and the
+required env. Gauntlet's own `gauntlet` CLI must also be on `PATH`.
+
+### Harness Scenarios
+
+A harness scenario is a directory, `harness/scenarios/<name>/`:
+
+```text
+story.md          Gauntlet story — the QA agent's brief + acceptance criteria
+setup.sh          builds the fixture workdir (runs before the agent)
+preflight.sh      verifies fixture invariants (optional, runs after setup)
+assertions/*.sh   post-run deterministic checks against captured evidence
+scenario.yaml     optional — restricts compatible targets
+```
+
+`story.md` carries YAML frontmatter (`id`, `title`) and an
+`## Acceptance Criteria` section. Write criteria to demand log evidence
+(e.g. "a `Skill` invocation naming `superpowers:writing-plans` appears in
+the agent's session log") so the QA agent must consult the log, not just
+the screen.
+
+### Writing a Harness Scenario
+
+1. `uv run harness new <name>` stamps a structurally-valid skeleton.
+2. Write `story.md`: brief the QA agent on the role it plays, the exact
+   message to send the agent under test, and when it is done — plus
+   evidence-demanding acceptance criteria. Follow the
+   `writing-gauntlet-stories` skill.
+3. Write `setup.sh` to build the fixture. Prefer
+   `uv run setup-helpers run <helper>` over inline Python; if you need a
+   new fixture, add a helper to `setup_helpers/` and register it in
+   `setup_helpers/__init__.py`.
+4. Write `preflight.sh` to assert the fixture is in the expected state
+   before the agent runs.
+5. Add `assertions/*.sh` — deterministic checks built from the `bin/`
+   helpers (`skill-called`, `skill-before-tool`, `tool-called`,
+   `tool-not-called`, …). Each must be executable; exit 0 = pass.
+6. `uv run harness check <name>` to validate structure, then run it
+   against a target.
+
+Setup and preflight scripts run with `$HARNESS_WORKDIR` pointing at the
+fixture workdir. Assertions run with `bin/` on `PATH` and the same
+`$HARNESS_WORKDIR`. Setup helpers take `workdir: Path` and mutate it.
 
 ## Setup
 
@@ -225,7 +355,7 @@ scenario workdir and `bin/` on `PATH`.
 ## Project Map
 
 ```text
-drill/              core engine and CLI
+drill/              Drill core engine and CLI (legacy; Phase 3 removes it)
   actor.py          user-simulator LLM
   assertions.py     deterministic post-session assertions
   backend.py        backend config loader and command builder
@@ -235,14 +365,29 @@ drill/              core engine and CLI
   session.py        tmux session wrapper
   sweep.py          multi-backend, repeated-run orchestration
   verifier.py       LLM verifier
-backends/           backend YAML configs
-bin/                assertion helper scripts
-docs/               design notes and manual testing protocols
-fixtures/           static repo fixtures
-prompts/            actor/verifier prompts
-scenarios/          scenario YAML files
-setup_helpers/      scenario fixture builders
-tests/              pytest suite
+harness/            Gauntlet-based harness (Drill's successor)
+  cli.py            `harness run`, `list`, `new`, `check`
+  runner.py         per-run orchestration (one scenario, one target)
+  target_config.py  per-target YAML loader
+  scenario_config.py optional per-scenario config loader
+  setup_step.py     runs scenario setup.sh / preflight.sh
+  capture.py        session-log snapshot/diff + token capture
+  normalizers.py    per-target session-log normalization
+  assertions.py     deterministic assertion runner
+  composer.py       gauntlet verdict + assertions → final verdict
+  scaffold.py       `harness new` / `harness check`
+  token_usage.py    per-target token-usage parsing
+  targets/          per-target config YAML (claude, codex)
+  target_contexts/  per-target HOWTO prose for the QA agent
+  scenarios/        harness scenarios (one directory each)
+backends/           Drill backend YAML configs
+bin/                assertion helper scripts (shared by Drill and harness)
+docs/               design notes, the migration spec, testing protocols
+fixtures/           static repo fixtures + agent-config skeletons
+prompts/            Drill actor/verifier prompts
+scenarios/          Drill scenario YAML files
+setup_helpers/      scenario fixture builders (shared) + `setup-helpers` CLI
+tests/              pytest suite (tests/harness/ covers the harness)
 ```
 
 ## Contribution Rules
