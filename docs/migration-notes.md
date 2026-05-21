@@ -37,9 +37,18 @@ so the verdict model does not have to change:
 
 Wired 2026-05-20: `harness/runner.py` step 9b calls `capture_token_usage`
 after every run, so `token_usage.json` lands in the run dir for all
-targets (claude/codex; gemini/pi produce no file — no parser). Still to
-do at cost-* port time: a `tokens-under <N>` style assertion helper in
-`bin/` that reads `token_usage.json` and exits 0/1.
+targets (claude/codex; gemini/pi produce no file — no parser).
+
+Cost-* scenarios ported 2026-05-20: they turned out to be pattern
+instruments (brainstorming over-trigger, tool-result bloat, spec/plan
+duplication, review fan-out) — not token-threshold checks — so the
+anticipated `tokens-under` helper was not needed. Their deterministic
+assertions are claude-shaped pattern gates (skill-not-called, Read/Grep,
+Agent count) and carry no `compatible_targets`, so a codex run still
+produces a valid `token_usage.json` even if the claude-shaped assertion
+misfires. The cross-backend cost comparison reads `token_usage.json`,
+which is backend-agnostic. Making the assertions themselves target-aware
+is a deferred follow-up.
 
 ## Phase 1 first-run findings (2026-05-18)
 
