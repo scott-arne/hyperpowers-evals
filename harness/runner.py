@@ -271,6 +271,7 @@ def invoke_gauntlet(
     launch_cwd: Path,
     run_dir: Path,
     max_time: str | None,
+    project_prompt: Path | None = None,
     extra_env: dict[str, str] | None = None,
 ) -> GauntletStatus:
     """Subprocess-invoke `gauntlet run`. Returns the verdict status string.
@@ -296,6 +297,8 @@ def invoke_gauntlet(
     ]
     if max_time:
         cmd += ["--max-time", max_time]
+    if project_prompt:
+        cmd += ["--project-prompt", str(project_prompt)]
     env = {
         **os.environ,
         "HARNESS_AGENT_CWD": str(launch_cwd),
@@ -474,6 +477,7 @@ def _run_scenario_inner(
         launch_cwd=launch_cwd,
         run_dir=run_dir,
         max_time=tcfg.max_time,
+        project_prompt=tcfg.project_prompt,
         extra_env={tcfg.agent_config_env: str(agent_config_dir)},
     )
 

@@ -40,13 +40,35 @@ Claude writes its session log as JSONL files under
 filename itself is a UUIDv4 (e.g.
 `7206a2c2-95f3-46e9-9bc8-8f6a863fcfc6.jsonl`).
 
-You can `tail` or `jq` this file to see what tools Claude has invoked —
-useful when the screen is mid-render or you want ground truth on tool
-usage. To find the file Claude just wrote:
+The log is **ground truth** for what Claude has done — every tool call,
+every Skill load, every file edit lands there. The screen is a
+rendering that can lag, scroll off the top, or stay frozen during long
+subagent runs even while Claude is busy. When in doubt, trust the log
+over the screen.
+
+**Use the log, not just `read_screen`, when:**
+
+- Two `read_screen` calls in a row return near-identical content.
+  Claude is probably running a long tool (subagent dispatch, a build,
+  a test command) that produces no parent-screen output. Tail the log
+  to see real activity.
+- You need to verify a specific tool call or Skill load happened.
+- The screen shows a spinner or "running" indicator with no detail.
+
+Find the active session file:
 
 ```
 find "$CLAUDE_CONFIG_DIR/projects" -name '*.jsonl' -mmin -5 -print
 ```
+
+Tail it as JSONL:
+
+```
+tail -20 <path> | jq -c '{type, name: (.message.content[0].name // .type)}'
+```
+
+If the log keeps growing while the screen stays still, Claude is still
+working — keep watching the log; don't conclude the run is stuck.
 
 ## Shutdown
 

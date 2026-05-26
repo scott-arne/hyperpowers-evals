@@ -48,6 +48,7 @@ def _tcfg(name: str = "claude") -> CodingAgentConfig:
         normalizer="claude",
         required_env=(),
         max_time=None,
+        project_prompt=None,
     )
 
 

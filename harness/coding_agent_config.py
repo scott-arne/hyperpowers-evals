@@ -41,6 +41,7 @@ class CodingAgentConfig:
     normalizer: str
     required_env: tuple[str, ...]
     max_time: str | None
+    project_prompt: Path | None
 
     def resolve_session_log_dir(self, agent_config_dir: Path) -> Path:
         """Substitute the agent-config env var in session_log_dir and expand ~."""
@@ -100,6 +101,16 @@ def load_coding_agent_config(path: Path) -> CodingAgentConfig:
             f"{path}: unknown normalizer {normalizer!r}; known: {sorted(NORMALIZERS)}"
         )
 
+    project_prompt_raw = raw.get("project_prompt")
+    project_prompt: Path | None = None
+    if project_prompt_raw:
+        candidate = (path.parent / project_prompt_raw).resolve()
+        if not candidate.is_file():
+            raise CodingAgentConfigError(
+                f"{path}: project_prompt path does not exist: {candidate}"
+            )
+        project_prompt = candidate
+
     return CodingAgentConfig(
         name=raw["name"],
         binary=raw["binary"],
@@ -109,4 +120,5 @@ def load_coding_agent_config(path: Path) -> CodingAgentConfig:
         normalizer=normalizer,
         required_env=required_env,
         max_time=raw.get("max_time"),
+        project_prompt=project_prompt,
     )
