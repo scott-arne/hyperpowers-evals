@@ -1,0 +1,92 @@
+"""harness run-all — batch driver over `harness run`.
+
+Constructs the (scenario × Coding-Agent) matrix, pre-filters pairs by the
+`# coding-agents:` directive in each scenario's checks.sh, runs the
+runnable pairs concurrently as child `harness run` processes, and writes a
+minimal batch index under results-harness/batches/<id>/.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from harness.checks import parse_coding_agents_directive
+
+
+@dataclass(frozen=True)
+class MatrixEntry:
+    """One (scenario, agent) cell of the batch matrix.
+
+    `skipped_reason` is None for runnable cells, "directive" for cells
+    excluded by `# coding-agents:`.
+    """
+    scenario: str
+    coding_agent: str
+    scenario_dir: Path
+    skipped_reason: str | None  # None | "directive"
+
+    @property
+    def runnable(self) -> bool:
+        return self.skipped_reason is None
+
+
+def _discover_scenarios(scenarios_root: Path) -> list[Path]:
+    """Mirror `harness list`: scenario dirs are children with story.md."""
+    return sorted(
+        d for d in scenarios_root.iterdir()
+        if d.is_dir() and (d / "story.md").exists()
+    )
+
+
+def _discover_agents(coding_agents_dir: Path) -> list[str]:
+    return sorted(p.stem for p in coding_agents_dir.glob("*.yaml"))
+
+
+def build_matrix(
+    *,
+    scenarios_root: Path,
+    coding_agents_dir: Path,
+    agent_filter: list[str] | None = None,
+) -> list[MatrixEntry]:
+    """Compute the (scenario × agent) matrix.
+
+    - Scenarios: every dir under `scenarios_root` with a `story.md`.
+    - Agents: every `*.yaml` under `coding_agents_dir`, optionally
+      filtered by `agent_filter` (CSV from --coding-agents).
+    - For each pair, read the `# coding-agents:` directive in
+      checks.sh; pairs excluded by the directive are returned with
+      `skipped_reason="directive"`.
+
+    Entries are sorted by (scenario, agent) for deterministic output.
+    Raises ValueError if `agent_filter` names an unknown agent.
+    """
+    available = _discover_agents(coding_agents_dir)
+    if agent_filter is not None:
+        unknown = [a for a in agent_filter if a not in available]
+        if unknown:
+            raise ValueError(
+                f"unknown coding-agent(s): {', '.join(unknown)} "
+                f"(available: {', '.join(available)})"
+            )
+        agents = [a for a in available if a in agent_filter]
+    else:
+        agents = available
+
+    entries: list[MatrixEntry] = []
+    for scenario_dir in _discover_scenarios(scenarios_root):
+        directive = parse_coding_agents_directive(scenario_dir / "checks.sh")
+        for agent in agents:
+            skipped = (
+                "directive"
+                if directive is not None and agent not in directive
+                else None
+            )
+            entries.append(MatrixEntry(
+                scenario=scenario_dir.name,
+                coding_agent=agent,
+                scenario_dir=scenario_dir,
+                skipped_reason=skipped,
+            ))
+    entries.sort(key=lambda e: (e.scenario, e.coding_agent))
+    return entries
