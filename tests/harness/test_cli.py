@@ -42,6 +42,42 @@ def test_run_invokes_run_scenario(tmp_path):
         mock.assert_called_once()
 
 
+def test_run_prints_run_id_line(tmp_path, monkeypatch):
+    """`harness run` prints `run-id: <id>` as the first stdout line."""
+    from click.testing import CliRunner
+    from harness.cli import main
+    from harness.composer import FinalVerdict, GauntletLayer
+
+    # Stub run_scenario so we don't actually drive an agent. Use real
+    # dataclass types — FinalVerdict.to_dict() calls asdict() on its
+    # nested fields and will TypeError on plain dicts.
+    fake_run_dir = tmp_path / "results-harness" / "foo-claude-20260526T180001Z-abcd"
+    fake_run_dir.mkdir(parents=True)
+    fake_verdict = FinalVerdict(
+        final="pass",
+        final_reason="ok",
+        gauntlet=GauntletLayer(status="pass", summary="ok", reasoning="ok"),
+        checks=[],
+        error=None,
+    )
+
+    def fake_run_scenario(**kwargs):
+        return fake_run_dir, fake_verdict
+
+    monkeypatch.setattr("harness.cli.run_scenario", fake_run_scenario)
+
+    # Minimal scenario dir to satisfy click.Path(exists=True).
+    scenario_dir = tmp_path / "scenario"
+    scenario_dir.mkdir()
+
+    result = CliRunner().invoke(main, [
+        "run", str(scenario_dir), "--coding-agent", "claude",
+    ])
+    assert result.exit_code == 0, result.output  # surface renderer crashes
+    first_line = result.output.splitlines()[0]
+    assert first_line == "run-id: foo-claude-20260526T180001Z-abcd"
+
+
 def test_run_resolves_relative_paths_to_absolute(tmp_path, monkeypatch):
     # Regression: setup_step.run_setup does subprocess.run([str(setup_path)],
     # cwd=workdir). If setup_path is relative, subprocess resolves it

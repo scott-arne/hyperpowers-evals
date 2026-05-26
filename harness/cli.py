@@ -78,6 +78,9 @@ def run(
         coding_agent_contexts_dir=coding_agent_contexts_dir,
         out_root=out_root,
     )
+    # Machine-readable line for `harness run-all` to parse. Printed
+    # unconditionally — color/mode flags don't affect it.
+    click.echo(f"run-id: {run_dir.name}")
     # Same renderer as `harness show` — consistent UX whether you're
     # watching a fresh run or re-rendering an old one. verdict.json is
     # always persisted to run_dir/ so the JSON is one `harness show --json`
