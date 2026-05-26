@@ -163,6 +163,8 @@ Define a palette near the existing color tables (`_VERDICT_COLORS` is at `show.p
 # Matrix-view glyph colors. Same Dracula palette as _VERDICT_COLORS for
 # pass/fail/indeterminate so the matrix matches `harness show <run-id>`.
 # Skipped and unknown use the label gray.
+#
+# Mirrors harness/run_all.py:_STATUS_STYLES — keep in sync.
 _BATCH_GLYPH_COLORS = {
     "pass":          "rgb(80,250,123)",
     "fail":          "rgb(255,85,85)",
@@ -299,11 +301,20 @@ Co-Authored-By: YourBobName@<first8hex> (Sonnet 4.6)"
 Append to `tests/harness/test_run_all.py`:
 
 ```python
-def test_run_batch_event_format_uses_total_denominator_and_skip_verb(tmp_path, capsys):
-    """[N/M] denominator counts the full matrix; skips render in event shape."""
+def test_run_batch_event_format_uses_total_denominator_and_skip_verb(
+    tmp_path, capsys, monkeypatch
+):
+    """[N/M] denominator counts the full matrix; skips render in event shape.
+
+    Strong assertions: skip line precedes runnable lines, and each
+    runnable index appears in BOTH a `start` and a `done` line.
+    """
+    # Pin Console TTY detection regardless of CI env (FORCE_COLOR).
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+
     scenarios = tmp_path / "scenarios"
     agents = tmp_path / "agents"
-    _scenario(scenarios, "alpha", directive="codex")  # claude skipped
+    _scenario(scenarios, "alpha", directive="codex")  # claude skipped at idx 1
     _scenario(scenarios, "beta")
     _agent(agents, "claude")
     _agent(agents, "codex")
@@ -323,15 +334,23 @@ def test_run_batch_event_format_uses_total_denominator_and_skip_verb(tmp_path, c
     )
 
     captured = capsys.readouterr().out
-    # build_matrix sorts (scenario, agent); alpha × claude is the skipped pair
-    # and should land at idx 1 out of 4 total.
+    # build_matrix sort order: alpha×claude (skip, idx 1), alpha×codex (2),
+    # beta×claude (3), beta×codex (4).
     assert "[1/4] skip" in captured, captured
-    assert "[1/4] skip" in captured and "alpha" in captured
-    # Old `[skip]` prefix is gone.
+    # Old [skip] prefix is gone.
     assert "[skip]" not in captured
-    # All four pairs accounted for via `[N/4]` indexing.
-    for i in (1, 2, 3, 4):
-        assert f"[{i}/4]" in captured, captured
+
+    # Each runnable index appears in BOTH a start and a done line.
+    for i in (2, 3, 4):
+        assert f"[{i}/4] start" in captured, captured
+        assert f"[{i}/4] done" in captured, captured
+
+    # Skip event is emitted upfront, before any runnable start.
+    skip_pos = captured.find("[1/4] skip")
+    first_start_pos = min(
+        captured.find(f"[{i}/4] start") for i in (2, 3, 4)
+    )
+    assert 0 <= skip_pos < first_start_pos, (skip_pos, first_start_pos)
 ```
 
 (Some of these tests check stdout shape from `capsys`. The plain-mode path prints to `sys.stdout` directly; with `use_cursor=False` and `--jobs 1`, ordering is deterministic.)
@@ -392,14 +411,19 @@ Three changes:
        """Owns rendering state for a batch. Thread-safe for the limited mutations
        workers make (`started` / `finished`); reads happen on the main thread."""
 
-       def __init__(self, *, batch_id: str, total: int, jobs: int):
+       def __init__(self, *, batch_id: str, total: int, jobs: int,
+                    skipped: int):
+           """`skipped` is known upfront (set from len(skipped_indexed)). All
+           further mutations come from worker threads via `started` / `finished`
+           — there's no runtime `skipped()` mutator, which keeps the invariant
+           that `_counts['skipped']` never changes during the Live phase."""
            self.batch_id = batch_id
            self.total = total
            self.jobs = jobs
            self._lock = threading.Lock()
            self._in_flight: dict[int, tuple[MatrixEntry, float]] = {}
            self._counts = {"pass": 0, "fail": 0, "indeterminate": 0,
-                           "unknown": 0, "skipped": 0}
+                           "unknown": 0, "skipped": skipped}
            self._started = time.monotonic()
 
        def started(self, idx: int, entry: MatrixEntry) -> None:
@@ -410,10 +434,6 @@ Three changes:
            with self._lock:
                self._in_flight.pop(idx, None)
                self._counts[final] = self._counts.get(final, 0) + 1
-
-       def skipped(self) -> None:
-           with self._lock:
-               self._counts["skipped"] += 1
 
        def snapshot(self) -> tuple[list[tuple[int, MatrixEntry, float]], dict[str, int]]:
            with self._lock:
@@ -508,25 +528,28 @@ def run_batch(
 
     console = Console(file=stream, force_terminal=None if stream is None else False)
     use_live = use_cursor and console.is_terminal
-    progress = BatchProgress(batch_id=batch_dir.name, total=total, jobs=jobs)
+    progress = BatchProgress(
+        batch_id=batch_dir.name, total=total, jobs=jobs,
+        skipped=len(skipped_indexed),
+    )
 
     # Header banner.
     console.print(
         f"batch {batch_dir.name} · {total} pairs "
         f"({len(runnable_indexed)} runnable, {len(skipped_indexed)} skipped by directive) "
         f"· --jobs {jobs}",
-        highlight=False,
+        markup=False, highlight=False,
     )
 
-    # Skips render first, synchronously.
+    # Skips render first, synchronously. Use Text() not f-strings: the
+    # literal `[N/M]` prefix would otherwise be interpreted as Rich markup.
     for idx, entry in skipped_indexed:
         directive = parse_coding_agents_directive(entry.scenario_dir / "checks.sh") or []
-        line = (
-            f"[{idx}/{total}] skip   {entry.scenario} × {entry.coding_agent}"
-            f"      → {_styled('skipped', f'— skip (requires {", ".join(directive)})')}"
+        line = Text.assemble(
+            f"[{idx}/{total}] skip   {entry.scenario} × {entry.coding_agent}      → ",
+            (f"— skip (requires {', '.join(directive)})", _STATUS_STYLES["skipped"]),
         )
-        console.print(line, highlight=False)
-        progress.skipped()
+        console.print(line, markup=False, highlight=False)
         append_result_record(
             batch_dir=batch_dir, scenario=entry.scenario,
             coding_agent=entry.coding_agent, run_id=None, skipped="directive",
@@ -536,8 +559,8 @@ def run_batch(
         progress.started(idx, entry)
         if not use_live:
             console.print(
-                f"[{idx}/{total}] start  {entry.scenario} × {entry.coding_agent}",
-                highlight=False,
+                Text(f"[{idx}/{total}] start  {entry.scenario} × {entry.coding_agent}"),
+                markup=False, highlight=False,
             )
         t0 = time.monotonic()
         result = invoke(
@@ -547,17 +570,24 @@ def run_batch(
         return idx, entry, result, time.monotonic() - t0
 
     def _drain(pool: ThreadPoolExecutor) -> None:
+        # All console.print calls inside Live MUST use this Console (already
+        # passed as console=console to Live above) — output corrupts if a
+        # worker constructs its own Console or calls plain print().
         futures = [pool.submit(_worker, idx, e) for idx, e in runnable_indexed]
         for fut in as_completed(futures):
             idx, entry, result, elapsed = fut.result()
             final = _final_status_for_result(result, out_root)
             progress.finished(idx, final)
-            glyph_label = _styled(final, _GLYPH_FOR_FINAL.get(final, f"? {final}"))
-            console.print(
-                f"[{idx}/{total}] done   {entry.scenario} × {entry.coding_agent}"
-                f"      → {glyph_label}      in {_fmt_duration(elapsed)}",
-                highlight=False,
+            label = _GLYPH_FOR_FINAL.get(final, f"? {final}")
+            # Use Text() with explicit segments so the literal `[N/M]` prefix
+            # is not parsed as Rich markup; the styled label is applied via
+            # the (text, style) tuple form of Text.assemble.
+            line = Text.assemble(
+                f"[{idx}/{total}] done   {entry.scenario} × {entry.coding_agent}      → ",
+                (label, _STATUS_STYLES.get(final, "")),
+                f"      in {_fmt_duration(elapsed)}",
             )
+            console.print(line, markup=False, highlight=False)
             append_result_record(
                 batch_dir=batch_dir, scenario=entry.scenario,
                 coding_agent=entry.coding_agent,
@@ -565,7 +595,12 @@ def run_batch(
             )
 
     if use_live:
-        with Live(progress, refresh_per_second=4, console=console):
+        # transient=True so the in-flight panel disappears when Live exits;
+        # otherwise an obsolete `(idle)` panel lingers between the last
+        # `done` event and the `batch done` summary line.
+        with Live(
+            progress, refresh_per_second=4, console=console, transient=True,
+        ):
             with ThreadPoolExecutor(max_workers=jobs) as pool:
                 _drain(pool)
     else:
@@ -585,18 +620,22 @@ def run_batch(
     summary_line += (
         f" · wall {_fmt_duration((finished_at - started_at).total_seconds())}"
     )
-    console.print(summary_line, highlight=False)
+    console.print(summary_line, markup=False, highlight=False)
     try:
         artifacts_path = batch_dir.relative_to(Path.cwd())
     except ValueError:
         artifacts_path = batch_dir
-    console.print(f"artifacts: {artifacts_path}", highlight=False)
+    console.print(f"artifacts: {artifacts_path}", markup=False, highlight=False)
     return batch_dir
 
 
-# Color helper. Always emits Rich markup; the receiving Console decides
-# whether to render ANSI (TTY) or strip it (pipe / no_color). Independent of
-# the live/plain choice — color and cursor-mode are orthogonal dimensions.
+# Status -> Rich style string. Lines build a `Text` object via
+# `Text.assemble(...)`, passing `(label, _STATUS_STYLES[final])` tuples for
+# the styled segments. The surrounding `[N/M]` prefix stays as a plain
+# segment so Rich's markup parser doesn't try to interpret it. Console
+# decides whether to emit ANSI based on TTY detection.
+#
+# Same palette as harness/show.py:_BATCH_GLYPH_COLORS — keep in sync.
 _STATUS_STYLES = {
     "pass":          "rgb(80,250,123)",
     "fail":          "rgb(255,85,85)",
@@ -604,13 +643,6 @@ _STATUS_STYLES = {
     "skipped":       "rgb(122,130,148)",
     "unknown":       "rgb(122,130,148)",
 }
-
-
-def _styled(status: str, text: str) -> str:
-    style = _STATUS_STYLES.get(status)
-    if style is None:
-        return text
-    return f"[{style}]{text}[/]"
 ```
 
 Imports to add at the top of `harness/run_all.py`:
