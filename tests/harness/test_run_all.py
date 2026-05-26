@@ -188,8 +188,8 @@ def test_allocate_batch_dir_creates_unique_dir(tmp_path):
 
     assert batch_dir.parent == out_root / "batches"
     assert batch_dir.is_dir()
-    # ID looks like 20260526T180000Z-abcd
-    assert re.fullmatch(r"\d{8}T\d{6}Z-[0-9a-f]{4}", batch_dir.name), batch_dir.name
+    # ID looks like batch-20260526T180000Z-abcd
+    assert re.fullmatch(r"batch-\d{8}T\d{6}Z-[0-9a-f]{4}", batch_dir.name), batch_dir.name
 
 
 def test_write_batch_header_writes_batch_json(tmp_path):

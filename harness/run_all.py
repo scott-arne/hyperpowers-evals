@@ -175,7 +175,7 @@ def _make_batch_id(now: datetime | None = None) -> str:
     now = now or datetime.now(UTC)
     stamp = now.strftime("%Y%m%dT%H%M%SZ")
     nonce = secrets.token_hex(2)  # 4 hex chars, matches per-run convention
-    return f"{stamp}-{nonce}"
+    return f"batch-{stamp}-{nonce}"
 
 
 def allocate_batch_dir(*, out_root: Path) -> Path:
