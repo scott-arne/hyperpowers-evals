@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from subprocess import CompletedProcess
+from unittest.mock import patch
 
 import pytest
 
-from harness.run_all import build_matrix
+from harness.run_all import build_matrix, invoke_child
 
 
 def _scenario(root: Path, name: str, *, directive: str | None = None) -> Path:
@@ -35,8 +37,7 @@ def test_build_matrix_full_cross_product_when_no_directive(tmp_path):
 
     assert len(entries) == 4
     pairs = {(e.scenario, e.coding_agent) for e in entries}
-    assert pairs == {("alpha", "claude"), ("alpha", "codex"),
-                     ("beta", "claude"), ("beta", "codex")}
+    assert pairs == {("alpha", "claude"), ("alpha", "codex"), ("beta", "claude"), ("beta", "codex")}
     assert all(e.runnable for e in entries)
 
 
@@ -67,7 +68,8 @@ def test_build_matrix_filters_agents(tmp_path):
     _agent(agents, "codex")
 
     entries = build_matrix(
-        scenarios_root=scenarios, coding_agents_dir=agents,
+        scenarios_root=scenarios,
+        coding_agents_dir=agents,
         agent_filter=["claude"],
     )
 
@@ -82,7 +84,8 @@ def test_build_matrix_unknown_agent_in_filter_raises(tmp_path):
 
     with pytest.raises(ValueError, match="unknown coding-agent.*gemini"):
         build_matrix(
-            scenarios_root=scenarios, coding_agents_dir=agents,
+            scenarios_root=scenarios,
+            coding_agents_dir=agents,
             agent_filter=["gemini"],
         )
 
@@ -99,3 +102,66 @@ def test_build_matrix_sorts_entries_for_deterministic_output(tmp_path):
 
     names = [(e.scenario, e.coding_agent) for e in entries]
     assert names == sorted(names)
+
+
+def test_invoke_child_parses_run_id_from_stdout(tmp_path):
+    fake_stdout = "run-id: foo-claude-20260526T180001Z-abcd\nheader line one\nheader line two\n"
+    completed = CompletedProcess(args=[], returncode=0, stdout=fake_stdout, stderr="")
+    with patch("harness.run_all.subprocess.run", return_value=completed) as mock:
+        result = invoke_child(
+            scenario_dir=tmp_path / "foo",
+            coding_agent="claude",
+            coding_agents_dir=tmp_path / "agents",
+            out_root=tmp_path / "results-harness",
+        )
+    assert result.run_id == "foo-claude-20260526T180001Z-abcd"
+    assert result.exit_code == 0
+    assert result.error is None
+    # Verify we shelled out to `uv run harness run` AND forwarded the
+    # parent's --coding-agents-dir / --out-root so the child uses the
+    # same roots (not its cwd-relative defaults).
+    cmd = mock.call_args[0][0]
+    assert cmd[:4] == ["uv", "run", "harness", "run"]
+    assert "--coding-agent" in cmd and "claude" in cmd
+    assert "--coding-agents-dir" in cmd
+    assert "--out-root" in cmd
+
+
+def test_invoke_child_records_nonzero_exit_with_run_id_when_present(tmp_path):
+    """A fail verdict exits 1 but still emits run-id. We record both."""
+    completed = CompletedProcess(
+        args=[],
+        returncode=1,
+        stdout="run-id: foo-claude-20260526T180001Z-abcd\n",
+        stderr="",
+    )
+    with patch("harness.run_all.subprocess.run", return_value=completed):
+        result = invoke_child(
+            scenario_dir=tmp_path / "foo",
+            coding_agent="claude",
+            coding_agents_dir=tmp_path / "agents",
+            out_root=tmp_path / "results-harness",
+        )
+    assert result.run_id == "foo-claude-20260526T180001Z-abcd"
+    assert result.exit_code == 1
+    assert result.error is None  # exit 1 is a normal fail verdict, not a child error
+
+
+def test_invoke_child_no_run_id_in_stdout_is_error(tmp_path):
+    """Child crashed before allocating a run-dir."""
+    completed = CompletedProcess(
+        args=[],
+        returncode=137,
+        stdout="boom\n",
+        stderr="segfault",
+    )
+    with patch("harness.run_all.subprocess.run", return_value=completed):
+        result = invoke_child(
+            scenario_dir=tmp_path / "foo",
+            coding_agent="claude",
+            coding_agents_dir=tmp_path / "agents",
+            out_root=tmp_path / "results-harness",
+        )
+    assert result.run_id is None
+    assert result.exit_code == 137
+    assert result.error is not None and "run-id" in result.error

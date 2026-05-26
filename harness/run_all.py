@@ -8,6 +8,7 @@ minimal batch index under results-harness/batches/<id>/.
 
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,6 +22,7 @@ class MatrixEntry:
     `skipped_reason` is None for runnable cells, "directive" for cells
     excluded by `# coding-agents:`.
     """
+
     scenario: str
     coding_agent: str
     scenario_dir: Path
@@ -33,10 +35,7 @@ class MatrixEntry:
 
 def _discover_scenarios(scenarios_root: Path) -> list[Path]:
     """Mirror `harness list`: scenario dirs are children with story.md."""
-    return sorted(
-        d for d in scenarios_root.iterdir()
-        if d.is_dir() and (d / "story.md").exists()
-    )
+    return sorted(d for d in scenarios_root.iterdir() if d.is_dir() and (d / "story.md").exists())
 
 
 def _discover_agents(coding_agents_dir: Path) -> list[str]:
@@ -66,8 +65,7 @@ def build_matrix(
         unknown = [a for a in agent_filter if a not in available]
         if unknown:
             raise ValueError(
-                f"unknown coding-agent(s): {', '.join(unknown)} "
-                f"(available: {', '.join(available)})"
+                f"unknown coding-agent(s): {', '.join(unknown)} (available: {', '.join(available)})"
             )
         agents = [a for a in available if a in agent_filter]
     else:
@@ -77,16 +75,88 @@ def build_matrix(
     for scenario_dir in _discover_scenarios(scenarios_root):
         directive = parse_coding_agents_directive(scenario_dir / "checks.sh")
         for agent in agents:
-            skipped = (
-                "directive"
-                if directive is not None and agent not in directive
-                else None
+            skipped = "directive" if directive is not None and agent not in directive else None
+            entries.append(
+                MatrixEntry(
+                    scenario=scenario_dir.name,
+                    coding_agent=agent,
+                    scenario_dir=scenario_dir,
+                    skipped_reason=skipped,
+                )
             )
-            entries.append(MatrixEntry(
-                scenario=scenario_dir.name,
-                coding_agent=agent,
-                scenario_dir=scenario_dir,
-                skipped_reason=skipped,
-            ))
     entries.sort(key=lambda e: (e.scenario, e.coding_agent))
     return entries
+
+
+@dataclass(frozen=True)
+class ChildResult:
+    """Outcome of one child `harness run` invocation.
+
+    run_id: the run-dir basename printed by the child, or None if the child
+      crashed before allocating one.
+    exit_code: child process exit code (0=pass, 1=fail, 2=indeterminate;
+      anything else = abnormal exit).
+    error: short human-readable description when something went wrong at the
+      *process* level (couldn't parse run-id, signal kill, etc.). A `fail`
+      verdict — exit 1 with a valid run-id — is NOT an error.
+    """
+
+    run_id: str | None
+    exit_code: int
+    error: str | None
+
+
+_RUN_ID_PREFIX = "run-id: "
+
+
+def _parse_run_id(stdout: str) -> str | None:
+    for line in stdout.splitlines():
+        if line.startswith(_RUN_ID_PREFIX):
+            return line[len(_RUN_ID_PREFIX) :].strip()
+    return None
+
+
+def invoke_child(
+    *,
+    scenario_dir: Path,
+    coding_agent: str,
+    coding_agents_dir: Path,
+    out_root: Path,
+    timeout_seconds: float | None = None,
+) -> ChildResult:
+    """Run one `harness run` as a subprocess; capture its run-id line.
+
+    `coding_agents_dir` and `out_root` are forwarded as explicit flags so
+    the child doesn't rely on its own cwd-relative defaults.
+    """
+    cmd = [
+        "uv",
+        "run",
+        "harness",
+        "run",
+        str(scenario_dir),
+        "--coding-agent",
+        coding_agent,
+        "--coding-agents-dir",
+        str(coding_agents_dir),
+        "--out-root",
+        str(out_root),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        return ChildResult(run_id=None, exit_code=-1, error="child timed out")
+
+    run_id = _parse_run_id(completed.stdout)
+    if run_id is None:
+        return ChildResult(
+            run_id=None,
+            exit_code=completed.returncode,
+            error=f"child did not print run-id (exit {completed.returncode})",
+        )
+    return ChildResult(run_id=run_id, exit_code=completed.returncode, error=None)
