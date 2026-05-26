@@ -1,0 +1,235 @@
+# Harness `run-all` — Design Specification
+
+**Status:** Specification, ready for implementation planning. Pending Matt's
+sign-off. Not yet implemented.
+**Date:** 2026-05-26
+**Related:** [2026-05-22-harness-model-design.md](2026-05-22-harness-model-design.md)
+(introduced the `# coding-agents:` directive and the run-dir layout this design
+builds on).
+
+**Frame.** Running the full eval suite today is a hand-rolled fish loop that
+filename-matches `*codex*` to decide which Coding-Agent to invoke. The harness
+already has the right machinery — the `# coding-agents:` directive in
+`checks.sh`, runner-side gating, per-run dirs under `results-harness/` — so
+what's missing is a thin batch driver. This spec adds `harness run-all`: a
+single command that fans out (scenario × Coding-Agent) pairs, gates each pair
+by the directive, runs them concurrently up to `--jobs N`, and writes a
+minimal batch index that `harness show` can render as a matrix.
+
+This spec covers `run-all` plus the matrix renderer added to `harness show`.
+It does *not* add `--repeat N` (that belongs on `harness run`; tracked
+separately).
+
+---
+
+## 1. Command surface
+
+```
+harness run-all [--coding-agents X[,Y,…]] [--jobs N]
+```
+
+- `--coding-agents`: optional CSV filter against `harness/coding-agents/*.yaml`.
+  Omitted = use every configured Coding-Agent. Acts as a filter on the matrix.
+- `--jobs`: integer ≥ 1. Default 1. Bounded concurrency for child runs.
+
+No `--scenarios-root`, no `--coding-agents-dir`. The Harness only runs against
+this repo; the paths are fixed (`harness/scenarios/`, `harness/coding-agents/`).
+
+No `--fail-fast`, no `--repeat`, no `--filter` for scenarios. Deliberately out
+of scope (§7).
+
+## 2. Matrix construction
+
+1. Enumerate scenarios: every directory under `harness/scenarios/` that
+   contains a `story.md` (matches `harness list`).
+2. Enumerate Coding-Agents: every `*.yaml` under `harness/coding-agents/`;
+   intersect with `--coding-agents` if set.
+3. For each (scenario, agent) pair, read
+   `parse_coding_agents_directive(checks.sh)` (`harness/checks.py:43`).
+   - Directive absent → pair is **runnable**.
+   - Directive present and includes the agent → **runnable**.
+   - Directive present and excludes the agent → **skipped** (directive); never
+     spawned, recorded with `run_id: null`.
+
+Pre-filtering by directive matters: an ineligible pair shouldn't waste setup
+time or pollute the live output as a noisy "indeterminate" row.
+
+## 3. Orchestration
+
+- Single parent Python process. Workers run as child subprocesses invoking the
+  existing CLI:
+  ```
+  uv run harness run <scenario_dir> --coding-agent <name>
+  ```
+  Reusing the CLI (not importing `run_scenario` directly) gives us hard
+  process isolation: a crashing scenario can't poison the batch.
+- Scheduler: `concurrent.futures.ThreadPoolExecutor(max_workers=jobs)`. The
+  work is `subprocess.run`-bound, so threads are sufficient — no need for a
+  process pool around the parent.
+- Each child writes its own run-dir under `results-harness/<run-id>/` exactly
+  as today. The parent does not reach into child output; it only records the
+  run ID returned by the child.
+- `harness run` is extended to print one structured line to stdout on every
+  invocation: `run-id: <id>`. The parent reads this line to learn where the
+  child's run-dir lives. Printing unconditionally means machine consumers
+  don't depend on the human-formatted header layout.
+- All file writes are done by the parent. Workers communicate completion via
+  the executor's `as_completed` queue. No locking, no concurrent writers.
+
+## 4. Outputs
+
+Two files per batch, under `results-harness/batches/<batch-id>/`.
+
+**Batch ID.** Matches the existing per-run convention: UTC compact timestamp +
+4-character nonce, e.g. `20260526T180000Z-3f2a`.
+
+**`batch.json`** — small, write-once at start, rewritten at end with closing
+timestamps:
+
+```json
+{
+  "schema_version": 1,
+  "id": "20260526T180000Z-3f2a",
+  "started_at": "2026-05-26T18:00:00Z",
+  "finished_at": "2026-05-26T18:03:41Z",
+  "coding_agents": ["claude", "codex"],
+  "jobs": 4
+}
+```
+
+**`results.jsonl`** — one record per (scenario, agent) pair. The parent
+appends a line as each pair resolves (skipped pairs first, then runnable pairs
+as their workers complete). Crash-resilient: Ctrl-C mid-batch leaves a valid
+partial file.
+
+```jsonl
+{"scenario":"foo","coding_agent":"claude","run_id":"foo-claude-20260526T180001Z-abcd"}
+{"scenario":"foo","coding_agent":"codex","run_id":null,"skipped":"directive"}
+```
+
+Schema:
+- `scenario`: scenario name (directory basename).
+- `coding_agent`: agent name (matches a YAML stem in `harness/coding-agents/`).
+- `run_id`: the run-dir basename under `results-harness/`, or `null`.
+- `skipped`: present only when `run_id` is null. Currently always `"directive"`;
+  reserved for future skip reasons.
+
+**Status and reason are not stored in the batch file.** They live in
+`<results-harness>/<run-id>/verdict.json`, which is the single source of
+truth. The matrix renderer reads them on demand. This keeps the batch index
+minimal and avoids the consistency hazard of duplicating data.
+
+## 5. Live progress output
+
+"Dumb" line-by-line printing. Each line is self-contained and survives
+interleaving under `--jobs N>1`.
+
+```
+batch 20260526T180000Z-3f2a · 12 pairs (8 runnable, 4 skipped by directive) · --jobs 4
+
+[skip] foo × codex            (directive: requires claude)
+[skip] codex-native-hooks × claude   (directive: requires codex)
+…
+[1/8] start  foo × claude
+[2/8] start  bar × claude
+[1/8] done   foo × claude        → ✓ pass        in 2m13s
+[3/8] start  baz × claude
+[2/8] done   bar × claude        → ✗ fail        in 1m47s   reason: …
+…
+batch done · 6 ✓ · 1 ✗ · 1 ⊘ · 4 — · wall 3m41s
+artifacts: results-harness/batches/20260526T180000Z-3f2a/
+```
+
+- Counters in `[N/M]` are over **runnable** pairs only — skipped pairs are
+  listed up front and don't consume a slot.
+- The `done` line shows the same glyph the matrix view uses (§6).
+- No cursor manipulation, no progress bar. A nicer TUI is a possible follow-up.
+
+## 6. Matrix view
+
+`harness show <batch-id>` renders a scenario × agent matrix.
+
+Glyphs and legend:
+
+```
+✓ pass    ✗ fail    ⊘ indeterminate    — skipped (directive)    ? no verdict
+```
+
+Example:
+
+```
+batch 20260526T180000Z-3f2a · started 2026-05-26T18:00:00Z · wall 3m41s
+
+| scenario                       | claude  | codex   |
+|--------------------------------|---------|---------|
+| foo                            | ✓ pass  | — skip  |
+| bar                            | ✗ fail  | ⊘ indet |
+| codex-native-hooks-bootstrap   | — skip  | ✓ pass  |
+
+Legend: ✓ pass   ✗ fail   ⊘ indeterminate   — skipped (directive)   ? no verdict
+6 ✓ · 1 ✗ · 1 ⊘ · 4 —
+```
+
+- Columns are the Coding-Agents present in the batch (read from `batch.json`).
+- Rows are scenarios that appear in `results.jsonl`, sorted alphabetically.
+- Each cell shows the glyph plus a short status word for legibility.
+- A missing `verdict.json` (child crashed before writing one) renders as `?`.
+
+Dispatch is added to the existing `resolve_target` (`harness/cli.py:209`):
+if the target resolves to a `results-harness/batches/<id>/` dir, render the
+matrix; otherwise render the per-run verdict as today. `--json` returns the
+contents of `results.jsonl` plus `batch.json` merged.
+
+The user can drill into any cell with `harness show <run-id>`. Run IDs are
+available via `harness show <batch-id> --json`.
+
+## 7. Out of scope
+
+These are deliberate deferrals, not gaps:
+
+- **`--fail-fast`.** Always continue. A future flag is easy to add when there's
+  a concrete need (CI smoke runs, for example).
+- **`--repeat N`.** Repetition belongs on `harness run`, not `run-all`; the
+  matrix view's column header naturally extends to per-cell run counts later,
+  but we are not building that here. Tracked as a separate concern.
+- **Distinct `error` status for child crashes.** Handled by the renderer
+  showing `?` for missing verdict.json, no new status type invented.
+- **Cursor-driven progress UI.** Dumb append-only printing today; a
+  rewritable status block is a possible follow-up.
+- **Cross-batch comparison views.** `harness compare` (Drill) is not getting
+  a harness analogue here.
+
+## 8. Implementation notes
+
+- New module: `harness/run_all.py` (orchestrator).
+- New CLI command: `run-all` in `harness/cli.py`, alongside `run` and `list`.
+- New batch-render code path in `harness/show.py`. `resolve_target` learns
+  to recognize `results-harness/batches/<id>` paths.
+- `harness run` gains one new line of stdout (`run-id: <id>`, printed
+  unconditionally). The existing human-formatted header in `show.py`
+  is unchanged.
+- No changes to `harness/runner.py`, `harness/checks.py`, scenario layout, or
+  any scenario's `checks.sh`.
+
+## 9. Testing
+
+- Unit tests for `run_all`:
+  - matrix construction with and without `--coding-agents`,
+  - directive pre-filtering produces correct skipped entries,
+  - `batch.json` and `results.jsonl` shapes,
+  - run-ID extraction from stdout,
+  - `--jobs N` scheduling (deterministic with a stub runner).
+- Unit tests for the matrix renderer:
+  - all five glyph states,
+  - missing `verdict.json` renders as `?`,
+  - column ordering follows `batch.json["coding_agents"]`.
+- One end-to-end smoke test invoking `harness run-all` against the existing
+  `_smoke-hello-world` scenario with `--jobs 1` and `--jobs 2`.
+
+## 10. Migration
+
+None. `run-all` is purely additive. The fish loop continues to work; users
+opt in by switching to `uv run harness run-all`.
+
+`README.md` and `CLAUDE.md` gain a short note pointing at `run-all` as the
+preferred way to run the full suite.
