@@ -246,3 +246,123 @@ opt in by switching to `uv run harness run-all`.
 
 `README.md` and `CLAUDE.md` gain a short note pointing at `run-all` as the
 preferred way to run the full suite.
+
+---
+
+# Addendum (2026-05-26 v2): UX iteration after first real-world run
+
+The v1 implementation landed and was driven against the full suite (68 pairs ×
+2 agents, `--jobs 8`). It worked, but the live output was hard to read — the
+busy interleaving of `start` and `done` lines under high concurrency, the
+visual exception that `[skip]` rows looked like, and the unfamiliar shape of
+the batch ID when copy-pasted out of context. This addendum captures the
+post-run fixes.
+
+## A1. Batch ID gets a `batch-` prefix
+
+New format: `batch-20260526T195817Z-5094` (was `20260526T195817Z-5094`).
+
+Reason: copy-paste affordance. The ID is the load-bearing string a user passes
+to `harness show <…>`; tagging it as a batch lets the reader recognize it
+without context. Same UTC stamp + 4-hex nonce; only the prefix is new.
+
+`resolve_target` already accepts the full string as a lookup under
+`results-harness/batches/<id>/` — no change needed there. Old batches (without
+the prefix) keep working via the same lookup. Only newly-allocated IDs use the
+new form.
+
+## A2. Skipped pairs render in the same event shape as runnable pairs
+
+The current `[skip] foo × claude   (directive: requires codex)` line reads as
+exceptional and bleeds into scenario-level confusion ("did the scenario get
+skipped?" — no, only one cell of its row).
+
+New shape — every cell of the matrix gets one event-shaped line, distinguished
+only by verb:
+
+```
+[1/68] done  _smoke-hello-world × claude              → ✓ pass    in 43s
+[2/68] skip  codex-native-hooks × claude              → — skip (requires codex)
+[3/68] start cost-checkbox-over-trigger × claude
+```
+
+The denominator becomes the **total** matrix size (runnable + skipped), and
+each cell gets a stable index assigned in matrix order. Skipped cells are
+written out first, synchronously, then runnable cells are scheduled.
+
+`results.jsonl` shape is unchanged.
+
+## A3. Color
+
+`render_batch` plumbs `color` through but currently discards it (`_ = color`).
+Wire it up using the same Dracula truecolor palette as `harness show <run-id>`
+(`show.py:99-103`):
+
+- `✓ pass`: `#50fa7b` (green)
+- `✗ fail`: `#ff5555` (red)
+- `⊘ indeterminate`: `#f1fa8c` (yellow)
+- `— skipped`: muted gray (`#7a8294`, matching the label color in show.py)
+- `? no verdict`: muted gray, same as skipped
+
+Apply to both the matrix view and the live log lines. The pre-existing rule
+holds: ANSI is emitted only when the stream `isatty()` — non-TTY pipes get
+plain text.
+
+## A4. Rich-driven live display
+
+Replace the append-only event log with a pinned status block plus a scrolling
+completion log, using `rich.live.Live`.
+
+**Layout while running:**
+
+```
+batch batch-20260526T180000Z-3f2a · 68 pairs (63 runnable, 5 skipped) · --jobs 8
+
+[2/68]  skip  codex-native-hooks × claude              → — skip (requires codex)
+[1/68]  done  _smoke-hello-world × claude              → ✓ pass    in 43s
+[5/68]  done  _smoke-hello-world × codex               → ✓ pass    in 37s
+… (scrolls upward)
+─── in flight (8/8) ─────────────────────────────────────────────────────────
+  [3/68]  claim-without-verification-naive × claude         1m12s
+  [4/68]  claim-without-verification-naive × codex            58s
+  [6/68]  code-review-catches-planted-bugs × claude         1m05s
+  [7/68]  code-review-catches-planted-bugs × codex            47s
+  …
+─── progress 12/68 · ✓8 ✗2 ⊘0 — 5 · wall 4m12s ────────────────────────────────
+```
+
+**On non-TTY** (`Console.is_terminal == False`): degrade to the v1 append-only
+log. `rich.live.Live` already handles this — when `is_terminal` is False, the
+live region simply isn't rendered; `console.print` calls still emit.
+
+**Refresh rate.** `refresh_per_second=4`. In-flight elapsed times tick four
+times a second; the user sees long-running pairs visibly accruing time, which
+helps diagnose a stuck slot.
+
+**Event flow refactor.** Workers no longer print directly. Each worker calls
+`progress.started(idx, entry)` before invoking the child and
+`progress.finished(idx, entry, result, elapsed)` after. The main `as_completed`
+loop calls `progress.skipped(idx, entry)` upfront. `progress.render()` returns
+a Rich `Group` containing the in-flight panel and the progress footer; Rich
+calls it each refresh tick.
+
+The `print_lock` from v1 goes away. All rendering happens on the main thread
+via Rich; workers only mutate `progress.in_flight` (a dict) under a much
+smaller internal lock owned by `BatchProgress`, since dict mutation across
+threads needs synchronization to avoid mid-iteration changes when `render()`
+walks it.
+
+**`--no-cursor` flag.** Reserved for the case where someone wants to pipe a
+live run through `tee` but still get the v1 append-only style. Default
+behavior is "Rich on TTY, plain on non-TTY"; the flag forces plain.
+
+**New dependency: `rich`.** Adding to `pyproject.toml`. Already widely used
+(it's a transitive dep of many things); the cost is marginal.
+
+## Out of scope (deferred again)
+
+- Per-job lane affinity in the in-flight panel. Currently in-flight rows are
+  ordered by start time. Showing them in a stable "slot" position would
+  reduce flicker but adds complexity.
+- A summary view that shows which scenarios failed, not just counts.
+- `--fail-fast`, `--repeat`. Still deferred.
