@@ -8,6 +8,7 @@ from pathlib import Path
 
 import click
 
+from harness.run_all import run_batch
 from harness.runner import run_scenario
 from harness.scaffold import (
     ScaffoldError,
@@ -233,3 +234,50 @@ def show(
             err=True,
         )
         sys.exit(2)
+
+
+@main.command("run-all")
+@click.option(
+    "--coding-agents", "coding_agents_csv", default=None,
+    help="CSV filter, e.g. claude,codex. Default: every YAML in harness/coding-agents/.",
+)
+@click.option(
+    "--jobs", "jobs", default=1, type=click.IntRange(min=1),
+    help="Worker pool size. Default 1. N>1 runs scenarios concurrently.",
+)
+@click.option(
+    "--scenarios-root", default=_DEFAULT_SCENARIOS_ROOT, hidden=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option(
+    "--coding-agents-dir", default=_DEFAULT_CODING_AGENTS_DIR, hidden=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option(
+    "--out-root", default=_DEFAULT_OUT_ROOT, hidden=True,
+    type=click.Path(path_type=Path),
+)
+def run_all_cmd(
+    coding_agents_csv: str | None,
+    jobs: int,
+    scenarios_root: Path,
+    coding_agents_dir: Path,
+    out_root: Path,
+) -> None:
+    """Run every (scenario × Coding-Agent) pair, gated by `# coding-agents:`."""
+    agent_filter = (
+        [a.strip() for a in coding_agents_csv.split(",") if a.strip()]
+        if coding_agents_csv else None
+    )
+    out_root.mkdir(parents=True, exist_ok=True)
+    try:
+        run_batch(
+            scenarios_root=scenarios_root.resolve(),
+            coding_agents_dir=coding_agents_dir.resolve(),
+            out_root=out_root.resolve(),
+            jobs=jobs,
+            agent_filter=agent_filter,
+        )
+    except ValueError as e:
+        click.echo(f"error: {e}", err=True)
+        sys.exit(1)

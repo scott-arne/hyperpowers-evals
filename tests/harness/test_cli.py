@@ -223,3 +223,35 @@ def test_show_subcommand_schema_deviant_verdict_exits_2(tmp_path):
     result = runner.invoke(main, ["show", "--results-root", str(root)])
     assert result.exit_code == 2
     assert "schema v1" in result.output
+
+
+def test_run_all_command_invokes_run_batch(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run_batch(**kwargs):
+        captured.update(kwargs)
+        return tmp_path / "results-harness" / "batches" / "fakebatch"
+
+    monkeypatch.setattr("harness.cli.run_batch", fake_run_batch)
+
+    # Minimum dirs to satisfy click.Path(exists=True) on the defaults.
+    (tmp_path / "harness" / "scenarios").mkdir(parents=True)
+    (tmp_path / "harness" / "coding-agents").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(main, [
+        "run-all", "--coding-agents", "claude,codex", "--jobs", "4",
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert captured["jobs"] == 4
+    assert captured["agent_filter"] == ["claude", "codex"]
+
+
+def test_run_all_jobs_must_be_positive(tmp_path, monkeypatch):
+    (tmp_path / "harness" / "scenarios").mkdir(parents=True)
+    (tmp_path / "harness" / "coding-agents").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(main, ["run-all", "--jobs", "0"])
+    assert result.exit_code != 0
