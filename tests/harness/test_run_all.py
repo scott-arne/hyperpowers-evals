@@ -11,10 +11,12 @@ from unittest.mock import patch
 import pytest
 
 from harness.run_all import (
+    ChildResult,
     allocate_batch_dir,
     append_result_record,
     build_matrix,
     invoke_child,
+    run_batch,
     write_batch_footer,
     write_batch_header,
 )
@@ -273,3 +275,94 @@ def test_append_result_record_runnable(tmp_path):
         "run_id": "foo-claude-20260526T180001Z-abcd",
     }
     assert "skipped" not in rec
+
+
+def test_run_batch_writes_skipped_then_runnable(tmp_path, capsys):
+    """Skipped entries are written upfront; runnable pairs appended on completion."""
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    _scenario(scenarios, "alpha", directive="codex")  # claude skipped
+    _scenario(scenarios, "beta")                      # both runnable
+    _agent(agents, "claude")
+    _agent(agents, "codex")
+    out_root = tmp_path / "results-harness"
+
+    def fake_invoke(*, scenario_dir, coding_agent, coding_agents_dir,
+                    out_root, timeout_seconds=None):
+        return ChildResult(
+            run_id=f"{scenario_dir.name}-{coding_agent}-fakerun",
+            exit_code=0, error=None,
+        )
+
+    batch_dir = run_batch(
+        scenarios_root=scenarios,
+        coding_agents_dir=agents,
+        out_root=out_root,
+        jobs=1,
+        agent_filter=None,
+        invoke=fake_invoke,
+    )
+
+    lines = (batch_dir / "results.jsonl").read_text().splitlines()
+    records = [json.loads(line) for line in lines]
+    # 1 skipped (alpha × claude) + 3 runnable = 4 records.
+    assert len(records) == 4
+
+    skipped = [r for r in records if r.get("skipped")]
+    assert len(skipped) == 1
+    assert skipped[0]["scenario"] == "alpha"
+    assert skipped[0]["coding_agent"] == "claude"
+
+    runnable = [r for r in records if r.get("run_id")]
+    assert len(runnable) == 3
+    assert all(r["run_id"].endswith("-fakerun") for r in runnable)
+
+
+def test_run_batch_writes_batch_json_header_and_footer(tmp_path):
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    _scenario(scenarios, "alpha")
+    _agent(agents, "claude")
+    out_root = tmp_path / "results-harness"
+
+    def fake_invoke(*, scenario_dir, coding_agent, coding_agents_dir,
+                    out_root, timeout_seconds=None):
+        return ChildResult(run_id="alpha-claude-fake", exit_code=0, error=None)
+
+    batch_dir = run_batch(
+        scenarios_root=scenarios, coding_agents_dir=agents,
+        out_root=out_root, jobs=1, agent_filter=None, invoke=fake_invoke,
+    )
+
+    data = json.loads((batch_dir / "batch.json").read_text())
+    assert data["coding_agents"] == ["claude"]
+    assert data["jobs"] == 1
+    assert data["started_at"] is not None
+    assert data["finished_at"] is not None
+
+
+def test_run_batch_jobs_gt_one_runs_all_pairs(tmp_path):
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    for n in ("a", "b", "c", "d"):
+        _scenario(scenarios, n)
+    _agent(agents, "claude")
+    out_root = tmp_path / "results-harness"
+
+    invocations: list[tuple[str, str]] = []
+
+    def fake_invoke(*, scenario_dir, coding_agent, coding_agents_dir,
+                    out_root, timeout_seconds=None):
+        invocations.append((scenario_dir.name, coding_agent))
+        return ChildResult(run_id=f"{scenario_dir.name}-{coding_agent}-x",
+                           exit_code=0, error=None)
+
+    batch_dir = run_batch(
+        scenarios_root=scenarios, coding_agents_dir=agents,
+        out_root=out_root, jobs=4, agent_filter=None, invoke=fake_invoke,
+    )
+
+    assert sorted(invocations) == [
+        ("a", "claude"), ("b", "claude"), ("c", "claude"), ("d", "claude"),
+    ]
+    assert len((batch_dir / "results.jsonl").read_text().splitlines()) == 4

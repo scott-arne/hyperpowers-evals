@@ -11,9 +11,15 @@ from __future__ import annotations
 import json
 import secrets
 import subprocess
+import sys
+import threading
+import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TextIO
 
 from harness.checks import parse_coding_agents_directive
 
@@ -230,3 +236,162 @@ def append_result_record(
         rec["skipped"] = skipped
     with (batch_dir / "results.jsonl").open("a") as f:
         f.write(json.dumps(rec) + "\n")
+
+
+def run_batch(
+    *,
+    scenarios_root: Path,
+    coding_agents_dir: Path,
+    out_root: Path,
+    jobs: int,
+    agent_filter: list[str] | None,
+    invoke: Callable[..., ChildResult] | None = None,
+    stream: TextIO | None = None,  # writable file; defaults to sys.stdout
+) -> Path:
+    """Run the full batch. Returns the batch dir path."""
+    if jobs < 1:
+        raise ValueError(f"jobs must be >= 1, got {jobs}")
+    # Late-bind to invoke_child so monkeypatch.setattr("harness.run_all.invoke_child", ...)
+    # works without needing to also pass `invoke=` explicitly.
+    invoke = invoke or invoke_child
+    out = stream or sys.stdout
+
+    entries = build_matrix(
+        scenarios_root=scenarios_root,
+        coding_agents_dir=coding_agents_dir,
+        agent_filter=agent_filter,
+    )
+
+    batch_dir = allocate_batch_dir(out_root=out_root)
+    started_at = datetime.now(UTC)
+
+    runnable = [e for e in entries if e.runnable]
+    skipped = [e for e in entries if not e.runnable]
+    agents_in_batch = sorted({e.coding_agent for e in entries})
+
+    write_batch_header(
+        batch_dir=batch_dir,
+        coding_agents=agents_in_batch,
+        jobs=jobs,
+        started_at=started_at,
+    )
+
+    print(
+        f"batch {batch_dir.name} · {len(entries)} pairs "
+        f"({len(runnable)} runnable, {len(skipped)} skipped by directive) "
+        f"· --jobs {jobs}",
+        file=out, flush=True,
+    )
+
+    # Skipped entries first — listed up front, never spawn.
+    for e in skipped:
+        directive = parse_coding_agents_directive(e.scenario_dir / "checks.sh") or []
+        print(
+            f"[skip] {e.scenario} × {e.coding_agent}   "
+            f"(directive: requires {', '.join(directive)})",
+            file=out, flush=True,
+        )
+        append_result_record(
+            batch_dir=batch_dir, scenario=e.scenario,
+            coding_agent=e.coding_agent, run_id=None, skipped="directive",
+        )
+
+    # Schedule runnable pairs. `start` lines are printed inside the worker so
+    # they interleave correctly with `done` lines under --jobs N>1; a lock
+    # serializes stdout writes so partial lines never collide.
+    total = len(runnable)
+    print_lock = threading.Lock()
+
+    # Counts accumulate inline; no end-of-batch re-read of results.jsonl.
+    counts = {"pass": 0, "fail": 0, "indeterminate": 0, "unknown": 0,
+              "skipped": len(skipped)}
+
+    def _worker(idx: int, entry: MatrixEntry) -> tuple[int, MatrixEntry, ChildResult, float]:
+        with print_lock:
+            print(f"[{idx}/{total}] start  {entry.scenario} × {entry.coding_agent}",
+                  file=out, flush=True)
+        t0 = time.monotonic()
+        result = invoke(
+            scenario_dir=entry.scenario_dir,
+            coding_agent=entry.coding_agent,
+            coding_agents_dir=coding_agents_dir,
+            out_root=out_root,
+        )
+        return idx, entry, result, time.monotonic() - t0
+
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = [pool.submit(_worker, i, e) for i, e in enumerate(runnable, 1)]
+        for fut in as_completed(futures):
+            idx, entry, result, elapsed = fut.result()
+            final = _final_status_for_result(result, out_root)
+            counts[final] = counts.get(final, 0) + 1
+            glyph = _GLYPH_FOR_FINAL.get(final, f"? {final}")
+            with print_lock:
+                print(
+                    f"[{idx}/{total}] done   {entry.scenario} × {entry.coding_agent}"
+                    f"      → {glyph}      in {_fmt_duration(elapsed)}",
+                    file=out, flush=True,
+                )
+            append_result_record(
+                batch_dir=batch_dir,
+                scenario=entry.scenario, coding_agent=entry.coding_agent,
+                run_id=result.run_id, skipped=None,
+            )
+
+    finished_at = datetime.now(UTC)
+    write_batch_footer(batch_dir=batch_dir, finished_at=finished_at)
+
+    summary_line = (
+        f"batch done · {counts['pass']} ✓ · {counts['fail']} ✗ · "
+        f"{counts['indeterminate']} ⊘ · {counts['skipped']} —"
+    )
+    if counts["unknown"]:
+        summary_line += f" · {counts['unknown']} ?"
+    summary_line += (
+        f" · wall {_fmt_duration((finished_at - started_at).total_seconds())}"
+    )
+    print(summary_line, file=out, flush=True)
+    try:
+        artifacts_path = batch_dir.relative_to(Path.cwd())
+    except ValueError:
+        artifacts_path = batch_dir
+    print(f"artifacts: {artifacts_path}", file=out, flush=True)
+    return batch_dir
+
+
+def _fmt_duration(seconds: float) -> str:
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    m, s = divmod(seconds, 60)
+    return f"{m}m{s:02d}s"
+
+
+def _read_verdict(run_dir: Path) -> dict | None:
+    """Read verdict.json for a run-id; return None if missing/unparseable."""
+    p = run_dir / "verdict.json"
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except json.JSONDecodeError:
+        return None
+
+
+_GLYPH_FOR_FINAL = {
+    "pass":          "✓ pass",
+    "fail":          "✗ fail",
+    "indeterminate": "⊘ indeterminate",
+    "unknown":       "? no verdict",
+}
+
+
+def _final_status_for_result(result: ChildResult, out_root: Path) -> str:
+    """Map a child outcome to one of pass / fail / indeterminate / unknown."""
+    if result.error is not None or result.run_id is None:
+        return "unknown"
+    verdict = _read_verdict(out_root / result.run_id)
+    if verdict is None:
+        return "unknown"
+    final = verdict.get("final", "unknown")
+    return final if final in ("pass", "fail", "indeterminate") else "unknown"
