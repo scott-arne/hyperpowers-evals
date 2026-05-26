@@ -391,3 +391,27 @@ def test_is_batch_dir(tmp_path):
     run_dir.mkdir()
     (run_dir / "verdict.json").write_text("{}")
     assert is_batch_dir(run_dir) is False
+
+
+def test_render_batch_emits_ansi_when_color_true(tmp_path):
+    """When color=True, glyphs are wrapped in ANSI sequences."""
+    batch_dir = _seed_batch(tmp_path, agents=["claude"], rows=[
+        {"scenario": "foo", "coding_agent": "claude",
+         "run_id": "foo-claude-x", "_verdict": "pass"},
+    ])
+
+    out = render_batch(
+        batch_dir=batch_dir,
+        results_root=tmp_path / "results-harness",
+        color=True,
+    )
+
+    # The "pass" glyph should be wrapped in an ANSI sequence (\x1b[).
+    assert "\x1b[" in out
+    # Plain text (color=False) should NOT contain ANSI sequences.
+    out_plain = render_batch(
+        batch_dir=batch_dir,
+        results_root=tmp_path / "results-harness",
+        color=False,
+    )
+    assert "\x1b[" not in out_plain

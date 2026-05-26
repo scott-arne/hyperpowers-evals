@@ -10,12 +10,14 @@ the judgement Pattern 2 vs Pattern 4 requires.
 """
 from __future__ import annotations
 
+import io
 import json as _json
 import textwrap
 from pathlib import Path
 from typing import Literal
 
 import click
+from rich.console import Console
 
 ShowMode = Literal["full", "quiet", "json"]
 
@@ -122,6 +124,21 @@ _VERDICT_COLORS: dict[str, tuple[int, int, int]] = {
 # as nearly-invisible on dark themes; a concrete bluish-gray stays readable
 # while still sitting clearly behind the colored values.
 _LABEL_RGB: tuple[int, int, int] = (122, 130, 148)  # #7a8294
+
+
+# Matrix-view glyph colors. Same Dracula palette as _VERDICT_COLORS for
+# pass/fail/indeterminate so the matrix matches `harness show <run-id>`.
+# Skipped and unknown use the label gray.
+#
+# Mirrors harness/run_all.py:_STATUS_STYLES (to be added in v2 Task 3) —
+# keep in sync if either changes.
+_BATCH_GLYPH_COLORS = {
+    "pass":          "rgb(80,250,123)",
+    "fail":          "rgb(255,85,85)",
+    "indeterminate": "rgb(241,250,140)",
+    "skipped":       "rgb(122,130,148)",
+    "unknown":       "rgb(122,130,148)",
+}
 
 
 def _style(
@@ -281,7 +298,6 @@ def render_batch(
     color: bool,
 ) -> str:
     """Render a batch as a scenario × agent matrix table."""
-    _ = color  # reserved for future ANSI coloring, parallels render()
     batch = _json.loads((batch_dir / "batch.json").read_text())
     rows = [
         _json.loads(line)
@@ -291,29 +307,32 @@ def render_batch(
     agents = batch["coding_agents"]
     scenarios = sorted({r["scenario"] for r in rows})
 
-    # Index: (scenario, agent) -> cell glyph + label
-    cells: dict[tuple[str, str], tuple[str, str]] = {}
+    # Store verdict keys (not pre-rendered tuples) so styling can be
+    # applied at render time per cell.
+    cell_verdicts: dict[tuple[str, str], str] = {}
     counts = {"pass": 0, "fail": 0, "indeterminate": 0, "skipped": 0, "unknown": 0}
     for r in rows:
         key = (r["scenario"], r["coding_agent"])
         if r.get("skipped"):
-            cells[key] = _GLYPHS["skipped"]
+            cell_verdicts[key] = "skipped"
             counts["skipped"] += 1
             continue
         run_id = r.get("run_id")
         verdict_path = results_root / run_id / "verdict.json" if run_id else None
         if not verdict_path or not verdict_path.exists():
-            cells[key] = _GLYPHS["unknown"]
+            cell_verdicts[key] = "unknown"
             counts["unknown"] += 1
             continue
         try:
             v = _json.loads(verdict_path.read_text())
         except _json.JSONDecodeError:
-            cells[key] = _GLYPHS["unknown"]
+            cell_verdicts[key] = "unknown"
             counts["unknown"] += 1
             continue
         final = v.get("final", "unknown")
-        cells[key] = _GLYPHS.get(final, _GLYPHS["unknown"])
+        if final not in _GLYPHS:
+            final = "unknown"
+        cell_verdicts[key] = final
         counts[final] = counts.get(final, 0) + 1
 
     # Column widths grow to fit content.
@@ -327,28 +346,44 @@ def render_batch(
         + " | ".join(a.ljust(cell_w) for a in agents) + " |"
     )
 
-    lines: list[str] = []
-    lines.append(
+    buf = io.StringIO()
+    console = Console(
+        file=buf,
+        force_terminal=color,
+        no_color=not color,
+        width=200,
+    )
+
+    banner = (
         f"batch {batch['id']} · started {batch['started_at']}"
         + (f" · finished {batch['finished_at']}" if batch.get('finished_at') else "")
     )
-    lines.append("")
-    lines.append(header)
-    lines.append(sep)
+    console.print(banner, highlight=False)
+    console.print("", highlight=False)
+    console.print(header, highlight=False)
+    console.print(sep, highlight=False)
     for s in scenarios:
         row_cells = []
         for a in agents:
-            glyph, label = cells.get((s, a), _GLYPHS["unknown"])
-            row_cells.append(f"{glyph} {label}".ljust(cell_w))
-        lines.append("| " + s.ljust(scen_w) + " | " + " | ".join(row_cells) + " |")
-    lines.append("")
-    lines.append(
+            verdict = cell_verdicts.get((s, a), "unknown")
+            glyph, label = _GLYPHS[verdict]
+            text = f"{glyph} {label}".ljust(cell_w)
+            color_name = _BATCH_GLYPH_COLORS[verdict]
+            row_cells.append(f"[{color_name}]{text}[/]")
+        console.print(
+            "| " + s.ljust(scen_w) + " | " + " | ".join(row_cells) + " |",
+            highlight=False,
+        )
+    console.print("", highlight=False)
+    console.print(
         "Legend: ✓ pass   ✗ fail   ⊘ indeterminate   "
-        "— skipped (directive)   ? no verdict"
+        "— skipped (directive)   ? no verdict",
+        highlight=False,
     )
-    lines.append(
+    tally = (
         f"{counts['pass']} ✓ · {counts['fail']} ✗ · "
         f"{counts['indeterminate']} ⊘ · {counts['skipped']} —"
         + (f" · {counts['unknown']} ?" if counts['unknown'] else "")
     )
-    return "\n".join(lines) + "\n"
+    console.print(tally, highlight=False)
+    return buf.getvalue()
