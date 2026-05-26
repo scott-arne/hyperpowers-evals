@@ -301,6 +301,7 @@ def test_run_batch_writes_skipped_then_runnable(tmp_path, capsys):
         jobs=1,
         agent_filter=None,
         invoke=fake_invoke,
+        use_cursor=False,
     )
 
     lines = (batch_dir / "results.jsonl").read_text().splitlines()
@@ -336,6 +337,7 @@ def test_run_batch_writes_batch_json_header_and_footer(tmp_path):
     batch_dir = run_batch(
         scenarios_root=scenarios, coding_agents_dir=agents,
         out_root=out_root, jobs=1, agent_filter=None, invoke=fake_invoke,
+        use_cursor=False,
     )
 
     data = json.loads((batch_dir / "batch.json").read_text())
@@ -364,9 +366,62 @@ def test_run_batch_jobs_gt_one_runs_all_pairs(tmp_path):
     batch_dir = run_batch(
         scenarios_root=scenarios, coding_agents_dir=agents,
         out_root=out_root, jobs=4, agent_filter=None, invoke=fake_invoke,
+        use_cursor=False,
     )
 
     assert sorted(invocations) == [
         ("a", "claude"), ("b", "claude"), ("c", "claude"), ("d", "claude"),
     ]
     assert len((batch_dir / "results.jsonl").read_text().splitlines()) == 4
+
+
+def test_run_batch_event_format_uses_total_denominator_and_skip_verb(
+    tmp_path, capsys, monkeypatch
+):
+    """[N/M] denominator counts the full matrix; skips render in event shape.
+
+    Strong assertions: skip line precedes runnable lines, and each
+    runnable index appears in BOTH a `start` and a `done` line.
+    """
+    # Pin Console TTY detection regardless of CI env (FORCE_COLOR).
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    _scenario(scenarios, "alpha", directive="codex")  # claude skipped at idx 1
+    _scenario(scenarios, "beta")
+    _agent(agents, "claude")
+    _agent(agents, "codex")
+    out_root = tmp_path / "results-harness"
+
+    def fake_invoke(*, scenario_dir, coding_agent, coding_agents_dir,
+                    out_root, timeout_seconds=None):
+        return ChildResult(
+            run_id=f"{scenario_dir.name}-{coding_agent}-x",
+            exit_code=0, error=None,
+        )
+
+    run_batch(
+        scenarios_root=scenarios, coding_agents_dir=agents,
+        out_root=out_root, jobs=1, agent_filter=None,
+        invoke=fake_invoke, use_cursor=False,
+    )
+
+    captured = capsys.readouterr().out
+    # build_matrix sort order: alpha×claude (skip, idx 1), alpha×codex (2),
+    # beta×claude (3), beta×codex (4).
+    assert "[1/4] skip" in captured, captured
+    # Old [skip] prefix is gone.
+    assert "[skip]" not in captured
+
+    # Each runnable index appears in BOTH a start and a done line.
+    for i in (2, 3, 4):
+        assert f"[{i}/4] start" in captured, captured
+        assert f"[{i}/4] done" in captured, captured
+
+    # Skip event is emitted upfront, before any runnable start.
+    skip_pos = captured.find("[1/4] skip")
+    first_start_pos = min(
+        captured.find(f"[{i}/4] start") for i in (2, 3, 4)
+    )
+    assert 0 <= skip_pos < first_start_pos, (skip_pos, first_start_pos)

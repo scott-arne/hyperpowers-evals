@@ -280,12 +280,17 @@ def show(
     "--out-root", default=_DEFAULT_OUT_ROOT, hidden=True,
     type=click.Path(path_type=Path),
 )
+@click.option(
+    "--no-cursor", "no_cursor", is_flag=True, default=False,
+    help="Disable in-place live display; print events as plain lines.",
+)
 def run_all_cmd(
     coding_agents_csv: str | None,
     jobs: int,
     scenarios_root: Path,
     coding_agents_dir: Path,
     out_root: Path,
+    no_cursor: bool,
 ) -> None:
     """Run every (scenario × Coding-Agent) pair, gated by `# coding-agents:`."""
     agent_filter = (
@@ -300,6 +305,7 @@ def run_all_cmd(
             out_root=out_root.resolve(),
             jobs=jobs,
             agent_filter=agent_filter,
+            use_cursor=not no_cursor,
         )
     except ValueError as e:
         click.echo(f"error: {e}", err=True)

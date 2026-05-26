@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import secrets
 import subprocess
-import sys
 import threading
 import time
 from collections.abc import Callable
@@ -20,6 +19,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TextIO
+
+from rich.console import Console, Group
+from rich.live import Live
+from rich.panel import Panel
+from rich.text import Text
 
 from harness.checks import parse_coding_agents_directive
 
@@ -238,6 +242,109 @@ def append_result_record(
         f.write(json.dumps(rec) + "\n")
 
 
+class BatchProgress:
+    """Owns rendering state for a batch.
+
+    Thread-safe for the limited mutations workers make (`started` /
+    `finished`); reads happen on the main thread (via `__rich__` from the
+    Live refresh tick, and via `snapshot()` at end of batch for the
+    summary).
+    """
+
+    def __init__(
+        self, *, batch_id: str, total: int, jobs: int, skipped: int
+    ) -> None:
+        """`skipped` is known upfront (set from len(skipped_indexed)).
+
+        All further mutations come from worker threads via `started` /
+        `finished` — there's no runtime `skipped()` mutator, which keeps
+        the invariant that `_counts['skipped']` never changes during the
+        Live phase.
+        """
+        self.batch_id = batch_id
+        self.total = total
+        self.jobs = jobs
+        self._lock = threading.Lock()
+        self._in_flight: dict[int, tuple[MatrixEntry, float]] = {}
+        self._counts: dict[str, int] = {
+            "pass": 0,
+            "fail": 0,
+            "indeterminate": 0,
+            "unknown": 0,
+            "skipped": skipped,
+        }
+        self._started = time.monotonic()
+
+    def started(self, idx: int, entry: MatrixEntry) -> None:
+        with self._lock:
+            self._in_flight[idx] = (entry, time.monotonic())
+
+    def finished(self, idx: int, final: str) -> None:
+        with self._lock:
+            self._in_flight.pop(idx, None)
+            self._counts[final] = self._counts.get(final, 0) + 1
+
+    def snapshot(
+        self,
+    ) -> tuple[list[tuple[int, MatrixEntry, float]], dict[str, int]]:
+        with self._lock:
+            in_flight = [
+                (idx, entry, time.monotonic() - t0)
+                for idx, (entry, t0) in sorted(self._in_flight.items())
+            ]
+            counts = dict(self._counts)
+        return in_flight, counts
+
+    def __rich__(self) -> Group:
+        """Called by rich.live.Live on each refresh tick."""
+        in_flight, counts = self.snapshot()
+        rows = []
+        for idx, entry, elapsed in in_flight:
+            rows.append(
+                f"  [{idx}/{self.total}]  {entry.scenario} × {entry.coding_agent}"
+                f"  {_fmt_duration(elapsed)}"
+            )
+        panel_body = "\n".join(rows) if rows else "(idle)"
+        panel = Panel(
+            panel_body,
+            title=f"in flight ({len(in_flight)}/{self.jobs})",
+            title_align="left",
+        )
+        done = (
+            counts["pass"]
+            + counts["fail"]
+            + counts["indeterminate"]
+            + counts["unknown"]
+        )
+        wall = _fmt_duration(time.monotonic() - self._started)
+        footer_text = (
+            f"progress {done + counts['skipped']}/{self.total}"
+            f" · ✓{counts['pass']} ✗{counts['fail']} ⊘{counts['indeterminate']}"
+            f" —{counts['skipped']}"
+        )
+        if counts["unknown"]:
+            footer_text += f" ?{counts['unknown']}"
+        footer_text += f" · wall {wall}"
+        footer = Text(footer_text)
+        return Group(panel, footer)
+
+
+# Status -> Rich style string. Lines build a `Text` object via
+# `Text.assemble(...)`, passing `(label, _STATUS_STYLES[final])` tuples for
+# the styled segments. The surrounding `[N/M]` prefix stays as a plain
+# segment so Rich's markup parser doesn't try to interpret it. Console
+# decides whether to emit ANSI based on TTY detection.
+#
+# Same palette as harness/show.py:_BATCH_GLYPH_COLORS — keep in sync.
+_STATUS_STYLES = {
+    "pass":          "rgb(80,250,123)",
+    "fail":          "rgb(255,85,85)",
+    "indeterminate": "rgb(241,250,140)",
+    "skipped":       "rgb(122,130,148)",
+    "unknown":       "rgb(122,130,148)",
+}
+
+
 def run_batch(
     *,
     scenarios_root: Path,
@@ -246,27 +353,33 @@ def run_batch(
     jobs: int,
     agent_filter: list[str] | None,
     invoke: Callable[..., ChildResult] | None = None,
-    stream: TextIO | None = None,  # writable file; defaults to sys.stdout
+    stream: TextIO | None = None,
+    use_cursor: bool = True,
 ) -> Path:
-    """Run the full batch. Returns the batch dir path."""
+    """Run the full batch. Returns the batch dir path.
+
+    `use_cursor=True` (default) uses a Rich `Live` in-flight panel on a
+    TTY; falls back to plain append-only output when stdout is not a TTY
+    or `use_cursor=False`.
+    """
     if jobs < 1:
         raise ValueError(f"jobs must be >= 1, got {jobs}")
-    # Late-bind to invoke_child so monkeypatch.setattr("harness.run_all.invoke_child", ...)
-    # works without needing to also pass `invoke=` explicitly.
+    # Late-bind to invoke_child so monkeypatch.setattr(
+    # "harness.run_all.invoke_child", ...) works without needing to also
+    # pass `invoke=` explicitly.
     invoke = invoke or invoke_child
-    out = stream or sys.stdout
 
     entries = build_matrix(
         scenarios_root=scenarios_root,
         coding_agents_dir=coding_agents_dir,
         agent_filter=agent_filter,
     )
-
     batch_dir = allocate_batch_dir(out_root=out_root)
     started_at = datetime.now(UTC)
-
-    runnable = [e for e in entries if e.runnable]
-    skipped = [e for e in entries if not e.runnable]
+    indexed = list(enumerate(entries, 1))
+    total = len(entries)
+    runnable_indexed = [(idx, e) for idx, e in indexed if e.runnable]
+    skipped_indexed = [(idx, e) for idx, e in indexed if not e.runnable]
     agents_in_batch = sorted({e.coding_agent for e in entries})
 
     write_batch_header(
@@ -276,40 +389,70 @@ def run_batch(
         started_at=started_at,
     )
 
-    print(
-        f"batch {batch_dir.name} · {len(entries)} pairs "
-        f"({len(runnable)} runnable, {len(skipped)} skipped by directive) "
-        f"· --jobs {jobs}",
-        file=out, flush=True,
+    # Construct Console with force_terminal=None if stream is None so the
+    # default stdout path picks up real TTY detection; if the caller passes
+    # a stream (test harnesses, pipes), force non-terminal so no ANSI
+    # leaks into captured output.
+    console = Console(
+        file=stream,
+        force_terminal=None if stream is None else False,
+    )
+    use_live = use_cursor and console.is_terminal
+    progress = BatchProgress(
+        batch_id=batch_dir.name,
+        total=total,
+        jobs=jobs,
+        skipped=len(skipped_indexed),
     )
 
-    # Skipped entries first — listed up front, never spawn.
-    for e in skipped:
-        directive = parse_coding_agents_directive(e.scenario_dir / "checks.sh") or []
-        print(
-            f"[skip] {e.scenario} × {e.coding_agent}   "
-            f"(directive: requires {', '.join(directive)})",
-            file=out, flush=True,
+    # Header banner.
+    console.print(
+        f"batch {batch_dir.name} · {total} pairs "
+        f"({len(runnable_indexed)} runnable, {len(skipped_indexed)} skipped by directive) "
+        f"· --jobs {jobs}",
+        markup=False,
+        highlight=False,
+    )
+
+    # Skips render first, synchronously. Use Text.assemble() not f-strings:
+    # the literal `[N/M]` prefix would otherwise be interpreted as Rich
+    # markup. The styled tail is applied via a (text, style) tuple.
+    for idx, entry in skipped_indexed:
+        directive = parse_coding_agents_directive(entry.scenario_dir / "checks.sh") or []
+        line = Text.assemble(
+            f"[{idx}/{total}] skip   {entry.scenario} × {entry.coding_agent}      → ",
+            (
+                f"— skip (requires {', '.join(directive)})",
+                _STATUS_STYLES["skipped"],
+            ),
         )
+        console.print(line, markup=False, highlight=False)
         append_result_record(
-            batch_dir=batch_dir, scenario=e.scenario,
-            coding_agent=e.coding_agent, run_id=None, skipped="directive",
+            batch_dir=batch_dir,
+            scenario=entry.scenario,
+            coding_agent=entry.coding_agent,
+            run_id=None,
+            skipped="directive",
         )
 
-    # Schedule runnable pairs. `start` lines are printed inside the worker so
-    # they interleave correctly with `done` lines under --jobs N>1; a lock
-    # serializes stdout writes so partial lines never collide.
-    total = len(runnable)
+    # Lock guards both `console.print` from workers (plain mode) AND
+    # results.jsonl writes (which happen on the main futures-completion
+    # thread, but a lock is cheap insurance).
     print_lock = threading.Lock()
 
-    # Counts accumulate inline; no end-of-batch re-read of results.jsonl.
-    counts = {"pass": 0, "fail": 0, "indeterminate": 0, "unknown": 0,
-              "skipped": len(skipped)}
-
-    def _worker(idx: int, entry: MatrixEntry) -> tuple[int, MatrixEntry, ChildResult, float]:
-        with print_lock:
-            print(f"[{idx}/{total}] start  {entry.scenario} × {entry.coding_agent}",
-                  file=out, flush=True)
+    def _worker(
+        idx: int, entry: MatrixEntry
+    ) -> tuple[int, MatrixEntry, ChildResult, float]:
+        progress.started(idx, entry)
+        if not use_live:
+            with print_lock:
+                console.print(
+                    Text(
+                        f"[{idx}/{total}] start  {entry.scenario} × {entry.coding_agent}"
+                    ),
+                    markup=False,
+                    highlight=False,
+                )
         t0 = time.monotonic()
         result = invoke(
             scenario_dir=entry.scenario_dir,
@@ -319,28 +462,57 @@ def run_batch(
         )
         return idx, entry, result, time.monotonic() - t0
 
-    with ThreadPoolExecutor(max_workers=jobs) as pool:
-        futures = [pool.submit(_worker, i, e) for i, e in enumerate(runnable, 1)]
+    def _drain(pool: ThreadPoolExecutor) -> None:
+        # All console.print calls inside Live MUST use this Console
+        # (already passed as console=console to Live above) — output
+        # corrupts if a worker constructs its own Console or calls plain
+        # print().
+        futures = [pool.submit(_worker, idx, e) for idx, e in runnable_indexed]
         for fut in as_completed(futures):
             idx, entry, result, elapsed = fut.result()
             final = _final_status_for_result(result, out_root)
-            counts[final] = counts.get(final, 0) + 1
-            glyph = _GLYPH_FOR_FINAL.get(final, f"? {final}")
-            with print_lock:
-                print(
-                    f"[{idx}/{total}] done   {entry.scenario} × {entry.coding_agent}"
-                    f"      → {glyph}      in {_fmt_duration(elapsed)}",
-                    file=out, flush=True,
-                )
-            append_result_record(
-                batch_dir=batch_dir,
-                scenario=entry.scenario, coding_agent=entry.coding_agent,
-                run_id=result.run_id, skipped=None,
+            progress.finished(idx, final)
+            label = _GLYPH_FOR_FINAL.get(final, f"? {final}")
+            # Use Text.assemble() with explicit segments so the literal
+            # `[N/M]` prefix is not parsed as Rich markup; the styled
+            # label is applied via the (text, style) tuple form.
+            line = Text.assemble(
+                f"[{idx}/{total}] done   {entry.scenario} × {entry.coding_agent}      → ",
+                (label, _STATUS_STYLES.get(final, "")),
+                f"      in {_fmt_duration(elapsed)}",
             )
+            with print_lock:
+                console.print(line, markup=False, highlight=False)
+                append_result_record(
+                    batch_dir=batch_dir,
+                    scenario=entry.scenario,
+                    coding_agent=entry.coding_agent,
+                    run_id=result.run_id,
+                    skipped=None,
+                )
+
+    if use_live:
+        # transient=True so the in-flight panel disappears when Live
+        # exits; otherwise an obsolete `(idle)` panel lingers between the
+        # last `done` event and the `batch done` summary line.
+        with (
+            Live(
+                progress,
+                refresh_per_second=4,
+                console=console,
+                transient=True,
+            ),
+            ThreadPoolExecutor(max_workers=jobs) as pool,
+        ):
+            _drain(pool)
+    else:
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            _drain(pool)
 
     finished_at = datetime.now(UTC)
     write_batch_footer(batch_dir=batch_dir, finished_at=finished_at)
 
+    _, counts = progress.snapshot()
     summary_line = (
         f"batch done · {counts['pass']} ✓ · {counts['fail']} ✗ · "
         f"{counts['indeterminate']} ⊘ · {counts['skipped']} —"
@@ -350,12 +522,12 @@ def run_batch(
     summary_line += (
         f" · wall {_fmt_duration((finished_at - started_at).total_seconds())}"
     )
-    print(summary_line, file=out, flush=True)
+    console.print(summary_line, markup=False, highlight=False)
     try:
         artifacts_path = batch_dir.relative_to(Path.cwd())
     except ValueError:
         artifacts_path = batch_dir
-    print(f"artifacts: {artifacts_path}", file=out, flush=True)
+    console.print(f"artifacts: {artifacts_path}", markup=False, highlight=False)
     return batch_dir
 
 

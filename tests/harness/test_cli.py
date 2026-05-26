@@ -259,6 +259,30 @@ def test_run_all_jobs_must_be_positive(tmp_path, monkeypatch):
     assert result.exit_code != 0
 
 
+def test_run_all_accepts_no_cursor_flag(tmp_path, monkeypatch):
+    """`--no-cursor` is wired through and forwarded to `run_batch`."""
+    captured = {}
+
+    def fake_run_batch(**kwargs):
+        captured.update(kwargs)
+        return tmp_path / "results-harness" / "batches" / "fakebatch"
+
+    monkeypatch.setattr("harness.cli.run_batch", fake_run_batch)
+
+    (tmp_path / "harness" / "scenarios").mkdir(parents=True)
+    (tmp_path / "harness" / "coding-agents").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    # --help must list the flag so users can discover it.
+    help_result = CliRunner().invoke(main, ["run-all", "--help"])
+    assert help_result.exit_code == 0
+    assert "--no-cursor" in help_result.output
+
+    result = CliRunner().invoke(main, ["run-all", "--no-cursor"])
+    assert result.exit_code == 0, result.output
+    assert captured["use_cursor"] is False
+
+
 def test_show_renders_batch_when_target_is_batch_id(tmp_path, monkeypatch):
     out_root = tmp_path / "results-harness"
     batch_dir = out_root / "batches" / "20260526T180000Z-abcd"
