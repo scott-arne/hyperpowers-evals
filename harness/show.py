@@ -245,3 +245,94 @@ def _wrap_indent(text: str, *, indent: int, width: int) -> str:
         return ""
     pad = " " * indent
     return textwrap.fill(text, width=width, subsequent_indent=pad)
+
+
+# ---------- batch matrix renderer --------------------------------------
+
+_GLYPHS = {
+    "pass":          ("✓", "pass"),
+    "fail":          ("✗", "fail"),
+    "indeterminate": ("⊘", "indet"),
+    "skipped":       ("—", "skip"),
+    "unknown":       ("?", "?"),
+}
+
+
+def render_batch(
+    *,
+    batch_dir: Path,
+    results_root: Path,
+    color: bool,
+) -> str:
+    """Render a batch as a scenario × agent matrix table."""
+    _ = color  # reserved for future ANSI coloring, parallels render()
+    batch = _json.loads((batch_dir / "batch.json").read_text())
+    rows = [
+        _json.loads(line)
+        for line in (batch_dir / "results.jsonl").read_text().splitlines()
+    ]
+
+    agents = batch["coding_agents"]
+    scenarios = sorted({r["scenario"] for r in rows})
+
+    # Index: (scenario, agent) -> cell glyph + label
+    cells: dict[tuple[str, str], tuple[str, str]] = {}
+    counts = {"pass": 0, "fail": 0, "indeterminate": 0, "skipped": 0, "unknown": 0}
+    for r in rows:
+        key = (r["scenario"], r["coding_agent"])
+        if r.get("skipped"):
+            cells[key] = _GLYPHS["skipped"]
+            counts["skipped"] += 1
+            continue
+        run_id = r.get("run_id")
+        verdict_path = results_root / run_id / "verdict.json" if run_id else None
+        if not verdict_path or not verdict_path.exists():
+            cells[key] = _GLYPHS["unknown"]
+            counts["unknown"] += 1
+            continue
+        try:
+            v = _json.loads(verdict_path.read_text())
+        except _json.JSONDecodeError:
+            cells[key] = _GLYPHS["unknown"]
+            counts["unknown"] += 1
+            continue
+        final = v.get("final", "unknown")
+        cells[key] = _GLYPHS.get(final, _GLYPHS["unknown"])
+        counts[final] = counts.get(final, 0) + 1
+
+    # Column widths grow to fit content.
+    scen_w = max((len(s) for s in scenarios), default=8)
+    scen_w = max(scen_w, len("scenario"))
+    cell_w = max([len(a) for a in agents] + [len("⊘ indet")])  # widest header or glyph
+
+    sep = "|" + "-" * (scen_w + 2) + "|" + "|".join("-" * (cell_w + 2) for _ in agents) + "|"
+    header = (
+        "| " + "scenario".ljust(scen_w) + " | "
+        + " | ".join(a.ljust(cell_w) for a in agents) + " |"
+    )
+
+    lines: list[str] = []
+    lines.append(
+        f"batch {batch['id']} · started {batch['started_at']}"
+        + (f" · finished {batch['finished_at']}" if batch.get('finished_at') else "")
+    )
+    lines.append("")
+    lines.append(header)
+    lines.append(sep)
+    for s in scenarios:
+        row_cells = []
+        for a in agents:
+            glyph, label = cells.get((s, a), _GLYPHS["unknown"])
+            row_cells.append(f"{glyph} {label}".ljust(cell_w))
+        lines.append("| " + s.ljust(scen_w) + " | " + " | ".join(row_cells) + " |")
+    lines.append("")
+    lines.append(
+        "Legend: ✓ pass   ✗ fail   ⊘ indeterminate   "
+        "— skipped (directive)   ? no verdict"
+    )
+    lines.append(
+        f"{counts['pass']} ✓ · {counts['fail']} ✗ · "
+        f"{counts['indeterminate']} ⊘ · {counts['skipped']} —"
+        + (f" · {counts['unknown']} ?" if counts['unknown'] else "")
+    )
+    return "\n".join(lines) + "\n"

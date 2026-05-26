@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from harness.show import ShowError, render, resolve_target
+from harness.show import ShowError, render, render_batch, resolve_target
 
 
 def _make_run(root: Path, name: str, *, age_seconds: int = 0) -> Path:
@@ -296,3 +296,63 @@ def test_render_quiet_color_skipped(tmp_path: Path):
     run_dir.mkdir()
     out = render(_verdict_fail_pass_judge(), run_dir, color=True, mode="quiet")
     assert "\x1b[" not in out
+
+
+# ---------- renderer: batch matrix --------------------------------------
+
+def _seed_batch(tmp_path: Path, *, agents: list[str], rows: list[dict]) -> Path:
+    """Build a fake batch dir + sibling per-run dirs to test the renderer."""
+    out_root = tmp_path / "results-harness"
+    batch_dir = out_root / "batches" / "20260526T180000Z-abcd"
+    batch_dir.mkdir(parents=True)
+    (batch_dir / "batch.json").write_text(_json.dumps({
+        "schema_version": 1, "id": batch_dir.name,
+        "started_at": "2026-05-26T18:00:00+00:00",
+        "finished_at": "2026-05-26T18:03:41+00:00",
+        "coding_agents": agents, "jobs": 1,
+    }))
+    lines = []
+    for r in rows:
+        lines.append(_json.dumps(r))
+        if r.get("run_id"):
+            run_dir = out_root / r["run_id"]
+            run_dir.mkdir(parents=True)
+            (run_dir / "verdict.json").write_text(_json.dumps({
+                "final": r.pop("_verdict", "pass"),
+                "final_reason": r.pop("_reason", "ok"),
+                "gauntlet": {}, "checks": {}, "error": None,
+            }))
+    (batch_dir / "results.jsonl").write_text("\n".join(lines) + "\n")
+    return batch_dir
+
+
+def test_render_batch_matrix_two_agents(tmp_path):
+    batch_dir = _seed_batch(tmp_path, agents=["claude", "codex"], rows=[
+        {"scenario": "foo", "coding_agent": "claude",
+         "run_id": "foo-claude-x", "_verdict": "pass"},
+        {"scenario": "foo", "coding_agent": "codex",
+         "run_id": None, "skipped": "directive"},
+        {"scenario": "bar", "coding_agent": "claude",
+         "run_id": "bar-claude-x", "_verdict": "fail"},
+        {"scenario": "bar", "coding_agent": "codex",
+         "run_id": "bar-codex-x", "_verdict": "indeterminate"},
+    ])
+
+    out = render_batch(batch_dir=batch_dir, results_root=tmp_path / "results-harness", color=False)
+
+    assert "scenario" in out and "claude" in out and "codex" in out
+    assert "✓ pass" in out
+    assert "✗ fail" in out
+    assert "⊘ indet" in out
+    assert "— skip" in out
+    assert "Legend:" in out
+    # Tally line
+    assert "1 ✓" in out and "1 ✗" in out and "1 ⊘" in out and "1 —" in out
+
+
+def test_render_batch_missing_verdict_renders_question_glyph(tmp_path):
+    batch_dir = _seed_batch(tmp_path, agents=["claude"], rows=[
+        {"scenario": "foo", "coding_agent": "claude", "run_id": "ghost"},
+    ])
+    out = render_batch(batch_dir=batch_dir, results_root=tmp_path / "results-harness", color=False)
+    assert "?" in out
