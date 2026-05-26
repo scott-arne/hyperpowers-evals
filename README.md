@@ -77,6 +77,16 @@ uv run harness check my-new-scenario
 
 `harness check` with no arguments validates every scenario.
 
+Run the full matrix:
+
+```bash
+uv run harness run-all --coding-agents claude,codex --jobs 2
+```
+
+`run-all` runs every scenario against every Coding-Agent, filtered by each
+scenario's `# coding-agents:` directive. View the resulting matrix with
+`uv run harness show <batch-id>`.
+
 ## Canonical Actors
 
 Keep the actors straight; confusing them is the most common triage error.

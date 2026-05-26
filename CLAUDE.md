@@ -34,6 +34,11 @@ A run involves two LLMs: the **Gauntlet-Agent** (QA tester) and the
 - **list scenarios**: `uv run harness list`
 - **scaffold scenario**: `uv run harness new <name>`
 - **show verdict**: `uv run harness show [<target>]`
+- **run all**: `uv run harness run-all [--coding-agents X,Y] [--jobs N]`
+- **show batch**: `uv run harness show <batch-id>` (matrix view)
+
+Per-coding-agent config: `harness/coding-agents/<name>.yaml`. Per-coding-agent HOWTO:
+`harness/coding-agent-contexts/<name>/`. Spec: `docs/superpowers/specs/2026-05-22-harness-model-design.md`.
 
 ## Architecture
 
