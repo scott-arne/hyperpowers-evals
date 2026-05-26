@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from harness.show import ShowError, render, render_batch, resolve_target
+from harness.show import ShowError, is_batch_dir, render, render_batch, resolve_target
 
 
 def _make_run(root: Path, name: str, *, age_seconds: int = 0) -> Path:
@@ -356,3 +356,38 @@ def test_render_batch_missing_verdict_renders_question_glyph(tmp_path):
     ])
     out = render_batch(batch_dir=batch_dir, results_root=tmp_path / "results-harness", color=False)
     assert "?" in out
+
+
+# ---------- resolver: batch-dir handling --------------------------------
+
+def test_resolve_target_returns_batch_dir_for_batch_id(tmp_path):
+    out_root = tmp_path / "results-harness"
+    batch_dir = out_root / "batches" / "20260526T180000Z-abcd"
+    batch_dir.mkdir(parents=True)
+    (batch_dir / "batch.json").write_text("{}")
+
+    resolved = resolve_target("20260526T180000Z-abcd", results_root=out_root)
+    assert resolved == batch_dir
+
+
+def test_resolve_target_returns_batch_dir_for_explicit_path(tmp_path):
+    """Explicit path to a batch dir must NOT trip the 'no verdict.json' check."""
+    out_root = tmp_path / "results-harness"
+    batch_dir = out_root / "batches" / "20260526T180000Z-abcd"
+    batch_dir.mkdir(parents=True)
+    (batch_dir / "batch.json").write_text("{}")
+
+    resolved = resolve_target(str(batch_dir), results_root=out_root)
+    assert resolved == batch_dir
+
+
+def test_is_batch_dir(tmp_path):
+    batch_dir = tmp_path / "20260526T180000Z-abcd"
+    batch_dir.mkdir()
+    (batch_dir / "batch.json").write_text("{}")
+    assert is_batch_dir(batch_dir) is True
+
+    run_dir = tmp_path / "foo-claude-20260526T180000Z-abcd"
+    run_dir.mkdir()
+    (run_dir / "verdict.json").write_text("{}")
+    assert is_batch_dir(run_dir) is False

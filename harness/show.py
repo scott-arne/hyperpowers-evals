@@ -27,17 +27,24 @@ class ShowError(Exception):
 
 # ---------- resolver ----------------------------------------------------
 
+def is_batch_dir(path: Path) -> bool:
+    """A path is a batch dir if it contains batch.json."""
+    return path.is_dir() and (path / "batch.json").exists()
+
+
 def resolve_target(target: str | None, *, results_root: Path) -> Path:
-    """Resolve `<target>` (per spec §5) to a run-dir Path.
+    """Resolve `<target>` (per spec §5) to a run-dir or batch-dir Path.
 
     Order:
       1. None → newest run-dir under results_root (by verdict.json mtime).
+      2a. Path that is a batch dir (contains batch.json) → that dir.
       2. Path that is a dir with verdict.json → that dir.
       3. Path that is a verdict.json file → its parent dir.
+      4a. Batch ID under results_root/batches/<target>/ → that batch dir.
       4. Prefix match under results_root: `<target>-*` → newest match by mtime.
       5. Else → ShowError.
 
-    Rules 1 and 4 require results_root to exist; rules 2-3 don't.
+    Rules 1, 4, and 4a require results_root to exist; rules 2, 2a, 3 don't.
     """
     # Rule 1: omitted
     if target is None:
@@ -56,6 +63,11 @@ def resolve_target(target: str | None, *, results_root: Path) -> Path:
         return max(candidates, key=lambda d: (d / "verdict.json").stat().st_mtime)
 
     p = Path(target)
+
+    # Batch dir (explicit path) — must precede the run-dir check, which
+    # would otherwise raise "no verdict.json in <p>" for a batch path.
+    if p.is_dir() and is_batch_dir(p):
+        return p
 
     # Rule 2: directory containing verdict.json
     if p.is_dir():
@@ -76,6 +88,10 @@ def resolve_target(target: str | None, *, results_root: Path) -> Path:
         raise ShowError(
             f"no run-dir resolved from {target!r} (results root does not exist: {results_root})"
         )
+    # Batch ID lookup: results_root/batches/<target>/.
+    batch_candidate = results_root / "batches" / target
+    if is_batch_dir(batch_candidate):
+        return batch_candidate
     matches = [
         d for d in results_root.glob(f"{target}-*")
         if d.is_dir() and (d / "verdict.json").is_file()

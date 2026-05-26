@@ -1,4 +1,5 @@
 # tests/harness/test_cli.py
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -255,3 +256,26 @@ def test_run_all_jobs_must_be_positive(tmp_path, monkeypatch):
 
     result = CliRunner().invoke(main, ["run-all", "--jobs", "0"])
     assert result.exit_code != 0
+
+
+def test_show_renders_batch_when_target_is_batch_id(tmp_path, monkeypatch):
+    out_root = tmp_path / "results-harness"
+    batch_dir = out_root / "batches" / "20260526T180000Z-abcd"
+    batch_dir.mkdir(parents=True)
+    batch_dir.joinpath("batch.json").write_text(json.dumps({
+        "schema_version": 1, "id": batch_dir.name,
+        "started_at": "2026-05-26T18:00:00+00:00",
+        "finished_at": "2026-05-26T18:03:41+00:00",
+        "coding_agents": ["claude"], "jobs": 1,
+    }))
+    batch_dir.joinpath("results.jsonl").write_text(
+        json.dumps({"scenario": "foo", "coding_agent": "claude",
+                    "run_id": None, "skipped": "directive"}) + "\n"
+    )
+
+    result = CliRunner().invoke(main, [
+        "show", "20260526T180000Z-abcd", "--results-root", str(out_root),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Legend:" in result.output
+    assert "— skip" in result.output

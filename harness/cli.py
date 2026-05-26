@@ -16,7 +16,14 @@ from harness.scaffold import (
     fix_executable_bits,
     new_scenario,
 )
-from harness.show import ShowError, ShowMode, render, resolve_target
+from harness.show import (
+    ShowError,
+    ShowMode,
+    is_batch_dir,
+    render,
+    render_batch,
+    resolve_target,
+)
 
 # TODO(phase-3): when drill is decommissioned, scenarios move to top-level
 # scenarios/ and coding-agent-contexts/coding-agents/ may relocate.
@@ -215,6 +222,23 @@ def show(
         click.echo(f"error: {e}", err=True)
         sys.exit(1)
 
+    color = not no_color and sys.stdout.isatty()
+
+    if is_batch_dir(run_dir):
+        if mode_json:
+            batch = json.loads((run_dir / "batch.json").read_text())
+            results = [
+                json.loads(line)
+                for line in (run_dir / "results.jsonl").read_text().splitlines()
+            ]
+            click.echo(json.dumps({**batch, "results": results}, indent=2))
+            return
+        click.echo(
+            render_batch(batch_dir=run_dir, results_root=results_root, color=color),
+            nl=False,
+        )
+        return
+
     verdict_path = run_dir / "verdict.json"
     try:
         verdict = json.loads(verdict_path.read_text())
@@ -222,7 +246,6 @@ def show(
         click.echo(f"error: malformed verdict.json at {verdict_path}: {e}", err=True)
         sys.exit(2)
 
-    color = not no_color and sys.stdout.isatty()
     try:
         click.echo(render(verdict, run_dir, color=color, mode=mode), nl=False)
     except (KeyError, TypeError) as e:
