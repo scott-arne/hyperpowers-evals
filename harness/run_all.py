@@ -252,7 +252,15 @@ class BatchProgress:
     """
 
     def __init__(
-        self, *, batch_id: str, total: int, jobs: int, skipped: int
+        self,
+        *,
+        batch_id: str,
+        total: int,
+        jobs: int,
+        skipped: int,
+        idx_w: int = 1,
+        agent_w: int = 1,
+        scn_w: int = 1,
     ) -> None:
         """`skipped` is known upfront (set from len(skipped_indexed)).
 
@@ -264,6 +272,9 @@ class BatchProgress:
         self.batch_id = batch_id
         self.total = total
         self.jobs = jobs
+        self.idx_w = idx_w
+        self.agent_w = agent_w
+        self.scn_w = scn_w
         self._lock = threading.Lock()
         self._in_flight: dict[int, tuple[MatrixEntry, float]] = {}
         self._counts: dict[str, int] = {
@@ -300,9 +311,11 @@ class BatchProgress:
         in_flight, counts = self.snapshot()
         rows = []
         for idx, entry, elapsed in in_flight:
+            scn = _truncate(entry.scenario, self.scn_w)
             rows.append(
-                f"  [{idx}/{self.total}]  {entry.scenario} × {entry.coding_agent}"
-                f"  {_fmt_duration(elapsed)}"
+                f"  [{idx:0{self.idx_w}d}/{self.total}]  "
+                f"{scn:<{self.scn_w}}  {entry.coding_agent:<{self.agent_w}}"
+                f"  {_fmt_duration(elapsed):>{_DUR_COL_W}}"
             )
         panel_body = "\n".join(rows) if rows else "(idle)"
         panel = Panel(
@@ -382,6 +395,12 @@ def run_batch(
     skipped_indexed = [(idx, e) for idx, e in indexed if not e.runnable]
     agents_in_batch = sorted({e.coding_agent for e in entries})
 
+    # Tabular layout: column widths derived from this batch's data, so
+    # short batches don't pay for wide padding.
+    idx_w = len(str(total))
+    agent_w = max((len(a) for a in agents_in_batch), default=1)
+    scn_w = min(_SCN_COL_MAX, max((len(e.scenario) for e in entries), default=1))
+
     write_batch_header(
         batch_dir=batch_dir,
         coding_agents=agents_in_batch,
@@ -403,6 +422,9 @@ def run_batch(
         total=total,
         jobs=jobs,
         skipped=len(skipped_indexed),
+        idx_w=idx_w,
+        agent_w=agent_w,
+        scn_w=scn_w,
     )
 
     # Header banner.
@@ -419,12 +441,12 @@ def run_batch(
     # markup. The styled tail is applied via a (text, style) tuple.
     for idx, entry in skipped_indexed:
         directive = parse_coding_agents_directive(entry.scenario_dir / "checks.sh") or []
+        scn = _truncate(entry.scenario, scn_w)
         line = Text.assemble(
-            f"[{idx}/{total}] skip   {entry.scenario} × {entry.coding_agent}      → ",
-            (
-                f"— skip (requires {', '.join(directive)})",
-                _STATUS_STYLES["skipped"],
-            ),
+            f"[{idx:0{idx_w}d}/{total}] {'skip':<{_STATE_COL_W}}  "
+            f"{scn:<{scn_w}}  {entry.coding_agent:<{agent_w}}  ",
+            (_GLYPH_SKIP, _STATUS_STYLES["skipped"]),
+            f"  {'':<{_DUR_COL_W}}  (requires {', '.join(directive)})",
         )
         console.print(line, markup=False, highlight=False)
         append_result_record(
@@ -446,9 +468,11 @@ def run_batch(
         progress.started(idx, entry)
         if not use_live:
             with print_lock:
+                scn = _truncate(entry.scenario, scn_w)
                 console.print(
                     Text(
-                        f"[{idx}/{total}] start  {entry.scenario} × {entry.coding_agent}"
+                        f"[{idx:0{idx_w}d}/{total}] {'start':<{_STATE_COL_W}}  "
+                        f"{scn:<{scn_w}}  {entry.coding_agent:<{agent_w}}"
                     ),
                     markup=False,
                     highlight=False,
@@ -472,14 +496,17 @@ def run_batch(
             idx, entry, result, elapsed = fut.result()
             final = _final_status_for_result(result, out_root)
             progress.finished(idx, final)
-            label = _GLYPH_FOR_FINAL.get(final, f"? {final}")
+            glyph = _GLYPH_FOR_FINAL.get(final, "?")
+            scn = _truncate(entry.scenario, scn_w)
+            duration = _fmt_duration(elapsed)
             # Use Text.assemble() with explicit segments so the literal
             # `[N/M]` prefix is not parsed as Rich markup; the styled
-            # label is applied via the (text, style) tuple form.
+            # glyph is applied via the (text, style) tuple form.
             line = Text.assemble(
-                f"[{idx}/{total}] done   {entry.scenario} × {entry.coding_agent}      → ",
-                (label, _STATUS_STYLES.get(final, "")),
-                f"      in {_fmt_duration(elapsed)}",
+                f"[{idx:0{idx_w}d}/{total}] {'done':<{_STATE_COL_W}}  "
+                f"{scn:<{scn_w}}  {entry.coding_agent:<{agent_w}}  ",
+                (glyph, _STATUS_STYLES.get(final, "")),
+                f"  {duration:>{_DUR_COL_W}}",
             )
             with print_lock:
                 console.print(line, markup=False, highlight=False)
@@ -551,11 +578,24 @@ def _read_verdict(run_dir: Path) -> dict | None:
 
 
 _GLYPH_FOR_FINAL = {
-    "pass":          "✓ pass",
-    "fail":          "✗ fail",
-    "indeterminate": "⊘ indeterminate",
-    "unknown":       "? no verdict",
+    "pass":          "✓",
+    "fail":          "✗",
+    "indeterminate": "⊘",
+    "unknown":       "?",
 }
+_GLYPH_SKIP = "—"
+
+# Cap scenario-name column at 44 — fits every name in the current scenarios
+# tree (longest is 44) and bounds the worst-case if someone adds a runaway.
+_SCN_COL_MAX = 44
+# State column fits "start" (5), the longest of {start, done, skip}.
+_STATE_COL_W = 5
+# Duration column: longest is "10m00s" (6) at the current max_time of 10m.
+_DUR_COL_W = 6
+
+
+def _truncate(s: str, w: int) -> str:
+    return s if len(s) <= w else s[: w - 1] + "…"
 
 
 def _final_status_for_result(result: ChildResult, out_root: Path) -> str:
