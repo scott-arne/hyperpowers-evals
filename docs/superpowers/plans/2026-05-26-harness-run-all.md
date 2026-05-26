@@ -49,15 +49,18 @@ def test_run_prints_run_id_line(tmp_path, monkeypatch):
     """`harness run` prints `run-id: <id>` as the first stdout line."""
     from click.testing import CliRunner
     from harness.cli import main
-    from harness.composer import FinalVerdict
+    from harness.composer import FinalVerdict, GauntletLayer
 
-    # Stub run_scenario so we don't actually drive an agent.
+    # Stub run_scenario so we don't actually drive an agent. Use real
+    # dataclass types — FinalVerdict.to_dict() calls asdict() on its
+    # nested fields and will TypeError on plain dicts.
     fake_run_dir = tmp_path / "results-harness" / "foo-claude-20260526T180001Z-abcd"
     fake_run_dir.mkdir(parents=True)
     fake_verdict = FinalVerdict(
-        final="pass", final_reason="ok",
-        gauntlet={"status": "pass", "reason": "ok"},
-        checks={"pre": [], "post": []},
+        final="pass",
+        final_reason="ok",
+        gauntlet=GauntletLayer(status="pass", summary="ok", reasoning="ok"),
+        checks=[],
         error=None,
     )
 
@@ -73,6 +76,7 @@ def test_run_prints_run_id_line(tmp_path, monkeypatch):
     result = CliRunner().invoke(main, [
         "run", str(scenario_dir), "--coding-agent", "claude",
     ])
+    assert result.exit_code == 0, result.output  # surface renderer crashes
     first_line = result.output.splitlines()[0]
     assert first_line == "run-id: foo-claude-20260526T180001Z-abcd"
 ```
@@ -382,14 +386,20 @@ def test_invoke_child_parses_run_id_from_stdout(tmp_path):
         result = invoke_child(
             scenario_dir=tmp_path / "foo",
             coding_agent="claude",
+            coding_agents_dir=tmp_path / "agents",
+            out_root=tmp_path / "results-harness",
         )
     assert result.run_id == "foo-claude-20260526T180001Z-abcd"
     assert result.exit_code == 0
     assert result.error is None
-    # Verify we shelled out to `uv run harness run`:
+    # Verify we shelled out to `uv run harness run` AND forwarded the
+    # parent's --coding-agents-dir / --out-root so the child uses the
+    # same roots (not its cwd-relative defaults).
     cmd = mock.call_args[0][0]
     assert cmd[:4] == ["uv", "run", "harness", "run"]
     assert "--coding-agent" in cmd and "claude" in cmd
+    assert "--coding-agents-dir" in cmd
+    assert "--out-root" in cmd
 
 
 def test_invoke_child_records_nonzero_exit_with_run_id_when_present(tmp_path):
@@ -402,6 +412,8 @@ def test_invoke_child_records_nonzero_exit_with_run_id_when_present(tmp_path):
     with patch("harness.run_all.subprocess.run", return_value=completed):
         result = invoke_child(
             scenario_dir=tmp_path / "foo", coding_agent="claude",
+            coding_agents_dir=tmp_path / "agents",
+            out_root=tmp_path / "results-harness",
         )
     assert result.run_id == "foo-claude-20260526T180001Z-abcd"
     assert result.exit_code == 1
@@ -416,6 +428,8 @@ def test_invoke_child_no_run_id_in_stdout_is_error(tmp_path):
     with patch("harness.run_all.subprocess.run", return_value=completed):
         result = invoke_child(
             scenario_dir=tmp_path / "foo", coding_agent="claude",
+            coding_agents_dir=tmp_path / "agents",
+            out_root=tmp_path / "results-harness",
         )
     assert result.run_id is None
     assert result.exit_code == 137
@@ -466,13 +480,21 @@ def invoke_child(
     *,
     scenario_dir: Path,
     coding_agent: str,
+    coding_agents_dir: Path,
+    out_root: Path,
     timeout_seconds: float | None = None,
 ) -> ChildResult:
-    """Run one `harness run` as a subprocess; capture its run-id line."""
+    """Run one `harness run` as a subprocess; capture its run-id line.
+
+    `coding_agents_dir` and `out_root` are forwarded as explicit flags so
+    the child doesn't rely on its own cwd-relative defaults.
+    """
     cmd = [
         "uv", "run", "harness", "run",
         str(scenario_dir),
         "--coding-agent", coding_agent,
+        "--coding-agents-dir", str(coding_agents_dir),
+        "--out-root", str(out_root),
     ]
     try:
         completed = subprocess.run(
@@ -532,6 +554,7 @@ from harness.run_all import (
 
 
 def test_allocate_batch_dir_creates_unique_dir(tmp_path):
+    import re
     out_root = tmp_path / "results-harness"
     out_root.mkdir()
 
@@ -540,9 +563,7 @@ def test_allocate_batch_dir_creates_unique_dir(tmp_path):
     assert batch_dir.parent == out_root / "batches"
     assert batch_dir.is_dir()
     # ID looks like 20260526T180000Z-abcd
-    name = batch_dir.name
-    assert name[8] == "T" and name.endswith("Z" + name[-5:])
-    assert "-" in name
+    assert re.fullmatch(r"\d{8}T\d{6}Z-[0-9a-f]{4}", batch_dir.name), batch_dir.name
 
 
 def test_write_batch_header_writes_batch_json(tmp_path):
@@ -645,13 +666,17 @@ def allocate_batch_dir(*, out_root: Path) -> Path:
     """Create results-harness/batches/<id>/ and return its path."""
     batches_root = out_root / "batches"
     batches_root.mkdir(parents=True, exist_ok=True)
-    while True:
+    for _ in range(100):
         candidate = batches_root / _make_batch_id()
         try:
             candidate.mkdir(exist_ok=False)
             return candidate
         except FileExistsError:
             continue  # nonce collision; try again
+    raise RuntimeError(
+        "could not allocate a unique batch id after 100 attempts "
+        f"(clock or RNG malfunction?) in {batches_root}"
+    )
 
 
 def write_batch_header(
@@ -739,7 +764,8 @@ def test_run_batch_writes_skipped_then_runnable(tmp_path, capsys):
     _agent(agents, "codex")
     out_root = tmp_path / "results-harness"
 
-    def fake_invoke(*, scenario_dir, coding_agent, timeout_seconds=None):
+    def fake_invoke(*, scenario_dir, coding_agent, coding_agents_dir,
+                    out_root, timeout_seconds=None):
         return ChildResult(
             run_id=f"{scenario_dir.name}-{coding_agent}-fakerun",
             exit_code=0, error=None,
@@ -776,7 +802,8 @@ def test_run_batch_writes_batch_json_header_and_footer(tmp_path):
     _agent(agents, "claude")
     out_root = tmp_path / "results-harness"
 
-    def fake_invoke(*, scenario_dir, coding_agent, timeout_seconds=None):
+    def fake_invoke(*, scenario_dir, coding_agent, coding_agents_dir,
+                    out_root, timeout_seconds=None):
         return ChildResult(run_id="alpha-claude-fake", exit_code=0, error=None)
 
     batch_dir = run_batch(
@@ -801,7 +828,8 @@ def test_run_batch_jobs_gt_one_runs_all_pairs(tmp_path):
 
     invocations: list[tuple[str, str]] = []
 
-    def fake_invoke(*, scenario_dir, coding_agent, timeout_seconds=None):
+    def fake_invoke(*, scenario_dir, coding_agent, coding_agents_dir,
+                    out_root, timeout_seconds=None):
         invocations.append((scenario_dir.name, coding_agent))
         return ChildResult(run_id=f"{scenario_dir.name}-{coding_agent}-x",
                            exit_code=0, error=None)
@@ -834,10 +862,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
 
-# Default child runner. Swap via the `invoke` param for tests.
-_default_invoke: Callable[..., ChildResult] = invoke_child
-
-
 def run_batch(
     *,
     scenarios_root: Path,
@@ -845,12 +869,15 @@ def run_batch(
     out_root: Path,
     jobs: int,
     agent_filter: list[str] | None,
-    invoke: Callable[..., ChildResult] = _default_invoke,
+    invoke: Callable[..., ChildResult] | None = None,
     stream: "object" = None,  # writable file; defaults to sys.stdout
 ) -> Path:
     """Run the full batch. Returns the batch dir path."""
     if jobs < 1:
         raise ValueError(f"jobs must be >= 1, got {jobs}")
+    # Late-bind to invoke_child so monkeypatch.setattr("harness.run_all.invoke_child", ...)
+    # works without needing to also pass `invoke=` explicitly.
+    invoke = invoke or invoke_child
     out = stream or sys.stdout
 
     entries = build_matrix(
@@ -899,20 +926,30 @@ def run_batch(
     total = len(runnable)
     print_lock = threading.Lock()
 
+    # Counts accumulate inline; no end-of-batch re-read of results.jsonl.
+    counts = {"pass": 0, "fail": 0, "indeterminate": 0, "unknown": 0,
+              "skipped": len(skipped)}
+
     def _worker(idx: int, entry: MatrixEntry) -> tuple[int, MatrixEntry, ChildResult, float]:
         with print_lock:
             print(f"[{idx}/{total}] start  {entry.scenario} × {entry.coding_agent}",
                   file=out, flush=True)
         t0 = time.monotonic()
-        result = invoke(scenario_dir=entry.scenario_dir,
-                        coding_agent=entry.coding_agent)
+        result = invoke(
+            scenario_dir=entry.scenario_dir,
+            coding_agent=entry.coding_agent,
+            coding_agents_dir=coding_agents_dir,
+            out_root=out_root,
+        )
         return idx, entry, result, time.monotonic() - t0
 
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = [pool.submit(_worker, i, e) for i, e in enumerate(runnable, 1)]
         for fut in as_completed(futures):
             idx, entry, result, elapsed = fut.result()
-            glyph = _verdict_glyph_from_result(result, out_root)
+            final = _final_status_for_result(result, out_root)
+            counts[final] = counts.get(final, 0) + 1
+            glyph = _GLYPH_FOR_FINAL.get(final, f"? {final}")
             with print_lock:
                 print(
                     f"[{idx}/{total}] done   {entry.scenario} × {entry.coding_agent}"
@@ -928,13 +965,16 @@ def run_batch(
     finished_at = datetime.now(timezone.utc)
     write_batch_footer(batch_dir=batch_dir, finished_at=finished_at)
 
-    counts = _tally_batch(batch_dir, out_root)
-    print(
+    summary_line = (
         f"batch done · {counts['pass']} ✓ · {counts['fail']} ✗ · "
-        f"{counts['indeterminate']} ⊘ · {counts['skipped']} — "
-        f"· wall {_fmt_duration((finished_at - started_at).total_seconds())}",
-        file=out, flush=True,
+        f"{counts['indeterminate']} ⊘ · {counts['skipped']} —"
     )
+    if counts["unknown"]:
+        summary_line += f" · {counts['unknown']} ?"
+    summary_line += (
+        f" · wall {_fmt_duration((finished_at - started_at).total_seconds())}"
+    )
+    print(summary_line, file=out, flush=True)
     try:
         artifacts_path = batch_dir.relative_to(Path.cwd())
     except ValueError:
@@ -962,34 +1002,23 @@ def _read_verdict(run_dir: Path) -> dict | None:
         return None
 
 
-def _verdict_glyph_from_result(result: ChildResult, out_root: Path) -> str:
-    """Render an inline glyph for the live progress `done` line."""
+_GLYPH_FOR_FINAL = {
+    "pass":          "✓ pass",
+    "fail":          "✗ fail",
+    "indeterminate": "⊘ indeterminate",
+    "unknown":       "? no verdict",
+}
+
+
+def _final_status_for_result(result: ChildResult, out_root: Path) -> str:
+    """Map a child outcome to one of pass / fail / indeterminate / unknown."""
     if result.error is not None or result.run_id is None:
-        return "? error"
+        return "unknown"
     verdict = _read_verdict(out_root / result.run_id)
     if verdict is None:
-        return "? no verdict"
-    final = verdict.get("final", "?")
-    return {
-        "pass": "✓ pass",
-        "fail": "✗ fail",
-        "indeterminate": "⊘ indeterminate",
-    }.get(final, f"? {final}")
-
-
-def _tally_batch(batch_dir: Path, out_root: Path) -> dict[str, int]:
-    counts = {"pass": 0, "fail": 0, "indeterminate": 0, "skipped": 0, "unknown": 0}
-    for line in (batch_dir / "results.jsonl").read_text().splitlines():
-        rec = json.loads(line)
-        if rec.get("skipped"):
-            counts["skipped"] += 1
-            continue
-        verdict = _read_verdict(out_root / rec["run_id"]) if rec.get("run_id") else None
-        if verdict is None:
-            counts["unknown"] += 1
-            continue
-        counts[verdict.get("final", "unknown")] = counts.get(verdict.get("final", "unknown"), 0) + 1
-    return counts
+        return "unknown"
+    final = verdict.get("final", "unknown")
+    return final if final in ("pass", "fail", "indeterminate") else "unknown"
 ```
 
 - [ ] **Step 4: Run tests**
@@ -1281,10 +1310,10 @@ def render_batch(
         cells[key] = _GLYPHS.get(final, _GLYPHS["unknown"])
         counts[final] = counts.get(final, 0) + 1
 
-    # Width of the scenario column = longest scenario name.
+    # Column widths grow to fit content.
     scen_w = max((len(s) for s in scenarios), default=8)
     scen_w = max(scen_w, len("scenario"))
-    cell_w = 8  # accommodates "✓ pass", "⊘ indet", "— skip" etc.
+    cell_w = max([len(a) for a in agents] + [len("⊘ indet")])  # widest header or glyph
 
     sep = "|" + "-" * (scen_w + 2) + "|" + "|".join("-" * (cell_w + 2) for _ in agents) + "|"
     header = (
@@ -1359,6 +1388,19 @@ def test_resolve_target_returns_batch_dir_for_batch_id(tmp_path):
     assert resolved == batch_dir
 
 
+def test_resolve_target_returns_batch_dir_for_explicit_path(tmp_path):
+    """Explicit path to a batch dir must NOT trip the 'no verdict.json' check."""
+    from harness.show import resolve_target
+
+    out_root = tmp_path / "results-harness"
+    batch_dir = out_root / "batches" / "20260526T180000Z-abcd"
+    batch_dir.mkdir(parents=True)
+    (batch_dir / "batch.json").write_text("{}")
+
+    resolved = resolve_target(str(batch_dir), results_root=out_root)
+    assert resolved == batch_dir
+
+
 def test_is_batch_dir(tmp_path):
     from harness.show import is_batch_dir
 
@@ -1380,7 +1422,7 @@ Expected: FAIL — `is_batch_dir` not defined; `resolve_target` doesn't look und
 
 - [ ] **Step 3: Extend `show.py`**
 
-Add to `harness/show.py`:
+Add to `harness/show.py` (above `resolve_target`):
 
 ```python
 def is_batch_dir(path: Path) -> bool:
@@ -1388,17 +1430,32 @@ def is_batch_dir(path: Path) -> bool:
     return path.is_dir() and (path / "batch.json").exists()
 ```
 
-In `resolve_target` (around `harness/show.py:30`), add a lookup under `<results_root>/batches/<target>/` BEFORE the existing prefix-match logic:
+Modify `resolve_target` (`harness/show.py:30`) to recognize batch dirs in two places:
 
-```python
-    # Batch IDs: results-harness/batches/<id>/.
-    if target is not None:
-        batch_candidate = results_root / "batches" / target
-        if is_batch_dir(batch_candidate):
-            return batch_candidate
-```
+1. **Explicit path** — between the current Rule 1 (`target is None`) and Rule 2
+   (directory containing `verdict.json`). Add after `p = Path(target)`:
 
-(Place this right after the early `target is None` branch and the explicit path branch; consult the existing function and slot it in before the prefix-match fallback. Do not change the prefix-match behavior for run-dir lookups.)
+   ```python
+       # Batch dir (explicit path) — must precede the run-dir check, which
+       # would otherwise raise "no verdict.json in <p>" for a batch path.
+       if p.is_dir() and is_batch_dir(p):
+           return p
+   ```
+
+2. **Batch ID under `<results_root>/batches/<id>/`** — add inside the prefix-match
+   section, BEFORE the existing `Path.glob(f"{target}-*")` lookup. (Both Rules
+   require `results_root.is_dir()`, which has already been asserted at that
+   point in the function.)
+
+   ```python
+       # Batch ID lookup: results_root/batches/<target>/.
+       batch_candidate = results_root / "batches" / target
+       if is_batch_dir(batch_candidate):
+           return batch_candidate
+   ```
+
+   Do not change the existing run-dir prefix-match behavior. Update the
+   function docstring's rule list to mention the two new resolution rules.
 
 - [ ] **Step 4: Dispatch in the `show` command**
 
@@ -1474,27 +1531,43 @@ Co-Authored-By: Penric@eabdc077 (Opus 4.7)"
 
 ---
 
-## Task 9: End-to-end smoke test + docs
+## Task 9: Docs + end-to-end smoke test
 
 **Files:**
-- Test: `tests/harness/test_run_all_e2e.py` (new)
 - Modify: `README.md`, `CLAUDE.md`
+- Test: `tests/harness/test_run_all_e2e.py` (new)
 
-- [ ] **Step 1: Write an E2E smoke test**
+Docs go first so they ship even if the E2E is skipped (no API key).
+
+- [ ] **Step 1: Update CLAUDE.md**
+
+In `CLAUDE.md`, under the existing `## Harness commands` section, add two bullets:
+
+```markdown
+- **run all**: `uv run harness run-all [--coding-agents X,Y] [--jobs N]`
+- **show batch**: `uv run harness show <batch-id>` (matrix view)
+```
+
+- [ ] **Step 2: Update README.md (if it documents harness commands)**
+
+If `README.md` lists `harness run` / `harness show`, add `run-all` next to them with one short sentence: "Run every scenario × Coding-Agent pair filtered by the `# coding-agents:` directive."
+
+- [ ] **Step 3: Write an E2E smoke test**
 
 Create `tests/harness/test_run_all_e2e.py`:
 
 ```python
 """End-to-end smoke test for `harness run-all` against _smoke-hello-world.
 
-Marked `slow` so it can be excluded from the default test pass; explicitly
-run via `uv run pytest tests/harness/test_run_all_e2e.py`.
+Skipped unless ANTHROPIC_API_KEY is set; explicitly run via
+`uv run pytest tests/harness/test_run_all_e2e.py`.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -1510,11 +1583,14 @@ pytestmark = pytest.mark.skipif(
 def test_run_all_smoke_jobs_1(tmp_path):
     """`harness run-all --coding-agents claude --jobs 1` against _smoke-hello-world."""
     repo_root = Path(__file__).resolve().parents[2]
-    # Copy or symlink the existing scenario into a private scenarios root.
+    # Copy the scenario into a private scenarios root. shutil.copytree is
+    # used instead of symlink because symlinks need admin on Windows and
+    # the copy lets the test mutate scenario files without contaminating
+    # the repo.
     scenarios = tmp_path / "scenarios"
     scenarios.mkdir()
     src = repo_root / "harness" / "scenarios" / "_smoke-hello-world"
-    (scenarios / "_smoke-hello-world").symlink_to(src)
+    shutil.copytree(src, scenarios / "_smoke-hello-world")
 
     out_root = tmp_path / "results-harness"
     out_root.mkdir()
@@ -1545,23 +1621,10 @@ def test_run_all_smoke_jobs_1(tmp_path):
     assert records[0]["coding_agent"] == "claude"
 ```
 
-- [ ] **Step 2: Run the E2E (locally; CI may skip)**
+- [ ] **Step 4: Run the E2E (locally; CI may skip)**
 
 Run: `uv run pytest tests/harness/test_run_all_e2e.py -x -q`
 Expected: PASS (or skip when `ANTHROPIC_API_KEY` is absent).
-
-- [ ] **Step 3: Update CLAUDE.md**
-
-In `CLAUDE.md`, under the existing `## Harness commands` section, add a bullet:
-
-```markdown
-- **run all**: `uv run harness run-all [--coding-agents X,Y] [--jobs N]`
-- **show batch**: `uv run harness show <batch-id>` (matrix view)
-```
-
-- [ ] **Step 4: Update README.md (if it documents harness commands)**
-
-If `README.md` lists `harness run` / `harness show`, add `run-all` next to them with one short sentence: "Run every scenario × Coding-Agent pair filtered by the `# coding-agents:` directive."
 
 - [ ] **Step 5: Run the full suite one more time**
 
@@ -1572,7 +1635,7 @@ Expected: PASS.
 
 ```bash
 git add tests/harness/test_run_all_e2e.py README.md CLAUDE.md
-git commit -m "harness: \`run-all\` E2E smoke + docs
+git commit -m "harness: \`run-all\` docs + E2E smoke
 
 Co-Authored-By: Penric@eabdc077 (Opus 4.7)"
 ```

@@ -34,6 +34,10 @@ harness run-all [--coding-agents X[,Y,…]] [--jobs N]
 
 No `--scenarios-root`, no `--coding-agents-dir`. The Harness only runs against
 this repo; the paths are fixed (`harness/scenarios/`, `harness/coding-agents/`).
+(Implementation detail: these and `--out-root` exist as `hidden=True` Click
+options on `run-all` so unit and E2E tests can inject `tmp_path` fixtures.
+Hidden options don't appear in `--help` and are not part of the user-facing
+contract.)
 
 No `--fail-fast`, no `--repeat`, no `--filter` for scenarios. Deliberately out
 of scope (§7).
@@ -90,12 +94,16 @@ timestamps:
 {
   "schema_version": 1,
   "id": "20260526T180000Z-3f2a",
-  "started_at": "2026-05-26T18:00:00Z",
-  "finished_at": "2026-05-26T18:03:41Z",
+  "started_at": "2026-05-26T18:00:00+00:00",
+  "finished_at": "2026-05-26T18:03:41+00:00",
   "coding_agents": ["claude", "codex"],
   "jobs": 4
 }
 ```
+
+Timestamps use `datetime.isoformat()` on UTC-aware values (`+00:00` suffix).
+Most JSON consumers accept either `Z` or `+00:00`; pinning the produced form
+keeps tests deterministic.
 
 **`results.jsonl`** — one record per (scenario, agent) pair. The parent
 appends a line as each pair resolves (skipped pairs first, then runnable pairs
@@ -113,6 +121,11 @@ Schema:
 - `run_id`: the run-dir basename under `results-harness/`, or `null`.
 - `skipped`: present only when `run_id` is null. Currently always `"directive"`;
   reserved for future skip reasons.
+
+**Record order.** Skipped pairs are appended first (synchronously, at batch
+start). Runnable pairs are appended in completion order, which is matrix
+order under `--jobs 1` but non-deterministic under `--jobs N>1`. Consumers
+must not assume sort order; the matrix renderer sorts on read.
 
 **Status and reason are not stored in the batch file.** They live in
 `<results-harness>/<run-id>/verdict.json`, which is the single source of
