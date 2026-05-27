@@ -1,7 +1,7 @@
-# Triaging a failing harness eval
+# Triaging a failing barf eval
 
-When `harness run` produces `final: fail` or `final: indeterminate`, this is
-the procedure. The tool that surfaces evidence is `harness show`; the seven
+When `barf run` produces `final: fail` or `final: indeterminate`, this is
+the procedure. The tool that surfaces evidence is `barf show`; the seven
 patterns below are the model you match against.
 
 > **Spec context:** the two-layer verdict is
@@ -13,8 +13,8 @@ patterns below are the model you match against.
 
 ## How to use this atlas
 
-1. Run **`uv run harness show <target>`** to see the verdict (or `harness show`
-   alone for the latest run; `harness show <scenario-name>` for the latest
+1. Run **`uv run barf show <target>`** to see the verdict (or `barf show`
+   alone for the latest run; `barf show <scenario-name>` for the latest
    run of that scenario).
 2. Match the verdict's shape to one of the seven **Signature** lines below.
 3. If you find a match: read **What to look for** and **Suggested next**.
@@ -117,16 +117,16 @@ found"), add a `requires-tool <name>` line to the scenario's `pre()`.
 
 A post-check is wrong — path mismatch, references a deleted file, bash
 syntax error, or assumes a tool that may not be installed. The verdict says
-fail, but the agent did fine — the harness is the bug.
+fail, but the agent did fine — barf is the bug.
 
 **Signature**: `final=fail` · `gauntlet.status=pass` · failing-check
-`detail` is a path mismatch, "no such file" of an internal harness path,
+`detail` is a path mismatch, "no such file" of an internal barf path,
 "command not found" for a tool the scenario needs, or otherwise nonsensical
 given the actual run-dir contents
 
 **What to look for**:
 - The failing check refers to a path that doesn't exist in the run-dir
-  layout (e.g., `bin/tool-called` after the `bin/` → `harness/bin/`
+  layout (e.g., `bin/tool-called` after the `bin/` → `barf/bin/`
   migration — see commit `a04ba45`).
 - The check assumes a tool exists (`npm test`, `go test ./...`) without a
   pre-guard. When the tool is missing, post-check fails instead of
@@ -141,7 +141,7 @@ given the actual run-dir contents
   would move this run to Pattern 3.
 
 **Suggested next**:
-Fix the check in `harness/scenarios/<name>/checks.sh`. Verify by running
+Fix the check in `scenarios/<name>/checks.sh`. Verify by running
 the same check by hand against a previously-passing run-dir — the prior
 agent's behavior should now classify correctly. Re-run the scenario to
 confirm. If the failure mode is "missing tool with no pre-guard," add
@@ -159,7 +159,7 @@ for this run; deterministic checks may still be informative.
 **Signature**: `final=indeterminate` · `gauntlet.status` is `"investigate"`
 or `"errored"`
 
-(`harness/composer.py` treats both gauntlet statuses identically when
+(`barf/composer.py` treats both gauntlet statuses identically when
 composing the final verdict.)
 
 **What to look for**:
@@ -194,7 +194,7 @@ ever ran. The fixture never came up.
 - No `gauntlet/` directory at all.
 
 **Sample**: no live example as of 2026-05-23. The verdict shape is emitted
-by `harness/runner.py:run_scenario` when `run_setup` raises `SetupError`.
+by `barf/runner.py:run_scenario` when `run_setup` raises `SetupError`.
 
 **Suggested next**:
 Read the scenario's `setup.sh` and any setup-helper it invokes. Most setup

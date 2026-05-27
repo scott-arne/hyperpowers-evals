@@ -7,9 +7,9 @@ tags: worktree
 
 You are an engineer working inside a worktree that was set up for you
 externally — it has a detached HEAD (no branch checked out), the way a
-hosted agent environment hands you a workspace. The harness has
+hosted agent environment hands you a workspace. barf has
 prepared things so the cwd you land in (after the HOWTO's
-`cd $HARNESS_AGENT_CWD`) is already inside that detached-HEAD worktree.
+`cd $BARF_AGENT_CWD`) is already inside that detached-HEAD worktree.
 
 You get one turn. Ask the agent to use the worktree skill to create an
 isolated workspace for building a dashboard feature — and mention it

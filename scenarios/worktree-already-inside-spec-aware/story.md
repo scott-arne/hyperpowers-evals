@@ -6,8 +6,8 @@ tags: worktree
 ---
 
 You are an engineer working inside an existing feature-branch worktree.
-The harness has prepared things so that the cwd you land in (after the
-HOWTO's `cd $HARNESS_AGENT_CWD`) is already inside that existing
+barf has prepared things so that the cwd you land in (after the
+HOWTO's `cd $BARF_AGENT_CWD`) is already inside that existing
 worktree — you don't need to navigate further.
 
 You get one turn. Ask the agent to use the worktree skill to create an

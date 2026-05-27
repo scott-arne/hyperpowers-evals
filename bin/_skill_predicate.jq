@@ -1,4 +1,4 @@
-# harness/bin/_skill_predicate.jq
+# barf/bin/_skill_predicate.jq
 # Shared jq predicate: did this trace event invoke a superpowers Skill?
 #
 # Sourced via jq's -L include mechanism by the four skill-* tools

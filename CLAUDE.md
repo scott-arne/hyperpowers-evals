@@ -25,17 +25,17 @@ A run involves two LLMs: the **Gauntlet-Agent** (QA tester) and the
 
 - **install**: `uv sync --extra dev`
 - **test**: `uv run pytest`
-- **test single**: `uv run pytest tests/harness/test_runner.py -x -q`
+- **test single**: `uv run pytest tests/barf/test_runner.py -x -q`
 - **lint**: `uv run ruff check`
 - **format**: `uv run ruff format`
 - **typecheck**: `uv run ty check`
-- **validate scenarios**: `uv run harness check`
-- **run scenario**: `uv run harness run harness/scenarios/<name> --coding-agent <claude|codex>`
-- **list scenarios**: `uv run harness list`
-- **scaffold scenario**: `uv run harness new <name>`
-- **show verdict**: `uv run harness show [<target>]`
-- **run all**: `uv run harness run-all [--coding-agents X,Y] [--jobs N]`
-- **show batch**: `uv run harness show <batch-id>` (matrix view)
+- **validate scenarios**: `uv run barf check`
+- **run scenario**: `uv run barf run scenarios/<name> --coding-agent <claude|codex>`
+- **list scenarios**: `uv run barf list`
+- **scaffold scenario**: `uv run barf new <name>`
+- **show verdict**: `uv run barf show [<target>]`
+- **run all**: `uv run barf run-all [--coding-agents X,Y] [--jobs N]`
+- **show batch**: `uv run barf show <batch-id>` (matrix view)
 
 Per-coding-agent config: `harness/coding-agents/<name>.yaml`. Per-coding-agent HOWTO:
 `harness/coding-agent-contexts/<name>/`. Spec: `docs/superpowers/specs/2026-05-22-harness-model-design.md`.
@@ -44,44 +44,44 @@ Per-coding-agent config: `harness/coding-agents/<name>.yaml`. Per-coding-agent H
 
 **Harness (active):**
 
-- `harness/runner.py` — per-run orchestration: setup, pre-checks, Gauntlet drive, capture, post-checks, verdict.
-- `harness/checks.py` — sources `checks.sh`, runs `pre()`/`post()`, collects structured check records.
-- `harness/composer.py` — composes Gauntlet-Agent verdict + deterministic checks into `pass | fail | indeterminate`.
+- `barf/runner.py` — per-run orchestration: setup, pre-checks, Gauntlet drive, capture, post-checks, verdict.
+- `barf/checks.py` — sources `checks.sh`, runs `pre()`/`post()`, collects structured check records.
+- `barf/composer.py` — composes Gauntlet-Agent verdict + deterministic checks into `pass | fail | indeterminate`.
 - `harness/coding_agent_config.py` — per-Coding-Agent YAML loader and session-log config.
 - `harness/capture.py` — session-log snapshot/diff, normalized tool-call capture, token capture.
 - `harness/normalizers.py` — Coding-Agent session-log normalizers.
-- `harness/scaffold.py` — `harness new` / `harness check` implementation.
-- `harness/show.py` — verdict renderer for triage.
+- `harness/scaffold.py` — `barf new` / `barf check` implementation.
+- `barf/show.py` — verdict renderer for triage.
 - `harness/bin/` — check-tool vocabulary; tools emit one JSON record each.
-- `harness/scenarios/` — active scenarios, one directory each.
+- `scenarios/` — active scenarios, one directory each.
 - `setup_helpers/*.py` — fixture creators shared by Harness and legacy Drill.
 
 **Drill (legacy; frozen):**
 
 - `drill/`, `backends/`, top-level `scenarios/`, top-level `bin/`, and
   `prompts/` remain for legacy-result archaeology and eventual decommissioning.
-- Drill's sweep/compare ergonomics have not yet been replaced in the Harness;
+- Drill's sweep/compare ergonomics have not yet been replaced in barf;
   decide whether those are still needed before deleting Drill.
 
 ## Scenario Conventions
 
-- A Harness scenario is `harness/scenarios/<name>/{story.md,setup.sh,checks.sh}`.
+- A barf scenario is `scenarios/<name>/{story.md,setup.sh,checks.sh}`.
 - `story.md` briefs the Gauntlet-Agent and includes evidence-demanding ACs.
-- `setup.sh` builds the fixture using `$HARNESS_WORKDIR`; prefer
+- `setup.sh` builds the fixture using `$BARF_WORKDIR`; prefer
   `uv run setup-helpers run <helper>`.
 - `checks.sh` contains only `pre()` and `post()` function definitions.
 - `checks.sh` should not have the executable bit set.
 - Check tools run from the fixture workdir with `harness/bin/` on `PATH`.
-- Post-checks that need sibling run artifacts can use `$HARNESS_RUN_DIR`.
+- Post-checks that need sibling run artifacts can use `$BARF_RUN_DIR`.
 - Use `# coding-agents: <csv>` to restrict a scenario to specific agents.
 - Use `requires-tool <name>` in `pre()` for local toolchain dependencies.
 
 ## Triage
 
-Triaging a non-passing Harness run starts with:
+Triaging a non-passing barf run starts with:
 
 ```
-uv run harness show [<target>]
+uv run barf show [<target>]
 ```
 
 Then use `docs/superpowers/skills/triaging-a-failing-eval.md` for the
@@ -94,11 +94,11 @@ These are safe for CI and routine PRs:
 ```
 uv run ruff check
 uv run ty check
-uv run harness check
+uv run barf check
 uv run pytest
 ```
 
-Live `harness run ...` evals are trusted-maintainer operations only. They
+Live `barf run ...` evals are trusted-maintainer operations only. They
 launch agent CLIs in permissive modes and can capture sensitive transcripts,
 tool calls, filesystem state, and token data. Do not add live evals, API keys,
 or dangerous-mode launches to public CI.
@@ -110,7 +110,7 @@ ANTHROPIC_API_KEY=sk-...
 OPENAI_API_KEY=sk-...
 ```
 
-When this repo is checked out as `superpowers/evals`, the Harness defaults
+When this repo is checked out as `superpowers/evals`, barf defaults
 `SUPERPOWERS_ROOT` to the parent `superpowers` checkout. In a standalone
 `superpowers-evals` clone, export it explicitly:
 

@@ -2,10 +2,10 @@
 
 Scenario setup.sh scripts use this instead of an inline
 `uv run python -c "..."` block. Each named helper is looked up in
-HELPER_REGISTRY and invoked against $HARNESS_WORKDIR. Helpers that need
+HELPER_REGISTRY and invoked against $BARF_WORKDIR. Helpers that need
 a fixture template or the superpowers root receive them by signature
 introspection — `template_dir` and `superpowers_root` params are filled
-from $HARNESS_REPO_ROOT and $SUPERPOWERS_ROOT respectively.
+from $BARF_REPO_ROOT and $SUPERPOWERS_ROOT respectively.
 """
 
 from __future__ import annotations
@@ -19,9 +19,9 @@ from setup_helpers import HELPER_REGISTRY
 
 
 def _run(names: list[str]) -> int:
-    workdir_env = os.environ.get("HARNESS_WORKDIR")
+    workdir_env = os.environ.get("BARF_WORKDIR")
     if not workdir_env:
-        print("setup-helpers: HARNESS_WORKDIR is not set", file=sys.stderr)
+        print("setup-helpers: BARF_WORKDIR is not set", file=sys.stderr)
         return 1
     workdir = Path(workdir_env)
 
@@ -44,9 +44,9 @@ def _run(names: list[str]) -> int:
             return 1
         kwargs: dict[str, object] = {}
         if "template_dir" in params:
-            repo_root = os.environ.get("HARNESS_REPO_ROOT")
+            repo_root = os.environ.get("BARF_REPO_ROOT")
             if not repo_root:
-                print("setup-helpers: HARNESS_REPO_ROOT is not set", file=sys.stderr)
+                print("setup-helpers: BARF_REPO_ROOT is not set", file=sys.stderr)
                 return 1
             kwargs["template_dir"] = Path(repo_root) / "fixtures" / "template-repo"
         if "superpowers_root" in params:

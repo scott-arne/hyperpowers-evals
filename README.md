@@ -11,7 +11,7 @@ verification reflexes, review quality, and cost-shaping patterns.
 
 > **Legacy:** Drill — the previous tmux-based runner — is being removed. Its
 > usage notes are parked at [docs/drill-legacy.md](docs/drill-legacy.md) until
-> the code is deleted. New scenarios go through the Harness.
+> the code is deleted. New scenarios go through barf.
 
 ## Safety Model
 
@@ -24,7 +24,7 @@ The Harness has two very different execution modes:
   filesystem state, and session logs.
 
 Public CI must stay on the static/unit side of that line. Never add API keys,
-live `harness run …` invocations, or dangerous-mode agent launches to public
+live `barf run …` invocations, or dangerous-mode agent launches to public
 CI.
 
 ## Live Eval Risk
@@ -44,7 +44,7 @@ Run live evals only from a trusted local environment:
 
 - Export only the API key needed for the selected Coding-Agent.
 - Avoid running with broad production or personal secrets in the environment.
-- Treat `results-harness/`, raw session logs, and Gauntlet-Agent inputs as
+- Treat `results/`, raw session logs, and Gauntlet-Agent inputs as
   sensitive.
 - Do not commit or paste raw run artifacts without checking them first.
 
@@ -59,33 +59,33 @@ uv sync --extra dev
 Run one scenario:
 
 ```bash
-uv run harness run harness/scenarios/triggering-writing-plans --coding-agent claude
+uv run barf run scenarios/triggering-writing-plans --coding-agent claude
 ```
 
 List scenarios:
 
 ```bash
-uv run harness list
+uv run barf list
 ```
 
 Scaffold and validate a new scenario:
 
 ```bash
-uv run harness new my-new-scenario
-uv run harness check my-new-scenario
+uv run barf new my-new-scenario
+uv run barf check my-new-scenario
 ```
 
-`harness check` with no arguments validates every scenario.
+`barf check` with no arguments validates every scenario.
 
 Run the full matrix:
 
 ```bash
-uv run harness run-all --coding-agents claude,codex --jobs 2
+uv run barf run-all --coding-agents claude,codex --jobs 2
 ```
 
 `run-all` runs every scenario against every Coding-Agent, filtered by each
 scenario's `# coding-agents:` directive. View the resulting matrix with
-`uv run harness show <batch-id>`.
+`uv run barf show <batch-id>`.
 
 ## Canonical Actors
 
@@ -106,7 +106,7 @@ costs.
 
 ## Scenario Anatomy
 
-A scenario is a directory under `harness/scenarios/<name>/`:
+A scenario is a directory under `scenarios/<name>/`:
 
 ```text
 story.md    Gauntlet story — the QA agent's brief + acceptance criteria
@@ -185,7 +185,7 @@ The Harness produces a **three-valued verdict** — `pass | fail | indeterminate
 
 - `pass` — Gauntlet-Agent passed **and** every post-check passed.
 - `fail` — Gauntlet-Agent failed, or a post-check failed.
-- `indeterminate` — a pre-check failed (invalid fixture), Gauntlet-Agent returned `investigate`, the capture was empty while a trace check was present, or the Harness itself errored. An `indeterminate` run is not a finding — it is a signal that the run did not execute cleanly.
+- `indeterminate` — a pre-check failed (invalid fixture), Gauntlet-Agent returned `investigate`, the capture was empty while a trace check was present, or barf itself errored. An `indeterminate` run is not a finding — it is a signal that the run did not execute cleanly.
 
 The structured `verdict.json` (schema v1) contains:
 
@@ -193,17 +193,17 @@ The structured `verdict.json` (schema v1) contains:
 - `checks` layer — an array of records from `pre()` and `post()`, each with `check`, `args`, `negated`, `passed`, `detail`, `phase`.
 - `final` — the composed `pass | fail | indeterminate`.
 - `final_reason` — a human-readable explanation of the verdict.
-- `error` — present if the Harness itself threw; includes `stage` and `message`.
+- `error` — present if barf itself threw; includes `stage` and `message`.
 
 **Exit codes:** 0 = pass, 1 = fail, 2 = indeterminate.
 
 ## Run Directory Layout
 
-Each run produces one directory under `results-harness/`, with every entry
+Each run produces one directory under `results/`, with every entry
 prefixed by the actor it belongs to:
 
 ```text
-results-harness/<scenario>-<coding-agent>-<timestamp>/
+results/<scenario>-<coding-agent>-<timestamp>/
 ├── verdict.json                     the composed result — the front door
 ├── gauntlet-agent/                  the Gauntlet-Agent's evidence
 │   └── results/<runId>/
@@ -217,7 +217,7 @@ results-harness/<scenario>-<coding-agent>-<timestamp>/
 └── coding-agent-token-usage.json    the Coding-Agent's token cost
 ```
 
-`results-harness/` is gitignored because run artifacts can contain sensitive
+`results/` is gitignored because run artifacts can contain sensitive
 transcripts.
 
 ## Coding-Agents
@@ -233,7 +233,7 @@ CLI and shared across scenarios.
 | `claude` | Claude Code | `ANTHROPIC_API_KEY`, `SUPERPOWERS_ROOT` |
 | `codex` | Codex CLI | `OPENAI_API_KEY`, `SUPERPOWERS_ROOT` |
 
-When this repo is checked out as `superpowers/evals`, the Harness defaults
+When this repo is checked out as `superpowers/evals`, barf defaults
 `SUPERPOWERS_ROOT` to the parent `superpowers` checkout. In a standalone
 `superpowers-evals` clone, set it explicitly:
 
@@ -245,16 +245,16 @@ Use a different `SUPERPOWERS_ROOT` when running RED/GREEN comparisons against
 modified superpowers skill text.
 
 Note: Gauntlet's own `gauntlet` CLI preserves its `--target <binary>` flag for
-selecting the TUI adapter binary; the Harness's `--coding-agent` flag is a
+selecting the TUI adapter binary; barf's `--coding-agent` flag is a
 separate, higher-level concept that selects the agent config.
 
 ## How a Run Works
 
-A `harness run` drives one scenario against one Coding-Agent:
+A `barf run` drives one scenario against one Coding-Agent:
 
 1. **Coding-Agent config** — `harness/coding-agents/<name>.yaml` is parsed and
    its required env vars validated.
-2. **Run dir** — a per-run directory is created under `results-harness/`. It
+2. **Run dir** — a per-run directory is created under `results/`. It
    doubles as Gauntlet's `--state-dir` root and the evidence root.
 3. **Isolation** — a fresh per-run agent-config dir (`CLAUDE_CONFIG_DIR` for
    Claude, `CODEX_HOME` for Codex) is seeded from a skeleton, so the
@@ -280,7 +280,7 @@ A `harness run` drives one scenario against one Coding-Agent:
 
 ## Writing a Scenario
 
-1. `uv run harness new <name>` stamps a structurally-valid skeleton.
+1. `uv run barf new <name>` stamps a structurally-valid skeleton.
 2. Write `story.md`: brief the Gauntlet-Agent on the role it plays, the exact
    message to send the Coding-Agent, and when it is done — plus
    evidence-demanding acceptance criteria. Follow the
@@ -291,12 +291,12 @@ A `harness run` drives one scenario against one Coding-Agent:
    `setup_helpers/__init__.py`.
 4. Write `checks.sh` with `pre()` and `post()` functions using the
    `harness/bin/` vocabulary. No exec bit.
-5. `uv run harness check <name>` to validate structure, then run it against a
+5. `uv run barf check <name>` to validate structure, then run it against a
    Coding-Agent.
 
-Setup scripts run with `$HARNESS_WORKDIR` pointing at the fixture workdir.
+Setup scripts run with `$BARF_WORKDIR` pointing at the fixture workdir.
 Check tools run from the fixture workdir with `harness/bin/` on `PATH`.
-Post-checks that need sibling run artifacts can use `$HARNESS_RUN_DIR`.
+Post-checks that need sibling run artifacts can use `$BARF_RUN_DIR`.
 
 ## Refreshing the Claude Skeleton
 
@@ -331,15 +331,15 @@ These are the checks expected in CI and on routine PRs:
 ```bash
 uv run ruff check
 uv run ty check
-uv run harness check
+uv run barf check
 uv run pytest
 ```
 
 ## Project Map
 
 ```text
-harness/                Harness CLI and runtime
-  cli.py                `harness run`, `list`, `new`, `check`
+harness/                barf CLI and runtime
+  cli.py                `barf run`, `list`, `new`, `check`
   runner.py             per-run orchestration (one scenario, one coding-agent)
   coding_agent_config.py  per-coding-agent YAML loader
   setup_step.py         runs scenario setup.sh
@@ -347,7 +347,7 @@ harness/                Harness CLI and runtime
   capture.py            session-log snapshot/diff + token capture
   normalizers.py        per-coding-agent session-log normalization
   composer.py           three-valued verdict from gauntlet + checks layers
-  scaffold.py           `harness new` / `harness check`
+  scaffold.py           `barf new` / `barf check`
   token_usage.py        per-coding-agent token-usage parsing
   bin/                  check-tool vocabulary (_record, file-exists, file-contains,
                         command-succeeds, git-repo, git-branch, git-clean, git-count,
@@ -359,7 +359,7 @@ harness/                Harness CLI and runtime
 setup_helpers/          scenario fixture builders + `setup-helpers` CLI (shared)
 fixtures/               static repo fixtures + agent-config skeletons (shared)
 docs/                   design notes, migration spec, testing protocols
-tests/                  pytest suite (tests/harness/ covers the harness)
+tests/                  pytest suite (tests/barf/ covers barf)
 ```
 
 Drill's tree (`drill/`, `backends/`, `prompts/`, `scenarios/`, top-level `bin/`)
@@ -368,7 +368,7 @@ removal.
 
 ## Triage
 
-Triaging a non-passing run: `uv run harness show [<target>]` and see
+Triaging a non-passing run: `uv run barf show [<target>]` and see
 [docs/superpowers/skills/triaging-a-failing-eval.md](docs/superpowers/skills/triaging-a-failing-eval.md)
 for the attribution atlas.
 

@@ -5,21 +5,21 @@ AI agent; what appears on screen is its work.
 
 ## Launch Codex with one command
 
-Your bash starts in a scratch directory, NOT the workdir the harness
+Your bash starts in a scratch directory, NOT the workdir barf
 prepared. You MUST cd into the workdir before launching codex, and you
 MUST set CODEX_HOME and the bypass flag. The simplest way to avoid
 skipping any of these is to type **this one line, verbatim** as your
 first action:
 
 ```
-cd "$HARNESS_AGENT_CWD" && CODEX_HOME="$CODEX_HOME" codex --dangerously-bypass-approvals-and-sandbox
+cd "$BARF_AGENT_CWD" && CODEX_HOME="$CODEX_HOME" codex --dangerously-bypass-approvals-and-sandbox
 ```
 
-`HARNESS_AGENT_CWD` is set in the inherited environment by the harness.
+`BARF_AGENT_CWD` is set in the inherited environment by barf.
 The `CODEX_HOME` value is burned into this HOWTO at runtime — it points
 at a per-run isolated config dir so no user-installed Codex plugins or
 prior sessions affect this run. Splitting this into multiple commands,
-or shortening it to a bare `codex`, will cause the harness to discard
+or shortening it to a bare `codex`, will cause barf to discard
 the run as misconfigured.
 
 For superpowers tool-mapping scenarios that use the legacy `.agents`

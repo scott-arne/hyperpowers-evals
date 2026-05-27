@@ -5,14 +5,14 @@ itself an AI agent; what appears on screen is its work.
 
 ## First: cd into the scenario's prepared workdir
 
-Your bash starts in a scratch directory, NOT the workdir the harness
+Your bash starts in a scratch directory, NOT the workdir barf
 prepared. Always start with:
 
 ```
-cd "$HARNESS_AGENT_CWD"
+cd "$BARF_AGENT_CWD"
 ```
 
-`HARNESS_AGENT_CWD` is set in the inherited environment by the harness.
+`BARF_AGENT_CWD` is set in the inherited environment by barf.
 It points at the git repo the setup step prepared.
 
 ## Invocation
@@ -24,8 +24,8 @@ CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" claude --dangerously-skip-permissions --p
 ```
 
 The `CLAUDE_CONFIG_DIR` and `SUPERPOWERS_ROOT` values are burned into
-this HOWTO at runtime by the harness — they look like env-var refs but
-the harness has already substituted absolute paths. tmux strips arbitrary
+this HOWTO at runtime by barf — they look like env-var refs but
+barf has already substituted absolute paths. tmux strips arbitrary
 env from new sessions, which is why we don't rely on inheritance.
 
 `CLAUDE_CONFIG_DIR` points at a per-run isolated `.claude` dir (seeded
