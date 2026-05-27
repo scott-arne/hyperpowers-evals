@@ -372,6 +372,9 @@ Triaging a non-passing run: `uv run harness show [<target>]` and see
 [docs/superpowers/skills/triaging-a-failing-eval.md](docs/superpowers/skills/triaging-a-failing-eval.md)
 for the attribution atlas.
 
+For the current known-good baseline (what counts as a clean batch on
+this commit, per backend), see [docs/baselines/](docs/baselines/).
+
 ## Contribution Rules
 
 This repo inherits the quality bar of `superpowers`.
