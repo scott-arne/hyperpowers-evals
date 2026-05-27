@@ -63,8 +63,7 @@ def _run(
     session_log_dir.mkdir(parents=True, exist_ok=True)
     _make_coding_agent(coding_agents_dir, coding_agent, session_log_dir)
 
-    contexts_dir = tmp_path / "contexts"
-    (contexts_dir / coding_agent).mkdir(parents=True, exist_ok=True)
+    (coding_agents_dir / f"{coding_agent}-context").mkdir(parents=True, exist_ok=True)
 
     skeleton_root = tmp_path / "fixtures"
     skeleton_root.mkdir(exist_ok=True)
@@ -75,7 +74,6 @@ def _run(
         scenario_dir=scenario_dir,
         coding_agent=coding_agent,
         coding_agents_dir=coding_agents_dir,
-        coding_agent_contexts_dir=contexts_dir,
         out_root=out_root,
         skeleton_root=skeleton_root,
     )
@@ -121,8 +119,7 @@ class TestCodingAgentGating:
         session_log_dir = tmp_path / "session-logs"
         session_log_dir.mkdir(parents=True, exist_ok=True)
         _make_coding_agent(coding_agents_dir, "claude", session_log_dir)
-        contexts_dir = tmp_path / "contexts"
-        (contexts_dir / "claude").mkdir(parents=True, exist_ok=True)
+        (coding_agents_dir / "claude-context").mkdir(parents=True, exist_ok=True)
         skeleton_root = tmp_path / "fixtures"
         skeleton_root.mkdir(exist_ok=True)
 
@@ -131,7 +128,6 @@ class TestCodingAgentGating:
                 scenario_dir=scen,
                 coding_agent="claude",
                 coding_agents_dir=coding_agents_dir,
-                coding_agent_contexts_dir=contexts_dir,
                 out_root=out_root,
                 skeleton_root=skeleton_root,
             )

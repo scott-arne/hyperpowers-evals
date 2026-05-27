@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 
-BIN = Path("harness/bin").resolve()
+BIN = Path("bin").resolve()
 
 def _run(*args: str, cwd: Path, sink: Path) -> int:
     return subprocess.run([str(BIN/"not"), *args], cwd=cwd,

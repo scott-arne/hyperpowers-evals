@@ -25,11 +25,8 @@ from harness.show import (
     resolve_target,
 )
 
-# TODO(phase-3): when drill is decommissioned, scenarios move to top-level
-# scenarios/ and coding-agent-contexts/coding-agents/ may relocate.
-_DEFAULT_SCENARIOS_ROOT = Path("harness/scenarios")
-_DEFAULT_CODING_AGENTS_DIR = Path("harness/coding-agents")
-_DEFAULT_CODING_AGENT_CONTEXTS_DIR = Path("harness/coding-agent-contexts")
+_DEFAULT_SCENARIOS_ROOT = Path("scenarios")
+_DEFAULT_CODING_AGENTS_DIR = Path("coding-agents")
 _DEFAULT_OUT_ROOT = Path("results-harness")
 
 
@@ -45,16 +42,11 @@ def main() -> None:
 )
 @click.option(
     "--coding-agent", required=True,
-    help="Coding-Agent name (matches harness/coding-agents/<name>.yaml)",
+    help="Coding-Agent name (matches coding-agents/<name>.yaml)",
 )
 @click.option(
     "--coding-agents-dir",
     default=_DEFAULT_CODING_AGENTS_DIR,
-    type=click.Path(path_type=Path),
-)
-@click.option(
-    "--coding-agent-contexts-dir",
-    default=_DEFAULT_CODING_AGENT_CONTEXTS_DIR,
     type=click.Path(path_type=Path),
 )
 @click.option(
@@ -66,7 +58,6 @@ def run(
     scenario_dir: Path,
     coding_agent: str,
     coding_agents_dir: Path,
-    coding_agent_contexts_dir: Path,
     out_root: Path,
 ) -> None:
     """Run one scenario against one Coding-Agent."""
@@ -76,14 +67,12 @@ def run(
     # inside setup.sh invocations.
     scenario_dir = scenario_dir.resolve()
     coding_agents_dir = coding_agents_dir.resolve()
-    coding_agent_contexts_dir = coding_agent_contexts_dir.resolve()
     out_root.mkdir(parents=True, exist_ok=True)
     out_root = out_root.resolve()
     run_dir, verdict = run_scenario(
         scenario_dir=scenario_dir,
         coding_agent=coding_agent,
         coding_agents_dir=coding_agents_dir,
-        coding_agent_contexts_dir=coding_agent_contexts_dir,
         out_root=out_root,
     )
     # Machine-readable line for `harness run-all` to parse. Printed
@@ -262,7 +251,7 @@ def show(
 @main.command("run-all")
 @click.option(
     "--coding-agents", "coding_agents_csv", default=None,
-    help="CSV filter, e.g. claude,codex. Default: every YAML in harness/coding-agents/.",
+    help="CSV filter, e.g. claude,codex. Default: every YAML in coding-agents/.",
 )
 @click.option(
     "--jobs", "jobs", default=1, type=click.IntRange(min=1),

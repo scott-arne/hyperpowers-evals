@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 
-BIN = Path("harness/bin").resolve()
+BIN = Path("bin").resolve()
 
 def _repo(tmp_path: Path) -> Path:
     p = tmp_path / "r"

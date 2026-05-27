@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 
-HELPER = Path("harness/bin/_record").resolve()
+HELPER = Path("bin/_record").resolve()
 
 def _run(snippet: str, sink: Path) -> subprocess.CompletedProcess:
     """Run a bash snippet with the helper sourced and HARNESS_RECORD_SINK set."""

@@ -61,8 +61,8 @@ class RunnerError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 def _harness_bin_dir() -> Path:
-    """Return the harness/bin/ directory (where check tools live)."""
-    return Path(__file__).resolve().parent / "bin"
+    """Return the repo's bin/ directory (where check tools live)."""
+    return Path(__file__).resolve().parent.parent / "bin"
 
 
 def _allocate_run_dir(*, out_root: Path, scenario_name: str, coding_agent: str) -> Path:
@@ -162,7 +162,7 @@ def _seed_agent_config_dir(
     process.cwd(), which is symlink-resolved on macOS) so the workspace-
     trust dialog stays off-screen. The claude skeleton itself carries
     onboarding / API-key dialog-bypass state (see
-    bin/refresh-skeleton-claude-home).
+    bin/refresh-claude-home-skeleton).
 
     For codex, _seed_codex_auth runs `codex login --with-api-key` against
     the fresh dir so the agent boots past the "Welcome to Codex / Sign in"
@@ -170,7 +170,7 @@ def _seed_agent_config_dir(
     plugin hook — the codex equivalent of the Superpowers access every
     claude run gets.
     """
-    skeleton = skeleton_root / f"skeleton-{coding_agent.name}-home"
+    skeleton = skeleton_root / f"{coding_agent.name}-home-skeleton"
     seeded = skeleton.exists()
     if seeded:
         shutil.copytree(skeleton, dest)
@@ -262,7 +262,7 @@ def _build_gauntlet_layer_from_run_dir(run_dir: Path) -> GauntletLayer | None:
 
 
 def _harness_repo_root() -> Path:
-    """Return the harness checkout root (where fixtures/, bin/, etc. live).
+    """Return the repo root (where bin/, scenarios/, coding-agents/ live).
 
     Resolved from this module's location: harness/runner.py → ../.
     """
@@ -316,12 +316,15 @@ def invoke_gauntlet(
 
 
 def _populate_context_dir(
-    contexts_dir: Path,
+    coding_agents_dir: Path,
     coding_agent: str,
     run_dir: Path,
     substitutions: dict[str, str] | None = None,
 ) -> None:
     """Copy per-coding-agent HOWTOs into <run-dir>/gauntlet-agent/context/.
+
+    Per-agent context lives at `<coding_agents_dir>/<name>-context/` alongside
+    the agent's YAML config and home-skeleton.
 
     `substitutions` maps placeholders (e.g. `$HARNESS_AGENT_CWD`) to literal
     values. Applied to every text file via plain string replace. This is the
@@ -334,7 +337,7 @@ def _populate_context_dir(
     `tmux new-session` so user env vars actually reach the agent's shell.
     When that lands, this templating becomes unnecessary.
     """
-    src = contexts_dir / coding_agent
+    src = coding_agents_dir / f"{coding_agent}-context"
     dst = run_dir / "gauntlet-agent" / "context"
     dst.mkdir(parents=True, exist_ok=True)
     subs = substitutions or {}
@@ -378,7 +381,6 @@ def _run_scenario_inner(
     scenario_dir: Path,
     coding_agent: str,
     coding_agents_dir: Path,
-    coding_agent_contexts_dir: Path,
     out_root: Path,
     skeleton_root: Path | None = None,
 ) -> tuple[Path, FinalVerdict]:
@@ -422,7 +424,7 @@ def _run_scenario_inner(
     agent_config_dir = run_dir / CODING_AGENT_CONFIG_SUBDIR
     _seed_agent_config_dir(
         tcfg,
-        skeleton_root=skeleton_root or (_harness_repo_root() / "fixtures"),
+        skeleton_root=skeleton_root or (_harness_repo_root() / "coding-agents"),
         dest=agent_config_dir,
         workdir=workdir,
     )
@@ -462,7 +464,7 @@ def _run_scenario_inner(
     #    relying on env-var inheritance. See _populate_context_dir
     #    docstring.
     _populate_context_dir(
-        coding_agent_contexts_dir,
+        coding_agents_dir,
         coding_agent,
         run_dir,
         substitutions={
@@ -589,7 +591,6 @@ def run_scenario(
     scenario_dir: Path,
     coding_agent: str,
     coding_agents_dir: Path,
-    coding_agent_contexts_dir: Path,
     out_root: Path,
     skeleton_root: Path | None = None,
 ) -> tuple[Path, FinalVerdict]:
@@ -612,7 +613,6 @@ def run_scenario(
             scenario_dir=scenario_dir,
             coding_agent=coding_agent,
             coding_agents_dir=coding_agents_dir,
-            coding_agent_contexts_dir=coding_agent_contexts_dir,
             out_root=out_root,
             skeleton_root=skeleton_root,
         )

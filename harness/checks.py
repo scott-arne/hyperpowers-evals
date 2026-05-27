@@ -6,7 +6,7 @@ Harness invokes one phase at a time:
 
     bash -c 'source <checks.sh>; <phase>'
 
-with cwd=<workdir>, PATH prepending harness/bin/, and HARNESS_RECORD_SINK
+with cwd=<workdir>, PATH prepending bin/, and HARNESS_RECORD_SINK
 pointing at a fresh JSONL file. Each check tool emits one record; this module
 parses the records and returns CheckRecord values. The phase is stamped here.
 

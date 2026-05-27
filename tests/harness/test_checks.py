@@ -28,7 +28,7 @@ def test_run_phase_collects_records(tmp_path: Path):
     )
     records, exit_code = run_phase(
         checks_sh=checks_sh, phase="post", workdir=workdir,
-        harness_bin=Path("harness/bin").resolve(),
+        harness_bin=Path("bin").resolve(),
     )
     assert exit_code == 0
     assert len(records) == 2
@@ -43,7 +43,7 @@ def test_run_phase_nonzero_exit_signals_crash(tmp_path: Path):
     checks_sh.write_text("pre() { :; }\npost() { undefined_function_blam; }\n")
     records, exit_code = run_phase(
         checks_sh=checks_sh, phase="post", workdir=workdir,
-        harness_bin=Path("harness/bin").resolve(),
+        harness_bin=Path("bin").resolve(),
     )
     assert exit_code != 0
 
@@ -65,7 +65,7 @@ def test_run_phase_crash_after_record_still_reports_crash(tmp_path: Path):
     )
     records, exit_code = run_phase(
         checks_sh=checks_sh, phase="post", workdir=workdir,
-        harness_bin=Path("harness/bin").resolve(),
+        harness_bin=Path("bin").resolve(),
     )
     # The file-exists record was emitted before the crash. Old code:
     # exit_code = 0 here. New code: exit_code reflects the 127.
@@ -85,7 +85,7 @@ def test_run_phase_tool_failure_does_not_look_like_crash(tmp_path: Path):
     checks_sh.write_text("pre() { :; }\npost() { file-exists 'missing.md'; }\n")
     records, exit_code = run_phase(
         checks_sh=checks_sh, phase="post", workdir=workdir,
-        harness_bin=Path("harness/bin").resolve(),
+        harness_bin=Path("bin").resolve(),
     )
     assert exit_code == 0
     assert len(records) == 1 and not records[0].passed
@@ -107,7 +107,7 @@ def test_run_phase_exports_harness_run_dir(tmp_path: Path):
     )
     records, exit_code = run_phase(
         checks_sh=checks_sh, phase="post", workdir=workdir,
-        harness_bin=Path("harness/bin").resolve(),
+        harness_bin=Path("bin").resolve(),
         run_dir=run_dir,
     )
     assert exit_code == 0
@@ -126,7 +126,7 @@ def test_run_phase_omits_harness_run_dir_when_none(tmp_path: Path):
     )
     records, exit_code = run_phase(
         checks_sh=checks_sh, phase="post", workdir=workdir,
-        harness_bin=Path("harness/bin").resolve(),
+        harness_bin=Path("bin").resolve(),
     )
     assert exit_code == 0
     assert len(records) == 1 and records[0].passed

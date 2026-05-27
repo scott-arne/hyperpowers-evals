@@ -91,7 +91,7 @@ class TestSeedAgentConfigDir:
         assert list(dest.iterdir()) == []
 
     def test_copies_skeleton_and_injects_workdir_trust_for_claude(self, tmp_path):
-        skel = tmp_path / "skeleton-claude-home"
+        skel = tmp_path / "claude-home-skeleton"
         skel.mkdir()
         (skel / ".claude.json").write_text(json.dumps({"hasCompletedOnboarding": True}))
         workdir = tmp_path / "workdir"
@@ -109,7 +109,7 @@ class TestSeedAgentConfigDir:
     def test_non_claude_target_skips_trust_injection(self, tmp_path):
         # Codex gets no .claude.json trust injection (that is claude-only);
         # codex auth + plugin-hook seeding are stubbed (own tests below).
-        skel = tmp_path / "skeleton-codex-home"
+        skel = tmp_path / "codex-home-skeleton"
         skel.mkdir()
         (skel / "config.toml").write_text("[features]\nplugins = true\n")
         dest = tmp_path / "agent-config"
@@ -202,9 +202,8 @@ class TestRunScenario:
         sd = _make_scenario(scenarios_dir, "x", with_checks=False)
         # Add checks.sh manually (with_checks=False skips it; add one that passes trivially)
         (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
-        coding_agent_contexts_dir = tmp_path / "contexts"
-        (coding_agent_contexts_dir / "claude").mkdir(parents=True)
-        (coding_agent_contexts_dir / "claude" / "HOWTO.md").write_text("invoke `claude`")
+        (coding_agents_dir / "claude-context").mkdir(parents=True)
+        (coding_agents_dir / "claude-context" / "HOWTO.md").write_text("invoke `claude`")
         out_root = tmp_path / "results"
 
         with patch("harness.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass):
@@ -212,7 +211,6 @@ class TestRunScenario:
                 scenario_dir=sd,
                 coding_agent="claude",
                 coding_agents_dir=coding_agents_dir,
-                coding_agent_contexts_dir=coding_agent_contexts_dir,
                 out_root=out_root,
                 skeleton_root=_empty_skeleton(tmp_path),
             )
@@ -232,8 +230,7 @@ class TestRunScenario:
         _make_coding_agent(coding_agents_dir, "claude", session_log_dir)
         # checks.sh post() always fails (file doesn't exist)
         sd = _make_scenario(scenarios_dir, "x", checks_pass=False)
-        coding_agent_contexts_dir = tmp_path / "contexts"
-        (coding_agent_contexts_dir / "claude").mkdir(parents=True)
+        (coding_agents_dir / "claude-context").mkdir(parents=True)
         out_root = tmp_path / "results"
 
         with patch("harness.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass):
@@ -241,7 +238,6 @@ class TestRunScenario:
                 scenario_dir=sd,
                 coding_agent="claude",
                 coding_agents_dir=coding_agents_dir,
-                coding_agent_contexts_dir=coding_agent_contexts_dir,
                 out_root=out_root,
                 skeleton_root=_empty_skeleton(tmp_path),
             )
@@ -260,8 +256,7 @@ class TestRunScenario:
         _make_coding_agent(coding_agents_dir, "claude", session_log_dir)
         sd = _make_scenario(scenarios_dir, "x")
         _exec(sd / "setup.sh", "#!/usr/bin/env bash\nexit 9\n")
-        coding_agent_contexts_dir = tmp_path / "contexts"
-        (coding_agent_contexts_dir / "claude").mkdir(parents=True)
+        (coding_agents_dir / "claude-context").mkdir(parents=True)
         out_root = tmp_path / "results"
 
         with patch("harness.runner.invoke_gauntlet") as mock_g:
@@ -269,7 +264,6 @@ class TestRunScenario:
                 scenario_dir=sd,
                 coding_agent="claude",
                 coding_agents_dir=coding_agents_dir,
-                coding_agent_contexts_dir=coding_agent_contexts_dir,
                 out_root=out_root,
                 skeleton_root=_empty_skeleton(tmp_path),
             )
@@ -295,8 +289,7 @@ class TestRunScenario:
         (sd / "checks.sh").write_text(
             "pre() { :; }\npost() { tool-called Edit; }\n"
         )
-        coding_agent_contexts_dir = tmp_path / "contexts"
-        (coding_agent_contexts_dir / "claude").mkdir(parents=True)
+        (coding_agents_dir / "claude-context").mkdir(parents=True)
         out_root = tmp_path / "results"
 
         with patch("harness.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass):
@@ -304,7 +297,6 @@ class TestRunScenario:
                 scenario_dir=sd,
                 coding_agent="claude",
                 coding_agents_dir=coding_agents_dir,
-                coding_agent_contexts_dir=coding_agent_contexts_dir,
                 out_root=out_root,
                 skeleton_root=_empty_skeleton(tmp_path),
             )
@@ -328,8 +320,7 @@ class TestRunScenario:
             'sib="${HARNESS_WORKDIR}-sibling"\nmkdir -p "$sib"\n'
             'echo "$sib" > "${HARNESS_WORKDIR}/.harness-launch-cwd"\n',
         )
-        coding_agent_contexts_dir = tmp_path / "contexts"
-        (coding_agent_contexts_dir / "claude").mkdir(parents=True)
+        (coding_agents_dir / "claude-context").mkdir(parents=True)
         out_root = tmp_path / "results"
         captured: dict[str, Path] = {}
 
@@ -343,7 +334,6 @@ class TestRunScenario:
                 scenario_dir=sd,
                 coding_agent="claude",
                 coding_agents_dir=coding_agents_dir,
-                coding_agent_contexts_dir=coding_agent_contexts_dir,
                 out_root=out_root,
                 skeleton_root=_empty_skeleton(tmp_path),
             )
@@ -357,8 +347,7 @@ class TestRunScenario:
         session_log_dir.mkdir()
         _make_coding_agent(coding_agents_dir, "claude", session_log_dir)
         sd = _make_scenario(scenarios_dir, "x")
-        coding_agent_contexts_dir = tmp_path / "contexts"
-        cd_claude = coding_agent_contexts_dir / "claude"
+        cd_claude = coding_agents_dir / "claude-context"
         cd_claude.mkdir(parents=True)
         (cd_claude / "HOWTO.md").write_text("invoke `claude --foo`")
         (cd_claude / "extra.md").write_text("extra context")
@@ -369,7 +358,6 @@ class TestRunScenario:
                 scenario_dir=sd,
                 coding_agent="claude",
                 coding_agents_dir=coding_agents_dir,
-                coding_agent_contexts_dir=coding_agent_contexts_dir,
                 out_root=out_root,
                 skeleton_root=_empty_skeleton(tmp_path),
             )
@@ -390,8 +378,7 @@ class TestRunScenario:
         session_log_dir.mkdir()
         _make_coding_agent(coding_agents_dir, "claude", session_log_dir)
         sd = _make_scenario(scenarios_dir, "x")
-        coding_agent_contexts_dir = tmp_path / "contexts"
-        cd_claude = coding_agent_contexts_dir / "claude"
+        cd_claude = coding_agents_dir / "claude-context"
         cd_claude.mkdir(parents=True)
         (cd_claude / "HOWTO.md").write_text(
             'cd "$HARNESS_AGENT_CWD"\n'
@@ -404,7 +391,6 @@ class TestRunScenario:
                 scenario_dir=sd,
                 coding_agent="claude",
                 coding_agents_dir=coding_agents_dir,
-                coding_agent_contexts_dir=coding_agent_contexts_dir,
                 out_root=out_root,
                 skeleton_root=_empty_skeleton(tmp_path),
             )
@@ -434,8 +420,7 @@ class TestRunScenario:
         _make_coding_agent(coding_agents_dir, "claude", session_log_dir)
         sd = _make_scenario(scenarios_dir, "x", with_checks=False)
         (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
-        coding_agent_contexts_dir = tmp_path / "contexts"
-        (coding_agent_contexts_dir / "claude").mkdir(parents=True)
+        (coding_agents_dir / "claude-context").mkdir(parents=True)
         out_root = tmp_path / "results"
 
         from harness.composer import FinalVerdict
@@ -449,7 +434,6 @@ class TestRunScenario:
                 scenario_dir=sd,
                 coding_agent="claude",
                 coding_agents_dir=coding_agents_dir,
-                coding_agent_contexts_dir=coding_agent_contexts_dir,
                 out_root=out_root,
                 skeleton_root=_empty_skeleton(tmp_path),
             )

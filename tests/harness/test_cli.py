@@ -36,7 +36,6 @@ def test_run_invokes_run_scenario(tmp_path):
             "run", str(sd),
             "--coding-agent", "claude",
             "--coding-agents-dir", str(tmp_path / "t"),
-            "--coding-agent-contexts-dir", str(tmp_path / "c"),
             "--out-root", str(tmp_path / "out"),
         ])
         assert result.exit_code == 0
@@ -98,14 +97,12 @@ def test_run_resolves_relative_paths_to_absolute(tmp_path, monkeypatch):
             "run", "scenarios/x",  # RELATIVE path
             "--coding-agent", "claude",
             "--coding-agents-dir", "t",
-            "--coding-agent-contexts-dir", "c",
             "--out-root", "out",
         ])
         assert result.exit_code == 0
         call = mock.call_args
         # Every path passed to run_scenario must be absolute.
-        for key in ("scenario_dir", "coding_agents_dir", "coding_agent_contexts_dir",
-                    "out_root"):
+        for key in ("scenario_dir", "coding_agents_dir", "out_root"):
             value = call.kwargs[key]
             assert isinstance(value, Path)
             assert value.is_absolute(), f"{key} was {value} (not absolute)"
@@ -237,8 +234,8 @@ def test_run_all_command_invokes_run_batch(tmp_path, monkeypatch):
     monkeypatch.setattr("harness.cli.run_batch", fake_run_batch)
 
     # Minimum dirs to satisfy click.Path(exists=True) on the defaults.
-    (tmp_path / "harness" / "scenarios").mkdir(parents=True)
-    (tmp_path / "harness" / "coding-agents").mkdir(parents=True)
+    (tmp_path / "scenarios").mkdir(parents=True)
+    (tmp_path / "coding-agents").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
 
     result = CliRunner().invoke(main, [
@@ -251,8 +248,8 @@ def test_run_all_command_invokes_run_batch(tmp_path, monkeypatch):
 
 
 def test_run_all_jobs_must_be_positive(tmp_path, monkeypatch):
-    (tmp_path / "harness" / "scenarios").mkdir(parents=True)
-    (tmp_path / "harness" / "coding-agents").mkdir(parents=True)
+    (tmp_path / "scenarios").mkdir(parents=True)
+    (tmp_path / "coding-agents").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
 
     result = CliRunner().invoke(main, ["run-all", "--jobs", "0"])
@@ -269,8 +266,8 @@ def test_run_all_accepts_no_cursor_flag(tmp_path, monkeypatch):
 
     monkeypatch.setattr("harness.cli.run_batch", fake_run_batch)
 
-    (tmp_path / "harness" / "scenarios").mkdir(parents=True)
-    (tmp_path / "harness" / "coding-agents").mkdir(parents=True)
+    (tmp_path / "scenarios").mkdir(parents=True)
+    (tmp_path / "coding-agents").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
 
     # --help must list the flag so users can discover it.

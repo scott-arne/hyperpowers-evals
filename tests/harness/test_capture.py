@@ -39,7 +39,7 @@ class TestSnapshotAndDiff:
         # codex nests rollouts under sessions/YYYY/MM/DD/, so codex.yaml's
         # glob must recurse. A non-recursive glob silently captures nothing.
         codex_yaml = (
-            Path(__file__).resolve().parents[2] / "harness/coding-agents/codex.yaml"
+            Path(__file__).resolve().parents[2] / "coding-agents/codex.yaml"
         )
         glob = yaml.safe_load(codex_yaml.read_text())["session_log_glob"]
         sessions = tmp_path / "sessions"

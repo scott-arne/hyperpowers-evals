@@ -3,7 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 
-BIN = Path("harness/bin").resolve()
+BIN = Path("bin").resolve()
 
 
 def _trace(tmp_path: Path, *records: dict) -> Path:
