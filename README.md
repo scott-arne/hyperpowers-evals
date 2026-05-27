@@ -1,9 +1,9 @@
 # Superpowers Evals
 
 Behavioral eval lab for [superpowers](https://github.com/obra/superpowers).
-**BARF** (Binarily Augmented Retro-Framing — an Iron Man *Civil War* reference)
-drives real coding-agent CLIs (Claude, Codex) through a Gauntlet QA agent and
-grades them against scenario acceptance criteria plus deterministic post-checks.
+**BARF** — the Behavioral Agent Regression Framework — drives real
+coding-agent CLIs (Claude, Codex) through a Gauntlet QA agent and grades them
+against scenario acceptance criteria plus deterministic post-checks.
 
 Code, CLI, paths, and inline prose all use lowercase `barf`; the all-caps form
 appears only in headings and the actor table.

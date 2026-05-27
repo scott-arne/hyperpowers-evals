@@ -2,8 +2,7 @@
 
 Behavioral eval lab for superpowers. Python 3.11+, managed with uv.
 
-The active runner is the Gauntlet-backed **BARF** (Binarily Augmented
-Retro-Framing — an Iron Man *Civil War* reference). Code, CLI, paths, and
+The active runner is the Gauntlet-backed **BARF**. Code, CLI, paths, and
 inline prose all use lowercase `barf`; the all-caps form appears only in
 headings and the actor table.
 
