@@ -34,6 +34,7 @@ import json
 import os
 import secrets
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -365,6 +366,11 @@ def _copy_with_substitutions(
     for placeholder, value in subs.items():
         content = content.replace(placeholder, value)
     dst.write_text(content)
+    # A shebang'd template (e.g. the launch-agent shim) must stay executable
+    # after substitution — write_text drops the mode. The QA agent invokes
+    # the shim by absolute path, so it needs +x.
+    if content.startswith("#!"):
+        dst.chmod(dst.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
 def _copytree_with_substitutions(
@@ -475,6 +481,13 @@ def _run_scenario_inner(
     #    sessions, so we burn the values into the HOWTO instead of
     #    relying on env-var inheritance. See _populate_context_dir
     #    docstring.
+    # $QUORUM_LAUNCH_AGENT resolves to the generated launcher shim's absolute
+    # path. The shim is the `launch-agent` template in <name>-context/: it
+    # bakes the `cd $QUORUM_AGENT_CWD` + env + flags into one executable so the
+    # QA agent can launch the target with a single token and cannot skip the
+    # cd (the qa-agent-misconfigured failure mode). HOWTOs reference it by this
+    # placeholder; the destination path is deterministic.
+    launch_agent_path = run_dir / "gauntlet-agent" / "context" / "launch-agent"
     _populate_context_dir(
         coding_agents_dir,
         coding_agent,
@@ -482,6 +495,7 @@ def _run_scenario_inner(
         substitutions={
             "$QUORUM_AGENT_CWD": str(launch_cwd),
             "$SUPERPOWERS_ROOT": os.environ.get("SUPERPOWERS_ROOT", ""),
+            "$QUORUM_LAUNCH_AGENT": str(launch_agent_path),
             f"${tcfg.agent_config_env}": str(agent_config_dir),
         },
     )
