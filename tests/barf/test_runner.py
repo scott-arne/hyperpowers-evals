@@ -440,3 +440,100 @@ class TestRunScenario:
         rd = list(out_root.iterdir())[0]
         assert (rd / "coding-agent-workdir").is_dir()
         assert not (rd / "workdir-path.txt").exists()
+
+    def _agent_with_max_time(self, coding_agents_dir, session_log_dir, max_time):
+        coding_agents_dir.mkdir(parents=True, exist_ok=True)
+        (coding_agents_dir / "claude.yaml").write_text(yaml.safe_dump({
+            "name": "claude",
+            "binary": "echo",
+            "agent_config_env": "CLAUDE_CONFIG_DIR",
+            "session_log_dir": str(session_log_dir),
+            "session_log_glob": "*.jsonl",
+            "normalizer": "claude",
+            "required_env": [],
+            "max_time": max_time,
+        }))
+        (coding_agents_dir / "claude-context").mkdir(parents=True, exist_ok=True)
+
+    def test_barf_max_time_overrides_agent_default(self, tmp_path):
+        # PRI-1869: a story's barf_max_time strictly overrides the agent
+        # default (here, raising 10m → 90m).
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"
+        session_log_dir.mkdir()
+        self._agent_with_max_time(coding_agents_dir, session_log_dir, "10m")
+        sd = _make_scenario(scenarios_dir, "x")
+        (sd / "story.md").write_text(
+            "---\nid: x\ntitle: x\nbarf_max_time: 90m\n---\nbody\n"
+        )
+        out_root = tmp_path / "results"
+        captured: dict[str, str | None] = {}
+
+        def stub(*, run_dir, max_time, **kwargs):
+            captured["max_time"] = max_time
+            (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
+            return "pass"
+
+        with patch("barf.runner.invoke_gauntlet", side_effect=stub):
+            run_scenario(
+                scenario_dir=sd,
+                coding_agent="claude",
+                coding_agents_dir=coding_agents_dir,
+                out_root=out_root,
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+        assert captured["max_time"] == "90m"
+
+    def test_agent_default_used_when_no_barf_max_time(self, tmp_path):
+        # Without a story override, the coding-agent default flows through.
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"
+        session_log_dir.mkdir()
+        self._agent_with_max_time(coding_agents_dir, session_log_dir, "10m")
+        sd = _make_scenario(scenarios_dir, "x")  # story.md has no barf_max_time
+        out_root = tmp_path / "results"
+        captured: dict[str, str | None] = {}
+
+        def stub(*, run_dir, max_time, **kwargs):
+            captured["max_time"] = max_time
+            (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
+            return "pass"
+
+        with patch("barf.runner.invoke_gauntlet", side_effect=stub):
+            run_scenario(
+                scenario_dir=sd,
+                coding_agent="claude",
+                coding_agents_dir=coding_agents_dir,
+                out_root=out_root,
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+        assert captured["max_time"] == "10m"
+
+    def test_malformed_barf_max_time_yields_indeterminate(self, tmp_path):
+        # A malformed override aborts cleanly before gauntlet: run_scenario
+        # converts the RunnerError into an indeterminate verdict.
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"
+        session_log_dir.mkdir()
+        self._agent_with_max_time(coding_agents_dir, session_log_dir, "10m")
+        sd = _make_scenario(scenarios_dir, "x")
+        (sd / "story.md").write_text(
+            "---\nid: x\ntitle: x\nbarf_max_time: ninety\n---\nbody\n"
+        )
+        out_root = tmp_path / "results"
+
+        with patch("barf.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass) as mock_g:
+            _run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="claude",
+                coding_agents_dir=coding_agents_dir,
+                out_root=out_root,
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+        mock_g.assert_not_called()
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert "barf_max_time" in verdict.error.message

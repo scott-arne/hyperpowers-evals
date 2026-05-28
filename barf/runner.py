@@ -46,6 +46,7 @@ from barf.checks import parse_coding_agents_directive, run_phase
 from barf.coding_agent_config import CodingAgentConfig, load_coding_agent_config
 from barf.composer import FinalVerdict, GauntletLayer, GauntletStatus, RunError, compose
 from barf.setup_step import SetupError, run_setup
+from barf.story_meta import StoryMetaError, read_barf_max_time
 from setup_helpers.worktree import install_codex_superpowers_plugin_hooks
 
 LAUNCH_CWD_SENTINEL = ".barf-launch-cwd"
@@ -399,6 +400,15 @@ def _run_scenario_inner(
     if not story_path.exists():
         raise RunnerError(f"{scenario_dir}: story.md missing")
 
+    # Per-scenario duration override (PRI-1869). Strict-override: a story's
+    # barf_max_time replaces the coding-agent default (up or down). Lets the
+    # agent default stay low while slow SDD scenarios crank it up.
+    try:
+        story_max_time = read_barf_max_time(story_path)
+    except StoryMetaError as e:
+        raise RunnerError(str(e)) from e
+    effective_max_time = story_max_time if story_max_time is not None else tcfg.max_time
+
     # 2. checks.sh is required.
     checks_sh = scenario_dir / "checks.sh"
     if not checks_sh.exists():
@@ -483,7 +493,7 @@ def _run_scenario_inner(
         target_binary=tcfg.binary,
         launch_cwd=launch_cwd,
         run_dir=run_dir,
-        max_time=tcfg.max_time,
+        max_time=effective_max_time,
         project_prompt=tcfg.project_prompt,
         extra_env={tcfg.agent_config_env: str(agent_config_dir)},
     )
