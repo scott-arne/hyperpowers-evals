@@ -109,7 +109,7 @@ def pricing_for_model(model_id: str | None) -> dict[str, float] | None:
         return CLAUDE_OPUS_PRICING
     if "sonnet" in m:
         return CLAUDE_SONNET_PRICING
-    if "gpt" in m or "codex" in m or m.startswith("o"):
+    if "gpt" in m or "codex" in m:
         return CODEX_GPT55_PRICING
     return None
 
@@ -125,7 +125,7 @@ def estimate_cost_with(usage: dict[str, Any], pricing: dict[str, float]) -> floa
     )
 ```
 
-Note: the `m.startswith("o")` clause catches OpenAI `o*` model ids; keep it last so `opus`/`sonnet` win. Leave the existing `estimate_claude_cost`/`estimate_codex_cost`/`capture_tokens` family path untouched — the coding-agent still uses it.
+Note: the resolver is used **only for the gauntlet-agent** (which runs Claude Sonnet); the coding-agent cost is reused frozen and never routed through it. Don't add speculative clauses (e.g. a bare `o*` OpenAI matcher) — unmotivated here, and would mis-price real `o1`/`o3` ids if they ever fired. Leave the existing `estimate_claude_cost`/`estimate_codex_cost`/`capture_tokens` family path untouched — the coding-agent still uses it.
 
 - [ ] **Step 4: Run, verify pass**
 
@@ -155,14 +155,18 @@ class TestTimestampSpan:
         from quorum.token_usage import parse_claude_session
         p = tmp_path / "s.jsonl"
         p.write_text(
-            json.dumps({"type": "assistant", "timestamp": "2026-05-28T10:00:00.000Z",
-                        "message": {"role": "assistant", "usage": {"input_tokens": 1}}}) + "\n"
+            # attachment: earliest timestamp, NO message dict — must still count
+            json.dumps({"type": "attachment", "timestamp": "2026-05-28T09:59:50.000Z"}) + "\n"
+            + json.dumps({"type": "assistant", "timestamp": "2026-05-28T10:00:00.000Z",
+                          "message": {"role": "assistant", "usage": {"input_tokens": 1}}}) + "\n"
             + json.dumps({"type": "mode"}) + "\n"  # no timestamp — skipped
             + json.dumps({"type": "assistant", "timestamp": "2026-05-28T10:05:00.000Z",
                           "message": {"role": "assistant", "usage": {"output_tokens": 1}}}) + "\n"
         )
         u = parse_claude_session(p)
-        assert u["first_ts"] == "2026-05-28T10:00:00.000Z"
+        # First ts comes from the attachment (no message dict) — proves the
+        # timestamp is tracked before the message guard.
+        assert u["first_ts"] == "2026-05-28T09:59:50.000Z"
         assert u["last_ts"] == "2026-05-28T10:05:00.000Z"
 
     def test_codex_span(self, tmp_path):
@@ -213,7 +217,7 @@ def _track_ts(current_first: str | None, current_last: str | None, ts: Any) -> t
 
 (ISO-8601 UTC strings with the same shape sort lexicographically, so string comparison gives correct ordering — no datetime parsing needed.)
 
-In `parse_claude_session`: initialize `first_ts = last_ts = None`; inside the per-line loop, `first_ts, last_ts = _track_ts(first_ts, last_ts, rec.get("timestamp"))`. Add `"first_ts": first_ts, "last_ts": last_ts` to the returned dict.
+In `parse_claude_session`: initialize `first_ts = last_ts = None`; call `first_ts, last_ts = _track_ts(first_ts, last_ts, rec.get("timestamp"))` **immediately after `rec = json.loads(line)` and BEFORE the `if not isinstance(message, dict): continue` guard** (`token_usage.py:~68`). This is load-bearing: `attachment` records carry a `timestamp` but have no `message` dict, so gating the timestamp on `message` drops them and shortens the span (verified ~10s head error on a real session). Add `"first_ts": first_ts, "last_ts": last_ts` to the returned dict.
 
 In `parse_codex_rollout`: same — `rec.get("timestamp")` is top-level. Add the same two keys to the returned dict.
 
@@ -532,7 +536,7 @@ Replace the block at `runner.py:584-593` (the `verdict = compose(...)` through t
 ```python
     verdict = compose(
         gauntlet=gauntlet_layer,
-        checks=post_records,
+        checks=pre_records + post_records,   # ← keep EXACTLY as the existing call (runner.py:586); do not change to post_records only
         capture_empty=capture_empty,
         error=None,
     )
@@ -544,7 +548,7 @@ Replace the block at `runner.py:584-593` (the `verdict = compose(...)` through t
     )
 ```
 
-(Match the actual argument names at that call site; only the two new lines + the `dataclasses.replace` are added.)
+**Critical:** do not retype the `compose(...)` call from memory — read `runner.py:584-590` and add *only* the three new lines (`economics = …`, the `if`, and the `replace`). The existing call passes `checks=pre_records + post_records`; preserving it is mandatory or pre-checks vanish from the verdict.
 
 - [ ] **Step 3: Verify the existing runner tests still pass**
 
@@ -595,7 +599,7 @@ def test_render_includes_economics_pane():
             "total_est_cost_usd": 2.27, "partial": False,
         },
     }
-    out = render(verdict, Path("/tmp/run"), color=False, mode=ShowMode.FULL)
+    out = render(verdict, Path("/tmp/run"), color=False, mode="full")
     assert "Economics" in out
     assert "$2.27" in out
     assert "Gauntlet" in out and "Coding" in out
@@ -604,11 +608,11 @@ def test_render_economics_absent_is_safe():
     from quorum.show import render
     verdict = {"final": "pass", "final_reason": "", "gauntlet": {"status": "pass"},
                "checks": []}  # no economics key
-    out = render(verdict, Path("/tmp/run"), color=False, mode=ShowMode.FULL)
+    out = render(verdict, Path("/tmp/run"), color=False, mode="full")
     assert isinstance(out, str)  # no crash
 ```
 
-(Match `ShowMode` import + `render` signature already in `test_show.py`.)
+Note: `ShowMode` is a `Literal["full","quiet","json"]`, NOT an enum — pass the string `"full"`, not `ShowMode.FULL`. Match the `render` signature already used in `test_show.py`.
 
 - [ ] **Step 2: Run, verify fail**
 
@@ -687,21 +691,17 @@ git commit -m "feat(show): Economics pane with per-agent timing + cost (PRI-1872
 
 - [ ] **Step 1: Add a cost helper + read per-run cost**
 
-In the `_drain` result loop (around `run_all.py:496-509`), after computing `duration`, read the run's verdict.json economics. The run dir is derivable from `result` (it carries `run_id`; the batch writes runs under `out_root`). Read:
+In the `_drain` result loop (around `run_all.py:496-509`), after computing `duration`, read the run's economics. The run dir is `out_root / result.run_id` — exactly what the existing `_final_status_for_result` uses (`run_all.py:605`), and there's already a `_read_verdict(run_dir)` helper (`run_all.py:569`). **Reuse `_read_verdict`** rather than re-opening the file:
 
 ```python
 def _run_cost(run_dir: Path) -> float | None:
-    vj = run_dir / "verdict.json"
-    if not vj.is_file():
+    verdict = _read_verdict(run_dir)   # existing helper at run_all.py:569
+    if not verdict:
         return None
-    try:
-        econ = (json.loads(vj.read_text()).get("economics") or {})
-    except (json.JSONDecodeError, OSError):
-        return None
-    return econ.get("total_est_cost_usd")
+    return (verdict.get("economics") or {}).get("total_est_cost_usd")
 ```
 
-Append a right-aligned cost cell to the `Text.assemble(...)` line (mirror the `{duration:>{_DUR_COL_W}}` pattern; format with `_fmt_cost` → `$1.23` / `—`). Accumulate a running `batch_cost_total` (sum of non-null per-run costs) under `print_lock`.
+For the cost cell formatting, `_fmt_cost` lives in `show.py` — **import it** (`from quorum.show import _fmt_cost`) rather than duplicating, so the `$1.23`/`n/a` formatting stays in one place. Append a right-aligned cost cell to the `Text.assemble(...)` line (mirror the `{duration:>{_DUR_COL_W}}` pattern). Accumulate a running `batch_cost_total` (sum of non-null per-run costs) under `print_lock`.
 
 - [ ] **Step 2: Add batch total to the footer**
 
