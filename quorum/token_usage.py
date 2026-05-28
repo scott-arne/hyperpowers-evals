@@ -31,6 +31,42 @@ CODEX_GPT55_PRICING: dict[str, float] = {
     "output_per_m": 10.0,
 }
 
+PRICING_ASOF = "2026-05"
+
+# Anthropic Claude Sonnet 4.x list pricing per 1M tokens (USD).
+CLAUDE_SONNET_PRICING: dict[str, float] = {
+    "input_per_m": 3.0,
+    "cache_create_per_m": 3.75,   # 1.25x base input
+    "cache_read_per_m": 0.30,     # 0.1x base input
+    "output_per_m": 15.0,
+}
+
+
+def pricing_for_model(model_id: str | None) -> dict[str, float] | None:
+    """Resolve a per-1M pricing table from a model id by substring match.
+    Returns None for unrecognized ids (caller renders cost as n/a)."""
+    if not isinstance(model_id, str):
+        return None
+    m = model_id.lower()
+    if "opus" in m:
+        return CLAUDE_OPUS_PRICING
+    if "sonnet" in m:
+        return CLAUDE_SONNET_PRICING
+    if "gpt" in m or "codex" in m:
+        return CODEX_GPT55_PRICING
+    return None
+
+
+def estimate_cost_with(usage: dict[str, Any], pricing: dict[str, float]) -> float:
+    """Cost in USD for a usage dict against an explicit pricing table.
+    cache_create_per_m may be absent (OpenAI) — treated as 0 contribution."""
+    return (
+        usage.get("total_input", 0) * pricing["input_per_m"] / 1_000_000
+        + usage.get("total_cache_create", 0) * pricing.get("cache_create_per_m", 0.0) / 1_000_000
+        + usage.get("total_cache_read", 0) * pricing["cache_read_per_m"] / 1_000_000
+        + usage.get("total_output", 0) * pricing["output_per_m"] / 1_000_000
+    )
+
 
 def parse_claude_session(path: Path) -> dict[str, Any] | None:
     """Sum Claude Code per-message usage across one session JSONL.

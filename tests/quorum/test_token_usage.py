@@ -9,12 +9,16 @@ import pytest
 
 from quorum.token_usage import (
     CLAUDE_OPUS_PRICING,
+    CLAUDE_SONNET_PRICING,
     CODEX_GPT55_PRICING,
+    PRICING_ASOF,
     capture_tokens,
     estimate_claude_cost,
     estimate_codex_cost,
+    estimate_cost_with,
     parse_claude_session,
     parse_codex_rollout,
+    pricing_for_model,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -134,6 +138,30 @@ class TestCostEstimation:
         usage = {"total_input": 0, "total_cache_read": 1_000_000, "total_output": 0}
         cost = estimate_codex_cost(usage)
         assert cost == pytest.approx(CODEX_GPT55_PRICING["cache_read_per_m"])
+
+
+class TestPricingResolver:
+    def test_opus_id_resolves_to_opus(self):
+        assert pricing_for_model("claude-opus-4-7") is CLAUDE_OPUS_PRICING
+
+    def test_sonnet_id_resolves_to_sonnet(self):
+        assert pricing_for_model("claude-sonnet-4-6") is CLAUDE_SONNET_PRICING
+
+    def test_gpt_id_resolves_to_codex(self):
+        assert pricing_for_model("gpt-5.5") is CODEX_GPT55_PRICING
+
+    def test_unknown_model_returns_none(self):
+        assert pricing_for_model("gemini-3-pro") is None
+        assert pricing_for_model(None) is None
+
+    def test_estimate_cost_with_sonnet(self):
+        usage = {"total_input": 1_000_000, "total_cache_create": 0,
+                 "total_cache_read": 0, "total_output": 0}
+        cost = estimate_cost_with(usage, CLAUDE_SONNET_PRICING)
+        assert cost == CLAUDE_SONNET_PRICING["input_per_m"]
+
+    def test_pricing_asof_is_set(self):
+        assert isinstance(PRICING_ASOF, str) and PRICING_ASOF
 
 
 class TestCaptureTokens:
