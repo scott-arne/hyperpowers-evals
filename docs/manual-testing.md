@@ -2,7 +2,7 @@
 
 Some legacy scenarios cannot run automatically because the Codex App desktop
 client has no CLI or tmux entry point the way `claude` and `codex` do. Those
-cases remain human-in-the-loop; new automated coverage should use barf
+cases remain human-in-the-loop; new automated coverage should use quorum
 scenarios whenever a CLI Coding-Agent can represent the behavior.
 
 ## Protocol
@@ -87,9 +87,9 @@ Matches the format of the existing `results/worktree-codex-app-detached-head/cod
 - The tester explicitly asks for a manual Codex App run of any scenario
 - An automated test result is inconclusive and we want a human-verified cross-check
 
-Do NOT use this procedure for scenarios barf can run with CLI
+Do NOT use this procedure for scenarios quorum can run with CLI
 Coding-Agents (`claude`, `codex`, and future CLI-backed agents) — use
-`barf run` instead. Use legacy Drill only for archived-result archaeology or
+`quorum run` instead. Use legacy Drill only for archived-result archaeology or
 explicit Drill decommissioning work.
 
 ## Pitfalls

@@ -5,21 +5,21 @@ AI agent; what appears on screen is its work.
 
 ## Launch Codex with one command
 
-Your bash starts in a scratch directory, NOT the workdir barf
+Your bash starts in a scratch directory, NOT the workdir quorum
 prepared. You MUST cd into the workdir before launching codex, and you
 MUST set CODEX_HOME and the bypass flag. The simplest way to avoid
 skipping any of these is to type **this one line, verbatim** as your
 first action:
 
 ```
-cd "$BARF_AGENT_CWD" && CODEX_HOME="$CODEX_HOME" codex --dangerously-bypass-approvals-and-sandbox
+cd "$QUORUM_AGENT_CWD" && CODEX_HOME="$CODEX_HOME" codex --dangerously-bypass-approvals-and-sandbox
 ```
 
-`BARF_AGENT_CWD` is set in the inherited environment by barf.
+`QUORUM_AGENT_CWD` is set in the inherited environment by quorum.
 The `CODEX_HOME` value is burned into this HOWTO at runtime — it points
 at a per-run isolated config dir so no user-installed Codex plugins or
 prior sessions affect this run. Splitting this into multiple commands,
-or shortening it to a bare `codex`, will cause barf to discard
+or shortening it to a bare `codex`, will cause quorum to discard
 the run as misconfigured.
 
 For superpowers tool-mapping scenarios that use the legacy `.agents`

@@ -115,7 +115,7 @@ def install_codex_superpowers_plugin_hooks(
     Drill call (codex_home omitted): build an isolated Codex home next to
     the workdir, log it in, and export DRILL_CODEX_HOME.
 
-    barf call (codex_home given): install into the runner's per-run
+    quorum call (codex_home given): install into the runner's per-run
     CODEX_HOME, which already exists and is already logged in — so the
     isolated-home build, the login, and the DRILL_CODEX_HOME export are
     all skipped.

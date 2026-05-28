@@ -3,7 +3,7 @@ id: sdd-go-fractals
 title: Agent executes a Go fractals plan end-to-end via subagent-driven-development
 status: ready
 tags: subagent-driven-development
-barf_max_time: 90m
+quorum_max_time: 90m
 ---
 
 You have a plan ready (plan.md, with design context in design.md) for

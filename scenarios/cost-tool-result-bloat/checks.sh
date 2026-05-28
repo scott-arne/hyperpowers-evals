@@ -10,5 +10,5 @@ post() {
     # check primitives self-report records, so OR-ing two tool-called
     # invocations would pollute the verdict with the losing side's fail.
     # Inline jq sidesteps that: one command-succeeds record either way.
-    command-succeeds 'jq -se "any(.[]; .tool==\"Read\" or .tool==\"Grep\")" "$BARF_TOOL_CALLS_PATH"'
+    command-succeeds 'jq -se "any(.[]; .tool==\"Read\" or .tool==\"Grep\")" "$QUORUM_TOOL_CALLS_PATH"'
 }

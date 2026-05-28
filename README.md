@@ -1,12 +1,12 @@
 # Superpowers Evals
 
 Behavioral eval lab for [superpowers](https://github.com/obra/superpowers).
-**BARF** — the Behavioral Agent Regression Framework — drives real
+**Quorum** drives real
 coding-agent CLIs (Claude, Codex) through a Gauntlet QA agent and grades them
 against scenario acceptance criteria plus deterministic post-checks.
 
-Code, CLI, paths, and inline prose all use lowercase `barf`; the all-caps form
-appears only in headings and the actor table.
+Code, CLI, paths, and inline prose all use lowercase `quorum`; the capitalized
+form `Quorum` appears in headings and the actor table.
 
 This is not a generic benchmark suite. It is an eval lab for workflow
 compliance: skill triggering, worktree behavior, subagent coordination,
@@ -14,7 +14,7 @@ verification reflexes, review quality, and cost-shaping patterns.
 
 ## Safety Model
 
-barf has two very different execution modes:
+quorum has two very different execution modes:
 
 - **Static/unit checks** are safe for public CI. They run `ruff`, `ty`, and
   `pytest`. They do not call model APIs and do not launch agent CLIs.
@@ -23,7 +23,7 @@ barf has two very different execution modes:
   filesystem state, and session logs.
 
 Public CI must stay on the static/unit side of that line. Never add API keys,
-live `barf run …` invocations, or dangerous-mode agent launches to public
+live `quorum run …` invocations, or dangerous-mode agent launches to public
 CI.
 
 ## Live Eval Risk
@@ -33,7 +33,7 @@ Live evals run the Coding-Agent under test with broad execution power:
 - Claude uses `--dangerously-skip-permissions`.
 - Codex uses `--dangerously-bypass-approvals-and-sandbox`.
 
-barf seeds a fresh per-run agent-config dir (`CLAUDE_CONFIG_DIR` for
+quorum seeds a fresh per-run agent-config dir (`CLAUDE_CONFIG_DIR` for
 Claude, `CODEX_HOME` for Codex) so the Coding-Agent never sees the host's real
 `~/.claude` / `~/.codex`, installed plugins, or prior sessions. That narrows
 the blast radius but is not a sandbox — the subprocess still inherits the
@@ -58,33 +58,33 @@ uv sync --extra dev
 Run one scenario:
 
 ```bash
-uv run barf run scenarios/triggering-writing-plans --coding-agent claude
+uv run quorum run scenarios/triggering-writing-plans --coding-agent claude
 ```
 
 List scenarios:
 
 ```bash
-uv run barf list
+uv run quorum list
 ```
 
 Scaffold and validate a new scenario:
 
 ```bash
-uv run barf new my-new-scenario
-uv run barf check my-new-scenario
+uv run quorum new my-new-scenario
+uv run quorum check my-new-scenario
 ```
 
-`barf check` with no arguments validates every scenario.
+`quorum check` with no arguments validates every scenario.
 
 Run the full matrix:
 
 ```bash
-uv run barf run-all --coding-agents claude,codex --jobs 2
+uv run quorum run-all --coding-agents claude,codex --jobs 2
 ```
 
 `run-all` runs every scenario against every Coding-Agent, filtered by each
 scenario's `# coding-agents:` directive. View the resulting matrix with
-`uv run barf show <batch-id>`.
+`uv run quorum show <batch-id>`.
 
 ## Canonical Actors
 
@@ -97,7 +97,7 @@ messages.
 | **Gauntlet** | General-purpose QA framework; the `gauntlet` CLI. A black-box tester. | repo `~/Code/prime/gauntlet`; on `PATH` as `gauntlet` |
 | **Gauntlet-Agent** | The LLM *inside* Gauntlet that drives the Coding-Agent and self-grades against the story's ACs. | model e.g. `claude-sonnet-4-6`; event stream → `<run>/gauntlet-agent/results/<runId>/run.jsonl`; verdict → `result.{json,md}` |
 | **Coding-Agent** | The agent under test — the SUT. Instances: **Claude**, **Codex**; future **Gemini**, **Pi**. | session log → `<run>/coding-agent-config/…`; the files it writes → `<run>/coding-agent-workdir/` |
-| **BARF** | The Python wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and the final verdict. | repo `superpowers-evals/barf/`; `<run>/verdict.json` |
+| **Quorum** | The Python wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and the final verdict. | repo `superpowers-evals/quorum/`; `<run>/verdict.json` |
 
 A run involves **two** LLMs — the **Gauntlet-Agent** (QA tester) and the
 **Coding-Agent** (subject). Separate models, separate logs, separate token
@@ -119,7 +119,7 @@ checks.sh   deterministic checks — pre() + post() bash functions
 Coding-Agent's session log") so the Gauntlet-Agent must consult the log, not
 just the screen.
 
-Optional frontmatter field `barf_max_time` overrides the per-coding-agent
+Optional frontmatter field `quorum_max_time` overrides the per-coding-agent
 `max_time` for this scenario only (strict override — raises *or* lowers it).
 Use it for slow scenarios that need a longer budget than the default:
 
@@ -127,12 +127,12 @@ Use it for slow scenarios that need a longer budget than the default:
 ---
 id: my-slow-sdd
 title: ...
-barf_max_time: 90m   # this scenario gets 90 minutes; others keep the agent default
+quorum_max_time: 90m   # this scenario gets 90 minutes; others keep the agent default
 ---
 ```
 
 The value is a Gauntlet duration string (`90m`, `600s`, or bare seconds like
-`1800`). It is a barf-only field — gauntlet does not read it; a direct
+`1800`). It is a quorum-only field — gauntlet does not read it; a direct
 `gauntlet run --max-time …` is unaffected.
 
 ### `checks.sh` Format
@@ -196,11 +196,11 @@ an `ERR` trap so a crashing tool never silently drops out of the verdict.
 
 ## Verdict
 
-barf produces a **three-valued verdict** — `pass | fail | indeterminate`:
+quorum produces a **three-valued verdict** — `pass | fail | indeterminate`:
 
 - `pass` — Gauntlet-Agent passed **and** every post-check passed.
 - `fail` — Gauntlet-Agent failed, or a post-check failed.
-- `indeterminate` — a pre-check failed (invalid fixture), Gauntlet-Agent returned `investigate`, the capture was empty while a trace check was present, or barf itself errored. An `indeterminate` run is not a finding — it is a signal that the run did not execute cleanly.
+- `indeterminate` — a pre-check failed (invalid fixture), Gauntlet-Agent returned `investigate`, the capture was empty while a trace check was present, or quorum itself errored. An `indeterminate` run is not a finding — it is a signal that the run did not execute cleanly.
 
 The structured `verdict.json` (schema v1) contains:
 
@@ -208,7 +208,7 @@ The structured `verdict.json` (schema v1) contains:
 - `checks` layer — an array of records from `pre()` and `post()`, each with `check`, `args`, `negated`, `passed`, `detail`, `phase`.
 - `final` — the composed `pass | fail | indeterminate`.
 - `final_reason` — a human-readable explanation of the verdict.
-- `error` — present if barf itself threw; includes `stage` and `message`.
+- `error` — present if quorum itself threw; includes `stage` and `message`.
 
 **Exit codes:** 0 = pass, 1 = fail, 2 = indeterminate.
 
@@ -251,7 +251,7 @@ scenarios.
 | `claude` | Claude Code | `ANTHROPIC_API_KEY`, `SUPERPOWERS_ROOT` |
 | `codex` | Codex CLI | `OPENAI_API_KEY`, `SUPERPOWERS_ROOT` |
 
-When this repo is checked out as `superpowers/evals`, barf defaults
+When this repo is checked out as `superpowers/evals`, quorum defaults
 `SUPERPOWERS_ROOT` to the parent `superpowers` checkout. In a standalone
 `superpowers-evals` clone, set it explicitly:
 
@@ -263,12 +263,12 @@ Use a different `SUPERPOWERS_ROOT` when running RED/GREEN comparisons against
 modified superpowers skill text.
 
 Note: Gauntlet's own `gauntlet` CLI preserves its `--target <binary>` flag for
-selecting the TUI adapter binary; barf's `--coding-agent` flag is a
+selecting the TUI adapter binary; quorum's `--coding-agent` flag is a
 separate, higher-level concept that selects the agent config.
 
 ## How a Run Works
 
-A `barf run` drives one scenario against one Coding-Agent:
+A `quorum run` drives one scenario against one Coding-Agent:
 
 1. **Coding-Agent config** — `coding-agents/<name>.yaml` is parsed and
    its required env vars validated.
@@ -298,7 +298,7 @@ A `barf run` drives one scenario against one Coding-Agent:
 
 ## Writing a Scenario
 
-1. `uv run barf new <name>` stamps a structurally-valid skeleton.
+1. `uv run quorum new <name>` stamps a structurally-valid skeleton.
 2. Write `story.md`: brief the Gauntlet-Agent on the role it plays, the exact
    message to send the Coding-Agent, and when it is done — plus
    evidence-demanding acceptance criteria. Follow the
@@ -309,12 +309,12 @@ A `barf run` drives one scenario against one Coding-Agent:
    `setup_helpers/__init__.py`.
 4. Write `checks.sh` with `pre()` and `post()` functions using the
    `bin/` vocabulary. No exec bit.
-5. `uv run barf check <name>` to validate structure, then run it against a
+5. `uv run quorum check <name>` to validate structure, then run it against a
    Coding-Agent.
 
-Setup scripts run with `$BARF_WORKDIR` pointing at the fixture workdir.
+Setup scripts run with `$QUORUM_WORKDIR` pointing at the fixture workdir.
 Check tools run from the fixture workdir with `bin/` on `PATH`.
-Post-checks that need sibling run artifacts can use `$BARF_RUN_DIR`.
+Post-checks that need sibling run artifacts can use `$QUORUM_RUN_DIR`.
 
 ## Refreshing the Claude Skeleton
 
@@ -336,7 +336,7 @@ CLAUDE_CONFIG_DIR=/tmp/claude-source claude
 # 2. Rebuild the fixture; commit the diff.
 bin/refresh-claude-home-skeleton --source /tmp/claude-source
 git diff coding-agents/claude-home-skeleton/   # sanity-check the scrubbed result
-git commit coding-agents/claude-home-skeleton/ -m "barf: refresh Claude skeleton"
+git commit coding-agents/claude-home-skeleton/ -m "quorum: refresh Claude skeleton"
 ```
 
 Codex needs no skeleton — `_seed_codex_auth` provisions a fresh per-run home
@@ -349,15 +349,15 @@ These are the checks expected in CI and on routine PRs:
 ```bash
 uv run ruff check
 uv run ty check
-uv run barf check
+uv run quorum check
 uv run pytest
 ```
 
 ## Project Map
 
 ```text
-barf/                   barf CLI and runtime
-  cli.py                `barf run`, `list`, `new`, `check`, `show`, `run-all`
+quorum/                   quorum CLI and runtime
+  cli.py                `quorum run`, `list`, `new`, `check`, `show`, `run-all`
   runner.py             per-run orchestration (one scenario, one coding-agent)
   coding_agent_config.py  per-coding-agent YAML loader
   setup_step.py         runs scenario setup.sh
@@ -365,7 +365,7 @@ barf/                   barf CLI and runtime
   capture.py            session-log snapshot/diff + token capture
   normalizers.py        per-coding-agent session-log normalization
   composer.py           three-valued verdict from gauntlet + checks layers
-  scaffold.py           `barf new` / `barf check`
+  scaffold.py           `quorum new` / `quorum check`
   show.py               verdict renderer for triage
   run_all.py            matrix runner across scenarios × coding-agents
   token_usage.py        per-coding-agent token-usage parsing
@@ -382,12 +382,12 @@ scenarios/              scenarios (one directory each)
 setup_helpers/          scenario fixture builders + `setup-helpers` CLI
 fixtures/               shared static fixture repos (e.g. template-repo/)
 docs/                   design notes, spec, testing protocols, baselines
-tests/                  pytest suite (tests/barf/ covers the package)
+tests/                  pytest suite (tests/quorum/ covers the package)
 ```
 
 ## Triage
 
-Triaging a non-passing run: `uv run barf show [<target>]` and see
+Triaging a non-passing run: `uv run quorum show [<target>]` and see
 [docs/superpowers/skills/triaging-a-failing-eval.md](docs/superpowers/skills/triaging-a-failing-eval.md)
 for the attribution atlas.
 

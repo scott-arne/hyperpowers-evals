@@ -1,6 +1,6 @@
 """Regression tests: worktree sibling paths land under workdir.parent.
 
-Under the new barf model, the workdir is <run-dir>/coding-agent-workdir/.
+Under the new quorum model, the workdir is <run-dir>/coding-agent-workdir/.
 Sibling directories (worktrees, codex-home) must be computed relative to
 workdir.parent so they all land under the same run dir, not escaped to some
 hardcoded location.

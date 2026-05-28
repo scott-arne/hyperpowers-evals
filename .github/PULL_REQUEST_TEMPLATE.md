@@ -1,5 +1,5 @@
 <!--
-BEFORE SUBMITTING: This repo is barf eval lab for superpowers.
+BEFORE SUBMITTING: This repo is quorum eval lab for superpowers.
 It runs agent CLIs in permissive modes and can handle sensitive transcripts.
 Low-evidence, speculative, or bundled PRs will be closed.
 -->
@@ -15,7 +15,7 @@ Low-evidence, speculative, or bundled PRs will be closed.
 ## Relationship to superpowers
 <!-- Explain how this supports the parent superpowers repo.
      If this changes skill behavior, harness loading, or eval methodology,
-     describe the expected before/after signal and why it belongs in barf. -->
+     describe the expected before/after signal and why it belongs in quorum. -->
 
 ## Security and eval-lab checklist
 - [ ] This PR does not commit API keys, `.env` files, session logs, `results/`, or other run artifacts
@@ -34,10 +34,10 @@ Risk notes:
 <!-- Paste exact commands and outcomes. At minimum, explain whether these ran:
      uv run ruff check
      uv run ty check
-     uv run barf check
+     uv run quorum check
      uv run pytest
 
-     Live `barf run ...` evals are not required for every PR and must stay out
+     Live `quorum run ...` evals are not required for every PR and must stay out
      of public CI because they require credentials and permissive agent CLIs. -->
 
 ## Human review
