@@ -119,6 +119,22 @@ checks.sh   deterministic checks — pre() + post() bash functions
 Coding-Agent's session log") so the Gauntlet-Agent must consult the log, not
 just the screen.
 
+Optional frontmatter field `barf_max_time` overrides the per-coding-agent
+`max_time` for this scenario only (strict override — raises *or* lowers it).
+Use it for slow scenarios that need a longer budget than the default:
+
+```yaml
+---
+id: my-slow-sdd
+title: ...
+barf_max_time: 90m   # this scenario gets 90 minutes; others keep the agent default
+---
+```
+
+The value is a Gauntlet duration string (`90m`, `600s`, or bare seconds like
+`1800`). It is a barf-only field — gauntlet does not read it; a direct
+`gauntlet run --max-time …` is unaffected.
+
 ### `checks.sh` Format
 
 `checks.sh` is a bash script containing exactly two functions — `pre()` and
