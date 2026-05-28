@@ -28,6 +28,7 @@ the runner writes an indeterminate verdict immediately.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as _dt
 import json
 import os
@@ -45,6 +46,7 @@ from quorum.capture import (
 from quorum.checks import parse_coding_agents_directive, run_phase
 from quorum.coding_agent_config import CodingAgentConfig, load_coding_agent_config
 from quorum.composer import FinalVerdict, GauntletLayer, GauntletStatus, RunError, compose
+from quorum.economics import build_run_economics
 from quorum.setup_step import SetupError, run_setup
 from quorum.story_meta import StoryMetaError, read_quorum_max_time
 from setup_helpers.worktree import install_codex_superpowers_plugin_hooks
@@ -587,6 +589,9 @@ def _run_scenario_inner(
         capture_empty=capture_empty,
         error=None,
     )
+    economics = build_run_economics(run_dir)
+    if economics is not None:
+        verdict = dataclasses.replace(verdict, economics=economics)
 
     # 13. Persist.
     (run_dir / "verdict.json").write_text(

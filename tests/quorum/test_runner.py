@@ -511,6 +511,53 @@ class TestRunScenario:
             )
         assert captured["max_time"] == "10m"
 
+    def test_verdict_carries_economics_when_sources_present(self, tmp_path):
+        # PRI-1872: when the gauntlet result.json and the coding-agent token
+        # usage file both exist in the run dir, run_scenario computes economics
+        # at run time and freezes it into verdict.json.
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"
+        session_log_dir.mkdir()
+        _make_coding_agent(coding_agents_dir, "claude", session_log_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+        (coding_agents_dir / "claude-context").mkdir(parents=True)
+        out_root = tmp_path / "results"
+
+        def stub(*, run_dir, **kwargs):
+            # Real gauntlet output path (economics reads gauntlet-agent/results).
+            rid = "run-x"
+            gd = run_dir / "gauntlet-agent" / "results" / rid
+            gd.mkdir(parents=True, exist_ok=True)
+            (gd / "result.json").write_text(json.dumps({
+                "runId": rid, "duration_ms": 120000,
+                "usage": {"inputTokens": 100, "outputTokens": 200,
+                          "cacheCreationInputTokens": 0, "cacheReadInputTokens": 1000},
+                "config": {"model": "claude-sonnet-4-6"},
+            }))
+            # Frozen coding-agent token usage.
+            (run_dir / "coding-agent-token-usage.json").write_text(json.dumps({
+                "total_input": 50, "total_cache_create": 0, "total_cache_read": 0,
+                "total_output": 80, "total_tokens": 130, "model": "gpt-5.5",
+                "est_cost_usd": 1.23, "duration_ms": 90000,
+            }))
+            (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
+            return "pass"
+
+        with patch("quorum.runner.invoke_gauntlet", side_effect=stub):
+            run_scenario(
+                scenario_dir=sd,
+                coding_agent="claude",
+                coding_agents_dir=coding_agents_dir,
+                out_root=out_root,
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+        rd = list(out_root.iterdir())[0]
+        econ = json.loads((rd / "verdict.json").read_text())["economics"]
+        assert isinstance(econ["total_est_cost_usd"], float)
+        assert econ["partial"] is False
+
     def test_malformed_quorum_max_time_yields_indeterminate(self, tmp_path):
         # A malformed override aborts cleanly before gauntlet: run_scenario
         # converts the RunnerError into an indeterminate verdict.
