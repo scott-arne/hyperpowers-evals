@@ -64,3 +64,28 @@ def test_unpriced_gauntlet_model_yields_null_cost(tmp_path):
 
 def test_no_sources_returns_none(tmp_path):
     assert build_run_economics(tmp_path) is None
+
+
+def test_coding_block_carries_per_model_breakdown(tmp_path):
+    _gauntlet_result(tmp_path)
+    (tmp_path / "coding-agent-token-usage.json").write_text(json.dumps({
+        "total_input": 30, "total_cache_create": 0, "total_cache_read": 0,
+        "total_output": 130, "total_tokens": 160, "model": "claude-opus-4-7",
+        "est_cost_usd": 31.59, "duration_ms": 90000,
+        "models": {
+            "claude-opus-4-7": {"total_input": 10, "total_cache_create": 0,
+                "total_cache_read": 0, "total_output": 100, "total_tokens": 110,
+                "n_assistant_turns": 1, "est_cost_usd": 25.09},
+            "claude-sonnet-4-6": {"total_input": 20, "total_cache_create": 0,
+                "total_cache_read": 0, "total_output": 30, "total_tokens": 50,
+                "n_assistant_turns": 1, "est_cost_usd": 6.50},
+        },
+    }))
+    econ = build_run_economics(tmp_path)
+    models = econ["coding_agent"]["models"]
+    assert len(models) == 2
+    # sorted by cost desc → opus first
+    assert models[0]["model"] == "claude-opus-4-7"
+    assert models[0]["est_cost_usd"] == 25.09
+    assert models[1]["model"] == "claude-sonnet-4-6"
+    assert econ["coding_agent"]["est_cost_usd"] == 31.59

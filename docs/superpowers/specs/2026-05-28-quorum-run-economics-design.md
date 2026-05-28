@@ -66,6 +66,20 @@ build_run_economics(run_dir: Path) -> RunEconomics
 
 `token_usage.py`'s parsers (`parse_claude_session`, `parse_codex_rollout`) already iterate every line of every session file at run time. Extend them to track the min and max record `timestamp` (skipping records without one), and have `capture_tokens` aggregate `first_ts` = min across files, `last_ts` = max across files, `duration_ms` = their delta. These three fields are written into `coding-agent-token-usage.json` alongside the existing token/cost data — so the coding-agent's wall-clock is frozen at run time in the same pass and the same file as its cost. `duration_ms` is null when no record carried a timestamp.
 
+### 1b. Multi-model coding-agent cost (amendment — PRI-1872 review finding)
+
+A single SDD run is **multi-model**: the main coding agent runs Opus while its dispatched subagents run Sonnet and Haiku (verified on `sdd-svelte-todo-claude`: 119 Opus turns, 481 Sonnet, 321 Haiku). The original `token_usage.py` summed all tokens into one pool and priced it at a single model's rate (whichever file it saw first → Opus), inflating cost ~2.4× ($78.49 vs the correct $32.98; the corrected per-model split cross-checks against the live Anthropic dashboard to within lag).
+
+Fix: track usage **per model**, price each model with its own table, sum the per-model costs.
+
+- `parse_claude_session` / `parse_codex_rollout` return a `by_model` map: `{model_id: {total_input, total_cache_create, total_cache_read, total_output, n_assistant_turns}}` (Codex has a single entry). The existing flat aggregate keys are retained.
+- `capture_tokens` aggregates `by_model` across all session files (summing per model), computes each model's `est_cost_usd` via `pricing_for_model` + `estimate_cost_with`, and sets the top-level `est_cost_usd` = **sum of per-model costs**. It emits a `models` block: `{model_id: {tokens..., est_cost_usd}}`.
+- A model with no pricing entry contributes its tokens but `est_cost_usd = null` for that sub-entry; the run total is still summed from the priced ones and the file flags any unpriced model.
+
+`coding-agent-token-usage.json` therefore carries: the flat totals (unchanged keys), `duration_ms`/`first_ts`/`last_ts` (§1a), a `models` per-model breakdown, and a corrected top-level `est_cost_usd`.
+
+Economics' coding-agent block surfaces the `models` breakdown; `show` renders the Coding-Agent as per-model sub-rows.
+
 ### 2. Pricing — extend `token_usage.py`
 
 - Add a `pricing_for_model(model_id: str) -> dict | None` resolver: substring match on the model id (`opus`→Opus table, `sonnet`→new Sonnet 4.x table, `gpt`/`codex`→GPT-5.5 table), returns `None` for unrecognized ids.

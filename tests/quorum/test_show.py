@@ -444,3 +444,29 @@ def test_render_economics_absent_is_safe():
                "checks": []}  # no economics key
     out = render(verdict, Path("/tmp/run"), color=False, mode="full")
     assert isinstance(out, str)  # no crash
+
+
+def test_economics_pane_shows_per_model_subrows():
+    from quorum.show import render
+    verdict = {
+        "final": "pass", "final_reason": "ok",
+        "gauntlet": {"status": "pass", "summary": "", "reasoning": ""},
+        "checks": [],
+        "economics": {
+            "pricing_asof": "2026-05",
+            "gauntlet": {"duration_ms": 1000, "model": "claude-sonnet-4-6",
+                         "tokens": {"total": 4_300_000}, "est_cost_usd": 1.71},
+            "coding_agent": {"duration_ms": 2000, "model": "claude-opus-4-7",
+                "tokens": {"total": 27_500_000}, "est_cost_usd": 32.98,
+                "models": [
+                    {"model": "claude-opus-4-7", "tokens": {"total": 9_700_000}, "est_cost_usd": 25.09},
+                    {"model": "claude-sonnet-4-6", "tokens": {"total": 11_400_000}, "est_cost_usd": 6.50},
+                    {"model": "claude-haiku-4-5-20251001", "tokens": {"total": 6_400_000}, "est_cost_usd": 1.39},
+                ]},
+            "total_est_cost_usd": 34.69, "partial": False,
+        },
+    }
+    out = render(verdict, Path("/tmp/run"), color=False, mode="full")
+    assert "opus" in out and "sonnet" in out and "haiku" in out
+    assert "$25.09" in out and "$6.50" in out and "$1.39" in out
+    assert "$34.69" in out  # total

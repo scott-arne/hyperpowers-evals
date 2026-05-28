@@ -51,6 +51,14 @@ CLAUDE_SONNET_PRICING: dict[str, float] = {
     "output_per_m": 15.0,
 }
 
+# Anthropic Claude Haiku 4.5 list pricing per 1M tokens (USD).
+CLAUDE_HAIKU_PRICING: dict[str, float] = {
+    "input_per_m": 1.0,
+    "cache_create_per_m": 1.25,   # 1.25x base input
+    "cache_read_per_m": 0.10,     # 0.1x base input
+    "output_per_m": 5.0,
+}
+
 
 def pricing_for_model(model_id: str | None) -> dict[str, float] | None:
     """Resolve a per-1M pricing table from a model id by substring match.
@@ -62,9 +70,20 @@ def pricing_for_model(model_id: str | None) -> dict[str, float] | None:
         return CLAUDE_OPUS_PRICING
     if "sonnet" in m:
         return CLAUDE_SONNET_PRICING
+    if "haiku" in m:
+        return CLAUDE_HAIKU_PRICING
     if "gpt" in m or "codex" in m:
         return CODEX_GPT55_PRICING
     return None
+
+
+_MODEL_TOKEN_KEYS = (
+    "total_input", "total_cache_create", "total_cache_read", "total_output",
+)
+
+
+def _empty_model_bucket() -> dict[str, int]:
+    return {k: 0 for k in _MODEL_TOKEN_KEYS} | {"n_assistant_turns": 0}
 
 
 def estimate_cost_with(usage: dict[str, Any], pricing: dict[str, float]) -> float:
@@ -102,6 +121,7 @@ def parse_claude_session(path: Path) -> dict[str, Any] | None:
     model: str | None = None
     first_ts: str | None = None
     last_ts: str | None = None
+    by_model: dict[str, dict[str, int]] = {}
 
     with path.open() as f:
         for line in f:
@@ -119,16 +139,27 @@ def parse_claude_session(path: Path) -> dict[str, Any] | None:
 
             if rec_type == "assistant":
                 n_assistant_turns += 1
-                if model is None:
-                    m = message.get("model")
-                    if isinstance(m, str):
-                        model = m
+                m = message.get("model")
+                if model is None and isinstance(m, str):
+                    model = m
+                bucket = by_model.setdefault(
+                    m if isinstance(m, str) else "unknown", _empty_model_bucket()
+                )
+                bucket["n_assistant_turns"] += 1
                 usage = message.get("usage")
                 if isinstance(usage, dict):
-                    total_input += int(usage.get("input_tokens", 0) or 0)
-                    total_cache_create += int(usage.get("cache_creation_input_tokens", 0) or 0)
-                    total_cache_read += int(usage.get("cache_read_input_tokens", 0) or 0)
-                    total_output += int(usage.get("output_tokens", 0) or 0)
+                    ti = int(usage.get("input_tokens", 0) or 0)
+                    tcc = int(usage.get("cache_creation_input_tokens", 0) or 0)
+                    tcr = int(usage.get("cache_read_input_tokens", 0) or 0)
+                    to = int(usage.get("output_tokens", 0) or 0)
+                    total_input += ti
+                    total_cache_create += tcc
+                    total_cache_read += tcr
+                    total_output += to
+                    bucket["total_input"] += ti
+                    bucket["total_cache_create"] += tcc
+                    bucket["total_cache_read"] += tcr
+                    bucket["total_output"] += to
 
             elif rec_type == "user":
                 content = message.get("content")
@@ -150,6 +181,7 @@ def parse_claude_session(path: Path) -> dict[str, Any] | None:
         "tool_result_total_bytes": tool_result_total_bytes,
         "first_ts": first_ts,
         "last_ts": last_ts,
+        "by_model": by_model,
     }
 
 
@@ -222,8 +254,18 @@ def parse_codex_rollout(path: Path) -> dict[str, Any] | None:
         output_tokens = int(last_total.get("output_tokens", 0) or 0)
         total_tokens = int(last_total.get("total_tokens", 0) or 0)
 
+    total_input_uncached = max(input_tokens - cached, 0)
+    by_model = {
+        (model if isinstance(model, str) else "unknown"): {
+            "total_input": total_input_uncached,
+            "total_cache_create": 0,
+            "total_cache_read": cached,
+            "total_output": output_tokens,
+            "n_assistant_turns": n_assistant_turns,
+        }
+    }
     return {
-        "total_input": max(input_tokens - cached, 0),
+        "total_input": total_input_uncached,
         "total_cache_create": 0,
         "total_cache_read": cached,
         "total_output": output_tokens,
@@ -234,6 +276,7 @@ def parse_codex_rollout(path: Path) -> dict[str, Any] | None:
         "cache_create_unavailable": True,
         "first_ts": first_ts,
         "last_ts": last_ts,
+        "by_model": by_model,
     }
 
 
@@ -304,10 +347,43 @@ def capture_tokens(
     summed["last_ts"] = last_ts
     summed["duration_ms"] = duration_ms
 
-    if backend_family == "claude":
-        summed["est_cost_usd"] = round(estimate_claude_cost(summed), 6)
-    else:
-        summed["est_cost_usd"] = round(estimate_codex_cost(summed), 6)
+    # Per-model cost. A single run is multi-model (main agent + subagents on
+    # different models); pricing the summed token pool at one model's rate
+    # over- or under-states cost. Aggregate by model, price each separately,
+    # and sum (PRI-1872).
+    agg: dict[str, dict[str, int]] = {}
+    for u in valid:
+        for m, bucket in (u.get("by_model") or {}).items():
+            dst = agg.setdefault(m, _empty_model_bucket())
+            for k in _MODEL_TOKEN_KEYS:
+                dst[k] += int(bucket.get(k, 0) or 0)
+            dst["n_assistant_turns"] += int(bucket.get("n_assistant_turns", 0) or 0)
+
+    models_out: dict[str, dict[str, Any]] = {}
+    total_cost = 0.0
+    has_unpriced = False
+    for m, bucket in agg.items():
+        pricing = pricing_for_model(m)
+        if pricing is None and backend_family == "codex":
+            # Codex model ids may not match the resolver substrings; the
+            # backend is uniformly GPT-5.5-priced.
+            pricing = CODEX_GPT55_PRICING
+        cost = round(estimate_cost_with(bucket, pricing), 6) if pricing else None
+        if cost is None:
+            has_unpriced = True
+        else:
+            total_cost += cost
+        models_out[m] = {
+            **bucket,
+            "total_tokens": sum(bucket[k] for k in _MODEL_TOKEN_KEYS),
+            "est_cost_usd": cost,
+        }
+
+    summed["models"] = models_out
+    summed["est_cost_usd"] = round(total_cost, 6)
+    if has_unpriced:
+        summed["has_unpriced_model"] = True
+    if backend_family == "codex":
         # Preserve the fact that cache_create is structurally missing for OpenAI.
         summed["cache_create_unavailable"] = True
 

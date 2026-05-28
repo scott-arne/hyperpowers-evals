@@ -190,6 +190,29 @@ def _agent_row(label, block, *, color):
     return f"  {label:<10} {dur:>10} {tok:>9} {cost:>9}"
 
 
+def _short_model(model_id: str | None) -> str:
+    """Friendly short label for a model id (opus/sonnet/haiku/gpt), else raw."""
+    if not isinstance(model_id, str):
+        return "—"
+    m = model_id.lower()
+    for fam in ("opus", "sonnet", "haiku"):
+        if fam in m:
+            return fam
+    if "gpt" in m or "codex" in m:
+        return "gpt"
+    return model_id
+
+
+def _model_subrow(entry: dict) -> str:
+    """Indented per-model line under the Coding row."""
+    label = "  " + _short_model(entry.get("model"))
+    tok = _fmt_tokens((entry.get("tokens") or {}).get("total"))
+    cost = _fmt_cost(entry.get("est_cost_usd"))
+    if entry.get("est_cost_usd") is None and entry.get("model"):
+        cost = "n/a"
+    return f"  {label:<10} {'':>10} {tok:>9} {cost:>9}"
+
+
 def _format_economics_pane(verdict: dict, *, color: bool) -> str:
     econ = verdict.get("economics")
     if not econ:
@@ -197,10 +220,12 @@ def _format_economics_pane(verdict: dict, *, color: bool) -> str:
     sep = _style("─── Economics ────────────────────────────────────",
                  fg="bright_cyan", bold=True, color=color)
     header = f"  {'':<10} {'duration':>10} {'tokens':>9} {'est cost':>9}"
-    rows = [
-        _agent_row("Gauntlet", econ.get("gauntlet"), color=color),
-        _agent_row("Coding", econ.get("coding_agent"), color=color),
-    ]
+    rows = [_agent_row("Gauntlet", econ.get("gauntlet"), color=color)]
+    coding = econ.get("coding_agent")
+    rows.append(_agent_row("Coding", coding, color=color))
+    # Per-model sub-rows under Coding (PRI-1872): a coding run is multi-model.
+    for entry in (coding or {}).get("models") or []:
+        rows.append(_model_subrow(entry))
     total = econ.get("total_est_cost_usd")
     total_str = _fmt_cost(total) if total is not None else ("partial" if econ.get("partial") else "—")
     rows.append(f"  {'total':<10} {'':>10} {'':>9} {total_str:>9}")

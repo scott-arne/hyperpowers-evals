@@ -275,3 +275,68 @@ class TestCaptureTokens:
         assert result["total_input"] == 300
         assert result["total_output"] == 20
         assert result["n_assistant_turns"] == 2
+
+
+class TestPerModelPricing:
+    """A single run is multi-model (main Opus + Sonnet/Haiku subagents).
+    capture_tokens must price each model separately and sum (PRI-1872)."""
+
+    def test_haiku_resolver(self):
+        from quorum.token_usage import pricing_for_model, CLAUDE_HAIKU_PRICING
+        assert pricing_for_model("claude-haiku-4-5-20251001") is CLAUDE_HAIKU_PRICING
+
+    def test_parse_claude_session_splits_by_model(self, tmp_path: Path):
+        from quorum.token_usage import parse_claude_session
+        p = tmp_path / "s.jsonl"
+        rows = [
+            {"type": "assistant", "message": {"model": "claude-opus-4-7",
+             "usage": {"input_tokens": 10, "output_tokens": 100}}},
+            {"type": "assistant", "message": {"model": "claude-sonnet-4-6",
+             "usage": {"input_tokens": 20, "output_tokens": 200}}},
+            {"type": "assistant", "message": {"model": "claude-opus-4-7",
+             "usage": {"input_tokens": 5, "output_tokens": 50}}},
+        ]
+        p.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        u = parse_claude_session(p)
+        bm = u["by_model"]
+        assert bm["claude-opus-4-7"]["total_input"] == 15
+        assert bm["claude-opus-4-7"]["total_output"] == 150
+        assert bm["claude-opus-4-7"]["n_assistant_turns"] == 2
+        assert bm["claude-sonnet-4-6"]["total_output"] == 200
+
+    def test_capture_tokens_prices_each_model_and_sums(self, tmp_path: Path):
+        from quorum.token_usage import (
+            capture_tokens, estimate_cost_with,
+            CLAUDE_OPUS_PRICING, CLAUDE_SONNET_PRICING,
+        )
+        p = tmp_path / "s.jsonl"
+        rows = [
+            {"type": "assistant", "message": {"model": "claude-opus-4-7",
+             "usage": {"input_tokens": 1_000_000, "output_tokens": 0}}},
+            {"type": "assistant", "message": {"model": "claude-sonnet-4-6",
+             "usage": {"input_tokens": 1_000_000, "output_tokens": 0}}},
+        ]
+        p.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        u = capture_tokens(backend_family="claude", session_log_files=[p])
+        # Opus input 1M -> $15 ; Sonnet input 1M -> $3 ; total $18
+        assert u["models"]["claude-opus-4-7"]["est_cost_usd"] == 15.0
+        assert u["models"]["claude-sonnet-4-6"]["est_cost_usd"] == 3.0
+        assert u["est_cost_usd"] == 18.0
+        # NOT the old single-model bug ($15/M applied to both = $30)
+        assert u["est_cost_usd"] != 30.0
+
+    def test_capture_tokens_unpriced_model_flags_but_still_sums_priced(self, tmp_path: Path):
+        from quorum.token_usage import capture_tokens
+        p = tmp_path / "s.jsonl"
+        rows = [
+            {"type": "assistant", "message": {"model": "claude-opus-4-7",
+             "usage": {"input_tokens": 1_000_000, "output_tokens": 0}}},
+            {"type": "assistant", "message": {"model": "gemini-3-pro",
+             "usage": {"input_tokens": 1_000_000, "output_tokens": 0}}},
+        ]
+        p.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        u = capture_tokens(backend_family="claude", session_log_files=[p])
+        assert u["models"]["gemini-3-pro"]["est_cost_usd"] is None
+        assert u["models"]["claude-opus-4-7"]["est_cost_usd"] == 15.0
+        assert u["est_cost_usd"] == 15.0  # only the priced one
+        assert u.get("has_unpriced_model") is True

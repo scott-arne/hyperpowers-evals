@@ -57,9 +57,27 @@ def _gauntlet_block(result: dict) -> dict:
 
 
 def _coding_block(usage: dict) -> dict:
+    # Per-model breakdown (PRI-1872): a coding run is multi-model (main agent
+    # + subagents on different models). `models` carries each model's tokens
+    # and cost; `est_cost_usd` is their sum (already frozen in the usage file).
+    models = []
+    for model_id, mt in (usage.get("models") or {}).items():
+        models.append({
+            "model": model_id,
+            "tokens": {
+                "input": mt.get("total_input", 0),
+                "output": mt.get("total_output", 0),
+                "cache_create": mt.get("total_cache_create", 0),
+                "cache_read": mt.get("total_cache_read", 0),
+                "total": mt.get("total_tokens", 0),
+            },
+            "est_cost_usd": mt.get("est_cost_usd"),
+        })
+    models.sort(key=lambda m: m["est_cost_usd"] or 0, reverse=True)
     return {
         "duration_ms": usage.get("duration_ms"),
         "model": usage.get("model"),
+        "models": models,
         "tokens": {
             "input": usage.get("total_input", 0),
             "output": usage.get("total_output", 0),
