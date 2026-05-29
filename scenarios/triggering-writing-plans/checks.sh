@@ -1,6 +1,8 @@
 pre() {
     git-repo
     git-branch main
+    file-exists 'app.js'
+    file-exists 'package.json'
 }
 
 post() {

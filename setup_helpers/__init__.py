@@ -15,6 +15,7 @@ from setup_helpers.spec_targets_wrong_component_with_checkpoint import (
 )
 from setup_helpers.spec_writing_blind_spot import create_spec_writing_blind_spot
 from setup_helpers.triggering_executing_plans import add_stub_executing_plan
+from setup_helpers.triggering_writing_plans import create_writing_plans_skeleton
 from setup_helpers.worktree import (
     add_existing_worktree,
     add_worktree,
@@ -44,6 +45,7 @@ HELPER_REGISTRY = {
         create_spec_targets_wrong_component_with_checkpoint
     ),
     "add_stub_executing_plan": add_stub_executing_plan,
+    "create_writing_plans_skeleton": create_writing_plans_skeleton,
     "create_code_review_planted_bugs": create_code_review_planted_bugs,
     "add_flawed_spec_for_review": add_flawed_spec_for_review,
     "add_sdd_auth_plan": add_sdd_auth_plan,

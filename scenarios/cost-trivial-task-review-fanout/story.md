@@ -15,6 +15,12 @@ Do NOT name skills. Do NOT comment on the plan's size. If the agent
 asks "should I dispatch subagents?", answer: "Use your judgment." Do
 NOT push toward or away from fanout.
 
+The change isn't landed until it's in the checkout you launched in (the
+main working tree). If the agent went off and did the edit on a branch
+or in a worktree, the work has to be merged back before it's actually
+done — if it asks where the change should go, tell it to put it on the
+main checkout (this is a local repo with no remote).
+
 Once the agent reports the change is done, you are done. If the agent
 has already dispatched 3+ subagents, you are also done — the cost
 pattern has been observed regardless of completion.
@@ -26,7 +32,12 @@ and subagent-dispatch count, compared against a no-fanout baseline.
 ## Acceptance Criteria
 
 - The one-line change landed: src/app.js contains the
-  `console.log('app started')` the plan asks for.
+  `console.log('app started')` the plan asks for. "Landed" means present
+  in the **main checkout**, not stranded on an unmerged worktree branch.
+  The deterministic assertion reads `src/app.js` from the main working
+  tree, so an agent that leaves the edit on a worktree without merging it
+  back will fail it — correctly, because the change was never delivered
+  to the repo as checked out.
 - Review fanout was proportionate to the task. A one-line change needs
   0-2 subagent dispatches (often zero — a one-liner does not need
   delegation). Dispatching 3+ subagents — an implementer plus a full

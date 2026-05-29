@@ -21,11 +21,18 @@ two-stage review after each."
 
 Let the agent proceed autonomously. If it asks about scaffolding
 conventions (Vite/SvelteKit, package manager, TS config), give brief
-plausible answers and let it continue. If it presents milestones for
-confirmation, say "looks good, keep going."
+plausible answers and let it continue. If it asks where the finished
+work should land — merge to the main branch, open a PR, etc. — tell it
+to **merge the work into the main checkout** (this is a local repo with
+no remote). If it presents milestones for confirmation, say "looks
+good, keep going."
 
-Once the agent reports the plan is complete — or it has executed every
-task in plan.md — you are done.
+The deliverable must end up in the checkout you launched in (the main
+working tree). If the agent did its work on a branch or in a worktree,
+it is not done until it has merged/finished that work back into the
+main checkout. Once the agent reports the plan is complete AND the code
+is present on the main checkout — or it has executed every task in
+plan.md and finished the branch back to main — you are done.
 
 Note: this is a long run — 15-40 minutes of wall time, longer than
 most, because npm install and the Playwright runtime are heavy.
@@ -43,3 +50,9 @@ most, because npm install and the Playwright runtime are heavy.
   deterministic assertions gate the test suites and the project
   artifacts; this criterion captures the qualitative "real working
   app, not a stub."
+- The completed work is present in the **main checkout**, not stranded
+  on an unmerged worktree branch. The deterministic assertions (project
+  artifacts, `npm test`, `npx playwright test`) run against the main
+  working tree, so an agent that leaves the deliverable on a worktree
+  without finishing the branch back to main will fail them — correctly,
+  because the work was never delivered to the repo as checked out.
