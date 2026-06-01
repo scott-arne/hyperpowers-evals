@@ -136,6 +136,10 @@ The implementation should keep this dependency contained:
   preflight must not use the run's `ANTIGRAVITY_CONFIG_DIR`, because Quorum's
   capture snapshots new transcript filenames; creating a transcript before the
   snapshot can hide the real run if Antigravity later appends to the same file.
+  It must also run from a throwaway non-repository cwd so Antigravity's
+  `.antigravitycli/` project marker does not dirty the Quorum checkout or a
+  scenario fixture before the runner has resolved and excluded the real launch
+  cwd.
   The preflight may use `--print-timeout <duration> --print <prompt>`; when it
   does, `--print-timeout` must appear before `--print` because observed `agy`
   behavior treats arguments after `--print` as prompt content.
@@ -153,9 +157,11 @@ not update the CLI during a run.
 Antigravity writes a `.antigravitycli/` project marker into the launch workdir.
 For git-backed fixtures, that marker must not make ordinary `git-clean` checks
 fail. After setup and after resolving `launch_cwd`, the runner should add
-`.antigravitycli/` to the launch repo's `.git/info/exclude` when `launch_cwd`
-is inside a git work tree. This keeps the marker out of `git status --porcelain`
-without changing tracked files.
+`.antigravitycli/` to the launch repo's local exclude file when `launch_cwd`
+is inside a git work tree. Use `git -C "$launch_cwd" rev-parse --git-path
+info/exclude` or equivalent rather than assuming `.git/` is a directory; linked
+worktrees use a `.git` file. The append should be idempotent. This keeps the
+marker out of `git status --porcelain` without changing tracked files.
 
 ## Superpowers install
 
@@ -190,12 +196,35 @@ generates the installed plugin package under `.gemini/config/plugins`. The
 post-install assertion should inspect the generated install, especially
 `plugin.json`, `hooks.json`, and `skills/using-superpowers/SKILL.md`.
 
+`hooks.json` existence is not sufficient evidence that Antigravity recognized
+or ran Superpowers hooks. Current `agy 1.0.3` can install a Superpowers
+`hooks.json` that still validates as `hooks: skipped (not found)` because the
+file shape is not the official Antigravity hook schema. V1 must therefore
+separate two claims:
+
+- plugin skill files installed and discoverable under
+  `.gemini/config/plugins/superpowers/skills/`;
+- hook/bootstrap behavior actually caused Antigravity to load a skill on a
+  naive request.
+
+The bootstrap scenario is the evidence for the second claim. If hook schema
+support is still not recognized at implementation time, V1 may test installed
+skills plus observed startup behavior, but it must not claim
+SessionStart-hook parity with Codex unless a live trace proves an official
+Antigravity hook fired.
+
 The runner provisioning should fail clearly if:
 
 - `SUPERPOWERS_ROOT` is missing.
 - `agy` is missing.
 - `agy plugin install "$SUPERPOWERS_ROOT"` fails.
 - The expected plugin files are absent after install.
+- provisioning creates any transcript under the real
+  `$ANTIGRAVITY_CONFIG_DIR/.gemini/antigravity-cli/brain` before Quorum's
+  capture snapshot. Current observed `agy plugin install` is transcript-silent;
+  if that changes, the implementation must either clear those provisioning
+  transcripts before snapshot or extend Antigravity capture to include
+  appended-to-existing files by size/mtime.
 
 ## Capture and normalization
 
@@ -215,6 +244,14 @@ Set `session_log_dir` to the `brain` directory and `session_log_glob` to
 `**/transcript.jsonl` so Quorum's existing snapshot/diff capture path can find
 new transcript files.
 
+Antigravity capture should also expose metadata to the runner: transcript paths
+found, count of new transcript files, and normalized row count. A missing
+transcript and a transcript that normalizes to zero rows are different
+failures, and the verdict should say which one happened. This may be a small
+Antigravity-specific capture result or a generic capture metadata extension,
+but the runner must not rely only on the byte size of
+`coding-agent-tool-calls.jsonl`.
+
 Add `normalize_antigravity_logs(raw_content: str)`.
 
 The normalizer should be tolerant because the transcript schema is observed,
@@ -224,7 +261,8 @@ not guaranteed:
 - Read tool calls from current `agy 1.0.3` top-level `tool_calls[]` entries
   when present.
 - Also tolerate older/alternate shapes such as `PLANNER_RESPONSE.tool_calls[]`
-  if captured fixtures show them.
+  as best-effort compatibility if captured fixtures show them; do not make
+  unobserved legacy shapes a hard requirement.
 - Ignore malformed lines and non-tool rows.
 - Preserve unknown Antigravity tool names instead of dropping or guessing.
 - Preserve raw tool args under `args.raw_args` while also emitting canonical
@@ -237,13 +275,18 @@ Canonical mappings:
 | `run_command` | `Bash` | Canonicalize `CommandLine` or `command` to `args.command`. |
 | `view_file` | `Read` | Canonicalize `AbsolutePath`, `path`, or `file_path` to `args.file_path`; canonicalize skill markers to `args.is_skill_file`. |
 | `write_to_file` | `Write` | Preserve raw args. |
+| `create_file` | `Write` | Fixture-backed alias for SDK/runtime tool naming. |
 | `replace_file_content` | `Edit` | Preserve raw args. |
 | `multi_replace_file_content` | `Edit` | Preserve raw args. |
+| `edit_file` | `Edit` | Fixture-backed alias for SDK/runtime tool naming. |
 | `grep_search` | `Grep` | Preserve raw args. |
+| `search_directory` | `Grep` | Fixture-backed alias for SDK/runtime tool naming. |
 | `list_dir` | `Glob` | Canonicalize `DirectoryPath` when present. |
 | `find_by_name` | `Glob` | Preserve raw args. |
+| `find_file` | `Glob` | Fixture-backed alias for SDK/runtime tool naming. |
+| `list_directory` | `Glob` | Fixture-backed alias for SDK/runtime tool naming. |
 | `invoke_subagent` | `Agent` | Preserve subagent type/name/prompt args. |
-| `manage_subagents` | `Agent` when the action launches a subagent; otherwise preserve raw | Current `agy 1.0.3` traces use this name. Do not claim completion/result semantics until real traces are understood. |
+| `manage_subagents` | `Agent` only for a fixture-proven launch action; otherwise preserve raw | Current `agy 1.0.3` traces use this name. Do not claim launch, wait, completion, or result semantics until real launch and non-launch transcript fixtures define the action field and allowed values. |
 | `search_web` | `WebSearch` | Preserve raw args. |
 | `read_url_content` | `WebFetch` | Preserve raw args. |
 | `manage_task` | `manage_task` | Keep raw until real traces show stable action semantics. |
@@ -269,9 +312,11 @@ count as skill invocations:
   Bash/Shell/LocalShellCall command reading `skills/<name>/SKILL.md` or
   `skills/superpowers/<name>/SKILL.md`.
 - New Antigravity normalized-read form:
-  `{"tool": "Read", "args": {"file_path": ".../skills/<name>/SKILL.md"}}`.
+  `{"tool": "Read", "args": {"file_path": ".../skills/<name>/SKILL.md"}}`
+  or `{"tool": "Read", "args": {"file_path": ".../skills/superpowers/<name>/SKILL.md"}}`.
 - New Antigravity skill marker form:
-  `{"tool": "Read", "args": {"file_path": ".../skills/<name>/SKILL.md", "is_skill_file": true}}`.
+  `{"tool": "Read", "args": {"file_path": ".../skills/<name>/SKILL.md", "is_skill_file": true}}`
+  or the `skills/superpowers/<name>/SKILL.md` equivalent.
 
 The predicate must not treat arbitrary file reads as skill invocations. The
 path must identify the skill directory being checked.
@@ -285,7 +330,8 @@ The original args should remain available under `raw_args`.
 Skill path detection should be root-tolerant. The same skill may appear under
 installed plugin roots such as `.gemini/config/plugins/superpowers/skills/`,
 global skills roots, or workspace `.agents/skills/`; matching should key off
-the `skills/<skill>/SKILL.md` suffix rather than one absolute prefix.
+the `skills/<skill>/SKILL.md` or `skills/superpowers/<skill>/SKILL.md` suffix
+rather than one absolute prefix.
 
 This is required for parity: `skill-called superpowers:writing-plans` should
 mean the same kind of behavioral evidence for Antigravity as it does for
@@ -323,16 +369,39 @@ The implementation must include a scenario compatibility rollout:
   under the isolated `.gemini/config/plugins/superpowers`, produces a non-empty
   Antigravity trace, and satisfies `skill-called` through the normalized
   `Read` predicate.
+- The bootstrap story must use a naive user request, like "Let's make a react
+  todo list", and must not mention Superpowers, hooks, skills, brainstorming,
+  planning, or tests. Otherwise the scenario can pass because Gauntlet told the
+  agent what to read, not because Jesse's Antigravity plugin support
+  bootstrapped naturally.
 - Do not use `codex-native-hooks-bootstrap` as the Antigravity smoke; it is
   Codex-gated and checks Codex hook state.
-- Either gate not-yet-audited scenarios to the currently supported agents, or
-  add an explicit Antigravity allowlist mechanism before `antigravity.yaml`
-  joins default `run-all` discovery.
+- Add an explicit Antigravity scenario allowlist, for example
+  `coding-agents/antigravity-scenarios.txt`, and enforce it through a shared
+  runner gating helper used by both direct `quorum run` and `run-all`. For
+  Claude and Codex, absent `# coding-agents:` keeps its existing "all supported
+  agents" meaning. For Antigravity, a scenario must pass both the existing
+  directive gate and the Antigravity allowlist until the suite is audited.
+- Direct `quorum run <scenario> --coding-agent antigravity` should return an
+  indeterminate "scenario not audited for Antigravity" verdict when the
+  scenario is not allowlisted, unless a future explicit maintainer override is
+  designed and documented.
+- Add a unit test against the matrix/gating helper proving the Antigravity
+  runnable set equals the allowlist and that unaudited scenarios are excluded
+  from both direct run and run-all.
 - Opt Antigravity into scenarios only after the story/check wording is portable
   and the scenario has passed a maintainer live run.
-- Initial live acceptance should include at least the bootstrap scenario, one
-  skill-order scenario, one SDD/subagent-launch scenario, one verification
-  scenario, and one worktree scenario.
+- Initial live acceptance should use this named matrix:
+  `antigravity-superpowers-bootstrap`;
+  `triggering-test-driven-development` after its story evidence wording is made
+  backend-neutral instead of referencing `$CLAUDE_CONFIG_DIR`;
+  `explicit-skill-request-sdd` only after `manage_subagents` launch/non-launch
+  fixtures define safe `Agent` mapping;
+  `claim-without-verification-naive`;
+  `worktree-creation-from-main` after its story stops requiring a
+  Claude-specific native worktree tool. The existing `worktree-created`
+  deterministic check is already portable because it accepts either
+  `EnterWorktree` or shell `git worktree add`.
 
 This rollout does not require every existing scenario to pass in the first
 patch. It does require the repository to avoid accidentally treating every
@@ -392,8 +461,21 @@ Static tests should cover the parity layer without launching `agy`:
 - Unknown Antigravity tools are preserved.
 - Current `agy 1.0.3` transcript fixtures with top-level `tool_calls[]` and
   PascalCase args normalize correctly.
-- Alternate/legacy transcript fixtures with nested `PLANNER_RESPONSE.tool_calls[]`
-  normalize if present in captured samples.
+- If real alternate/legacy transcript samples with nested
+  `PLANNER_RESPONSE.tool_calls[]` are committed as fixtures, they normalize
+  correctly. If no real fixture exists, this remains best-effort rather than a
+  release blocker.
+- Canonicalization tests assert `CommandLine`, `AbsolutePath`, `Path`,
+  `DirectoryPath`, observed skill marker casing, nested marker metadata, and
+  `args.raw_args` preservation.
+- `manage_subagents` tests include at least one launch fixture and one
+  non-launch fixture before any Antigravity subagent scenario is enabled.
+- Tool-alias tests cover fixture-backed aliases used by official SDK/runtime
+  surfaces: `create_file`, `edit_file`, `find_file`, `list_directory`, and
+  `search_directory`.
+- Bootstrap tests distinguish installed skill files from recognized/effective
+  hook behavior; `hooks.json` presence alone is not accepted as proof of
+  Antigravity startup support.
 - `view_file` reads of `.../skills/<skill>/SKILL.md` count for `skill-called`
   through canonical `args.file_path`.
 - `view_file` reads with any observed skill marker casing count only when the path
@@ -406,10 +488,15 @@ Static tests should cover the parity layer without launching `agy`:
   do not run live `agy` in CI.
 - Runner tests cover install order, `ANTIGRAVITY_CONFIG_DIR` substitution,
   executable `launch-agent`, `AGY_CLI_DISABLE_AUTO_UPDATE=true`, `--gemini_dir`,
-  no `--print` in the interactive launcher, `.antigravitycli/` git exclusion,
-  missing-transcript indeterminate behavior, and auth preflight failures.
+  no `--print` in the interactive launcher, auth preflight using a throwaway
+  non-repo cwd, `.antigravitycli/` git exclusion via `git rev-parse --git-path
+  info/exclude`, no real-config provisioning transcripts before snapshot,
+  missing-transcript indeterminate behavior, zero-normalized-row diagnostics,
+  and auth preflight failures.
 - Scenario rollout tests or checks ensure Antigravity is not accidentally
-  included in all ungated scenarios before compatibility has been audited.
+  included in all ungated scenarios before compatibility has been audited:
+  direct `quorum run` and `run-all` must both respect the same Antigravity
+  allowlist.
 
 Trusted-maintainer live smoke, documented but not part of CI:
 
@@ -438,7 +525,7 @@ The bootstrap scenario is required acceptance for v1, not an optional follow-up.
   parity, runner provisioning, auth diagnostics, git metadata exclusion, and
   setup/install behavior.
 - The repository has an Antigravity scenario rollout plan: a bootstrap scenario,
-  a small representative live matrix, and no accidental default sweep across
-  unaudited scenarios.
+  a small representative live matrix, and an enforced allowlist that prevents
+  accidental direct-run or run-all sweeps across unaudited scenarios.
 - README documents the target, safety model, hidden `--gemini_dir` dependency,
   and live-smoke procedure.
