@@ -515,7 +515,7 @@ def _run_scenario_inner(
     )
 
     # 9. Capture + normalize logs.
-    capture_tool_calls(
+    capture_result = capture_tool_calls(
         log_dir=session_log_dir,
         log_glob=tcfg.session_log_glob,
         snapshot=snap,
@@ -553,8 +553,7 @@ def _run_scenario_inner(
         )
 
     # 11. Built-in empty-capture check.
-    tcp = run_dir / "coding-agent-tool-calls.jsonl"
-    capture_empty = not tcp.exists() or tcp.stat().st_size == 0
+    capture_empty = capture_result.row_count == 0
 
     # 11b. QA-agent-misconfigured short-circuit.
     #      An empty capture *plus* a codex rollout sitting under run_dir but

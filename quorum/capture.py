@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from quorum.normalizers import (
@@ -12,6 +13,13 @@ from quorum.normalizers import (
     find_misplaced_codex_rollouts,
 )
 from quorum.token_usage import capture_tokens
+
+
+@dataclass(frozen=True)
+class CaptureResult:
+    path: Path
+    source_logs: tuple[Path, ...]
+    row_count: int
 
 
 def snapshot_dir(log_dir: Path, glob: str) -> set[str]:
@@ -57,20 +65,24 @@ def capture_tool_calls(
     normalizer: str,
     run_dir: Path,
     launch_cwd: Path | None = None,
-) -> Path:
+) -> CaptureResult:
     """Diff log_dir, filter by cwd if applicable, normalize, write JSONL.
 
     Always writes coding-agent-tool-calls.jsonl (empty if no new logs) so
-    downstream assertions can rely on the file existing.
+    downstream assertions can rely on the file existing. The returned metadata
+    lets runner diagnostics distinguish missing source logs from zero normalized
+    rows.
     """
     new = _new_session_logs(log_dir, log_glob, snapshot, normalizer, launch_cwd)
     fn = NORMALIZERS[normalizer]
     out_path = run_dir / "coding-agent-tool-calls.jsonl"
+    row_count = 0
     with out_path.open("w") as f:
         for path in new:
             for row in fn(path.read_text()):
                 f.write(json.dumps(row) + "\n")
-    return out_path
+                row_count += 1
+    return CaptureResult(path=out_path, source_logs=tuple(new), row_count=row_count)
 
 
 def detect_misplaced_codex_rollouts(
