@@ -9,6 +9,15 @@ from quorum.checks import CheckRecord
 
 FinalStatus = Literal["pass", "fail", "indeterminate"]
 GauntletStatus = Literal["pass", "fail", "investigate", "errored"]
+RunErrorStage = Literal[
+    "setup",
+    "gauntlet",
+    "capture",
+    "checks",
+    "compose",
+    "qa-agent-misconfigured",
+    "unknown",
+]
 TRACE_PRIMITIVES = {
     "tool-called", "tool-not-called", "tool-count", "tool-before",
     "tool-arg-match", "tool-match-before-tool-match",
@@ -27,15 +36,7 @@ class GauntletLayer:
 
 @dataclass(frozen=True)
 class RunError:
-    stage: Literal[
-        "setup",
-        "gauntlet",
-        "capture",
-        "checks",
-        "compose",
-        "qa-agent-misconfigured",
-        "unknown",
-    ]
+    stage: RunErrorStage
     message: str
 
 

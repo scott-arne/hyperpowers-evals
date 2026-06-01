@@ -36,6 +36,7 @@ import secrets
 import shutil
 import stat
 import subprocess
+import tempfile
 from pathlib import Path
 
 from quorum.capture import (
@@ -46,7 +47,14 @@ from quorum.capture import (
 )
 from quorum.checks import parse_coding_agents_directive, run_phase
 from quorum.coding_agent_config import CodingAgentConfig, load_coding_agent_config
-from quorum.composer import FinalVerdict, GauntletLayer, GauntletStatus, RunError, compose
+from quorum.composer import (
+    FinalVerdict,
+    GauntletLayer,
+    GauntletStatus,
+    RunError,
+    RunErrorStage,
+    compose,
+)
 from quorum.economics import build_run_economics
 from quorum.setup_step import SetupError, run_setup
 from quorum.story_meta import StoryMetaError, read_quorum_max_time
@@ -58,6 +66,10 @@ CODING_AGENT_CONFIG_SUBDIR = "coding-agent-config"
 
 class RunnerError(RuntimeError):
     """Raised on non-recoverable errors before verdict composition."""
+
+    def __init__(self, message: str, *, stage: RunErrorStage = "unknown"):
+        super().__init__(message)
+        self.stage = stage
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +164,135 @@ def _seed_codex_plugin_hooks(codex_home: Path, workdir: Path) -> None:
     )
 
 
+def _antigravity_transcripts(config_dir: Path) -> list[Path]:
+    brain = config_dir / ".gemini" / "antigravity-cli" / "brain"
+    if not brain.exists():
+        return []
+    return sorted(brain.glob("**/transcript.jsonl"))
+
+
+def _run_antigravity_auth_preflight() -> None:
+    """Verify agy auth and hidden --gemini_dir isolation using throwaway state."""
+    with tempfile.TemporaryDirectory(prefix="quorum-antigravity-preflight-") as tmp:
+        tmp_path = Path(tmp)
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        gemini_dir = tmp_path / ".gemini"
+        log_path = tmp_path / "agy.log"
+        cmd = [
+            "agy",
+            f"--gemini_dir={gemini_dir}",
+            "--dangerously-skip-permissions",
+            "--log-file",
+            str(log_path),
+            "--print-timeout",
+            "60s",
+            "--print",
+            "Reply with EXACTLY OK.",
+        ]
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=cwd,
+                text=True,
+                capture_output=True,
+                timeout=90,
+                env={**os.environ, "AGY_CLI_DISABLE_AUTO_UPDATE": "true"},
+            )
+        except subprocess.TimeoutExpired as e:
+            raise RunnerError(
+                "antigravity auth preflight timed out after 90s; "
+                "check agy browser/keyring auth",
+                stage="setup",
+            ) from e
+        if result.returncode != 0:
+            raise RunnerError(
+                "antigravity auth preflight failed "
+                f"(exit {result.returncode}); check agy browser/keyring auth. "
+                f"stderr: {result.stderr.strip()[:300]}",
+                stage="setup",
+            )
+        if result.stdout.strip() != "OK":
+            raise RunnerError(
+                "antigravity auth preflight did not return OK; "
+                f"stdout: {result.stdout.strip()[:300]}",
+                stage="setup",
+            )
+        transcripts = sorted(
+            (gemini_dir / "antigravity-cli" / "brain").glob("**/transcript.jsonl")
+        )
+        if not transcripts:
+            raise RunnerError(
+                "antigravity auth preflight produced no transcript under isolated "
+                "--gemini_dir",
+                stage="setup",
+            )
+
+
+def _seed_antigravity_config(antigravity_config_dir: Path) -> None:
+    """Install Superpowers into an isolated Antigravity .gemini tree."""
+    superpowers_root = os.environ.get("SUPERPOWERS_ROOT", "")
+    if not superpowers_root:
+        raise RunnerError(
+            "SUPERPOWERS_ROOT not set; cannot install antigravity Superpowers plugin",
+            stage="setup",
+        )
+    if shutil.which("agy") is None:
+        raise RunnerError(
+            "agy not found on PATH; cannot run antigravity evals",
+            stage="setup",
+        )
+
+    antigravity_config_dir.mkdir(parents=True, exist_ok=True)
+    _run_antigravity_auth_preflight()
+
+    cmd = [
+        "agy",
+        f"--gemini_dir={antigravity_config_dir / '.gemini'}",
+        "plugin",
+        "install",
+        superpowers_root,
+    ]
+    result = subprocess.run(
+        cmd,
+        cwd=antigravity_config_dir,
+        text=True,
+        capture_output=True,
+        env={**os.environ, "AGY_CLI_DISABLE_AUTO_UPDATE": "true"},
+    )
+    if result.returncode != 0:
+        raise RunnerError(
+            "agy plugin install failed "
+            f"(exit {result.returncode}); stderr: {result.stderr.strip()[:300]}",
+            stage="setup",
+        )
+
+    plugin_root = (
+        antigravity_config_dir / ".gemini" / "config" / "plugins" / "superpowers"
+    )
+    required = [
+        plugin_root / "plugin.json",
+        plugin_root / "hooks.json",
+        plugin_root / "skills" / "using-superpowers" / "SKILL.md",
+    ]
+    missing = [str(p.relative_to(plugin_root)) for p in required if not p.exists()]
+    if missing:
+        raise RunnerError(
+            "agy plugin install completed but expected Superpowers plugin files "
+            "are missing: " + ", ".join(missing),
+            stage="setup",
+        )
+
+    transcripts = _antigravity_transcripts(antigravity_config_dir)
+    if transcripts:
+        rel = [str(p.relative_to(antigravity_config_dir)) for p in transcripts]
+        raise RunnerError(
+            "antigravity provisioning unexpectedly wrote transcripts before "
+            "capture snapshot: " + ", ".join(rel),
+            stage="setup",
+        )
+
+
 def _seed_agent_config_dir(
     coding_agent: CodingAgentConfig,
     skeleton_root: Path,
@@ -193,6 +334,36 @@ def _seed_agent_config_dir(
     if coding_agent.name == "codex":
         _seed_codex_auth(dest)
         _seed_codex_plugin_hooks(dest, workdir)
+    if coding_agent.name == "antigravity":
+        _seed_antigravity_config(dest)
+
+
+def _exclude_antigravity_project_marker(launch_cwd: Path) -> None:
+    """Ignore Antigravity's project marker in the launch repo when one exists."""
+    inside = subprocess.run(
+        ["git", "-C", str(launch_cwd), "rev-parse", "--is-inside-work-tree"],
+        text=True,
+        capture_output=True,
+    )
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return
+
+    git_path = subprocess.run(
+        ["git", "-C", str(launch_cwd), "rev-parse", "--git-path", "info/exclude"],
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout.strip()
+    exclude_path = Path(git_path)
+    if not exclude_path.is_absolute():
+        exclude_path = launch_cwd / exclude_path
+    exclude_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = exclude_path.read_text().splitlines() if exclude_path.exists() else []
+    if ".antigravitycli/" not in existing:
+        with exclude_path.open("a") as f:
+            if existing and existing[-1] != "":
+                f.write("\n")
+            f.write(".antigravitycli/\n")
 
 
 def _resolve_launch_cwd(workdir: Path) -> Path:
@@ -473,6 +644,8 @@ def _run_scenario_inner(
     # 5. Resolve launch cwd (defaults to workdir; setup.sh may
     #    override via .quorum-launch-cwd sentinel).
     launch_cwd = _resolve_launch_cwd(workdir)
+    if tcfg.name == "antigravity":
+        _exclude_antigravity_project_marker(launch_cwd)
 
     # 6. Populate gauntlet-agent/context/ with HOWTOs, substituting
     #    $QUORUM_AGENT_CWD, $SUPERPOWERS_ROOT, and the per-coding-agent
@@ -655,7 +828,7 @@ def run_scenario(
         v = _write_indeterminate(
             run_dir,
             final_reason=f"runner error: {e}",
-            error=RunError(stage="unknown", message=str(e)[:500]),
+            error=RunError(stage=e.stage, message=str(e)[:500]),
         )
         return run_dir, v
     except Exception as e:  # last-resort: unexpected quorum crash

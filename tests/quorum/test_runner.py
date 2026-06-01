@@ -10,7 +10,13 @@ import pytest
 import yaml
 
 from quorum.coding_agent_config import CodingAgentConfig
-from quorum.runner import RunnerError, _seed_agent_config_dir, run_scenario
+from quorum.runner import (
+    RunnerError,
+    _exclude_antigravity_project_marker,
+    _seed_agent_config_dir,
+    _seed_antigravity_config,
+    run_scenario,
+)
 
 
 def _exec(path: Path, body: str) -> None:
@@ -47,6 +53,20 @@ def _tcfg(name: str = "claude") -> CodingAgentConfig:
         session_log_dir="${CLAUDE_CONFIG_DIR}/projects",
         session_log_glob="*.jsonl",
         normalizer="claude",
+        required_env=(),
+        max_time=None,
+        project_prompt=None,
+    )
+
+
+def _antigravity_tcfg() -> CodingAgentConfig:
+    return CodingAgentConfig(
+        name="antigravity",
+        binary="agy",
+        agent_config_env="ANTIGRAVITY_CONFIG_DIR",
+        session_log_dir="${ANTIGRAVITY_CONFIG_DIR}/.gemini/antigravity-cli/brain",
+        session_log_glob="**/transcript.jsonl",
+        normalizer="antigravity",
         required_env=(),
         max_time=None,
         project_prompt=None,
@@ -112,7 +132,10 @@ def test_antigravity_launch_agent_is_interactive_and_substituted(tmp_path):
     )
     out_root = tmp_path / "results"
 
-    with patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass):
+    with (
+        patch("quorum.runner._seed_antigravity_config"),
+        patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass),
+    ):
         run_scenario(
             scenario_dir=sd,
             coding_agent="antigravity",
@@ -241,6 +264,163 @@ class TestSeedAgentConfigDir:
             pytest.raises(RunnerError, match="SUPERPOWERS_ROOT"),
         ):
             _seed_agent_config_dir(_tcfg("codex"), tmp_path, dest, tmp_path / "wd")
+
+    def test_antigravity_seed_requires_superpowers_root(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("SUPERPOWERS_ROOT", raising=False)
+        with pytest.raises(RunnerError, match="SUPERPOWERS_ROOT"):
+            _seed_antigravity_config(tmp_path / "cfg")
+
+    def test_antigravity_target_seeds_config(self, tmp_path):
+        dest = tmp_path / "agent-config"
+        with patch("quorum.runner._seed_antigravity_config") as mock_seed:
+            _seed_agent_config_dir(_antigravity_tcfg(), tmp_path, dest, tmp_path / "wd")
+        mock_seed.assert_called_once_with(dest)
+
+    def test_antigravity_seed_runs_auth_preflight_then_plugin_install(
+        self, tmp_path, monkeypatch
+    ):
+        sp = tmp_path / "superpowers"
+        sp.mkdir()
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/agy")
+        cfg = tmp_path / "cfg"
+
+        def fake_run(cmd, **kwargs):
+            if "--print" in cmd:
+                assert kwargs["cwd"] != cfg
+                assert str(cfg) not in str(cmd)
+                assert kwargs["timeout"] == 90
+                assert kwargs["env"]["AGY_CLI_DISABLE_AUTO_UPDATE"] == "true"
+                assert cmd.index("--print-timeout") < cmd.index("--print")
+                assert "--log-file" in cmd
+                gemini_arg = next(part for part in cmd if part.startswith("--gemini_dir="))
+                gemini_dir = Path(gemini_arg.split("=", 1)[1])
+                transcript_dir = (
+                    gemini_dir
+                    / "antigravity-cli"
+                    / "brain"
+                    / "session"
+                    / ".system_generated"
+                    / "logs"
+                )
+                transcript_dir.mkdir(parents=True)
+                (transcript_dir / "transcript.jsonl").write_text(
+                    '{"tool_calls":[]}\n'
+                )
+                return subprocess.CompletedProcess(cmd, 0, "OK\n", "")
+            assert cmd == [
+                "agy",
+                f"--gemini_dir={cfg / '.gemini'}",
+                "plugin",
+                "install",
+                str(sp),
+            ]
+            assert kwargs["cwd"] == cfg
+            assert kwargs["env"]["AGY_CLI_DISABLE_AUTO_UPDATE"] == "true"
+            root = cfg / ".gemini" / "config" / "plugins" / "superpowers"
+            (root / "skills" / "using-superpowers").mkdir(parents=True)
+            (root / "plugin.json").write_text("{}")
+            (root / "hooks.json").write_text("{}")
+            (root / "skills" / "using-superpowers" / "SKILL.md").write_text("skill")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with patch("quorum.runner.subprocess.run", side_effect=fake_run) as mock_run:
+            _seed_antigravity_config(cfg)
+
+        assert mock_run.call_count == 2
+
+    def test_antigravity_seed_fails_when_auth_preflight_has_no_transcript(
+        self, tmp_path, monkeypatch
+    ):
+        sp = tmp_path / "superpowers"
+        sp.mkdir()
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/agy")
+
+        with (
+            patch(
+                "quorum.runner.subprocess.run",
+                return_value=subprocess.CompletedProcess([], 0, "OK\n", ""),
+            ),
+            pytest.raises(RunnerError, match="produced no transcript"),
+        ):
+            _seed_antigravity_config(tmp_path / "cfg")
+
+    def test_antigravity_seed_fails_when_install_creates_real_config_transcript(
+        self, tmp_path, monkeypatch
+    ):
+        sp = tmp_path / "superpowers"
+        sp.mkdir()
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/agy")
+        cfg = tmp_path / "cfg"
+
+        def fake_run(cmd, **kwargs):
+            gemini_arg = next(part for part in cmd if part.startswith("--gemini_dir="))
+            gemini_dir = Path(gemini_arg.split("=", 1)[1])
+            if "--print" in cmd:
+                transcript_dir = (
+                    gemini_dir
+                    / "antigravity-cli"
+                    / "brain"
+                    / "session"
+                    / ".system_generated"
+                    / "logs"
+                )
+                transcript_dir.mkdir(parents=True)
+                (transcript_dir / "transcript.jsonl").write_text(
+                    '{"tool_calls":[]}\n'
+                )
+                return subprocess.CompletedProcess(cmd, 0, "OK\n", "")
+            root = cfg / ".gemini" / "config" / "plugins" / "superpowers"
+            (root / "skills" / "using-superpowers").mkdir(parents=True)
+            (root / "plugin.json").write_text("{}")
+            (root / "hooks.json").write_text("{}")
+            (root / "skills" / "using-superpowers" / "SKILL.md").write_text("skill")
+            transcript_dir = (
+                cfg
+                / ".gemini"
+                / "antigravity-cli"
+                / "brain"
+                / "session"
+                / ".system_generated"
+                / "logs"
+            )
+            transcript_dir.mkdir(parents=True)
+            (transcript_dir / "transcript.jsonl").write_text("{}\n")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with (
+            patch("quorum.runner.subprocess.run", side_effect=fake_run),
+            pytest.raises(
+                RunnerError,
+                match="provisioning unexpectedly wrote transcripts",
+            ),
+        ):
+            _seed_antigravity_config(cfg)
+
+
+class TestAntigravityProjectMarkerExclusion:
+    def test_excludes_marker_in_git_info_exclude_idempotently(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+
+        _exclude_antigravity_project_marker(repo)
+        _exclude_antigravity_project_marker(repo)
+
+        exclude_path = subprocess.check_output(
+            ["git", "-C", str(repo), "rev-parse", "--git-path", "info/exclude"],
+            text=True,
+        ).strip()
+        lines = (repo / exclude_path).read_text().splitlines()
+        assert lines.count(".antigravitycli/") == 1
+
+    def test_exclusion_is_noop_outside_git_repo(self, tmp_path):
+        plain = tmp_path / "plain"
+        plain.mkdir()
+        _exclude_antigravity_project_marker(plain)
+        assert not (plain / ".git").exists()
 
 
 class TestRunScenario:
@@ -389,6 +569,89 @@ class TestRunScenario:
                 skeleton_root=_empty_skeleton(tmp_path),
             )
         assert captured["launch_cwd"].name.endswith("-sibling")
+
+    def test_antigravity_excludes_project_marker_after_launch_cwd_resolution(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(tmp_path / "sp"))
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"
+        session_log_dir.mkdir()
+        coding_agents_dir.mkdir(parents=True, exist_ok=True)
+        (coding_agents_dir / "antigravity.yaml").write_text(yaml.safe_dump({
+            "name": "antigravity",
+            "binary": "echo",
+            "agent_config_env": "ANTIGRAVITY_CONFIG_DIR",
+            "session_log_dir": str(session_log_dir),
+            "session_log_glob": "*.jsonl",
+            "normalizer": "claude",
+            "required_env": [],
+        }))
+        (coding_agents_dir / "antigravity-context").mkdir(parents=True)
+        sd = _make_scenario(scenarios_dir, "x")
+        _exec(
+            sd / "setup.sh",
+            "#!/usr/bin/env bash\nset -euo pipefail\n"
+            "git init >/dev/null\n"
+            "mkdir app\n"
+            "git -C app init >/dev/null\n"
+            'echo "$QUORUM_WORKDIR/app" > "$QUORUM_WORKDIR/.quorum-launch-cwd"\n',
+        )
+        out_root = tmp_path / "results"
+
+        with (
+            patch("quorum.runner._seed_antigravity_config"),
+            patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass),
+        ):
+            run_scenario(
+                scenario_dir=sd,
+                coding_agent="antigravity",
+                coding_agents_dir=coding_agents_dir,
+                out_root=out_root,
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        launch_repo = next(out_root.iterdir()) / "coding-agent-workdir" / "app"
+        exclude_path = subprocess.check_output(
+            ["git", "-C", str(launch_repo), "rev-parse", "--git-path", "info/exclude"],
+            text=True,
+        ).strip()
+        assert ".antigravitycli/" in (launch_repo / exclude_path).read_text()
+
+    def test_antigravity_seed_runner_error_preserves_setup_stage(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.delenv("SUPERPOWERS_ROOT", raising=False)
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"
+        session_log_dir.mkdir()
+        coding_agents_dir.mkdir(parents=True, exist_ok=True)
+        (coding_agents_dir / "antigravity.yaml").write_text(yaml.safe_dump({
+            "name": "antigravity",
+            "binary": "agy",
+            "agent_config_env": "ANTIGRAVITY_CONFIG_DIR",
+            "session_log_dir": str(session_log_dir),
+            "session_log_glob": "*.jsonl",
+            "normalizer": "claude",
+            "required_env": [],
+        }))
+        (coding_agents_dir / "antigravity-context").mkdir(parents=True)
+        sd = _make_scenario(scenarios_dir, "x")
+
+        run_dir, verdict = run_scenario(
+            scenario_dir=sd,
+            coding_agent="antigravity",
+            coding_agents_dir=coding_agents_dir,
+            out_root=tmp_path / "results",
+            skeleton_root=_empty_skeleton(tmp_path),
+        )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "setup"
+        assert (run_dir / "verdict.json").exists()
 
     def test_populate_context_dir_copies_coding_agent_contexts(self, tmp_path):
         # Spot-check that coding-agent context HOWTOs land in <run-dir>/gauntlet-agent/context/.
