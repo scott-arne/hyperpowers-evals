@@ -395,6 +395,16 @@ def _first_arg(args: dict[str, Any], keys: tuple[str, ...]) -> Any:
     return _MISSING
 
 
+def _antigravity_canonical_value(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return value
+    return parsed if isinstance(parsed, str | bool | int | float) else value
+
+
 def _canonical_antigravity_tool_name(name: str) -> str:
     return ANTIGRAVITY_TOOL_MAP.get(name, name)
 
@@ -432,13 +442,13 @@ def _normalize_antigravity_args(name: str, raw_args: Any) -> dict[str, Any]:
     if name == "run_command":
         command = _first_arg(raw_args, ("CommandLine", "command"))
         if command is not _MISSING:
-            args["command"] = command
+            args["command"] = _antigravity_canonical_value(command)
     elif name == "view_file":
         file_path = _first_arg(
             raw_args, ("AbsolutePath", "Path", "path", "file_path", "filePath")
         )
         if file_path is not _MISSING:
-            args["file_path"] = file_path
+            args["file_path"] = _antigravity_canonical_value(file_path)
 
         is_skill_file = _first_arg(raw_args, ("IsSkillFile", "isSkillFile", "is_skill_file"))
         if is_skill_file is _MISSING:
@@ -448,11 +458,11 @@ def _normalize_antigravity_args(name: str, raw_args: Any) -> dict[str, Any]:
                     metadata, ("IsSkillFile", "isSkillFile", "is_skill_file")
                 )
         if is_skill_file is not _MISSING:
-            args["is_skill_file"] = is_skill_file
+            args["is_skill_file"] = _antigravity_canonical_value(is_skill_file)
     elif name == "list_dir":
         path = _first_arg(raw_args, ("DirectoryPath", "directory_path", "path"))
         if path is not _MISSING:
-            args["path"] = path
+            args["path"] = _antigravity_canonical_value(path)
 
     return args
 

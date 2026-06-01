@@ -438,6 +438,42 @@ class TestNormalizeAntigravityLogs:
         assert rows[1]["args"]["raw_args"]["IsSkillFile"] is True
         assert rows[2]["args"]["path"] == "src"
 
+    def test_decodes_antigravity_json_string_literal_args(self):
+        raw = json.dumps(
+            {
+                "tool_calls": [
+                    {
+                        "name": "view_file",
+                        "args": {
+                            "AbsolutePath": (
+                                '"/tmp/run/.gemini/config/plugins/superpowers/'
+                                'skills/brainstorming/SKILL.md"'
+                            ),
+                            "toolSummary": '"Read brainstorming skill"',
+                        },
+                    },
+                    {
+                        "name": "run_command",
+                        "args": {"CommandLine": '"pytest -q"'},
+                    },
+                    {
+                        "name": "list_dir",
+                        "args": {"DirectoryPath": '"/tmp/run/src"'},
+                    },
+                ]
+            }
+        )
+
+        rows = normalize_antigravity_logs(raw)
+
+        assert rows[0]["args"]["file_path"] == (
+            "/tmp/run/.gemini/config/plugins/superpowers/"
+            "skills/brainstorming/SKILL.md"
+        )
+        assert rows[0]["args"]["raw_args"]["AbsolutePath"].startswith('"')
+        assert rows[1]["args"]["command"] == "pytest -q"
+        assert rows[2]["args"]["path"] == "/tmp/run/src"
+
     def test_normalizes_nested_planner_response_tool_calls(self):
         raw = json.dumps(
             {
