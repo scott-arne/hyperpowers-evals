@@ -6,6 +6,7 @@ from quorum.normalizers import (
     filter_codex_logs_by_cwd,
     filter_pi_logs_by_cwd,
     find_misplaced_codex_rollouts,
+    normalize_antigravity_logs,
     normalize_claude_logs,
     normalize_codex_logs,
     normalize_gemini_logs,
@@ -397,3 +398,198 @@ class TestNormalizeGeminiLogs:
             {"tool": "Read", "args": {"file_path": "GEMINI.md"}, "source": "native"},
             {"tool": "Bash", "args": {"command": "git status"}, "source": "shell"},
         ]
+
+
+class TestNormalizeAntigravityLogs:
+    def test_normalizes_top_level_tool_calls_and_pascal_case_args(self):
+        raw = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "tool_calls": [
+                            {"name": "run_command", "args": {"CommandLine": "pytest -q"}},
+                            {
+                                "name": "view_file",
+                                "args": {
+                                    "AbsolutePath": "/tmp/run/.gemini/config/plugins/"
+                                    "superpowers/skills/test-driven-development/SKILL.md",
+                                    "IsSkillFile": True,
+                                },
+                            },
+                            {"name": "list_dir", "args": {"DirectoryPath": "src"}},
+                        ],
+                    }
+                ),
+                "not json",
+                json.dumps({"type": "assistant", "text": "no tools here"}),
+            ]
+        )
+
+        rows = normalize_antigravity_logs(raw)
+
+        assert [r["tool"] for r in rows] == ["Bash", "Read", "Glob"]
+        assert rows[0]["args"]["command"] == "pytest -q"
+        assert rows[0]["args"]["raw_args"] == {"CommandLine": "pytest -q"}
+        assert rows[1]["args"]["file_path"].endswith(
+            "/skills/test-driven-development/SKILL.md"
+        )
+        assert rows[1]["args"]["is_skill_file"] is True
+        assert rows[1]["args"]["raw_args"]["IsSkillFile"] is True
+        assert rows[2]["args"]["path"] == "src"
+
+    def test_normalizes_nested_planner_response_tool_calls(self):
+        raw = json.dumps(
+            {
+                "PLANNER_RESPONSE": {
+                    "tool_calls": [
+                        {"name": "write_to_file", "args": {"Path": "src/app.py"}},
+                        {
+                            "name": "replace_file_content",
+                            "args": {"path": "src/app.py"},
+                        },
+                        {"name": "grep_search", "args": {"pattern": "validate"}},
+                    ]
+                }
+            }
+        )
+
+        rows = normalize_antigravity_logs(raw)
+
+        assert [r["tool"] for r in rows] == ["Write", "Edit", "Grep"]
+        assert all("raw_args" in r["args"] for r in rows)
+
+    def test_normalizes_lowercase_args_and_camel_case_tool_call_shapes(self):
+        raw = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "toolCalls": [
+                            {"name": "run_command", "args": {"command": "pytest"}},
+                            {"name": "list_dir", "args": {"directory_path": "src"}},
+                            {"name": "list_dir", "args": {"path": "tests"}},
+                        ]
+                    }
+                ),
+                json.dumps(
+                    {
+                        "planner_response": {
+                            "toolCalls": [
+                                {
+                                    "name": "view_file",
+                                    "args": {"filePath": "src/app.py"},
+                                }
+                            ]
+                        }
+                    }
+                ),
+            ]
+        )
+
+        rows = normalize_antigravity_logs(raw)
+
+        assert [r["tool"] for r in rows] == ["Bash", "Glob", "Glob", "Read"]
+        assert rows[0]["args"]["command"] == "pytest"
+        assert rows[1]["args"]["path"] == "src"
+        assert rows[2]["args"]["path"] == "tests"
+        assert rows[3]["args"]["file_path"] == "src/app.py"
+        assert all("raw_args" in r["args"] for r in rows)
+
+    def test_normalizes_documented_aliases_and_find_wildcard(self):
+        raw = json.dumps(
+            {
+                "tool_calls": [
+                    {"name": "create_file", "args": {"Path": "new.py"}},
+                    {
+                        "name": "multi_replace_file_content",
+                        "args": {"path": "existing.py"},
+                    },
+                    {"name": "edit_file", "args": {"path": "existing.py"}},
+                    {"name": "search_directory", "args": {"query": "needle"}},
+                    {"name": "find_by_name", "args": {"name": "README.md"}},
+                    {"name": "find_file", "args": {"name": "pyproject.toml"}},
+                    {"name": "find_symbol", "args": {"symbol": "validate"}},
+                    {"name": "list_directory", "args": {"path": "src"}},
+                    {"name": "search_web", "args": {"query": "docs"}},
+                    {"name": "read_url_content", "args": {"url": "https://example.test"}},
+                ]
+            }
+        )
+
+        rows = normalize_antigravity_logs(raw)
+
+        assert [r["tool"] for r in rows] == [
+            "Write",
+            "Edit",
+            "Edit",
+            "Grep",
+            "Glob",
+            "Glob",
+            "Glob",
+            "Glob",
+            "WebSearch",
+            "WebFetch",
+        ]
+        assert all(r["source"] == "native" for r in rows)
+        assert rows[6]["args"]["raw_args"] == {"symbol": "validate"}
+
+    def test_preserves_unknown_tools_and_non_launch_manage_subagents(self):
+        raw = json.dumps(
+            {
+                "tool_calls": [
+                    {"name": "unknown_tool", "args": {"x": 1}},
+                    {"name": "manage_subagents", "args": {"action": "list"}},
+                    {"name": "invoke_subagent", "args": {"prompt": "review this"}},
+                ]
+            }
+        )
+
+        rows = normalize_antigravity_logs(raw)
+
+        assert [r["tool"] for r in rows] == [
+            "unknown_tool",
+            "manage_subagents",
+            "Agent",
+        ]
+        assert rows[0]["args"]["raw_args"] == {"x": 1}
+        assert rows[1]["args"]["raw_args"] == {"action": "list"}
+        assert rows[2]["source"] == "native"
+
+    def test_ignores_non_string_tool_names(self):
+        raw = json.dumps(
+            {
+                "tool_calls": [
+                    {"name": 123, "args": {"x": 1}},
+                    {"name": "run_command", "args": {"command": "pytest -q"}},
+                ]
+            }
+        )
+
+        rows = normalize_antigravity_logs(raw)
+
+        assert [r["tool"] for r in rows] == ["Bash"]
+        assert rows[0]["args"]["command"] == "pytest -q"
+
+    def test_canonicalizes_skill_marker_casing_and_nested_metadata(self):
+        raw = json.dumps(
+            {
+                "tool_calls": [
+                    {
+                        "name": "view_file",
+                        "args": {
+                            "Path": "/x/skills/superpowers/brainstorming/SKILL.md",
+                            "metadata": {"isSkillFile": True},
+                        },
+                    }
+                ]
+            }
+        )
+
+        rows = normalize_antigravity_logs(raw)
+
+        assert rows[0]["tool"] == "Read"
+        assert (
+            rows[0]["args"]["file_path"]
+            == "/x/skills/superpowers/brainstorming/SKILL.md"
+        )
+        assert rows[0]["args"]["is_skill_file"] is True

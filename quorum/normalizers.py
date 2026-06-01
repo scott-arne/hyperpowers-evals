@@ -359,7 +359,137 @@ def normalize_gemini_logs(raw_content: str) -> list[dict[str, Any]]:
     return results
 
 
+ANTIGRAVITY_TOOL_MAP: dict[str, str] = {
+    "run_command": "Bash",
+    "view_file": "Read",
+    "write_to_file": "Write",
+    "create_file": "Write",
+    "replace_file_content": "Edit",
+    "multi_replace_file_content": "Edit",
+    "edit_file": "Edit",
+    "grep_search": "Grep",
+    "search_directory": "Grep",
+    "list_dir": "Glob",
+    "find_by_name": "Glob",
+    "find_file": "Glob",
+    "list_directory": "Glob",
+    "invoke_subagent": "Agent",
+    "search_web": "WebSearch",
+    "read_url_content": "WebFetch",
+}
+
+
+ANTIGRAVITY_NATIVE_TOOLS = (set(ANTIGRAVITY_TOOL_MAP.values()) - {"Bash"}) | {
+    "manage_task",
+    "list_permissions",
+}
+
+
+_MISSING = object()
+
+
+def _first_arg(args: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        if key in args:
+            return args[key]
+    return _MISSING
+
+
+def _canonical_antigravity_tool_name(name: str) -> str:
+    # Antigravity's implementation plan treats find_* as one Glob-family wildcard.
+    if name.startswith("find_"):
+        return "Glob"
+    return ANTIGRAVITY_TOOL_MAP.get(name, name)
+
+
+def _antigravity_tool_calls(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    containers = [entry]
+    for planner_key in ("PLANNER_RESPONSE", "planner_response"):
+        planner_response = entry.get(planner_key)
+        if isinstance(planner_response, dict):
+            containers.append(planner_response)
+
+    calls: list[dict[str, Any]] = []
+    for container in containers:
+        for calls_key in ("tool_calls", "toolCalls"):
+            tool_calls = container.get(calls_key)
+            if not isinstance(tool_calls, list):
+                continue
+            calls.extend(call for call in tool_calls if isinstance(call, dict))
+    return calls
+
+
+def _normalize_antigravity_args(name: str, raw_args: Any) -> dict[str, Any]:
+    if isinstance(raw_args, dict):
+        original_args = dict(raw_args)
+        args = dict(raw_args)
+    else:
+        original_args = raw_args
+        args = {}
+
+    args["raw_args"] = original_args
+
+    if not isinstance(raw_args, dict):
+        return args
+
+    if name == "run_command":
+        command = _first_arg(raw_args, ("CommandLine", "command"))
+        if command is not _MISSING:
+            args["command"] = command
+    elif name == "view_file":
+        file_path = _first_arg(
+            raw_args, ("AbsolutePath", "Path", "path", "file_path", "filePath")
+        )
+        if file_path is not _MISSING:
+            args["file_path"] = file_path
+
+        is_skill_file = _first_arg(raw_args, ("IsSkillFile", "isSkillFile", "is_skill_file"))
+        if is_skill_file is _MISSING:
+            metadata = raw_args.get("metadata")
+            if isinstance(metadata, dict):
+                is_skill_file = _first_arg(
+                    metadata, ("IsSkillFile", "isSkillFile", "is_skill_file")
+                )
+        if is_skill_file is not _MISSING:
+            args["is_skill_file"] = is_skill_file
+    elif name == "list_dir":
+        path = _first_arg(raw_args, ("DirectoryPath", "directory_path", "path"))
+        if path is not _MISSING:
+            args["path"] = path
+
+    return args
+
+
+def normalize_antigravity_logs(raw_content: str) -> list[dict[str, Any]]:
+    """Normalize Antigravity JSONL transcript tool calls.
+
+    Antigravity emits tool calls in top-level tool_calls/toolCalls arrays and,
+    for planner turns, nested under PLANNER_RESPONSE/planner_response.
+    """
+    results: list[dict[str, Any]] = []
+    for line in raw_content.strip().split("\n"):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+
+        for tool_call in _antigravity_tool_calls(entry):
+            name = tool_call.get("name", "")
+            if not isinstance(name, str) or not name:
+                continue
+            canonical = _canonical_antigravity_tool_name(name)
+            args = _normalize_antigravity_args(name, tool_call.get("args", {}))
+            source = "native" if canonical in ANTIGRAVITY_NATIVE_TOOLS else "shell"
+            results.append({"tool": canonical, "args": args, "source": source})
+    return results
+
+
 NORMALIZERS: dict[str, Callable[[str], list[dict[str, Any]]]] = {
+    "antigravity": normalize_antigravity_logs,
     "claude": normalize_claude_logs,
     "codex": normalize_codex_logs,
     "gemini": normalize_gemini_logs,
