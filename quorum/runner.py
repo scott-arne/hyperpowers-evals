@@ -28,6 +28,7 @@ the runner writes an indeterminate verdict immediately.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import datetime as _dt
 import json
@@ -78,6 +79,7 @@ class RunnerError(RuntimeError):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _quorum_bin_dir() -> Path:
     """Return the repo's bin/ directory (where check tools live)."""
     return Path(__file__).resolve().parent.parent / "bin"
@@ -120,6 +122,7 @@ def _write_indeterminate(
 
 # ---------------------------------------------------------------------------
 
+
 def _seed_codex_auth(codex_home: Path) -> None:
     """Seed codex auth.json so the agent boots past the sign-in picker.
 
@@ -142,8 +145,7 @@ def _seed_codex_auth(codex_home: Path) -> None:
     )
     if result.returncode != 0:
         raise RunnerError(
-            f"codex login --with-api-key failed (exit {result.returncode}): "
-            f"{result.stderr.strip()}"
+            f"codex login --with-api-key failed (exit {result.returncode}): {result.stderr.strip()}"
         )
 
 
@@ -158,12 +160,8 @@ def _seed_codex_plugin_hooks(codex_home: Path, workdir: Path) -> None:
     """
     superpowers_root = os.environ.get("SUPERPOWERS_ROOT", "")
     if not superpowers_root:
-        raise RunnerError(
-            "SUPERPOWERS_ROOT not set; cannot install codex plugin hooks"
-        )
-    install_codex_superpowers_plugin_hooks(
-        workdir, superpowers_root, codex_home=codex_home
-    )
+        raise RunnerError("SUPERPOWERS_ROOT not set; cannot install codex plugin hooks")
+    install_codex_superpowers_plugin_hooks(workdir, superpowers_root, codex_home=codex_home)
 
 
 def _antigravity_transcripts(config_dir: Path) -> list[Path]:
@@ -171,6 +169,31 @@ def _antigravity_transcripts(config_dir: Path) -> list[Path]:
     if not brain.exists():
         return []
     return sorted(brain.glob("**/transcript.jsonl"))
+
+
+def _preflight_response_ok(stdout: str) -> bool:
+    """Accept the auth-preflight reply tolerantly.
+
+    The preflight asks agy to "Reply with EXACTLY OK." A compliant model
+    occasionally appends punctuation ("OK.") or differs in case; a strict
+    equality check rejected those and produced false setup failures. Normalize
+    trailing punctuation, whitespace, and case — but still reject empty
+    (rate-limited / dead) or verbose replies.
+    """
+    return stdout.strip().rstrip(".!").strip().upper() == "OK"
+
+
+ANTIGRAVITY_RATE_LIMIT_MARKER = "Code Assist rate limit"
+
+# Substrings agy writes to its log/stderr when the Gemini Code Assist backend
+# throttles. RESOURCE_EXHAUSTED is the definitive 429 signal; the others
+# corroborate. Matched case-insensitively.
+_AGY_RATE_LIMIT_SIGNALS = ("resource_exhausted", "ratelimitexceeded", "429")
+
+
+def _agy_log_shows_rate_limit(*texts: str) -> bool:
+    blob = "\n".join(t for t in texts if t).lower()
+    return any(sig in blob for sig in _AGY_RATE_LIMIT_SIGNALS)
 
 
 def _run_antigravity_auth_preflight() -> None:
@@ -203,30 +226,43 @@ def _run_antigravity_auth_preflight() -> None:
             )
         except subprocess.TimeoutExpired as e:
             raise RunnerError(
-                "antigravity auth preflight timed out after 90s; "
-                "check agy browser/keyring auth",
+                "antigravity auth preflight timed out after 90s; check agy browser/keyring auth",
                 stage="setup",
             ) from e
-        if result.returncode != 0:
-            raise RunnerError(
-                "antigravity auth preflight failed "
-                f"(exit {result.returncode}); check agy browser/keyring auth. "
-                f"stderr: {result.stderr.strip()[:300]}",
-                stage="setup",
-            )
-        if result.stdout.strip() != "OK":
+        # A failed preflight — non-zero exit OR an empty/garbled reply — is
+        # most often the Gemini Code Assist quota/rate window being exhausted,
+        # which agy surfaces as an empty reply plus 429 / RESOURCE_EXHAUSTED in
+        # its log. Diagnose that distinctly so triage doesn't chase a phantom
+        # auth bug, and so run-all can stop hammering the throttled window.
+        if result.returncode != 0 or not _preflight_response_ok(result.stdout):
+            log_text = ""
+            with contextlib.suppress(OSError):
+                log_text = log_path.read_text(errors="replace")
+            if _agy_log_shows_rate_limit(log_text, result.stderr):
+                raise RunnerError(
+                    f"{ANTIGRAVITY_RATE_LIMIT_MARKER}: agy returned no usable "
+                    "response and its log shows Code Assist 429 / "
+                    "RESOURCE_EXHAUSTED. The Gemini Code Assist rate/quota "
+                    "window is exhausted; wait for it to refresh before "
+                    "re-running antigravity.",
+                    stage="setup",
+                )
+            if result.returncode != 0:
+                raise RunnerError(
+                    "antigravity auth preflight failed "
+                    f"(exit {result.returncode}); check agy browser/keyring auth. "
+                    f"stderr: {result.stderr.strip()[:300]}",
+                    stage="setup",
+                )
             raise RunnerError(
                 "antigravity auth preflight did not return OK; "
                 f"stdout: {result.stdout.strip()[:300]}",
                 stage="setup",
             )
-        transcripts = sorted(
-            (gemini_dir / "antigravity-cli" / "brain").glob("**/transcript.jsonl")
-        )
+        transcripts = sorted((gemini_dir / "antigravity-cli" / "brain").glob("**/transcript.jsonl"))
         if not transcripts:
             raise RunnerError(
-                "antigravity auth preflight produced no transcript under isolated "
-                "--gemini_dir",
+                "antigravity auth preflight produced no transcript under isolated --gemini_dir",
                 stage="setup",
             )
 
@@ -236,9 +272,7 @@ def _write_antigravity_settings(
     workdir: Path,
 ) -> None:
     """Persist no-prompt settings for the isolated Antigravity run."""
-    settings_path = (
-        antigravity_config_dir / ".gemini" / "antigravity-cli" / "settings.json"
-    )
+    settings_path = antigravity_config_dir / ".gemini" / "antigravity-cli" / "settings.json"
     settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
 
     trusted = settings.setdefault("trustedWorkspaces", [])
@@ -303,9 +337,7 @@ def _seed_antigravity_config(antigravity_config_dir: Path, workdir: Path) -> Non
             stage="setup",
         )
 
-    plugin_root = (
-        antigravity_config_dir / ".gemini" / "config" / "plugins" / "superpowers"
-    )
+    plugin_root = antigravity_config_dir / ".gemini" / "config" / "plugins" / "superpowers"
     required = [
         plugin_root / "plugin.json",
         plugin_root / "hooks.json",
@@ -416,8 +448,7 @@ def _resolve_launch_cwd(workdir: Path) -> Path:
     resolved_path = Path(sentinel.read_text().strip())
     if not resolved_path.exists():
         raise RunnerError(
-            f"setup.sh wrote {LAUNCH_CWD_SENTINEL}={resolved_path} but that path "
-            "doesn't exist"
+            f"setup.sh wrote {LAUNCH_CWD_SENTINEL}={resolved_path} but that path doesn't exist"
         )
     return resolved_path
 
@@ -561,12 +592,18 @@ def invoke_gauntlet(
     is set here too for belt-and-suspenders + future Gauntlet `-e` support.
     """
     cmd = [
-        "gauntlet", "run", str(story_path),
-        "--adapter", "tui",
+        "gauntlet",
+        "run",
+        str(story_path),
+        "--adapter",
+        "tui",
         # Gauntlet's own --target flag; not quorum's vocabulary — keep.
-        "--target", target_binary,
-        "--project-dir", str(run_dir),
-        "--state-dir", "gauntlet-agent",
+        "--target",
+        target_binary,
+        "--project-dir",
+        str(run_dir),
+        "--state-dir",
+        "gauntlet-agent",
         "--silent",
     ]
     if max_time:
@@ -619,9 +656,7 @@ def _populate_context_dir(
             _copytree_with_substitutions(entry, dst / entry.name, subs)
 
 
-def _copy_with_substitutions(
-    src: Path, dst: Path, subs: dict[str, str]
-) -> None:
+def _copy_with_substitutions(src: Path, dst: Path, subs: dict[str, str]) -> None:
     try:
         content = src.read_text()
     except UnicodeDecodeError:
@@ -638,9 +673,7 @@ def _copy_with_substitutions(
         dst.chmod(dst.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def _copytree_with_substitutions(
-    src: Path, dst: Path, subs: dict[str, str]
-) -> None:
+def _copytree_with_substitutions(src: Path, dst: Path, subs: dict[str, str]) -> None:
     dst.mkdir(parents=True, exist_ok=True)
     for entry in src.iterdir():
         if entry.is_file():
@@ -841,8 +874,7 @@ def _run_scenario_inner(
         return run_dir, _write_indeterminate(
             run_dir,
             final_reason=(
-                "Antigravity transcript(s) normalized to zero tool-call rows: "
-                + ", ".join(rel)
+                "Antigravity transcript(s) normalized to zero tool-call rows: " + ", ".join(rel)
             ),
             gauntlet=gauntlet_layer,
             checks=pre_records,
@@ -912,9 +944,7 @@ def _run_scenario_inner(
         verdict = dataclasses.replace(verdict, economics=economics)
 
     # 13. Persist.
-    (run_dir / "verdict.json").write_text(
-        json.dumps(verdict.to_dict(), indent=2)
-    )
+    (run_dir / "verdict.json").write_text(json.dumps(verdict.to_dict(), indent=2))
 
     return run_dir, verdict
 

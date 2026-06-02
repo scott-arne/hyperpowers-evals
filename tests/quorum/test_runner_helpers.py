@@ -2,17 +2,38 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from quorum.composer import RunError
 from quorum.runner import (
     _allocate_run_dir,
+    _preflight_response_ok,
     _quorum_bin_dir,
     _write_indeterminate,
 )
 
 
+@pytest.mark.parametrize(
+    "stdout,expected",
+    [
+        ("OK", True),
+        ("OK\n", True),
+        ("OK.", True),  # agy sometimes appends a period
+        ("OK!\n", True),
+        ("  ok  ", True),
+        ("", False),  # empty == rate-limited / dead
+        ("Quota exceeded", False),
+        ("OK, sure I will", False),  # verbose reply is not compliance
+    ],
+)
+def test_preflight_response_ok(stdout, expected):
+    assert _preflight_response_ok(stdout) is expected
+
+
 def test_write_indeterminate_persists_verdict(tmp_path: Path):
     v = _write_indeterminate(
-        tmp_path, final_reason="setup boom",
+        tmp_path,
+        final_reason="setup boom",
         error=RunError(stage="setup", message="boom"),
     )
     assert v.final == "indeterminate"
@@ -23,6 +44,7 @@ def test_write_indeterminate_persists_verdict(tmp_path: Path):
 
 def test_allocate_run_dir(tmp_path: Path):
     import re
+
     rd = _allocate_run_dir(out_root=tmp_path, scenario_name="x", coding_agent="claude")
     assert rd.parent == tmp_path
     assert rd.is_dir()

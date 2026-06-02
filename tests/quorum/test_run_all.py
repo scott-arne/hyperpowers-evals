@@ -32,9 +32,12 @@ def _scenario(root: Path, name: str, *, directive: str | None = None) -> Path:
     return d
 
 
-def _agent(root: Path, name: str) -> None:
+def _agent(root: Path, name: str, *, max_concurrency: int | None = None) -> None:
     root.mkdir(parents=True, exist_ok=True)
-    (root / f"{name}.yaml").write_text(f"name: {name}\nbinary: echo\n")
+    body = f"name: {name}\nbinary: echo\n"
+    if max_concurrency is not None:
+        body += f"max_concurrency: {max_concurrency}\n"
+    (root / f"{name}.yaml").write_text(body)
 
 
 def test_build_matrix_full_cross_product_when_no_directive(tmp_path):
@@ -283,16 +286,18 @@ def test_run_batch_writes_skipped_then_runnable(tmp_path, capsys):
     scenarios = tmp_path / "scenarios"
     agents = tmp_path / "agents"
     _scenario(scenarios, "alpha", directive="codex")  # claude skipped
-    _scenario(scenarios, "beta")                      # both runnable
+    _scenario(scenarios, "beta")  # both runnable
     _agent(agents, "claude")
     _agent(agents, "codex")
     out_root = tmp_path / "results"
 
-    def fake_invoke(*, scenario_dir, coding_agent, coding_agents_dir,
-                    out_root, timeout_seconds=None):
+    def fake_invoke(
+        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+    ):
         return ChildResult(
             run_id=f"{scenario_dir.name}-{coding_agent}-fakerun",
-            exit_code=0, error=None,
+            exit_code=0,
+            error=None,
         )
 
     batch_dir = run_batch(
@@ -331,13 +336,18 @@ def test_run_batch_writes_batch_json_header_and_footer(tmp_path):
     _agent(agents, "claude")
     out_root = tmp_path / "results"
 
-    def fake_invoke(*, scenario_dir, coding_agent, coding_agents_dir,
-                    out_root, timeout_seconds=None):
+    def fake_invoke(
+        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+    ):
         return ChildResult(run_id="alpha-claude-fake", exit_code=0, error=None)
 
     batch_dir = run_batch(
-        scenarios_root=scenarios, coding_agents_dir=agents,
-        out_root=out_root, jobs=1, agent_filter=None, invoke=fake_invoke,
+        scenarios_root=scenarios,
+        coding_agents_dir=agents,
+        out_root=out_root,
+        jobs=1,
+        agent_filter=None,
+        invoke=fake_invoke,
         use_cursor=False,
     )
 
@@ -358,27 +368,112 @@ def test_run_batch_jobs_gt_one_runs_all_pairs(tmp_path):
 
     invocations: list[tuple[str, str]] = []
 
-    def fake_invoke(*, scenario_dir, coding_agent, coding_agents_dir,
-                    out_root, timeout_seconds=None):
+    def fake_invoke(
+        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+    ):
         invocations.append((scenario_dir.name, coding_agent))
-        return ChildResult(run_id=f"{scenario_dir.name}-{coding_agent}-x",
-                           exit_code=0, error=None)
+        return ChildResult(run_id=f"{scenario_dir.name}-{coding_agent}-x", exit_code=0, error=None)
 
     batch_dir = run_batch(
-        scenarios_root=scenarios, coding_agents_dir=agents,
-        out_root=out_root, jobs=4, agent_filter=None, invoke=fake_invoke,
+        scenarios_root=scenarios,
+        coding_agents_dir=agents,
+        out_root=out_root,
+        jobs=4,
+        agent_filter=None,
+        invoke=fake_invoke,
         use_cursor=False,
     )
 
     assert sorted(invocations) == [
-        ("a", "claude"), ("b", "claude"), ("c", "claude"), ("d", "claude"),
+        ("a", "claude"),
+        ("b", "claude"),
+        ("c", "claude"),
+        ("d", "claude"),
     ]
     assert len((batch_dir / "results.jsonl").read_text().splitlines()) == 4
 
 
-def test_run_batch_event_format_uses_total_denominator_and_skip_verb(
-    tmp_path, capsys, monkeypatch
-):
+def test_run_batch_serializes_capped_agent(tmp_path):
+    """antigravity (max_concurrency=1) never runs two cells at once, even at
+    --jobs 4 — its Code Assist backend 429s on concurrent calls."""
+    import threading
+    import time
+
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    for n in ("a", "b", "c", "d"):
+        _scenario(scenarios, n)
+    _agent(agents, "claude")
+    _agent(agents, "antigravity", max_concurrency=1)
+    out_root = tmp_path / "results"
+
+    lock = threading.Lock()
+    state = {"agy_now": 0, "agy_max": 0}
+
+    def fake_invoke(
+        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+    ):
+        if coding_agent == "antigravity":
+            with lock:
+                state["agy_now"] += 1
+                state["agy_max"] = max(state["agy_max"], state["agy_now"])
+            time.sleep(0.05)
+            with lock:
+                state["agy_now"] -= 1
+        return ChildResult(run_id=f"{scenario_dir.name}-{coding_agent}-x", exit_code=0, error=None)
+
+    run_batch(
+        scenarios_root=scenarios,
+        coding_agents_dir=agents,
+        out_root=out_root,
+        jobs=4,
+        agent_filter=None,
+        invoke=fake_invoke,
+        use_cursor=False,
+    )
+    assert state["agy_max"] == 1
+
+
+def test_run_batch_does_not_serialize_uncapped_agent(tmp_path):
+    """An agent without max_concurrency still parallelizes up to --jobs (the
+    serialize gate must not throttle everyone)."""
+    import threading
+    import time
+
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    for n in ("a", "b", "c", "d"):
+        _scenario(scenarios, n)
+    _agent(agents, "claude")  # uncapped
+    out_root = tmp_path / "results"
+
+    lock = threading.Lock()
+    state = {"now": 0, "max": 0}
+
+    def fake_invoke(
+        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+    ):
+        with lock:
+            state["now"] += 1
+            state["max"] = max(state["max"], state["now"])
+        time.sleep(0.05)
+        with lock:
+            state["now"] -= 1
+        return ChildResult(run_id=f"{scenario_dir.name}-{coding_agent}-x", exit_code=0, error=None)
+
+    run_batch(
+        scenarios_root=scenarios,
+        coding_agents_dir=agents,
+        out_root=out_root,
+        jobs=4,
+        agent_filter=None,
+        invoke=fake_invoke,
+        use_cursor=False,
+    )
+    assert state["max"] >= 2
+
+
+def test_run_batch_event_format_uses_total_denominator_and_skip_verb(tmp_path, capsys, monkeypatch):
     """[N/M] denominator counts the full matrix; skips render in event shape.
 
     Strong assertions: skip line precedes runnable lines, and each
@@ -395,17 +490,23 @@ def test_run_batch_event_format_uses_total_denominator_and_skip_verb(
     _agent(agents, "codex")
     out_root = tmp_path / "results"
 
-    def fake_invoke(*, scenario_dir, coding_agent, coding_agents_dir,
-                    out_root, timeout_seconds=None):
+    def fake_invoke(
+        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+    ):
         return ChildResult(
             run_id=f"{scenario_dir.name}-{coding_agent}-x",
-            exit_code=0, error=None,
+            exit_code=0,
+            error=None,
         )
 
     run_batch(
-        scenarios_root=scenarios, coding_agents_dir=agents,
-        out_root=out_root, jobs=1, agent_filter=None,
-        invoke=fake_invoke, use_cursor=False,
+        scenarios_root=scenarios,
+        coding_agents_dir=agents,
+        out_root=out_root,
+        jobs=1,
+        agent_filter=None,
+        invoke=fake_invoke,
+        use_cursor=False,
     )
 
     captured = capsys.readouterr().out
@@ -422,19 +523,21 @@ def test_run_batch_event_format_uses_total_denominator_and_skip_verb(
 
     # Skip event is emitted upfront, before any runnable start.
     skip_pos = captured.find("[1/4] skip")
-    first_start_pos = min(
-        captured.find(f"[{i}/4] start") for i in (2, 3, 4)
-    )
+    first_start_pos = min(captured.find(f"[{i}/4] start") for i in (2, 3, 4))
     assert 0 <= skip_pos < first_start_pos, (skip_pos, first_start_pos)
 
 
 def test_run_cost_reads_frozen_total(tmp_path):
     run_dir = tmp_path / "run-1"
     run_dir.mkdir()
-    (run_dir / "verdict.json").write_text(json.dumps({
-        "final": "pass",
-        "economics": {"total_est_cost_usd": 2.27, "partial": False},
-    }))
+    (run_dir / "verdict.json").write_text(
+        json.dumps(
+            {
+                "final": "pass",
+                "economics": {"total_est_cost_usd": 2.27, "partial": False},
+            }
+        )
+    )
     assert _run_cost(run_dir) == 2.27
 
 
@@ -460,23 +563,32 @@ def test_run_batch_renders_cost_column_and_batch_total(tmp_path, capsys, monkeyp
     _agent(agents, "claude")
     out_root = tmp_path / "results"
 
-    def fake_invoke(*, scenario_dir, coding_agent, coding_agents_dir,
-                    out_root, timeout_seconds=None):
+    def fake_invoke(
+        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+    ):
         run_id = f"{scenario_dir.name}-{coding_agent}-x"
         rd = out_root / run_id
         rd.mkdir(parents=True, exist_ok=True)
-        (rd / "verdict.json").write_text(json.dumps({
-            "final": "pass",
-            "economics": {"total_est_cost_usd": 2.27, "partial": False},
-        }))
+        (rd / "verdict.json").write_text(
+            json.dumps(
+                {
+                    "final": "pass",
+                    "economics": {"total_est_cost_usd": 2.27, "partial": False},
+                }
+            )
+        )
         return ChildResult(run_id=run_id, exit_code=0, error=None)
 
     run_batch(
-        scenarios_root=scenarios, coding_agents_dir=agents,
-        out_root=out_root, jobs=1, agent_filter=None,
-        invoke=fake_invoke, use_cursor=False,
+        scenarios_root=scenarios,
+        coding_agents_dir=agents,
+        out_root=out_root,
+        jobs=1,
+        agent_filter=None,
+        invoke=fake_invoke,
+        use_cursor=False,
     )
 
     captured = capsys.readouterr().out
-    assert "$2.27" in captured, captured          # per-run cost cell
-    assert "cost $2.27" in captured, captured      # footer batch total
+    assert "$2.27" in captured, captured  # per-run cost cell
+    assert "cost $2.27" in captured, captured  # footer batch total

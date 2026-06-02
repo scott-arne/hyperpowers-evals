@@ -11,8 +11,10 @@ import yaml
 
 from quorum.coding_agent_config import CodingAgentConfig
 from quorum.runner import (
+    ANTIGRAVITY_RATE_LIMIT_MARKER,
     RunnerError,
     _exclude_antigravity_project_marker,
+    _run_antigravity_auth_preflight,
     _seed_agent_config_dir,
     _seed_antigravity_config,
     _write_antigravity_settings,
@@ -27,15 +29,19 @@ def _exec(path: Path, body: str) -> None:
 
 def _make_coding_agent(coding_agents_dir: Path, name: str, session_log_dir: Path) -> None:
     coding_agents_dir.mkdir(parents=True, exist_ok=True)
-    (coding_agents_dir / f"{name}.yaml").write_text(yaml.safe_dump({
-        "name": name,
-        "binary": "echo",  # we never actually run the real CLI in tests
-        "agent_config_env": "CLAUDE_CONFIG_DIR",
-        "session_log_dir": str(session_log_dir),
-        "session_log_glob": "*.jsonl",
-        "normalizer": "claude",
-        "required_env": [],
-    }))
+    (coding_agents_dir / f"{name}.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": name,
+                "binary": "echo",  # we never actually run the real CLI in tests
+                "agent_config_env": "CLAUDE_CONFIG_DIR",
+                "session_log_dir": str(session_log_dir),
+                "session_log_glob": "*.jsonl",
+                "normalizer": "claude",
+                "required_env": [],
+            }
+        )
+    )
 
 
 def _make_antigravity_agent(
@@ -44,15 +50,19 @@ def _make_antigravity_agent(
     normalizer: str = "antigravity",
 ) -> None:
     coding_agents_dir.mkdir(parents=True, exist_ok=True)
-    (coding_agents_dir / "antigravity.yaml").write_text(yaml.safe_dump({
-        "name": "antigravity",
-        "binary": "echo",
-        "agent_config_env": "ANTIGRAVITY_CONFIG_DIR",
-        "session_log_dir": str(session_log_dir),
-        "session_log_glob": "*.jsonl",
-        "normalizer": normalizer,
-        "required_env": [],
-    }))
+    (coding_agents_dir / "antigravity.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "antigravity",
+                "binary": "echo",
+                "agent_config_env": "ANTIGRAVITY_CONFIG_DIR",
+                "session_log_dir": str(session_log_dir),
+                "session_log_glob": "*.jsonl",
+                "normalizer": normalizer,
+                "required_env": [],
+            }
+        )
+    )
     (coding_agents_dir / "antigravity-context").mkdir(parents=True, exist_ok=True)
 
 
@@ -107,9 +117,7 @@ def _make_scenario(
     if with_checks:
         # A post() check that passes or fails depending on checks_pass.
         check_line = "file-exists marker" if checks_pass else "file-exists missing-nonexistent-file"
-        (sd / "checks.sh").write_text(
-            f"pre() {{ :; }}\npost() {{ {check_line}; }}\n"
-        )
+        (sd / "checks.sh").write_text(f"pre() {{ :; }}\npost() {{ {check_line}; }}\n")
     return sd
 
 
@@ -127,17 +135,19 @@ def test_antigravity_launch_agent_is_interactive_and_substituted(tmp_path):
     coding_agents_dir = tmp_path / "coding-agents"
     scenarios_dir = tmp_path / "scenarios"
     coding_agents_dir.mkdir(parents=True, exist_ok=True)
-    (coding_agents_dir / "antigravity.yaml").write_text(yaml.safe_dump({
-        "name": "antigravity",
-        "binary": "agy",
-        "agent_config_env": "ANTIGRAVITY_CONFIG_DIR",
-        "session_log_dir": (
-            "${ANTIGRAVITY_CONFIG_DIR}/.gemini/antigravity-cli/brain"
-        ),
-        "session_log_glob": "**/transcript.jsonl",
-        "normalizer": "antigravity",
-        "required_env": [],
-    }))
+    (coding_agents_dir / "antigravity.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "antigravity",
+                "binary": "agy",
+                "agent_config_env": "ANTIGRAVITY_CONFIG_DIR",
+                "session_log_dir": ("${ANTIGRAVITY_CONFIG_DIR}/.gemini/antigravity-cli/brain"),
+                "session_log_glob": "**/transcript.jsonl",
+                "normalizer": "antigravity",
+                "required_env": [],
+            }
+        )
+    )
     sd = _make_scenario(scenarios_dir, "x", with_checks=False)
     (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
     cd_antigravity = coding_agents_dir / "antigravity-context"
@@ -232,8 +242,7 @@ def test_antigravity_launch_uses_visible_alias_for_hidden_cwd(tmp_path, monkeypa
     assert str(launch_cwd) in shim
 
     settings = json.loads(
-        (rd / "coding-agent-config" / ".gemini" / "antigravity-cli" / "settings.json")
-        .read_text()
+        (rd / "coding-agent-config" / ".gemini" / "antigravity-cli" / "settings.json").read_text()
     )
     assert str(launch_cwd) in settings["trustedWorkspaces"]
     assert str(workdir.resolve()) in settings["trustedWorkspaces"]
@@ -248,9 +257,7 @@ def test_antigravity_settings_trusts_symlink_alias_and_target(tmp_path):
 
     _write_antigravity_settings(cfg, alias)
 
-    settings = json.loads(
-        (cfg / ".gemini" / "antigravity-cli" / "settings.json").read_text()
-    )
+    settings = json.loads((cfg / ".gemini" / "antigravity-cli" / "settings.json").read_text())
     assert str(alias) in settings["trustedWorkspaces"]
     assert str(target.resolve()) in settings["trustedWorkspaces"]
 
@@ -342,9 +349,7 @@ class TestSeedAgentConfigDir:
         workdir = tmp_path / "wd"
         with (
             patch("quorum.runner._seed_codex_auth"),
-            patch(
-                "quorum.runner.install_codex_superpowers_plugin_hooks"
-            ) as mock_install,
+            patch("quorum.runner.install_codex_superpowers_plugin_hooks") as mock_install,
         ):
             _seed_agent_config_dir(_tcfg("codex"), tmp_path, dest, workdir)
         (cmd_workdir, cmd_sp), kwargs = mock_install.call_args
@@ -352,9 +357,7 @@ class TestSeedAgentConfigDir:
         assert cmd_sp == str(tmp_path / "sp")
         assert kwargs["codex_home"] == dest
 
-    def test_codex_plugin_hooks_raise_without_superpowers_root(
-        self, tmp_path, monkeypatch
-    ):
+    def test_codex_plugin_hooks_raise_without_superpowers_root(self, tmp_path, monkeypatch):
         monkeypatch.delenv("SUPERPOWERS_ROOT", raising=False)
         dest = tmp_path / "agent-config"
         with (
@@ -374,9 +377,7 @@ class TestSeedAgentConfigDir:
             _seed_agent_config_dir(_antigravity_tcfg(), tmp_path, dest, tmp_path / "wd")
         mock_seed.assert_called_once_with(dest, tmp_path / "wd")
 
-    def test_antigravity_seed_runs_auth_preflight_then_plugin_install(
-        self, tmp_path, monkeypatch
-    ):
+    def test_antigravity_seed_runs_auth_preflight_then_plugin_install(self, tmp_path, monkeypatch):
         sp = tmp_path / "superpowers"
         sp.mkdir()
         monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
@@ -402,9 +403,7 @@ class TestSeedAgentConfigDir:
                     / "logs"
                 )
                 transcript_dir.mkdir(parents=True)
-                (transcript_dir / "transcript.jsonl").write_text(
-                    '{"tool_calls":[]}\n'
-                )
+                (transcript_dir / "transcript.jsonl").write_text('{"tool_calls":[]}\n')
                 return subprocess.CompletedProcess(cmd, 0, "OK\n", "")
             assert cmd == [
                 "agy",
@@ -427,9 +426,7 @@ class TestSeedAgentConfigDir:
 
         assert mock_run.call_count == 2
 
-    def test_antigravity_seed_writes_always_proceed_settings(
-        self, tmp_path, monkeypatch
-    ):
+    def test_antigravity_seed_writes_always_proceed_settings(self, tmp_path, monkeypatch):
         sp = tmp_path / "superpowers"
         sp.mkdir()
         monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
@@ -451,9 +448,7 @@ class TestSeedAgentConfigDir:
                     / "logs"
                 )
                 transcript_dir.mkdir(parents=True)
-                (transcript_dir / "transcript.jsonl").write_text(
-                    '{"tool_calls":[]}\n'
-                )
+                (transcript_dir / "transcript.jsonl").write_text('{"tool_calls":[]}\n')
                 return subprocess.CompletedProcess(cmd, 0, "OK\n", "")
             root = cfg / ".gemini" / "config" / "plugins" / "superpowers"
             (root / "skills" / "using-superpowers").mkdir(parents=True)
@@ -465,9 +460,7 @@ class TestSeedAgentConfigDir:
         with patch("quorum.runner.subprocess.run", side_effect=fake_run):
             _seed_antigravity_config(cfg, workdir)
 
-        settings = json.loads(
-            (cfg / ".gemini" / "antigravity-cli" / "settings.json").read_text()
-        )
+        settings = json.loads((cfg / ".gemini" / "antigravity-cli" / "settings.json").read_text())
         assert settings["toolPermission"] == "always-proceed"
         assert settings["artifactReviewPolicy"] == "always-proceed"
         assert str(workdir.resolve()) in settings["trustedWorkspaces"]
@@ -514,9 +507,7 @@ class TestSeedAgentConfigDir:
                     / "logs"
                 )
                 transcript_dir.mkdir(parents=True)
-                (transcript_dir / "transcript.jsonl").write_text(
-                    '{"tool_calls":[]}\n'
-                )
+                (transcript_dir / "transcript.jsonl").write_text('{"tool_calls":[]}\n')
                 return subprocess.CompletedProcess(cmd, 0, "OK\n", "")
             root = cfg / ".gemini" / "config" / "plugins" / "superpowers"
             (root / "skills" / "using-superpowers").mkdir(parents=True)
@@ -544,6 +535,42 @@ class TestSeedAgentConfigDir:
             ),
         ):
             _seed_antigravity_config(cfg, tmp_path / "wd")
+
+    def test_preflight_diagnoses_rate_limit_from_log(self):
+        """Empty agy reply + 429/RESOURCE_EXHAUSTED in agy.log is diagnosed as a
+        Code Assist rate-limit setup error, not a mislabeled auth failure."""
+
+        def fake_run(cmd, **kwargs):
+            log_path = Path(cmd[cmd.index("--log-file") + 1])
+            log_path.write_text(
+                "http_helpers.go: URL streamGenerateContent status 429\n"
+                "stream error: RESOURCE_EXHAUSTED quota exceeded\n"
+            )
+            return subprocess.CompletedProcess(cmd, 0, "", "")  # empty stdout
+
+        with (
+            patch("quorum.runner.subprocess.run", side_effect=fake_run),
+            pytest.raises(RunnerError) as excinfo,
+        ):
+            _run_antigravity_auth_preflight()
+        assert excinfo.value.stage == "setup"
+        assert ANTIGRAVITY_RATE_LIMIT_MARKER in str(excinfo.value)
+
+    def test_preflight_empty_without_rate_limit_is_auth_error(self):
+        """Empty agy reply with no rate-limit signal stays an auth-style error."""
+
+        def fake_run(cmd, **kwargs):
+            log_path = Path(cmd[cmd.index("--log-file") + 1])
+            log_path.write_text("ordinary startup log, no errors here\n")
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+        with (
+            patch("quorum.runner.subprocess.run", side_effect=fake_run),
+            pytest.raises(RunnerError) as excinfo,
+        ):
+            _run_antigravity_auth_preflight()
+        assert ANTIGRAVITY_RATE_LIMIT_MARKER not in str(excinfo.value)
+        assert "did not return OK" in str(excinfo.value)
 
 
 class TestAntigravityProjectMarkerExclusion:
@@ -663,9 +690,7 @@ class TestRunScenario:
         (sd / "story.md").write_text("---\nid: x\ntitle: x\n---\nbody\n")
         _exec(sd / "setup.sh", "#!/usr/bin/env bash\necho ok > marker\n")
         # post() references tool-called (a trace primitive) — triggers capture-empty guard
-        (sd / "checks.sh").write_text(
-            "pre() { :; }\npost() { tool-called Edit; }\n"
-        )
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { tool-called Edit; }\n")
         (coding_agents_dir / "claude-context").mkdir(parents=True)
         out_root = tmp_path / "results"
 
@@ -693,7 +718,7 @@ class TestRunScenario:
         sd = _make_scenario(scenarios_dir, "x")
         _exec(
             sd / "setup.sh",
-            '#!/usr/bin/env bash\nset -e\n'
+            "#!/usr/bin/env bash\nset -e\n"
             'sib="${QUORUM_WORKDIR}-sibling"\nmkdir -p "$sib"\n'
             'echo "$sib" > "${QUORUM_WORKDIR}/.quorum-launch-cwd"\n',
         )
@@ -725,15 +750,19 @@ class TestRunScenario:
         session_log_dir = tmp_path / "logs"
         session_log_dir.mkdir()
         coding_agents_dir.mkdir(parents=True, exist_ok=True)
-        (coding_agents_dir / "antigravity.yaml").write_text(yaml.safe_dump({
-            "name": "antigravity",
-            "binary": "echo",
-            "agent_config_env": "ANTIGRAVITY_CONFIG_DIR",
-            "session_log_dir": str(session_log_dir),
-            "session_log_glob": "*.jsonl",
-            "normalizer": "claude",
-            "required_env": [],
-        }))
+        (coding_agents_dir / "antigravity.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "name": "antigravity",
+                    "binary": "echo",
+                    "agent_config_env": "ANTIGRAVITY_CONFIG_DIR",
+                    "session_log_dir": str(session_log_dir),
+                    "session_log_glob": "*.jsonl",
+                    "normalizer": "claude",
+                    "required_env": [],
+                }
+            )
+        )
         (coding_agents_dir / "antigravity-context").mkdir(parents=True)
         sd = _make_scenario(scenarios_dir, "x")
         _exec(
@@ -765,24 +794,26 @@ class TestRunScenario:
         ).strip()
         assert ".antigravitycli/" in (launch_repo / exclude_path).read_text()
 
-    def test_antigravity_seed_runner_error_preserves_setup_stage(
-        self, tmp_path, monkeypatch
-    ):
+    def test_antigravity_seed_runner_error_preserves_setup_stage(self, tmp_path, monkeypatch):
         monkeypatch.delenv("SUPERPOWERS_ROOT", raising=False)
         coding_agents_dir = tmp_path / "coding-agents"
         scenarios_dir = tmp_path / "scenarios"
         session_log_dir = tmp_path / "logs"
         session_log_dir.mkdir()
         coding_agents_dir.mkdir(parents=True, exist_ok=True)
-        (coding_agents_dir / "antigravity.yaml").write_text(yaml.safe_dump({
-            "name": "antigravity",
-            "binary": "agy",
-            "agent_config_env": "ANTIGRAVITY_CONFIG_DIR",
-            "session_log_dir": str(session_log_dir),
-            "session_log_glob": "*.jsonl",
-            "normalizer": "claude",
-            "required_env": [],
-        }))
+        (coding_agents_dir / "antigravity.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "name": "antigravity",
+                    "binary": "agy",
+                    "agent_config_env": "ANTIGRAVITY_CONFIG_DIR",
+                    "session_log_dir": str(session_log_dir),
+                    "session_log_glob": "*.jsonl",
+                    "normalizer": "claude",
+                    "required_env": [],
+                }
+            )
+        )
         (coding_agents_dir / "antigravity-context").mkdir(parents=True)
         sd = _make_scenario(scenarios_dir, "x")
 
@@ -845,9 +876,7 @@ class TestRunScenario:
         out_root = tmp_path / "results"
 
         def gauntlet_with_non_tool_log(*, run_dir, **kwargs):
-            (session_log_dir / "session.jsonl").write_text(
-                '{"type":"assistant","text":"hello"}\n'
-            )
+            (session_log_dir / "session.jsonl").write_text('{"type":"assistant","text":"hello"}\n')
             (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
             return "pass"
 
@@ -900,9 +929,7 @@ class TestRunScenario:
         assert (ctx / "HOWTO.md").read_text() == "invoke `claude --foo`"
         assert (ctx / "extra.md").read_text() == "extra context"
 
-    def test_howto_substitutes_harness_agent_cwd_and_superpowers_root(
-        self, tmp_path, monkeypatch
-    ):
+    def test_howto_substitutes_harness_agent_cwd_and_superpowers_root(self, tmp_path, monkeypatch):
         # tmux strips arbitrary env vars from new sessions, so we burn
         # resolved values into the HOWTO at runtime instead.
         monkeypatch.setenv("SUPERPOWERS_ROOT", "/path/to/sp")
@@ -915,8 +942,7 @@ class TestRunScenario:
         cd_claude = coding_agents_dir / "claude-context"
         cd_claude.mkdir(parents=True)
         (cd_claude / "HOWTO.md").write_text(
-            'cd "$QUORUM_AGENT_CWD"\n'
-            'claude --plugin-dir "$SUPERPOWERS_ROOT"\n'
+            'cd "$QUORUM_AGENT_CWD"\nclaude --plugin-dir "$SUPERPOWERS_ROOT"\n'
         )
         out_root = tmp_path / "results"
 
@@ -936,15 +962,11 @@ class TestRunScenario:
         # tempfile.mkdtemp produced under /tmp or platform equivalent).
         assert "$QUORUM_AGENT_CWD" not in ctx_content
         # The substituted value points at a real existing directory.
-        cd_line = [
-            ln for ln in ctx_content.splitlines() if ln.startswith("cd ")
-        ][0]
+        cd_line = [ln for ln in ctx_content.splitlines() if ln.startswith("cd ")][0]
         resolved = cd_line.split('"')[1]
         assert Path(resolved).exists()
 
-    def test_launch_agent_shim_generated_executable_and_substituted(
-        self, tmp_path, monkeypatch
-    ):
+    def test_launch_agent_shim_generated_executable_and_substituted(self, tmp_path, monkeypatch):
         # The launch-agent template is copied into the context dir with its
         # $… tokens resolved and the +x bit preserved, so the QA agent can
         # invoke it by absolute path. This replaces the fragile
@@ -959,7 +981,7 @@ class TestRunScenario:
         cd_claude = coding_agents_dir / "claude-context"
         cd_claude.mkdir(parents=True)
         (cd_claude / "launch-agent").write_text(
-            '#!/usr/bin/env bash\n'
+            "#!/usr/bin/env bash\n"
             'cd "$QUORUM_AGENT_CWD"\n'
             'exec env CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" echo "$@"\n'
         )
@@ -1030,6 +1052,7 @@ class TestRunScenario:
         out_root = tmp_path / "results"
 
         from quorum.composer import FinalVerdict
+
         fake_verdict = FinalVerdict(final="pass")
 
         with (
@@ -1049,16 +1072,20 @@ class TestRunScenario:
 
     def _agent_with_max_time(self, coding_agents_dir, session_log_dir, max_time):
         coding_agents_dir.mkdir(parents=True, exist_ok=True)
-        (coding_agents_dir / "claude.yaml").write_text(yaml.safe_dump({
-            "name": "claude",
-            "binary": "echo",
-            "agent_config_env": "CLAUDE_CONFIG_DIR",
-            "session_log_dir": str(session_log_dir),
-            "session_log_glob": "*.jsonl",
-            "normalizer": "claude",
-            "required_env": [],
-            "max_time": max_time,
-        }))
+        (coding_agents_dir / "claude.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "name": "claude",
+                    "binary": "echo",
+                    "agent_config_env": "CLAUDE_CONFIG_DIR",
+                    "session_log_dir": str(session_log_dir),
+                    "session_log_glob": "*.jsonl",
+                    "normalizer": "claude",
+                    "required_env": [],
+                    "max_time": max_time,
+                }
+            )
+        )
         (coding_agents_dir / "claude-context").mkdir(parents=True, exist_ok=True)
 
     def test_quorum_max_time_overrides_agent_default(self, tmp_path):
@@ -1070,9 +1097,7 @@ class TestRunScenario:
         session_log_dir.mkdir()
         self._agent_with_max_time(coding_agents_dir, session_log_dir, "10m")
         sd = _make_scenario(scenarios_dir, "x")
-        (sd / "story.md").write_text(
-            "---\nid: x\ntitle: x\nquorum_max_time: 90m\n---\nbody\n"
-        )
+        (sd / "story.md").write_text("---\nid: x\ntitle: x\nquorum_max_time: 90m\n---\nbody\n")
         out_root = tmp_path / "results"
         captured: dict[str, str | None] = {}
 
@@ -1136,18 +1161,36 @@ class TestRunScenario:
             rid = "run-x"
             gd = run_dir / "gauntlet-agent" / "results" / rid
             gd.mkdir(parents=True, exist_ok=True)
-            (gd / "result.json").write_text(json.dumps({
-                "runId": rid, "duration_ms": 120000,
-                "usage": {"inputTokens": 100, "outputTokens": 200,
-                          "cacheCreationInputTokens": 0, "cacheReadInputTokens": 1000},
-                "config": {"model": "claude-sonnet-4-6"},
-            }))
+            (gd / "result.json").write_text(
+                json.dumps(
+                    {
+                        "runId": rid,
+                        "duration_ms": 120000,
+                        "usage": {
+                            "inputTokens": 100,
+                            "outputTokens": 200,
+                            "cacheCreationInputTokens": 0,
+                            "cacheReadInputTokens": 1000,
+                        },
+                        "config": {"model": "claude-sonnet-4-6"},
+                    }
+                )
+            )
             # Frozen coding-agent token usage.
-            (run_dir / "coding-agent-token-usage.json").write_text(json.dumps({
-                "total_input": 50, "total_cache_create": 0, "total_cache_read": 0,
-                "total_output": 80, "total_tokens": 130, "model": "gpt-5.5",
-                "est_cost_usd": 1.23, "duration_ms": 90000,
-            }))
+            (run_dir / "coding-agent-token-usage.json").write_text(
+                json.dumps(
+                    {
+                        "total_input": 50,
+                        "total_cache_create": 0,
+                        "total_cache_read": 0,
+                        "total_output": 80,
+                        "total_tokens": 130,
+                        "model": "gpt-5.5",
+                        "est_cost_usd": 1.23,
+                        "duration_ms": 90000,
+                    }
+                )
+            )
             (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
             return "pass"
 
@@ -1173,9 +1216,7 @@ class TestRunScenario:
         session_log_dir.mkdir()
         self._agent_with_max_time(coding_agents_dir, session_log_dir, "10m")
         sd = _make_scenario(scenarios_dir, "x")
-        (sd / "story.md").write_text(
-            "---\nid: x\ntitle: x\nquorum_max_time: ninety\n---\nbody\n"
-        )
+        (sd / "story.md").write_text("---\nid: x\ntitle: x\nquorum_max_time: ninety\n---\nbody\n")
         out_root = tmp_path / "results"
 
         with patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass) as mock_g:

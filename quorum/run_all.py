@@ -15,11 +15,13 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TextIO
 
+import yaml
 from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
@@ -54,6 +56,21 @@ def _discover_scenarios(scenarios_root: Path) -> list[Path]:
 
 def _discover_agents(coding_agents_dir: Path) -> list[str]:
     return sorted(p.stem for p in coding_agents_dir.glob("*.yaml"))
+
+
+def _agent_max_concurrency(coding_agents_dir: Path, agent: str) -> int | None:
+    """An agent's optional `max_concurrency` cap from its YAML.
+
+    Returns None when unset. Agents whose backend rate-limits concurrent calls
+    (e.g. antigravity's Gemini Code Assist quota) set this to 1 so run-all
+    serializes them regardless of --jobs.
+    """
+    try:
+        data = yaml.safe_load((coding_agents_dir / f"{agent}.yaml").read_text()) or {}
+    except OSError:
+        return None
+    cap = data.get("max_concurrency")
+    return int(cap) if cap is not None else None
 
 
 def build_matrix(
@@ -324,12 +341,7 @@ class BatchProgress:
             title=f"in flight ({len(in_flight)}/{self.jobs})",
             title_align="left",
         )
-        done = (
-            counts["pass"]
-            + counts["fail"]
-            + counts["indeterminate"]
-            + counts["unknown"]
-        )
+        done = counts["pass"] + counts["fail"] + counts["indeterminate"] + counts["unknown"]
         wall = _fmt_duration(time.monotonic() - self._started)
         footer_text = (
             f"progress {done + counts['skipped']}/{self.total}"
@@ -351,11 +363,11 @@ class BatchProgress:
 #
 # Same palette as quorum/show.py:_BATCH_GLYPH_COLORS — keep in sync.
 _STATUS_STYLES = {
-    "pass":          "rgb(80,250,123)",
-    "fail":          "rgb(255,85,85)",
+    "pass": "rgb(80,250,123)",
+    "fail": "rgb(255,85,85)",
     "indeterminate": "rgb(241,250,140)",
-    "skipped":       "rgb(122,130,148)",
-    "unknown":       "rgb(122,130,148)",
+    "skipped": "rgb(122,130,148)",
+    "unknown": "rgb(122,130,148)",
 }
 
 
@@ -465,9 +477,7 @@ def run_batch(
     # Mutable cell so the nested _drain closure can accumulate the batch cost.
     batch_cost_total = [0.0]
 
-    def _worker(
-        idx: int, entry: MatrixEntry
-    ) -> tuple[int, MatrixEntry, ChildResult, float]:
+    def _worker(idx: int, entry: MatrixEntry) -> tuple[int, MatrixEntry, ChildResult, float]:
         progress.started(idx, entry)
         if not use_live:
             with print_lock:
@@ -489,12 +499,12 @@ def run_batch(
         )
         return idx, entry, result, time.monotonic() - t0
 
-    def _drain(pool: ThreadPoolExecutor) -> None:
+    def _drain(pool_for: Callable[[str], ThreadPoolExecutor]) -> None:
         # All console.print calls inside Live MUST use this Console
         # (already passed as console=console to Live above) — output
         # corrupts if a worker constructs its own Console or calls plain
         # print().
-        futures = [pool.submit(_worker, idx, e) for idx, e in runnable_indexed]
+        futures = [pool_for(e.coding_agent).submit(_worker, idx, e) for idx, e in runnable_indexed]
         for fut in as_completed(futures):
             idx, entry, result, elapsed = fut.result()
             final = _final_status_for_result(result, out_root)
@@ -525,23 +535,35 @@ def run_batch(
                     skipped=None,
                 )
 
-    if use_live:
-        # transient=True so the in-flight panel disappears when Live
-        # exits; otherwise an obsolete `(idle)` panel lingers between the
-        # last `done` event and the `batch done` summary line.
-        with (
-            Live(
-                progress,
-                refresh_per_second=4,
-                console=console,
-                transient=True,
-            ),
-            ThreadPoolExecutor(max_workers=jobs) as pool,
-        ):
-            _drain(pool)
-    else:
-        with ThreadPoolExecutor(max_workers=jobs) as pool:
-            _drain(pool)
+    # Concurrency lanes: an agent with an explicit max_concurrency runs in a
+    # dedicated executor of that size, so e.g. antigravity stays serial against
+    # its rate-limited Code Assist backend without consuming — or being starved
+    # by — the shared --jobs pool. Other agents share the main pool. Live
+    # children can reach jobs + (capped lanes); that's intended, since
+    # serialized agents progress alongside the rest and different agents hit
+    # independent backends.
+    agent_caps = {
+        agent: _agent_max_concurrency(coding_agents_dir, agent) for agent in agents_in_batch
+    }
+    with ExitStack() as stack:
+        main_pool = stack.enter_context(ThreadPoolExecutor(max_workers=jobs))
+        lanes: dict[str, ThreadPoolExecutor] = {}
+        for agent, cap in agent_caps.items():
+            if cap is not None and cap < jobs:
+                lanes[agent] = stack.enter_context(ThreadPoolExecutor(max_workers=max(1, cap)))
+        if use_live:
+            # transient=True so the in-flight panel disappears when Live
+            # exits; otherwise an obsolete `(idle)` panel lingers between the
+            # last `done` event and the `batch done` summary line.
+            stack.enter_context(
+                Live(
+                    progress,
+                    refresh_per_second=4,
+                    console=console,
+                    transient=True,
+                )
+            )
+        _drain(lambda agent: lanes.get(agent, main_pool))
 
     finished_at = datetime.now(UTC)
     write_batch_footer(batch_dir=batch_dir, finished_at=finished_at)
@@ -553,9 +575,7 @@ def run_batch(
     )
     if counts["unknown"]:
         summary_line += f" · {counts['unknown']} ?"
-    summary_line += (
-        f" · wall {_fmt_duration((finished_at - started_at).total_seconds())}"
-    )
+    summary_line += f" · wall {_fmt_duration((finished_at - started_at).total_seconds())}"
     if batch_cost_total[0] > 0:
         summary_line += f" · cost ${batch_cost_total[0]:.2f}"
     console.print(summary_line, markup=False, highlight=False)
@@ -595,10 +615,10 @@ def _run_cost(run_dir: Path) -> float | None:
 
 
 _GLYPH_FOR_FINAL = {
-    "pass":          "✓",
-    "fail":          "✗",
+    "pass": "✓",
+    "fail": "✗",
     "indeterminate": "⊘",
-    "unknown":       "?",
+    "unknown": "?",
 }
 _GLYPH_SKIP = "—"
 
