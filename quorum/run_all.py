@@ -28,6 +28,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from quorum.checks import parse_coding_agents_directive
+from quorum.runner import ANTIGRAVITY_RATE_LIMIT_MARKER
 from quorum.show import _fmt_cost
 
 
@@ -138,6 +139,10 @@ class ChildResult:
 
 
 _RUN_ID_PREFIX = "run-id: "
+
+# Sentinel ChildResult.error marking a cell we skipped without invoking because
+# its agent already hit its rate-limit window earlier this batch.
+_RATE_LIMIT_SKIP_SENTINEL = "agy-rate-limit-skip"
 
 
 def _parse_run_id(stdout: str) -> str | None:
@@ -301,6 +306,7 @@ class BatchProgress:
             "indeterminate": 0,
             "unknown": 0,
             "skipped": skipped,
+            "rate_limited": 0,
         }
         self._started = time.monotonic()
 
@@ -312,6 +318,13 @@ class BatchProgress:
         with self._lock:
             self._in_flight.pop(idx, None)
             self._counts[final] = self._counts.get(final, 0) + 1
+
+    def rate_limited(self) -> None:
+        """A runnable cell skipped at runtime because its agent's rate-limit
+        window latched off. Unlike directive skips (known upfront), this count
+        grows during the run."""
+        with self._lock:
+            self._counts["rate_limited"] += 1
 
     def snapshot(
         self,
@@ -344,12 +357,14 @@ class BatchProgress:
         done = counts["pass"] + counts["fail"] + counts["indeterminate"] + counts["unknown"]
         wall = _fmt_duration(time.monotonic() - self._started)
         footer_text = (
-            f"progress {done + counts['skipped']}/{self.total}"
+            f"progress {done + counts['skipped'] + counts['rate_limited']}/{self.total}"
             f" · ✓{counts['pass']} ✗{counts['fail']} ⊘{counts['indeterminate']}"
             f" —{counts['skipped']}"
         )
         if counts["unknown"]:
             footer_text += f" ?{counts['unknown']}"
+        if counts["rate_limited"]:
+            footer_text += f" ⏸{counts['rate_limited']}"
         footer_text += f" · wall {wall}"
         footer = Text(footer_text)
         return Group(panel, footer)
@@ -476,8 +491,24 @@ def run_batch(
     print_lock = threading.Lock()
     # Mutable cell so the nested _drain closure can accumulate the batch cost.
     batch_cost_total = [0.0]
+    # Agents that hit their rate-limit window this batch; once latched, their
+    # remaining cells are skipped instead of re-run (see _worker / _drain).
+    rate_limit_lock = threading.Lock()
+    rate_limited_agents: set[str] = set()
 
     def _worker(idx: int, entry: MatrixEntry) -> tuple[int, MatrixEntry, ChildResult, float]:
+        with rate_limit_lock:
+            latched = entry.coding_agent in rate_limited_agents
+        if latched:
+            # This agent already exhausted its rate-limit window; don't invoke
+            # — a doomed preflight can hang for the full timeout and deepen the
+            # lockout. Signal a skip to _drain via the sentinel.
+            return (
+                idx,
+                entry,
+                ChildResult(run_id=None, exit_code=0, error=_RATE_LIMIT_SKIP_SENTINEL),
+                0.0,
+            )
         progress.started(idx, entry)
         if not use_live:
             with print_lock:
@@ -497,6 +528,9 @@ def run_batch(
             coding_agents_dir=coding_agents_dir,
             out_root=out_root,
         )
+        if result.run_id and _is_rate_limited_verdict(_read_verdict(out_root / result.run_id)):
+            with rate_limit_lock:
+                rate_limited_agents.add(entry.coding_agent)
         return idx, entry, result, time.monotonic() - t0
 
     def _drain(pool_for: Callable[[str], ThreadPoolExecutor]) -> None:
@@ -507,6 +541,25 @@ def run_batch(
         futures = [pool_for(e.coding_agent).submit(_worker, idx, e) for idx, e in runnable_indexed]
         for fut in as_completed(futures):
             idx, entry, result, elapsed = fut.result()
+            if result.error == _RATE_LIMIT_SKIP_SENTINEL:
+                scn = _truncate(entry.scenario, scn_w)
+                line = Text.assemble(
+                    f"[{idx:0{idx_w}d}/{total}] {'skip':<{_STATE_COL_W}}  "
+                    f"{scn:<{scn_w}}  {entry.coding_agent:<{agent_w}}  ",
+                    (_GLYPH_SKIP, _STATUS_STYLES["skipped"]),
+                    f"  {'':<{_DUR_COL_W}}  (agy rate-limited)",
+                )
+                with print_lock:
+                    progress.rate_limited()
+                    console.print(line, markup=False, highlight=False)
+                    append_result_record(
+                        batch_dir=batch_dir,
+                        scenario=entry.scenario,
+                        coding_agent=entry.coding_agent,
+                        run_id=None,
+                        skipped="rate-limited",
+                    )
+                continue
             final = _final_status_for_result(result, out_root)
             progress.finished(idx, final)
             glyph = _GLYPH_FOR_FINAL.get(final, "?")
@@ -573,6 +626,8 @@ def run_batch(
         f"batch done · {counts['pass']} ✓ · {counts['fail']} ✗ · "
         f"{counts['indeterminate']} ⊘ · {counts['skipped']} —"
     )
+    if counts["rate_limited"]:
+        summary_line += f" · {counts['rate_limited']} ⏸"
     if counts["unknown"]:
         summary_line += f" · {counts['unknown']} ?"
     summary_line += f" · wall {_fmt_duration((finished_at - started_at).total_seconds())}"
@@ -604,6 +659,16 @@ def _read_verdict(run_dir: Path) -> dict | None:
         return json.loads(p.read_text())
     except json.JSONDecodeError:
         return None
+
+
+def _is_rate_limited_verdict(verdict: dict | None) -> bool:
+    """True when a child's verdict is a Code Assist rate-limit setup failure."""
+    if not verdict:
+        return False
+    err = verdict.get("error") or {}
+    return err.get("stage") == "setup" and ANTIGRAVITY_RATE_LIMIT_MARKER in (
+        err.get("message") or ""
+    )
 
 
 def _run_cost(run_dir: Path) -> float | None:

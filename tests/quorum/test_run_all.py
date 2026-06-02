@@ -21,6 +21,7 @@ from quorum.run_all import (
     write_batch_footer,
     write_batch_header,
 )
+from quorum.runner import ANTIGRAVITY_RATE_LIMIT_MARKER
 
 
 def _scenario(root: Path, name: str, *, directive: str | None = None) -> Path:
@@ -471,6 +472,64 @@ def test_run_batch_does_not_serialize_uncapped_agent(tmp_path):
         use_cursor=False,
     )
     assert state["max"] >= 2
+
+
+def test_run_batch_fail_fast_on_agy_rate_limit(tmp_path):
+    """After one antigravity cell hits a Code Assist rate-limit setup verdict,
+    the remaining antigravity cells are skipped (rate-limited), not re-run —
+    while other agents keep going."""
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    for n in ("a", "b", "c"):
+        _scenario(scenarios, n)
+    _agent(agents, "claude")
+    _agent(agents, "antigravity", max_concurrency=1)
+    out_root = tmp_path / "results"
+
+    invoked: list[tuple[str, str]] = []
+
+    def fake_invoke(
+        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+    ):
+        invoked.append((scenario_dir.name, coding_agent))
+        run_id = f"{scenario_dir.name}-{coding_agent}-x"
+        run_dir = out_root / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        if coding_agent == "antigravity":
+            verdict = {
+                "final": "indeterminate",
+                "error": {
+                    "stage": "setup",
+                    "message": f"{ANTIGRAVITY_RATE_LIMIT_MARKER}: throttled",
+                },
+            }
+            exit_code = 2
+        else:
+            verdict = {"final": "pass"}
+            exit_code = 0
+        (run_dir / "verdict.json").write_text(json.dumps(verdict))
+        return ChildResult(run_id=run_id, exit_code=exit_code, error=None)
+
+    batch_dir = run_batch(
+        scenarios_root=scenarios,
+        coding_agents_dir=agents,
+        out_root=out_root,
+        jobs=1,
+        agent_filter=None,
+        invoke=fake_invoke,
+        use_cursor=False,
+    )
+
+    # Only the first antigravity cell actually ran; the rest latched off.
+    assert [s for s, a in invoked if a == "antigravity"] == ["a"]
+    # claude is unaffected — all three ran.
+    assert sorted(s for s, a in invoked if a == "claude") == ["a", "b", "c"]
+
+    records = [json.loads(line) for line in (batch_dir / "results.jsonl").read_text().splitlines()]
+    rate_limited = [r for r in records if r.get("skipped") == "rate-limited"]
+    assert len(rate_limited) == 2
+    assert all(r["coding_agent"] == "antigravity" for r in rate_limited)
+    assert all(r["run_id"] is None for r in rate_limited)
 
 
 def test_run_batch_event_format_uses_total_denominator_and_skip_verb(tmp_path, capsys, monkeypatch):
