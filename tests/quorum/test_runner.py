@@ -1106,6 +1106,28 @@ class TestRunScenario:
         assert verdict.error.stage == "setup"
         assert (run_dir / "verdict.json").exists()
 
+    def test_config_error_becomes_setup_indeterminate(self, tmp_path):
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        coding_agents_dir.mkdir(parents=True)
+        (coding_agents_dir / "broken.yaml").write_text("name: broken\n")
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+
+        run_dir, verdict = run_scenario(
+            scenario_dir=sd,
+            coding_agent="broken",
+            coding_agents_dir=coding_agents_dir,
+            out_root=tmp_path / "results",
+            skeleton_root=_empty_skeleton(tmp_path),
+        )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "setup"
+        assert "missing required fields" in verdict.final_reason
+        assert (run_dir / "verdict.json").exists()
+
     def test_capture_empty_yields_indeterminate_when_trace_checks_present(self, tmp_path):
         # The built-in capture-non-empty guard fires when checks reference
         # trace primitives (tool-called etc.) and capture is empty.
@@ -1330,6 +1352,66 @@ class TestRunScenario:
         assert verdict.gauntlet.status == "pass"
         assert verdict.error is not None
         assert verdict.error.stage == "capture"
+
+    def test_gemini_capture_no_transcript_is_capture_indeterminate(self, tmp_path):
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"
+        session_log_dir.mkdir()
+        _make_gemini_agent(coding_agents_dir, session_log_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+
+        with (
+            patch("quorum.runner._seed_gemini_config"),
+            patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass),
+        ):
+            _run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="gemini",
+                coding_agents_dir=coding_agents_dir,
+                out_root=tmp_path / "results",
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "capture"
+        assert "no Gemini transcript" in verdict.final_reason
+
+    def test_gemini_capture_zero_rows_is_capture_indeterminate(self, tmp_path):
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"
+        session_log_dir.mkdir()
+        _make_gemini_agent(coding_agents_dir, session_log_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+
+        def fake_invoke(*, run_dir, **_kwargs):
+            (session_log_dir / "session-empty.jsonl").write_text('{"type":"user"}\n')
+            (run_dir / "gauntlet-agent" / "results" / "run-1").mkdir(parents=True)
+            (run_dir / "gauntlet-agent" / "results" / "run-1" / "result.json").write_text(
+                json.dumps({"status": "pass"})
+            )
+            return "pass"
+
+        with (
+            patch("quorum.runner._seed_gemini_config"),
+            patch("quorum.runner.invoke_gauntlet", side_effect=fake_invoke),
+        ):
+            _run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="gemini",
+                coding_agents_dir=coding_agents_dir,
+                out_root=tmp_path / "results",
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "capture"
+        assert "Gemini transcript(s) normalized to zero" in verdict.final_reason
 
     def test_populate_context_dir_copies_coding_agent_contexts(self, tmp_path):
         # Spot-check that coding-agent context HOWTOs land in <run-dir>/gauntlet-agent/context/.

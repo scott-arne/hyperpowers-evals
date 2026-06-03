@@ -48,7 +48,11 @@ from quorum.capture import (
     snapshot_dir,
 )
 from quorum.checks import parse_coding_agents_directive, run_phase
-from quorum.coding_agent_config import CodingAgentConfig, load_coding_agent_config
+from quorum.coding_agent_config import (
+    CodingAgentConfig,
+    CodingAgentConfigError,
+    load_coding_agent_config,
+)
 from quorum.composer import (
     FinalVerdict,
     GauntletLayer,
@@ -1016,37 +1020,36 @@ def _run_scenario_inner(
             run_id=None,
         )
 
-    if tcfg.normalizer == "antigravity" and not capture_result.source_logs:
+    strict_capture_names = {"antigravity": "Antigravity", "gemini": "Gemini"}
+    strict_capture_name = strict_capture_names.get(tcfg.normalizer)
+    if strict_capture_name and not capture_result.source_logs:
         return run_dir, _write_indeterminate(
             run_dir,
             final_reason=(
-                "no Antigravity transcript appeared under isolated "
+                f"no {strict_capture_name} transcript appeared under isolated "
                 f"{session_log_dir}; cannot evaluate this run"
             ),
             gauntlet=gauntlet_layer,
             checks=pre_records,
             error=RunError(
                 stage="capture",
-                message="no Antigravity transcript captured",
+                message=f"no {strict_capture_name} transcript captured",
             ),
         )
 
-    if (
-        tcfg.normalizer == "antigravity"
-        and capture_result.source_logs
-        and capture_result.row_count == 0
-    ):
+    if strict_capture_name and capture_result.source_logs and capture_result.row_count == 0:
         rel = [str(p.relative_to(session_log_dir)) for p in capture_result.source_logs]
         return run_dir, _write_indeterminate(
             run_dir,
             final_reason=(
-                "Antigravity transcript(s) normalized to zero tool-call rows: " + ", ".join(rel)
+                f"{strict_capture_name} transcript(s) normalized to zero tool-call rows: "
+                + ", ".join(rel)
             ),
             gauntlet=gauntlet_layer,
             checks=pre_records,
             error=RunError(
                 stage="capture",
-                message="Antigravity capture normalized to zero rows",
+                message=f"{strict_capture_name} capture normalized to zero rows",
             ),
         )
 
@@ -1146,6 +1149,13 @@ def run_scenario(
             skeleton_root=skeleton_root,
         )
     except SetupError as e:
+        v = _write_indeterminate(
+            run_dir,
+            final_reason=f"setup failed: {e}",
+            error=RunError(stage="setup", message=str(e)[:500]),
+        )
+        return run_dir, v
+    except CodingAgentConfigError as e:
         v = _write_indeterminate(
             run_dir,
             final_reason=f"setup failed: {e}",
