@@ -17,6 +17,7 @@ from quorum.run_all import (
     append_result_record,
     build_matrix,
     invoke_child,
+    prepare_kimi_batch_preflight,
     run_batch,
     write_batch_footer,
     write_batch_header,
@@ -633,7 +634,10 @@ def test_run_batch_preflights_kimi_once_for_multiple_cells(tmp_path):
 
     def fake_preflight(**_kwargs):
         calls["preflight"] += 1
-        return {"QUORUM_KIMI_PREFLIGHT_SENTINEL": str(tmp_path / "sentinel.json")}
+        return {
+            "QUORUM_KIMI_PREFLIGHT_SENTINEL": str(tmp_path / "sentinel.json"),
+            "QUORUM_KIMI_PREFLIGHT_TOKEN": "batch-token",
+        }
 
     def fake_invoke(
         *,
@@ -661,6 +665,28 @@ def test_run_batch_preflights_kimi_once_for_multiple_cells(tmp_path):
     assert calls["preflight"] == 1
     assert len(child_envs) == 2
     assert all("QUORUM_KIMI_PREFLIGHT_SENTINEL" in env for env in child_envs)
+    assert all("QUORUM_KIMI_PREFLIGHT_TOKEN" in env for env in child_envs)
+
+
+def test_prepare_kimi_batch_preflight_writes_token_digest_only(tmp_path, monkeypatch):
+    agents = tmp_path / "agents"
+    custom_kimi = tmp_path / "custom-kimi"
+    custom_kimi.write_text("#!/usr/bin/env bash\nexit 0\n")
+    custom_kimi.chmod(0o755)
+    _agent(agents, "kimi", binary=str(custom_kimi))
+    monkeypatch.setenv("KIMI_MODEL_API_KEY", "fake-kimi-key")
+    monkeypatch.setattr("quorum.run_all.secrets.token_urlsafe", lambda _n: "raw-batch-token")
+
+    with patch("quorum.run_all.run_kimi_auth_preflight"):
+        env = prepare_kimi_batch_preflight(
+            batch_dir=tmp_path / "batch",
+            coding_agents_dir=agents,
+        )
+
+    marker_text = Path(env["QUORUM_KIMI_PREFLIGHT_SENTINEL"]).read_text()
+    assert env["QUORUM_KIMI_PREFLIGHT_TOKEN"] == "raw-batch-token"
+    assert "raw-batch-token" not in marker_text
+    assert "preflight_token_sha256" in marker_text
 
 
 def test_run_batch_kimi_preflight_failure_writes_indeterminate_runs(tmp_path):
@@ -741,6 +767,57 @@ def test_run_batch_kimi_parent_preflight_uses_configured_binary(tmp_path, monkey
 
     assert preflight_binaries == [str(custom_kimi)]
     assert child_envs[0]["QUORUM_KIMI_PREFLIGHT_SENTINEL"]
+    assert child_envs[0]["QUORUM_KIMI_PREFLIGHT_TOKEN"]
+
+
+def test_run_batch_kimi_preflight_token_stays_out_of_batch_artifacts(tmp_path, monkeypatch):
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    _scenario(scenarios, "a")
+    custom_kimi = tmp_path / "custom-kimi"
+    custom_kimi.write_text("#!/usr/bin/env bash\nexit 0\n")
+    custom_kimi.chmod(0o755)
+    _agent(agents, "kimi", binary=str(custom_kimi))
+    out_root = tmp_path / "results"
+    child_envs = []
+    monkeypatch.setenv("KIMI_MODEL_API_KEY", "fake-kimi-key")
+    monkeypatch.setattr("quorum.run_all.secrets.token_urlsafe", lambda _n: "raw-batch-token")
+
+    def fake_invoke(
+        *,
+        scenario_dir,
+        coding_agent,
+        coding_agents_dir,
+        out_root,
+        extra_env=None,
+        timeout_seconds=None,
+    ):
+        child_envs.append(extra_env or {})
+        run_id = f"{scenario_dir.name}-{coding_agent}-x"
+        run_dir = out_root / run_id
+        run_dir.mkdir(parents=True)
+        (run_dir / "verdict.json").write_text(
+            json.dumps({"final": "pass", "error": None}, indent=2) + "\n"
+        )
+        return ChildResult(run_id=run_id, exit_code=0, error=None)
+
+    with patch("quorum.run_all.run_kimi_auth_preflight"):
+        batch_dir = run_batch(
+            scenarios_root=scenarios,
+            coding_agents_dir=agents,
+            out_root=out_root,
+            jobs=1,
+            agent_filter=["kimi"],
+            invoke=fake_invoke,
+            use_cursor=False,
+        )
+
+    assert child_envs[0]["QUORUM_KIMI_PREFLIGHT_TOKEN"] == "raw-batch-token"
+    marker = batch_dir / "kimi-preflight-ok.json"
+    assert marker.exists()
+    assert "raw-batch-token" not in marker.read_text()
+    assert "raw-batch-token" not in (batch_dir / "results.jsonl").read_text()
+    assert "raw-batch-token" not in (out_root / "a-kimi-x" / "verdict.json").read_text()
 
 
 def test_run_batch_kimi_preflight_failure_redacts_secret_in_verdict(tmp_path, monkeypatch):

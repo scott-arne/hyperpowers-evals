@@ -175,21 +175,25 @@ def test_effective_config_summary_omits_non_kimi_runtime_env(tmp_path):
 
 def test_kimi_preflight_sentinel_payload_round_trips_validation(tmp_path):
     env = effective_kimi_model_env({"KIMI_MODEL_API_KEY": "fake-key"})
+    token = "batch-token"
     path = tmp_path / "sentinel.json"
     path.write_text(
         json.dumps(
             kimi_preflight_sentinel_payload(
                 kimi_binary="/usr/local/bin/kimi-custom",
                 kimi_model_env=env,
+                preflight_token=token,
             )
         )
         + "\n"
     )
 
+    assert token not in path.read_text()
     validate_kimi_preflight_sentinel(
         path,
         kimi_binary="/usr/local/bin/kimi-custom",
         kimi_model_env=env,
+        preflight_token=token,
     )
 
 
@@ -203,6 +207,7 @@ def test_kimi_preflight_sentinel_rejects_malformed_json(tmp_path):
             path,
             kimi_binary="/usr/local/bin/kimi",
             kimi_model_env=env,
+            preflight_token="batch-token",
         )
 
 
@@ -212,6 +217,7 @@ def test_kimi_preflight_sentinel_rejects_model_mismatch(tmp_path):
     payload = kimi_preflight_sentinel_payload(
         kimi_binary="/usr/local/bin/kimi",
         kimi_model_env=env,
+        preflight_token="batch-token",
     )
     payload["model"] = "other-model"
     path.write_text(json.dumps(payload) + "\n")
@@ -221,6 +227,7 @@ def test_kimi_preflight_sentinel_rejects_model_mismatch(tmp_path):
             path,
             kimi_binary="/usr/local/bin/kimi",
             kimi_model_env=env,
+            preflight_token="batch-token",
         )
 
 
@@ -232,6 +239,7 @@ def test_kimi_preflight_sentinel_rejects_binary_mismatch(tmp_path):
             kimi_preflight_sentinel_payload(
                 kimi_binary="/usr/local/bin/kimi-a",
                 kimi_model_env=env,
+                preflight_token="batch-token",
             )
         )
         + "\n"
@@ -242,6 +250,53 @@ def test_kimi_preflight_sentinel_rejects_binary_mismatch(tmp_path):
             path,
             kimi_binary="/usr/local/bin/kimi-b",
             kimi_model_env=env,
+            preflight_token="batch-token",
+        )
+
+
+def test_kimi_preflight_sentinel_rejects_missing_token(tmp_path):
+    env = effective_kimi_model_env({"KIMI_MODEL_API_KEY": "fake-key"})
+    path = tmp_path / "sentinel.json"
+    path.write_text(
+        json.dumps(
+            kimi_preflight_sentinel_payload(
+                kimi_binary="/usr/local/bin/kimi",
+                kimi_model_env=env,
+                preflight_token="batch-token",
+            )
+        )
+        + "\n"
+    )
+
+    with pytest.raises(KimiConfigError, match="token"):
+        validate_kimi_preflight_sentinel(
+            path,
+            kimi_binary="/usr/local/bin/kimi",
+            kimi_model_env=env,
+            preflight_token=None,
+        )
+
+
+def test_kimi_preflight_sentinel_rejects_token_mismatch(tmp_path):
+    env = effective_kimi_model_env({"KIMI_MODEL_API_KEY": "fake-key"})
+    path = tmp_path / "sentinel.json"
+    path.write_text(
+        json.dumps(
+            kimi_preflight_sentinel_payload(
+                kimi_binary="/usr/local/bin/kimi",
+                kimi_model_env=env,
+                preflight_token="batch-token-a",
+            )
+        )
+        + "\n"
+    )
+
+    with pytest.raises(KimiConfigError, match="token"):
+        validate_kimi_preflight_sentinel(
+            path,
+            kimi_binary="/usr/local/bin/kimi",
+            kimi_model_env=env,
+            preflight_token="batch-token-b",
         )
 
 

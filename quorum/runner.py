@@ -165,7 +165,22 @@ def _write_indeterminate(
 
 def _cleanup_agent_runtime(runtime: AgentRuntime) -> None:
     for path in runtime.cleanup_dirs:
-        shutil.rmtree(path, ignore_errors=True)
+        try:
+            shutil.rmtree(path)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            raise RunnerError(
+                f"agent runtime cleanup failed for {path}: {str(e)[:200]}",
+                stage="setup",
+            ) from e
+    leftovers = []
+    if runtime.env_file is not None and runtime.env_file.exists():
+        leftovers.append(runtime.env_file)
+    leftovers.extend(path for path in runtime.cleanup_dirs if path.exists())
+    if leftovers:
+        paths = ", ".join(str(path) for path in leftovers)
+        raise RunnerError(f"agent runtime cleanup failed; path remains: {paths}", stage="setup")
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +384,7 @@ def _seed_kimi_config(kimi_home: Path, *, run_dir: Path, binary: str) -> AgentRu
             stage="setup",
         )
     preflight_sentinel = os.environ.get("QUORUM_KIMI_PREFLIGHT_SENTINEL")
+    preflight_token = os.environ.get("QUORUM_KIMI_PREFLIGHT_TOKEN")
 
     try:
         kimi_binary = resolve_kimi_binary(binary)
@@ -378,6 +394,7 @@ def _seed_kimi_config(kimi_home: Path, *, run_dir: Path, binary: str) -> AgentRu
                 Path(preflight_sentinel),
                 kimi_binary=kimi_binary,
                 kimi_model_env=kimi_env,
+                preflight_token=preflight_token,
             )
         else:
             run_kimi_auth_preflight(
@@ -400,13 +417,7 @@ def _seed_kimi_config(kimi_home: Path, *, run_dir: Path, binary: str) -> AgentRu
         kimi_model_env=kimi_env,
     )
     env_file = write_kimi_runtime_env_file(runtime_env, run_dir=run_dir)
-    write_effective_kimi_config(
-        kimi_home,
-        runtime_env,
-        kimi_binary=kimi_binary,
-        kimi_version=None,
-    )
-    return AgentRuntime(
+    runtime = AgentRuntime(
         env_file=env_file,
         substitutions={
             "$KIMI_ENV_FILE": str(env_file),
@@ -414,6 +425,17 @@ def _seed_kimi_config(kimi_home: Path, *, run_dir: Path, binary: str) -> AgentRu
         },
         cleanup_dirs=(env_file.parent,),
     )
+    try:
+        write_effective_kimi_config(
+            kimi_home,
+            runtime_env,
+            kimi_binary=kimi_binary,
+            kimi_version=None,
+        )
+        return runtime
+    except Exception:
+        _cleanup_agent_runtime(runtime)
+        raise
 
 
 def _antigravity_transcripts(config_dir: Path) -> list[Path]:

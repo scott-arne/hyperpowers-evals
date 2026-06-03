@@ -16,6 +16,7 @@ from quorum.runner import (
     ANTIGRAVITY_RATE_LIMIT_MARKER,
     AgentRuntime,
     RunnerError,
+    _cleanup_agent_runtime,
     _exclude_antigravity_project_marker,
     _gemini_transcripts,
     _populate_context_dir,
@@ -1367,6 +1368,7 @@ class TestSeedAgentConfigDir:
                 kimi_preflight_sentinel_payload(
                     kimi_binary="/usr/bin/kimi",
                     kimi_model_env=kimi_env,
+                    preflight_token="batch-token",
                 )
             )
             + "\n"
@@ -1380,6 +1382,7 @@ class TestSeedAgentConfigDir:
                     "SUPERPOWERS_ROOT": str(superpowers),
                     "KIMI_MODEL_API_KEY": "fake-kimi-key",
                     "QUORUM_KIMI_PREFLIGHT_SENTINEL": str(sentinel),
+                    "QUORUM_KIMI_PREFLIGHT_TOKEN": "batch-token",
                 },
                 clear=True,
             ),
@@ -1444,6 +1447,7 @@ class TestSeedAgentConfigDir:
         payload = kimi_preflight_sentinel_payload(
             kimi_binary="/usr/bin/kimi",
             kimi_model_env=kimi_env,
+            preflight_token="batch-token",
         )
         payload["model"] = "other-model"
         sentinel = tmp_path / "sentinel.json"
@@ -1457,6 +1461,7 @@ class TestSeedAgentConfigDir:
                     "SUPERPOWERS_ROOT": str(superpowers),
                     "KIMI_MODEL_API_KEY": "fake-kimi-key",
                     "QUORUM_KIMI_PREFLIGHT_SENTINEL": str(sentinel),
+                    "QUORUM_KIMI_PREFLIGHT_TOKEN": "batch-token",
                 },
                 clear=True,
             ),
@@ -1468,10 +1473,168 @@ class TestSeedAgentConfigDir:
         assert excinfo.value.stage == "setup"
         mock_preflight.assert_not_called()
 
+    def test_kimi_seed_rejects_preflight_sentinel_without_token(self, tmp_path, monkeypatch):
+        superpowers = _make_kimi_superpowers_root(tmp_path)
+        monkeypatch.setattr("quorum.kimi.shutil.which", lambda name: "/usr/bin/kimi")
+        kimi_env = effective_kimi_model_env({"KIMI_MODEL_API_KEY": "fake-kimi-key"})
+        sentinel = tmp_path / "sentinel.json"
+        sentinel.write_text(
+            json.dumps(
+                kimi_preflight_sentinel_payload(
+                    kimi_binary="/usr/bin/kimi",
+                    kimi_model_env=kimi_env,
+                    preflight_token="batch-token",
+                )
+            )
+            + "\n"
+        )
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "PATH": "/usr/bin:/bin",
+                    "SUPERPOWERS_ROOT": str(superpowers),
+                    "KIMI_MODEL_API_KEY": "fake-kimi-key",
+                    "QUORUM_KIMI_PREFLIGHT_SENTINEL": str(sentinel),
+                },
+                clear=True,
+            ),
+            patch("quorum.runner.run_kimi_auth_preflight") as mock_preflight,
+            pytest.raises(RunnerError, match="token") as excinfo,
+        ):
+            _seed_kimi_config(tmp_path / "cfg", run_dir=tmp_path / "run", binary="kimi")
+
+        assert excinfo.value.stage == "setup"
+        mock_preflight.assert_not_called()
+
+    def test_kimi_seed_rejects_preflight_sentinel_with_mismatched_token(
+        self, tmp_path, monkeypatch
+    ):
+        superpowers = _make_kimi_superpowers_root(tmp_path)
+        monkeypatch.setattr("quorum.kimi.shutil.which", lambda name: "/usr/bin/kimi")
+        kimi_env = effective_kimi_model_env({"KIMI_MODEL_API_KEY": "fake-kimi-key"})
+        sentinel = tmp_path / "sentinel.json"
+        sentinel.write_text(
+            json.dumps(
+                kimi_preflight_sentinel_payload(
+                    kimi_binary="/usr/bin/kimi",
+                    kimi_model_env=kimi_env,
+                    preflight_token="batch-token-a",
+                )
+            )
+            + "\n"
+        )
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "PATH": "/usr/bin:/bin",
+                    "SUPERPOWERS_ROOT": str(superpowers),
+                    "KIMI_MODEL_API_KEY": "fake-kimi-key",
+                    "QUORUM_KIMI_PREFLIGHT_SENTINEL": str(sentinel),
+                    "QUORUM_KIMI_PREFLIGHT_TOKEN": "batch-token-b",
+                },
+                clear=True,
+            ),
+            patch("quorum.runner.run_kimi_auth_preflight") as mock_preflight,
+            pytest.raises(RunnerError, match="token") as excinfo,
+        ):
+            _seed_kimi_config(tmp_path / "cfg", run_dir=tmp_path / "run", binary="kimi")
+
+        assert excinfo.value.stage == "setup"
+        mock_preflight.assert_not_called()
+
     def test_kimi_seed_requires_superpowers_root(self, tmp_path, monkeypatch):
         monkeypatch.delenv("SUPERPOWERS_ROOT", raising=False)
         with pytest.raises(RunnerError, match="SUPERPOWERS_ROOT"):
             _seed_kimi_config(tmp_path / "cfg", run_dir=tmp_path / "run", binary="kimi")
+
+    def test_kimi_seed_removes_runtime_env_dir_when_effective_config_write_fails(
+        self, tmp_path, monkeypatch
+    ):
+        superpowers = _make_kimi_superpowers_root(tmp_path)
+        monkeypatch.setattr("quorum.kimi.shutil.which", lambda name: "/usr/bin/kimi")
+        env_dir = tmp_path / "secret-env"
+        env_file = env_dir / "kimi-runtime.env"
+
+        def fake_write_env(_env, *, run_dir):
+            env_dir.mkdir()
+            env_file.write_text("KIMI_MODEL_API_KEY=fake-kimi-key\n")
+            return env_file
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "PATH": "/usr/bin:/bin",
+                    "SUPERPOWERS_ROOT": str(superpowers),
+                    "KIMI_MODEL_API_KEY": "fake-kimi-key",
+                },
+                clear=True,
+            ),
+            patch("quorum.runner.run_kimi_auth_preflight"),
+            patch("quorum.runner.write_kimi_runtime_env_file", side_effect=fake_write_env),
+            patch("quorum.runner.write_effective_kimi_config", side_effect=OSError("disk full")),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            _seed_kimi_config(tmp_path / "cfg", run_dir=tmp_path / "run", binary="kimi")
+
+        assert not env_file.exists()
+        assert not env_dir.exists()
+
+    def test_cleanup_agent_runtime_fails_when_runtime_env_file_remains(
+        self, tmp_path, monkeypatch
+    ):
+        env_dir = tmp_path / "secret-env"
+        env_dir.mkdir()
+        env_file = env_dir / "kimi-runtime.env"
+        env_file.write_text("KIMI_MODEL_API_KEY=fake-kimi-key\n")
+
+        monkeypatch.setattr("quorum.runner.shutil.rmtree", lambda _path: None)
+
+        with pytest.raises(RunnerError, match="cleanup failed") as excinfo:
+            _cleanup_agent_runtime(AgentRuntime(env_file=env_file, cleanup_dirs=(env_dir,)))
+
+        assert excinfo.value.stage == "setup"
+
+    def test_run_scenario_reports_indeterminate_when_runtime_cleanup_fails(
+        self, tmp_path, monkeypatch
+    ):
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        out_root = tmp_path / "results"
+        session_log_dir = tmp_path / "logs"
+        _make_coding_agent(coding_agents_dir, "claude", session_log_dir)
+        scenario = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (scenario / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+        env_dir = tmp_path / "secret-env"
+        env_dir.mkdir()
+        env_file = env_dir / "kimi-runtime.env"
+        env_file.write_text("KIMI_MODEL_API_KEY=fake-kimi-key\n")
+
+        monkeypatch.setattr("quorum.runner.shutil.rmtree", lambda _path: None)
+
+        with (
+            patch(
+                "quorum.runner._seed_agent_config_dir",
+                return_value=AgentRuntime(env_file=env_file, cleanup_dirs=(env_dir,)),
+            ),
+            patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass),
+        ):
+            _run_dir, verdict = run_scenario(
+                scenario_dir=scenario,
+                coding_agent="claude",
+                coding_agents_dir=coding_agents_dir,
+                out_root=out_root,
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "setup"
+        assert "cleanup failed" in verdict.error.message
 
     def test_antigravity_seed_runs_auth_preflight_then_plugin_install(self, tmp_path, monkeypatch):
         sp = tmp_path / "superpowers"

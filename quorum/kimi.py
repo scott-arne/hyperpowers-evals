@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime as _dt
+import hashlib
 import json
 import os
 import shlex
@@ -49,6 +50,7 @@ def kimi_preflight_sentinel_payload(
     *,
     kimi_binary: str,
     kimi_model_env: Mapping[str, str],
+    preflight_token: str,
 ) -> dict[str, str | int]:
     return {
         "schema": 1,
@@ -57,6 +59,7 @@ def kimi_preflight_sentinel_payload(
         "model": kimi_model_env["KIMI_MODEL_NAME"],
         "provider": kimi_model_env["KIMI_MODEL_PROVIDER_TYPE"],
         "base_url": kimi_model_env["KIMI_MODEL_BASE_URL"],
+        "preflight_token_sha256": hashlib.sha256(preflight_token.encode()).hexdigest(),
     }
 
 
@@ -65,6 +68,7 @@ def validate_kimi_preflight_sentinel(
     *,
     kimi_binary: str,
     kimi_model_env: Mapping[str, str],
+    preflight_token: str | None,
 ) -> None:
     if not path.is_file():
         raise KimiConfigError(f"Kimi preflight sentinel missing: {path}")
@@ -76,10 +80,13 @@ def validate_kimi_preflight_sentinel(
         raise KimiConfigError(f"Kimi preflight sentinel could not be read: {e}") from e
     if not isinstance(payload, dict):
         raise KimiConfigError("Kimi preflight sentinel must be a JSON object")
+    if preflight_token is None or not preflight_token.strip():
+        raise KimiConfigError("Kimi preflight sentinel token missing or malformed")
 
     expected = kimi_preflight_sentinel_payload(
         kimi_binary=kimi_binary,
         kimi_model_env=kimi_model_env,
+        preflight_token=preflight_token,
     )
     for key, expected_value in expected.items():
         actual = payload.get(key)

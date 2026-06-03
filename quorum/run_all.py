@@ -242,18 +242,24 @@ def prepare_kimi_batch_preflight(*, batch_dir: Path, coding_agents_dir: Path) ->
         kimi_model_env=kimi_env,
         base_env=os.environ,
     )
+    preflight_token = secrets.token_urlsafe(32)
     marker = batch_dir / "kimi-preflight-ok.json"
+    marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(
         json.dumps(
             kimi_preflight_sentinel_payload(
                 kimi_binary=kimi_binary,
                 kimi_model_env=kimi_env,
+                preflight_token=preflight_token,
             ),
             indent=2,
         )
         + "\n"
     )
-    return {"QUORUM_KIMI_PREFLIGHT_SENTINEL": str(marker)}
+    return {
+        "QUORUM_KIMI_PREFLIGHT_SENTINEL": str(marker),
+        "QUORUM_KIMI_PREFLIGHT_TOKEN": preflight_token,
+    }
 
 
 def _write_setup_indeterminate_run(
