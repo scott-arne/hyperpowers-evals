@@ -79,6 +79,7 @@ def build_matrix(
     scenarios_root: Path,
     coding_agents_dir: Path,
     agent_filter: list[str] | None = None,
+    scenario_filter: list[str] | None = None,
 ) -> list[MatrixEntry]:
     """Compute the (scenario × agent) matrix.
 
@@ -103,8 +104,19 @@ def build_matrix(
     else:
         agents = available
 
+    scenario_dirs = _discover_scenarios(scenarios_root)
+    if scenario_filter is not None:
+        available_scn = {d.name for d in scenario_dirs}
+        unknown = [s for s in scenario_filter if s not in available_scn]
+        if unknown:
+            raise ValueError(
+                f"unknown scenario(s): {', '.join(unknown)} "
+                f"(available: {', '.join(sorted(available_scn))})"
+            )
+        scenario_dirs = [d for d in scenario_dirs if d.name in scenario_filter]
+
     entries: list[MatrixEntry] = []
-    for scenario_dir in _discover_scenarios(scenarios_root):
+    for scenario_dir in scenario_dirs:
         directive = parse_coding_agents_directive(scenario_dir / "checks.sh")
         for agent in agents:
             skipped = "directive" if directive is not None and agent not in directive else None
@@ -393,6 +405,7 @@ def run_batch(
     out_root: Path,
     jobs: int,
     agent_filter: list[str] | None,
+    scenario_filter: list[str] | None = None,
     invoke: Callable[..., ChildResult] | None = None,
     stream: TextIO | None = None,
     use_cursor: bool = True,
@@ -414,6 +427,7 @@ def run_batch(
         scenarios_root=scenarios_root,
         coding_agents_dir=coding_agents_dir,
         agent_filter=agent_filter,
+        scenario_filter=scenario_filter,
     )
     batch_dir = allocate_batch_dir(out_root=out_root)
     started_at = datetime.now(UTC)

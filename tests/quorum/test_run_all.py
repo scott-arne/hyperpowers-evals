@@ -106,6 +106,37 @@ def test_build_matrix_unknown_agent_in_filter_raises(tmp_path):
         )
 
 
+def test_build_matrix_filters_scenarios(tmp_path):
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    _scenario(scenarios, "alpha")
+    _scenario(scenarios, "beta")
+    _scenario(scenarios, "gamma")
+    _agent(agents, "claude")
+
+    entries = build_matrix(
+        scenarios_root=scenarios,
+        coding_agents_dir=agents,
+        scenario_filter=["alpha", "gamma"],
+    )
+
+    assert {e.scenario for e in entries} == {"alpha", "gamma"}
+
+
+def test_build_matrix_unknown_scenario_in_filter_raises(tmp_path):
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    _scenario(scenarios, "alpha")
+    _agent(agents, "claude")
+
+    with pytest.raises(ValueError, match="unknown scenario.*nope"):
+        build_matrix(
+            scenarios_root=scenarios,
+            coding_agents_dir=agents,
+            scenario_filter=["nope"],
+        )
+
+
 def test_build_matrix_sorts_entries_for_deterministic_output(tmp_path):
     scenarios = tmp_path / "scenarios"
     agents = tmp_path / "agents"
@@ -530,6 +561,37 @@ def test_run_batch_fail_fast_on_agy_rate_limit(tmp_path):
     assert len(rate_limited) == 2
     assert all(r["coding_agent"] == "antigravity" for r in rate_limited)
     assert all(r["run_id"] is None for r in rate_limited)
+
+
+def test_run_batch_scenario_filter_runs_only_named(tmp_path):
+    """--scenarios narrows the batch to the named scenarios (resume support)."""
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    for n in ("a", "b", "c"):
+        _scenario(scenarios, n)
+    _agent(agents, "claude")
+    out_root = tmp_path / "results"
+
+    invoked: list[str] = []
+
+    def fake_invoke(
+        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+    ):
+        invoked.append(scenario_dir.name)
+        return ChildResult(run_id=f"{scenario_dir.name}-claude-x", exit_code=0, error=None)
+
+    run_batch(
+        scenarios_root=scenarios,
+        coding_agents_dir=agents,
+        out_root=out_root,
+        jobs=1,
+        agent_filter=None,
+        scenario_filter=["a", "c"],
+        invoke=fake_invoke,
+        use_cursor=False,
+    )
+
+    assert sorted(invoked) == ["a", "c"]
 
 
 def test_run_batch_event_format_uses_total_denominator_and_skip_verb(tmp_path, capsys, monkeypatch):

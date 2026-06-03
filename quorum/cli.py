@@ -42,7 +42,8 @@ def main() -> None:
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
 @click.option(
-    "--coding-agent", required=True,
+    "--coding-agent",
+    required=True,
     help="Coding-Agent name (matches coding-agents/<name>.yaml)",
 )
 @click.option(
@@ -97,9 +98,7 @@ def run(
 def list_scenarios(scenarios_root: Path) -> None:
     """List scenarios under scenarios-root."""
     found = sorted(
-        d.name
-        for d in scenarios_root.iterdir()
-        if d.is_dir() and (d / "story.md").exists()
+        d.name for d in scenarios_root.iterdir() if d.is_dir() and (d / "story.md").exists()
     )
     for name in found:
         click.echo(name)
@@ -126,7 +125,8 @@ def new(name: str, scenarios_root: Path) -> None:
 @main.command("check")
 @click.argument("names", nargs=-1)
 @click.option(
-    "--fix", is_flag=True,
+    "--fix",
+    is_flag=True,
     help="chmod +x any scripts missing the executable bit",
 )
 @click.option(
@@ -147,8 +147,7 @@ def check(names: tuple[str, ...], fix: bool, scenarios_root: Path) -> None:
                 sys.exit(1)
     else:
         targets = sorted(
-            d for d in scenarios_root.iterdir()
-            if d.is_dir() and (d / "story.md").exists()
+            d for d in scenarios_root.iterdir() if d.is_dir() and (d / "story.md").exists()
         )
 
     failed = 0
@@ -172,12 +171,22 @@ def check(names: tuple[str, ...], fix: bool, scenarios_root: Path) -> None:
 
 @main.command("show")
 @click.argument("target", required=False)
-@click.option("-q", "--quiet", "mode_quiet", is_flag=True,
-              help="Print only the two-line header (final + reason).")
-@click.option("--json", "mode_json", is_flag=True,
-              help="Print raw verdict.json after resolving target.")
-@click.option("--no-color", "no_color", is_flag=True,
-              help="Disable ANSI color (auto-disabled when stdout isn't a TTY).")
+@click.option(
+    "-q",
+    "--quiet",
+    "mode_quiet",
+    is_flag=True,
+    help="Print only the two-line header (final + reason).",
+)
+@click.option(
+    "--json", "mode_json", is_flag=True, help="Print raw verdict.json after resolving target."
+)
+@click.option(
+    "--no-color",
+    "no_color",
+    is_flag=True,
+    help="Disable ANSI color (auto-disabled when stdout isn't a TTY).",
+)
 @click.option(
     "--results-root",
     default=_DEFAULT_OUT_ROOT,
@@ -218,8 +227,7 @@ def show(
         if mode_json:
             batch = json.loads((run_dir / "batch.json").read_text())
             results = [
-                json.loads(line)
-                for line in (run_dir / "results.jsonl").read_text().splitlines()
+                json.loads(line) for line in (run_dir / "results.jsonl").read_text().splitlines()
             ]
             click.echo(json.dumps({**batch, "results": results}, indent=2))
             return
@@ -251,10 +259,11 @@ def show(
 
 @main.command("backfill-economics")
 @click.argument("target", required=False, type=click.Path(path_type=Path))
-@click.option("--all", "do_all", is_flag=True,
-              help="Backfill every run-dir under --results-root.")
+@click.option("--all", "do_all", is_flag=True, help="Backfill every run-dir under --results-root.")
 @click.option(
-    "--results-root", default=_DEFAULT_OUT_ROOT, type=click.Path(path_type=Path),
+    "--results-root",
+    default=_DEFAULT_OUT_ROOT,
+    type=click.Path(path_type=Path),
     help="Where to find run-dirs when using --all (default: results/).",
 )
 def backfill_economics(target: Path | None, do_all: bool, results_root: Path) -> None:
@@ -293,31 +302,53 @@ def backfill_economics(target: Path | None, do_all: bool, results_root: Path) ->
 
 @main.command("run-all")
 @click.option(
-    "--coding-agents", "coding_agents_csv", default=None,
+    "--coding-agents",
+    "coding_agents_csv",
+    default=None,
     help="CSV filter, e.g. claude,codex. Default: every YAML in coding-agents/.",
 )
 @click.option(
-    "--jobs", "jobs", default=1, type=click.IntRange(min=1),
+    "--scenarios",
+    "scenarios_csv",
+    default=None,
+    help="CSV filter of scenario names, e.g. sdd-svelte-todo,spec-writing-blind-spot. "
+    "Default: all. Use to resume a subset.",
+)
+@click.option(
+    "--jobs",
+    "jobs",
+    default=1,
+    type=click.IntRange(min=1),
     help="Worker pool size. Default 1. N>1 runs scenarios concurrently.",
 )
 @click.option(
-    "--scenarios-root", default=_DEFAULT_SCENARIOS_ROOT, hidden=True,
+    "--scenarios-root",
+    default=_DEFAULT_SCENARIOS_ROOT,
+    hidden=True,
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
 @click.option(
-    "--coding-agents-dir", default=_DEFAULT_CODING_AGENTS_DIR, hidden=True,
+    "--coding-agents-dir",
+    default=_DEFAULT_CODING_AGENTS_DIR,
+    hidden=True,
     type=click.Path(exists=True, file_okay=False, path_type=Path),
 )
 @click.option(
-    "--out-root", default=_DEFAULT_OUT_ROOT, hidden=True,
+    "--out-root",
+    default=_DEFAULT_OUT_ROOT,
+    hidden=True,
     type=click.Path(path_type=Path),
 )
 @click.option(
-    "--no-cursor", "no_cursor", is_flag=True, default=False,
+    "--no-cursor",
+    "no_cursor",
+    is_flag=True,
+    default=False,
     help="Disable in-place live display; print events as plain lines.",
 )
 def run_all_cmd(
     coding_agents_csv: str | None,
+    scenarios_csv: str | None,
     jobs: int,
     scenarios_root: Path,
     coding_agents_dir: Path,
@@ -327,7 +358,11 @@ def run_all_cmd(
     """Run every (scenario × Coding-Agent) pair, gated by `# coding-agents:`."""
     agent_filter = (
         [a.strip() for a in coding_agents_csv.split(",") if a.strip()]
-        if coding_agents_csv else None
+        if coding_agents_csv
+        else None
+    )
+    scenario_filter = (
+        [s.strip() for s in scenarios_csv.split(",") if s.strip()] if scenarios_csv else None
     )
     out_root.mkdir(parents=True, exist_ok=True)
     try:
@@ -337,6 +372,7 @@ def run_all_cmd(
             out_root=out_root.resolve(),
             jobs=jobs,
             agent_filter=agent_filter,
+            scenario_filter=scenario_filter,
             use_cursor=not no_cursor,
         )
     except ValueError as e:

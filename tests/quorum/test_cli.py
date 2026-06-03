@@ -32,12 +32,19 @@ def test_run_invokes_run_scenario(tmp_path):
         fake_run_dir = tmp_path / "results" / "x-claude-20260101T000000"
         fake_verdict = MagicMock(final="pass", to_dict=lambda: {"final": "pass"})
         mock.return_value = (fake_run_dir, fake_verdict)
-        result = runner.invoke(main, [
-            "run", str(sd),
-            "--coding-agent", "claude",
-            "--coding-agents-dir", str(tmp_path / "t"),
-            "--out-root", str(tmp_path / "out"),
-        ])
+        result = runner.invoke(
+            main,
+            [
+                "run",
+                str(sd),
+                "--coding-agent",
+                "claude",
+                "--coding-agents-dir",
+                str(tmp_path / "t"),
+                "--out-root",
+                str(tmp_path / "out"),
+            ],
+        )
         assert result.exit_code == 0
         mock.assert_called_once()
 
@@ -71,9 +78,15 @@ def test_run_prints_run_id_line(tmp_path, monkeypatch):
     scenario_dir = tmp_path / "scenario"
     scenario_dir.mkdir()
 
-    result = CliRunner().invoke(main, [
-        "run", str(scenario_dir), "--coding-agent", "claude",
-    ])
+    result = CliRunner().invoke(
+        main,
+        [
+            "run",
+            str(scenario_dir),
+            "--coding-agent",
+            "claude",
+        ],
+    )
     assert result.exit_code == 0, result.output  # surface renderer crashes
     first_line = result.output.splitlines()[0]
     assert first_line == "run-id: foo-claude-20260526T180001Z-abcd"
@@ -93,12 +106,19 @@ def test_run_resolves_relative_paths_to_absolute(tmp_path, monkeypatch):
         fake_run_dir = tmp_path / "results" / "x-claude-20260101T000000"
         fake_verdict = MagicMock(final="pass", to_dict=lambda: {"final": "pass"})
         mock.return_value = (fake_run_dir, fake_verdict)
-        result = runner.invoke(main, [
-            "run", "scenarios/x",  # RELATIVE path
-            "--coding-agent", "claude",
-            "--coding-agents-dir", "t",
-            "--out-root", "out",
-        ])
+        result = runner.invoke(
+            main,
+            [
+                "run",
+                "scenarios/x",  # RELATIVE path
+                "--coding-agent",
+                "claude",
+                "--coding-agents-dir",
+                "t",
+                "--out-root",
+                "out",
+            ],
+        )
         assert result.exit_code == 0
         call = mock.call_args
         # Every path passed to run_scenario must be absolute.
@@ -110,8 +130,10 @@ def test_run_resolves_relative_paths_to_absolute(tmp_path, monkeypatch):
 
 # ---------- show subcommand --------------------------------------------
 
+
 def _write_verdict(run_dir: Path, body: dict) -> None:
     import json as _json
+
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "verdict.json").write_text(_json.dumps(body))
 
@@ -120,10 +142,14 @@ def test_show_subcommand_renders_latest(tmp_path):
     root = tmp_path / "results"
     _write_verdict(
         root / "x-claude-20260523T000000Z-aaaa",
-        {"schema": 1, "final": "pass", "final_reason": "ok",
-         "gauntlet": {"status": "pass", "summary": "s", "reasoning": "r",
-                      "run_id": "x_z_0000"},
-         "checks": [], "error": None},
+        {
+            "schema": 1,
+            "final": "pass",
+            "final_reason": "ok",
+            "gauntlet": {"status": "pass", "summary": "s", "reasoning": "r", "run_id": "x_z_0000"},
+            "checks": [],
+            "error": None,
+        },
     )
     runner = CliRunner()
     result = runner.invoke(main, ["show", "--results-root", str(root)])
@@ -135,8 +161,14 @@ def test_show_subcommand_quiet_flag(tmp_path):
     root = tmp_path / "results"
     _write_verdict(
         root / "x-claude-20260523T000000Z-aaaa",
-        {"schema": 1, "final": "fail", "final_reason": "1 post-check(s) failed",
-         "gauntlet": None, "checks": [], "error": None},
+        {
+            "schema": 1,
+            "final": "fail",
+            "final_reason": "1 post-check(s) failed",
+            "gauntlet": None,
+            "checks": [],
+            "error": None,
+        },
     )
     runner = CliRunner()
     result = runner.invoke(main, ["show", "-q", "--results-root", str(root)])
@@ -157,11 +189,18 @@ def test_show_subcommand_missing_target_exits_1(tmp_path):
 
 def test_show_subcommand_json_flag(tmp_path):
     import json as _json
+
     root = tmp_path / "results"
     _write_verdict(
         root / "x-claude-20260523T000000Z-aaaa",
-        {"schema": 1, "final": "pass", "final_reason": "ok",
-         "gauntlet": None, "checks": [], "error": None},
+        {
+            "schema": 1,
+            "final": "pass",
+            "final_reason": "ok",
+            "gauntlet": None,
+            "checks": [],
+            "error": None,
+        },
     )
     runner = CliRunner()
     result = runner.invoke(main, ["show", "--json", "--results-root", str(root)])
@@ -176,10 +215,14 @@ def test_show_subcommand_exits_zero_on_fail_verdict(tmp_path):
     root = tmp_path / "results"
     _write_verdict(
         root / "x-claude-20260523T000000Z-aaaa",
-        {"schema": 1, "final": "fail", "final_reason": "1 post-check(s) failed",
-         "gauntlet": {"status": "fail", "summary": "bad", "reasoning": "bad",
-                      "run_id": "x_z_0"},
-         "checks": [], "error": None},
+        {
+            "schema": 1,
+            "final": "fail",
+            "final_reason": "1 post-check(s) failed",
+            "gauntlet": {"status": "fail", "summary": "bad", "reasoning": "bad", "run_id": "x_z_0"},
+            "checks": [],
+            "error": None,
+        },
     )
     runner = CliRunner()
     result = runner.invoke(main, ["show", "--results-root", str(root)])
@@ -190,9 +233,16 @@ def test_show_subcommand_quiet_and_json_mutually_exclusive(tmp_path):
     root = tmp_path / "results"
     root.mkdir()
     runner = CliRunner()
-    result = runner.invoke(main, [
-        "show", "-q", "--json", "--results-root", str(root),
-    ])
+    result = runner.invoke(
+        main,
+        [
+            "show",
+            "-q",
+            "--json",
+            "--results-root",
+            str(root),
+        ],
+    )
     assert result.exit_code == 1
     assert "mutually exclusive" in result.output
 
@@ -213,6 +263,7 @@ def test_show_subcommand_schema_deviant_verdict_exits_2(tmp_path):
     # should hit the same exit-2 path as malformed JSON. Without the guard,
     # render() raises KeyError and the CLI leaks a Python traceback.
     import json as _json
+
     root = tmp_path / "results"
     run = root / "x-claude-20260523T000000Z-aaaa"
     run.mkdir(parents=True)
@@ -238,13 +289,41 @@ def test_run_all_command_invokes_run_batch(tmp_path, monkeypatch):
     (tmp_path / "coding-agents").mkdir(parents=True)
     monkeypatch.chdir(tmp_path)
 
-    result = CliRunner().invoke(main, [
-        "run-all", "--coding-agents", "claude,codex", "--jobs", "4",
-    ])
+    result = CliRunner().invoke(
+        main,
+        [
+            "run-all",
+            "--coding-agents",
+            "claude,codex",
+            "--jobs",
+            "4",
+        ],
+    )
 
     assert result.exit_code == 0, result.output
     assert captured["jobs"] == 4
     assert captured["agent_filter"] == ["claude", "codex"]
+
+
+def test_run_all_scenarios_filter_forwarded(tmp_path, monkeypatch):
+    """`--scenarios` is discoverable and forwarded to run_batch as a list."""
+    captured = {}
+
+    def fake_run_batch(**kwargs):
+        captured.update(kwargs)
+        return tmp_path / "results" / "batches" / "fakebatch"
+
+    monkeypatch.setattr("quorum.cli.run_batch", fake_run_batch)
+    (tmp_path / "scenarios").mkdir(parents=True)
+    (tmp_path / "coding-agents").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    help_result = CliRunner().invoke(main, ["run-all", "--help"])
+    assert "--scenarios" in help_result.output
+
+    result = CliRunner().invoke(main, ["run-all", "--scenarios", "alpha, gamma"])
+    assert result.exit_code == 0, result.output
+    assert captured["scenario_filter"] == ["alpha", "gamma"]
 
 
 def test_run_all_jobs_must_be_positive(tmp_path, monkeypatch):
@@ -284,20 +363,34 @@ def test_show_renders_batch_when_target_is_batch_id(tmp_path, monkeypatch):
     out_root = tmp_path / "results"
     batch_dir = out_root / "batches" / "20260526T180000Z-abcd"
     batch_dir.mkdir(parents=True)
-    batch_dir.joinpath("batch.json").write_text(json.dumps({
-        "schema_version": 1, "id": batch_dir.name,
-        "started_at": "2026-05-26T18:00:00+00:00",
-        "finished_at": "2026-05-26T18:03:41+00:00",
-        "coding_agents": ["claude"], "jobs": 1,
-    }))
+    batch_dir.joinpath("batch.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "id": batch_dir.name,
+                "started_at": "2026-05-26T18:00:00+00:00",
+                "finished_at": "2026-05-26T18:03:41+00:00",
+                "coding_agents": ["claude"],
+                "jobs": 1,
+            }
+        )
+    )
     batch_dir.joinpath("results.jsonl").write_text(
-        json.dumps({"scenario": "foo", "coding_agent": "claude",
-                    "run_id": None, "skipped": "directive"}) + "\n"
+        json.dumps(
+            {"scenario": "foo", "coding_agent": "claude", "run_id": None, "skipped": "directive"}
+        )
+        + "\n"
     )
 
-    result = CliRunner().invoke(main, [
-        "show", "20260526T180000Z-abcd", "--results-root", str(out_root),
-    ])
+    result = CliRunner().invoke(
+        main,
+        [
+            "show",
+            "20260526T180000Z-abcd",
+            "--results-root",
+            str(out_root),
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert "Legend:" in result.output
     assert "— skip" in result.output
@@ -308,20 +401,47 @@ def _backfillable_run(root: Path, name: str):
     proj = rd / "coding-agent-config" / "projects" / "p"
     proj.mkdir(parents=True)
     (proj / "s.jsonl").write_text(
-        json.dumps({"type": "assistant", "timestamp": "2026-05-28T10:00:00.000Z",
-                    "message": {"model": "claude-opus-4-7",
-                                "usage": {"input_tokens": 1_000_000, "output_tokens": 0}}}) + "\n"
+        json.dumps(
+            {
+                "type": "assistant",
+                "timestamp": "2026-05-28T10:00:00.000Z",
+                "message": {
+                    "model": "claude-opus-4-7",
+                    "usage": {"input_tokens": 1_000_000, "output_tokens": 0},
+                },
+            }
+        )
+        + "\n"
     )
     gd = rd / "gauntlet-agent" / "results" / "rid"
     gd.mkdir(parents=True)
-    (gd / "result.json").write_text(json.dumps(
-        {"runId": "rid", "duration_ms": 1000,
-         "usage": {"inputTokens": 10, "outputTokens": 20,
-                   "cacheCreationInputTokens": 0, "cacheReadInputTokens": 0},
-         "config": {"model": "claude-sonnet-4-6"}}))
-    (rd / "verdict.json").write_text(json.dumps(
-        {"schema": 1, "final": "pass", "final_reason": "ok",
-         "gauntlet": {"status": "pass"}, "checks": [], "error": None}))
+    (gd / "result.json").write_text(
+        json.dumps(
+            {
+                "runId": "rid",
+                "duration_ms": 1000,
+                "usage": {
+                    "inputTokens": 10,
+                    "outputTokens": 20,
+                    "cacheCreationInputTokens": 0,
+                    "cacheReadInputTokens": 0,
+                },
+                "config": {"model": "claude-sonnet-4-6"},
+            }
+        )
+    )
+    (rd / "verdict.json").write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "final": "pass",
+                "final_reason": "ok",
+                "gauntlet": {"status": "pass"},
+                "checks": [],
+                "error": None,
+            }
+        )
+    )
     return rd
 
 
