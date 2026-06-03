@@ -231,6 +231,23 @@ def test_kimi_stream_json_reply_ok_accepts_assistant_ok():
     assert kimi_stream_json_reply_ok(stdout)
 
 
+def test_kimi_stream_json_reply_ok_accepts_role_assistant_string_content():
+    stdout = json.dumps({"role": "assistant", "content": "OK."})
+    assert kimi_stream_json_reply_ok(stdout)
+
+
+def test_kimi_stream_json_reply_ok_accepts_role_assistant_array_content():
+    stdout = json.dumps(
+        {"role": "assistant", "content": [{"type": "text", "text": "O"}, {"text": "K!"}]}
+    )
+    assert kimi_stream_json_reply_ok(stdout)
+
+
+def test_kimi_stream_json_reply_ok_ignores_tool_rows():
+    stdout = json.dumps({"type": "message", "role": "tool", "content": "OK"})
+    assert not kimi_stream_json_reply_ok(stdout)
+
+
 def test_kimi_stream_json_reply_ok_rejects_verbose_reply():
     stdout = json.dumps({"type": "assistant", "content": "OK, I will do that"})
     assert not kimi_stream_json_reply_ok(stdout)
@@ -264,6 +281,34 @@ def test_run_kimi_auth_preflight_uses_throwaway_home_and_checks_logs(tmp_path, m
     )
 
     cmd, kwargs = calls[0]
-    assert cmd == ["kimi", "-p", "Reply with EXACTLY OK.", "--output-format", "stream-json"]
+    assert cmd == ["kimi", "-p", "Reply with EXACTLY OK.", "--output-format=stream-json"]
     assert Path(kwargs["env"]["KIMI_CODE_HOME"]).name.startswith("kimi-home")
     assert kwargs["env"]["KIMI_MODEL_API_KEY"] == "fake"
+
+
+def test_run_kimi_auth_preflight_requires_wire_log_under_matching_session_dir(monkeypatch):
+    def fake_run(cmd, **kwargs):
+        kimi_home = Path(kwargs["env"]["KIMI_CODE_HOME"])
+        cwd = Path(kwargs["cwd"])
+        matched_session = kimi_home / "sessions" / "wd" / "session"
+        unmatched_main = kimi_home / "sessions" / "other" / "session" / "agents" / "main"
+        unmatched_main.mkdir(parents=True)
+        (unmatched_main / "wire.jsonl").write_text("{}\n")
+        (kimi_home / "session_index.jsonl").write_text(
+            json.dumps({"sessionDir": str(matched_session), "workDir": str(cwd)}) + "\n"
+        )
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            json.dumps({"role": "assistant", "content": "OK"}) + "\n",
+            "",
+        )
+
+    monkeypatch.setattr("quorum.kimi.subprocess.run", fake_run)
+
+    with pytest.raises(KimiConfigError, match="matching sessionDir produced no wire.jsonl"):
+        run_kimi_auth_preflight(
+            kimi_binary="kimi",
+            kimi_model_env={"KIMI_MODEL_API_KEY": "fake", "KIMI_MODEL_NAME": "kimi"},
+            base_env={"PATH": "/usr/bin:/bin"},
+        )

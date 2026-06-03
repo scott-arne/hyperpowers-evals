@@ -90,7 +90,12 @@ def kimi_stream_json_reply_ok(stdout: str) -> bool:
             continue
         if not isinstance(row, dict):
             continue
-        if row.get("type") in {"assistant", "message", "response"}:
+        role = row.get("role")
+        if role is not None:
+            is_assistant = role == "assistant"
+        else:
+            is_assistant = row.get("type") in {"assistant", "message", "response"}
+        if is_assistant:
             content = row.get("content")
             if isinstance(content, str):
                 assistant_parts.append(content)
@@ -123,7 +128,7 @@ def run_kimi_auth_preflight(
         )
         try:
             result = subprocess.run(
-                [kimi_binary, "-p", "Reply with EXACTLY OK.", "--output-format", "stream-json"],
+                [kimi_binary, "-p", "Reply with EXACTLY OK.", "--output-format=stream-json"],
                 cwd=cwd,
                 env=env,
                 text=True,
@@ -143,13 +148,11 @@ def run_kimi_auth_preflight(
                 + result.stdout.strip()[:300]
             )
         index_path = kimi_home / "session_index.jsonl"
-        logs = sorted((kimi_home / "sessions").glob("**/wire.jsonl"))
         if not index_path.is_file():
             raise KimiConfigError("kimi auth preflight produced no session_index.jsonl")
-        if not logs:
-            raise KimiConfigError("kimi auth preflight produced no wire.jsonl")
         target = os.path.realpath(cwd)
-        matched = False
+        matched_workdir = False
+        matching_session_dirs: list[Path] = []
         with index_path.open() as f:
             for line in f:
                 if not line.strip():
@@ -160,10 +163,21 @@ def run_kimi_auth_preflight(
                         isinstance(row, dict)
                         and os.path.realpath(str(row.get("workDir", ""))) == target
                     ):
-                        matched = True
-                        break
-        if not matched:
+                        matched_workdir = True
+                        session_dir = row.get("sessionDir")
+                        if isinstance(session_dir, str) and session_dir:
+                            matching_session_dirs.append(Path(os.path.realpath(session_dir)))
+        if not matched_workdir:
             raise KimiConfigError("kimi auth preflight session_index workDir did not match cwd")
+        if not matching_session_dirs:
+            raise KimiConfigError("kimi auth preflight session_index matched no sessionDir")
+        for session_dir in matching_session_dirs:
+            if any(session_dir.glob("**/wire.jsonl")):
+                break
+        else:
+            raise KimiConfigError(
+                "kimi auth preflight matching sessionDir produced no wire.jsonl"
+            )
 
 
 def _shell_assignment(key: str, value: str) -> str:
