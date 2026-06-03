@@ -108,6 +108,24 @@ def test_opencode_config_loads_when_superpowers_root_set(monkeypatch, tmp_path):
     )
 
 
+def test_pi_config_loads_when_env_set(monkeypatch, tmp_path):
+    monkeypatch.setenv("SUPERPOWERS_ROOT", str(tmp_path / "superpowers"))
+    monkeypatch.setenv("PI_PROVIDER", "azure-openai-responses")
+    monkeypatch.setenv("PI_MODEL", "gpt-5.4")
+    monkeypatch.setenv("PI_API_KEY", "pi-test-key")
+
+    cfg = load_coding_agent_config(
+        Path(__file__).resolve().parents[2] / "coding-agents" / "pi.yaml"
+    )
+
+    assert cfg.name == "pi"
+    assert cfg.binary == "pi"
+    assert cfg.agent_config_env == "PI_CODING_AGENT_DIR"
+    assert cfg.normalizer == "pi"
+    assert cfg.session_log_glob == "*.jsonl"
+    assert cfg.resolve_session_log_dir(tmp_path / "cfg") == tmp_path / "cfg" / "sessions"
+
+
 class TestLoadCodingAgentConfig:
     def test_minimal_valid(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "x")

@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# quorum-generated launcher for Pi (the agent under test).
+#
+# quorum substitutes the $... values below at runtime, so the installed copy
+# contains literal absolute paths. The cd, auth env file, session dir, model,
+# extension path, and tool allowlist are baked in so the QA agent launches Pi
+# with one command and cannot accidentally start from the scratch directory.
+set -euo pipefail
+
+cd "$QUORUM_AGENT_CWD" || {
+  echo "launch-agent: cannot cd to $QUORUM_AGENT_CWD" >&2
+  exit 1
+}
+
+set -a
+. "$PI_ENV_FILE"
+set +a
+
+exec env \
+  PI_CODING_AGENT_DIR="$PI_CODING_AGENT_DIR" \
+  PI_OFFLINE=1 \
+  PI_TELEMETRY=0 \
+  pi \
+    --session-dir "$PI_CODING_AGENT_DIR/sessions" \
+    --provider "$PI_PROVIDER" \
+    --model "$PI_MODEL" \
+    --no-extensions \
+    --extension "$SUPERPOWERS_ROOT" \
+    --no-skills \
+    --skill "$SUPERPOWERS_ROOT/skills" \
+    --no-context-files \
+    --tools read,bash,edit,write,grep,find,ls \
+    "$@"
