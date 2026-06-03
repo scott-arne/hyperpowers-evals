@@ -45,6 +45,7 @@ from pathlib import Path
 from quorum.capture import (
     capture_token_usage,
     capture_tool_calls,
+    detect_kimi_cwd_mismatch,
     detect_misplaced_codex_rollouts,
     detect_misplaced_pi_sessions,
     detect_unusable_pi_sessions,
@@ -70,6 +71,7 @@ from quorum.kimi import (
     build_kimi_subprocess_env,
     effective_kimi_model_env,
     install_kimi_superpowers_plugin,
+    kimi_logs_have_superpowers_session_start,
     run_kimi_auth_preflight,
     write_effective_kimi_config,
     write_kimi_runtime_env_file,
@@ -1582,6 +1584,66 @@ def _run_scenario_inner(
                     message=f"{strict_capture_name} capture normalized to zero rows",
                 ),
             )
+
+        if tcfg.normalizer == "kimi":
+            if not capture_result.source_logs:
+                mismatched = detect_kimi_cwd_mismatch(
+                    log_dir=session_log_dir,
+                    log_glob=tcfg.session_log_glob,
+                    snapshot=snap,
+                    launch_cwd=launch_cwd,
+                )
+                if mismatched:
+                    rel = [str(p.relative_to(session_log_dir)) for p in mismatched]
+                    return run_dir, _write_indeterminate(
+                        run_dir,
+                        final_reason=(
+                            "Kimi wrote wire logs, but none matched the launch cwd; "
+                            "the QA agent likely bypassed the generated launcher"
+                        ),
+                        gauntlet=gauntlet_layer,
+                        checks=pre_records,
+                        error=RunError(
+                            stage="qa-agent-misconfigured",
+                            message=f"Kimi wire logs did not match launch cwd: {rel}",
+                        ),
+                    )
+                return run_dir, _write_indeterminate(
+                    run_dir,
+                    final_reason=(
+                        f"no Kimi wire.jsonl appeared under isolated {session_log_dir}; "
+                        "cannot evaluate this run"
+                    ),
+                    gauntlet=gauntlet_layer,
+                    checks=pre_records,
+                    error=RunError(stage="capture", message="no Kimi wire.jsonl captured"),
+                )
+            if capture_result.row_count == 0:
+                rel = [str(p.relative_to(session_log_dir)) for p in capture_result.source_logs]
+                return run_dir, _write_indeterminate(
+                    run_dir,
+                    final_reason=(
+                        "Kimi wire log(s) normalized to zero tool-call rows: "
+                        + ", ".join(rel)
+                    ),
+                    gauntlet=gauntlet_layer,
+                    checks=pre_records,
+                    error=RunError(stage="capture", message="Kimi capture normalized to zero rows"),
+                )
+            if not kimi_logs_have_superpowers_session_start(capture_result.source_logs):
+                return run_dir, _write_indeterminate(
+                    run_dir,
+                    final_reason="Kimi raw wire log lacks Superpowers plugin_session_start",
+                    gauntlet=gauntlet_layer,
+                    checks=pre_records,
+                    error=RunError(
+                        stage="capture",
+                        message=(
+                            "missing plugin_session_start plugin=superpowers "
+                            "skill=using-superpowers"
+                        ),
+                    ),
+                )
 
         # 11. Run checks.sh post().
         post_records, post_exit = run_phase(

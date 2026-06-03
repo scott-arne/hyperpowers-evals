@@ -12,6 +12,7 @@ from quorum.kimi import (
     build_kimi_subprocess_env,
     effective_kimi_model_env,
     install_kimi_superpowers_plugin,
+    kimi_logs_have_superpowers_session_start,
     kimi_stream_json_reply_ok,
     run_kimi_auth_preflight,
     validate_superpowers_kimi_root,
@@ -251,6 +252,32 @@ def test_kimi_stream_json_reply_ok_ignores_tool_rows():
 def test_kimi_stream_json_reply_ok_rejects_verbose_reply():
     stdout = json.dumps({"type": "assistant", "content": "OK, I will do that"})
     assert not kimi_stream_json_reply_ok(stdout)
+
+
+def test_kimi_logs_have_superpowers_session_start(tmp_path):
+    wire = tmp_path / "wire.jsonl"
+    wire.write_text(
+        json.dumps(
+            {
+                "type": "context.append_loop_event",
+                "event": {
+                    "type": "plugin_session_start",
+                    "plugin": "superpowers",
+                    "skill": "using-superpowers",
+                },
+            }
+        )
+        + "\n"
+    )
+
+    assert kimi_logs_have_superpowers_session_start([wire])
+
+
+def test_kimi_logs_reject_missing_superpowers_session_start(tmp_path):
+    wire = tmp_path / "wire.jsonl"
+    wire.write_text(json.dumps({"type": "context.append_loop_event", "event": {}}) + "\n")
+
+    assert not kimi_logs_have_superpowers_session_start([wire])
 
 
 def test_run_kimi_auth_preflight_uses_throwaway_home_and_checks_logs(tmp_path, monkeypatch):

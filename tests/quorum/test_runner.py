@@ -130,6 +130,24 @@ def _make_pi_agent(coding_agents_dir: Path, session_log_dir: Path) -> None:
     (ctx / "launch-agent").write_text("#!/usr/bin/env bash\nset -euo pipefail\n")
 
 
+def _make_kimi_agent(coding_agents_dir: Path, session_log_dir: Path) -> None:
+    coding_agents_dir.mkdir(parents=True, exist_ok=True)
+    (coding_agents_dir / "kimi.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "kimi",
+                "binary": "kimi",
+                "agent_config_env": "KIMI_CODE_HOME",
+                "session_log_dir": str(session_log_dir),
+                "session_log_glob": "**/wire.jsonl",
+                "normalizer": "kimi",
+                "required_env": [],
+            }
+        )
+    )
+    (coding_agents_dir / "kimi-context").mkdir(parents=True, exist_ok=True)
+
+
 # Tests pass an empty dir as skeleton_root so _seed_agent_config_dir falls
 # through to mkdir-empty without requiring the production skeleton fixture.
 def _empty_skeleton(tmp_path: Path) -> Path:
@@ -2236,6 +2254,82 @@ class TestRunScenario:
         assert "unusable Pi session header" in verdict.final_reason
         assert verdict.error is not None
         assert verdict.error.stage == "capture"
+
+    def test_kimi_no_wire_logs_is_capture_indeterminate_even_without_trace_checks(
+        self, tmp_path
+    ):
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "kimi-home" / "sessions"
+        session_log_dir.mkdir(parents=True)
+        _make_kimi_agent(coding_agents_dir, session_log_dir)
+        sd = _make_scenario(scenarios_dir, "x")
+        out_root = tmp_path / "results"
+
+        with (
+            patch("quorum.runner._seed_kimi_config", return_value=AgentRuntime()),
+            patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass),
+        ):
+            _run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="kimi",
+                coding_agents_dir=coding_agents_dir,
+                out_root=out_root,
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "capture"
+        assert "no Kimi wire.jsonl" in verdict.error.message
+
+    def test_kimi_missing_plugin_session_start_is_indeterminate(self, tmp_path):
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "kimi-home" / "sessions"
+        session_log_dir.mkdir(parents=True)
+        _make_kimi_agent(coding_agents_dir, session_log_dir)
+        sd = _make_scenario(scenarios_dir, "x")
+        out_root = tmp_path / "results"
+
+        def fake_gauntlet(*, launch_cwd, **kwargs):
+            session_dir = session_log_dir / "wd" / "session"
+            wire_dir = session_dir / "agents" / "main"
+            wire_dir.mkdir(parents=True)
+            (wire_dir / "wire.jsonl").write_text(
+                json.dumps(
+                    {
+                        "type": "context.append_loop_event",
+                        "event": {
+                            "type": "tool.call",
+                            "name": "Read",
+                            "args": {"path": "README.md"},
+                        },
+                    }
+                )
+                + "\n"
+            )
+            (session_log_dir.parent / "session_index.jsonl").write_text(
+                json.dumps({"sessionDir": str(session_dir), "workDir": str(launch_cwd)}) + "\n"
+            )
+            return "pass"
+
+        with (
+            patch("quorum.runner._seed_kimi_config", return_value=AgentRuntime()),
+            patch("quorum.runner.invoke_gauntlet", side_effect=fake_gauntlet),
+        ):
+            _run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="kimi",
+                coding_agents_dir=coding_agents_dir,
+                out_root=out_root,
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "capture"
+        assert "plugin_session_start" in verdict.error.message
 
     def test_populate_context_dir_copies_coding_agent_contexts(self, tmp_path):
         # Spot-check that coding-agent context HOWTOs land in <run-dir>/gauntlet-agent/context/.

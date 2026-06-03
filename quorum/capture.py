@@ -132,6 +132,22 @@ def detect_unusable_pi_sessions(
     return find_unusable_pi_sessions(new)
 
 
+def detect_kimi_cwd_mismatch(
+    *,
+    log_dir: Path,
+    log_glob: str,
+    snapshot: set[str],
+    launch_cwd: Path,
+) -> list[Path]:
+    new = new_files_since(log_dir, log_glob, snapshot)
+    if not new:
+        return []
+    matched = filter_kimi_logs_by_cwd(new, str(launch_cwd))
+    if matched:
+        return []
+    return new
+
+
 def capture_token_usage(
     *,
     log_dir: Path,

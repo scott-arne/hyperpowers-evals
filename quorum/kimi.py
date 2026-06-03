@@ -108,6 +108,31 @@ def kimi_stream_json_reply_ok(stdout: str) -> bool:
     return _normalized_ok("".join(assistant_parts))
 
 
+def kimi_logs_have_superpowers_session_start(paths: list[Path] | tuple[Path, ...]) -> bool:
+    for path in paths:
+        try:
+            lines = path.read_text().splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            event = row.get("event") if isinstance(row, dict) else None
+            if not isinstance(event, dict):
+                continue
+            if (
+                event.get("type") == "plugin_session_start"
+                and event.get("plugin") == "superpowers"
+                and event.get("skill") == "using-superpowers"
+            ):
+                return True
+    return False
+
+
 def run_kimi_auth_preflight(
     *,
     kimi_binary: str,

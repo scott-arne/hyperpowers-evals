@@ -8,6 +8,7 @@ from quorum.capture import (
     capture_tool_calls,
     detect_misplaced_pi_sessions,
     detect_unusable_pi_sessions,
+    detect_kimi_cwd_mismatch,
     new_files_since,
     snapshot_dir,
 )
@@ -240,6 +241,25 @@ class TestCaptureToolCalls:
             if x.strip()
         ]
         assert [r["tool"] for r in rows] == ["Read"]
+
+    def test_detect_kimi_cwd_mismatch_when_new_logs_exist_but_none_match(self, tmp_path):
+        log_dir = tmp_path / "sessions"
+        session_dir = log_dir / "wd_other" / "session_other"
+        wire_dir = session_dir / "agents" / "main"
+        wire_dir.mkdir(parents=True)
+        snap = snapshot_dir(log_dir, "**/wire.jsonl")
+        wire = wire_dir / "wire.jsonl"
+        wire.write_text("{}\n")
+        (tmp_path / "session_index.jsonl").write_text(
+            json.dumps({"sessionDir": str(session_dir), "workDir": str(tmp_path / "wrong")}) + "\n"
+        )
+
+        assert detect_kimi_cwd_mismatch(
+            log_dir=log_dir,
+            log_glob="**/wire.jsonl",
+            snapshot=snap,
+            launch_cwd=tmp_path / "expected",
+        ) == [wire]
 
     def test_empty_capture_writes_empty_file(self, tmp_path):
         # File must always exist so assertions can rely on its presence.
