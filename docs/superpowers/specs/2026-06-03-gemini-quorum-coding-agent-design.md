@@ -125,6 +125,12 @@ prompt-free interactive startup. Local Gemini CLI `0.41.2` exposes
 `--skip-trust` and `--approval-mode=yolo`; bare `--yolo` exists but should not
 be the primary launcher form.
 
+Any model-invoking startup preflight must use a throwaway `GEMINI_CLI_HOME` and
+throwaway cwd, not the run's real `coding-agent-config`. The real run home may
+only receive local provisioning checks before Quorum snapshots logs. This keeps
+the real capture directory transcript-free until the scenario's Gemini session
+starts.
+
 ## Superpowers install
 
 Gemini runner provisioning should install Superpowers into the isolated Gemini
@@ -181,16 +187,18 @@ update.
    prompt-free Gemini auth/settings state, writes the chmod-0600 runtime env
    file, and links Superpowers from `SUPERPOWERS_ROOT` with `extensions link
    --consent`.
-4. Scenario setup and pre-checks run normally.
-5. Runner populates `gemini-context` with literal paths, including
+4. If needed, runner verifies prompt-free model startup in a throwaway Gemini
+   home, never in the real run home.
+5. Scenario setup and pre-checks run normally.
+6. Runner populates `gemini-context` with literal paths, including
    `$QUORUM_LAUNCH_AGENT`, `$QUORUM_AGENT_CWD`, and `$GEMINI_CLI_HOME`.
-6. Runner snapshots `${GEMINI_CLI_HOME}/.gemini/tmp/**/chats/**/*.json*`.
-7. Gauntlet drives the QA agent, which launches Gemini through the generated
+7. Runner snapshots `${GEMINI_CLI_HOME}/.gemini/tmp/**/chats/**/*.json*`.
+8. Gauntlet drives the QA agent, which launches Gemini through the generated
    launcher.
-8. Gemini writes session logs under the isolated home.
-9. Quorum captures new session files and normalizes tool calls with the
+9. Gemini writes session logs under the isolated home.
+10. Quorum captures new session files and normalizes tool calls with the
    existing `gemini` normalizer.
-10. Post-checks compose verdicts through the normal Quorum path.
+11. Post-checks compose verdicts through the normal Quorum path.
 
 ## Failure modes
 
@@ -229,6 +237,8 @@ Before live evals, cover the harness with unit tests:
 - `gemini extensions list` reports Superpowers enabled under the isolated home.
 - trust/no-prompt setting writes.
 - chmod-0600 runtime env-file creation without logging the API key.
+- model-invoking startup preflight uses a throwaway Gemini home and leaves the
+  real run home transcript-free before capture snapshot.
 - pre-existing transcript rejection before capture snapshot.
 - generated launcher/context substitution for `$GEMINI_CLI_HOME` and
   `$QUORUM_LAUNCH_AGENT`.
