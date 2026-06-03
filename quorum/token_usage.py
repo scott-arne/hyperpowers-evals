@@ -31,6 +31,19 @@ def _track_ts(
     last = ts if current_last is None or ts > current_last else current_last
     return first, last
 
+
+def _track_numeric_ts(
+    current_first: int | None, current_last: int | None, ts: Any
+) -> tuple[int | None, int | None]:
+    """Fold a numeric epoch-ish timestamp into running (first, last)."""
+    if not isinstance(ts, int | float):
+        return current_first, current_last
+    value = int(ts)
+    first = value if current_first is None or value < current_first else current_first
+    last = value if current_last is None or value > current_last else current_last
+    return first, last
+
+
 # Anthropic Claude Opus 4.5/4.6/4.7/4.8 list pricing per 1M tokens (USD).
 # platform.claude.com/docs/en/about-claude/pricing — Opus 4.5+ is $5/$25,
 # NOT the Opus-4.1-and-earlier $15/$75. cache_create uses the 5-minute write
@@ -306,6 +319,88 @@ def parse_codex_rollout(path: Path) -> dict[str, Any] | None:
     }
 
 
+def parse_kimi_wire(path: Path) -> dict[str, Any] | None:
+    """Sum Kimi Code `usage.record` rows from one wire.jsonl file.
+
+    Kimi emits both per-turn and cumulative session usage rows. Prefer turn
+    rows when present so capture does not double-count the same session.
+    """
+    if not path.exists():
+        return None
+
+    turn_rows: list[dict[str, Any]] = []
+    session_rows: list[dict[str, Any]] = []
+    with path.open() as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict) or row.get("type") != "usage.record":
+                continue
+            if row.get("usageScope") == "turn":
+                turn_rows.append(row)
+            elif row.get("usageScope") == "session":
+                session_rows.append(row)
+
+    selected = turn_rows
+    usage_source = "turn"
+    if not selected and session_rows:
+        selected = [
+            max(
+                session_rows,
+                key=lambda row: row["time"] if isinstance(row.get("time"), int | float) else 0,
+            )
+        ]
+        usage_source = "session_fallback"
+    if not selected:
+        return None
+
+    first_ts: int | None = None
+    last_ts: int | None = None
+    by_model: dict[str, dict[str, int]] = {}
+    totals = _empty_model_bucket()
+    model: str | None = None
+
+    for row in selected:
+        first_ts, last_ts = _track_numeric_ts(first_ts, last_ts, row.get("time"))
+        raw_model = row.get("model")
+        model_id = raw_model if isinstance(raw_model, str) else "unknown"
+        model = model or model_id
+        raw_usage = row.get("usage")
+        usage: dict[str, Any] = raw_usage if isinstance(raw_usage, dict) else {}
+        entry = {
+            "total_input": int(usage.get("inputOther", 0) or 0),
+            "total_cache_read": int(usage.get("inputCacheRead", 0) or 0),
+            "total_cache_create": int(usage.get("inputCacheCreation", 0) or 0),
+            "total_output": int(usage.get("output", 0) or 0),
+        }
+        bucket = by_model.setdefault(model_id, _empty_model_bucket())
+        for key, value in entry.items():
+            totals[key] += value
+            bucket[key] += value
+        if row.get("usageScope") == "turn":
+            totals["n_assistant_turns"] += 1
+            bucket["n_assistant_turns"] += 1
+
+    duration_ms = None
+    if first_ts is not None and last_ts is not None:
+        duration_ms = max(last_ts - first_ts, 0)
+    return {
+        **totals,
+        "total_tokens": sum(totals[k] for k in _MODEL_TOKEN_KEYS),
+        "model": model,
+        "tool_result_total_bytes": 0,
+        "first_ts": first_ts,
+        "last_ts": last_ts,
+        "duration_ms": duration_ms,
+        "by_model": by_model,
+        "usage_source": usage_source,
+    }
+
+
 def estimate_claude_cost(usage: dict[str, Any]) -> float:
     """Cost in USD using Claude Opus 4.x list pricing."""
     p = CLAUDE_OPUS_PRICING
@@ -342,6 +437,8 @@ def capture_tokens(
         per_file = [parse_claude_session(p) for p in session_log_files]
     elif backend_family == "codex":
         per_file = [parse_codex_rollout(p) for p in session_log_files]
+    elif backend_family == "kimi":
+        per_file = [parse_kimi_wire(p) for p in session_log_files]
     else:
         return None
 
@@ -366,9 +463,12 @@ def capture_tokens(
     last_ts = max(lasts) if lasts else None
     duration_ms = None
     if first_ts and last_ts:
-        a = datetime.fromisoformat(first_ts.replace("Z", "+00:00"))
-        b = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
-        duration_ms = max(int((b - a).total_seconds() * 1000), 0)
+        if isinstance(first_ts, int | float) and isinstance(last_ts, int | float):
+            duration_ms = max(int(last_ts - first_ts), 0)
+        elif isinstance(first_ts, str) and isinstance(last_ts, str):
+            a = datetime.fromisoformat(first_ts.replace("Z", "+00:00"))
+            b = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+            duration_ms = max(int((b - a).total_seconds() * 1000), 0)
     summed["first_ts"] = first_ts
     summed["last_ts"] = last_ts
     summed["duration_ms"] = duration_ms
@@ -406,7 +506,8 @@ def capture_tokens(
         }
 
     summed["models"] = models_out
-    summed["est_cost_usd"] = round(total_cost, 6)
+    priced_any = any(model["est_cost_usd"] is not None for model in models_out.values())
+    summed["est_cost_usd"] = round(total_cost, 6) if priced_any else None
     if has_unpriced:
         summed["has_unpriced_model"] = True
     if backend_family == "codex":

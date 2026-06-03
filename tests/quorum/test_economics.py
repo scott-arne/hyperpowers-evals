@@ -68,6 +68,23 @@ def test_unpriced_gauntlet_model_yields_null_cost(tmp_path):
     assert econ["partial"] is True
 
 
+def test_unpriced_coding_agent_yields_null_total_cost(tmp_path):
+    _gauntlet_result(tmp_path)
+    _coding_usage(
+        tmp_path,
+        model="kimi-for-coding",
+        est_cost_usd=None,
+        has_unpriced_model=True,
+    )
+    econ = build_run_economics(tmp_path)
+    assert econ is not None
+    assert econ["gauntlet"]["est_cost_usd"] is not None
+    assert econ["coding_agent"]["est_cost_usd"] is None
+    assert econ["coding_agent"]["tokens"]["total"] == 130
+    assert econ["total_est_cost_usd"] is None
+    assert econ["partial"] is True
+
+
 def test_no_sources_returns_none(tmp_path):
     assert build_run_economics(tmp_path) is None
 

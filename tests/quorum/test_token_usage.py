@@ -18,6 +18,7 @@ from quorum.token_usage import (
     estimate_cost_with,
     parse_claude_session,
     parse_codex_rollout,
+    parse_kimi_wire,
     pricing_for_model,
 )
 
@@ -100,6 +101,78 @@ class TestParseCodexRollout:
         assert usage is not None
         assert usage["total_tokens"] == 0
         assert usage["total_input"] == 0
+
+
+class TestParseKimiWire:
+    def test_uses_turn_rows_and_ignores_session_when_both_exist(self, tmp_path: Path):
+        p = tmp_path / "wire.jsonl"
+        rows = [
+            {
+                "type": "usage.record",
+                "usageScope": "turn",
+                "model": "kimi-for-coding",
+                "time": 1800000000000,
+                "usage": {
+                    "inputOther": 10,
+                    "inputCacheRead": 20,
+                    "inputCacheCreation": 30,
+                    "output": 40,
+                },
+            },
+            {
+                "type": "usage.record",
+                "usageScope": "session",
+                "model": "kimi-for-coding",
+                "time": 1800000001000,
+                "usage": {
+                    "inputOther": 999,
+                    "inputCacheRead": 999,
+                    "inputCacheCreation": 999,
+                    "output": 999,
+                },
+            },
+        ]
+        p.write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+        usage = parse_kimi_wire(p)
+
+        assert usage is not None
+        assert usage["total_input"] == 10
+        assert usage["total_cache_read"] == 20
+        assert usage["total_cache_create"] == 30
+        assert usage["total_output"] == 40
+        assert usage["total_tokens"] == 100
+        assert usage["n_assistant_turns"] == 1
+        assert usage["first_ts"] == 1800000000000
+        assert usage["last_ts"] == 1800000000000
+        assert usage["duration_ms"] == 0
+
+    def test_session_row_fallback_when_no_turn_rows(self, tmp_path: Path):
+        p = tmp_path / "wire.jsonl"
+        p.write_text(
+            json.dumps(
+                {
+                    "type": "usage.record",
+                    "usageScope": "session",
+                    "model": "kimi-for-coding",
+                    "time": 1800000000000,
+                    "usage": {
+                        "inputOther": 1,
+                        "inputCacheRead": 2,
+                        "inputCacheCreation": 3,
+                        "output": 4,
+                    },
+                }
+            )
+            + "\n"
+        )
+
+        usage = parse_kimi_wire(p)
+
+        assert usage is not None
+        assert usage["total_tokens"] == 10
+        assert usage["n_assistant_turns"] == 0
+        assert usage["usage_source"] == "session_fallback"
 
 
 class TestCostEstimation:
@@ -242,6 +315,34 @@ class TestCaptureTokens:
         assert result["total_output"] == 120
         assert result["est_cost_usd"] > 0
         assert result["cache_create_unavailable"] is True
+
+    def test_kimi_family_returns_unpriced_usage(self, tmp_path: Path):
+        p = tmp_path / "wire.jsonl"
+        p.write_text(
+            json.dumps(
+                {
+                    "type": "usage.record",
+                    "usageScope": "turn",
+                    "model": "kimi-for-coding",
+                    "time": 1800000000000,
+                    "usage": {
+                        "inputOther": 10,
+                        "inputCacheRead": 20,
+                        "inputCacheCreation": 30,
+                        "output": 40,
+                    },
+                }
+            )
+            + "\n"
+        )
+
+        result = capture_tokens(backend_family="kimi", session_log_files=[p])
+
+        assert result is not None
+        assert result["total_tokens"] == 100
+        assert result["est_cost_usd"] is None
+        assert result["has_unpriced_model"] is True
+        assert result["models"]["kimi-for-coding"]["est_cost_usd"] is None
 
     def test_unknown_backend_returns_none(self):
         result = capture_tokens(backend_family="other", session_log_files=[])

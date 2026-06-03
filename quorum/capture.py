@@ -259,7 +259,7 @@ def capture_token_usage(
     cost scenario reads it from an ordinary deterministic assertion (see
     docs/migration-notes.md, the cost / measurement decision). Returns the
     written path, or None when usage can't be captured — a backend
-    token_usage.py does not parse (gemini, kimi, pi), or no new session logs were
+    token_usage.py does not parse (gemini, pi), or no new session logs were
     produced — in which case no file is written.
     """
     new = _new_session_logs(log_dir, log_glob, snapshot, normalizer, launch_cwd)

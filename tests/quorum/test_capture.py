@@ -387,3 +387,49 @@ class TestCaptureTokenUsage:
         )
         assert out is None
         assert not (run_dir / "coding-agent-token-usage.json").exists()
+
+    def test_kimi_token_usage_writes_unpriced_json(self, tmp_path):
+        log_dir = _mkdir(tmp_path / "sessions")
+        session_dir = log_dir / "wd" / "session"
+        wire_dir = session_dir / "agents" / "main"
+        wire_dir.mkdir(parents=True)
+        snap = snapshot_dir(log_dir, "**/wire.jsonl")
+        launch_cwd = tmp_path / "launch"
+        launch_cwd.mkdir()
+        wire = wire_dir / "wire.jsonl"
+        wire.write_text(
+            json.dumps(
+                {
+                    "type": "usage.record",
+                    "usageScope": "turn",
+                    "model": "kimi-for-coding",
+                    "time": 1800000000000,
+                    "usage": {
+                        "inputOther": 10,
+                        "inputCacheRead": 20,
+                        "inputCacheCreation": 30,
+                        "output": 40,
+                    },
+                }
+            )
+            + "\n"
+        )
+        (tmp_path / "session_index.jsonl").write_text(
+            json.dumps({"sessionDir": str(session_dir), "workDir": str(launch_cwd)}) + "\n"
+        )
+        run_dir = _mkdir(tmp_path / "run")
+
+        out = capture_token_usage(
+            log_dir=log_dir,
+            log_glob="**/wire.jsonl",
+            snapshot=snap,
+            normalizer="kimi",
+            run_dir=run_dir,
+            launch_cwd=launch_cwd,
+        )
+
+        assert out is not None
+        assert out == run_dir / "coding-agent-token-usage.json"
+        data = json.loads(out.read_text())
+        assert data["total_tokens"] == 100
+        assert data["est_cost_usd"] is None
