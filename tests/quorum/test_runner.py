@@ -253,6 +253,26 @@ def _kimi_tcfg() -> CodingAgentConfig:
     )
 
 
+def _make_kimi_superpowers_root(tmp_path: Path) -> Path:
+    superpowers = tmp_path / "superpowers"
+    (superpowers / ".kimi-plugin").mkdir(parents=True)
+    (superpowers / ".kimi-plugin" / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "superpowers",
+                "skills": "./skills/",
+                "sessionStart": {"skill": "using-superpowers"},
+                "skillInstructions": {"tools": {"Bash": "shell"}},
+            }
+        )
+    )
+    (superpowers / "skills" / "using-superpowers").mkdir(parents=True)
+    (superpowers / "skills" / "brainstorming").mkdir(parents=True)
+    (superpowers / "skills" / "using-superpowers" / "SKILL.md").write_text("skill")
+    (superpowers / "skills" / "brainstorming" / "SKILL.md").write_text("skill")
+    return superpowers
+
+
 def _make_scenario(
     scenarios_dir: Path,
     name: str,
@@ -1188,22 +1208,7 @@ class TestSeedAgentConfigDir:
         (source_home / "credentials").mkdir(parents=True)
         (source_home / "config.toml").write_text("must not be read\n")
 
-        superpowers = tmp_path / "superpowers"
-        (superpowers / ".kimi-plugin").mkdir(parents=True)
-        (superpowers / ".kimi-plugin" / "plugin.json").write_text(
-            json.dumps(
-                {
-                    "name": "superpowers",
-                    "skills": "./skills/",
-                    "sessionStart": {"skill": "using-superpowers"},
-                    "skillInstructions": {"tools": {"Bash": "shell"}},
-                }
-            )
-        )
-        (superpowers / "skills" / "using-superpowers").mkdir(parents=True)
-        (superpowers / "skills" / "brainstorming").mkdir(parents=True)
-        (superpowers / "skills" / "using-superpowers" / "SKILL.md").write_text("skill")
-        (superpowers / "skills" / "brainstorming" / "SKILL.md").write_text("skill")
+        superpowers = _make_kimi_superpowers_root(tmp_path)
 
         dest = tmp_path / "agent-config"
         monkeypatch.setenv("HOME", str(home))
@@ -1211,7 +1216,8 @@ class TestSeedAgentConfigDir:
         monkeypatch.setenv("KIMI_MODEL_API_KEY", "fake-kimi-key")
         monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/kimi")
 
-        runtime = _seed_kimi_config(dest, run_dir=tmp_path / "run")
+        with patch("quorum.runner.run_kimi_auth_preflight"):
+            runtime = _seed_kimi_config(dest, run_dir=tmp_path / "run")
 
         assert (dest / "home").is_dir()
         assert not (dest / "config.toml").exists()
@@ -1225,6 +1231,45 @@ class TestSeedAgentConfigDir:
         assert plugin["enabled"] is True
         assert runtime.env_file is not None
         assert runtime.env_file.exists()
+
+    def test_kimi_seed_runs_auth_preflight_without_sentinel(self, tmp_path, monkeypatch):
+        superpowers = _make_kimi_superpowers_root(tmp_path)
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(superpowers))
+        monkeypatch.setenv("KIMI_MODEL_API_KEY", "fake-kimi-key")
+        monkeypatch.delenv("QUORUM_KIMI_PREFLIGHT_SENTINEL", raising=False)
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/kimi")
+
+        with patch("quorum.runner.run_kimi_auth_preflight") as mock_preflight:
+            _seed_kimi_config(tmp_path / "cfg", run_dir=tmp_path / "run")
+
+        mock_preflight.assert_called_once_with(
+            kimi_binary="/usr/bin/kimi",
+            kimi_model_env={
+                "KIMI_MODEL_API_KEY": "fake-kimi-key",
+                "KIMI_MODEL_NAME": "kimi-for-coding",
+                "KIMI_MODEL_PROVIDER_TYPE": "kimi",
+                "KIMI_MODEL_BASE_URL": "https://api.kimi.com/coding/v1",
+                "KIMI_MODEL_MAX_CONTEXT_SIZE": "262144",
+                "KIMI_MODEL_CAPABILITIES": "thinking,image_in,video_in,tool_use",
+                "KIMI_MODEL_DEFAULT_THINKING": "true",
+                "KIMI_DISABLE_TELEMETRY": "1",
+                "KIMI_DISABLE_CRON": "1",
+                "KIMI_CODE_BACKGROUND_KEEP_ALIVE_ON_EXIT": "false",
+            },
+            base_env=os.environ,
+        )
+
+    def test_kimi_seed_skips_auth_preflight_with_sentinel(self, tmp_path, monkeypatch):
+        superpowers = _make_kimi_superpowers_root(tmp_path)
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(superpowers))
+        monkeypatch.setenv("KIMI_MODEL_API_KEY", "fake-kimi-key")
+        monkeypatch.setenv("QUORUM_KIMI_PREFLIGHT_SENTINEL", str(tmp_path / "sentinel.json"))
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/kimi")
+
+        with patch("quorum.runner.run_kimi_auth_preflight") as mock_preflight:
+            _seed_kimi_config(tmp_path / "cfg", run_dir=tmp_path / "run")
+
+        mock_preflight.assert_not_called()
 
     def test_kimi_seed_requires_superpowers_root(self, tmp_path, monkeypatch):
         monkeypatch.delenv("SUPERPOWERS_ROOT", raising=False)

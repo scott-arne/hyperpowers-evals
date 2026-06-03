@@ -70,6 +70,7 @@ from quorum.kimi import (
     build_kimi_subprocess_env,
     effective_kimi_model_env,
     install_kimi_superpowers_plugin,
+    run_kimi_auth_preflight,
     write_effective_kimi_config,
     write_kimi_runtime_env_file,
 )
@@ -371,6 +372,12 @@ def _seed_kimi_config(kimi_home: Path, *, run_dir: Path) -> AgentRuntime:
 
     try:
         kimi_env = effective_kimi_model_env(os.environ)
+        if not os.environ.get("QUORUM_KIMI_PREFLIGHT_SENTINEL"):
+            run_kimi_auth_preflight(
+                kimi_binary=kimi_binary,
+                kimi_model_env=kimi_env,
+                base_env=os.environ,
+            )
         install_kimi_superpowers_plugin(kimi_home, superpowers_root)
     except KimiConfigError as e:
         raise RunnerError(str(e), stage="setup") from e

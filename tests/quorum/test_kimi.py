@@ -12,6 +12,8 @@ from quorum.kimi import (
     build_kimi_subprocess_env,
     effective_kimi_model_env,
     install_kimi_superpowers_plugin,
+    kimi_stream_json_reply_ok,
+    run_kimi_auth_preflight,
     validate_superpowers_kimi_root,
     write_effective_kimi_config,
     write_kimi_runtime_env_file,
@@ -217,3 +219,51 @@ def test_install_kimi_superpowers_plugin_writes_local_path_metadata(tmp_path):
     assert plugin["source"] == "local-path"
     assert Path(plugin["root"]).resolve() == root.resolve()
     assert not (kimi_home / "plugins" / "managed" / "superpowers").exists()
+
+
+def test_kimi_stream_json_reply_ok_accepts_assistant_ok():
+    stdout = "\n".join(
+        [
+            json.dumps({"type": "system", "message": "ignored"}),
+            json.dumps({"type": "assistant", "content": "OK."}),
+        ]
+    )
+    assert kimi_stream_json_reply_ok(stdout)
+
+
+def test_kimi_stream_json_reply_ok_rejects_verbose_reply():
+    stdout = json.dumps({"type": "assistant", "content": "OK, I will do that"})
+    assert not kimi_stream_json_reply_ok(stdout)
+
+
+def test_run_kimi_auth_preflight_uses_throwaway_home_and_checks_logs(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        kimi_home = Path(kwargs["env"]["KIMI_CODE_HOME"])
+        cwd = Path(kwargs["cwd"])
+        session = kimi_home / "sessions" / "wd" / "session" / "agents" / "main"
+        session.mkdir(parents=True)
+        (session / "wire.jsonl").write_text("{}\n")
+        (kimi_home / "session_index.jsonl").write_text(
+            json.dumps({"sessionDir": str(session.parent.parent), "workDir": str(cwd)}) + "\n"
+        )
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            json.dumps({"type": "assistant", "content": "OK"}) + "\n",
+            "",
+        )
+
+    monkeypatch.setattr("quorum.kimi.subprocess.run", fake_run)
+    run_kimi_auth_preflight(
+        kimi_binary="kimi",
+        kimi_model_env={"KIMI_MODEL_API_KEY": "fake", "KIMI_MODEL_NAME": "kimi"},
+        base_env={"PATH": "/usr/bin:/bin"},
+    )
+
+    cmd, kwargs = calls[0]
+    assert cmd == ["kimi", "-p", "Reply with EXACTLY OK.", "--output-format", "stream-json"]
+    assert Path(kwargs["env"]["KIMI_CODE_HOME"]).name.startswith("kimi-home")
+    assert kwargs["env"]["KIMI_MODEL_API_KEY"] == "fake"

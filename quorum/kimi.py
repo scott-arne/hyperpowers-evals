@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
 import json
+import os
 import shlex
 import stat
+import subprocess
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
@@ -70,6 +73,97 @@ def build_kimi_subprocess_env(
     out["XDG_CACHE_HOME"] = str(kimi_home / "xdg-cache")
     out["XDG_DATA_HOME"] = str(kimi_home / "xdg-data")
     return out
+
+
+def _normalized_ok(text: str) -> bool:
+    return text.strip().rstrip(".!").strip().upper() == "OK"
+
+
+def kimi_stream_json_reply_ok(stdout: str) -> bool:
+    assistant_parts: list[str] = []
+    for line in stdout.splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        if row.get("type") in {"assistant", "message", "response"}:
+            content = row.get("content")
+            if isinstance(content, str):
+                assistant_parts.append(content)
+            elif isinstance(content, list):
+                assistant_parts.extend(
+                    part.get("text", "")
+                    for part in content
+                    if isinstance(part, dict) and isinstance(part.get("text"), str)
+                )
+    return _normalized_ok("".join(assistant_parts))
+
+
+def run_kimi_auth_preflight(
+    *,
+    kimi_binary: str,
+    kimi_model_env: Mapping[str, str],
+    base_env: Mapping[str, str],
+    timeout: int = 90,
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="quorum-kimi-preflight-") as tmp:
+        tmp_path = Path(tmp)
+        kimi_home = tmp_path / "kimi-home"
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        env = build_kimi_subprocess_env(
+            base_env=base_env,
+            kimi_home=kimi_home,
+            cwd=cwd,
+            kimi_model_env=kimi_model_env,
+        )
+        try:
+            result = subprocess.run(
+                [kimi_binary, "-p", "Reply with EXACTLY OK.", "--output-format", "stream-json"],
+                cwd=cwd,
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise KimiConfigError("kimi auth preflight timed out") from e
+        if result.returncode != 0:
+            stderr = result.stderr.strip()[:300]
+            raise KimiConfigError(
+                f"kimi auth preflight failed (exit {result.returncode}); stderr: {stderr}"
+            )
+        if not kimi_stream_json_reply_ok(result.stdout):
+            raise KimiConfigError(
+                "kimi auth preflight did not return OK; stdout: "
+                + result.stdout.strip()[:300]
+            )
+        index_path = kimi_home / "session_index.jsonl"
+        logs = sorted((kimi_home / "sessions").glob("**/wire.jsonl"))
+        if not index_path.is_file():
+            raise KimiConfigError("kimi auth preflight produced no session_index.jsonl")
+        if not logs:
+            raise KimiConfigError("kimi auth preflight produced no wire.jsonl")
+        target = os.path.realpath(cwd)
+        matched = False
+        with index_path.open() as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                with contextlib.suppress(json.JSONDecodeError):
+                    row = json.loads(line)
+                    if (
+                        isinstance(row, dict)
+                        and os.path.realpath(str(row.get("workDir", ""))) == target
+                    ):
+                        matched = True
+                        break
+        if not matched:
+            raise KimiConfigError("kimi auth preflight session_index workDir did not match cwd")
 
 
 def _shell_assignment(key: str, value: str) -> str:
