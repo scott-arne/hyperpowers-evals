@@ -14,10 +14,14 @@ from quorum.runner import (
     ANTIGRAVITY_RATE_LIMIT_MARKER,
     RunnerError,
     _exclude_antigravity_project_marker,
+    _gemini_transcripts,
     _run_antigravity_auth_preflight,
     _seed_agent_config_dir,
     _seed_antigravity_config,
+    _seed_gemini_config,
     _write_antigravity_settings,
+    _write_gemini_env_file,
+    _write_gemini_settings,
     run_scenario,
 )
 
@@ -66,6 +70,24 @@ def _make_antigravity_agent(
     (coding_agents_dir / "antigravity-context").mkdir(parents=True, exist_ok=True)
 
 
+def _make_gemini_agent(coding_agents_dir: Path, session_log_dir: Path) -> None:
+    coding_agents_dir.mkdir(parents=True, exist_ok=True)
+    (coding_agents_dir / "gemini.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "gemini",
+                "binary": "gemini",
+                "agent_config_env": "GEMINI_CLI_HOME",
+                "session_log_dir": str(session_log_dir),
+                "session_log_glob": "*.jsonl",
+                "normalizer": "gemini",
+                "required_env": [],
+            }
+        )
+    )
+    (coding_agents_dir / "gemini-context").mkdir(parents=True, exist_ok=True)
+
+
 # Tests pass an empty dir as skeleton_root so _seed_agent_config_dir falls
 # through to mkdir-empty without requiring the production skeleton fixture.
 def _empty_skeleton(tmp_path: Path) -> Path:
@@ -102,6 +124,20 @@ def _antigravity_tcfg() -> CodingAgentConfig:
     )
 
 
+def _gemini_tcfg() -> CodingAgentConfig:
+    return CodingAgentConfig(
+        name="gemini",
+        binary="gemini",
+        agent_config_env="GEMINI_CLI_HOME",
+        session_log_dir="${GEMINI_CLI_HOME}/.gemini/tmp",
+        session_log_glob="**/chats/**/*.json*",
+        normalizer="gemini",
+        required_env=(),
+        max_time=None,
+        project_prompt=None,
+    )
+
+
 def _make_scenario(
     scenarios_dir: Path,
     name: str,
@@ -119,6 +155,18 @@ def _make_scenario(
         check_line = "file-exists marker" if checks_pass else "file-exists missing-nonexistent-file"
         (sd / "checks.sh").write_text(f"pre() {{ :; }}\npost() {{ {check_line}; }}\n")
     return sd
+
+
+def _make_gemini_superpowers_root(tmp_path: Path) -> Path:
+    root = tmp_path / "superpowers"
+    (root / "skills" / "using-superpowers" / "references").mkdir(parents=True)
+    (root / "gemini-extension.json").write_text("{}")
+    (root / "GEMINI.md").write_text("# Superpowers\n")
+    (root / "skills" / "using-superpowers" / "SKILL.md").write_text("skill")
+    (root / "skills" / "using-superpowers" / "references" / "gemini-tools.md").write_text(
+        "tools"
+    )
+    return root
 
 
 def _stub_gauntlet_pass(*, run_dir, **kwargs):
@@ -185,6 +233,48 @@ def test_antigravity_launch_agent_is_interactive_and_substituted(tmp_path):
     assert "--dangerously-skip-permissions" in content
     assert "--log-file" in content
     assert "--print" not in content
+
+
+def test_gemini_launch_agent_is_substituted(tmp_path):
+    coding_agents_dir = tmp_path / "coding-agents"
+    scenarios_dir = tmp_path / "scenarios"
+    session_log_dir = tmp_path / "logs"
+    session_log_dir.mkdir()
+    _make_gemini_agent(coding_agents_dir, session_log_dir)
+    shutil.copy2(
+        Path(__file__).resolve().parents[2]
+        / "coding-agents"
+        / "gemini-context"
+        / "launch-agent",
+        coding_agents_dir / "gemini-context" / "launch-agent",
+    )
+    sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+    (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+    out_root = tmp_path / "results"
+
+    with (
+        patch("quorum.runner._seed_gemini_config"),
+        patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass),
+    ):
+        run_scenario(
+            scenario_dir=sd,
+            coding_agent="gemini",
+            coding_agents_dir=coding_agents_dir,
+            out_root=out_root,
+            skeleton_root=_empty_skeleton(tmp_path),
+        )
+
+    rd = next(out_root.iterdir())
+    shim = rd / "gauntlet-agent" / "context" / "launch-agent"
+    assert shim.exists()
+    assert shim.stat().st_mode & stat.S_IXUSR
+    content = shim.read_text()
+    assert "$QUORUM_AGENT_CWD" not in content
+    assert "$GEMINI_CLI_HOME" not in content
+    assert "$GEMINI_ENV_FILE" not in content
+    assert "GEMINI_CLI_HOME=" in content
+    assert ".gemini-env" in content
+    assert "--skip-trust --approval-mode=yolo" in content
 
 
 def test_antigravity_launch_uses_visible_alias_for_hidden_cwd(tmp_path, monkeypatch):
@@ -376,6 +466,123 @@ class TestSeedAgentConfigDir:
         with patch("quorum.runner._seed_antigravity_config") as mock_seed:
             _seed_agent_config_dir(_antigravity_tcfg(), tmp_path, dest, tmp_path / "wd")
         mock_seed.assert_called_once_with(dest, tmp_path / "wd")
+
+    def test_gemini_target_seeds_config(self, tmp_path):
+        dest = tmp_path / "agent-config"
+        with patch("quorum.runner._seed_gemini_config") as mock_seed:
+            _seed_agent_config_dir(_gemini_tcfg(), tmp_path, dest, tmp_path / "wd")
+        mock_seed.assert_called_once_with(dest, tmp_path / "wd")
+
+    def test_gemini_seed_requires_api_key(self, tmp_path, monkeypatch):
+        sp = _make_gemini_superpowers_root(tmp_path)
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/gemini")
+
+        with pytest.raises(RunnerError, match="GEMINI_API_KEY") as excinfo:
+            _seed_gemini_config(tmp_path / "cfg", tmp_path / "wd")
+
+        assert excinfo.value.stage == "setup"
+
+    def test_gemini_seed_requires_superpowers_root(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.delenv("SUPERPOWERS_ROOT", raising=False)
+
+        with pytest.raises(RunnerError, match="SUPERPOWERS_ROOT") as excinfo:
+            _seed_gemini_config(tmp_path / "cfg", tmp_path / "wd")
+
+        assert excinfo.value.stage == "setup"
+
+    def test_gemini_settings_select_api_key_auth(self, tmp_path):
+        cfg = tmp_path / "cfg"
+
+        _write_gemini_settings(cfg)
+
+        settings = json.loads((cfg / ".gemini" / "settings.json").read_text())
+        assert settings["security"]["auth"]["selectedType"] == "gemini-api-key"
+
+    def test_gemini_env_file_quotes_api_key_and_is_private(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "test-'key")
+
+        env_file = _write_gemini_env_file(tmp_path / "cfg")
+
+        assert env_file.name == ".gemini-env"
+        assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
+        assert env_file.read_text() == "GEMINI_API_KEY='test-'\"'\"'key'\n"
+
+    def test_gemini_seed_links_extension_lists_it_and_verifies_metadata(
+        self, tmp_path, monkeypatch
+    ):
+        sp = _make_gemini_superpowers_root(tmp_path)
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/gemini")
+        cfg = tmp_path / "cfg"
+
+        def fake_run(cmd, **kwargs):
+            assert kwargs["cwd"] == cfg
+            assert kwargs["env"]["GEMINI_CLI_HOME"] == str(cfg)
+            assert kwargs["env"]["GEMINI_CLI_TRUST_WORKSPACE"] == "true"
+            assert kwargs["env"]["GEMINI_DEFAULT_AUTH_TYPE"] == "gemini-api-key"
+            if cmd[:3] == ["gemini", "extensions", "link"]:
+                assert cmd == ["gemini", "extensions", "link", str(sp), "--consent"]
+                (cfg / ".gemini" / "extensions" / "superpowers").mkdir(parents=True)
+                (
+                    cfg
+                    / ".gemini"
+                    / "extensions"
+                    / "superpowers"
+                    / ".gemini-extension-install.json"
+                ).write_text("{}")
+                (cfg / ".gemini" / "extensions" / "extension-enablement.json").write_text("{}")
+                (cfg / ".gemini" / "extension_integrity.json").write_text("{}")
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            assert cmd == ["gemini", "extensions", "list"]
+            return subprocess.CompletedProcess(cmd, 0, "superpowers\n", "")
+
+        with patch("quorum.runner.subprocess.run", side_effect=fake_run) as mock_run:
+            _seed_gemini_config(cfg, tmp_path / "wd")
+
+        assert mock_run.call_count == 2
+        assert (cfg / ".gemini" / "settings.json").exists()
+        assert (cfg / ".gemini-env").exists()
+        assert _gemini_transcripts(cfg) == []
+
+    def test_gemini_seed_fails_when_provisioning_creates_transcripts(
+        self, tmp_path, monkeypatch
+    ):
+        sp = _make_gemini_superpowers_root(tmp_path)
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/gemini")
+        cfg = tmp_path / "cfg"
+
+        def fake_run(cmd, **_kwargs):
+            if cmd[:3] == ["gemini", "extensions", "link"]:
+                (cfg / ".gemini" / "extensions" / "superpowers").mkdir(parents=True)
+                (
+                    cfg
+                    / ".gemini"
+                    / "extensions"
+                    / "superpowers"
+                    / ".gemini-extension-install.json"
+                ).write_text("{}")
+                (cfg / ".gemini" / "extensions" / "extension-enablement.json").write_text("{}")
+                (cfg / ".gemini" / "extension_integrity.json").write_text("{}")
+                transcript_dir = cfg / ".gemini" / "tmp" / "session" / "chats"
+                transcript_dir.mkdir(parents=True)
+                (transcript_dir / "chat.jsonl").write_text("{}\n")
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return subprocess.CompletedProcess(cmd, 0, "superpowers\n", "")
+
+        with (
+            patch("quorum.runner.subprocess.run", side_effect=fake_run),
+            pytest.raises(
+                RunnerError,
+                match="provisioning unexpectedly wrote transcripts",
+            ),
+        ):
+            _seed_gemini_config(cfg, tmp_path / "wd")
 
     def test_antigravity_seed_runs_auth_preflight_then_plugin_install(self, tmp_path, monkeypatch):
         sp = tmp_path / "superpowers"

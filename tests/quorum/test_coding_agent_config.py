@@ -75,6 +75,23 @@ def test_antigravity_config_loads_when_superpowers_root_set(monkeypatch, tmp_pat
     )
 
 
+def test_gemini_config_loads_when_env_set(monkeypatch, tmp_path):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("SUPERPOWERS_ROOT", str(tmp_path / "superpowers"))
+    cfg = load_coding_agent_config(
+        Path(__file__).resolve().parents[2] / "coding-agents" / "gemini.yaml"
+    )
+
+    assert cfg.name == "gemini"
+    assert cfg.binary == "gemini"
+    assert cfg.agent_config_env == "GEMINI_CLI_HOME"
+    assert cfg.normalizer == "gemini"
+    assert cfg.session_log_glob == "**/chats/**/*.json*"
+    assert cfg.resolve_session_log_dir(tmp_path / "cfg") == (
+        tmp_path / "cfg" / ".gemini" / "tmp"
+    )
+
+
 class TestLoadCodingAgentConfig:
     def test_minimal_valid(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "x")

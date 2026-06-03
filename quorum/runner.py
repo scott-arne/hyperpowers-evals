@@ -65,6 +65,13 @@ LAUNCH_CWD_SENTINEL = ".quorum-launch-cwd"
 CODING_AGENT_CONFIG_SUBDIR = "coding-agent-config"
 ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV = "QUORUM_ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT"
 ANTIGRAVITY_VISIBLE_LAUNCH_RECORD = "antigravity-visible-launch-cwd.json"
+GEMINI_ENV_FILE_NAME = ".gemini-env"
+GEMINI_REQUIRED_SUPERPOWERS_FILES = (
+    "gemini-extension.json",
+    "GEMINI.md",
+    "skills/using-superpowers/SKILL.md",
+    "skills/using-superpowers/references/gemini-tools.md",
+)
 
 
 class RunnerError(RuntimeError):
@@ -162,6 +169,133 @@ def _seed_codex_plugin_hooks(codex_home: Path, workdir: Path) -> None:
     if not superpowers_root:
         raise RunnerError("SUPERPOWERS_ROOT not set; cannot install codex plugin hooks")
     install_codex_superpowers_plugin_hooks(workdir, superpowers_root, codex_home=codex_home)
+
+
+def _gemini_transcripts(config_dir: Path) -> list[Path]:
+    tmp_dir = config_dir / ".gemini" / "tmp"
+    if not tmp_dir.exists():
+        return []
+    return sorted(tmp_dir.glob("**/chats/**/*.json*"))
+
+
+def _write_gemini_settings(gemini_home: Path) -> None:
+    settings_path = gemini_home / ".gemini" / "settings.json"
+    settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    security = settings.setdefault("security", {})
+    auth = security.setdefault("auth", {})
+    auth["selectedType"] = "gemini-api-key"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    settings_path.write_text(json.dumps(settings, indent=2))
+
+
+def _shell_single_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def _write_gemini_env_file(gemini_home: Path) -> Path:
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        raise RunnerError("GEMINI_API_KEY not set; cannot seed Gemini auth", stage="setup")
+    env_file = gemini_home / GEMINI_ENV_FILE_NAME
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    env_file.write_text("GEMINI_API_KEY=" + _shell_single_quote(api_key) + "\n")
+    env_file.chmod(0o600)
+    return env_file
+
+
+def _require_gemini_superpowers_root(superpowers_root: str) -> Path:
+    if not superpowers_root:
+        raise RunnerError(
+            "SUPERPOWERS_ROOT not set; cannot install Gemini Superpowers extension",
+            stage="setup",
+        )
+    root = Path(superpowers_root).expanduser()
+    missing = [rel for rel in GEMINI_REQUIRED_SUPERPOWERS_FILES if not (root / rel).exists()]
+    if missing:
+        raise RunnerError(
+            "SUPERPOWERS_ROOT is missing required Gemini Superpowers files: "
+            + ", ".join(missing),
+            stage="setup",
+        )
+    return root
+
+
+def _seed_gemini_config(gemini_home: Path, workdir: Path) -> None:
+    """Install Superpowers into an isolated Gemini CLI home without invoking the model."""
+    del workdir
+    superpowers_root = _require_gemini_superpowers_root(os.environ.get("SUPERPOWERS_ROOT", ""))
+    if shutil.which("gemini") is None:
+        raise RunnerError(
+            "gemini not found on PATH; cannot run Gemini evals",
+            stage="setup",
+        )
+
+    gemini_home.mkdir(parents=True, exist_ok=True)
+    _write_gemini_settings(gemini_home)
+    _write_gemini_env_file(gemini_home)
+
+    env = {
+        **os.environ,
+        "GEMINI_CLI_HOME": str(gemini_home),
+        "GEMINI_CLI_TRUST_WORKSPACE": "true",
+        "GEMINI_DEFAULT_AUTH_TYPE": "gemini-api-key",
+    }
+    link_cmd = ["gemini", "extensions", "link", str(superpowers_root), "--consent"]
+    link = subprocess.run(
+        link_cmd,
+        cwd=gemini_home,
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+    if link.returncode != 0:
+        raise RunnerError(
+            "gemini extensions link failed "
+            f"(exit {link.returncode}); stderr: {link.stderr.strip()[:300]}",
+            stage="setup",
+        )
+
+    list_cmd = ["gemini", "extensions", "list"]
+    listing = subprocess.run(
+        list_cmd,
+        cwd=gemini_home,
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+    if listing.returncode != 0:
+        raise RunnerError(
+            "gemini extensions list failed "
+            f"(exit {listing.returncode}); stderr: {listing.stderr.strip()[:300]}",
+            stage="setup",
+        )
+    if "superpowers" not in listing.stdout.lower():
+        raise RunnerError(
+            "gemini extensions list did not show Superpowers extension",
+            stage="setup",
+        )
+
+    metadata = [
+        gemini_home / ".gemini" / "extensions" / "superpowers" / ".gemini-extension-install.json",
+        gemini_home / ".gemini" / "extensions" / "extension-enablement.json",
+        gemini_home / ".gemini" / "extension_integrity.json",
+    ]
+    missing_metadata = [str(p.relative_to(gemini_home)) for p in metadata if not p.exists()]
+    if missing_metadata:
+        raise RunnerError(
+            "gemini extension link completed but expected metadata files are missing: "
+            + ", ".join(missing_metadata),
+            stage="setup",
+        )
+
+    transcripts = _gemini_transcripts(gemini_home)
+    if transcripts:
+        rel = [str(p.relative_to(gemini_home)) for p in transcripts]
+        raise RunnerError(
+            "gemini provisioning unexpectedly wrote transcripts before "
+            "capture snapshot: " + ", ".join(rel),
+            stage="setup",
+        )
 
 
 def _antigravity_transcripts(config_dir: Path) -> list[Path]:
@@ -406,6 +540,8 @@ def _seed_agent_config_dir(
         _seed_codex_plugin_hooks(dest, workdir)
     if coding_agent.name == "antigravity":
         _seed_antigravity_config(dest, workdir)
+    if coding_agent.name == "gemini":
+        _seed_gemini_config(dest, workdir)
 
 
 def _exclude_antigravity_project_marker(launch_cwd: Path) -> None:
@@ -790,16 +926,19 @@ def _run_scenario_inner(
     # cd (the qa-agent-misconfigured failure mode). HOWTOs reference it by this
     # placeholder; the destination path is deterministic.
     launch_agent_path = run_dir / "gauntlet-agent" / "context" / "launch-agent"
+    substitutions = {
+        "$QUORUM_AGENT_CWD": str(launch_cwd),
+        "$SUPERPOWERS_ROOT": os.environ.get("SUPERPOWERS_ROOT", ""),
+        "$QUORUM_LAUNCH_AGENT": str(launch_agent_path),
+        f"${tcfg.agent_config_env}": str(agent_config_dir),
+    }
+    if tcfg.name == "gemini":
+        substitutions["$GEMINI_ENV_FILE"] = str(agent_config_dir / GEMINI_ENV_FILE_NAME)
     _populate_context_dir(
         coding_agents_dir,
         coding_agent,
         run_dir,
-        substitutions={
-            "$QUORUM_AGENT_CWD": str(launch_cwd),
-            "$SUPERPOWERS_ROOT": os.environ.get("SUPERPOWERS_ROOT", ""),
-            "$QUORUM_LAUNCH_AGENT": str(launch_agent_path),
-            f"${tcfg.agent_config_env}": str(agent_config_dir),
-        },
+        substitutions=substitutions,
     )
 
     # 7. Snapshot session-log dir.
