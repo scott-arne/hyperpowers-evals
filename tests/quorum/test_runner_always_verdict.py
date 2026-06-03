@@ -67,7 +67,9 @@ def _invoke(
 # Tests
 # ---------------------------------------------------------------------------
 
-def test_coding_agent_config_error_is_setup_indeterminate(tmp_path):
+def test_coding_agent_config_error_is_setup_indeterminate(monkeypatch, tmp_path):
+    monkeypatch.delenv("KIMI_MODEL_API_KEY", raising=False)
+
     scen = tmp_path / "s"
     scen.mkdir()
     (scen / "story.md").write_text("---\nid: x\ntitle: t\n---\n")
