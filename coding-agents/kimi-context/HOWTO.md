@@ -14,22 +14,17 @@ with automatic permissions. Type this one line, verbatim, as your first action:
 "$QUORUM_LAUNCH_AGENT"
 ```
 
-That path is burned into this HOWTO at runtime by quorum; it points at a
-generated executable that runs, in effect:
+That path is burned into this HOWTO at runtime by quorum.
 
-```
-cd <prepared-workdir> && KIMI_CODE_HOME=<per-run-isolated-dir> HOME=<isolated-home> kimi --yolo
-```
-
-Because the `cd`, isolated Kimi home, and permission flags live inside the
+Because the `cd`, isolated Kimi home, auth settings, and permission flags live inside the
 launcher, do not hand-type a bare `kimi` or reconstruct the command yourself.
 Just run the one line above.
 
-`KIMI_CODE_HOME` points at a per-run isolated Kimi home. The launcher also sets
-`HOME` to an empty directory inside that home so user-scope skills cannot shadow
-the local Superpowers plugin. quorum registers the local Superpowers checkout as
-the only enabled Kimi plugin in that home, while auth/config are symlinked from
-the user's existing Kimi login.
+`KIMI_CODE_HOME` points at a per-run isolated Kimi home. quorum registers the
+local Superpowers checkout as the only enabled Kimi plugin in that home. Auth
+and model settings are supplied by quorum through its generated launcher; do
+not hand-type provider env vars, use a local Kimi login, or reconstruct the
+command yourself.
 
 ## Observing what Kimi is doing
 

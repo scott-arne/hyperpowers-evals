@@ -157,6 +157,11 @@ def _write_indeterminate(
     return v
 
 
+def _cleanup_agent_runtime(runtime: AgentRuntime) -> None:
+    for path in runtime.cleanup_dirs:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 # ---------------------------------------------------------------------------
 
 
@@ -1259,373 +1264,383 @@ def _run_scenario_inner(
     workdir = run_dir / "coding-agent-workdir"
     workdir.mkdir()
     agent_config_dir = run_dir / CODING_AGENT_CONFIG_SUBDIR
-    _agent_runtime = _seed_agent_config_dir(
+    agent_runtime = _seed_agent_config_dir(
         tcfg,
         skeleton_root=skeleton_root or (_quorum_repo_root() / "coding-agents"),
         dest=agent_config_dir,
         workdir=workdir,
         run_dir=run_dir,
     )
-    session_log_dir = tcfg.resolve_session_log_dir(agent_config_dir)
-    env_extra = {"QUORUM_REPO_ROOT": str(_quorum_repo_root())}
+    try:
+        session_log_dir = tcfg.resolve_session_log_dir(agent_config_dir)
+        env_extra = {"QUORUM_REPO_ROOT": str(_quorum_repo_root())}
 
-    # 4. Run setup.sh (build the fixture).
-    # SetupError propagates directly to the run_scenario wrapper, which maps it
-    # to an indeterminate verdict with error.stage="setup".
-    run_setup(scenario_dir, workdir, env_extra=env_extra)
+        # 4. Run setup.sh (build the fixture).
+        # SetupError propagates directly to the run_scenario wrapper, which maps it
+        # to an indeterminate verdict with error.stage="setup".
+        run_setup(scenario_dir, workdir, env_extra=env_extra)
 
-    # 4b. Run checks.sh pre() — verifies the fixture is in the expected state.
-    pre_records, pre_exit = run_phase(
-        checks_sh=checks_sh,
-        phase="pre",
-        workdir=workdir,
-        quorum_bin=_quorum_bin_dir(),
-        tool_calls_path=run_dir / "coding-agent-tool-calls.jsonl",
-        run_dir=run_dir,
-    )
-    if pre_exit != 0:
-        return run_dir, _write_indeterminate(
-            run_dir,
-            final_reason=f"checks.sh pre() crashed (exit {pre_exit})",
-            error=RunError(stage="checks", message=f"pre exit {pre_exit}"),
+        # 4b. Run checks.sh pre() — verifies the fixture is in the expected state.
+        pre_records, pre_exit = run_phase(
+            checks_sh=checks_sh,
+            phase="pre",
+            workdir=workdir,
+            quorum_bin=_quorum_bin_dir(),
+            tool_calls_path=run_dir / "coding-agent-tool-calls.jsonl",
+            run_dir=run_dir,
         )
-
-    # 5. Resolve launch cwd (defaults to workdir; setup.sh may
-    #    override via .quorum-launch-cwd sentinel).
-    launch_cwd = _resolve_launch_cwd(workdir)
-    if tcfg.name == "antigravity":
-        _exclude_antigravity_project_marker(launch_cwd)
-        launch_cwd = _prepare_antigravity_launch_cwd(launch_cwd, run_dir)
-        _write_antigravity_settings(agent_config_dir, launch_cwd)
-
-    opencode_session_snapshot: set[str] = set()
-    if tcfg.normalizer == "opencode":
-        try:
-            opencode_session_snapshot = snapshot_opencode_sessions(
-                opencode_home=agent_config_dir,
-                launch_cwd=launch_cwd,
-            )
-        except OpenCodeCaptureError as e:
+        if pre_exit != 0:
             return run_dir, _write_indeterminate(
                 run_dir,
-                final_reason=f"OpenCode session snapshot failed: {e}",
-                checks=pre_records,
-                error=RunError(stage="capture", message=str(e)),
+                final_reason=f"checks.sh pre() crashed (exit {pre_exit})",
+                error=RunError(stage="checks", message=f"pre exit {pre_exit}"),
             )
 
-    # 6. Populate gauntlet-agent/context/ with HOWTOs, substituting
-    #    $QUORUM_AGENT_CWD, $SUPERPOWERS_ROOT, and the per-coding-agent
-    #    agent-config env var (e.g. $CLAUDE_CONFIG_DIR) with resolved
-    #    absolute paths. tmux strips arbitrary env vars from new
-    #    sessions, so we burn the values into the HOWTO instead of
-    #    relying on env-var inheritance. See _populate_context_dir
-    #    docstring.
-    # $QUORUM_LAUNCH_AGENT resolves to the generated launcher shim's absolute
-    # path. The shim is the `launch-agent` template in <name>-context/: it
-    # bakes the `cd $QUORUM_AGENT_CWD` + env + flags into one executable so the
-    # QA agent can launch the target with a single token and cannot skip the
-    # cd (the qa-agent-misconfigured failure mode). HOWTOs reference it by this
-    # placeholder; the destination path is deterministic.
-    launch_agent_path = run_dir / "gauntlet-agent" / "context" / "launch-agent"
-    substitutions = {
-        "$QUORUM_AGENT_CWD": str(launch_cwd),
-        "$SUPERPOWERS_ROOT": os.environ.get("SUPERPOWERS_ROOT", ""),
-        "$QUORUM_LAUNCH_AGENT": str(launch_agent_path),
-        f"${tcfg.agent_config_env}": str(agent_config_dir),
-    }
-    if tcfg.name == "gemini":
-        substitutions["$GEMINI_ENV_FILE"] = str(agent_config_dir / GEMINI_ENV_FILE_NAME)
-        substitutions["$QUORUM_AGENT_CWD_SH"] = _shell_single_quote(str(launch_cwd))
-        substitutions["$GEMINI_ENV_FILE_SH"] = _shell_single_quote(
-            str(agent_config_dir / GEMINI_ENV_FILE_NAME)
-        )
-        substitutions[f"${tcfg.agent_config_env}_SH"] = _shell_single_quote(str(agent_config_dir))
-    if tcfg.name == "pi":
-        substitutions["$PI_ENV_FILE"] = str(agent_config_dir / "pi.env")
-    _populate_context_dir(
-        coding_agents_dir,
-        coding_agent,
-        run_dir,
-        substitutions=substitutions,
-    )
+        # 5. Resolve launch cwd (defaults to workdir; setup.sh may
+        #    override via .quorum-launch-cwd sentinel).
+        launch_cwd = _resolve_launch_cwd(workdir)
+        if tcfg.name == "antigravity":
+            _exclude_antigravity_project_marker(launch_cwd)
+            launch_cwd = _prepare_antigravity_launch_cwd(launch_cwd, run_dir)
+            _write_antigravity_settings(agent_config_dir, launch_cwd)
 
-    # 7. Snapshot session-log dir.
-    snap = snapshot_dir(session_log_dir, tcfg.session_log_glob)
-
-    # 8. Invoke gauntlet.
-    gauntlet_status = invoke_gauntlet(
-        story_path=story_path,
-        target_binary=tcfg.binary,
-        launch_cwd=launch_cwd,
-        run_dir=run_dir,
-        max_time=effective_max_time,
-        project_prompt=tcfg.project_prompt,
-        extra_env={tcfg.agent_config_env: str(agent_config_dir)},
-    )
-
-    opencode_exported_paths: tuple[Path, ...] = ()
-    if tcfg.normalizer == "opencode":
-        try:
-            opencode_exported_paths = export_opencode_sessions(
-                opencode_home=agent_config_dir,
-                export_dir=session_log_dir,
-                launch_cwd=launch_cwd,
-                snapshot=opencode_session_snapshot,
-            )
-        except OpenCodeCaptureError as e:
-            gauntlet_layer = _build_gauntlet_layer_from_run_dir(run_dir)
-            if gauntlet_layer is None:
-                gauntlet_layer = GauntletLayer(
-                    status=gauntlet_status,
-                    summary="",
-                    reasoning="",
-                    run_id=None,
+        opencode_session_snapshot: set[str] = set()
+        if tcfg.normalizer == "opencode":
+            try:
+                opencode_session_snapshot = snapshot_opencode_sessions(
+                    opencode_home=agent_config_dir,
+                    launch_cwd=launch_cwd,
                 )
-            return run_dir, _write_indeterminate(
-                run_dir,
-                final_reason=f"OpenCode session export failed: {e}",
-                gauntlet=gauntlet_layer,
-                checks=pre_records,
-                error=RunError(stage="capture", message=str(e)),
+            except OpenCodeCaptureError as e:
+                return run_dir, _write_indeterminate(
+                    run_dir,
+                    final_reason=f"OpenCode session snapshot failed: {e}",
+                    checks=pre_records,
+                    error=RunError(stage="capture", message=str(e)),
+                )
+
+        # 6. Populate gauntlet-agent/context/ with HOWTOs, substituting
+        #    $QUORUM_AGENT_CWD, $SUPERPOWERS_ROOT, and the per-coding-agent
+        #    agent-config env var (e.g. $CLAUDE_CONFIG_DIR) with resolved
+        #    absolute paths. tmux strips arbitrary env vars from new
+        #    sessions, so we burn the values into the HOWTO instead of
+        #    relying on env-var inheritance. See _populate_context_dir
+        #    docstring.
+        # $QUORUM_LAUNCH_AGENT resolves to the generated launcher shim's absolute
+        # path. The shim is the `launch-agent` template in <name>-context/: it
+        # bakes the `cd $QUORUM_AGENT_CWD` + env + flags into one executable so the
+        # QA agent can launch the target with a single token and cannot skip the
+        # cd (the qa-agent-misconfigured failure mode). HOWTOs reference it by this
+        # placeholder; the destination path is deterministic.
+        launch_agent_path = run_dir / "gauntlet-agent" / "context" / "launch-agent"
+        substitutions = {
+            "$QUORUM_AGENT_CWD": str(launch_cwd),
+            "$SUPERPOWERS_ROOT": os.environ.get("SUPERPOWERS_ROOT", ""),
+            "$QUORUM_LAUNCH_AGENT": str(launch_agent_path),
+            f"${tcfg.agent_config_env}": str(agent_config_dir),
+            **agent_runtime.substitutions,
+        }
+        if tcfg.name == "gemini":
+            substitutions["$GEMINI_ENV_FILE"] = str(agent_config_dir / GEMINI_ENV_FILE_NAME)
+            substitutions["$QUORUM_AGENT_CWD_SH"] = _shell_single_quote(str(launch_cwd))
+            substitutions["$GEMINI_ENV_FILE_SH"] = _shell_single_quote(
+                str(agent_config_dir / GEMINI_ENV_FILE_NAME)
             )
-
-    # 9. Capture + normalize logs.
-    capture_result = capture_tool_calls(
-        log_dir=session_log_dir,
-        log_glob=tcfg.session_log_glob,
-        snapshot=snap,
-        normalizer=tcfg.normalizer,
-        run_dir=run_dir,
-        launch_cwd=launch_cwd,
-    )
-
-    # 9b. Capture token usage — measurement only, written to
-    #     coding-agent-token-usage.json. Does not affect the verdict (see
-    #     docs/migration-notes.md, cost / measurement decision).
-    capture_token_usage(
-        log_dir=session_log_dir,
-        log_glob=tcfg.session_log_glob,
-        snapshot=snap,
-        normalizer=tcfg.normalizer,
-        run_dir=run_dir,
-        launch_cwd=launch_cwd,
-    )
-
-    # 10. Build Gauntlet layer from run dir before capture short-circuits or
-    # post-checks, so early indeterminate verdicts still preserve QA context.
-    gauntlet_layer = _build_gauntlet_layer_from_run_dir(run_dir)
-    if gauntlet_layer is None:
-        # Fallback: synthesise from the status returned by invoke_gauntlet.
-        gauntlet_layer = GauntletLayer(
-            status=gauntlet_status,
-            summary="",
-            reasoning="",
-            run_id=None,
-        )
-
-    if (
-        tcfg.normalizer == "opencode"
-        and capture_result.source_logs == ()
-        and opencode_exported_paths
-    ):
-        return run_dir, _write_indeterminate(
+            substitutions[f"${tcfg.agent_config_env}_SH"] = _shell_single_quote(
+                str(agent_config_dir)
+            )
+        if tcfg.name == "pi":
+            substitutions["$PI_ENV_FILE"] = str(agent_config_dir / "pi.env")
+        _populate_context_dir(
+            coding_agents_dir,
+            coding_agent,
             run_dir,
-            final_reason=(
-                "OpenCode exported session files, but file-diff capture did not "
-                "see them as new; check export snapshot timing"
-            ),
-            gauntlet=gauntlet_layer,
-            checks=pre_records,
-            error=RunError(stage="capture", message="OpenCode export/capture snapshot mismatch"),
+            substitutions=substitutions,
         )
 
-    if tcfg.normalizer == "pi" and not capture_result.source_logs:
-        misplaced = detect_misplaced_pi_sessions(
+        # 7. Snapshot session-log dir.
+        snap = snapshot_dir(session_log_dir, tcfg.session_log_glob)
+
+        # 8. Invoke gauntlet.
+        gauntlet_status = invoke_gauntlet(
+            story_path=story_path,
+            target_binary=tcfg.binary,
+            launch_cwd=launch_cwd,
+            run_dir=run_dir,
+            max_time=effective_max_time,
+            project_prompt=tcfg.project_prompt,
+            extra_env={tcfg.agent_config_env: str(agent_config_dir)},
+        )
+
+        opencode_exported_paths: tuple[Path, ...] = ()
+        if tcfg.normalizer == "opencode":
+            try:
+                opencode_exported_paths = export_opencode_sessions(
+                    opencode_home=agent_config_dir,
+                    export_dir=session_log_dir,
+                    launch_cwd=launch_cwd,
+                    snapshot=opencode_session_snapshot,
+                )
+            except OpenCodeCaptureError as e:
+                gauntlet_layer = _build_gauntlet_layer_from_run_dir(run_dir)
+                if gauntlet_layer is None:
+                    gauntlet_layer = GauntletLayer(
+                        status=gauntlet_status,
+                        summary="",
+                        reasoning="",
+                        run_id=None,
+                    )
+                return run_dir, _write_indeterminate(
+                    run_dir,
+                    final_reason=f"OpenCode session export failed: {e}",
+                    gauntlet=gauntlet_layer,
+                    checks=pre_records,
+                    error=RunError(stage="capture", message=str(e)),
+                )
+
+        # 9. Capture + normalize logs.
+        capture_result = capture_tool_calls(
             log_dir=session_log_dir,
             log_glob=tcfg.session_log_glob,
             snapshot=snap,
+            normalizer=tcfg.normalizer,
+            run_dir=run_dir,
             launch_cwd=launch_cwd,
         )
-        if misplaced:
-            misplaced_rel = [str(p.relative_to(session_log_dir)) for p in misplaced]
+
+        # 9b. Capture token usage — measurement only, written to
+        #     coding-agent-token-usage.json. Does not affect the verdict (see
+        #     docs/migration-notes.md, cost / measurement decision).
+        capture_token_usage(
+            log_dir=session_log_dir,
+            log_glob=tcfg.session_log_glob,
+            snapshot=snap,
+            normalizer=tcfg.normalizer,
+            run_dir=run_dir,
+            launch_cwd=launch_cwd,
+        )
+
+        # 10. Build Gauntlet layer from run dir before capture short-circuits or
+        # post-checks, so early indeterminate verdicts still preserve QA context.
+        gauntlet_layer = _build_gauntlet_layer_from_run_dir(run_dir)
+        if gauntlet_layer is None:
+            # Fallback: synthesise from the status returned by invoke_gauntlet.
+            gauntlet_layer = GauntletLayer(
+                status=gauntlet_status,
+                summary="",
+                reasoning="",
+                run_id=None,
+            )
+
+        if (
+            tcfg.normalizer == "opencode"
+            and capture_result.source_logs == ()
+            and opencode_exported_paths
+        ):
             return run_dir, _write_indeterminate(
                 run_dir,
                 final_reason=(
-                    "QA agent launched Pi from the wrong cwd - likely skipped "
-                    "`cd $QUORUM_AGENT_CWD` in the Pi launcher. See "
-                    f"{misplaced_rel} for the misplaced session(s)."
+                    "OpenCode exported session files, but file-diff capture did not "
+                    "see them as new; check export snapshot timing"
                 ),
                 gauntlet=gauntlet_layer,
                 checks=pre_records,
-                error=RunError(
-                    stage="qa-agent-misconfigured",
-                    message=f"misplaced Pi sessions: {misplaced_rel}",
-                ),
+                error=RunError(stage="capture", message="OpenCode export/capture snapshot mismatch"),
             )
-        unusable = detect_unusable_pi_sessions(
-            log_dir=session_log_dir,
-            log_glob=tcfg.session_log_glob,
-            snapshot=snap,
-        )
-        if unusable:
-            unusable_rel = [str(p.relative_to(session_log_dir)) for p in unusable]
+
+        if tcfg.normalizer == "pi" and not capture_result.source_logs:
+            misplaced = detect_misplaced_pi_sessions(
+                log_dir=session_log_dir,
+                log_glob=tcfg.session_log_glob,
+                snapshot=snap,
+                launch_cwd=launch_cwd,
+            )
+            if misplaced:
+                misplaced_rel = [str(p.relative_to(session_log_dir)) for p in misplaced]
+                return run_dir, _write_indeterminate(
+                    run_dir,
+                    final_reason=(
+                        "QA agent launched Pi from the wrong cwd - likely skipped "
+                        "`cd $QUORUM_AGENT_CWD` in the Pi launcher. See "
+                        f"{misplaced_rel} for the misplaced session(s)."
+                    ),
+                    gauntlet=gauntlet_layer,
+                    checks=pre_records,
+                    error=RunError(
+                        stage="qa-agent-misconfigured",
+                        message=f"misplaced Pi sessions: {misplaced_rel}",
+                    ),
+                )
+            unusable = detect_unusable_pi_sessions(
+                log_dir=session_log_dir,
+                log_glob=tcfg.session_log_glob,
+                snapshot=snap,
+            )
+            if unusable:
+                unusable_rel = [str(p.relative_to(session_log_dir)) for p in unusable]
+                return run_dir, _write_indeterminate(
+                    run_dir,
+                    final_reason="unusable Pi session header(s): " + ", ".join(unusable_rel),
+                    gauntlet=gauntlet_layer,
+                    checks=pre_records,
+                    error=RunError(
+                        stage="capture",
+                        message=f"unusable Pi session headers: {unusable_rel}",
+                    ),
+                )
             return run_dir, _write_indeterminate(
                 run_dir,
-                final_reason="unusable Pi session header(s): " + ", ".join(unusable_rel),
+                final_reason=(
+                    "no Pi session appeared under isolated "
+                    f"{session_log_dir}; cannot evaluate this run"
+                ),
+                gauntlet=gauntlet_layer,
+                checks=pre_records,
+                error=RunError(stage="capture", message="no Pi session captured"),
+            )
+
+        if tcfg.normalizer == "pi" and capture_result.source_logs and capture_result.row_count == 0:
+            rel = [str(p.relative_to(session_log_dir)) for p in capture_result.source_logs]
+            return run_dir, _write_indeterminate(
+                run_dir,
+                final_reason="Pi session(s) normalized to zero tool-call rows: " + ", ".join(rel),
+                gauntlet=gauntlet_layer,
+                checks=pre_records,
+                error=RunError(stage="capture", message="Pi capture normalized to zero rows"),
+            )
+
+        if tcfg.normalizer == "opencode" and not capture_result.source_logs:
+            return run_dir, _write_indeterminate(
+                run_dir,
+                final_reason=(
+                    "no OpenCode session export appeared under isolated "
+                    f"{session_log_dir}; cannot evaluate this run"
+                ),
+                gauntlet=gauntlet_layer,
+                checks=pre_records,
+                error=RunError(stage="capture", message="no OpenCode session export captured"),
+            )
+
+        if (
+            tcfg.normalizer == "opencode"
+            and capture_result.source_logs
+            and capture_result.row_count == 0
+        ):
+            rel = [str(p.relative_to(session_log_dir)) for p in capture_result.source_logs]
+            return run_dir, _write_indeterminate(
+                run_dir,
+                final_reason="OpenCode export(s) normalized to zero tool-call rows: " + ", ".join(rel),
+                gauntlet=gauntlet_layer,
+                checks=pre_records,
+                error=RunError(stage="capture", message="OpenCode capture normalized to zero rows"),
+            )
+
+        strict_capture_names = {
+            "antigravity": "Antigravity",
+            "gemini": "Gemini",
+            "opencode": "OpenCode",
+        }
+        strict_capture_name = strict_capture_names.get(tcfg.normalizer)
+        if strict_capture_name and not capture_result.source_logs:
+            return run_dir, _write_indeterminate(
+                run_dir,
+                final_reason=(
+                    f"no {strict_capture_name} transcript appeared under isolated "
+                    f"{session_log_dir}; cannot evaluate this run"
+                ),
                 gauntlet=gauntlet_layer,
                 checks=pre_records,
                 error=RunError(
                     stage="capture",
-                    message=f"unusable Pi session headers: {unusable_rel}",
+                    message=f"no {strict_capture_name} transcript captured",
                 ),
             )
-        return run_dir, _write_indeterminate(
-            run_dir,
-            final_reason=(
-                "no Pi session appeared under isolated "
-                f"{session_log_dir}; cannot evaluate this run"
-            ),
-            gauntlet=gauntlet_layer,
-            checks=pre_records,
-            error=RunError(stage="capture", message="no Pi session captured"),
-        )
 
-    if tcfg.normalizer == "pi" and capture_result.source_logs and capture_result.row_count == 0:
-        rel = [str(p.relative_to(session_log_dir)) for p in capture_result.source_logs]
-        return run_dir, _write_indeterminate(
-            run_dir,
-            final_reason="Pi session(s) normalized to zero tool-call rows: " + ", ".join(rel),
-            gauntlet=gauntlet_layer,
-            checks=pre_records,
-            error=RunError(stage="capture", message="Pi capture normalized to zero rows"),
-        )
-
-    if tcfg.normalizer == "opencode" and not capture_result.source_logs:
-        return run_dir, _write_indeterminate(
-            run_dir,
-            final_reason=(
-                "no OpenCode session export appeared under isolated "
-                f"{session_log_dir}; cannot evaluate this run"
-            ),
-            gauntlet=gauntlet_layer,
-            checks=pre_records,
-            error=RunError(stage="capture", message="no OpenCode session export captured"),
-        )
-
-    if (
-        tcfg.normalizer == "opencode"
-        and capture_result.source_logs
-        and capture_result.row_count == 0
-    ):
-        rel = [str(p.relative_to(session_log_dir)) for p in capture_result.source_logs]
-        return run_dir, _write_indeterminate(
-            run_dir,
-            final_reason="OpenCode export(s) normalized to zero tool-call rows: " + ", ".join(rel),
-            gauntlet=gauntlet_layer,
-            checks=pre_records,
-            error=RunError(stage="capture", message="OpenCode capture normalized to zero rows"),
-        )
-
-    strict_capture_names = {
-        "antigravity": "Antigravity",
-        "gemini": "Gemini",
-        "opencode": "OpenCode",
-    }
-    strict_capture_name = strict_capture_names.get(tcfg.normalizer)
-    if strict_capture_name and not capture_result.source_logs:
-        return run_dir, _write_indeterminate(
-            run_dir,
-            final_reason=(
-                f"no {strict_capture_name} transcript appeared under isolated "
-                f"{session_log_dir}; cannot evaluate this run"
-            ),
-            gauntlet=gauntlet_layer,
-            checks=pre_records,
-            error=RunError(
-                stage="capture",
-                message=f"no {strict_capture_name} transcript captured",
-            ),
-        )
-
-    if strict_capture_name and capture_result.source_logs and capture_result.row_count == 0:
-        rel = [str(p.relative_to(session_log_dir)) for p in capture_result.source_logs]
-        return run_dir, _write_indeterminate(
-            run_dir,
-            final_reason=(
-                f"{strict_capture_name} transcript(s) normalized to zero tool-call rows: "
-                + ", ".join(rel)
-            ),
-            gauntlet=gauntlet_layer,
-            checks=pre_records,
-            error=RunError(
-                stage="capture",
-                message=f"{strict_capture_name} capture normalized to zero rows",
-            ),
-        )
-
-    # 11. Run checks.sh post().
-    post_records, post_exit = run_phase(
-        checks_sh=checks_sh,
-        phase="post",
-        workdir=workdir,
-        quorum_bin=_quorum_bin_dir(),
-        tool_calls_path=run_dir / "coding-agent-tool-calls.jsonl",
-        run_dir=run_dir,
-    )
-    if post_exit != 0:
-        return run_dir, _write_indeterminate(
-            run_dir,
-            final_reason=f"checks.sh post() crashed (exit {post_exit})",
-            error=RunError(stage="checks", message=f"post exit {post_exit}"),
-        )
-
-    # 12. Built-in empty-capture check.
-    capture_empty = capture_result.row_count == 0
-
-    # 12b. QA-agent-misconfigured short-circuit.
-    #      An empty capture *plus* a codex rollout sitting under run_dir but
-    #      launched in some subdir other than launch_cwd means the QA agent
-    #      skipped `cd $QUORUM_AGENT_CWD` from the codex HOWTO before typing
-    #      `codex`. Surface that as its own indeterminate stage — otherwise
-    #      downstream tool-called checks all report "never called" and the
-    #      real cause stays buried.
-    if capture_empty and tcfg.normalizer == "codex":
-        misplaced = detect_misplaced_codex_rollouts(
-            log_dir=session_log_dir,
-            log_glob=tcfg.session_log_glob,
-            snapshot=snap,
-            run_dir=run_dir,
-            launch_cwd=launch_cwd,
-        )
-        if misplaced:
-            misplaced_rel = [str(p.relative_to(session_log_dir)) for p in misplaced]
+        if (
+            strict_capture_name
+            and capture_result.source_logs
+            and capture_result.row_count == 0
+        ):
+            rel = [str(p.relative_to(session_log_dir)) for p in capture_result.source_logs]
             return run_dir, _write_indeterminate(
                 run_dir,
                 final_reason=(
-                    "QA agent launched codex from the wrong cwd — likely skipped "
-                    "`cd $QUORUM_AGENT_CWD` in the codex HOWTO. See "
-                    f"{misplaced_rel} for the misplaced rollout(s)."
+                    f"{strict_capture_name} transcript(s) normalized to zero tool-call rows: "
+                    + ", ".join(rel)
                 ),
+                gauntlet=gauntlet_layer,
+                checks=pre_records,
                 error=RunError(
-                    stage="qa-agent-misconfigured",
-                    message=f"misplaced codex rollouts: {misplaced_rel}",
+                    stage="capture",
+                    message=f"{strict_capture_name} capture normalized to zero rows",
                 ),
             )
 
-    verdict = compose(
-        gauntlet=gauntlet_layer,
-        checks=pre_records + post_records,
-        capture_empty=capture_empty,
-        error=None,
-    )
-    economics = build_run_economics(run_dir)
-    if economics is not None:
-        verdict = dataclasses.replace(verdict, economics=economics)
+        # 11. Run checks.sh post().
+        post_records, post_exit = run_phase(
+            checks_sh=checks_sh,
+            phase="post",
+            workdir=workdir,
+            quorum_bin=_quorum_bin_dir(),
+            tool_calls_path=run_dir / "coding-agent-tool-calls.jsonl",
+            run_dir=run_dir,
+        )
+        if post_exit != 0:
+            return run_dir, _write_indeterminate(
+                run_dir,
+                final_reason=f"checks.sh post() crashed (exit {post_exit})",
+                error=RunError(stage="checks", message=f"post exit {post_exit}"),
+            )
 
-    # 13. Persist.
-    (run_dir / "verdict.json").write_text(json.dumps(verdict.to_dict(), indent=2))
+        # 12. Built-in empty-capture check.
+        capture_empty = capture_result.row_count == 0
 
-    return run_dir, verdict
+        # 12b. QA-agent-misconfigured short-circuit.
+        #      An empty capture *plus* a codex rollout sitting under run_dir but
+        #      launched in some subdir other than launch_cwd means the QA agent
+        #      skipped `cd $QUORUM_AGENT_CWD` from the codex HOWTO before typing
+        #      `codex`. Surface that as its own indeterminate stage — otherwise
+        #      downstream tool-called checks all report "never called" and the
+        #      real cause stays buried.
+        if capture_empty and tcfg.normalizer == "codex":
+            misplaced = detect_misplaced_codex_rollouts(
+                log_dir=session_log_dir,
+                log_glob=tcfg.session_log_glob,
+                snapshot=snap,
+                run_dir=run_dir,
+                launch_cwd=launch_cwd,
+            )
+            if misplaced:
+                misplaced_rel = [str(p.relative_to(session_log_dir)) for p in misplaced]
+                return run_dir, _write_indeterminate(
+                    run_dir,
+                    final_reason=(
+                        "QA agent launched codex from the wrong cwd — likely skipped "
+                        "`cd $QUORUM_AGENT_CWD` in the codex HOWTO. See "
+                        f"{misplaced_rel} for the misplaced rollout(s)."
+                    ),
+                    error=RunError(
+                        stage="qa-agent-misconfigured",
+                        message=f"misplaced codex rollouts: {misplaced_rel}",
+                    ),
+                )
+
+        verdict = compose(
+            gauntlet=gauntlet_layer,
+            checks=pre_records + post_records,
+            capture_empty=capture_empty,
+            error=None,
+        )
+        economics = build_run_economics(run_dir)
+        if economics is not None:
+            verdict = dataclasses.replace(verdict, economics=economics)
+
+        # 13. Persist.
+        (run_dir / "verdict.json").write_text(json.dumps(verdict.to_dict(), indent=2))
+
+        return run_dir, verdict
+    finally:
+        _cleanup_agent_runtime(agent_runtime)
 
 
 def run_scenario(

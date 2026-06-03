@@ -15,6 +15,7 @@ import yaml
 from quorum.coding_agent_config import CodingAgentConfig
 from quorum.runner import (
     ANTIGRAVITY_RATE_LIMIT_MARKER,
+    AgentRuntime,
     RunnerError,
     _exclude_antigravity_project_marker,
     _gemini_transcripts,
@@ -537,7 +538,14 @@ def test_kimi_launch_agent_is_interactive_and_substituted(tmp_path):
     out_root = tmp_path / "results"
 
     with (
-        patch("quorum.runner._seed_kimi_config"),
+        patch(
+            "quorum.runner._seed_kimi_config",
+            return_value=AgentRuntime(
+                env_file=tmp_path / "secret" / "kimi-runtime.env",
+                substitutions={"$KIMI_ENV_FILE": str(tmp_path / "secret" / "kimi-runtime.env")},
+                cleanup_dirs=(tmp_path / "secret",),
+            ),
+        ),
         patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass),
     ):
         run_scenario(
@@ -554,12 +562,69 @@ def test_kimi_launch_agent_is_interactive_and_substituted(tmp_path):
     content = shim.read_text()
     assert "$QUORUM_AGENT_CWD" not in content
     assert "$KIMI_CODE_HOME" not in content
-    assert "KIMI_CODE_HOME=" in content
-    assert "HOME=" in content
-    assert "/home" in content
-    assert "kimi" in content
-    assert "--yolo" in content
+    assert "$KIMI_ENV_FILE" not in content
+    assert "set -a" in content
+    assert '. "$KIMI_ENV_FILE"' not in content
+    assert str(tmp_path / "secret" / "kimi-runtime.env") in content
+    assert "trap cleanup_kimi_env EXIT HUP INT TERM" in content
+    assert "unset KIMI_ENV_FILE" in content
+    assert "exec kimi --yolo" in content
+    assert "--skills-dir" not in content
     assert "--auto" not in content
+
+
+def test_kimi_runtime_env_file_cleaned_when_gauntlet_never_launches(tmp_path, monkeypatch):
+    coding_agents_dir = tmp_path / "coding-agents"
+    scenarios_dir = tmp_path / "scenarios"
+    coding_agents_dir.mkdir(parents=True, exist_ok=True)
+    (coding_agents_dir / "kimi.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "kimi",
+                "binary": "kimi",
+                "agent_config_env": "KIMI_CODE_HOME",
+                "session_log_dir": "${KIMI_CODE_HOME}/sessions",
+                "session_log_glob": "**/wire.jsonl",
+                "normalizer": "kimi",
+                "required_env": [],
+            }
+        )
+    )
+    cd_kimi = coding_agents_dir / "kimi-context"
+    cd_kimi.mkdir()
+    (cd_kimi / "launch-agent").write_text("#!/usr/bin/env bash\nexit 0\n")
+    sd = _make_scenario(scenarios_dir, "x")
+    out_root = tmp_path / "results"
+    secret_dir = tmp_path / "secret"
+    secret_dir.mkdir()
+    env_file = secret_dir / "kimi-runtime.env"
+    env_file.write_text("KIMI_MODEL_API_KEY=fake\n")
+
+    with (
+        patch(
+            "quorum.runner._seed_kimi_config",
+            return_value=AgentRuntime(
+                env_file=env_file,
+                substitutions={"$KIMI_ENV_FILE": str(env_file)},
+                cleanup_dirs=(secret_dir,),
+            ),
+        ),
+        patch(
+            "quorum.runner.invoke_gauntlet",
+            side_effect=RunnerError("gauntlet boom", stage="gauntlet"),
+        ),
+    ):
+        _run_dir, verdict = run_scenario(
+            scenario_dir=sd,
+            coding_agent="kimi",
+            coding_agents_dir=coding_agents_dir,
+            out_root=out_root,
+            skeleton_root=_empty_skeleton(tmp_path),
+        )
+
+    assert verdict.final == "indeterminate"
+    assert not env_file.exists()
+    assert not secret_dir.exists()
 
 
 def test_antigravity_launch_uses_visible_alias_for_hidden_cwd(tmp_path, monkeypatch):
