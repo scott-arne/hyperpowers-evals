@@ -73,8 +73,20 @@ def _shell_assignment(key: str, value: str) -> str:
     return f"{key}={shlex.quote(value)}"
 
 
+def _kimi_runtime_env_temp_parent(run_dir: Path) -> Path:
+    run_dir_resolved = run_dir.resolve()
+    temp_parent = Path(tempfile.gettempdir()).resolve()
+    if temp_parent.is_relative_to(run_dir_resolved):
+        temp_parent = run_dir_resolved.parent.parent
+    temp_parent.mkdir(parents=True, exist_ok=True)
+    if temp_parent.resolve().is_relative_to(run_dir_resolved):
+        raise KimiConfigError("Kimi runtime env temp directory resolved inside run dir")
+    return temp_parent
+
+
 def write_kimi_runtime_env_file(env: Mapping[str, str], *, run_dir: Path) -> Path:
-    secret_dir = Path(tempfile.mkdtemp(prefix=f"quorum-kimi-env-{run_dir.name}-"))
+    temp_parent = _kimi_runtime_env_temp_parent(run_dir)
+    secret_dir = Path(tempfile.mkdtemp(prefix=f"quorum-kimi-env-{run_dir.name}-", dir=temp_parent))
     path = secret_dir / "kimi-runtime.env"
     path.write_text("".join(_shell_assignment(k, v) + "\n" for k, v in sorted(env.items())))
     path.chmod(stat.S_IRUSR | stat.S_IWUSR)

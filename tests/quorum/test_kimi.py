@@ -2,6 +2,7 @@ import json
 import os
 import stat
 import subprocess
+import tempfile
 
 import pytest
 
@@ -84,6 +85,20 @@ def test_runtime_env_file_is_0600_outside_run_dir_and_sourceable(tmp_path):
         check=True,
     )
     assert result.stdout.strip() == "fake key with spaces"
+
+
+def test_runtime_env_file_avoids_process_temp_dir_inside_run_dir(monkeypatch, tmp_path):
+    run_dir = tmp_path / "results" / "run"
+    run_dir.mkdir(parents=True)
+    monkeypatch.setenv("TMPDIR", str(run_dir))
+    monkeypatch.setattr(tempfile, "tempdir", str(run_dir))
+
+    env_file = write_kimi_runtime_env_file(
+        {"KIMI_MODEL_API_KEY": "fake-key"},
+        run_dir=run_dir,
+    )
+
+    assert not env_file.resolve().is_relative_to(run_dir.resolve())
 
 
 def test_effective_config_summary_redacts_api_key(tmp_path):
