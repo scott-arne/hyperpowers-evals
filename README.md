@@ -2,7 +2,7 @@
 
 Behavioral eval lab for [superpowers](https://github.com/obra/superpowers).
 **Quorum** drives real coding-agent CLIs (Claude, Codex, Antigravity, Gemini,
-OpenCode, Pi) through a Gauntlet QA agent and grades them against scenario
+Kimi, OpenCode, Pi) through a Gauntlet QA agent and grades them against scenario
 acceptance criteria plus deterministic post-checks.
 
 Code, CLI, paths, and inline prose all use lowercase `quorum`; the capitalized
@@ -19,8 +19,8 @@ quorum has two very different execution modes:
 - **Static/unit checks** are safe for public CI. They run `ruff`, `ty`, and
   `pytest`. They do not call model APIs and do not launch agent CLIs.
 - **Live evals** are trusted-maintainer operations. They launch Claude Code,
-  Codex CLI, Antigravity CLI, Gemini CLI, OpenCode CLI, or Pi CLI in permissive
-  modes and collect raw
+  Codex CLI, Antigravity CLI, Gemini CLI, Kimi Code, OpenCode CLI, or Pi CLI in
+  permissive modes and collect raw
   transcripts, tool calls, filesystem state, and session logs.
 
 Public CI must stay on the static/unit side of that line. Never add API keys,
@@ -36,18 +36,20 @@ Live evals run the Coding-Agent under test with broad execution power:
 - Antigravity uses `--dangerously-skip-permissions` and relies on local
   browser/keyring auth for `agy`.
 - Gemini uses `--skip-trust --approval-mode=yolo` and API-key auth.
+- Kimi uses `--yolo`.
 - OpenCode uses `--dangerously-skip-permissions`.
 - Pi uses explicit tool allowlists and API-key auth in a run-local config dir.
 
 quorum seeds a fresh per-run agent-config dir (`CLAUDE_CONFIG_DIR` for
-Claude, `CODEX_HOME` for Codex, `ANTIGRAVITY_CONFIG_DIR` for Antigravity, and
-`GEMINI_CLI_HOME` for Gemini, `OPENCODE_QUORUM_HOME` plus isolated XDG dirs for
-OpenCode, and `PI_CODING_AGENT_DIR` for Pi) so the Coding-Agent never sees the
-host's real `~/.claude`, `~/.codex`, `~/.gemini`, OpenCode state, or `~/.pi`
-state, installed plugins, or prior sessions. That narrows the blast radius but
-is not a sandbox. OpenCode's launcher additionally uses an allowlisted
-environment, but live Coding-Agents still run with broad filesystem and command
-execution power.
+Claude, `CODEX_HOME` for Codex, `ANTIGRAVITY_CONFIG_DIR` for Antigravity,
+`GEMINI_CLI_HOME` for Gemini, `KIMI_CODE_HOME` for Kimi,
+`OPENCODE_QUORUM_HOME` plus isolated XDG dirs for OpenCode, and
+`PI_CODING_AGENT_DIR` for Pi) so the Coding-Agent never sees the host's real
+`~/.claude`, `~/.codex`, `~/.gemini`, `~/.kimi-code`, OpenCode state, or
+`~/.pi` state, installed plugins, or prior sessions. That narrows the blast
+radius but is not a sandbox. OpenCode's launcher additionally uses an
+allowlisted environment, but live Coding-Agents still run with broad filesystem
+and command execution power.
 
 Run live evals only from a trusted local environment:
 
@@ -71,8 +73,8 @@ Run one scenario:
 uv run quorum run scenarios/triggering-writing-plans --coding-agent claude
 ```
 
-Agent names are `claude`, `codex`, `antigravity`, `gemini`, `opencode`, and
-`pi`; not every scenario is valid for every agent.
+Agent names are `claude`, `codex`, `antigravity`, `gemini`, `kimi`,
+`opencode`, and `pi`; not every scenario is valid for every agent.
 
 List scenarios:
 
@@ -120,6 +122,29 @@ uv run quorum show <run-dir>
 Do not wire Gemini live evals to public CI; they launch `gemini` with
 `--approval-mode=yolo` and preserve secret-bearing run artifacts.
 
+Trusted-maintainer Kimi smoke:
+
+```bash
+export SUPERPOWERS_ROOT=/Users/drewritter/prime-rad/superpowers
+export KIMI_MODEL_API_KEY=...
+uv run quorum run scenarios/kimi-superpowers-bootstrap --coding-agent kimi
+```
+
+For a Kimi-only sweep:
+
+```bash
+uv run quorum run-all --coding-agents kimi --jobs 1
+```
+
+Kimi runs use a fresh per-run `KIMI_CODE_HOME` and do not read or symlink local
+`~/.kimi-code`. Auth/model config comes from `KIMI_MODEL_API_KEY` plus
+Quorum's default Kimi provider env. `KIMI_MODEL_NAME` may be overridden; other
+host `KIMI_MODEL_*` overrides are rejected in v1 for reproducibility.
+
+Do not wire Kimi live evals to public CI. They launch `kimi --yolo`, write raw
+`wire.jsonl` model/tool logs, and should not be run against untrusted PR
+scenarios until Kimi tool-subprocess env scrubbing has been verified.
+
 Trusted-maintainer OpenCode bootstrap smoke:
 
 ```bash
@@ -153,7 +178,7 @@ messages.
 |---|---|---|
 | **Gauntlet** | General-purpose QA framework; the `gauntlet` CLI. A black-box tester. | repo `~/Code/prime/gauntlet`; on `PATH` as `gauntlet` |
 | **Gauntlet-Agent** | The LLM *inside* Gauntlet that drives the Coding-Agent and self-grades against the story's ACs. | model e.g. `claude-sonnet-4-6`; event stream → `<run>/gauntlet-agent/results/<runId>/run.jsonl`; verdict → `result.{json,md}` |
-| **Coding-Agent** | The agent under test — the SUT. Instances: **Claude**, **Codex**, **Antigravity**, **Gemini**, **OpenCode**, **Pi**. | session log → `<run>/coding-agent-config/…`; the files it writes → `<run>/coding-agent-workdir/` |
+| **Coding-Agent** | The agent under test — the SUT. Instances: **Claude**, **Codex**, **Antigravity**, **Gemini**, **Kimi**, **OpenCode**, **Pi**. | session log → `<run>/coding-agent-config/…`; the files it writes → `<run>/coding-agent-workdir/` |
 | **Quorum** | The Python wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and the final verdict. | repo `superpowers-evals/quorum/`; `<run>/verdict.json` |
 
 A run involves **two** LLMs — the **Gauntlet-Agent** (QA tester) and the
@@ -301,9 +326,10 @@ learn how to launch and observe that CLI. Claude additionally has a home
 skeleton at `coding-agents/claude-home-skeleton/` that gets copied into the
 per-run `CLAUDE_CONFIG_DIR` (Codex provisions its home fresh per run via
 `codex login --with-api-key`; Antigravity and Gemini provision isolated
-`.gemini` state fresh per run; OpenCode stages the local Superpowers plugin and
-skills into isolated XDG dirs; Pi provisions run-local auth and settings).
-All authored once per agent and shared across scenarios.
+`.gemini` state fresh per run; Kimi provisions an isolated `KIMI_CODE_HOME`;
+OpenCode stages the local Superpowers plugin and skills into isolated XDG
+dirs; Pi provisions run-local auth and settings). All authored once per agent
+and shared across scenarios.
 
 | Coding-Agent | CLI | Required environment |
 | --- | --- | --- |
@@ -311,6 +337,7 @@ All authored once per agent and shared across scenarios.
 | `codex` | Codex CLI | `OPENAI_API_KEY`, `SUPERPOWERS_ROOT` |
 | `antigravity` | Google Antigravity CLI (`agy`) | `SUPERPOWERS_ROOT` |
 | `gemini` | Gemini CLI (`gemini`) | `GEMINI_API_KEY`, `SUPERPOWERS_ROOT` |
+| `kimi` | Kimi Code | `KIMI_MODEL_API_KEY`, `SUPERPOWERS_ROOT` |
 | `opencode` | OpenCode CLI | `SUPERPOWERS_ROOT`, provider credentials for the selected OpenCode model |
 | `pi` | Pi CLI (`pi`) | `SUPERPOWERS_ROOT`, `PI_PROVIDER`, `PI_MODEL`, `PI_API_KEY` |
 
@@ -436,6 +463,37 @@ worktree. quorum adds that path to the local repo exclude file
 (`.git/info/exclude`) when the run starts; it is runtime metadata, not a
 scenario artifact to commit.
 
+### Kimi
+
+`coding-agents/kimi.yaml` launches Kimi Code as `kimi`. It requires
+`SUPERPOWERS_ROOT` because quorum installs the local Superpowers plugin into
+each run's isolated Kimi config. Kimi auth/model setup comes from
+`KIMI_MODEL_API_KEY` plus quorum's default Kimi provider environment, with
+`KIMI_MODEL_NAME` available as the only host `KIMI_MODEL_*` override in v1.
+
+The runner creates a fresh per-run `KIMI_CODE_HOME` under the run directory and
+does not read or symlink the host's `~/.kimi-code`. Before launch, quorum writes
+`plugins/installed.json` with a single enabled Superpowers plugin whose
+`source` is `local-path` and whose root realpath matches `SUPERPOWERS_ROOT`.
+The runtime must not contain a copied `plugins/managed/superpowers` plugin.
+
+Kimi launches with:
+
+```bash
+kimi --yolo
+```
+
+Kimi run artifacts are sensitive. In addition to the normalized
+`<run>/coding-agent-tool-calls.jsonl`, raw Kimi wire logs may appear at:
+
+```text
+<run>/coding-agent-config/**/wire.jsonl
+```
+
+Those logs can contain model outputs, tool arguments, and provider environment
+until Kimi tool-subprocess env scrubbing has been verified. Do not add Kimi
+live evals to public CI or run them against untrusted PR scenarios.
+
 Note: Gauntlet's own `gauntlet` CLI preserves its `--target <binary>` flag for
 selecting the TUI adapter binary; quorum's `--coding-agent` flag is a
 separate, higher-level concept that selects the agent config.
@@ -532,13 +590,15 @@ A `quorum run` drives one scenario against one Coding-Agent:
    doubles as Gauntlet's `--state-dir` root and the evidence root.
 3. **Isolation** — a fresh per-run agent-config dir (`CLAUDE_CONFIG_DIR` for
    Claude, `CODEX_HOME` for Codex, `ANTIGRAVITY_CONFIG_DIR` for Antigravity,
-   `GEMINI_CLI_HOME` for Gemini, `OPENCODE_QUORUM_HOME` for OpenCode, and
-   `PI_CODING_AGENT_DIR` for Pi) is seeded or provisioned, so the Coding-Agent
-   never sees the host's real `~/.claude`, `~/.codex`, `~/.gemini`, OpenCode
-   state, or `~/.pi` state, installed plugins, or prior sessions. Antigravity
-   also runs an isolated auth preflight and plugin install before launch;
-   Gemini links the local Superpowers extension before launch; OpenCode stages
-   the plugin and runs an isolated provider preflight; Pi writes run-local auth,
+   `GEMINI_CLI_HOME` for Gemini, `KIMI_CODE_HOME` for Kimi,
+   `OPENCODE_QUORUM_HOME` for OpenCode, and `PI_CODING_AGENT_DIR` for Pi) is
+   seeded or provisioned, so the Coding-Agent never sees the host's real
+   `~/.claude`, `~/.codex`, `~/.gemini`, `~/.kimi-code`, OpenCode state, or
+   `~/.pi` state, installed plugins, or prior sessions. Antigravity also runs
+   an isolated auth preflight and plugin install before launch; Gemini links
+   the local Superpowers extension before launch; Kimi gets an isolated
+   local-path Superpowers plugin install before launch; OpenCode stages the
+   plugin and runs an isolated provider preflight; Pi writes run-local auth,
    settings, and environment files.
 4. **Setup** — the Coding-Agent's workdir is created inside the run dir as
    `coding-agent-workdir/`; the scenario's `setup.sh` builds the fixture.
@@ -555,7 +615,7 @@ A `quorum run` drives one scenario against one Coding-Agent:
    `coding-agent-tool-calls.jsonl`, and token usage is written to
    `coding-agent-token-usage.json` when supported (measurement only). OpenCode
    exports matching new sessions before this diff step. Antigravity, Gemini,
-   OpenCode, and Pi runs fail closed as `indeterminate` if no
+   Kimi, OpenCode, and Pi runs fail closed as `indeterminate` if no
    transcript/session export is captured or captured logs normalize to zero
    tool-call rows.
 9. **Post-checks** — `checks.sh`'s `post()` runs against the captured evidence.
@@ -605,13 +665,15 @@ git diff coding-agents/claude-home-skeleton/   # sanity-check the scrubbed resul
 git commit coding-agents/claude-home-skeleton/ -m "quorum: refresh Claude skeleton"
 ```
 
-Codex, Antigravity, Gemini, OpenCode, and Pi need no committed home skeleton.
+Codex, Antigravity, Gemini, Kimi, OpenCode, and Pi need no committed home skeleton.
 Codex provisions a fresh per-run home from your `OPENAI_API_KEY`; Antigravity
 provisions an isolated per-run `ANTIGRAVITY_CONFIG_DIR`, runs its auth
 preflight, and installs the Superpowers plugin from `SUPERPOWERS_ROOT`; Gemini
-seeds API-key auth and links the local extension; OpenCode stages the plugin and
-skills from `SUPERPOWERS_ROOT` into isolated XDG dirs; Pi provisions run-local
-auth, settings, and env files under `PI_CODING_AGENT_DIR`.
+seeds API-key auth and links the local extension; Kimi provisions a fresh
+per-run `KIMI_CODE_HOME` and installs only the local-path Superpowers plugin
+from `SUPERPOWERS_ROOT`; OpenCode stages the plugin and skills from
+`SUPERPOWERS_ROOT` into isolated XDG dirs; Pi provisions run-local auth,
+settings, and env files under `PI_CODING_AGENT_DIR`.
 
 ## Safe Checks
 
