@@ -2,7 +2,7 @@
 
 Behavioral eval lab for [superpowers](https://github.com/obra/superpowers).
 **Quorum** drives real coding-agent CLIs (Claude, Codex, Antigravity, Gemini,
-OpenCode) through a Gauntlet QA agent and grades them against scenario
+OpenCode, Pi) through a Gauntlet QA agent and grades them against scenario
 acceptance criteria plus deterministic post-checks.
 
 Code, CLI, paths, and inline prose all use lowercase `quorum`; the capitalized
@@ -19,8 +19,8 @@ quorum has two very different execution modes:
 - **Static/unit checks** are safe for public CI. They run `ruff`, `ty`, and
   `pytest`. They do not call model APIs and do not launch agent CLIs.
 - **Live evals** are trusted-maintainer operations. They launch Claude Code,
-  Codex CLI, Antigravity CLI, Gemini CLI, or OpenCode CLI in permissive modes
-  and collect raw
+  Codex CLI, Antigravity CLI, Gemini CLI, OpenCode CLI, or Pi CLI in permissive
+  modes and collect raw
   transcripts, tool calls, filesystem state, and session logs.
 
 Public CI must stay on the static/unit side of that line. Never add API keys,
@@ -37,15 +37,17 @@ Live evals run the Coding-Agent under test with broad execution power:
   browser/keyring auth for `agy`.
 - Gemini uses `--skip-trust --approval-mode=yolo` and API-key auth.
 - OpenCode uses `--dangerously-skip-permissions`.
+- Pi uses explicit tool allowlists and API-key auth in a run-local config dir.
 
 quorum seeds a fresh per-run agent-config dir (`CLAUDE_CONFIG_DIR` for
 Claude, `CODEX_HOME` for Codex, `ANTIGRAVITY_CONFIG_DIR` for Antigravity, and
-`GEMINI_CLI_HOME` for Gemini, and `OPENCODE_QUORUM_HOME` plus isolated XDG dirs
-for OpenCode) so the Coding-Agent never sees the host's real `~/.claude`,
-`~/.codex`, `~/.gemini`, or OpenCode state, installed plugins, or prior
-sessions. That narrows the blast radius but is not a sandbox. OpenCode's
-launcher additionally uses an allowlisted environment, but live Coding-Agents
-still run with broad filesystem and command execution power.
+`GEMINI_CLI_HOME` for Gemini, `OPENCODE_QUORUM_HOME` plus isolated XDG dirs for
+OpenCode, and `PI_CODING_AGENT_DIR` for Pi) so the Coding-Agent never sees the
+host's real `~/.claude`, `~/.codex`, `~/.gemini`, OpenCode state, or `~/.pi`
+state, installed plugins, or prior sessions. That narrows the blast radius but
+is not a sandbox. OpenCode's launcher additionally uses an allowlisted
+environment, but live Coding-Agents still run with broad filesystem and command
+execution power.
 
 Run live evals only from a trusted local environment:
 
@@ -69,8 +71,8 @@ Run one scenario:
 uv run quorum run scenarios/triggering-writing-plans --coding-agent claude
 ```
 
-Agent names are `claude`, `codex`, `antigravity`, `gemini`, and `opencode`; not every
-scenario is valid for every agent.
+Agent names are `claude`, `codex`, `antigravity`, `gemini`, `opencode`, and
+`pi`; not every scenario is valid for every agent.
 
 List scenarios:
 
@@ -127,6 +129,20 @@ SUPERPOWERS_ROOT=/Users/drewritter/prime-rad/superpowers uv run quorum run scena
 Do not wire OpenCode live evals to public CI; they launch `opencode` with
 `--dangerously-skip-permissions` and depend on local provider credentials.
 
+Trusted-maintainer Pi bootstrap smoke:
+
+```bash
+export SUPERPOWERS_ROOT=/Users/drewritter/prime-rad/superpowers
+export PI_PROVIDER=openai
+export PI_MODEL=gpt-5.5
+export PI_API_KEY=...
+uv run quorum run scenarios/pi-superpowers-bootstrap --coding-agent pi
+uv run quorum show <run-dir>
+```
+
+Do not wire Pi live evals to public CI; they launch `pi` with broad tool
+allowlists and preserve secret-bearing run artifacts.
+
 ## Canonical Actors
 
 Keep the actors straight; confusing them is the most common triage error.
@@ -137,7 +153,7 @@ messages.
 |---|---|---|
 | **Gauntlet** | General-purpose QA framework; the `gauntlet` CLI. A black-box tester. | repo `~/Code/prime/gauntlet`; on `PATH` as `gauntlet` |
 | **Gauntlet-Agent** | The LLM *inside* Gauntlet that drives the Coding-Agent and self-grades against the story's ACs. | model e.g. `claude-sonnet-4-6`; event stream → `<run>/gauntlet-agent/results/<runId>/run.jsonl`; verdict → `result.{json,md}` |
-| **Coding-Agent** | The agent under test — the SUT. Instances: **Claude**, **Codex**, **Antigravity**, **Gemini**, **OpenCode**; future **Pi**. | session log → `<run>/coding-agent-config/…`; the files it writes → `<run>/coding-agent-workdir/` |
+| **Coding-Agent** | The agent under test — the SUT. Instances: **Claude**, **Codex**, **Antigravity**, **Gemini**, **OpenCode**, **Pi**. | session log → `<run>/coding-agent-config/…`; the files it writes → `<run>/coding-agent-workdir/` |
 | **Quorum** | The Python wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and the final verdict. | repo `superpowers-evals/quorum/`; `<run>/verdict.json` |
 
 A run involves **two** LLMs — the **Gauntlet-Agent** (QA tester) and the
@@ -286,8 +302,8 @@ skeleton at `coding-agents/claude-home-skeleton/` that gets copied into the
 per-run `CLAUDE_CONFIG_DIR` (Codex provisions its home fresh per run via
 `codex login --with-api-key`; Antigravity and Gemini provision isolated
 `.gemini` state fresh per run; OpenCode stages the local Superpowers plugin and
-skills into isolated XDG dirs). All authored once per agent and shared across
-scenarios.
+skills into isolated XDG dirs; Pi provisions run-local auth and settings).
+All authored once per agent and shared across scenarios.
 
 | Coding-Agent | CLI | Required environment |
 | --- | --- | --- |
@@ -296,6 +312,11 @@ scenarios.
 | `antigravity` | Google Antigravity CLI (`agy`) | `SUPERPOWERS_ROOT` |
 | `gemini` | Gemini CLI (`gemini`) | `GEMINI_API_KEY`, `SUPERPOWERS_ROOT` |
 | `opencode` | OpenCode CLI | `SUPERPOWERS_ROOT`, provider credentials for the selected OpenCode model |
+| `pi` | Pi CLI (`pi`) | `SUPERPOWERS_ROOT`, `PI_PROVIDER`, `PI_MODEL`, `PI_API_KEY` |
+
+For `PI_PROVIDER=azure-openai-responses`, set either `AZURE_OPENAI_BASE_URL`
+or `AZURE_OPENAI_RESOURCE_NAME`; quorum also forwards optional
+`AZURE_OPENAI_API_VERSION` and `AZURE_OPENAI_DEPLOYMENT_NAME_MAP`.
 
 When this repo is checked out as `superpowers/evals`, quorum defaults
 `SUPERPOWERS_ROOT` to the parent `superpowers` checkout. In a standalone
@@ -461,6 +482,46 @@ records raw session rows, cwd-filter decisions, skipped existing sessions, and
 export metadata. The manifest is diagnostic evidence only and is excluded from
 normalization.
 
+### Pi
+
+`coding-agents/pi.yaml` launches Pi as `pi`. It requires `SUPERPOWERS_ROOT`,
+`PI_PROVIDER`, `PI_MODEL`, and `PI_API_KEY`. quorum creates an isolated per-run
+`PI_CODING_AGENT_DIR` under `<run>/coding-agent-config` and writes:
+
+```text
+<run>/coding-agent-config/auth.json
+<run>/coding-agent-config/settings.json
+<run>/coding-agent-config/pi.env
+<run>/coding-agent-config/sessions/*.jsonl
+```
+
+`auth.json` references `$PI_API_KEY` instead of embedding the key; `pi.env`
+contains the real runtime secret and is chmod `0600`. Pi run directories are
+secret-bearing artifacts.
+
+The generated launcher starts Pi with:
+
+```bash
+PI_CODING_AGENT_DIR="$PI_CODING_AGENT_DIR" \
+pi \
+  --config-dir "$PI_CODING_AGENT_DIR" \
+  --no-context-files \
+  --extension "$SUPERPOWERS_ROOT" \
+  --allow-tool RunCommand \
+  --allow-tool Edit
+```
+
+Pi loads the Superpowers extension and skills from the local
+`SUPERPOWERS_ROOT`, so globally installed Pi packages or `~/.agents/skills`
+cannot satisfy the eval accidentally. Raw Pi sessions are captured from:
+
+```text
+<run>/coding-agent-config/sessions/*.jsonl
+```
+
+Pi token/cost capture is unsupported in v1, so `coding-agent-token-usage.json`
+is not expected for Pi runs.
+
 ## How a Run Works
 
 A `quorum run` drives one scenario against one Coding-Agent:
@@ -471,13 +532,14 @@ A `quorum run` drives one scenario against one Coding-Agent:
    doubles as Gauntlet's `--state-dir` root and the evidence root.
 3. **Isolation** — a fresh per-run agent-config dir (`CLAUDE_CONFIG_DIR` for
    Claude, `CODEX_HOME` for Codex, `ANTIGRAVITY_CONFIG_DIR` for Antigravity,
-   `GEMINI_CLI_HOME` for Gemini, `OPENCODE_QUORUM_HOME` for OpenCode) is
-   seeded or provisioned, so the Coding-Agent never sees the host's real
-   `~/.claude`, `~/.codex`, `~/.gemini`, or OpenCode state, installed plugins,
-   or prior sessions. Antigravity also runs an isolated auth preflight and
-   plugin install before launch; Gemini links the local Superpowers extension
-   before launch; OpenCode stages the plugin and runs an isolated provider
-   preflight.
+   `GEMINI_CLI_HOME` for Gemini, `OPENCODE_QUORUM_HOME` for OpenCode, and
+   `PI_CODING_AGENT_DIR` for Pi) is seeded or provisioned, so the Coding-Agent
+   never sees the host's real `~/.claude`, `~/.codex`, `~/.gemini`, OpenCode
+   state, or `~/.pi` state, installed plugins, or prior sessions. Antigravity
+   also runs an isolated auth preflight and plugin install before launch;
+   Gemini links the local Superpowers extension before launch; OpenCode stages
+   the plugin and runs an isolated provider preflight; Pi writes run-local auth,
+   settings, and environment files.
 4. **Setup** — the Coding-Agent's workdir is created inside the run dir as
    `coding-agent-workdir/`; the scenario's `setup.sh` builds the fixture.
 5. **Pre-checks** — `checks.sh`'s `pre()` runs against the workdir; a failure
@@ -491,10 +553,11 @@ A `quorum run` drives one scenario against one Coding-Agent:
    `## Acceptance Criteria`.
 8. **Capture** — the Coding-Agent's session-log dir is diffed, normalized into
    `coding-agent-tool-calls.jsonl`, and token usage is written to
-   `coding-agent-token-usage.json` (measurement only). OpenCode exports matching
-   new sessions before this diff step. Antigravity, Gemini, and OpenCode runs
-   fail closed as `indeterminate` if no transcript/session export is captured or
-   captured logs normalize to zero tool-call rows.
+   `coding-agent-token-usage.json` when supported (measurement only). OpenCode
+   exports matching new sessions before this diff step. Antigravity, Gemini,
+   OpenCode, and Pi runs fail closed as `indeterminate` if no
+   transcript/session export is captured or captured logs normalize to zero
+   tool-call rows.
 9. **Post-checks** — `checks.sh`'s `post()` runs against the captured evidence.
 10. **Compose** — the final verdict is `pass` iff the Gauntlet-Agent passed
     **and** every post-check passed. `verdict.json` is written to the run dir.
@@ -542,12 +605,13 @@ git diff coding-agents/claude-home-skeleton/   # sanity-check the scrubbed resul
 git commit coding-agents/claude-home-skeleton/ -m "quorum: refresh Claude skeleton"
 ```
 
-Codex, Antigravity, Gemini, and OpenCode need no committed home skeleton. Codex
-provisions a fresh per-run home from your `OPENAI_API_KEY`; Antigravity
+Codex, Antigravity, Gemini, OpenCode, and Pi need no committed home skeleton.
+Codex provisions a fresh per-run home from your `OPENAI_API_KEY`; Antigravity
 provisions an isolated per-run `ANTIGRAVITY_CONFIG_DIR`, runs its auth
 preflight, and installs the Superpowers plugin from `SUPERPOWERS_ROOT`; Gemini
 seeds API-key auth and links the local extension; OpenCode stages the plugin and
-skills from `SUPERPOWERS_ROOT` into isolated XDG dirs.
+skills from `SUPERPOWERS_ROOT` into isolated XDG dirs; Pi provisions run-local
+auth, settings, and env files under `PI_CODING_AGENT_DIR`.
 
 ## Safe Checks
 
@@ -635,6 +699,28 @@ When an OpenCode run is non-passing or indeterminate:
 6. Inspect normalized behavior in `<run>/coding-agent-tool-calls.jsonl`; plugin
    files alone do not prove hook or skill behavior.
 7. Render the verdict with `uv run quorum show <run-or-batch-id>`.
+
+### Pi Troubleshooting
+
+When a Pi run is non-passing or indeterminate:
+
+1. Confirm `pi` is installed and reachable: `pi --version`.
+2. Confirm `PI_PROVIDER`, `PI_MODEL`, `PI_API_KEY`, and `SUPERPOWERS_ROOT` are
+   set in the shell that launches quorum.
+3. If using `azure-openai-responses`, confirm `AZURE_OPENAI_BASE_URL` or
+   `AZURE_OPENAI_RESOURCE_NAME` is set.
+4. Inspect `<run>/coding-agent-config/pi.env`; it should exist, be chmod
+   `0600`, and contain the runtime env expected by the launcher.
+5. Inspect `<run>/coding-agent-config/auth.json`; it should be chmod `0600`
+   and should reference `$PI_API_KEY`, not the literal secret.
+6. Confirm raw Pi sessions exist under
+   `<run>/coding-agent-config/sessions/*.jsonl`.
+7. If the verdict says `qa-agent-misconfigured`, look for a new Pi session
+   whose header `cwd` is outside `<run>/coding-agent-workdir`.
+8. If the verdict says `unusable Pi session header`, inspect the first line of
+   each new Pi session for malformed JSON or missing `cwd`.
+9. Inspect normalized behavior in `<run>/coding-agent-tool-calls.jsonl`.
+10. Render the verdict with `uv run quorum show <run-or-batch-id>`.
 
 ## Contribution Rules
 

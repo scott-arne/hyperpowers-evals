@@ -249,6 +249,24 @@ a misaligned test.
 
 ---
 
+## Pi Capture Triage
+
+Pi raw sessions are run-local at `<run>/coding-agent-config/sessions/*.jsonl`.
+If a Pi run is indeterminate before post-checks, distinguish:
+
+- no new `*.jsonl` file: Pi did not launch or wrote outside the isolated
+  session dir;
+- new `*.jsonl` with malformed first row, missing `type: "session"`, or
+  missing `cwd`: Pi log shape/config changed;
+- new `*.jsonl` whose first-row `cwd` differs from the launch cwd:
+  `qa-agent-misconfigured`; the QA agent likely skipped the generated
+  launcher;
+- matching first-row `cwd` but empty `coding-agent-tool-calls.jsonl`: Pi ran
+  but produced no normalized tool calls, or the normalizer no longer matches
+  Pi's JSONL shape.
+
+---
+
 ## When attribution is ambiguous
 
 The most common ambiguity is Pattern 2 vs Pattern 4 — both produce
