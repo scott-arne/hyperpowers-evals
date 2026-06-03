@@ -10,36 +10,86 @@ if [ -z "${QUORUM_RUN_DIR:-}" ]; then
     exit 1
 fi
 
+if [ -z "${SUPERPOWERS_ROOT:-}" ]; then
+    record_fail "SUPERPOWERS_ROOT is not set"
+    exit 1
+fi
+
 KIMI_HOME_DIR="$QUORUM_RUN_DIR/coding-agent-config"
 INSTALLED="$KIMI_HOME_DIR/plugins/installed.json"
+MANAGED_ROOT="$KIMI_HOME_DIR/plugins/managed/superpowers"
 
 test -f "$INSTALLED" || { record_fail "missing Kimi installed.json at $INSTALLED"; exit 1; }
+
+PLUGIN_COUNT=$(
+    jq -r '
+      [.plugins[]? | select(.id == "superpowers" and .enabled == true)]
+      | length
+    ' "$INSTALLED"
+)
+
+if [ "$PLUGIN_COUNT" -ne 1 ]; then
+    record_fail "expected exactly one enabled Superpowers plugin in $INSTALLED; found $PLUGIN_COUNT"
+    exit 1
+fi
+
+PLUGIN_SOURCE=$(
+    jq -r '
+      .plugins[]?
+      | select(.id == "superpowers" and .enabled == true)
+      | .source // ""
+    ' "$INSTALLED"
+)
+
+if [ "$PLUGIN_SOURCE" != "local-path" ]; then
+    record_fail "Kimi Superpowers plugin source must be local-path; found ${PLUGIN_SOURCE:-missing}"
+    exit 1
+fi
 
 PLUGIN_ROOT=$(
     jq -r '
       .plugins[]
-      | select(.id == "superpowers" and .enabled == true and .source == "local")
+      | select(.id == "superpowers" and .enabled == true)
       | .root
-    ' "$INSTALLED" | head -1
+    ' "$INSTALLED"
 )
 
 if [ -z "$PLUGIN_ROOT" ] || [ "$PLUGIN_ROOT" = "null" ]; then
-    record_fail "local enabled Superpowers plugin missing from $INSTALLED"
+    record_fail "enabled local-path Superpowers plugin root missing from $INSTALLED"
+    exit 1
+fi
+
+PLUGIN_ROOT_REAL=$(realpath "$PLUGIN_ROOT" 2>/dev/null) || {
+    record_fail "Kimi Superpowers plugin root does not resolve: $PLUGIN_ROOT"
+    exit 1
+}
+EXPECTED_ROOT_REAL=$(realpath "$SUPERPOWERS_ROOT" 2>/dev/null) || {
+    record_fail "SUPERPOWERS_ROOT does not resolve: $SUPERPOWERS_ROOT"
+    exit 1
+}
+
+if [ "$PLUGIN_ROOT_REAL" != "$EXPECTED_ROOT_REAL" ]; then
+    record_fail "Kimi Superpowers plugin root $PLUGIN_ROOT_REAL does not match SUPERPOWERS_ROOT $EXPECTED_ROOT_REAL"
+    exit 1
+fi
+
+if [ -e "$MANAGED_ROOT" ]; then
+    record_fail "Kimi Superpowers plugin must not use copied managed plugin root $MANAGED_ROOT"
     exit 1
 fi
 
 missing=()
 for path in \
-    "$PLUGIN_ROOT/.kimi-plugin/plugin.json" \
-    "$PLUGIN_ROOT/skills/using-superpowers/SKILL.md"
+    "$PLUGIN_ROOT_REAL/.kimi-plugin/plugin.json" \
+    "$PLUGIN_ROOT_REAL/skills/using-superpowers/SKILL.md"
 do
     if [ ! -f "$path" ]; then
-        missing+=("${path#$PLUGIN_ROOT/}")
+        missing+=("${path#$PLUGIN_ROOT_REAL/}")
     fi
 done
 
 if [ "${#missing[@]}" -eq 0 ]; then
-    record_pass "Kimi Superpowers plugin configured from $PLUGIN_ROOT"
+    record_pass "Kimi local-path Superpowers plugin configured from $PLUGIN_ROOT_REAL"
 else
     detail=""
     for rel in "${missing[@]}"; do

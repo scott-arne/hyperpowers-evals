@@ -563,15 +563,16 @@ def test_antigravity_plugin_installed_fails_when_skill_missing(tmp_path):
     assert "using-superpowers" in rec["detail"]
 
 
-def test_kimi_plugin_installed_passes(tmp_path):
-    run_dir = tmp_path / "run"
-    workdir = run_dir / "coding-agent-workdir"
-    workdir.mkdir(parents=True)
-    superpowers = tmp_path / "superpowers"
-    (superpowers / ".kimi-plugin").mkdir(parents=True)
-    (superpowers / "skills" / "using-superpowers").mkdir(parents=True)
-    (superpowers / ".kimi-plugin" / "plugin.json").write_text("{}")
-    (superpowers / "skills" / "using-superpowers" / "SKILL.md").write_text("skill")
+def _make_kimi_superpowers_root(root: Path, *, include_skill: bool = True) -> Path:
+    (root / ".kimi-plugin").mkdir(parents=True)
+    (root / ".kimi-plugin" / "plugin.json").write_text("{}")
+    if include_skill:
+        (root / "skills" / "using-superpowers").mkdir(parents=True)
+        (root / "skills" / "using-superpowers" / "SKILL.md").write_text("skill")
+    return root
+
+
+def _write_kimi_installed(run_dir: Path, root: Path, *, source: str = "local-path") -> None:
     plugins_dir = run_dir / "coding-agent-config" / "plugins"
     plugins_dir.mkdir(parents=True)
     (plugins_dir / "installed.json").write_text(
@@ -581,8 +582,8 @@ def test_kimi_plugin_installed_passes(tmp_path):
                 "plugins": [
                     {
                         "id": "superpowers",
-                        "root": str(superpowers),
-                        "source": "local",
+                        "root": str(root),
+                        "source": source,
                         "enabled": True,
                     }
                 ],
@@ -590,19 +591,33 @@ def test_kimi_plugin_installed_passes(tmp_path):
         )
         + "\n"
     )
-    sink = tmp_path / "s"
 
-    result = subprocess.run(
+
+def _run_kimi_plugin_installed(run_dir: Path, workdir: Path, sink: Path, superpowers: Path):
+    return subprocess.run(
         [str(BIN / "kimi-plugin-installed")],
         cwd=workdir,
         env={
             "PATH": f"{BIN}:/usr/bin:/bin",
             "QUORUM_RECORD_SINK": str(sink),
             "QUORUM_RUN_DIR": str(run_dir),
+            "SUPERPOWERS_ROOT": str(superpowers),
         },
         capture_output=True,
         text=True,
     )
+
+
+def test_kimi_plugin_installed_passes(tmp_path):
+    run_dir = tmp_path / "run"
+    workdir = run_dir / "coding-agent-workdir"
+    workdir.mkdir(parents=True)
+    superpowers = tmp_path / "superpowers"
+    _make_kimi_superpowers_root(superpowers)
+    _write_kimi_installed(run_dir, superpowers)
+    sink = tmp_path / "s"
+
+    result = _run_kimi_plugin_installed(run_dir, workdir, sink, superpowers)
 
     assert result.returncode == 0
     assert len(sink.read_text().splitlines()) == 1
@@ -614,45 +629,73 @@ def test_kimi_plugin_installed_fails_when_skill_missing(tmp_path):
     workdir = run_dir / "coding-agent-workdir"
     workdir.mkdir(parents=True)
     superpowers = tmp_path / "superpowers"
-    (superpowers / ".kimi-plugin").mkdir(parents=True)
-    (superpowers / ".kimi-plugin" / "plugin.json").write_text("{}")
-    plugins_dir = run_dir / "coding-agent-config" / "plugins"
-    plugins_dir.mkdir(parents=True)
-    (plugins_dir / "installed.json").write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "plugins": [
-                    {
-                        "id": "superpowers",
-                        "root": str(superpowers),
-                        "source": "local",
-                        "enabled": True,
-                    }
-                ],
-            }
-        )
-        + "\n"
-    )
+    _make_kimi_superpowers_root(superpowers, include_skill=False)
+    _write_kimi_installed(run_dir, superpowers)
     sink = tmp_path / "s"
 
-    result = subprocess.run(
-        [str(BIN / "kimi-plugin-installed")],
-        cwd=workdir,
-        env={
-            "PATH": f"{BIN}:/usr/bin:/bin",
-            "QUORUM_RECORD_SINK": str(sink),
-            "QUORUM_RUN_DIR": str(run_dir),
-        },
-        capture_output=True,
-        text=True,
-    )
+    result = _run_kimi_plugin_installed(run_dir, workdir, sink, superpowers)
 
     assert result.returncode != 0
     assert len(sink.read_text().splitlines()) == 1
     rec = _r(sink)
     assert not rec["passed"]
     assert "using-superpowers" in rec["detail"]
+
+
+def test_kimi_plugin_installed_fails_when_source_is_local(tmp_path):
+    run_dir = tmp_path / "run"
+    workdir = run_dir / "coding-agent-workdir"
+    workdir.mkdir(parents=True)
+    superpowers = tmp_path / "superpowers"
+    _make_kimi_superpowers_root(superpowers)
+    _write_kimi_installed(run_dir, superpowers, source="local")
+    sink = tmp_path / "s"
+
+    result = _run_kimi_plugin_installed(run_dir, workdir, sink, superpowers)
+
+    assert result.returncode != 0
+    rec = _r(sink)
+    assert not rec["passed"]
+    assert "local-path" in rec["detail"]
+
+
+def test_kimi_plugin_installed_fails_when_root_mismatches_superpowers_root(tmp_path):
+    run_dir = tmp_path / "run"
+    workdir = run_dir / "coding-agent-workdir"
+    workdir.mkdir(parents=True)
+    installed_root = tmp_path / "installed-superpowers"
+    expected_root = tmp_path / "expected-superpowers"
+    _make_kimi_superpowers_root(installed_root)
+    _make_kimi_superpowers_root(expected_root)
+    _write_kimi_installed(run_dir, installed_root)
+    sink = tmp_path / "s"
+
+    result = _run_kimi_plugin_installed(run_dir, workdir, sink, expected_root)
+
+    assert result.returncode != 0
+    rec = _r(sink)
+    assert not rec["passed"]
+    assert "SUPERPOWERS_ROOT" in rec["detail"]
+
+
+def test_kimi_plugin_installed_fails_when_managed_copy_exists(tmp_path):
+    run_dir = tmp_path / "run"
+    workdir = run_dir / "coding-agent-workdir"
+    workdir.mkdir(parents=True)
+    superpowers = tmp_path / "superpowers"
+    _make_kimi_superpowers_root(superpowers)
+    _write_kimi_installed(run_dir, superpowers)
+    (run_dir / "coding-agent-config" / "plugins" / "managed" / "superpowers").mkdir(
+        parents=True
+    )
+    sink = tmp_path / "s"
+
+    result = _run_kimi_plugin_installed(run_dir, workdir, sink, superpowers)
+
+    assert result.returncode != 0
+    rec = _r(sink)
+    assert not rec["passed"]
+    assert "managed" in rec["detail"]
 
 
 # worktree-created — semantic check that passes for either Claude
