@@ -62,6 +62,7 @@ def test_sanitized_env_drops_host_state(monkeypatch, tmp_path):
     assert env["XDG_CONFIG_HOME"] == str(kimi_home / "xdg-config")
     assert env["XDG_CACHE_HOME"] == str(kimi_home / "xdg-cache")
     assert env["XDG_DATA_HOME"] == str(kimi_home / "xdg-data")
+    assert "PWD" not in env
     assert "MOONSHOT_API_KEY" not in env
 
 

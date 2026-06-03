@@ -69,7 +69,6 @@ def build_kimi_subprocess_env(
     out["XDG_CONFIG_HOME"] = str(kimi_home / "xdg-config")
     out["XDG_CACHE_HOME"] = str(kimi_home / "xdg-cache")
     out["XDG_DATA_HOME"] = str(kimi_home / "xdg-data")
-    out["PWD"] = str(cwd)
     return out
 
 
