@@ -1,5 +1,6 @@
 # tests/quorum/test_runner.py
 import json
+import os
 import shutil
 import stat
 import subprocess
@@ -169,6 +170,15 @@ def _make_gemini_superpowers_root(tmp_path: Path) -> Path:
     return root
 
 
+def _write_gemini_extension_metadata(cfg: Path) -> None:
+    (cfg / ".gemini" / "extensions" / "superpowers").mkdir(parents=True)
+    (
+        cfg / ".gemini" / "extensions" / "superpowers" / ".gemini-extension-install.json"
+    ).write_text("{}")
+    (cfg / ".gemini" / "extensions" / "extension-enablement.json").write_text("{}")
+    (cfg / ".gemini" / "extension_integrity.json").write_text("{}")
+
+
 def _stub_gauntlet_pass(*, run_dir, **kwargs):
     (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
     return "pass"
@@ -275,6 +285,92 @@ def test_gemini_launch_agent_is_substituted(tmp_path):
     assert "GEMINI_CLI_HOME=" in content
     assert ".gemini-env" in content
     assert "--skip-trust --approval-mode=yolo" in content
+
+
+def test_gemini_launch_agent_handles_shell_sensitive_paths(tmp_path):
+    coding_agents_dir = tmp_path / "coding-agents"
+    scenarios_dir = tmp_path / "scenarios"
+    session_log_dir = tmp_path / "logs"
+    session_log_dir.mkdir()
+    _make_gemini_agent(coding_agents_dir, session_log_dir)
+    shutil.copy2(
+        Path(__file__).resolve().parents[2]
+        / "coding-agents"
+        / "gemini-context"
+        / "launch-agent",
+        coding_agents_dir / "gemini-context" / "launch-agent",
+    )
+    launch_cwd = tmp_path / 'cwd-$HOME-"quoted"'
+    launch_cwd.mkdir()
+
+    sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+    (sd / "setup.sh").write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        f"printf '%s\\n' '{launch_cwd}' > \"$QUORUM_WORKDIR/.quorum-launch-cwd\"\n"
+        "touch marker\n"
+    )
+    sd.joinpath("setup.sh").chmod(sd.joinpath("setup.sh").stat().st_mode | stat.S_IXUSR)
+    (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+    out_root = tmp_path / "results"
+
+    def fake_seed(gemini_home: Path, _workdir: Path) -> None:
+        gemini_home.mkdir(parents=True, exist_ok=True)
+        (gemini_home / ".gemini-env").write_text("GEMINI_API_KEY='launch key'\n")
+
+    with (
+        patch("quorum.runner._seed_gemini_config", side_effect=fake_seed),
+        patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass),
+    ):
+        run_scenario(
+            scenario_dir=sd,
+            coding_agent="gemini",
+            coding_agents_dir=coding_agents_dir,
+            out_root=out_root,
+            skeleton_root=_empty_skeleton(tmp_path),
+        )
+
+    rd = next(out_root.iterdir())
+    shim = rd / "gauntlet-agent" / "context" / "launch-agent"
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    capture_path = tmp_path / "gemini-capture.json"
+    _exec(
+        fake_bin / "gemini",
+        "#!/usr/bin/env python3\n"
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "Path(os.environ['FAKE_GEMINI_CAPTURE']).write_text(json.dumps({\n"
+        "    'args': sys.argv[1:],\n"
+        "    'auth': os.environ.get('GEMINI_DEFAULT_AUTH_TYPE'),\n"
+        "    'cwd': os.getcwd(),\n"
+        "    'home': os.environ.get('GEMINI_CLI_HOME'),\n"
+        "    'key': os.environ.get('GEMINI_API_KEY'),\n"
+        "    'trust': os.environ.get('GEMINI_CLI_TRUST_WORKSPACE'),\n"
+        "}))\n",
+    )
+
+    result = subprocess.run(
+        [str(shim), "--probe", "two words"],
+        text=True,
+        capture_output=True,
+        env={
+            **os.environ,
+            "FAKE_GEMINI_CAPTURE": str(capture_path),
+            "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"],
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    record = json.loads(capture_path.read_text())
+    assert record == {
+        "args": ["--skip-trust", "--approval-mode=yolo", "--probe", "two words"],
+        "auth": "gemini-api-key",
+        "cwd": str(launch_cwd),
+        "home": str(rd / "coding-agent-config"),
+        "key": "launch key",
+        "trust": "true",
+    }
 
 
 def test_antigravity_launch_uses_visible_alias_for_hidden_cwd(tmp_path, monkeypatch):
@@ -510,6 +606,28 @@ class TestSeedAgentConfigDir:
         assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
         assert env_file.read_text() == "GEMINI_API_KEY='test-'\"'\"'key'\n"
 
+    def test_gemini_env_file_uses_restrictive_open_mode(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        real_open = os.open
+        seen: dict[str, int] = {}
+
+        def capture_open(path, flags, mode=0o777):
+            seen["flags"] = flags
+            seen["mode"] = mode
+            return real_open(path, flags, mode)
+
+        with patch("quorum.runner.os.open", side_effect=capture_open):
+            env_file = _write_gemini_env_file(tmp_path / "cfg")
+
+        assert env_file.read_text() == "GEMINI_API_KEY='test-key'\n"
+        assert seen["mode"] == 0o600
+        assert seen["flags"] & os.O_WRONLY
+        assert seen["flags"] & os.O_CREAT
+        assert seen["flags"] & os.O_TRUNC
+        assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
+
     def test_gemini_seed_links_extension_lists_it_and_verifies_metadata(
         self, tmp_path, monkeypatch
     ):
@@ -526,19 +644,10 @@ class TestSeedAgentConfigDir:
             assert kwargs["env"]["GEMINI_DEFAULT_AUTH_TYPE"] == "gemini-api-key"
             if cmd[:3] == ["gemini", "extensions", "link"]:
                 assert cmd == ["gemini", "extensions", "link", str(sp), "--consent"]
-                (cfg / ".gemini" / "extensions" / "superpowers").mkdir(parents=True)
-                (
-                    cfg
-                    / ".gemini"
-                    / "extensions"
-                    / "superpowers"
-                    / ".gemini-extension-install.json"
-                ).write_text("{}")
-                (cfg / ".gemini" / "extensions" / "extension-enablement.json").write_text("{}")
-                (cfg / ".gemini" / "extension_integrity.json").write_text("{}")
+                _write_gemini_extension_metadata(cfg)
                 return subprocess.CompletedProcess(cmd, 0, "", "")
             assert cmd == ["gemini", "extensions", "list"]
-            return subprocess.CompletedProcess(cmd, 0, "superpowers\n", "")
+            return subprocess.CompletedProcess(cmd, 0, "superpowers (5.1.0)\t/path\tenabled\n", "")
 
         with patch("quorum.runner.subprocess.run", side_effect=fake_run) as mock_run:
             _seed_gemini_config(cfg, tmp_path / "wd")
@@ -547,6 +656,104 @@ class TestSeedAgentConfigDir:
         assert (cfg / ".gemini" / "settings.json").exists()
         assert (cfg / ".gemini-env").exists()
         assert _gemini_transcripts(cfg) == []
+
+    def test_gemini_seed_redacts_api_key_from_link_failure(
+        self, tmp_path, monkeypatch
+    ):
+        sp = _make_gemini_superpowers_root(tmp_path)
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
+        monkeypatch.setenv("GEMINI_API_KEY", "test-secret-key")
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/gemini")
+
+        with (
+            patch(
+                "quorum.runner.subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    ["gemini", "extensions", "link"], 1, "", "bad test-secret-key"
+                ),
+            ),
+            pytest.raises(RunnerError) as excinfo,
+        ):
+            _seed_gemini_config(tmp_path / "cfg", tmp_path / "wd")
+
+        assert excinfo.value.stage == "setup"
+        assert "extensions link failed" in str(excinfo.value)
+        assert "test-secret-key" not in str(excinfo.value)
+
+    def test_gemini_seed_redacts_api_key_from_list_failure(
+        self, tmp_path, monkeypatch
+    ):
+        sp = _make_gemini_superpowers_root(tmp_path)
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
+        monkeypatch.setenv("GEMINI_API_KEY", "test-secret-key")
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/gemini")
+        cfg = tmp_path / "cfg"
+
+        def fake_run(cmd, **_kwargs):
+            if cmd[:3] == ["gemini", "extensions", "link"]:
+                _write_gemini_extension_metadata(cfg)
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return subprocess.CompletedProcess(cmd, 1, "", "bad test-secret-key")
+
+        with (
+            patch("quorum.runner.subprocess.run", side_effect=fake_run),
+            pytest.raises(RunnerError) as excinfo,
+        ):
+            _seed_gemini_config(cfg, tmp_path / "wd")
+
+        assert excinfo.value.stage == "setup"
+        assert "extensions list failed" in str(excinfo.value)
+        assert "test-secret-key" not in str(excinfo.value)
+
+    def test_gemini_seed_rejects_substring_extension_list_match(
+        self, tmp_path, monkeypatch
+    ):
+        sp = _make_gemini_superpowers_root(tmp_path)
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
+        monkeypatch.setenv("GEMINI_API_KEY", "test-secret-key")
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/gemini")
+        cfg = tmp_path / "cfg"
+
+        def fake_run(cmd, **_kwargs):
+            if cmd[:3] == ["gemini", "extensions", "link"]:
+                _write_gemini_extension_metadata(cfg)
+                return subprocess.CompletedProcess(cmd, 0, "", "")
+            return subprocess.CompletedProcess(
+                cmd, 0, "not-superpowers (1.0.0)\t/path\tenabled\n", ""
+            )
+
+        with (
+            patch("quorum.runner.subprocess.run", side_effect=fake_run),
+            pytest.raises(RunnerError) as excinfo,
+        ):
+            _seed_gemini_config(cfg, tmp_path / "wd")
+
+        assert excinfo.value.stage == "setup"
+        assert "did not show Superpowers extension" in str(excinfo.value)
+        assert "test-secret-key" not in str(excinfo.value)
+
+    def test_gemini_seed_reports_missing_metadata_without_api_key(
+        self, tmp_path, monkeypatch
+    ):
+        sp = _make_gemini_superpowers_root(tmp_path)
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
+        monkeypatch.setenv("GEMINI_API_KEY", "test-secret-key")
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/gemini")
+
+        def fake_run(cmd, **_kwargs):
+            return subprocess.CompletedProcess(
+                cmd, 0, "superpowers (5.1.0)\t/path\tenabled\n", ""
+            )
+
+        with (
+            patch("quorum.runner.subprocess.run", side_effect=fake_run),
+            pytest.raises(RunnerError) as excinfo,
+        ):
+            _seed_gemini_config(tmp_path / "cfg", tmp_path / "wd")
+
+        assert excinfo.value.stage == "setup"
+        assert "expected metadata files are missing" in str(excinfo.value)
+        assert "test-secret-key" not in str(excinfo.value)
 
     def test_gemini_seed_fails_when_provisioning_creates_transcripts(
         self, tmp_path, monkeypatch
@@ -559,21 +766,12 @@ class TestSeedAgentConfigDir:
 
         def fake_run(cmd, **_kwargs):
             if cmd[:3] == ["gemini", "extensions", "link"]:
-                (cfg / ".gemini" / "extensions" / "superpowers").mkdir(parents=True)
-                (
-                    cfg
-                    / ".gemini"
-                    / "extensions"
-                    / "superpowers"
-                    / ".gemini-extension-install.json"
-                ).write_text("{}")
-                (cfg / ".gemini" / "extensions" / "extension-enablement.json").write_text("{}")
-                (cfg / ".gemini" / "extension_integrity.json").write_text("{}")
+                _write_gemini_extension_metadata(cfg)
                 transcript_dir = cfg / ".gemini" / "tmp" / "session" / "chats"
                 transcript_dir.mkdir(parents=True)
                 (transcript_dir / "chat.jsonl").write_text("{}\n")
                 return subprocess.CompletedProcess(cmd, 0, "", "")
-            return subprocess.CompletedProcess(cmd, 0, "superpowers\n", "")
+            return subprocess.CompletedProcess(cmd, 0, "superpowers (5.1.0)\t/path\tenabled\n", "")
 
         with (
             patch("quorum.runner.subprocess.run", side_effect=fake_run),

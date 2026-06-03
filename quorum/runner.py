@@ -33,6 +33,7 @@ import dataclasses
 import datetime as _dt
 import json
 import os
+import re
 import secrets
 import shutil
 import stat
@@ -192,14 +193,35 @@ def _shell_single_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
+def _gemini_stderr_excerpt(stderr: str) -> str:
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    excerpt = stderr.strip()[:300]
+    if api_key:
+        excerpt = excerpt.replace(api_key, "[redacted]")
+    return excerpt
+
+
+def _gemini_extension_list_shows_superpowers(stdout: str) -> bool:
+    return any(
+        re.match(r"^\s*superpowers(?:\s|\(|$)", line, flags=re.IGNORECASE)
+        for line in stdout.splitlines()
+    )
+
+
 def _write_gemini_env_file(gemini_home: Path) -> Path:
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         raise RunnerError("GEMINI_API_KEY not set; cannot seed Gemini auth", stage="setup")
     env_file = gemini_home / GEMINI_ENV_FILE_NAME
     env_file.parent.mkdir(parents=True, exist_ok=True)
-    env_file.write_text("GEMINI_API_KEY=" + _shell_single_quote(api_key) + "\n")
-    env_file.chmod(0o600)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(env_file, flags, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write("GEMINI_API_KEY=" + _shell_single_quote(api_key) + "\n")
+        f.flush()
+        os.fchmod(f.fileno(), 0o600)
     return env_file
 
 
@@ -251,7 +273,7 @@ def _seed_gemini_config(gemini_home: Path, workdir: Path) -> None:
     if link.returncode != 0:
         raise RunnerError(
             "gemini extensions link failed "
-            f"(exit {link.returncode}); stderr: {link.stderr.strip()[:300]}",
+            f"(exit {link.returncode}); stderr: {_gemini_stderr_excerpt(link.stderr)}",
             stage="setup",
         )
 
@@ -266,10 +288,10 @@ def _seed_gemini_config(gemini_home: Path, workdir: Path) -> None:
     if listing.returncode != 0:
         raise RunnerError(
             "gemini extensions list failed "
-            f"(exit {listing.returncode}); stderr: {listing.stderr.strip()[:300]}",
+            f"(exit {listing.returncode}); stderr: {_gemini_stderr_excerpt(listing.stderr)}",
             stage="setup",
         )
-    if "superpowers" not in listing.stdout.lower():
+    if not _gemini_extension_list_shows_superpowers(listing.stdout):
         raise RunnerError(
             "gemini extensions list did not show Superpowers extension",
             stage="setup",
@@ -799,7 +821,7 @@ def _copy_with_substitutions(src: Path, dst: Path, subs: dict[str, str]) -> None
         # Non-text fixture file (image, binary). Copy as-is.
         shutil.copy2(src, dst)
         return
-    for placeholder, value in subs.items():
+    for placeholder, value in sorted(subs.items(), key=lambda item: len(item[0]), reverse=True):
         content = content.replace(placeholder, value)
     dst.write_text(content)
     # A shebang'd template (e.g. the launch-agent shim) must stay executable
@@ -934,6 +956,11 @@ def _run_scenario_inner(
     }
     if tcfg.name == "gemini":
         substitutions["$GEMINI_ENV_FILE"] = str(agent_config_dir / GEMINI_ENV_FILE_NAME)
+        substitutions["$QUORUM_AGENT_CWD_SH"] = _shell_single_quote(str(launch_cwd))
+        substitutions["$GEMINI_ENV_FILE_SH"] = _shell_single_quote(
+            str(agent_config_dir / GEMINI_ENV_FILE_NAME)
+        )
+        substitutions[f"${tcfg.agent_config_env}_SH"] = _shell_single_quote(str(agent_config_dir))
     _populate_context_dir(
         coding_agents_dir,
         coding_agent,
