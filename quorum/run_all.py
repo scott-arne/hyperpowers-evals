@@ -9,6 +9,7 @@ minimal batch index under results/batches/<id>/.
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import subprocess
 import threading
@@ -28,7 +29,9 @@ from rich.panel import Panel
 from rich.text import Text
 
 from quorum.checks import parse_coding_agents_directive
-from quorum.runner import ANTIGRAVITY_RATE_LIMIT_MARKER
+from quorum.composer import RunError
+from quorum.kimi import effective_kimi_model_env, run_kimi_auth_preflight
+from quorum.runner import ANTIGRAVITY_RATE_LIMIT_MARKER, _allocate_run_dir, _write_indeterminate
 from quorum.show import _fmt_cost
 
 
@@ -171,6 +174,7 @@ def invoke_child(
     coding_agents_dir: Path,
     out_root: Path,
     timeout_seconds: float | None = None,
+    extra_env: dict[str, str] | None = None,
 ) -> ChildResult:
     """Run one `quorum run` as a subprocess; capture its run-id line.
 
@@ -196,6 +200,7 @@ def invoke_child(
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
+            env={**os.environ, **(extra_env or {})},
         )
     except subprocess.TimeoutExpired:
         return ChildResult(run_id=None, exit_code=-1, error="child timed out")
@@ -208,6 +213,58 @@ def invoke_child(
             error=f"child did not print run-id (exit {completed.returncode})",
         )
     return ChildResult(run_id=run_id, exit_code=completed.returncode, error=None)
+
+
+def prepare_kimi_batch_preflight(*, batch_dir: Path, coding_agents_dir: Path) -> dict[str, str]:
+    """Run Kimi auth/model preflight once for a run-all batch.
+
+    Children receive the returned marker env so they can skip their direct
+    preflight while still validating that the parent actually prepared the
+    batch.
+    """
+    kimi_yaml = coding_agents_dir / "kimi.yaml"
+    if not kimi_yaml.exists():
+        return {}
+    kimi_env = effective_kimi_model_env(os.environ)
+    run_kimi_auth_preflight(
+        kimi_binary="kimi",
+        kimi_model_env=kimi_env,
+        base_env=os.environ,
+    )
+    marker = batch_dir / "kimi-preflight-ok.json"
+    marker.write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "agent": "kimi",
+                "model": kimi_env["KIMI_MODEL_NAME"],
+                "provider": kimi_env["KIMI_MODEL_PROVIDER_TYPE"],
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    return {"QUORUM_KIMI_PREFLIGHT_SENTINEL": str(marker)}
+
+
+def _write_setup_indeterminate_run(
+    *,
+    out_root: Path,
+    scenario: str,
+    coding_agent: str,
+    message: str,
+) -> str:
+    run_dir = _allocate_run_dir(
+        out_root=out_root,
+        scenario_name=scenario,
+        coding_agent=coding_agent,
+    )
+    _write_indeterminate(
+        run_dir,
+        final_reason=f"coding-agent batch preflight failed: {message}",
+        error=RunError(stage="setup", message=message[:500]),
+    )
+    return run_dir.name
 
 
 def _make_batch_id(now: datetime | None = None) -> str:
@@ -503,6 +560,36 @@ def run_batch(
     # results.jsonl writes (which happen on the main futures-completion
     # thread, but a lock is cheap insurance).
     print_lock = threading.Lock()
+    preflight_env_by_agent: dict[str, dict[str, str]] = {}
+
+    kimi_entries = [(idx, entry) for idx, entry in runnable_indexed if entry.coding_agent == "kimi"]
+    if kimi_entries:
+        try:
+            preflight_env_by_agent["kimi"] = prepare_kimi_batch_preflight(
+                batch_dir=batch_dir,
+                coding_agents_dir=coding_agents_dir,
+            )
+        except Exception as e:
+            message = str(e)
+            for idx, entry in kimi_entries:
+                run_id = _write_setup_indeterminate_run(
+                    out_root=out_root,
+                    scenario=entry.scenario,
+                    coding_agent=entry.coding_agent,
+                    message=message,
+                )
+                progress.finished(idx, "indeterminate")
+                append_result_record(
+                    batch_dir=batch_dir,
+                    scenario=entry.scenario,
+                    coding_agent=entry.coding_agent,
+                    run_id=run_id,
+                    skipped=None,
+                )
+            runnable_indexed = [
+                (idx, entry) for idx, entry in runnable_indexed if entry.coding_agent != "kimi"
+            ]
+
     # Mutable cell so the nested _drain closure can accumulate the batch cost.
     batch_cost_total = [0.0]
     # Agents that hit their rate-limit window this batch; once latched, their
@@ -541,6 +628,7 @@ def run_batch(
             coding_agent=entry.coding_agent,
             coding_agents_dir=coding_agents_dir,
             out_root=out_root,
+            extra_env=preflight_env_by_agent.get(entry.coding_agent),
         )
         if result.run_id and _is_rate_limited_verdict(_read_verdict(out_root / result.run_id)):
             with rate_limit_lock:

@@ -1297,6 +1297,8 @@ class TestSeedAgentConfigDir:
     def test_kimi_seed_skips_auth_preflight_with_sentinel(self, tmp_path, monkeypatch):
         superpowers = _make_kimi_superpowers_root(tmp_path)
         monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/kimi")
+        sentinel = tmp_path / "sentinel.json"
+        sentinel.write_text("{}\n")
 
         with (
             patch.dict(
@@ -1305,7 +1307,7 @@ class TestSeedAgentConfigDir:
                     "PATH": "/usr/bin:/bin",
                     "SUPERPOWERS_ROOT": str(superpowers),
                     "KIMI_MODEL_API_KEY": "fake-kimi-key",
-                    "QUORUM_KIMI_PREFLIGHT_SENTINEL": str(tmp_path / "sentinel.json"),
+                    "QUORUM_KIMI_PREFLIGHT_SENTINEL": str(sentinel),
                 },
                 clear=True,
             ),
@@ -1314,6 +1316,29 @@ class TestSeedAgentConfigDir:
             _seed_kimi_config(tmp_path / "cfg", run_dir=tmp_path / "run")
 
             mock_preflight.assert_not_called()
+
+    def test_kimi_seed_requires_existing_preflight_sentinel(self, tmp_path, monkeypatch):
+        superpowers = _make_kimi_superpowers_root(tmp_path)
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/kimi")
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "PATH": "/usr/bin:/bin",
+                    "SUPERPOWERS_ROOT": str(superpowers),
+                    "KIMI_MODEL_API_KEY": "fake-kimi-key",
+                    "QUORUM_KIMI_PREFLIGHT_SENTINEL": str(tmp_path / "missing-sentinel.json"),
+                },
+                clear=True,
+            ),
+            patch("quorum.runner.run_kimi_auth_preflight") as mock_preflight,
+            pytest.raises(RunnerError, match="Kimi preflight sentinel missing") as excinfo,
+        ):
+            _seed_kimi_config(tmp_path / "cfg", run_dir=tmp_path / "run")
+
+        assert excinfo.value.stage == "setup"
+        mock_preflight.assert_not_called()
 
     def test_kimi_seed_requires_superpowers_root(self, tmp_path, monkeypatch):
         monkeypatch.delenv("SUPERPOWERS_ROOT", raising=False)

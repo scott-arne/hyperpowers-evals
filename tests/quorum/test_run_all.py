@@ -174,6 +174,22 @@ def test_invoke_child_parses_run_id_from_stdout(tmp_path):
     assert "--out-root" in cmd
 
 
+def test_invoke_child_merges_extra_env(tmp_path):
+    fake_stdout = "run-id: foo-kimi-20260526T180001Z-abcd\n"
+    completed = CompletedProcess(args=[], returncode=0, stdout=fake_stdout, stderr="")
+    with patch("quorum.run_all.subprocess.run", return_value=completed) as mock:
+        invoke_child(
+            scenario_dir=tmp_path / "foo",
+            coding_agent="kimi",
+            coding_agents_dir=tmp_path / "agents",
+            out_root=tmp_path / "results",
+            extra_env={"QUORUM_KIMI_PREFLIGHT_SENTINEL": str(tmp_path / "sentinel.json")},
+        )
+
+    env = mock.call_args.kwargs["env"]
+    assert env["QUORUM_KIMI_PREFLIGHT_SENTINEL"] == str(tmp_path / "sentinel.json")
+
+
 def test_invoke_child_records_nonzero_exit_with_run_id_when_present(tmp_path):
     """A fail verdict exits 1 but still emits run-id. We record both."""
     completed = CompletedProcess(
@@ -324,7 +340,13 @@ def test_run_batch_writes_skipped_then_runnable(tmp_path, capsys):
     out_root = tmp_path / "results"
 
     def fake_invoke(
-        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+        *,
+        scenario_dir,
+        coding_agent,
+        coding_agents_dir,
+        out_root,
+        extra_env=None,
+        timeout_seconds=None,
     ):
         return ChildResult(
             run_id=f"{scenario_dir.name}-{coding_agent}-fakerun",
@@ -369,7 +391,13 @@ def test_run_batch_writes_batch_json_header_and_footer(tmp_path):
     out_root = tmp_path / "results"
 
     def fake_invoke(
-        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+        *,
+        scenario_dir,
+        coding_agent,
+        coding_agents_dir,
+        out_root,
+        extra_env=None,
+        timeout_seconds=None,
     ):
         return ChildResult(run_id="alpha-claude-fake", exit_code=0, error=None)
 
@@ -401,7 +429,13 @@ def test_run_batch_jobs_gt_one_runs_all_pairs(tmp_path):
     invocations: list[tuple[str, str]] = []
 
     def fake_invoke(
-        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+        *,
+        scenario_dir,
+        coding_agent,
+        coding_agents_dir,
+        out_root,
+        extra_env=None,
+        timeout_seconds=None,
     ):
         invocations.append((scenario_dir.name, coding_agent))
         return ChildResult(run_id=f"{scenario_dir.name}-{coding_agent}-x", exit_code=0, error=None)
@@ -443,7 +477,13 @@ def test_run_batch_serializes_capped_agent(tmp_path):
     state = {"agy_now": 0, "agy_max": 0}
 
     def fake_invoke(
-        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+        *,
+        scenario_dir,
+        coding_agent,
+        coding_agents_dir,
+        out_root,
+        extra_env=None,
+        timeout_seconds=None,
     ):
         if coding_agent == "antigravity":
             with lock:
@@ -483,7 +523,13 @@ def test_run_batch_does_not_serialize_uncapped_agent(tmp_path):
     state = {"now": 0, "max": 0}
 
     def fake_invoke(
-        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+        *,
+        scenario_dir,
+        coding_agent,
+        coding_agents_dir,
+        out_root,
+        extra_env=None,
+        timeout_seconds=None,
     ):
         with lock:
             state["now"] += 1
@@ -520,7 +566,13 @@ def test_run_batch_fail_fast_on_agy_rate_limit(tmp_path):
     invoked: list[tuple[str, str]] = []
 
     def fake_invoke(
-        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+        *,
+        scenario_dir,
+        coding_agent,
+        coding_agents_dir,
+        out_root,
+        extra_env=None,
+        timeout_seconds=None,
     ):
         invoked.append((scenario_dir.name, coding_agent))
         run_id = f"{scenario_dir.name}-{coding_agent}-x"
@@ -563,6 +615,85 @@ def test_run_batch_fail_fast_on_agy_rate_limit(tmp_path):
     assert all(r["run_id"] is None for r in rate_limited)
 
 
+def test_run_batch_preflights_kimi_once_for_multiple_cells(tmp_path):
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    _scenario(scenarios, "a")
+    _scenario(scenarios, "b")
+    _agent(agents, "kimi")
+    out_root = tmp_path / "results"
+    calls = {"preflight": 0}
+    child_envs = []
+
+    def fake_preflight(**_kwargs):
+        calls["preflight"] += 1
+        return {"QUORUM_KIMI_PREFLIGHT_SENTINEL": str(tmp_path / "sentinel.json")}
+
+    def fake_invoke(
+        *,
+        scenario_dir,
+        coding_agent,
+        coding_agents_dir,
+        out_root,
+        extra_env=None,
+        timeout_seconds=None,
+    ):
+        child_envs.append(extra_env or {})
+        return ChildResult(run_id=f"{scenario_dir.name}-{coding_agent}-x", exit_code=0, error=None)
+
+    with patch("quorum.run_all.prepare_kimi_batch_preflight", side_effect=fake_preflight):
+        run_batch(
+            scenarios_root=scenarios,
+            coding_agents_dir=agents,
+            out_root=out_root,
+            jobs=1,
+            agent_filter=["kimi"],
+            invoke=fake_invoke,
+            use_cursor=False,
+        )
+
+    assert calls["preflight"] == 1
+    assert len(child_envs) == 2
+    assert all("QUORUM_KIMI_PREFLIGHT_SENTINEL" in env for env in child_envs)
+
+
+def test_run_batch_kimi_preflight_failure_writes_indeterminate_runs(tmp_path):
+    scenarios = tmp_path / "scenarios"
+    agents = tmp_path / "agents"
+    _scenario(scenarios, "a")
+    _scenario(scenarios, "b")
+    _agent(agents, "kimi")
+    out_root = tmp_path / "results"
+
+    with patch(
+        "quorum.run_all.prepare_kimi_batch_preflight",
+        side_effect=RuntimeError("kimi auth failed"),
+    ):
+        batch_dir = run_batch(
+            scenarios_root=scenarios,
+            coding_agents_dir=agents,
+            out_root=out_root,
+            jobs=1,
+            agent_filter=["kimi"],
+            invoke=lambda **_kwargs: ChildResult(
+                run_id=None,
+                exit_code=99,
+                error="should not run",
+            ),
+            use_cursor=False,
+        )
+
+    records = [json.loads(line) for line in (batch_dir / "results.jsonl").read_text().splitlines()]
+    assert len(records) == 2
+    assert all(record["run_id"] for record in records)
+    verdicts = [
+        json.loads((out_root / record["run_id"] / "verdict.json").read_text()) for record in records
+    ]
+    assert all(v["final"] == "indeterminate" for v in verdicts)
+    assert all(v["error"]["stage"] == "setup" for v in verdicts)
+    assert all("kimi auth failed" in v["error"]["message"] for v in verdicts)
+
+
 def test_run_batch_scenario_filter_runs_only_named(tmp_path):
     """--scenarios narrows the batch to the named scenarios (resume support)."""
     scenarios = tmp_path / "scenarios"
@@ -575,7 +706,13 @@ def test_run_batch_scenario_filter_runs_only_named(tmp_path):
     invoked: list[str] = []
 
     def fake_invoke(
-        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+        *,
+        scenario_dir,
+        coding_agent,
+        coding_agents_dir,
+        out_root,
+        extra_env=None,
+        timeout_seconds=None,
     ):
         invoked.append(scenario_dir.name)
         return ChildResult(run_id=f"{scenario_dir.name}-claude-x", exit_code=0, error=None)
@@ -612,7 +749,13 @@ def test_run_batch_event_format_uses_total_denominator_and_skip_verb(tmp_path, c
     out_root = tmp_path / "results"
 
     def fake_invoke(
-        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+        *,
+        scenario_dir,
+        coding_agent,
+        coding_agents_dir,
+        out_root,
+        extra_env=None,
+        timeout_seconds=None,
     ):
         return ChildResult(
             run_id=f"{scenario_dir.name}-{coding_agent}-x",
@@ -685,7 +828,13 @@ def test_run_batch_renders_cost_column_and_batch_total(tmp_path, capsys, monkeyp
     out_root = tmp_path / "results"
 
     def fake_invoke(
-        *, scenario_dir, coding_agent, coding_agents_dir, out_root, timeout_seconds=None
+        *,
+        scenario_dir,
+        coding_agent,
+        coding_agents_dir,
+        out_root,
+        extra_env=None,
+        timeout_seconds=None,
     ):
         run_id = f"{scenario_dir.name}-{coding_agent}-x"
         rd = out_root / run_id

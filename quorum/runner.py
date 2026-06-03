@@ -365,6 +365,12 @@ def _seed_kimi_config(kimi_home: Path, *, run_dir: Path) -> AgentRuntime:
             "SUPERPOWERS_ROOT not set; cannot install Kimi Superpowers plugin",
             stage="setup",
         )
+    preflight_sentinel = os.environ.get("QUORUM_KIMI_PREFLIGHT_SENTINEL")
+    if preflight_sentinel and not Path(preflight_sentinel).is_file():
+        raise RunnerError(
+            f"Kimi preflight sentinel missing: {preflight_sentinel}",
+            stage="setup",
+        )
     kimi_binary = shutil.which("kimi")
     if kimi_binary is None:
         raise RunnerError(
@@ -374,7 +380,7 @@ def _seed_kimi_config(kimi_home: Path, *, run_dir: Path) -> AgentRuntime:
 
     try:
         kimi_env = effective_kimi_model_env(os.environ)
-        if not os.environ.get("QUORUM_KIMI_PREFLIGHT_SENTINEL"):
+        if not preflight_sentinel:
             run_kimi_auth_preflight(
                 kimi_binary=kimi_binary,
                 kimi_model_env=kimi_env,
