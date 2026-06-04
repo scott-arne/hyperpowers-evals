@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# quorum-generated launcher for GitHub Copilot CLI (the agent under test).
+#
+# quorum substitutes the $... placeholders below with literal per-run paths so
+# the QA agent can launch Copilot with one command even when tmux strips env.
+set -euo pipefail
+cd $QUORUM_AGENT_CWD_SH || { echo "launch-agent: cannot cd to prepared workdir" >&2; exit 1; }
+
+set -a
+. $COPILOT_ENV_FILE_SH
+set +a
+
+env_args=(
+  "PATH=${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+  "TERM=${TERM:-xterm-256color}"
+  "LANG=${LANG:-C.UTF-8}"
+)
+for name in \
+  COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN \
+  GH_HOST COPILOT_GH_HOST \
+  HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY \
+  http_proxy https_proxy all_proxy no_proxy \
+  SSL_CERT_FILE SSL_CERT_DIR NODE_EXTRA_CA_CERTS REQUESTS_CA_BUNDLE CURL_CA_BUNDLE \
+  COPILOT_MODEL COPILOT_OFFLINE \
+  COPILOT_PROVIDER_BASE_URL COPILOT_PROVIDER_TYPE \
+  COPILOT_PROVIDER_API_KEY COPILOT_PROVIDER_BEARER_TOKEN \
+  COPILOT_PROVIDER_WIRE_API COPILOT_PROVIDER_AZURE_API_VERSION \
+  COPILOT_PROVIDER_MODEL_ID COPILOT_PROVIDER_WIRE_MODEL \
+  COPILOT_PROVIDER_MAX_PROMPT_TOKENS COPILOT_PROVIDER_MAX_OUTPUT_TOKENS; do
+  if [[ -n "${!name-}" ]]; then
+    env_args+=("$name=${!name}")
+  fi
+done
+
+secret_env_vars=(
+  COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN
+  COPILOT_PROVIDER_API_KEY COPILOT_PROVIDER_BEARER_TOKEN
+)
+
+exec env -i \
+  "${env_args[@]}" \
+  HOME=$COPILOT_HOME_SH \
+  COPILOT_HOME=$COPILOT_HOME_SH \
+  COPILOT_CACHE_HOME=$COPILOT_HOME_SH/.cache \
+  COPILOT_CLI=1 \
+  COPILOT_AUTO_UPDATE=false \
+  copilot \
+    --plugin-dir $COPILOT_HOME_SH/plugins/superpowers \
+    --session-id "$QUORUM_COPILOT_SESSION_ID" \
+    --allow-all \
+    --no-auto-update \
+    --no-remote \
+    --disable-builtin-mcps \
+    --secret-env-vars="$(IFS=,; echo "${secret_env_vars[*]}")" \
+    --log-dir $COPILOT_HOME_SH/logs \
+    "$@"

@@ -153,6 +153,24 @@ def test_kimi_config_requires_model_api_key(monkeypatch, tmp_path):
         )
 
 
+def test_copilot_config_loads_when_superpowers_root_set(monkeypatch, tmp_path):
+    monkeypatch.setenv("SUPERPOWERS_ROOT", str(tmp_path / "superpowers"))
+    cfg = load_coding_agent_config(
+        Path(__file__).resolve().parents[2] / "coding-agents" / "copilot.yaml"
+    )
+
+    assert cfg.name == "copilot"
+    assert cfg.binary == "copilot"
+    assert cfg.agent_config_env == "COPILOT_HOME"
+    assert cfg.session_log_glob == "**/events.jsonl"
+    assert cfg.normalizer == "copilot"
+    assert cfg.required_env == ("SUPERPOWERS_ROOT",)
+    assert cfg.max_time == "10m"
+    assert cfg.resolve_session_log_dir(tmp_path / "cfg") == (
+        tmp_path / "cfg" / "session-state"
+    )
+
+
 class TestLoadCodingAgentConfig:
     def test_minimal_valid(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "x")

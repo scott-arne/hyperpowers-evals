@@ -40,6 +40,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import uuid
 from pathlib import Path
 
 from quorum.capture import (
@@ -94,6 +95,7 @@ CODING_AGENT_CONFIG_SUBDIR = "coding-agent-config"
 ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV = "QUORUM_ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT"
 ANTIGRAVITY_VISIBLE_LAUNCH_RECORD = "antigravity-visible-launch-cwd.json"
 GEMINI_ENV_FILE_NAME = ".gemini-env"
+COPILOT_ENV_FILE_NAME = ".copilot-env"
 GEMINI_REQUIRED_SUPERPOWERS_FILES = (
     "gemini-extension.json",
     "GEMINI.md",
@@ -1374,20 +1376,25 @@ def _run_scenario_inner(
         launch_agent_path = run_dir / "gauntlet-agent" / "context" / "launch-agent"
         substitutions = {
             "$QUORUM_AGENT_CWD": str(launch_cwd),
+            "$QUORUM_AGENT_CWD_SH": _shell_single_quote(str(launch_cwd)),
             "$SUPERPOWERS_ROOT": os.environ.get("SUPERPOWERS_ROOT", ""),
             "$QUORUM_LAUNCH_AGENT": str(launch_agent_path),
+            "$QUORUM_LAUNCH_AGENT_SH": _shell_single_quote(str(launch_agent_path)),
             f"${tcfg.agent_config_env}": str(agent_config_dir),
+            f"${tcfg.agent_config_env}_SH": _shell_single_quote(str(agent_config_dir)),
             **agent_runtime.substitutions,
         }
         if tcfg.name == "gemini":
             substitutions["$GEMINI_ENV_FILE"] = str(agent_config_dir / GEMINI_ENV_FILE_NAME)
-            substitutions["$QUORUM_AGENT_CWD_SH"] = _shell_single_quote(str(launch_cwd))
             substitutions["$GEMINI_ENV_FILE_SH"] = _shell_single_quote(
                 str(agent_config_dir / GEMINI_ENV_FILE_NAME)
             )
-            substitutions[f"${tcfg.agent_config_env}_SH"] = _shell_single_quote(
-                str(agent_config_dir)
+        if tcfg.name == "copilot":
+            substitutions["$COPILOT_ENV_FILE"] = str(agent_config_dir / COPILOT_ENV_FILE_NAME)
+            substitutions["$COPILOT_ENV_FILE_SH"] = _shell_single_quote(
+                str(agent_config_dir / COPILOT_ENV_FILE_NAME)
             )
+            substitutions["$QUORUM_COPILOT_SESSION_ID"] = str(uuid.uuid4())
         if tcfg.name == "pi":
             substitutions["$PI_ENV_FILE"] = str(agent_config_dir / "pi.env")
         _populate_context_dir(

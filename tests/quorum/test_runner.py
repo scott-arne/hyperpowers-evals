@@ -4,6 +4,7 @@ import shlex
 import shutil
 import stat
 import subprocess
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,6 +26,7 @@ from quorum.runner import (
     _seed_antigravity_config,
     _seed_gemini_config,
     _seed_kimi_config,
+    _shell_single_quote,
     _write_antigravity_settings,
     _write_gemini_env_file,
     _write_gemini_settings,
@@ -35,6 +37,21 @@ from quorum.runner import (
 def _exec(path: Path, body: str) -> None:
     path.write_text(body)
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def _fake_copilot_bin(bin_dir: Path, output_path: Path) -> None:
+    _exec(
+        bin_dir / "copilot",
+        "#!/usr/bin/env python3\n"
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        f"output_path = Path({json.dumps(str(output_path))})\n"
+        "output_path.write_text(json.dumps({\n"
+        "    'argv': sys.argv[1:],\n"
+        "    'cwd': os.getcwd(),\n"
+        "    'env': dict(os.environ),\n"
+        "}, sort_keys=True))\n",
+    )
 
 
 def _make_coding_agent(coding_agents_dir: Path, name: str, session_log_dir: Path) -> None:
@@ -707,6 +724,184 @@ def test_kimi_runtime_env_file_cleaned_when_gauntlet_never_launches(tmp_path, mo
     assert verdict.final == "indeterminate"
     assert not env_file.exists()
     assert not secret_dir.exists()
+
+
+def test_copilot_launch_agent_is_substituted_and_uses_env_i(tmp_path):
+    coding_agents_dir = tmp_path / "coding-agents"
+    copilot_context = coding_agents_dir / "copilot-context"
+    copilot_context.mkdir(parents=True)
+    shutil.copy2(
+        Path(__file__).resolve().parents[2]
+        / "coding-agents"
+        / "copilot-context"
+        / "launch-agent",
+        copilot_context / "launch-agent",
+    )
+    shutil.copy2(
+        Path(__file__).resolve().parents[2]
+        / "coding-agents"
+        / "copilot-context"
+        / "HOWTO.md",
+        copilot_context / "HOWTO.md",
+    )
+    run_dir = tmp_path / "run $HOME's dir"
+    launch_cwd = tmp_path / "launch cwd $HOME's place"
+    copilot_home = run_dir / "coding agent $HOME's config"
+    env_file = copilot_home / "copilot env $HOME's file"
+    launch_agent_path = run_dir / "gauntlet-agent" / "context" / "launch-agent"
+    launch_cwd.mkdir()
+    copilot_home.mkdir(parents=True)
+    env_file.write_text(
+        "COPILOT_GITHUB_TOKEN='token with spaces'\n"
+        "LEAK_ME='from-env-file'\n"
+    )
+
+    _populate_context_dir(
+        coding_agents_dir,
+        "copilot",
+        run_dir,
+        substitutions={
+            "$QUORUM_AGENT_CWD": str(launch_cwd),
+            "$QUORUM_AGENT_CWD_SH": _shell_single_quote(str(launch_cwd)),
+            "$QUORUM_LAUNCH_AGENT": str(launch_agent_path),
+            "$QUORUM_LAUNCH_AGENT_SH": _shell_single_quote(str(launch_agent_path)),
+            "$COPILOT_HOME": str(copilot_home),
+            "$COPILOT_HOME_SH": _shell_single_quote(str(copilot_home)),
+            "$COPILOT_ENV_FILE": str(env_file),
+            "$COPILOT_ENV_FILE_SH": _shell_single_quote(str(env_file)),
+            "$QUORUM_COPILOT_SESSION_ID": "quorum-session-123",
+        },
+    )
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    capture_path = tmp_path / "copilot-capture.json"
+    _fake_copilot_bin(fake_bin, capture_path)
+    howto = (run_dir / "gauntlet-agent" / "context" / "HOWTO.md").read_text()
+    launch_command = _shell_single_quote(str(launch_agent_path))
+    assert launch_command in howto
+    assert '"$QUORUM_LAUNCH_AGENT"' not in howto
+    launch_env_path = str(fake_bin) + os.pathsep + os.environ["PATH"]
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-lc",
+            (
+                "PATH="
+                + _shell_single_quote(launch_env_path)
+                + " "
+                + launch_command
+                + " --extra 'two words' 'semi;colon' 'dollar$arg'"
+            ),
+        ],
+        text=True,
+        capture_output=True,
+        env={
+            "PATH": os.environ["PATH"],
+            "TERM": "xterm-256color",
+            "LANG": "C.UTF-8",
+            "LEAK_ME": "from-host",
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    record = json.loads(capture_path.read_text())
+    env = record["env"]
+    assert record["cwd"] == str(launch_cwd)
+    expected_env = {
+        "COPILOT_AUTO_UPDATE": "false",
+        "COPILOT_CACHE_HOME": str(copilot_home / ".cache"),
+        "COPILOT_CLI": "1",
+        "COPILOT_GITHUB_TOKEN": "token with spaces",
+        "COPILOT_HOME": str(copilot_home),
+        "HOME": str(copilot_home),
+        "LANG": "C.UTF-8",
+        "PATH": launch_env_path,
+        "TERM": "xterm-256color",
+    }
+    platform_env = set(env) - set(expected_env)
+    assert platform_env <= {"__CF_USER_TEXT_ENCODING"}
+    for name in platform_env:
+        env.pop(name)
+    assert env == expected_env
+    assert record["argv"] == [
+        "--plugin-dir",
+        str(copilot_home / "plugins" / "superpowers"),
+        "--session-id",
+        "quorum-session-123",
+        "--allow-all",
+        "--no-auto-update",
+        "--no-remote",
+        "--disable-builtin-mcps",
+        "--secret-env-vars=COPILOT_GITHUB_TOKEN,GH_TOKEN,GITHUB_TOKEN,"
+        "COPILOT_PROVIDER_API_KEY,COPILOT_PROVIDER_BEARER_TOKEN",
+        "--log-dir",
+        str(copilot_home / "logs"),
+        "--extra",
+        "two words",
+        "semi;colon",
+        "dollar$arg",
+    ]
+
+
+def test_copilot_context_shell_substitutions_are_from_runner(tmp_path):
+    coding_agents_dir = tmp_path / "coding-agents"
+    scenarios_dir = tmp_path / "scenarios"
+    session_log_dir = tmp_path / "logs"
+    _make_coding_agent(coding_agents_dir, "copilot", session_log_dir)
+    (coding_agents_dir / "copilot-context").mkdir(parents=True, exist_ok=True)
+    (coding_agents_dir / "copilot.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "copilot",
+                "binary": "echo",
+                "agent_config_env": "COPILOT_HOME",
+                "session_log_dir": str(session_log_dir),
+                "session_log_glob": "*.jsonl",
+                "normalizer": "claude",
+                "required_env": [],
+            }
+        )
+    )
+    (coding_agents_dir / "copilot-context" / "HOWTO.md").write_text(
+        "$QUORUM_LAUNCH_AGENT_SH\n"
+        "$COPILOT_HOME_SH\n"
+        "$COPILOT_ENV_FILE_SH\n"
+        "$QUORUM_COPILOT_SESSION_ID\n"
+    )
+    shutil.copy2(
+        Path(__file__).resolve().parents[2]
+        / "coding-agents"
+        / "copilot-context"
+        / "launch-agent",
+        coding_agents_dir / "copilot-context" / "launch-agent",
+    )
+    sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+    (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+
+    with patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass):
+        run_dir, _ = run_scenario(
+            scenario_dir=sd,
+            coding_agent="copilot",
+            coding_agents_dir=coding_agents_dir,
+            out_root=tmp_path / "out $HOME's dir",
+            skeleton_root=_empty_skeleton(tmp_path),
+        )
+
+    howto = (run_dir / "gauntlet-agent" / "context" / "HOWTO.md").read_text()
+    assert "$QUORUM_LAUNCH_AGENT_SH" not in howto
+    assert "$COPILOT_HOME_SH" not in howto
+    assert "$COPILOT_ENV_FILE_SH" not in howto
+    assert "$QUORUM_COPILOT_SESSION_ID" not in howto
+    launch_agent = run_dir / "gauntlet-agent" / "context" / "launch-agent"
+    launcher = launch_agent.read_text()
+    assert "$QUORUM_COPILOT_SESSION_ID" not in launcher
+    assert _shell_single_quote(str(launch_agent)) in howto
+    assert _shell_single_quote(str(run_dir / "coding-agent-config")) in howto
+    assert _shell_single_quote(str(run_dir / "coding-agent-config" / ".copilot-env")) in howto
+    session_id = launcher.split('--session-id "', 1)[1].split('"', 1)[0]
+    assert str(uuid.UUID(session_id)) == session_id
 
 
 def test_antigravity_launch_uses_visible_alias_for_hidden_cwd(tmp_path, monkeypatch):
