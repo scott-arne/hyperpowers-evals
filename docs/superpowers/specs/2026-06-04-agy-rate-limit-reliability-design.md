@@ -1,7 +1,7 @@
 # agy Rate-Limit Reliability — Design Specification
 
-**Status:** Specification, ready for implementation planning. Not yet
-implemented.
+**Status:** Specification, ready for implementation planning. Revised after a
+5-reviewer design pass. Not yet implemented.
 **Date:** 2026-06-04
 **Scope:** Stream 1 of 2. This spec covers **antigravity (`agy`) reliability
 only** — surviving and recovering from the Gemini Code Assist rate window. The
@@ -45,7 +45,8 @@ documentation (2026-06-04):
   `GOOGLE_GENAI_USE_VERTEXAI`, or `GOOGLE_CLOUD_PROJECT` string — there is no
   API-key or Vertex/GCP metered path. *(Verified: 0 whole-word `strings` hits;
   corroborated by upstream feature request antigravity-cli#78.)* **We do not
-  design around metered billing for agy — it cannot reach it.**
+  design around metered billing for agy — it cannot reach it.** (gemini, a
+  *different* agent, can — §5 B5.)
 - **The "5-hour limit" is the subscription's usage-refresh window.** Under
   Google's March 2026 Antigravity plan structure, Pro/Ultra subscriptions
   **refresh usage every 5 hours** (free tier refreshes weekly), metered by
@@ -87,139 +88,234 @@ solved. The gaps are mid-run detection (§4) and resume (§5).
 
 ## 4. Part A — fail fast and classify correctly
 
-**Goal:** no agy cell hangs to its budget because of a 429, and every 429 is
-recorded as a rate-limit (with its cause), not as an empty-trace indeterminate.
+**Goal:** no agy cell hangs to its budget because of a 429, every 429 is recorded
+as a rate-limit (with its cause) rather than a capture-stage indeterminate, and
+the kill can never corrupt shared state.
 
-**A1. Live mid-run detection.** While the gauntlet subprocess drives the main
-agy run, watch the run's `agy.log` for an `_AGY_RATE_LIMIT_SIGNALS` hit. On the
-first hit, terminate the gauntlet invocation immediately rather than waiting for
-`max_time`. Write the verdict as a rate-limit (reuse `ANTIGRAVITY_RATE_LIMIT_MARKER`)
-so the latch (§3) trips and the rest of agy is skipped.
+> **A staff-SWE review corrected the original A1.** The first draft said "watch
+> `agy.log` and kill the gauntlet subprocess." That does not work: (1)
+> `invoke_gauntlet` calls a **blocking** `subprocess.run` (`runner.py:1185`) with
+> no handle to kill; (2) gauntlet drives agy via `tmux new-session`, which
+> **daemonizes agy away from gauntlet's process group** — killing gauntlet
+> orphans agy to the tmux server, so it keeps burning the 5-hour bucket; (3) a
+> killed-but-empty run lands in the **capture cascade** and is written as a
+> `stage="capture"` "no Antigravity transcript captured" indeterminate
+> (`runner.py:1583-1602`), so the latch never fires. The design below fixes all
+> three.
 
-> **Latch predicate must broaden.** `_is_rate_limited_verdict` (`run_all.py:781`)
-> currently requires `error.stage == "setup"` — true for the preflight path but
-> not for a mid-run abort, which is a later stage. A1 must make the latch
-> recognize a mid-run rate-limit verdict: match on `ANTIGRAVITY_RATE_LIMIT_MARKER`
-> regardless of stage (or set an explicit `rate_limited: true` flag on the verdict
-> and key the latch off that). Pick one and use it consistently; do not write a
-> setup-stage error for a run that actually started.
+**A1. Live mid-run detection — inside the runner, killing the process group.**
+The watcher lives in `runner.invoke_gauntlet`, not `run_all` (run-all owns only
+the child `quorum run` PID, and only the runner can synthesize the verdict before
+the capture cascade). Convert `invoke_gauntlet` to
+`Popen(cmd, start_new_session=True)` so gauntlet + tmux + agy share one process
+group, and poll the main-run `agy.log` while it runs. On a **confirmed**
+rate-limit (predicate in A2), tear the whole thing down — `os.killpg` the group
+**and** `tmux kill-session` / kill the `agy` pid (a process-group kill alone does
+not reliably reap the tmux server) — then short-circuit `_run_scenario_inner` to
+write **exactly one** rate-limit verdict **before** the capture cascade runs, so
+the result is a rate-limit, not an empty-trace indeterminate.
 
-> **Implementation constraint to confirm first.** The main agy run is driven by
-> **gauntlet** (TUI adapter via tmux), so quorum does not own the agy process
-> directly — it owns the *gauntlet* subprocess. A1 therefore watches the known
-> `agy.log` path and, on a signal, kills the gauntlet subprocess (tearing down
-> agy). The implementation plan MUST start by reproducing a mid-run 429 and
-> confirming (a) where `agy.log` is for the main run, (b) that killing gauntlet
-> cleanly tears down agy and leaves a capturable run dir, and (c) that we do not
-> race a legitimate late-run recovery. Do not build A1 before this reproduction
-> exists.
+**A2. Confirm the rate-limit (predicate) and capture the `quota_metric`.** A
+single `RESOURCE_EXHAUSTED` substring is not enough — agy logs it on retried,
+*recovered* transient 429s too, so first-hit kill would defer passing runs on a
+blip (and if it's the first agy cell, latch the whole sweep on a blip). The kill
+predicate is: **a fatal `quota_metric` (the 5-hour compute window) OR ≥N
+`RESOURCE_EXHAUSTED` lines with the transcript not advancing for T seconds.** The
+`RESOURCE_EXHAUSTED` payload names *which* quota was hit (5-hour window vs Code
+Assist day cap); extract and persist it as `verdict.error.quota_metric`. This both
+drives the predicate (window = fatal; per-minute burst = maybe transient) and is
+the diagnostic that tells us empirically whether 5× is enough (Part B). N and T
+are pinned from the A5 reproduction, not guessed.
 
-**A2. Capture the `quota_metric`.** The `RESOURCE_EXHAUSTED` payload identifies
-*which* quota was exhausted (the Antigravity 5-hour compute window vs. the Code
-Assist per-user day cap). Extract and persist that string on the rate-limit
-verdict (e.g. `verdict.error.quota_metric`). This is the diagnostic that tells
-us, empirically, whether the 5× upgrade or a different lever is the right next
-move — it pays for itself by removing a guess from Part B and from any future
-account decision.
+**A3. One verdict, correctly classified.** The mid-run-aborted cell records a
+rate-limit verdict carrying the marker/flag (§6) and is counted as
+`skipped="rate-limited"` / deferred — never indeterminate. The existing
+latch-skipped cells already do this.
 
-**A3. Keep the deferred cells out of the indeterminate count.** Already true for
-latch-skipped cells (`skipped="rate-limited"`). Extend the same classification to
-the *first* mid-run-aborted cell from A1 so a tripped window produces a clean
-"deferred" set, never indeterminate noise.
+**A4. Credential safety — gates A1.** agy reads auth from the **shared, live,
+token-rotating** `~/.gemini/oauth_creds.json` (the runner isolates only
+`--gemini_dir` plugin/transcript state, `runner.py:576-599`; it does **not** copy
+the credential). A `SIGKILL` during a token refresh — most likely *exactly* at a
+rate-limit event — can leave that file half-written and auth-brick **all** future
+agy runs (recovery is a manual browser OAuth flow). This also trips the project
+rule against destructive ops on credentials without backup/read-back. Therefore:
+**SIGTERM with a grace period before any SIGKILL** so agy can finish a credential
+write; **back up `oauth_creds.json` before, and read-back-verify it after**, any
+batch that may mid-run-kill agy, restoring on mismatch; and, as the durable fix,
+**copy agy's auth into the per-run `--gemini_dir`** so a kill can never touch the
+canonical token. A1 does not ship until credential safety is proven.
+
+**A5. Reproduction gate — build nothing in A1–A4 until this passes.** Reproduce a
+mid-run 429 against live agy and confirm, with assertions: **(a)** the watcher
+attaches to the file the judge's *actual* launch writes — the main-run log is
+`$ANTIGRAVITY_CONFIG_DIR/agy.log` (`launch-agent:22` →
+`<run_dir>/coding-agent-config/agy.log`), **not** the preflight's
+`tmp_path/agy.log`; pin and `touch` it before gauntlet starts so the watcher has a
+stable inode from t=0, and treat "log absent past a grace window AND transcript
+empty" as the existing empty-trace path, not a hang; **(b)** after teardown,
+`pgrep -f agy` returns nothing (agy actually dead, tmux session gone) — not merely
+"a run dir exists"; **(c)** the kill leaves `oauth_creds.json` intact (read-back
+matches); **(d)** `agy.log` flushes the 429 line in real time (measure the delay
+between the API error and the line; if buffered, switch detection to
+`transcript.jsonl` stall + error, or find an unbuffer flag); **(e)** the predicate
+distinguishes a fatal window-exhaustion from a recovered transient 429.
 
 ## 5. Part B — reliable coverage
 
-**Goal:** agy eventually covers its whole scenario set despite the window.
+**Goal:** agy eventually covers its whole scenario set despite the window, and a
+partial sweep is never reported as green.
 
-**B1. Bigger bucket (done, no code).** AI Ultra 5× is live on the eval account.
-agy inherits it; nothing to wire.
+**B1. Bigger bucket (done, no code).** AI Ultra 5× is live on the eval account;
+agy inherits it.
 
-**B2. Resume-deferred command.** Add a way to re-run **only** the cells a batch
-deferred for rate-limit, re-running them into a fresh window and appending to the
-same batch's results. The deferred set is the **union** of (a) the latch-skipped
-cells (`skipped="rate-limited"` records) and (b) the cell that tripped the window
-mid-run, whose verdict is a rate-limit verdict (§6) — both must be re-run, or the
-first cell is silently lost. This converts Part A's "skip now" into
-eventually-complete coverage. CLI surface: a flag/subcommand on the existing
-run-all path (exact shape decided in the implementation plan); it must reuse the
-matrix-expansion and invoke machinery, not duplicate it.
+**B2. Resume-deferred — idempotent and interruption-safe.** Resume re-runs the
+cells a batch did **not** terminally complete, into a fresh window. The review
+found two ways the naive design loses cells, so the deferred set is defined
+against the **full intended matrix**, not just written records:
 
-**B3. Keep the three sdd 90-minute builds off agy's routine set.** The
-`sdd-go-fractals`, `sdd-svelte-todo`, and `sdd-rejects-extra-features` scenarios
-override `quorum_max_time` to 90m and are the single largest consumers of the
-compute window. Spending a 5-hour bucket on a $30 build is how the window trips.
-**This is the seam into Stream 2** (§7); this spec only records the requirement,
-it does not implement scenario tiering.
+- Persist the intended matrix (every `(scenario, agy)` cell `build_matrix`
+  produced) to `batch.json` **up front**, so resume knows what was *supposed* to
+  run. An interrupted batch (Ctrl-C, host sleep, 5-hour wall) leaves runnable
+  cells with **no** record at all; without the up-front matrix, resume keyed only
+  on `skipped="rate-limited"` silently skips them and reports false-complete.
+- The deferred set = **intended-matrix cells whose latest record is rate-limited
+  OR absent.** On a successful resume, supersede the old rate-limited record (or
+  add an `attempt` index) so a *second* resume — the realistic case, since the
+  resume window can itself trip — does not double-run already-passed cells.
 
-**B4. Validate, then decide on fan-out.** After the upgrade, run one full agy
-sweep and read A2's `quota_metric` plus the deferred count. If 5× holds a whole
-sweep, the stream is done. Only if it does not do we consider fanning agy across
-2–3 accounts. **Account fan-out is explicitly out of scope here (YAGNI) until the
-measurement says we need it.**
+Resume reuses the matrix-expansion and invoke machinery (no duplication); the
+exact CLI shape is an implementation-plan detail. It must converge: repeated
+resumes monotonically shrink the deferred set.
+
+**B3. Keep the three sdd 90-minute builds off agy's routine set.** Records the
+requirement; the mechanism is the Stream 2 tier (§7). If Stream 1 lands first, the
+interim guard is a `# coding-agents:` allowlist on each sdd `checks.sh` (§7), with
+a `build_matrix` test.
+
+**B4. Validate, with a real fallback if 5× is not enough.** Run one full reshaped
+agy sweep; from A2's `quota_metric` + the deferred count, compute
+**windows-per-sweep**. Gate "stream done" on **windows-per-sweep ≤ 1**. If > 1,
+the design does **not** silently leave a deferred tail — it must either ship
+`--resume-until-complete` (wait for the window to refresh, re-invoke until the
+deferred set is empty) or move more agy scenarios to adhoc until one window fits.
+**A non-empty agy deferred set surfaces as a distinct non-green state** ("agy
+coverage incomplete: N deferred"), never folded into a passing summary line.
+Account fan-out across 2–3 accounts stays out of scope (YAGNI) until the
+measurement says even `--resume-until-complete` is too slow.
+
+**B5. Cross-agent quota (the other capped agents).** agy is the only agent on the
+OAuth consumer Code Assist 5-hour window. **gemini is a *different* backend** — a
+metered AI Studio key (`GEMINI_DEFAULT_AUTH_TYPE=gemini-api-key`,
+`gemini-context/launch-agent`) — so it does **not** share agy's window. Per the
+maintainer's preference, **route gemini to a Vertex token on a controlled GCP
+project** for isolated, predictable, metered billing (the gemini CLI supports a
+Vertex auth mode; *verify the exact env/flag and stand up a billed project before
+switching* — do not repeat the agy/Vertex mistake of assuming a backend). Once
+gemini is on its own project, any "does gemini bill agy's account?" co-burn
+concern is moot. `opencode` and `pi` also set `max_concurrency: 1` but, unlike
+antigravity, with no documented rationale — likely copy-paste; **verify whether
+their backends actually rate-limit before relaxing the cap.** The per-agent latch
+(`rate_limited_agents`, keyed by agent name) is correct as long as each capped
+agent has an independent backend; if two ever share one Google identity/quota it
+must become per-backend — moot once gemini is on Vertex.
 
 ## 6. Data & interfaces
 
-- **Rate-limit verdict** gains an optional `quota_metric` field under its error
-  block (A2). Absent when the metric could not be parsed.
-- **Deferred set** is not a new artifact: it is, within a batch, the union of
-  the `skipped="rate-limited"` result records (latch-skipped cells) and the
-  cell(s) whose verdict carries the rate-limit marker / `rate_limited` flag (the
-  mid-run trip from A1). B2 reads both; no new schema.
-- **Resume command** takes a batch id (or the latest batch) and re-runs its
-  rate-limited records. No new persistent state beyond the appended run dirs.
+- **Rate-limit verdict invariant (single owner).** *Any* agy verdict produced
+  after a rate-limit signal — from the preflight, the mid-run abort (A1), or a
+  Stream 2 **check-only** (judge-skipped) run — MUST carry the rate-limit
+  marker/flag, regardless of which code path wrote it. This is the one fact the
+  latch, composer, and summary all key on. Stream 1 owns this invariant; Stream 2's
+  check-only path (its §4) must honor it, or an agy check-only sentinel that 429s
+  would silently fail to latch. Broaden `_is_rate_limited_verdict`
+  (`run_all.py:781`) to match the marker/flag **regardless of `error.stage`**
+  (today it requires `stage=="setup"`).
+- **`quota_metric`** — optional field on the rate-limit verdict's error block
+  (A2); absent when unparseable.
+- **Intended matrix** — `batch.json` records every `(scenario, agy)` cell
+  `build_matrix` produced, written up front, so resume can compute "absent" cells
+  (B2).
+- **Deferred set** — intended-matrix cells whose latest record is rate-limited or
+  absent (B2). Latest-record-per-cell; a successful resume supersedes the prior
+  rate-limited record.
 
-No change to the verdict pass/fail/indeterminate semantics. "Deferred /
-rate-limited" remains a *skip* category, not a verdict.
+No change to pass/fail/indeterminate semantics. "Deferred / rate-limited" remains
+a *skip* category, not a verdict.
 
 ## 7. Seam to Stream 2 (suite cost/length)
 
-The only coupling: **which scenarios agy runs** is a tiering decision. B3
-requires that the routine agy set excludes the 90-minute sdd builds. Stream 2
-owns the mechanism (tiers / `tags:` / `status:` wiring); this spec owns the
-requirement. When Stream 2 lands, B3 is satisfied by placing the sdd scenarios in
-a non-routine tier for agy. Until then, B3 can be met by the existing
-`# coding-agents:` directive convention or an explicit exclusion list.
+The coupling is **which scenarios agy runs**, and the review caught that the
+original "tiering keeps agy in its window by construction" does **not** compute:
+tier membership is a property of a **scenario**, but the 5-hour window is consumed
+per **(scenario, agent) cell**, and `build_matrix` fans every un-directived
+scenario across *all* agents (only 11/39 carry a `# coding-agents:` allowlist). So
+`--tier full --coding-agents antigravity` would run *every* full-tier scenario on
+agy — there is no "agy-applicable full-thorough" until something defines it.
+
+Requirement: the seam is satisfied only when **`--tier sentinel --coding-agents
+antigravity` and `--tier full --coding-agents antigravity` each yield an
+enumerated, measured, window-fitting set** (B4's windows-per-sweep ≤ 1 measured,
+not asserted). Either tier membership becomes expressible per-agent, or agy's
+routine set is an explicit allowlist. **Interim guard if Stream 1 lands first:**
+add a `# coding-agents:` allowlist to each of the three sdd `checks.sh` excluding
+agy, plus a `build_matrix` test. Note the allowlist enumerates the *other* agents,
+so it **goes stale when a new agent is added** — the test must fail loudly when an
+agent is missing from the list, or Stream 2 must pivot to a denylist mechanism.
 
 ## 8. Testing
 
-Follow TDD; tests must be deterministic and must not hit the live Code Assist
-backend.
+Follow TDD; unit tests must be deterministic and must not hit the live Code Assist
+backend. The live-only facts (teardown, flush, credential safety) are proven once
+in the A5 reproduction, then encoded as fixtures.
 
-- **A1 mid-run detection:** unit-test the log-watcher against a synthetic
-  `agy.log` that gains a `RESOURCE_EXHAUSTED` line mid-stream; assert the
-  gauntlet invocation is terminated and a rate-limit verdict is written. The
-  process-teardown behavior is validated against the reproduction harness from
-  the §4 constraint, not mocked away.
-- **A2 quota_metric:** unit-test extraction from representative
-  `RESOURCE_EXHAUSTED` payloads (real captured strings, both window and day-cap
-  variants once observed); assert the field is persisted and absent-safe.
-- **A3 classification:** extend the existing rate-limit tests
-  (`tests/quorum/test_run_all.py::test_run_batch_fail_fast_on_agy_rate_limit`,
-  `tests/quorum/test_runner.py` rate-limit-diagnosis cases) to assert the first
-  mid-run-aborted cell records `skipped="rate-limited"`, not indeterminate.
-- **B2 resume:** unit-test that resume re-runs exactly the `skipped="rate-limited"`
-  cells of a batch and nothing else.
+- **A1 detection + verdict path:** the log-watcher trips on a synthetic main-run
+  `agy.log` gaining a `RESOURCE_EXHAUSTED` line mid-stream, and a single
+  rate-limit verdict is written **before** the capture cascade (assert it is a
+  rate-limit, not a `stage="capture"` empty-trace indeterminate).
+- **A2 predicate + quota_metric:** a *recovered transient* 429 (signal, then the
+  transcript advances) does **not** trip; a fatal window `quota_metric` does;
+  field extraction is persisted and absent-safe.
+- **A4 credential safety:** SIGTERM-grace precedes SIGKILL; `oauth_creds.json` is
+  backed up and read-back-verified; a corrupted read-back triggers restore.
+- **A5 reproduction (gating, live, manual):** `pgrep -f agy` empty after teardown;
+  watcher attaches to the main-run log path; flush latency recorded.
+- **Latch / cross-stream:** an agy verdict carrying the marker latches regardless
+  of `error.stage`; a **check-only (judge-skipped) agy scenario that 429s still
+  latches** the rest of agy (the Stream 1 ↔ Stream 2 invariant, §6).
+- **B2 resume convergence:** (i) interrupt a batch after K of N records → resume
+  re-runs the N−K absent cells plus the rate-limited ones; (ii) a resume that
+  itself re-trips does not double-run passed cells (two-generation); repeated
+  resumes monotonically shrink the deferred set.
 
 Test output must be pristine; intentionally-triggered rate-limit errors are
 captured and asserted, never leaked to logs.
 
 ## 9. Open questions / future
 
-- **Exact 5-hour vs day-cap attribution** — resolved empirically by A2's
-  `quota_metric`, not by this spec.
-- **Account fan-out** — deferred (B4), pending measurement.
-- **Model selection (`--model`, agy ≥1.0.5)** — a cheaper/higher-quota model
-  (Flash) could widen headroom, but requires updating agy (evals disable
-  auto-update) and threading `--model` through the launcher. Out of scope; note
-  for later.
-- **Whether killing gauntlet mid-run is the right teardown** vs. a future
-  gauntlet-side early-abort hook — A1 takes the quorum-side path now; a
-  gauntlet-side hook is a possible later refinement.
+- **gemini → Vertex (B5)** — verify the gemini CLI's exact Vertex auth env/flag
+  and stand up a billed GCP project before switching; until then gemini stays on
+  its current metered AI Studio key. Confirm the key's billing identity.
+- **opencode / pi concurrency caps (B5)** — verify whether their backends actually
+  rate-limit; relax the `max_concurrency: 1` cap if it was copy-paste.
+- **Account fan-out** — deferred (B4), only if `--resume-until-complete` proves
+  too slow.
+- **Model selection (`--model`, agy ≥1.0.5)** — a cheaper/higher-quota Flash tier
+  could widen headroom but needs an agy update (evals disable auto-update) and a
+  launcher `--model`. Out of scope; note for later.
+- **Gauntlet-side early-abort hook** — A1 takes the quorum-side teardown now; a
+  future gauntlet hook that ends a run on its own 429 would be cleaner.
 
 ## 10. Non-goals
 
-- Metered/Vertex/API-key routing for agy (impossible on v1.0.4).
+- Metered/Vertex/API-key routing for **agy** (impossible on v1.0.4; gemini is
+  different — B5).
 - Scenario tiering, redundant-scenario cuts, parallelism defaults (Stream 2).
-- Capture/verdict reliability for non-agy indeterminates (empty-trace,
-  stuck-judge) — a separate reliability effort.
 - Changing the Gauntlet-Agent (judge) model.
+
+**Named dependency (no longer a silent non-goal).** The non-agy half of the ~28%
+indeterminate rate — stuck-judge and empty-trace capture failures — is a real
+reliability problem this spec does not fix. But it is **not** nobody's: Stream 2's
+judge-skip on the sentinel tier depends on capture working (an empty trace becomes
+an *unmediated* indeterminate once the judge is removed), so it is called out as a
+precondition in the Stream 2 spec and needs its own follow-up ("Stream 3"). It is
+no longer buried as a non-goal.
