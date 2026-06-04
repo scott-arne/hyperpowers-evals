@@ -103,17 +103,29 @@ the kill can never corrupt shared state.
 > (`runner.py:1583-1602`), so the latch never fires. The design below fixes all
 > three.
 
-**A1. Live mid-run detection — inside the runner, killing the process group.**
-The watcher lives in `runner.invoke_gauntlet`, not `run_all` (run-all owns only
-the child `quorum run` PID, and only the runner can synthesize the verdict before
-the capture cascade). Convert `invoke_gauntlet` to
-`Popen(cmd, start_new_session=True)` so gauntlet + tmux + agy share one process
-group, and poll the main-run `agy.log` while it runs. On a **confirmed**
-rate-limit (predicate in A2), tear the whole thing down — `os.killpg` the group
-**and** `tmux kill-session` / kill the `agy` pid (a process-group kill alone does
-not reliably reap the tmux server) — then short-circuit `_run_scenario_inner` to
-write **exactly one** rate-limit verdict **before** the capture cascade runs, so
-the result is a rate-limit, not an empty-trace indeterminate.
+**A1. Live mid-run detection — inside the runner, killing gauntlet's private
+tmux server.** The watcher lives in `runner.invoke_gauntlet`, not `run_all`
+(run-all owns only the child `quorum run` PID, and only the runner can synthesize
+the verdict before the capture cascade). Run `invoke_gauntlet` via `Popen` with a
+handle, and poll the main-run `agy.log` while it runs. On a **confirmed**
+rate-limit (predicate in A2), tear the run down by **killing gauntlet's private
+tmux server** — *not* a process-group kill.
+
+> **Teardown mechanism — empirically verified (2026-06-04).** A controlled
+> experiment confirmed the review and corrected an earlier draft of this spec: a
+> tmux-spawned process is **reparented to PID 1 in its own process group**, so
+> `os.killpg` on the launcher's group **cannot** reach agy (killing gauntlet just
+> orphans agy, which keeps burning quota). `tmux kill-session` / `kill-server`
+> **does** reap it. Gauntlet runs a **private tmux server per session**
+> (`gauntlet/src/adapters/tui/adapter.ts:97`), so the clean teardown is
+> `tmux -S <that-session's-socket> kill-server` (or kill the tracked pane pid),
+> which reaps the bash + agy under it, scoped to exactly that cell and touching no
+> other tmux. The implementation reads the socket/pane pid gauntlet exposes; the
+> A5 reproduction confirms `pgrep -f agy` is empty afterward.
+
+After teardown, short-circuit `_run_scenario_inner` to write **exactly one**
+rate-limit verdict **before** the capture cascade runs, so the result is a
+rate-limit, not an empty-trace indeterminate.
 
 **A2. Confirm the rate-limit (predicate) and capture the `quota_metric`.** A
 single `RESOURCE_EXHAUSTED` substring is not enough — agy logs it on retried,
