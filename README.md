@@ -2,8 +2,8 @@
 
 Behavioral eval lab for [superpowers](https://github.com/obra/superpowers).
 **Quorum** drives real coding-agent CLIs (Claude, Codex, Antigravity, Gemini,
-Kimi, OpenCode, Pi) through a Gauntlet QA agent and grades them against scenario
-acceptance criteria plus deterministic post-checks.
+Kimi, OpenCode, Pi, and Copilot) through a Gauntlet QA agent and grades them
+against scenario acceptance criteria plus deterministic post-checks.
 
 Code, CLI, paths, and inline prose all use lowercase `quorum`; the capitalized
 form `Quorum` appears in headings and the actor table.
@@ -19,9 +19,9 @@ quorum has two very different execution modes:
 - **Static/unit checks** are safe for public CI. They run `ruff`, `ty`, and
   `pytest`. They do not call model APIs and do not launch agent CLIs.
 - **Live evals** are trusted-maintainer operations. They launch Claude Code,
-  Codex CLI, Antigravity CLI, Gemini CLI, Kimi Code, OpenCode CLI, or Pi CLI in
-  permissive modes and collect raw
-  transcripts, tool calls, filesystem state, and session logs.
+  Codex CLI, Antigravity CLI, Gemini CLI, Kimi Code, OpenCode CLI, Pi CLI, or
+  Copilot CLI in permissive modes and collect raw transcripts, tool calls,
+  filesystem state, and session logs.
 
 Public CI must stay on the static/unit side of that line. Never add API keys,
 live `quorum run …` invocations, or dangerous-mode agent launches to public
@@ -39,23 +39,29 @@ Live evals run the Coding-Agent under test with broad execution power:
 - Kimi uses `--yolo`.
 - OpenCode uses `--dangerously-skip-permissions`.
 - Pi uses explicit tool allowlists and API-key auth in a run-local config dir.
+- Copilot uses `--allow-all`.
 
 quorum seeds a fresh per-run agent-config dir (`CLAUDE_CONFIG_DIR` for
 Claude, `CODEX_HOME` for Codex, `ANTIGRAVITY_CONFIG_DIR` for Antigravity,
 `GEMINI_CLI_HOME` for Gemini, `KIMI_CODE_HOME` for Kimi,
-`OPENCODE_QUORUM_HOME` plus isolated XDG dirs for OpenCode, and
-`PI_CODING_AGENT_DIR` for Pi) so the Coding-Agent never sees the host's real
-`~/.claude`, `~/.codex`, `~/.gemini`, `~/.kimi-code`, OpenCode state, or
-`~/.pi` state, installed plugins, or prior sessions. That narrows the blast
-radius but is not a sandbox. OpenCode's launcher additionally uses an
-allowlisted environment, but live Coding-Agents still run with broad filesystem
-and command execution power.
+`OPENCODE_QUORUM_HOME` plus isolated XDG dirs for OpenCode,
+`PI_CODING_AGENT_DIR` for Pi, and `COPILOT_HOME` for Copilot) so the
+Coding-Agent never sees the host's real
+`~/.claude`, `~/.codex`, `~/.gemini`, `~/.kimi-code`, `~/.pi`,
+`~/.copilot`, or OpenCode state, installed plugins, or prior sessions. Copilot
+stages the local Superpowers plugin under the isolated home, uses an
+allowlisted outer environment, and writes a secret-bearing chmod-0600
+`.copilot-env` inside the run dir. That narrows the blast radius but is not a
+sandbox. OpenCode and Copilot launchers additionally use allowlisted
+environments, but live Coding-Agents still run with broad filesystem and
+command execution power.
 
 Run live evals only from a trusted local environment:
 
 - Export only the API key needed for the selected Coding-Agent.
 - Avoid running with broad production or personal secrets in the environment.
-- Treat `results/`, raw session logs, and Gauntlet-Agent inputs as
+- Treat `results/`, raw session logs, session-state/tool-call artifacts, and
+  Gauntlet-Agent inputs as
   sensitive.
 - Do not commit or paste raw run artifacts without checking them first.
 
@@ -74,7 +80,7 @@ uv run quorum run scenarios/triggering-writing-plans --coding-agent claude
 ```
 
 Agent names are `claude`, `codex`, `antigravity`, `gemini`, `kimi`,
-`opencode`, and `pi`; not every scenario is valid for every agent.
+`opencode`, `pi`, and `copilot`; not every scenario is valid for every agent.
 
 List scenarios:
 
@@ -168,6 +174,15 @@ uv run quorum show <run-dir>
 Do not wire Pi live evals to public CI; they launch `pi` with broad tool
 allowlists and preserve secret-bearing run artifacts.
 
+Trusted-maintainer Copilot bootstrap smoke:
+
+```bash
+SUPERPOWERS_ROOT=/Users/drewritter/prime-rad/superpowers uv run quorum run scenarios/copilot-superpowers-bootstrap --coding-agent copilot
+```
+
+Do not wire Copilot live evals to public CI; they launch `copilot` with
+`--allow-all` and preserve secret-bearing run artifacts.
+
 ## Canonical Actors
 
 Keep the actors straight; confusing them is the most common triage error.
@@ -178,7 +193,7 @@ messages.
 |---|---|---|
 | **Gauntlet** | General-purpose QA framework; the `gauntlet` CLI. A black-box tester. | repo `~/Code/prime/gauntlet`; on `PATH` as `gauntlet` |
 | **Gauntlet-Agent** | The LLM *inside* Gauntlet that drives the Coding-Agent and self-grades against the story's ACs. | model e.g. `claude-sonnet-4-6`; event stream → `<run>/gauntlet-agent/results/<runId>/run.jsonl`; verdict → `result.{json,md}` |
-| **Coding-Agent** | The agent under test — the SUT. Instances: **Claude**, **Codex**, **Antigravity**, **Gemini**, **Kimi**, **OpenCode**, **Pi**. | session log → `<run>/coding-agent-config/…`; the files it writes → `<run>/coding-agent-workdir/` |
+| **Coding-Agent** | The agent under test — the SUT. Instances: **Claude**, **Codex**, **Antigravity**, **Gemini**, **Kimi**, **OpenCode**, **Pi**, **Copilot**. | session log → `<run>/coding-agent-config/…`; the files it writes → `<run>/coding-agent-workdir/` |
 | **Quorum** | The Python wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and the final verdict. | repo `superpowers-evals/quorum/`; `<run>/verdict.json` |
 
 A run involves **two** LLMs — the **Gauntlet-Agent** (QA tester) and the
@@ -328,8 +343,9 @@ per-run `CLAUDE_CONFIG_DIR` (Codex provisions its home fresh per run via
 `codex login --with-api-key`; Antigravity and Gemini provision isolated
 `.gemini` state fresh per run; Kimi provisions an isolated `KIMI_CODE_HOME`;
 OpenCode stages the local Superpowers plugin and skills into isolated XDG
-dirs; Pi provisions run-local auth and settings). All authored once per agent
-and shared across scenarios.
+dirs; Pi provisions run-local auth and settings; Copilot stages the local
+Superpowers plugin into an isolated `COPILOT_HOME` and writes a private
+`.copilot-env`). All authored once per agent and shared across scenarios.
 
 | Coding-Agent | CLI | Required environment |
 | --- | --- | --- |
@@ -340,6 +356,7 @@ and shared across scenarios.
 | `kimi` | Kimi Code | `KIMI_MODEL_API_KEY`, `SUPERPOWERS_ROOT` |
 | `opencode` | OpenCode CLI | `SUPERPOWERS_ROOT`, provider credentials for the selected OpenCode model |
 | `pi` | Pi CLI (`pi`) | `SUPERPOWERS_ROOT`, `PI_PROVIDER`, `PI_MODEL`, `PI_API_KEY` |
+| `copilot` | GitHub Copilot CLI (`copilot`) | `SUPERPOWERS_ROOT`, plus `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, GitHub CLI auth, or `COPILOT_PROVIDER_BASE_URL` |
 
 For `PI_PROVIDER=azure-openai-responses`, set either `AZURE_OPENAI_BASE_URL`
 or `AZURE_OPENAI_RESOURCE_NAME`; quorum also forwards optional
@@ -580,6 +597,54 @@ cannot satisfy the eval accidentally. Raw Pi sessions are captured from:
 Pi token/cost capture is unsupported in v1, so `coding-agent-token-usage.json`
 is not expected for Pi runs.
 
+### Copilot
+
+`coding-agents/copilot.yaml` launches GitHub Copilot CLI as `copilot`. Its
+context lives in `coding-agents/copilot-context/HOWTO.md`, and quorum generates
+the per-run launcher from `coding-agents/copilot-context/launch-agent`.
+
+quorum creates an isolated `COPILOT_HOME` under `<run>/coding-agent-config`,
+writes a chmod-0600 `.copilot-env`, stages Superpowers under
+`plugins/superpowers`, and launches Copilot from the scenario workdir with:
+
+```bash
+copilot \
+  --plugin-dir <run>/coding-agent-config/plugins/superpowers \
+  --session-id <run-session-id> \
+  --allow-all \
+  --no-auto-update \
+  --no-remote \
+  --disable-builtin-mcps \
+  --secret-env-vars=<secret-env-var-names> \
+  --log-dir <run>/coding-agent-config/logs
+```
+
+The launcher uses an allowlisted outer environment. Auth can come from
+`COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, `gh auth token`, or
+`COPILOT_PROVIDER_BASE_URL`. Proxy URLs with embedded credentials are rejected;
+remove the userinfo from `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and lowercase
+variants before running Copilot evals.
+
+Copilot's primary trace is strict session state:
+
+```text
+<run>/coding-agent-config/session-state/<run-session-id>/events.jsonl
+```
+
+quorum normalizes that file into `<run>/coding-agent-tool-calls.jsonl` and
+fails closed if the expected session-state file is missing, empty after
+normalization, or accompanied by unexpected session-state files. Plugin staging
+is validated by files under `plugins/superpowers`, but behavioral validation
+comes from native `Skill` rows in the normalized trace. Do not use
+`copilot plugin list` as the validation source; it currently reports no
+plugins for the staged root.
+
+Live smoke:
+
+```bash
+SUPERPOWERS_ROOT=/Users/drewritter/prime-rad/superpowers uv run quorum run scenarios/copilot-superpowers-bootstrap --coding-agent copilot
+```
+
 ## How a Run Works
 
 A `quorum run` drives one scenario against one Coding-Agent:
@@ -591,15 +656,17 @@ A `quorum run` drives one scenario against one Coding-Agent:
 3. **Isolation** — a fresh per-run agent-config dir (`CLAUDE_CONFIG_DIR` for
    Claude, `CODEX_HOME` for Codex, `ANTIGRAVITY_CONFIG_DIR` for Antigravity,
    `GEMINI_CLI_HOME` for Gemini, `KIMI_CODE_HOME` for Kimi,
-   `OPENCODE_QUORUM_HOME` for OpenCode, and `PI_CODING_AGENT_DIR` for Pi) is
-   seeded or provisioned, so the Coding-Agent never sees the host's real
-   `~/.claude`, `~/.codex`, `~/.gemini`, `~/.kimi-code`, OpenCode state, or
-   `~/.pi` state, installed plugins, or prior sessions. Antigravity also runs
-   an isolated auth preflight and plugin install before launch; Gemini links
-   the local Superpowers extension before launch; Kimi gets an isolated
-   local-path Superpowers plugin install before launch; OpenCode stages the
-   plugin and runs an isolated provider preflight; Pi writes run-local auth,
-   settings, and environment files.
+   `OPENCODE_QUORUM_HOME` for OpenCode, `PI_CODING_AGENT_DIR` for Pi, and
+   `COPILOT_HOME` for Copilot) is seeded or provisioned, so the Coding-Agent
+   never sees the host's real `~/.claude`, `~/.codex`, `~/.gemini`,
+   `~/.kimi-code`, OpenCode state, `~/.pi` state, or `~/.copilot` state,
+   installed plugins, or prior sessions. Antigravity also runs an isolated auth
+   preflight and plugin install before launch; Gemini links the local
+   Superpowers extension before launch; Kimi gets an isolated local-path
+   Superpowers plugin install before launch; OpenCode stages the plugin and
+   runs an isolated provider preflight; Pi writes run-local auth, settings, and
+   environment files; Copilot stages the plugin and writes a private
+   `.copilot-env` before launch.
 4. **Setup** — the Coding-Agent's workdir is created inside the run dir as
    `coding-agent-workdir/`; the scenario's `setup.sh` builds the fixture.
 5. **Pre-checks** — `checks.sh`'s `pre()` runs against the workdir; a failure
@@ -613,10 +680,10 @@ A `quorum run` drives one scenario against one Coding-Agent:
    `## Acceptance Criteria`.
 8. **Capture** — the Coding-Agent's session-log dir is diffed, normalized into
    `coding-agent-tool-calls.jsonl`, and token usage is written to
-   `coding-agent-token-usage.json` when supported (measurement only). OpenCode
-   exports matching new sessions before this diff step. Antigravity, Gemini,
-   Kimi, OpenCode, and Pi runs fail closed as `indeterminate` if no
-   transcript/session export is captured or captured logs normalize to zero
+   `coding-agent-token-usage.json` (measurement only). OpenCode exports matching
+   new sessions before this diff step. Antigravity, Gemini, Kimi, OpenCode, Pi,
+   and Copilot runs fail closed as `indeterminate` if no transcript/session
+   export or session-state file is captured, or captured logs normalize to zero
    tool-call rows.
 9. **Post-checks** — `checks.sh`'s `post()` runs against the captured evidence.
 10. **Compose** — the final verdict is `pass` iff the Gauntlet-Agent passed
@@ -665,15 +732,16 @@ git diff coding-agents/claude-home-skeleton/   # sanity-check the scrubbed resul
 git commit coding-agents/claude-home-skeleton/ -m "quorum: refresh Claude skeleton"
 ```
 
-Codex, Antigravity, Gemini, Kimi, OpenCode, and Pi need no committed home skeleton.
-Codex provisions a fresh per-run home from your `OPENAI_API_KEY`; Antigravity
-provisions an isolated per-run `ANTIGRAVITY_CONFIG_DIR`, runs its auth
-preflight, and installs the Superpowers plugin from `SUPERPOWERS_ROOT`; Gemini
-seeds API-key auth and links the local extension; Kimi provisions a fresh
-per-run `KIMI_CODE_HOME` and installs only the local-path Superpowers plugin
-from `SUPERPOWERS_ROOT`; OpenCode stages the plugin and skills from
-`SUPERPOWERS_ROOT` into isolated XDG dirs; Pi provisions run-local auth,
-settings, and env files under `PI_CODING_AGENT_DIR`.
+Codex, Antigravity, Gemini, Kimi, OpenCode, Pi, and Copilot need no committed
+home skeleton. Codex provisions a fresh per-run home from your
+`OPENAI_API_KEY`; Antigravity provisions an isolated per-run
+`ANTIGRAVITY_CONFIG_DIR`, runs its auth preflight, and installs the Superpowers
+plugin from `SUPERPOWERS_ROOT`; Gemini seeds API-key auth and links the local
+extension; Kimi provisions a fresh per-run `KIMI_CODE_HOME` and installs only
+the local-path Superpowers plugin from `SUPERPOWERS_ROOT`; OpenCode stages the
+plugin and skills from `SUPERPOWERS_ROOT` into isolated XDG dirs; Pi provisions
+run-local auth, settings, and env files under `PI_CODING_AGENT_DIR`; Copilot
+stages the plugin from `SUPERPOWERS_ROOT` into isolated `COPILOT_HOME`.
 
 ## Safe Checks
 
@@ -783,6 +851,24 @@ When a Pi run is non-passing or indeterminate:
    each new Pi session for malformed JSON or missing `cwd`.
 9. Inspect normalized behavior in `<run>/coding-agent-tool-calls.jsonl`.
 10. Render the verdict with `uv run quorum show <run-or-batch-id>`.
+
+### Copilot Troubleshooting
+
+When a Copilot run is non-passing or indeterminate:
+
+1. Confirm `copilot` is installed and reachable: `copilot --version`.
+2. Confirm auth is available from `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`,
+   `GITHUB_TOKEN`, `gh auth token`, or `COPILOT_PROVIDER_BASE_URL`.
+3. Confirm the staged plugin files exist under
+   `<run>/coding-agent-config/plugins/superpowers/`.
+4. Confirm the expected session-state trace exists at
+   `<run>/coding-agent-config/session-state/<run-session-id>/events.jsonl`.
+5. Inspect normalized behavior in `<run>/coding-agent-tool-calls.jsonl`;
+   behavioral validation comes from native `Skill` rows, not
+   `copilot plugin list`.
+6. If setup fails on a proxy variable, remove embedded credentials from the
+   proxy URL and retry.
+7. Render the verdict with `uv run quorum show <run-or-batch-id>`.
 
 ## Contribution Rules
 
