@@ -843,6 +843,195 @@ def test_kimi_plugin_installed_fails_when_managed_copy_exists(tmp_path):
     assert "managed" in rec["detail"]
 
 
+COPILOT_PLUGIN_FILES = [
+    ".claude-plugin/plugin.json",
+    "hooks/hooks.json",
+    "hooks/run-hook.cmd",
+    "hooks/session-start",
+    "skills/using-superpowers/SKILL.md",
+    "skills/brainstorming/SKILL.md",
+    "skills/using-superpowers/references/copilot-tools.md",
+]
+
+COPILOT_BRAINSTORMING_ARG_RE = '"skill":"superpowers:brainstorming"'
+
+
+def _stage_copilot_plugin(plugin_root: Path, *, omit: set[str] | None = None) -> None:
+    omitted = omit or set()
+    for rel in COPILOT_PLUGIN_FILES:
+        if rel in omitted:
+            continue
+        path = plugin_root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("present")
+
+
+def test_copilot_bootstrap_native_skill_before_write_rejects_shell_read_only_order(
+    tmp_path,
+):
+    parent = tmp_path / "rundir"
+    parent.mkdir()
+    workdir = parent / "coding-agent-workdir"
+    workdir.mkdir()
+    trace = _trace(
+        parent,
+        {
+            "tool": "Bash",
+            "args": {
+                "command": (
+                    "cat plugins/superpowers/skills/brainstorming/SKILL.md"
+                )
+            },
+        },
+        {"tool": "Write", "args": {"file_path": str(workdir / "src/App.jsx")}},
+        {"tool": "Skill", "args": {"skill": "superpowers:brainstorming"}},
+    )
+    broad_sink = tmp_path / "broad"
+    assert (
+        _run(
+            "skill-before-tool",
+            "superpowers:brainstorming",
+            "Write",
+            trace=trace,
+            cwd=workdir,
+            sink=broad_sink,
+        )
+        == 0
+    )
+
+    native_sink = tmp_path / "native"
+    assert (
+        _run(
+            "tool-match-before-tool-match",
+            "Skill",
+            COPILOT_BRAINSTORMING_ARG_RE,
+            "Write",
+            ".*",
+            trace=trace,
+            cwd=workdir,
+            sink=native_sink,
+        )
+        != 0
+    )
+    rec = _r(native_sink)
+    assert not rec["passed"]
+    assert "Skill" in rec["detail"]
+    assert "Write" in rec["detail"]
+
+
+def test_copilot_bootstrap_native_skill_before_write_accepts_native_order(
+    tmp_path,
+):
+    parent = tmp_path / "rundir"
+    parent.mkdir()
+    workdir = parent / "coding-agent-workdir"
+    workdir.mkdir()
+    trace = _trace(
+        parent,
+        {"tool": "Skill", "args": {"skill": "superpowers:brainstorming"}},
+        {"tool": "Write", "args": {"file_path": str(workdir / "src/App.jsx")}},
+    )
+    sink = tmp_path / "s"
+
+    assert (
+        _run(
+            "tool-match-before-tool-match",
+            "Skill",
+            COPILOT_BRAINSTORMING_ARG_RE,
+            "Write",
+            ".*",
+            trace=trace,
+            cwd=workdir,
+            sink=sink,
+        )
+        == 0
+    )
+    assert _r(sink)["passed"]
+
+
+def test_copilot_plugin_installed_passes_when_required_files_exist(tmp_path):
+    run_dir = tmp_path / "run"
+    workdir = run_dir / "coding-agent-workdir"
+    workdir.mkdir(parents=True)
+    plugin_root = run_dir / "coding-agent-config" / "plugins" / "superpowers"
+    _stage_copilot_plugin(plugin_root)
+    sink = tmp_path / "s"
+
+    result = subprocess.run(
+        [str(BIN / "copilot-plugin-installed")],
+        cwd=workdir,
+        env={
+            "PATH": f"{BIN}:/usr/bin:/bin",
+            "QUORUM_RECORD_SINK": str(sink),
+            "QUORUM_RUN_DIR": str(run_dir),
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert len(sink.read_text().splitlines()) == 1
+    assert _r(sink)["passed"]
+
+
+def test_copilot_plugin_installed_passes_with_copilot_home_when_run_dir_unset(
+    tmp_path,
+):
+    copilot_home = tmp_path / "copilot-home"
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    _stage_copilot_plugin(copilot_home / "plugins" / "superpowers")
+    sink = tmp_path / "s"
+
+    result = subprocess.run(
+        [str(BIN / "copilot-plugin-installed")],
+        cwd=workdir,
+        env={
+            "PATH": f"{BIN}:/usr/bin:/bin",
+            "QUORUM_RECORD_SINK": str(sink),
+            "COPILOT_HOME": str(copilot_home),
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert len(sink.read_text().splitlines()) == 1
+    assert _r(sink)["passed"]
+
+
+def test_copilot_plugin_installed_fails_when_copilot_tools_reference_missing(
+    tmp_path,
+):
+    run_dir = tmp_path / "run"
+    workdir = run_dir / "coding-agent-workdir"
+    workdir.mkdir(parents=True)
+    plugin_root = run_dir / "coding-agent-config" / "plugins" / "superpowers"
+    _stage_copilot_plugin(
+        plugin_root,
+        omit={"skills/using-superpowers/references/copilot-tools.md"},
+    )
+    sink = tmp_path / "s"
+
+    result = subprocess.run(
+        [str(BIN / "copilot-plugin-installed")],
+        cwd=workdir,
+        env={
+            "PATH": f"{BIN}:/usr/bin:/bin",
+            "QUORUM_RECORD_SINK": str(sink),
+            "QUORUM_RUN_DIR": str(run_dir),
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert len(sink.read_text().splitlines()) == 1
+    rec = _r(sink)
+    assert not rec["passed"]
+    assert "copilot-tools.md" in rec["detail"]
+
+
 # worktree-created — semantic check that passes for either Claude
 # (native EnterWorktree tool) or Codex (shells out to `git worktree add`).
 # Replaces `tool-called EnterWorktree`, which was Claude-only and

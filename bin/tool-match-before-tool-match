@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Verify any Bash call with command matching a regex fires before any other Bash call
-# matching a second regex.
+# Verify any tool call with args matching a regex fires before any other tool call
+# matching a second regex. For shell-like rows, match args.command. For native
+# tool rows without args.command, match compact args JSON.
 #
 # Usage: tool-match-before-tool-match <tool-name> <earlier-regex> <tool-name> <later-regex>
 # Example: tool-match-before-tool-match Bash 'pytest' Bash 'git[[:space:]]+commit'
@@ -27,13 +28,27 @@ fi
 
 IDX_A=$(
     jq -s --arg tool "$TOOL_A" --arg re "$REGEX_A" \
-        'to_entries | map(select(.value.tool == $tool and ((.value.args.command // "") | test($re)))) | first | (.key // -1)' \
+        'def match_text:
+           if (.args.command? // null) == null
+           then (.args // {} | tojson)
+           else .args.command
+           end;
+         to_entries
+         | map(select(.value.tool == $tool and ((.value | match_text) | test($re))))
+         | first | (.key // -1)' \
         "$FILE"
 )
 
 IDX_B=$(
     jq -s --arg tool "$TOOL_B" --arg re "$REGEX_B" \
-        'to_entries | map(select(.value.tool == $tool and ((.value.args.command // "") | test($re)))) | first | (.key // -1)' \
+        'def match_text:
+           if (.args.command? // null) == null
+           then (.args // {} | tojson)
+           else .args.command
+           end;
+         to_entries
+         | map(select(.value.tool == $tool and ((.value | match_text) | test($re))))
+         | first | (.key // -1)' \
         "$FILE"
 )
 

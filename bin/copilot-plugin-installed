@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+_RECORD_CHECK=copilot-plugin-installed
+_RECORD_ARGS=("$@")
+source "$(dirname "$0")/_record"
+set -uo pipefail
+
+if [ -n "${QUORUM_RUN_DIR:-}" ]; then
+    home="$QUORUM_RUN_DIR/coding-agent-config"
+else
+    home="${COPILOT_HOME:-}"
+fi
+
+plugin_root="$home/plugins/superpowers"
+missing=()
+for rel in \
+    ".claude-plugin/plugin.json" \
+    "hooks/hooks.json" \
+    "hooks/run-hook.cmd" \
+    "hooks/session-start" \
+    "skills/using-superpowers/SKILL.md" \
+    "skills/brainstorming/SKILL.md" \
+    "skills/using-superpowers/references/copilot-tools.md"
+do
+    if [ ! -f "$plugin_root/$rel" ]; then
+        missing+=("$rel")
+    fi
+done
+
+if [ "${#missing[@]}" -ne 0 ]; then
+    detail=""
+    for rel in "${missing[@]}"; do
+        if [ -z "$detail" ]; then
+            detail="$rel"
+        else
+            detail="$detail, $rel"
+        fi
+    done
+    record_fail "missing Copilot Superpowers plugin files: $detail"
+    exit 1
+fi
+
+record_pass "Copilot Superpowers plugin staged in isolated config"

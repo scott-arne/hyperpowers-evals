@@ -168,6 +168,23 @@ def test_opencode_bootstrap_requires_native_skill_call():
     assert 'tool-arg-match Skill \'.skill == "superpowers:brainstorming"\'' in checks
 
 
+def test_copilot_bootstrap_requires_native_skill_call():
+    root = Path(__file__).resolve().parents[2]
+    checks = (root / "scenarios" / "copilot-superpowers-bootstrap" / "checks.sh").read_text()
+
+    assert "copilot-plugin-installed" in checks
+    assert 'tool-arg-match Skill \'.skill == "superpowers:brainstorming"\'' in checks
+    assert (
+        "tool-match-before-tool-match "
+        "Skill '\"skill\":\"superpowers:brainstorming\"' Edit '.*'"
+    ) in checks
+    assert (
+        "tool-match-before-tool-match "
+        "Skill '\"skill\":\"superpowers:brainstorming\"' Write '.*'"
+    ) in checks
+    assert "skill-before-tool superpowers:brainstorming" not in checks
+
+
 class TestFixExecutableBits:
     def test_fixes_setup(self, tmp_path):
         sd = new_scenario(tmp_path, "demo")
