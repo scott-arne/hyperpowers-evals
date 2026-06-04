@@ -15,11 +15,11 @@ from quorum.coding_agent_config import CodingAgentConfig
 from quorum.kimi import effective_kimi_model_env, kimi_preflight_sentinel_payload
 from quorum.runner import (
     ANTIGRAVITY_RATE_LIMIT_MARKER,
-    AgentRuntime,
     COPILOT_ENV_FILE_NAME,
     COPILOT_PROVIDER_ENV_NAMES,
     COPILOT_REQUIRED_SUPERPOWERS_FILES,
     COPILOT_SECRET_ENV_NAMES,
+    AgentRuntime,
     CopilotProvisioning,
     RunnerError,
     _cleanup_agent_runtime,
@@ -43,6 +43,7 @@ from quorum.runner import (
     _write_copilot_env_file,
     _write_gemini_env_file,
     _write_gemini_settings,
+    invoke_gauntlet,
     run_scenario,
 )
 
@@ -179,6 +180,68 @@ def _make_kimi_agent(coding_agents_dir: Path, session_log_dir: Path) -> None:
         )
     )
     (coding_agents_dir / "kimi-context").mkdir(parents=True, exist_ok=True)
+
+
+def _make_copilot_agent(
+    coding_agents_dir: Path,
+    session_log_dir: Path | None = None,
+) -> None:
+    coding_agents_dir.mkdir(parents=True, exist_ok=True)
+    (coding_agents_dir / "copilot.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "name": "copilot",
+                "binary": "copilot",
+                "agent_config_env": "COPILOT_HOME",
+                "session_log_dir": (
+                    "${COPILOT_HOME}/session-state"
+                    if session_log_dir is None
+                    else str(session_log_dir)
+                ),
+                "session_log_glob": "**/events.jsonl",
+                "normalizer": "copilot",
+                "required_env": [],
+            }
+        )
+    )
+    (coding_agents_dir / "copilot-context").mkdir(parents=True, exist_ok=True)
+
+
+def _write_copilot_skill_event(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "type": "assistant.message",
+                "data": {
+                    "toolRequests": [
+                        {
+                            "name": "skill",
+                            "arguments": {"skill": "superpowers:brainstorming"},
+                        }
+                    ]
+                },
+            }
+        )
+        + "\n"
+    )
+
+
+def _copilot_provisioning(
+    copilot_home: Path,
+    *,
+    session_id: str = "session-123",
+    secret: str = "secret-token",
+) -> CopilotProvisioning:
+    env_file = copilot_home / COPILOT_ENV_FILE_NAME
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    env_file.write_text(f"COPILOT_GITHUB_TOKEN={_shell_single_quote(secret)}\n")
+    return CopilotProvisioning(
+        session_id=session_id,
+        env_file=env_file,
+        secret_names=("COPILOT_GITHUB_TOKEN",),
+        secret_values=(secret,),
+    )
 
 
 # Tests pass an empty dir as skeleton_root so _seed_agent_config_dir falls
@@ -408,6 +471,41 @@ def _stub_gauntlet_pass(*, run_dir, **kwargs):
 def _stub_gauntlet_fail(*, run_dir, **kwargs):
     (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
     return "fail"
+
+
+def test_invoke_gauntlet_accepts_sanitized_env_base(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOST_ONLY", "must-not-leak")
+    story = tmp_path / "story.md"
+    story.write_text("story\n")
+    launch_cwd = tmp_path / "workdir"
+    launch_cwd.mkdir()
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    captured: dict[str, dict[str, str]] = {}
+
+    def fake_run(cmd, **kwargs):
+        del cmd
+        captured["env"] = kwargs["env"]
+        return subprocess.CompletedProcess([], 0, "", "")
+
+    with patch("quorum.runner.subprocess.run", side_effect=fake_run):
+        status = invoke_gauntlet(
+            story_path=story,
+            target_binary="copilot",
+            launch_cwd=launch_cwd,
+            run_dir=run_dir,
+            max_time=None,
+            extra_env={"COPILOT_HOME": "/isolated/copilot"},
+            env_base={"PATH": "/bin", "TERM": "xterm-256color"},
+        )
+
+    assert status == "investigate"
+    assert captured["env"] == {
+        "PATH": "/bin",
+        "TERM": "xterm-256color",
+        "QUORUM_AGENT_CWD": str(launch_cwd),
+        "COPILOT_HOME": "/isolated/copilot",
+    }
 
 
 def test_antigravity_launch_agent_is_interactive_and_substituted(tmp_path):
@@ -894,42 +992,38 @@ def test_copilot_launch_agent_is_substituted_and_uses_env_i(tmp_path):
     ]
 
 
-def test_copilot_context_shell_substitutions_are_from_runner(tmp_path):
+def test_copilot_context_gets_runtime_substitutions(tmp_path):
     coding_agents_dir = tmp_path / "coding-agents"
     scenarios_dir = tmp_path / "scenarios"
-    session_log_dir = tmp_path / "logs"
-    _make_coding_agent(coding_agents_dir, "copilot", session_log_dir)
-    (coding_agents_dir / "copilot-context").mkdir(parents=True, exist_ok=True)
-    (coding_agents_dir / "copilot.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "name": "copilot",
-                "binary": "echo",
-                "agent_config_env": "COPILOT_HOME",
-                "session_log_dir": str(session_log_dir),
-                "session_log_glob": "*.jsonl",
-                "normalizer": "claude",
-                "required_env": [],
-            }
-        )
-    )
+    _make_copilot_agent(coding_agents_dir)
     (coding_agents_dir / "copilot-context" / "HOWTO.md").write_text(
         "$QUORUM_LAUNCH_AGENT_SH\n"
         "$COPILOT_HOME_SH\n"
+        "$COPILOT_ENV_FILE\n"
         "$COPILOT_ENV_FILE_SH\n"
         "$QUORUM_COPILOT_SESSION_ID\n"
     )
-    shutil.copy2(
-        Path(__file__).resolve().parents[2]
-        / "coding-agents"
-        / "copilot-context"
-        / "launch-agent",
-        coding_agents_dir / "copilot-context" / "launch-agent",
+    (coding_agents_dir / "copilot-context" / "launch-agent").write_text(
+        "#!/usr/bin/env bash\n"
+        "echo $COPILOT_HOME_SH\n"
+        "echo $COPILOT_ENV_FILE\n"
+        "echo $COPILOT_ENV_FILE_SH\n"
+        'echo "$QUORUM_COPILOT_SESSION_ID"\n'
     )
     sd = _make_scenario(scenarios_dir, "x", with_checks=False)
     (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+    env_file = tmp_path / "runtime env $HOME's file"
+    provisioning = CopilotProvisioning(
+        session_id="session-123",
+        env_file=env_file,
+        secret_names=("COPILOT_GITHUB_TOKEN",),
+        secret_values=("secret-token",),
+    )
 
-    with patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass):
+    with (
+        patch("quorum.runner._seed_copilot_config", return_value=provisioning),
+        patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass),
+    ):
         run_dir, _ = run_scenario(
             scenario_dir=sd,
             coding_agent="copilot",
@@ -939,18 +1033,18 @@ def test_copilot_context_shell_substitutions_are_from_runner(tmp_path):
         )
 
     howto = (run_dir / "gauntlet-agent" / "context" / "HOWTO.md").read_text()
-    assert "$QUORUM_LAUNCH_AGENT_SH" not in howto
-    assert "$COPILOT_HOME_SH" not in howto
-    assert "$COPILOT_ENV_FILE_SH" not in howto
-    assert "$QUORUM_COPILOT_SESSION_ID" not in howto
     launch_agent = run_dir / "gauntlet-agent" / "context" / "launch-agent"
     launcher = launch_agent.read_text()
-    assert "$QUORUM_COPILOT_SESSION_ID" not in launcher
+    combined = howto + launcher
+    assert "$QUORUM_" not in combined
+    assert "$COPILOT_" not in combined
     assert _shell_single_quote(str(launch_agent)) in howto
     assert _shell_single_quote(str(run_dir / "coding-agent-config")) in howto
-    assert _shell_single_quote(str(run_dir / "coding-agent-config" / ".copilot-env")) in howto
-    session_id = launcher.split('--session-id "', 1)[1].split('"', 1)[0]
-    assert str(uuid.UUID(session_id)) == session_id
+    assert str(env_file) in howto
+    assert _shell_single_quote(str(env_file)) in howto
+    assert "session-123" in combined
+    assert str(env_file) in launcher
+    assert _shell_single_quote(str(env_file)) in launcher
 
 
 def test_antigravity_launch_uses_visible_alias_for_hidden_cwd(tmp_path, monkeypatch):
@@ -1644,10 +1738,21 @@ class TestSeedAgentConfigDir:
             "PATH": "/bin",
             "TERM": "xterm-256color",
             "LANG": "C.UTF-8",
+            "GH_HOST": "github.enterprise.test",
+            "COPILOT_GH_HOST": "copilot.enterprise.test",
+            "HTTP_PROXY": "http://proxy.test:8080",
+            "HTTPS_PROXY": "http://proxy.test:8080",
+            "all_proxy": "socks5://proxy.test:1080",
+            "no_proxy": "localhost,127.0.0.1",
+            "SSL_CERT_FILE": "/certs/ca.pem",
+            "NODE_EXTRA_CA_CERTS": "/certs/node.pem",
+            "COPILOT_MODEL": "gpt-test",
+            "COPILOT_OFFLINE": "1",
             "COPILOT_GITHUB_TOKEN": "token",
             "GH_TOKEN": "gh-token",
             "GITHUB_TOKEN": "github-token",
             "COPILOT_PROVIDER_API_KEY": "provider-key",
+            "COPILOT_PROVIDER_BEARER_TOKEN": "provider-bearer",
             "COPILOT_PROVIDER_BASE_URL": "http://provider",
             "OTEL_EXPORTER_OTLP_HEADERS": "secret",
             "AWS_SECRET_ACCESS_KEY": "aws-secret",
@@ -1657,9 +1762,37 @@ class TestSeedAgentConfigDir:
             "PATH": "/bin",
             "TERM": "xterm-256color",
             "LANG": "C.UTF-8",
+            "GH_HOST": "github.enterprise.test",
+            "COPILOT_GH_HOST": "copilot.enterprise.test",
+            "HTTP_PROXY": "http://proxy.test:8080",
+            "HTTPS_PROXY": "http://proxy.test:8080",
+            "all_proxy": "socks5://proxy.test:1080",
+            "no_proxy": "localhost,127.0.0.1",
+            "SSL_CERT_FILE": "/certs/ca.pem",
+            "NODE_EXTRA_CA_CERTS": "/certs/node.pem",
+            "COPILOT_MODEL": "gpt-test",
+            "COPILOT_OFFLINE": "1",
         }
         for name in COPILOT_SECRET_ENV_NAMES:
             assert name not in _copilot_gauntlet_env(host_env)
+        for name in (
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
+            "COPILOT_PROVIDER_BASE_URL",
+            "COPILOT_PROVIDER_BEARER_TOKEN",
+            "OTEL_EXPORTER_OTLP_HEADERS",
+            "AWS_SECRET_ACCESS_KEY",
+        ):
+            assert name not in _copilot_gauntlet_env(host_env)
+
+    def test_copilot_gauntlet_env_rejects_credentialed_proxy(self):
+        with pytest.raises(RunnerError, match="credentialed proxy") as excinfo:
+            _copilot_gauntlet_env({
+                "PATH": "/bin",
+                "HTTP_PROXY": "http://user:pass@proxy.example:8080",
+            })
+
+        assert excinfo.value.stage == "setup"
 
     def test_copilot_leak_scan_reports_only_non_excluded_secret_paths(self, tmp_path):
         run_dir = tmp_path / "run"
@@ -3418,6 +3551,322 @@ class TestRunScenario:
         assert verdict.error is not None
         assert verdict.error.stage == "capture"
         assert "plugin_session_start" in verdict.error.message
+
+    def test_copilot_run_uses_sanitized_gauntlet_env(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PATH", "/bin")
+        monkeypatch.setenv("TERM", "xterm-256color")
+        monkeypatch.setenv("LANG", "C.UTF-8")
+        monkeypatch.setenv("GH_HOST", "github.enterprise.test")
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.test:8080")
+        monkeypatch.setenv("SSL_CERT_FILE", "/certs/ca.pem")
+        monkeypatch.setenv("COPILOT_MODEL", "gpt-test")
+        monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "host-token")
+        monkeypatch.setenv("GH_TOKEN", "gh-token")
+        monkeypatch.setenv("GITHUB_TOKEN", "github-token")
+        monkeypatch.setenv("COPILOT_PROVIDER_API_KEY", "provider-key")
+        monkeypatch.setenv("COPILOT_PROVIDER_BASE_URL", "http://provider")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "otel-secret")
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        _make_copilot_agent(coding_agents_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+        captured: dict[str, dict[str, str] | None] = {}
+
+        def fake_seed(copilot_home: Path, workdir: Path, session_id: str):
+            del workdir, session_id
+            return _copilot_provisioning(copilot_home)
+
+        def fake_invoke(*, run_dir, env_base, extra_env, **_kwargs):
+            captured["env_base"] = env_base
+            captured["extra_env"] = extra_env
+            copilot_home = Path(extra_env["COPILOT_HOME"])
+            _write_copilot_skill_event(
+                copilot_home / "session-state" / "session-123" / "events.jsonl"
+            )
+            result_dir = run_dir / "gauntlet-agent" / "results" / "run-1"
+            result_dir.mkdir(parents=True)
+            (result_dir / "result.json").write_text(json.dumps({"status": "pass"}))
+            return "pass"
+
+        with (
+            patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
+            patch("quorum.runner.invoke_gauntlet", side_effect=fake_invoke),
+        ):
+            _run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="copilot",
+                coding_agents_dir=coding_agents_dir,
+                out_root=tmp_path / "results",
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "pass"
+        assert captured["env_base"] == {
+            "PATH": "/bin",
+            "TERM": "xterm-256color",
+            "LANG": "C.UTF-8",
+            "GH_HOST": "github.enterprise.test",
+            "HTTPS_PROXY": "http://proxy.test:8080",
+            "SSL_CERT_FILE": "/certs/ca.pem",
+            "COPILOT_MODEL": "gpt-test",
+        }
+        assert captured["extra_env"] == {
+            "COPILOT_HOME": str(_run_dir / "coding-agent-config")
+        }
+        env_base = captured["env_base"] or {}
+        for name in (
+            "COPILOT_GITHUB_TOKEN",
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
+            "COPILOT_PROVIDER_API_KEY",
+            "COPILOT_PROVIDER_BASE_URL",
+            "OTEL_EXPORTER_OTLP_HEADERS",
+            "AWS_SECRET_ACCESS_KEY",
+        ):
+            assert name not in env_base
+
+    def test_copilot_missing_transcript_is_indeterminate(self, tmp_path):
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        _make_copilot_agent(coding_agents_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+
+        def fake_seed(copilot_home: Path, workdir: Path, session_id: str):
+            del workdir, session_id
+            return _copilot_provisioning(copilot_home)
+
+        with (
+            patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
+            patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass),
+        ):
+            _run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="copilot",
+                coding_agents_dir=coding_agents_dir,
+                out_root=tmp_path / "results",
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "capture"
+        assert "no Copilot transcript" in verdict.final_reason
+
+    def test_copilot_transcript_zero_rows_is_indeterminate(self, tmp_path):
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        _make_copilot_agent(coding_agents_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+
+        def fake_seed(copilot_home: Path, workdir: Path, session_id: str):
+            del workdir, session_id
+            return _copilot_provisioning(copilot_home)
+
+        def fake_invoke(*, run_dir, extra_env, **_kwargs):
+            copilot_home = Path(extra_env["COPILOT_HOME"])
+            events = copilot_home / "session-state" / "session-123" / "events.jsonl"
+            events.parent.mkdir(parents=True)
+            events.write_text('{"type":"session.shutdown"}\n')
+            result_dir = run_dir / "gauntlet-agent" / "results" / "run-1"
+            result_dir.mkdir(parents=True)
+            (result_dir / "result.json").write_text(json.dumps({"status": "pass"}))
+            return "pass"
+
+        with (
+            patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
+            patch("quorum.runner.invoke_gauntlet", side_effect=fake_invoke),
+        ):
+            _run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="copilot",
+                coding_agents_dir=coding_agents_dir,
+                out_root=tmp_path / "results",
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "capture"
+        assert "Copilot transcript(s) normalized to zero" in verdict.final_reason
+
+    def test_copilot_missing_expected_session_state_is_indeterminate(self, tmp_path):
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        _make_copilot_agent(coding_agents_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+
+        def fake_seed(copilot_home: Path, workdir: Path, session_id: str):
+            del workdir, session_id
+            return _copilot_provisioning(copilot_home, session_id="expected")
+
+        def fake_invoke(*, run_dir, extra_env, **_kwargs):
+            copilot_home = Path(extra_env["COPILOT_HOME"])
+            _write_copilot_skill_event(
+                copilot_home / "session-state" / "other" / "events.jsonl"
+            )
+            result_dir = run_dir / "gauntlet-agent" / "results" / "run-1"
+            result_dir.mkdir(parents=True)
+            (result_dir / "result.json").write_text(json.dumps({"status": "pass"}))
+            return "pass"
+
+        with (
+            patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
+            patch("quorum.runner.invoke_gauntlet", side_effect=fake_invoke),
+        ):
+            _run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="copilot",
+                coding_agents_dir=coding_agents_dir,
+                out_root=tmp_path / "results",
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "capture"
+        assert "expected Copilot session-state log did not appear" in verdict.final_reason
+
+    def test_copilot_extra_session_state_log_is_indeterminate(self, tmp_path):
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        _make_copilot_agent(coding_agents_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+
+        def fake_seed(copilot_home: Path, workdir: Path, session_id: str):
+            del workdir, session_id
+            return _copilot_provisioning(copilot_home, session_id="expected")
+
+        def fake_invoke(*, run_dir, extra_env, **_kwargs):
+            copilot_home = Path(extra_env["COPILOT_HOME"])
+            expected_log = (
+                copilot_home / "session-state" / "expected" / "events.jsonl"
+            )
+            expected_log.parent.mkdir(parents=True)
+            expected_log.write_text('{"type":"session.shutdown"}\n')
+            _write_copilot_skill_event(
+                copilot_home / "session-state" / "other" / "events.jsonl"
+            )
+            result_dir = run_dir / "gauntlet-agent" / "results" / "run-1"
+            result_dir.mkdir(parents=True)
+            (result_dir / "result.json").write_text(json.dumps({"status": "pass"}))
+            return "pass"
+
+        with (
+            patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
+            patch("quorum.runner.invoke_gauntlet", side_effect=fake_invoke),
+        ):
+            _run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="copilot",
+                coding_agents_dir=coding_agents_dir,
+                out_root=tmp_path / "results",
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "capture"
+        assert "unexpected Copilot session-state log" in verdict.final_reason
+
+    def test_copilot_secret_leak_in_wrong_session_state_takes_precedence(
+        self, tmp_path
+    ):
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        _make_copilot_agent(coding_agents_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+
+        def fake_seed(copilot_home: Path, workdir: Path, session_id: str):
+            del workdir, session_id
+            return _copilot_provisioning(
+                copilot_home,
+                session_id="expected",
+                secret="leaked-secret",
+            )
+
+        def fake_invoke(*, run_dir, extra_env, **_kwargs):
+            copilot_home = Path(extra_env["COPILOT_HOME"])
+            other_log = copilot_home / "session-state" / "other" / "events.jsonl"
+            _write_copilot_skill_event(other_log)
+            with other_log.open("a") as f:
+                f.write("leaked-secret\n")
+            result_dir = run_dir / "gauntlet-agent" / "results" / "run-1"
+            result_dir.mkdir(parents=True)
+            (result_dir / "result.json").write_text(json.dumps({"status": "pass"}))
+            return "pass"
+
+        with (
+            patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
+            patch("quorum.runner.invoke_gauntlet", side_effect=fake_invoke),
+        ):
+            _run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="copilot",
+                coding_agents_dir=coding_agents_dir,
+                out_root=tmp_path / "results",
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "capture"
+        assert "Copilot secret value appeared in non-secret run artifact" in (
+            verdict.final_reason
+        )
+        assert "expected Copilot session-state log did not appear" not in (
+            verdict.final_reason
+        )
+
+    def test_copilot_secret_leak_forces_indeterminate(self, tmp_path):
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        _make_copilot_agent(coding_agents_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+
+        def fake_seed(copilot_home: Path, workdir: Path, session_id: str):
+            del workdir, session_id
+            return _copilot_provisioning(copilot_home, secret="leaked-secret")
+
+        def fake_invoke(*, run_dir, extra_env, **_kwargs):
+            copilot_home = Path(extra_env["COPILOT_HOME"])
+            _write_copilot_skill_event(
+                copilot_home / "session-state" / "session-123" / "events.jsonl"
+            )
+            (run_dir / "gauntlet-agent").mkdir(parents=True, exist_ok=True)
+            (run_dir / "gauntlet-agent" / "transcript.txt").write_text(
+                "accidentally printed leaked-secret"
+            )
+            result_dir = run_dir / "gauntlet-agent" / "results" / "run-1"
+            result_dir.mkdir(parents=True)
+            (result_dir / "result.json").write_text(json.dumps({"status": "pass"}))
+            return "pass"
+
+        with (
+            patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
+            patch("quorum.runner.invoke_gauntlet", side_effect=fake_invoke),
+        ):
+            _run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="copilot",
+                coding_agents_dir=coding_agents_dir,
+                out_root=tmp_path / "results",
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "capture"
+        assert "Copilot secret value appeared in non-secret run artifact" in (
+            verdict.final_reason
+        )
 
     def test_populate_context_dir_copies_coding_agent_contexts(self, tmp_path):
         # Spot-check that coding-agent context HOWTOs land in <run-dir>/gauntlet-agent/context/.

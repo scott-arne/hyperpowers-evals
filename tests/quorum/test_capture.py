@@ -131,6 +131,49 @@ class TestCaptureToolCalls:
         assert result.source_logs == (first, second)
         assert result.row_count == 2
 
+    def test_copilot_recursive_events_capture(self, tmp_path):
+        log_dir = tmp_path / "copilot-home"
+        session_id = "12345678-1234-5678-1234-567812345678"
+        events = log_dir / "session-state" / session_id / "events.jsonl"
+        events.parent.mkdir(parents=True)
+        snap = snapshot_dir(log_dir, "**/events.jsonl")
+        events.write_text(
+            json.dumps(
+                {
+                    "type": "assistant.message",
+                    "data": {
+                        "toolRequests": [
+                            {
+                                "name": "skill",
+                                "arguments": {"skill": "superpowers:brainstorming"},
+                            }
+                        ]
+                    },
+                }
+            )
+            + "\n"
+        )
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+
+        result = capture_tool_calls(
+            log_dir=log_dir,
+            log_glob="**/events.jsonl",
+            snapshot=snap,
+            normalizer="copilot",
+            run_dir=run_dir,
+        )
+
+        rows = [
+            json.loads(line)
+            for line in result.path.read_text().splitlines()
+            if line.strip()
+        ]
+        assert result.source_logs == (events,)
+        assert result.row_count == 1
+        assert rows[0]["tool"] == "Skill"
+        assert rows[0]["args"]["skill"] == "superpowers:brainstorming"
+
     def test_codex_filter_uses_launch_cwd(self, tmp_path):
         # capture_tool_calls attributes codex rollouts by the launch cwd
         # passed in. A scenario may launch the agent in a subdir via

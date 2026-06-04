@@ -43,6 +43,7 @@ import tempfile
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from quorum.capture import (
     capture_token_usage,
@@ -131,7 +132,36 @@ COPILOT_SECRET_ENV_NAMES = (
     "COPILOT_PROVIDER_API_KEY",
     "COPILOT_PROVIDER_BEARER_TOKEN",
 )
-COPILOT_GAUNTLET_ENV_ALLOWLIST = ("PATH", "TERM", "LANG")
+COPILOT_PROXY_ENV_NAMES = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+)
+COPILOT_GAUNTLET_ENV_ALLOWLIST = (
+    "PATH",
+    "TERM",
+    "LANG",
+    "GH_HOST",
+    "COPILOT_GH_HOST",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_EXTRA_CA_CERTS",
+    "REQUESTS_CA_BUNDLE",
+    "CURL_CA_BUNDLE",
+    "COPILOT_MODEL",
+    "COPILOT_OFFLINE",
+)
 OPENCODE_EXPORT_SUBDIR = Path(".quorum/session-exports")
 
 
@@ -945,11 +975,32 @@ def _seed_copilot_config(
 
 
 def _copilot_gauntlet_env(host_env: Mapping[str, str]) -> dict[str, str]:
-    return {
-        name: host_env[name]
-        for name in COPILOT_GAUNTLET_ENV_ALLOWLIST
-        if host_env.get(name) is not None
-    }
+    env: dict[str, str] = {}
+    for name in COPILOT_GAUNTLET_ENV_ALLOWLIST:
+        value = host_env.get(name)
+        if value is None:
+            continue
+        if name in COPILOT_PROXY_ENV_NAMES and _proxy_url_has_userinfo(value):
+            raise RunnerError(
+                f"{name} contains credentialed proxy URL; remove proxy userinfo",
+                stage="setup",
+            )
+        env[name] = value
+    return env
+
+
+def _proxy_url_has_userinfo(value: str) -> bool:
+    candidate = value.strip()
+    if not candidate:
+        return False
+    parse_value = candidate if "://" in candidate else f"//{candidate}"
+    try:
+        parsed = urlsplit(parse_value)
+    except ValueError:
+        after_scheme = candidate.split("://", 1)[-1]
+        authority = after_scheme.split("/", 1)[0]
+        return bool(authority.split("@", 1)[0]) and "@" in authority
+    return bool(parsed.username or parsed.password)
 
 
 def _scan_copilot_secret_leaks(
@@ -1406,6 +1457,7 @@ def invoke_gauntlet(
     max_time: str | None,
     project_prompt: Path | None = None,
     extra_env: dict[str, str] | None = None,
+    env_base: Mapping[str, str] | None = None,
 ) -> GauntletStatus:
     """Subprocess-invoke `gauntlet run`. Returns the verdict status string.
 
@@ -1438,8 +1490,9 @@ def invoke_gauntlet(
         cmd += ["--max-time", max_time]
     if project_prompt:
         cmd += ["--project-prompt", str(project_prompt)]
+    base_env = dict(env_base) if env_base is not None else dict(os.environ)
     env = {
-        **os.environ,
+        **base_env,
         "QUORUM_AGENT_CWD": str(launch_cwd),
         **(extra_env or {}),
     }
@@ -1566,13 +1619,22 @@ def _run_scenario_inner(
     workdir = run_dir / "coding-agent-workdir"
     workdir.mkdir()
     agent_config_dir = run_dir / CODING_AGENT_CONFIG_SUBDIR
-    agent_runtime = _seed_agent_config_dir(
-        tcfg,
-        skeleton_root=skeleton_root or (_quorum_repo_root() / "coding-agents"),
-        dest=agent_config_dir,
-        workdir=workdir,
-        run_dir=run_dir,
-    )
+    agent_runtime = AgentRuntime()
+    copilot_provisioning: CopilotProvisioning | None = None
+    if tcfg.name == "copilot":
+        copilot_provisioning = _seed_copilot_config(
+            agent_config_dir,
+            workdir,
+            str(uuid.uuid4()),
+        )
+    else:
+        agent_runtime = _seed_agent_config_dir(
+            tcfg,
+            skeleton_root=skeleton_root or (_quorum_repo_root() / "coding-agents"),
+            dest=agent_config_dir,
+            workdir=workdir,
+            run_dir=run_dir,
+        )
     try:
         session_log_dir = tcfg.resolve_session_log_dir(agent_config_dir)
         env_extra = {"QUORUM_REPO_ROOT": str(_quorum_repo_root())}
@@ -1651,11 +1713,16 @@ def _run_scenario_inner(
                 str(agent_config_dir / GEMINI_ENV_FILE_NAME)
             )
         if tcfg.name == "copilot":
-            substitutions["$COPILOT_ENV_FILE"] = str(agent_config_dir / COPILOT_ENV_FILE_NAME)
+            if copilot_provisioning is None:
+                raise RunnerError(
+                    "Copilot provisioning missing before context setup",
+                    stage="setup",
+                )
+            substitutions["$COPILOT_ENV_FILE"] = str(copilot_provisioning.env_file)
             substitutions["$COPILOT_ENV_FILE_SH"] = _shell_single_quote(
-                str(agent_config_dir / COPILOT_ENV_FILE_NAME)
+                str(copilot_provisioning.env_file)
             )
-            substitutions["$QUORUM_COPILOT_SESSION_ID"] = str(uuid.uuid4())
+            substitutions["$QUORUM_COPILOT_SESSION_ID"] = copilot_provisioning.session_id
         if tcfg.name == "pi":
             substitutions["$PI_ENV_FILE"] = str(agent_config_dir / "pi.env")
         _populate_context_dir(
@@ -1669,6 +1736,7 @@ def _run_scenario_inner(
         snap = snapshot_dir(session_log_dir, tcfg.session_log_glob)
 
         # 8. Invoke gauntlet.
+        gauntlet_env_base = _copilot_gauntlet_env(os.environ) if tcfg.name == "copilot" else None
         gauntlet_status = invoke_gauntlet(
             story_path=story_path,
             target_binary=tcfg.binary,
@@ -1677,6 +1745,7 @@ def _run_scenario_inner(
             max_time=effective_max_time,
             project_prompt=tcfg.project_prompt,
             extra_env={tcfg.agent_config_env: str(agent_config_dir)},
+            env_base=gauntlet_env_base,
         )
 
         opencode_exported_paths: tuple[Path, ...] = ()
@@ -1757,6 +1826,78 @@ def _run_scenario_inner(
                     message="OpenCode export/capture snapshot mismatch",
                 ),
             )
+
+        if tcfg.normalizer == "copilot" and copilot_provisioning is not None:
+            expected_log = (
+                agent_config_dir
+                / "session-state"
+                / copilot_provisioning.session_id
+                / "events.jsonl"
+            )
+            source_logs = {path.resolve() for path in capture_result.source_logs}
+            expected_resolved = expected_log.resolve()
+            leaks = _scan_copilot_secret_leaks(
+                run_dir,
+                secret_values=copilot_provisioning.secret_values,
+                excluded_paths=(copilot_provisioning.env_file,),
+            )
+            if leaks:
+                rel = [
+                    str(path.relative_to(run_dir)) if path.is_relative_to(run_dir) else str(path)
+                    for path in leaks
+                ]
+                return run_dir, _write_indeterminate(
+                    run_dir,
+                    final_reason=(
+                        "Copilot secret value appeared in non-secret run artifact: "
+                        + ", ".join(rel)
+                    ),
+                    gauntlet=gauntlet_layer,
+                    checks=pre_records,
+                    error=RunError(
+                        stage="capture",
+                        message="Copilot secret value leaked into run artifact",
+                    ),
+                )
+            if capture_result.source_logs and expected_resolved not in source_logs:
+                return run_dir, _write_indeterminate(
+                    run_dir,
+                    final_reason=(
+                        "expected Copilot session-state log did not appear: "
+                        f"{expected_log}"
+                    ),
+                    gauntlet=gauntlet_layer,
+                    checks=pre_records,
+                    error=RunError(
+                        stage="capture",
+                        message="expected Copilot session-state log missing",
+                    ),
+                )
+            unexpected_logs = [
+                path
+                for path in capture_result.source_logs
+                if path.resolve() != expected_resolved
+            ]
+            if unexpected_logs:
+                rel = [
+                    str(path.relative_to(session_log_dir))
+                    if path.is_relative_to(session_log_dir)
+                    else str(path)
+                    for path in unexpected_logs
+                ]
+                return run_dir, _write_indeterminate(
+                    run_dir,
+                    final_reason=(
+                        "unexpected Copilot session-state log(s) appeared: "
+                        + ", ".join(rel)
+                    ),
+                    gauntlet=gauntlet_layer,
+                    checks=pre_records,
+                    error=RunError(
+                        stage="capture",
+                        message="unexpected Copilot session-state log captured",
+                    ),
+                )
 
         if tcfg.normalizer == "pi" and not capture_result.source_logs:
             misplaced = detect_misplaced_pi_sessions(
@@ -1850,6 +1991,7 @@ def _run_scenario_inner(
 
         strict_capture_names = {
             "antigravity": "Antigravity",
+            "copilot": "Copilot",
             "gemini": "Gemini",
             "opencode": "OpenCode",
         }
