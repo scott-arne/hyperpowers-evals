@@ -70,7 +70,7 @@ def test_does_not_false_match_sibling_dir(tmp_path, monkeypatch):
     assert ["tmux", "-L", "gauntlet-1-aaaaaa", "kill-server"] not in calls
 
 
-def test_no_servers_returns_false(tmp_path, monkeypatch):
+def test_non_matching_pane_returns_false(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "quorum.agy_teardown._list_gauntlet_sockets",
         lambda: ["gauntlet-1-aaaaaa"],

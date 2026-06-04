@@ -35,13 +35,17 @@ def _pane_path(name: str, runner) -> str:
         capture_output=True,
         text=True,
     )
+    # A non-zero exit (e.g. the server died between the glob and this query)
+    # yields no stdout, so this returns "" and the caller simply skips it.
     return (getattr(r, "stdout", "") or "").strip()
 
 
-def kill_run_tmux_server(scratch_dir, *, runner=subprocess.run) -> bool:
-    """Kill the gauntlet tmux server whose pane cwd matches *scratch_dir*.
+def kill_run_tmux_server(scratch_dir: os.PathLike | str, *, runner=subprocess.run) -> bool:
+    """Kill the gauntlet tmux server whose pane started in *scratch_dir*.
 
-    Returns True if a matching server was found and killed, False otherwise.
+    Returns True if a matching server was found and a ``kill-server`` was
+    dispatched (best-effort — not a guarantee the kill itself succeeded); False
+    if no gauntlet server's pane matched the run's scratch directory.
     """
     target = str(pathlib.Path(scratch_dir).resolve())
     for name in _list_gauntlet_sockets():
