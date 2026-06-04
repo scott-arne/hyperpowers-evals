@@ -111,17 +111,21 @@ handle, and poll the main-run `agy.log` while it runs. On a **confirmed**
 rate-limit (predicate in A2), tear the run down by **killing gauntlet's private
 tmux server** — *not* a process-group kill.
 
-> **Teardown mechanism — empirically verified (2026-06-04).** A controlled
-> experiment confirmed the review and corrected an earlier draft of this spec: a
-> tmux-spawned process is **reparented to PID 1 in its own process group**, so
-> `os.killpg` on the launcher's group **cannot** reach agy (killing gauntlet just
-> orphans agy, which keeps burning quota). `tmux kill-session` / `kill-server`
-> **does** reap it. Gauntlet runs a **private tmux server per session**
-> (`gauntlet/src/adapters/tui/adapter.ts:97`), so the clean teardown is
-> `tmux -S <that-session's-socket> kill-server` (or kill the tracked pane pid),
-> which reaps the bash + agy under it, scoped to exactly that cell and touching no
-> other tmux. The implementation reads the socket/pane pid gauntlet exposes; the
-> A5 reproduction confirms `pgrep -f agy` is empty afterward.
+> **Teardown mechanism — resolved from gauntlet source + a tmux experiment
+> (2026-06-04).** Killing the launcher's process group does **not** reap agy —
+> tmux reparents it to PID 1 in its own group (confirmed experimentally);
+> `tmux … kill-server` does. Gauntlet runs a **private, per-session tmux server**
+> on a **named** socket `gauntlet-<epoch>-<rand>` (`adapters/tui/adapter.ts:111,118`),
+> chosen randomly *inside* gauntlet — so quorum **cannot compute it**, and gauntlet
+> exposes **no live handle** (the pane pid stays in-memory; the session name is
+> logged only at *close* time, after teardown). Quorum therefore **discovers** it:
+> glob `${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)/gauntlet-*`, and to pin this run vs. a
+> concurrent one, match the server whose pane cwd is this run's scratch dir via
+> `tmux -L <name> list-panes -a -F '#{pane_start_path}'`, then
+> `tmux -L <name> kill-server` — **the exact orphan-free command gauntlet's own
+> `close()` uses** (`adapter.ts:264`). Quorum is single-run-at-a-time today, so a
+> first cut may kill all `gauntlet-*` servers; match-by-scratch is the concurrency
+> upgrade. The plan asserts `pgrep -f agy` is empty after teardown.
 
 After teardown, short-circuit `_run_scenario_inner` to write **exactly one**
 rate-limit verdict **before** the capture cascade runs, so the result is a
@@ -136,8 +140,9 @@ predicate is: **a fatal `quota_metric` (the 5-hour compute window) OR ≥N
 `RESOURCE_EXHAUSTED` payload names *which* quota was hit (5-hour window vs Code
 Assist day cap); extract and persist it as `verdict.error.quota_metric`. This both
 drives the predicate (window = fatal; per-minute burst = maybe transient) and is
-the diagnostic that tells us empirically whether 5× is enough (Part B). N and T
-are pinned from the A5 reproduction, not guessed.
+the diagnostic that tells us empirically whether 5× is enough (Part B). N and T,
+and the verbatim 429 string the matcher keys on, are pinned from the first
+captured 429 payload (the one live observation, A5), not guessed.
 
 **A3. One verdict, correctly classified.** The mid-run-aborted cell records a
 rate-limit verdict carrying the marker/flag (§6) and is counted as
@@ -150,27 +155,34 @@ token-rotating** `~/.gemini/oauth_creds.json` (the runner isolates only
 the credential). A `SIGKILL` during a token refresh — most likely *exactly* at a
 rate-limit event — can leave that file half-written and auth-brick **all** future
 agy runs (recovery is a manual browser OAuth flow). This also trips the project
-rule against destructive ops on credentials without backup/read-back. Therefore:
-**SIGTERM with a grace period before any SIGKILL** so agy can finish a credential
-write; **back up `oauth_creds.json` before, and read-back-verify it after**, any
-batch that may mid-run-kill agy, restoring on mismatch; and, as the durable fix,
-**copy agy's auth into the per-run `--gemini_dir`** so a kill can never touch the
-canonical token. A1 does not ship until credential safety is proven.
+rule against destructive ops on credentials without backup/read-back. **Shippable
+fix (fully code-knowable):** SIGTERM with a grace period before any SIGKILL so agy
+can finish a write; **back up `oauth_creds.json` before, and read-back-verify it
+after**, any batch that may mid-run-kill agy, restoring on mismatch. *(Copying auth
+into the per-run `--gemini_dir` does **not** redirect the read — the preflight
+authenticates with a throwaway `--gemini_dir`, proving agy reads
+`~/.gemini/oauth_creds.json` regardless. A real redirect would need agy to honor a
+`HOME`/gemini-home override — untested, so it's a best-effort upgrade, not the
+load-bearing fix.)* A1 does not ship until backup/restore is in place.
 
-**A5. Reproduction gate — build nothing in A1–A4 until this passes.** Reproduce a
-mid-run 429 against live agy and confirm, with assertions: **(a)** the watcher
-attaches to the file the judge's *actual* launch writes — the main-run log is
-`$ANTIGRAVITY_CONFIG_DIR/agy.log` (`launch-agent:22` →
-`<run_dir>/coding-agent-config/agy.log`), **not** the preflight's
-`tmp_path/agy.log`; pin and `touch` it before gauntlet starts so the watcher has a
-stable inode from t=0, and treat "log absent past a grace window AND transcript
-empty" as the existing empty-trace path, not a hang; **(b)** after teardown,
-`pgrep -f agy` returns nothing (agy actually dead, tmux session gone) — not merely
-"a run dir exists"; **(c)** the kill leaves `oauth_creds.json` intact (read-back
-matches); **(d)** `agy.log` flushes the 429 line in real time (measure the delay
-between the API error and the line; if buffered, switch detection to
-`transcript.jsonl` stall + error, or find an unbuffer flag); **(e)** the predicate
-distinguishes a fatal window-exhaustion from a recovered transient 429.
+**A5. Validation — resolved from source; one cheap live observation.** A deep read
+of gauntlet + quorum (2026-06-04) resolved what an earlier draft gated on a live
+reproduction spike — **the spike is obviated.** Resolved from source: **(a)** the
+detection source is `agy.log` at `<run_dir>/coding-agent-config/agy.log`
+(`launch-agent:22`; the existing `_agy_log_shows_rate_limit` matcher fires on it),
+and gauntlet provides **no** streaming alternative — it captures the pane only
+on-demand via `read_screen`, with no background poll — so `agy.log` is the only
+deterministic continuous signal; **(b)** the teardown is the discovery + kill-server
+mechanism above; **(c)** the credential surface is confirmed (shared
+`~/.gemini/oauth_creds.json`), handled by A4's backup/restore. The **one genuine
+residual** needing a live look: does agy's Go-`glog` flush the 429 line promptly,
+or buffer it (agy-binary internal, unknowable from source)? It affects detection
+**latency only**, not architecture — so the plan watches `agy.log` with the existing
+matcher, keeps the gauntlet **wall-clock budget as the guaranteed backstop**, and
+notes a `transcript.jsonl`-stall fallback if a single observation of one agy run's
+log timing shows the line is held until exit. The watcher must also tolerate
+`agy.log` being absent at launch (agy, not quorum, creates it when the QA agent
+runs the launcher) — pre-`touch` it for a stable inode.
 
 ## 5. Part B — reliable coverage
 
