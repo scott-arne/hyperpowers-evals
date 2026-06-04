@@ -16,18 +16,31 @@ from quorum.kimi import effective_kimi_model_env, kimi_preflight_sentinel_payloa
 from quorum.runner import (
     ANTIGRAVITY_RATE_LIMIT_MARKER,
     AgentRuntime,
+    COPILOT_ENV_FILE_NAME,
+    COPILOT_PROVIDER_ENV_NAMES,
+    COPILOT_REQUIRED_SUPERPOWERS_FILES,
+    COPILOT_SECRET_ENV_NAMES,
+    CopilotProvisioning,
     RunnerError,
     _cleanup_agent_runtime,
+    _copilot_gauntlet_env,
     _exclude_antigravity_project_marker,
     _gemini_transcripts,
+    _gh_auth_token,
     _populate_context_dir,
+    _require_copilot_superpowers_root,
+    _resolve_copilot_auth_env,
     _run_antigravity_auth_preflight,
+    _scan_copilot_secret_leaks,
     _seed_agent_config_dir,
     _seed_antigravity_config,
+    _seed_copilot_config,
     _seed_gemini_config,
     _seed_kimi_config,
     _shell_single_quote,
+    _stage_copilot_superpowers_plugin,
     _write_antigravity_settings,
+    _write_copilot_env_file,
     _write_gemini_env_file,
     _write_gemini_settings,
     run_scenario,
@@ -246,6 +259,20 @@ def _pi_tcfg() -> CodingAgentConfig:
     )
 
 
+def _copilot_tcfg() -> CodingAgentConfig:
+    return CodingAgentConfig(
+        name="copilot",
+        binary="copilot",
+        agent_config_env="COPILOT_HOME",
+        session_log_dir="${COPILOT_HOME}/session-state",
+        session_log_glob="**/events.jsonl",
+        normalizer="copilot",
+        required_env=(),
+        max_time=None,
+        project_prompt=None,
+    )
+
+
 def _make_superpowers_opencode_root(tmp_path: Path) -> Path:
     sp = tmp_path / "superpowers"
     plugin_src = sp / ".opencode" / "plugins" / "superpowers.js"
@@ -340,6 +367,28 @@ def _make_gemini_superpowers_root(tmp_path: Path) -> Path:
         "tools"
     )
     return root
+
+
+def _make_superpowers_copilot_root(tmp_path: Path) -> Path:
+    root = tmp_path / "superpowers-copilot"
+    for rel in COPILOT_REQUIRED_SUPERPOWERS_FILES:
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{rel}\n")
+    extra = root / "skills" / "extra-skill" / "references" / "extra.md"
+    extra.parent.mkdir(parents=True)
+    extra.write_text("extra reference\n")
+    return root
+
+
+def _clear_copilot_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "COPILOT_GITHUB_TOKEN",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        *COPILOT_PROVIDER_ENV_NAMES,
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 def _write_gemini_extension_metadata(cfg: Path) -> None:
@@ -1315,6 +1364,322 @@ class TestSeedAgentConfigDir:
         assert seen["flags"] & os.O_CREAT
         assert seen["flags"] & os.O_TRUNC
         assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
+
+    def test_copilot_auth_prefers_explicit_copilot_token(self):
+        with patch("quorum.runner._gh_auth_token", side_effect=AssertionError("unexpected gh")):
+            values, secret_names, secret_values = _resolve_copilot_auth_env(
+                {
+                    "COPILOT_GITHUB_TOKEN": "copilot-token",
+                    "GH_TOKEN": "gh-token",
+                    "GITHUB_TOKEN": "github-token",
+                }
+            )
+
+        assert values == {"COPILOT_GITHUB_TOKEN": "copilot-token"}
+        assert secret_names == ("COPILOT_GITHUB_TOKEN",)
+        assert secret_values == ("copilot-token",)
+
+    def test_copilot_auth_uses_gh_auth_token_fallback(self, monkeypatch):
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: "/usr/bin/gh")
+
+        def fake_run(cmd, **kwargs):
+            assert cmd == ["gh", "auth", "token"]
+            assert kwargs["text"] is True
+            assert kwargs["capture_output"] is True
+            assert kwargs["timeout"] == 10
+            return subprocess.CompletedProcess(cmd, 0, " gh-token \n", "")
+
+        monkeypatch.setattr("quorum.runner.subprocess.run", fake_run)
+
+        assert _gh_auth_token() == "gh-token"
+        values, secret_names, secret_values = _resolve_copilot_auth_env({})
+        assert values == {"COPILOT_GITHUB_TOKEN": "gh-token"}
+        assert secret_names == ("COPILOT_GITHUB_TOKEN",)
+        assert secret_values == ("gh-token",)
+
+    def test_copilot_auth_provider_mode_does_not_require_github_token(self):
+        values, secret_names, secret_values = _resolve_copilot_auth_env(
+            {
+                "COPILOT_PROVIDER_BASE_URL": "http://127.0.0.1:4000",
+                "COPILOT_PROVIDER_TYPE": "openai",
+                "COPILOT_PROVIDER_API_KEY": "provider-key",
+                "COPILOT_PROVIDER_BEARER_TOKEN": "provider-bearer",
+                "COPILOT_OFFLINE": "YES",
+                "COPILOT_MODEL": "gpt-test",
+                "GH_TOKEN": "ignored-gh-token",
+            }
+        )
+
+        assert values == {
+            "COPILOT_PROVIDER_BASE_URL": "http://127.0.0.1:4000",
+            "COPILOT_PROVIDER_TYPE": "openai",
+            "COPILOT_PROVIDER_API_KEY": "provider-key",
+            "COPILOT_PROVIDER_BEARER_TOKEN": "provider-bearer",
+            "COPILOT_OFFLINE": "YES",
+            "COPILOT_MODEL": "gpt-test",
+        }
+        assert secret_names == ("COPILOT_PROVIDER_API_KEY", "COPILOT_PROVIDER_BEARER_TOKEN")
+        assert secret_values == ("provider-key", "provider-bearer")
+
+    def test_copilot_auth_offline_requires_provider_base_url(self):
+        with pytest.raises(RunnerError, match="COPILOT_OFFLINE=true") as excinfo:
+            _resolve_copilot_auth_env({"COPILOT_OFFLINE": "1"})
+
+        assert excinfo.value.stage == "setup"
+
+    def test_copilot_auth_errors_without_supported_source(self, monkeypatch):
+        monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "host-token")
+        with (
+            patch("quorum.runner._gh_auth_token", return_value=None),
+            pytest.raises(RunnerError, match="no Copilot auth found") as excinfo,
+        ):
+            _resolve_copilot_auth_env({})
+
+        assert excinfo.value.stage == "setup"
+        assert "sk-" not in str(excinfo.value)
+
+    def test_copilot_env_file_quotes_values_and_is_private(self, tmp_path):
+        env_file = _write_copilot_env_file(
+            tmp_path / "cfg",
+            {
+                "COPILOT_MODEL": "o'clock model",
+                "COPILOT_GITHUB_TOKEN": "token with spaces",
+            },
+        )
+
+        assert env_file.name == COPILOT_ENV_FILE_NAME
+        assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
+        assert env_file.read_text() == (
+            "COPILOT_GITHUB_TOKEN='token with spaces'\n"
+            "COPILOT_MODEL='o'\"'\"'clock model'\n"
+        )
+
+    def test_copilot_env_file_uses_restrictive_open_flags(self, tmp_path):
+        real_open = os.open
+        seen: dict[str, int] = {}
+
+        def capture_open(path, flags, mode=0o777):
+            seen["flags"] = flags
+            seen["mode"] = mode
+            return real_open(path, flags, mode)
+
+        with patch("quorum.runner.os.open", side_effect=capture_open):
+            env_file = _write_copilot_env_file(
+                tmp_path / "cfg",
+                {"COPILOT_GITHUB_TOKEN": "token"},
+            )
+
+        assert env_file.read_text() == "COPILOT_GITHUB_TOKEN='token'\n"
+        assert seen["mode"] == 0o600
+        assert seen["flags"] & os.O_WRONLY
+        assert seen["flags"] & os.O_CREAT
+        assert seen["flags"] & os.O_TRUNC
+        if hasattr(os, "O_NOFOLLOW"):
+            assert seen["flags"] & os.O_NOFOLLOW
+        assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
+
+    def test_copilot_env_file_chmods_existing_file_before_writing_secret(self, tmp_path):
+        cfg = tmp_path / "cfg"
+        cfg.mkdir()
+        env_file = cfg / COPILOT_ENV_FILE_NAME
+        env_file.write_text("old\n")
+        env_file.chmod(0o666)
+        real_fdopen = os.fdopen
+
+        class ModeCheckingFile:
+            def __init__(self, wrapped):
+                self._wrapped = wrapped
+
+            def __enter__(self):
+                self._wrapped.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self._wrapped.__exit__(*args)
+
+            def write(self, value):
+                assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
+                return self._wrapped.write(value)
+
+            def flush(self):
+                return self._wrapped.flush()
+
+            def fileno(self):
+                return self._wrapped.fileno()
+
+        with patch(
+            "quorum.runner.os.fdopen",
+            side_effect=lambda fd, *args, **kwargs: ModeCheckingFile(
+                real_fdopen(fd, *args, **kwargs)
+            ),
+        ):
+            _write_copilot_env_file(cfg, {"COPILOT_GITHUB_TOKEN": "secret"})
+
+        assert env_file.read_text() == "COPILOT_GITHUB_TOKEN='secret'\n"
+        assert stat.S_IMODE(env_file.stat().st_mode) == 0o600
+
+    def test_copilot_seed_stages_plugin_without_plugin_list_subprocess(
+        self, tmp_path, monkeypatch
+    ):
+        sp = _make_superpowers_copilot_root(tmp_path)
+        _clear_copilot_auth_env(monkeypatch)
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
+        monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "seed-secret")
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(
+            "quorum.runner.subprocess.run",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                AssertionError("copilot plugin list should not run")
+            ),
+        )
+        cfg = tmp_path / "cfg"
+        session_id = str(uuid.uuid4())
+
+        provisioning = _seed_copilot_config(cfg, tmp_path / "wd", session_id)
+
+        assert isinstance(provisioning, CopilotProvisioning)
+        assert provisioning.session_id == session_id
+        assert provisioning.env_file == cfg / COPILOT_ENV_FILE_NAME
+        assert provisioning.secret_names == ("COPILOT_GITHUB_TOKEN",)
+        assert provisioning.secret_values == ("seed-secret",)
+        assert stat.S_IMODE(provisioning.env_file.stat().st_mode) == 0o600
+        for rel in COPILOT_REQUIRED_SUPERPOWERS_FILES:
+            staged = cfg / "plugins" / "superpowers" / rel
+            assert staged.read_text() == f"{rel}\n"
+            assert staged.resolve().is_relative_to(cfg.resolve())
+        extra_staged = cfg / "plugins" / "superpowers" / "skills" / "extra-skill"
+        extra_source = sp / "skills" / "extra-skill"
+        assert (extra_staged / "references" / "extra.md").read_text() == "extra reference\n"
+        (extra_source / "references" / "extra.md").unlink()
+        (extra_source / "SKILL.md").write_text("mutated source\n")
+        assert (extra_staged / "references" / "extra.md").read_text() == "extra reference\n"
+        assert not (extra_staged / "SKILL.md").exists()
+        for rel in (".quorum", ".cache", "logs", "plugins", "session-state"):
+            assert (cfg / rel).is_dir()
+
+    def test_copilot_seed_errors_when_required_plugin_file_missing(self, tmp_path):
+        sp = _make_superpowers_copilot_root(tmp_path)
+        missing = sp / "skills" / "using-superpowers" / "references" / "copilot-tools.md"
+        missing.unlink()
+
+        with pytest.raises(RunnerError, match="copilot-tools.md") as excinfo:
+            _require_copilot_superpowers_root(str(sp))
+
+        assert excinfo.value.stage == "setup"
+
+    def test_copilot_seed_rejects_skill_symlink(self, tmp_path):
+        sp = _make_superpowers_copilot_root(tmp_path)
+        (sp / "skills" / "brainstorming" / "escape").symlink_to(tmp_path)
+
+        with pytest.raises(RunnerError, match="symlink") as excinfo:
+            _stage_copilot_superpowers_plugin(sp, tmp_path / "cfg")
+
+        assert excinfo.value.stage == "setup"
+
+    def test_copilot_seed_rejects_skills_root_symlink(self, tmp_path):
+        sp = _make_superpowers_copilot_root(tmp_path)
+        real_skills = tmp_path / "real-skills"
+        shutil.move(str(sp / "skills"), real_skills)
+        (sp / "skills").symlink_to(real_skills, target_is_directory=True)
+
+        with pytest.raises(RunnerError, match="symlink") as excinfo:
+            _stage_copilot_superpowers_plugin(sp, tmp_path / "cfg")
+
+        assert excinfo.value.stage == "setup"
+
+    @pytest.mark.parametrize(
+        "source_rel",
+        [
+            ".claude-plugin",
+            ".claude-plugin/plugin.json",
+            "hooks/hooks.json",
+            "hooks/run-hook.cmd",
+            "hooks/session-start",
+        ],
+    )
+    def test_copilot_seed_rejects_hook_and_plugin_source_symlinks(
+        self, tmp_path, source_rel
+    ):
+        sp = _make_superpowers_copilot_root(tmp_path)
+        source = sp / source_rel
+        target = tmp_path / "symlink-target"
+        if source.is_dir():
+            shutil.move(str(source), target)
+            source.symlink_to(target, target_is_directory=True)
+        else:
+            target.write_text("external\n")
+            source.unlink()
+            source.symlink_to(target)
+
+        with pytest.raises(RunnerError, match="symlink") as excinfo:
+            _stage_copilot_superpowers_plugin(sp, tmp_path / "cfg")
+
+        assert excinfo.value.stage == "setup"
+
+    def test_copilot_seed_rejects_stale_expected_session_state(
+        self, tmp_path, monkeypatch
+    ):
+        sp = _make_superpowers_copilot_root(tmp_path)
+        _clear_copilot_auth_env(monkeypatch)
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(sp))
+        monkeypatch.setenv("COPILOT_GITHUB_TOKEN", "seed-secret")
+        monkeypatch.setattr("quorum.runner.shutil.which", lambda name: f"/usr/bin/{name}")
+        monkeypatch.setattr(
+            "quorum.runner.subprocess.run",
+            lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected subprocess")),
+        )
+        cfg = tmp_path / "cfg"
+        session_id = str(uuid.uuid4())
+        stale = cfg / "session-state" / session_id / "events.jsonl"
+        stale.parent.mkdir(parents=True)
+        stale.write_text("{}\n")
+
+        with pytest.raises(RunnerError, match="pre-existing Copilot session-state") as excinfo:
+            _seed_copilot_config(cfg, tmp_path / "wd", session_id)
+
+        assert excinfo.value.stage == "setup"
+
+    def test_copilot_gauntlet_env_excludes_auth_provider_otel_and_unrelated_secrets(self):
+        host_env = {
+            "PATH": "/bin",
+            "TERM": "xterm-256color",
+            "LANG": "C.UTF-8",
+            "COPILOT_GITHUB_TOKEN": "token",
+            "GH_TOKEN": "gh-token",
+            "GITHUB_TOKEN": "github-token",
+            "COPILOT_PROVIDER_API_KEY": "provider-key",
+            "COPILOT_PROVIDER_BASE_URL": "http://provider",
+            "OTEL_EXPORTER_OTLP_HEADERS": "secret",
+            "AWS_SECRET_ACCESS_KEY": "aws-secret",
+        }
+
+        assert _copilot_gauntlet_env(host_env) == {
+            "PATH": "/bin",
+            "TERM": "xterm-256color",
+            "LANG": "C.UTF-8",
+        }
+        for name in COPILOT_SECRET_ENV_NAMES:
+            assert name not in _copilot_gauntlet_env(host_env)
+
+    def test_copilot_leak_scan_reports_only_non_excluded_secret_paths(self, tmp_path):
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+        env_file = run_dir / "coding-agent-config" / COPILOT_ENV_FILE_NAME
+        env_file.parent.mkdir()
+        env_file.write_text("COPILOT_GITHUB_TOKEN='secret-token'\n")
+        leaked = run_dir / "gauntlet-agent" / "transcript.txt"
+        leaked.parent.mkdir()
+        leaked.write_text("observed secret-token in output")
+        safe = run_dir / "gauntlet-agent" / "safe.txt"
+        safe.write_text("no secrets here")
+
+        leaks = _scan_copilot_secret_leaks(
+            run_dir,
+            secret_values=("secret-token",),
+            excluded_paths=(env_file,),
+        )
+
+        assert leaks == (leaked,)
 
     def test_gemini_seed_links_extension_lists_it_and_verifies_metadata(
         self, tmp_path, monkeypatch

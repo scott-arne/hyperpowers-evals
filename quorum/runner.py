@@ -41,6 +41,7 @@ import stat
 import subprocess
 import tempfile
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 
 from quorum.capture import (
@@ -102,7 +103,44 @@ GEMINI_REQUIRED_SUPERPOWERS_FILES = (
     "skills/using-superpowers/SKILL.md",
     "skills/using-superpowers/references/gemini-tools.md",
 )
+COPILOT_REQUIRED_SUPERPOWERS_FILES = (
+    ".claude-plugin/plugin.json",
+    "hooks/hooks.json",
+    "hooks/run-hook.cmd",
+    "hooks/session-start",
+    "skills/using-superpowers/SKILL.md",
+    "skills/brainstorming/SKILL.md",
+    "skills/using-superpowers/references/copilot-tools.md",
+)
+COPILOT_PROVIDER_ENV_NAMES = (
+    "COPILOT_PROVIDER_BASE_URL",
+    "COPILOT_PROVIDER_TYPE",
+    "COPILOT_PROVIDER_API_KEY",
+    "COPILOT_PROVIDER_BEARER_TOKEN",
+    "COPILOT_PROVIDER_WIRE_API",
+    "COPILOT_PROVIDER_AZURE_API_VERSION",
+    "COPILOT_PROVIDER_MODEL_ID",
+    "COPILOT_PROVIDER_WIRE_MODEL",
+    "COPILOT_PROVIDER_MAX_PROMPT_TOKENS",
+    "COPILOT_PROVIDER_MAX_OUTPUT_TOKENS",
+    "COPILOT_OFFLINE",
+    "COPILOT_MODEL",
+)
+COPILOT_SECRET_ENV_NAMES = (
+    "COPILOT_GITHUB_TOKEN",
+    "COPILOT_PROVIDER_API_KEY",
+    "COPILOT_PROVIDER_BEARER_TOKEN",
+)
+COPILOT_GAUNTLET_ENV_ALLOWLIST = ("PATH", "TERM", "LANG")
 OPENCODE_EXPORT_SUBDIR = Path(".quorum/session-exports")
+
+
+@dataclasses.dataclass(frozen=True)
+class CopilotProvisioning:
+    session_id: str
+    env_file: Path
+    secret_names: tuple[str, ...]
+    secret_values: tuple[str, ...]
 
 
 class RunnerError(RuntimeError):
@@ -277,6 +315,85 @@ def _write_gemini_env_file(gemini_home: Path) -> Path:
     fd = os.open(env_file, flags, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write("GEMINI_API_KEY=" + _shell_single_quote(api_key) + "\n")
+        f.flush()
+        os.fchmod(f.fileno(), 0o600)
+    return env_file
+
+
+def _copilot_offline_requested(env: Mapping[str, str]) -> bool:
+    return env.get("COPILOT_OFFLINE", "").strip().lower() in {"1", "true", "yes"}
+
+
+def _gh_auth_token() -> str | None:
+    if shutil.which("gh") is None:
+        return None
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            text=True,
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    token = result.stdout.strip()
+    return token or None
+
+
+def _resolve_copilot_auth_env(
+    env: Mapping[str, str] | None = None,
+) -> tuple[dict[str, str], tuple[str, ...], tuple[str, ...]]:
+    host_env = os.environ if env is None else env
+    if _copilot_offline_requested(host_env) and not host_env.get("COPILOT_PROVIDER_BASE_URL"):
+        raise RunnerError(
+            "COPILOT_OFFLINE=true requires COPILOT_PROVIDER_BASE_URL",
+            stage="setup",
+        )
+
+    if host_env.get("COPILOT_PROVIDER_BASE_URL"):
+        provider_values = {
+            name: host_env[name]
+            for name in COPILOT_PROVIDER_ENV_NAMES
+            if host_env.get(name)
+        }
+        secret_names = tuple(
+            name
+            for name in ("COPILOT_PROVIDER_API_KEY", "COPILOT_PROVIDER_BEARER_TOKEN")
+            if provider_values.get(name)
+        )
+        secret_values = tuple(provider_values[name] for name in secret_names)
+        return provider_values, secret_names, secret_values
+
+    token_value = ""
+    for name in ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
+        value = host_env.get(name, "")
+        if value:
+            token_value = value
+            break
+    if not token_value:
+        token_value = _gh_auth_token() or ""
+    if not token_value:
+        raise RunnerError(
+            "no Copilot auth found; set COPILOT_GITHUB_TOKEN, GH_TOKEN, GITHUB_TOKEN, "
+            "or COPILOT_PROVIDER_BASE_URL",
+            stage="setup",
+        )
+    return {"COPILOT_GITHUB_TOKEN": token_value}, ("COPILOT_GITHUB_TOKEN",), (token_value,)
+
+
+def _write_copilot_env_file(copilot_home: Path, values: Mapping[str, str]) -> Path:
+    env_file = copilot_home / COPILOT_ENV_FILE_NAME
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(env_file, flags, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w") as f:
+        for key in sorted(values):
+            f.write(f"{key}={_shell_single_quote(values[key])}\n")
         f.flush()
         os.fchmod(f.fileno(), 0o600)
     return env_file
@@ -704,6 +821,8 @@ def _run_opencode_provider_preflight() -> None:
 
 
 def _reject_symlinks(root: Path, *, label: str) -> None:
+    if root.is_symlink():
+        raise RunnerError(f"{label} contains unsupported symlink: {root}", stage="setup")
     for path in root.rglob("*"):
         if path.is_symlink():
             raise RunnerError(f"{label} contains unsupported symlink: {path}", stage="setup")
@@ -715,6 +834,148 @@ def _require_under_home(path: Path, opencode_home: Path) -> None:
             f"staged OpenCode Superpowers path escapes isolated home: {path}",
             stage="setup",
         )
+
+
+def _require_copilot_superpowers_root(superpowers_root: str) -> Path:
+    if not superpowers_root:
+        raise RunnerError(
+            "SUPERPOWERS_ROOT not set; cannot install Copilot Superpowers plugin",
+            stage="setup",
+        )
+    root = Path(superpowers_root).expanduser()
+    _reject_copilot_staging_source_symlinks(root)
+    missing = [rel for rel in COPILOT_REQUIRED_SUPERPOWERS_FILES if not (root / rel).is_file()]
+    if missing:
+        raise RunnerError(
+            "SUPERPOWERS_ROOT is missing required Copilot Superpowers files: "
+            + ", ".join(missing),
+            stage="setup",
+        )
+    return root
+
+
+def _require_copilot_path_under_home(path: Path, copilot_home: Path) -> None:
+    if not path.resolve().is_relative_to(copilot_home.resolve()):
+        raise RunnerError(
+            f"staged Copilot Superpowers path escapes isolated home: {path}",
+            stage="setup",
+        )
+
+
+def _reject_copilot_staging_source_symlinks(sp_root: Path) -> None:
+    _reject_symlinks(sp_root / "skills", label="SUPERPOWERS_ROOT skills")
+    _reject_symlinks(sp_root / ".claude-plugin", label="SUPERPOWERS_ROOT .claude-plugin")
+    for rel in ("hooks/hooks.json", "hooks/run-hook.cmd", "hooks/session-start"):
+        path = sp_root / rel
+        if path.is_symlink():
+            raise RunnerError(
+                f"SUPERPOWERS_ROOT Copilot hook contains unsupported symlink: {path}",
+                stage="setup",
+            )
+
+
+def _stage_copilot_superpowers_plugin(sp_root: Path, copilot_home: Path) -> Path:
+    _reject_copilot_staging_source_symlinks(sp_root)
+    plugin_root = copilot_home / "plugins" / "superpowers"
+    if plugin_root.exists() or plugin_root.is_symlink():
+        if plugin_root.is_dir() and not plugin_root.is_symlink():
+            shutil.rmtree(plugin_root)
+        else:
+            plugin_root.unlink()
+
+    (plugin_root / "hooks").mkdir(parents=True)
+    shutil.copytree(sp_root / ".claude-plugin", plugin_root / ".claude-plugin")
+    shutil.copy2(sp_root / "hooks" / "hooks.json", plugin_root / "hooks" / "hooks.json")
+    shutil.copy2(sp_root / "hooks" / "run-hook.cmd", plugin_root / "hooks" / "run-hook.cmd")
+    shutil.copy2(sp_root / "hooks" / "session-start", plugin_root / "hooks" / "session-start")
+    shutil.copytree(sp_root / "skills", plugin_root / "skills")
+
+    missing = [
+        rel for rel in COPILOT_REQUIRED_SUPERPOWERS_FILES if not (plugin_root / rel).is_file()
+    ]
+    if missing:
+        raise RunnerError(
+            "staged Copilot Superpowers plugin is missing required files: "
+            + ", ".join(missing),
+            stage="setup",
+        )
+
+    _require_copilot_path_under_home(plugin_root, copilot_home)
+    for path in plugin_root.rglob("*"):
+        _require_copilot_path_under_home(path, copilot_home)
+    return plugin_root
+
+
+def _seed_copilot_config(
+    copilot_home: Path,
+    workdir: Path,
+    session_id: str,
+) -> CopilotProvisioning:
+    """Stage Superpowers and prepare isolated Copilot CLI state."""
+    del workdir
+    sp_root = _require_copilot_superpowers_root(os.environ.get("SUPERPOWERS_ROOT", ""))
+    if shutil.which("copilot") is None:
+        raise RunnerError("copilot not found on PATH; cannot run Copilot evals", stage="setup")
+
+    env_values, secret_names, secret_values = _resolve_copilot_auth_env()
+    env_file = _write_copilot_env_file(copilot_home, env_values)
+    for path in (
+        copilot_home / ".quorum",
+        copilot_home / ".cache",
+        copilot_home / "logs",
+        copilot_home / "plugins",
+        copilot_home / "session-state",
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+
+    expected_events = copilot_home / "session-state" / session_id / "events.jsonl"
+    if expected_events.exists():
+        raise RunnerError(
+            f"pre-existing Copilot session-state before capture snapshot: {expected_events}",
+            stage="setup",
+        )
+
+    _stage_copilot_superpowers_plugin(sp_root, copilot_home)
+    return CopilotProvisioning(
+        session_id=session_id,
+        env_file=env_file,
+        secret_names=secret_names,
+        secret_values=secret_values,
+    )
+
+
+def _copilot_gauntlet_env(host_env: Mapping[str, str]) -> dict[str, str]:
+    return {
+        name: host_env[name]
+        for name in COPILOT_GAUNTLET_ENV_ALLOWLIST
+        if host_env.get(name) is not None
+    }
+
+
+def _scan_copilot_secret_leaks(
+    run_dir: Path,
+    *,
+    secret_values: tuple[str, ...],
+    excluded_paths: tuple[Path, ...],
+) -> tuple[Path, ...]:
+    secret_bytes = tuple(value.encode() for value in secret_values if value)
+    if not secret_bytes:
+        return ()
+
+    excluded_resolved = {path.resolve() for path in excluded_paths}
+    leaks: list[Path] = []
+    for path in run_dir.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            if path.resolve() in excluded_resolved:
+                continue
+            content = path.read_bytes()
+        except OSError:
+            continue
+        if any(secret in content for secret in secret_bytes):
+            leaks.append(path)
+    return tuple(leaks)
 
 
 def _seed_opencode_config(opencode_home: Path) -> None:
