@@ -108,7 +108,14 @@ class TestCheckScenario:
         assert check_scenario(sd) == []
 
     def test_absent_tier_is_accepted(self, tmp_path):
+        # The template now includes quorum_tier: full, so we must explicitly
+        # remove the field to verify backward-compatibility with old scenarios
+        # that pre-date the tiering mechanism.
         sd = self._valid(tmp_path)
+        story = sd / "story.md"
+        text = story.read_text()
+        text = text.replace("quorum_tier: full\n", "")
+        story.write_text(text)
         assert check_scenario(sd) == []
 
     def test_invalid_tier_is_caught(self, tmp_path):
