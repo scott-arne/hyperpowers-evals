@@ -26,14 +26,16 @@ class AgyRateLimitWatcher(threading.Thread):
     def __init__(
         self,
         log_path: Path,
-        scratch_dir: Path,
+        teardown_target: Path,
         *,
         teardown: Callable[[Path], object] | None = None,
         poll_interval: float = 0.5,
     ) -> None:
         super().__init__(daemon=True)
         self._log_path = Path(log_path)
-        self._scratch_dir = scratch_dir
+        # Opaque arg handed to teardown(); the default teardown expects the run
+        # dir and globs to the scratch dir itself, so this is not a scratch dir.
+        self._teardown_target = teardown_target
         self._teardown = teardown if teardown is not None else kill_run_tmux_server
         self._poll_interval = poll_interval
         self._stop_event = threading.Event()
@@ -56,7 +58,7 @@ class AgyRateLimitWatcher(threading.Thread):
                         offset += len(new_bytes)
                         if _agy_log_shows_rate_limit(new_text):
                             self.matched_text = new_text
-                            self._teardown(self._scratch_dir)
+                            self._teardown(self._teardown_target)
                             # Set flag last so readers always see matched_text
                             # and teardown side-effect before tripped=True.
                             self.tripped = True

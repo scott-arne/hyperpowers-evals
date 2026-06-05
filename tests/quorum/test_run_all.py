@@ -560,12 +560,13 @@ def test_run_batch_does_not_serialize_uncapped_agent(tmp_path):
 
 
 def test_rate_limited_verdict_detected_regardless_of_stage():
-    setup_v = {"error": {"stage": "setup", "message": f"{ANTIGRAVITY_RATE_LIMIT_MARKER}: …"}}
-    midrun_v = {"error": {"stage": "gauntlet", "message": f"{ANTIGRAVITY_RATE_LIMIT_MARKER}: killed mid-run"}}
+    marker = ANTIGRAVITY_RATE_LIMIT_MARKER
+    setup_v = {"error": {"stage": "setup", "message": f"{marker}: preflight"}}
+    midrun_v = {"error": {"stage": "gauntlet", "message": f"{marker}: killed mid-run"}}
     other_v = {"error": {"stage": "gauntlet", "message": "no Antigravity transcript captured"}}
-    assert _is_rate_limited_verdict(setup_v) is True      # preflight path still works
-    assert _is_rate_limited_verdict(midrun_v) is True      # NEW: mid-run kill latches
-    assert _is_rate_limited_verdict(other_v) is False      # a plain capture failure does not
+    assert _is_rate_limited_verdict(setup_v) is True  # preflight path still works
+    assert _is_rate_limited_verdict(midrun_v) is True  # NEW: mid-run kill latches
+    assert _is_rate_limited_verdict(other_v) is False  # a plain capture failure does not
     assert _is_rate_limited_verdict(None) is False
 
 

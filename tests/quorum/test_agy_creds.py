@@ -13,6 +13,7 @@ def test_corrupt_creds_restored(tmp_path, monkeypatch):
     _write(creds, {"access_token": "good", "refresh_token": "r"})
     monkeypatch.setattr("quorum.agy_creds._CRED_PATH", creds)
     b = backup_credential()
+    assert b is not None
     creds.write_text('{"access_token": "tru')  # simulate half-written kill
     b.verify_or_restore()
     assert json.loads(creds.read_text())["access_token"] == "good"  # restored
@@ -24,6 +25,7 @@ def test_legitimate_refresh_not_restored(tmp_path, monkeypatch):
     _write(creds, {"access_token": "old", "refresh_token": "r"})
     monkeypatch.setattr("quorum.agy_creds._CRED_PATH", creds)
     b = backup_credential()
+    assert b is not None
     _write(creds, {"access_token": "rotated", "refresh_token": "r"})  # valid refresh
     b.verify_or_restore()
     assert json.loads(creds.read_text())["access_token"] == "rotated"  # left alone
@@ -40,6 +42,7 @@ def test_backup_file_cleaned_up_on_valid_json(tmp_path, monkeypatch):
     _write(creds, {"access_token": "ok", "refresh_token": "r"})
     monkeypatch.setattr("quorum.agy_creds._CRED_PATH", creds)
     b = backup_credential()
+    assert b is not None
     backup_path = b.backup
     assert backup_path.exists()
     b.verify_or_restore()
@@ -52,6 +55,7 @@ def test_backup_file_cleaned_up_after_restore(tmp_path, monkeypatch):
     _write(creds, {"access_token": "good", "refresh_token": "r"})
     monkeypatch.setattr("quorum.agy_creds._CRED_PATH", creds)
     b = backup_credential()
+    assert b is not None
     backup_path = b.backup
     creds.write_text("not json at all")
     b.verify_or_restore()
