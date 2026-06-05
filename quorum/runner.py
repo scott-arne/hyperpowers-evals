@@ -41,10 +41,12 @@ import stat
 import subprocess
 import tempfile
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from quorum import agy_creds
+from quorum.agy_teardown import kill_run_tmux_server
 from quorum.capture import (
     capture_token_usage,
     capture_tool_calls,
@@ -193,6 +195,19 @@ class AgentRuntime:
     env_file: Path | None = None
     substitutions: dict[str, str] = dataclasses.field(default_factory=dict)
     cleanup_dirs: tuple[Path, ...] = ()
+
+
+@dataclasses.dataclass(frozen=True)
+class GauntletResult:
+    """Outcome of an `invoke_gauntlet` call.
+
+    `rate_limited` is True only when the agy rate-limit watcher tripped during
+    the run and tore gauntlet down (antigravity only). The caller uses it to
+    short-circuit to a rate-limit verdict before the capture cascade (Task 6).
+    """
+
+    status: GauntletStatus
+    rate_limited: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -1455,6 +1470,25 @@ def _quorum_repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def _kill_gauntlet_tmux_for_run(run_dir: Path) -> bool:
+    """Kill the gauntlet tmux server driving agy for *run_dir*.
+
+    Gauntlet runs agy inside a private tmux server whose pane cwd is
+    `<run_dir>/gauntlet-agent/results/<runId>/scratch`. The `runId` is minted
+    inside gauntlet (`orchestrator.makeRunId`), so quorum cannot pre-compute it
+    — but quorum is single-run-per-run-dir, so there is exactly one such
+    `results/<runId>/scratch` to discover by glob. We resolve that exact path
+    and hand it to `kill_run_tmux_server`, which matches the server by strict
+    pane-path equality (Task 3). The glob runs at teardown time, by which point
+    gauntlet is well into the run and the scratch dir exists.
+    """
+    results_root = run_dir / "gauntlet-agent" / "results"
+    scratch_dirs = sorted(results_root.glob("*/scratch"))
+    if not scratch_dirs:
+        return False
+    return kill_run_tmux_server(scratch_dirs[-1])
+
+
 def invoke_gauntlet(
     *,
     story_path: Path,
@@ -1462,11 +1496,13 @@ def invoke_gauntlet(
     launch_cwd: Path,
     run_dir: Path,
     max_time: str | None,
+    coding_agent: str,
     project_prompt: Path | None = None,
     extra_env: dict[str, str] | None = None,
     env_base: Mapping[str, str] | None = None,
-) -> GauntletStatus:
-    """Subprocess-invoke `gauntlet run`. Returns the verdict status string.
+    teardown: Callable[[Path], object] | None = None,
+) -> GauntletResult:
+    """Subprocess-invoke `gauntlet run`. Returns status + rate_limited flag.
 
     Sets QUORUM_AGENT_CWD in the env so the QA agent's bash (which starts
     in <run-dir>/scratch, NOT in our launch_cwd) can `cd` there before
@@ -1477,6 +1513,13 @@ def invoke_gauntlet(
     (see _populate_context_dir docstring), so the agent reads the value
     from the substituted HOWTO rather than from inheritance — but the env
     is set here too for belt-and-suspenders + future Gauntlet `-e` support.
+
+    For antigravity, an AgyRateLimitWatcher tails the main-run agy.log while
+    gauntlet drives the run. On a confirmed Code Assist rate-limit it kills
+    gauntlet's private tmux server (teardown) so the cell fails fast instead of
+    hanging to its budget, and the returned GauntletResult.rate_limited is True.
+    Other coding-agents run with no watcher and rate_limited stays False.
+    `teardown` is a test seam; production leaves it None to use the real kill.
     """
     cmd = [
         "gauntlet",
@@ -1503,10 +1546,42 @@ def invoke_gauntlet(
         "QUORUM_AGENT_CWD": str(launch_cwd),
         **(extra_env or {}),
     }
+
+    # Import here, not at module scope: agy_watch imports from this module, so a
+    # top-level import would be circular.
+    from quorum.agy_watch import AgyRateLimitWatcher
+
+    watcher: AgyRateLimitWatcher | None = None
+    if coding_agent == "antigravity":
+        agent_config_dir = run_dir / CODING_AGENT_CONFIG_SUBDIR
+        agy_log = agent_config_dir / "agy.log"
+        # Pre-touch for a stable inode: agy (not quorum) creates the log when
+        # the QA agent runs the launcher, which races the watcher's first poll.
+        agy_log.parent.mkdir(parents=True, exist_ok=True)
+        agy_log.touch(exist_ok=True)
+        watcher = AgyRateLimitWatcher(
+            agy_log,
+            run_dir,
+            teardown=teardown or _kill_gauntlet_tmux_for_run,
+        )
+        watcher.start()
+
     # --silent prints runId on stderr; we don't disambiguate by runId in
     # Phase 1 (one invocation per run-dir = at most one runId subdirectory).
-    subprocess.run(cmd, env=env, check=False)
-    return _gauntlet_status_from_run_dir(run_dir)
+    try:
+        proc = subprocess.Popen(cmd, env=env)
+        proc.wait()
+    finally:
+        # Always stop the watcher thread, even if gauntlet errored, so it never
+        # outlives the run.
+        if watcher is not None:
+            watcher.stop()
+
+    rate_limited = watcher is not None and watcher.tripped
+    return GauntletResult(
+        status=_gauntlet_status_from_run_dir(run_dir),
+        rate_limited=rate_limited,
+    )
 
 
 def _populate_context_dir(
@@ -1742,18 +1817,53 @@ def _run_scenario_inner(
         # 7. Snapshot session-log dir.
         snap = snapshot_dir(session_log_dir, tcfg.session_log_glob)
 
-        # 8. Invoke gauntlet.
+        # 8. Invoke gauntlet. For antigravity this also runs the agy rate-limit
+        #    watcher, which may SIGKILL/kill-server agy mid-run — a kill during a
+        #    token refresh can corrupt the shared ~/.gemini/oauth_creds.json. Back
+        #    it up before the run and verify/restore in a finally after it returns
+        #    (A4). Antigravity only; no overhead for other agents.
         gauntlet_env_base = _copilot_gauntlet_env(os.environ) if tcfg.name == "copilot" else None
-        gauntlet_status = invoke_gauntlet(
-            story_path=story_path,
-            target_binary=tcfg.binary,
-            launch_cwd=launch_cwd,
-            run_dir=run_dir,
-            max_time=effective_max_time,
-            project_prompt=tcfg.project_prompt,
-            extra_env={tcfg.agent_config_env: str(agent_config_dir)},
-            env_base=gauntlet_env_base,
-        )
+        cb = agy_creds.backup_credential() if coding_agent == "antigravity" else None
+        try:
+            gauntlet_result = invoke_gauntlet(
+                story_path=story_path,
+                target_binary=tcfg.binary,
+                launch_cwd=launch_cwd,
+                run_dir=run_dir,
+                max_time=effective_max_time,
+                coding_agent=coding_agent,
+                project_prompt=tcfg.project_prompt,
+                extra_env={tcfg.agent_config_env: str(agent_config_dir)},
+                env_base=gauntlet_env_base,
+            )
+        finally:
+            if cb is not None:
+                cb.verify_or_restore()
+        gauntlet_status = gauntlet_result.status
+
+        # 8a. Mid-run rate-limit short-circuit (A1/A3). When the watcher tripped,
+        #     agy was killed and the run dir has no usable antigravity transcript.
+        #     Intercept BEFORE the capture cascade and its strict-capture guard so
+        #     this surfaces as a recognizable rate-limit verdict (carrying
+        #     ANTIGRAVITY_RATE_LIMIT_MARKER for run_all's latch) rather than a
+        #     generic empty-trace capture indeterminate.
+        if coding_agent == "antigravity" and gauntlet_result.rate_limited:
+            return run_dir, _write_indeterminate(
+                run_dir,
+                final_reason=(
+                    "antigravity hit a Code Assist rate limit mid-run; agy was "
+                    "killed and produced no usable transcript"
+                ),
+                gauntlet=_build_gauntlet_layer_from_run_dir(run_dir),
+                checks=pre_records,
+                error=RunError(
+                    stage="gauntlet",
+                    message=(
+                        f"{ANTIGRAVITY_RATE_LIMIT_MARKER}: agy hit "
+                        "RESOURCE_EXHAUSTED mid-run; killed"
+                    ),
+                ),
+            )
 
         opencode_exported_paths: tuple[Path, ...] = ()
         if tcfg.normalizer == "opencode":

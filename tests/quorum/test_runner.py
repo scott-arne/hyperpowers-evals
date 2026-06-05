@@ -21,6 +21,7 @@ from quorum.runner import (
     COPILOT_SECRET_ENV_NAMES,
     AgentRuntime,
     CopilotProvisioning,
+    GauntletResult,
     RunnerError,
     _cleanup_agent_runtime,
     _copilot_gauntlet_env,
@@ -465,12 +466,12 @@ def _write_gemini_extension_metadata(cfg: Path) -> None:
 
 def _stub_gauntlet_pass(*, run_dir, **kwargs):
     (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
-    return "pass"
+    return GauntletResult(status="pass")
 
 
 def _stub_gauntlet_fail(*, run_dir, **kwargs):
     (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
-    return "fail"
+    return GauntletResult(status="fail")
 
 
 def test_invoke_gauntlet_accepts_sanitized_env_base(tmp_path, monkeypatch):
@@ -483,23 +484,30 @@ def test_invoke_gauntlet_accepts_sanitized_env_base(tmp_path, monkeypatch):
     run_dir.mkdir()
     captured: dict[str, dict[str, str]] = {}
 
-    def fake_run(cmd, **kwargs):
+    class FakeProc:
+        returncode = 0
+
+        def wait(self):
+            return 0
+
+    def fake_popen(cmd, **kwargs):
         del cmd
         captured["env"] = kwargs["env"]
-        return subprocess.CompletedProcess([], 0, "", "")
+        return FakeProc()
 
-    with patch("quorum.runner.subprocess.run", side_effect=fake_run):
-        status = invoke_gauntlet(
+    with patch("quorum.runner.subprocess.Popen", side_effect=fake_popen):
+        result = invoke_gauntlet(
             story_path=story,
             target_binary="copilot",
             launch_cwd=launch_cwd,
             run_dir=run_dir,
             max_time=None,
+            coding_agent="copilot",
             extra_env={"COPILOT_HOME": "/isolated/copilot"},
             env_base={"PATH": "/bin", "TERM": "xterm-256color"},
         )
 
-    assert status == "investigate"
+    assert result.status == "investigate"
     assert captured["env"] == {
         "PATH": "/bin",
         "TERM": "xterm-256color",
@@ -1071,7 +1079,7 @@ def test_antigravity_launch_uses_visible_alias_for_hidden_cwd(tmp_path, monkeypa
     def fake_invoke(*, launch_cwd, run_dir, **_kwargs):
         captured["launch_cwd"] = launch_cwd
         (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
-        return "pass"
+        return GauntletResult(status="pass")
 
     with (
         patch("quorum.runner._seed_antigravity_config"),
@@ -2861,7 +2869,7 @@ class TestRunScenario:
         def stub(*, run_dir, launch_cwd, **kwargs):
             captured["launch_cwd"] = launch_cwd
             (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
-            return "pass"
+            return GauntletResult(status="pass")
 
         with patch("quorum.runner.invoke_gauntlet", side_effect=stub):
             _run_dir, _verdict = run_scenario(
@@ -2994,6 +3002,123 @@ class TestRunScenario:
         assert verdict.error is not None
         assert verdict.error.stage == "capture"
 
+    def test_antigravity_rate_limited_short_circuits_to_rate_limit_verdict(
+        self, tmp_path, monkeypatch
+    ):
+        from quorum.run_all import _is_rate_limited_verdict
+
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(tmp_path / "sp"))
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"
+        session_log_dir.mkdir()
+        _make_antigravity_agent(coding_agents_dir, session_log_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+        out_root = tmp_path / "results"
+
+        def rate_limited_gauntlet(*, run_dir, **kwargs):
+            (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
+            return GauntletResult(status="fail", rate_limited=True)
+
+        with (
+            patch("quorum.runner._seed_antigravity_config"),
+            patch("quorum.runner.invoke_gauntlet", side_effect=rate_limited_gauntlet),
+        ):
+            run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="antigravity",
+                coding_agents_dir=coding_agents_dir,
+                out_root=out_root,
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert verdict.final == "indeterminate"
+        assert verdict.error is not None
+        assert verdict.error.stage == "gauntlet"
+        assert ANTIGRAVITY_RATE_LIMIT_MARKER in verdict.error.message
+        assert "no Antigravity transcript captured" not in verdict.error.message
+        assert "no Antigravity transcript" not in verdict.final_reason
+
+        written = json.loads((run_dir / "verdict.json").read_text())
+        assert ANTIGRAVITY_RATE_LIMIT_MARKER in written["error"]["message"]
+        assert _is_rate_limited_verdict(written) is True
+
+    def test_antigravity_run_backs_up_and_restores_credential(self, tmp_path, monkeypatch):
+        from quorum import agy_creds
+
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(tmp_path / "sp"))
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"
+        session_log_dir.mkdir()
+        _make_antigravity_agent(coding_agents_dir, session_log_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+        out_root = tmp_path / "results"
+
+        order: list[str] = []
+
+        class _SpyBackup:
+            def verify_or_restore(self):
+                order.append("restore")
+
+        def spy_backup():
+            order.append("backup")
+            return _SpyBackup()
+
+        def spy_gauntlet(*, run_dir, **kwargs):
+            order.append("gauntlet")
+            (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
+            return GauntletResult(status="pass")
+
+        monkeypatch.setattr(agy_creds, "backup_credential", spy_backup)
+        with (
+            patch("quorum.runner._seed_antigravity_config"),
+            patch("quorum.runner.invoke_gauntlet", side_effect=spy_gauntlet),
+        ):
+            run_scenario(
+                scenario_dir=sd,
+                coding_agent="antigravity",
+                coding_agents_dir=coding_agents_dir,
+                out_root=out_root,
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        # backup before the agy run, restore exactly once after it returns
+        assert order == ["backup", "gauntlet", "restore"]
+
+    def test_non_antigravity_run_does_not_back_up_credential(self, tmp_path, monkeypatch):
+        from quorum import agy_creds
+
+        monkeypatch.setenv("SUPERPOWERS_ROOT", str(tmp_path / "sp"))
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"
+        session_log_dir.mkdir()
+        _make_coding_agent(coding_agents_dir, "claude", session_log_dir)
+        sd = _make_scenario(scenarios_dir, "x", with_checks=False)
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+        out_root = tmp_path / "results"
+
+        calls = {"backed_up": 0}
+
+        def spy_backup():
+            calls["backed_up"] += 1
+            return None
+
+        monkeypatch.setattr(agy_creds, "backup_credential", spy_backup)
+        with patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass):
+            run_scenario(
+                scenario_dir=sd,
+                coding_agent="claude",
+                coding_agents_dir=coding_agents_dir,
+                out_root=out_root,
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+
+        assert calls["backed_up"] == 0
+
     def test_antigravity_zero_normalized_rows_is_distinct_from_missing_transcript(
         self, tmp_path, monkeypatch
     ):
@@ -3010,7 +3135,7 @@ class TestRunScenario:
         def gauntlet_with_non_tool_log(*, run_dir, **kwargs):
             (session_log_dir / "session.jsonl").write_text('{"type":"assistant","text":"hello"}\n')
             (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_antigravity_config"),
@@ -3183,7 +3308,7 @@ class TestRunScenario:
             (run_dir / "gauntlet-agent" / "results" / "run-1" / "result.json").write_text(
                 json.dumps({"status": "pass"})
             )
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_gemini_config"),
@@ -3253,7 +3378,7 @@ class TestRunScenario:
                 )
                 + "\n"
             )
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_pi_config"),
@@ -3287,7 +3412,7 @@ class TestRunScenario:
             session_log_dir.joinpath("session.jsonl").write_text(
                 json.dumps({"type": "session", "cwd": str(wrong_cwd)}) + "\n"
             )
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_pi_config"),
@@ -3317,7 +3442,7 @@ class TestRunScenario:
 
         def write_malformed_pi_session(**kwargs):
             session_log_dir.joinpath("session.jsonl").write_text("{not json}\n")
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_pi_config"),
@@ -3396,7 +3521,7 @@ class TestRunScenario:
                 )
                 + "\n"
             )
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_kimi_config", return_value=AgentRuntime()),
@@ -3441,7 +3566,7 @@ class TestRunScenario:
                 )
                 + "\n"
             )
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_kimi_config", return_value=AgentRuntime()),
@@ -3491,7 +3616,7 @@ class TestRunScenario:
             (session_log_dir.parent / "session_index.jsonl").write_text(
                 json.dumps({"sessionDir": str(session_dir), "workDir": str(launch_cwd)}) + "\n"
             )
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_kimi_config", return_value=AgentRuntime()),
@@ -3539,7 +3664,7 @@ class TestRunScenario:
             (session_log_dir.parent / "session_index.jsonl").write_text(
                 json.dumps({"sessionDir": str(session_dir), "workDir": str(launch_cwd)}) + "\n"
             )
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_kimi_config", return_value=AgentRuntime()),
@@ -3594,7 +3719,7 @@ class TestRunScenario:
             result_dir = run_dir / "gauntlet-agent" / "results" / "run-1"
             result_dir.mkdir(parents=True)
             (result_dir / "result.json").write_text(json.dumps({"status": "pass"}))
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
@@ -3680,7 +3805,7 @@ class TestRunScenario:
             result_dir = run_dir / "gauntlet-agent" / "results" / "run-1"
             result_dir.mkdir(parents=True)
             (result_dir / "result.json").write_text(json.dumps({"status": "pass"}))
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
@@ -3718,7 +3843,7 @@ class TestRunScenario:
             result_dir = run_dir / "gauntlet-agent" / "results" / "run-1"
             result_dir.mkdir(parents=True)
             (result_dir / "result.json").write_text(json.dumps({"status": "pass"}))
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
@@ -3761,7 +3886,7 @@ class TestRunScenario:
             result_dir = run_dir / "gauntlet-agent" / "results" / "run-1"
             result_dir.mkdir(parents=True)
             (result_dir / "result.json").write_text(json.dumps({"status": "pass"}))
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
@@ -3806,7 +3931,7 @@ class TestRunScenario:
             result_dir = run_dir / "gauntlet-agent" / "results" / "run-1"
             result_dir.mkdir(parents=True)
             (result_dir / "result.json").write_text(json.dumps({"status": "pass"}))
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
@@ -3853,7 +3978,7 @@ class TestRunScenario:
             result_dir = run_dir / "gauntlet-agent" / "results" / "run-1"
             result_dir.mkdir(parents=True)
             (result_dir / "result.json").write_text(json.dumps({"status": "pass"}))
-            return "pass"
+            return GauntletResult(status="pass")
 
         with (
             patch("quorum.runner._seed_copilot_config", side_effect=fake_seed),
@@ -4237,7 +4362,7 @@ class TestRunScenario:
         def stub(*, run_dir, max_time, **kwargs):
             captured["max_time"] = max_time
             (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
-            return "pass"
+            return GauntletResult(status="pass")
 
         with patch("quorum.runner.invoke_gauntlet", side_effect=stub):
             run_scenario(
@@ -4263,7 +4388,7 @@ class TestRunScenario:
         def stub(*, run_dir, max_time, **kwargs):
             captured["max_time"] = max_time
             (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
-            return "pass"
+            return GauntletResult(status="pass")
 
         with patch("quorum.runner.invoke_gauntlet", side_effect=stub):
             run_scenario(
@@ -4325,7 +4450,7 @@ class TestRunScenario:
                 )
             )
             (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
-            return "pass"
+            return GauntletResult(status="pass")
 
         with patch("quorum.runner.invoke_gauntlet", side_effect=stub):
             run_scenario(
