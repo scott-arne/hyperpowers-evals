@@ -27,7 +27,9 @@ class CredBackup:
     def verify_or_restore(self) -> None:
         """Restore from backup only if the live file is missing or corrupt JSON.
 
-        Always cleans up the temp backup file regardless of outcome.
+        Best-effort and never raises — it runs in a teardown ``finally`` after a
+        possibly-failing run, so it must not mask the in-flight exception. Always
+        cleans up the temp backup file.
         """
         corrupt = True
         try:
@@ -36,12 +38,11 @@ class CredBackup:
                 corrupt = False  # valid JSON — legitimate refresh or unchanged
         except (json.JSONDecodeError, OSError):
             pass
-        try:
-            if corrupt:
-                shutil.copy2(self.backup, self.live)
-        finally:
+        if corrupt:
             with contextlib.suppress(OSError):
-                self.backup.unlink()
+                shutil.copy2(self.backup, self.live)
+        with contextlib.suppress(OSError):
+            self.backup.unlink()
 
 
 def backup_credential() -> CredBackup | None:
