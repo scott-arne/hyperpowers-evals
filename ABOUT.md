@@ -8,9 +8,10 @@
 Quorum drives real coding-agent CLIs (Claude, Codex, Antigravity, Gemini, Kimi, OpenCode, Pi, Copilot) through a Gauntlet QA agent and grades them against scenario acceptance criteria plus deterministic post-checks. It is an eval lab for workflow compliance — skill triggering, worktree behavior, subagent coordination, verification reflexes, review quality, cost-shaping — not a generic benchmark. Static/unit checks are CI-safe; live evals are trusted-maintainer operations that launch agent CLIs in permissive modes.
 
 ## How it fits
-- Depends on: —
+- Depends on: [gauntlet](https://github.com/prime-radiant-inc/gauntlet) — its runner is the "Gauntlet-backed Quorum"; `quorum/runner.py` drives Gauntlet.
+- Evaluates: [superpowers-private](https://github.com/prime-radiant-inc/superpowers-private) — Superpowers is the system under test (grades workflow compliance).
 - Used by: —
-- External: Anthropic, OpenAI Codex, Google Gemini, Kimi, OpenCode, Pi, Copilot agent CLIs (launched as eval subjects). Superpowers is the system under test (testing relationship, not a code dependency).
+- External: Anthropic, OpenAI Codex, Gemini, Kimi, OpenCode, Pi, Copilot agent CLIs (launched as eval subjects).
 
 ## Runtime & data
 - Runs: Python CLI (quorum) + shell, run locally by trusted maintainers; GitHub Actions for static/unit checks only.
