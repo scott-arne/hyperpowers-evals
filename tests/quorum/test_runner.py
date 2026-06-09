@@ -2537,6 +2537,10 @@ class TestSeedAgentConfigDir:
         assert (dest / ".cache").is_dir()
         assert (dest / ".tmp").is_dir()
         assert (dest / ".quorum" / "session-exports").is_dir()
+        # Without a pinned model, opencode auto-selects across whatever
+        # provider keys are ambient (it picked claude-sonnet over GPT).
+        seeded_config = json.loads((config_dir / "opencode.json").read_text())
+        assert seeded_config["model"] == "openai/gpt-5.5"
 
     def test_opencode_seed_rejects_skill_tree_symlinks(self, tmp_path, monkeypatch):
         sp = _make_superpowers_opencode_root(tmp_path)
@@ -4670,9 +4674,11 @@ class TestRunScenario:
 
 
 # The opencode CLI (bun-compiled) ends every command with a bare process.exit()
-# that discards stdout not yet drained to the pipe; under load the preflight's
-# tiny "OK" reply vanishes (exit 0, empty stdout). The fake binary reproduces
-# that contract: reply written only when stdout is a regular file.
+# that discards stdout not yet drained; even file-redirected tiny replies can
+# vanish (exit 0, empty stdout), and with multiple provider keys ambient the
+# model auto-selection floats. The fake binary encodes the required contract:
+# reply only when the model is pinned and stdout is a regular file, with an
+# optional one-shot dropped-reply mode to exercise the retry.
 _FAKE_OPENCODE_PREFLIGHT = """#!/usr/bin/env python3
 import os, stat, sys
 
@@ -4685,6 +4691,13 @@ if args and args[0] == "run":
     if os.path.exists(os.path.join(here, "stderr-error-mode")):
         sys.stderr.write("provider exploded")
         sys.exit(0)
+    if "-m" not in args or "openai/gpt-5.5" not in args:
+        sys.stderr.write("model not pinned")
+        sys.exit(0)
+    marker = os.path.join(here, "first-reply-dropped")
+    if os.path.exists(os.path.join(here, "drop-first-reply")) and not os.path.exists(marker):
+        open(marker, "w").close()
+        sys.exit(0)
     if stat.S_ISFIFO(os.fstat(1).st_mode):
         sys.exit(0)
     sys.stdout.write("OK")
@@ -4692,17 +4705,25 @@ if args and args[0] == "run":
 
 
 class TestOpencodeProviderPreflight:
-    def _install_fake(self, tmp_path, monkeypatch, *, stderr_error=False):
+    def _install_fake(self, tmp_path, monkeypatch, *, stderr_error=False, drop_first_reply=False):
         bin_dir = tmp_path / "fake-opencode-bin"
         bin_dir.mkdir(exist_ok=True)
         _exec(bin_dir / "opencode", _FAKE_OPENCODE_PREFLIGHT)
         if stderr_error:
             (bin_dir / "stderr-error-mode").touch()
+        if drop_first_reply:
+            (bin_dir / "drop-first-reply").touch()
         monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+        return bin_dir
 
-    def test_preflight_survives_stdout_pipe_drop(self, tmp_path, monkeypatch):
+    def test_preflight_pins_model_and_survives_stdout_pipe_drop(self, tmp_path, monkeypatch):
         self._install_fake(tmp_path, monkeypatch)
         _run_opencode_provider_preflight()
+
+    def test_preflight_retries_when_reply_dropped(self, tmp_path, monkeypatch):
+        bin_dir = self._install_fake(tmp_path, monkeypatch, drop_first_reply=True)
+        _run_opencode_provider_preflight()
+        assert (bin_dir / "first-reply-dropped").exists()
 
     def test_preflight_failure_carries_stderr(self, tmp_path, monkeypatch):
         self._install_fake(tmp_path, monkeypatch, stderr_error=True)

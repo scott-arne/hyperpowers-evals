@@ -173,6 +173,11 @@ COPILOT_GAUNTLET_ENV_ALLOWLIST = (
     "COPILOT_OFFLINE",
 )
 OPENCODE_EXPORT_SUBDIR = Path(".quorum/session-exports")
+# Pinned model for the opencode coding-agent. Without a pin, opencode
+# auto-selects across whatever provider keys are ambient (with both OpenAI and
+# Anthropic keys present it picked claude-sonnet), which silently changes what
+# the column measures. Seeded into each run home and passed to the preflight.
+OPENCODE_MODEL = "openai/gpt-5.5"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -847,7 +852,13 @@ def _seed_antigravity_config(antigravity_config_dir: Path, workdir: Path) -> Non
 
 
 def _run_opencode_provider_preflight() -> None:
-    """Verify OpenCode can answer in a throwaway isolated home."""
+    """Verify OpenCode can answer in a throwaway isolated home.
+
+    The model is pinned (-m) so the check exercises the same provider the
+    eval runs on instead of opencode's ambient-key auto-selection. The reply
+    is retried because opencode's bare process.exit() can discard the tiny
+    "OK" even when stdout is a regular file.
+    """
     with tempfile.TemporaryDirectory(prefix="quorum-opencode-preflight-") as tmp:
         tmp_path = Path(tmp)
         cwd = tmp_path / "cwd"
@@ -874,22 +885,27 @@ def _run_opencode_provider_preflight() -> None:
         except (subprocess.TimeoutExpired, OSError):
             pass
 
-        try:
-            result = run_opencode_command(
-                [
-                    "run",
-                    "--dangerously-skip-permissions",
-                    "Reply with EXACTLY OK.",
-                ],
-                opencode_home=home,
-                launch_cwd=cwd,
-                timeout=90,
-            )
-        except subprocess.TimeoutExpired as e:
-            raise RunnerError(
-                "opencode provider preflight timed out after 90s",
-                stage="setup",
-            ) from e
+        for _ in range(3):
+            try:
+                result = run_opencode_command(
+                    [
+                        "run",
+                        "-m",
+                        OPENCODE_MODEL,
+                        "--dangerously-skip-permissions",
+                        "Reply with EXACTLY OK.",
+                    ],
+                    opencode_home=home,
+                    launch_cwd=cwd,
+                    timeout=90,
+                )
+            except subprocess.TimeoutExpired as e:
+                raise RunnerError(
+                    "opencode provider preflight timed out after 90s",
+                    stage="setup",
+                ) from e
+            if result.returncode == 0 and _preflight_response_ok(result.stdout):
+                return
     if result.returncode != 0:
         raise RunnerError(
             "opencode provider preflight failed "
@@ -897,13 +913,12 @@ def _run_opencode_provider_preflight() -> None:
             f"stderr: {result.stderr.strip()[:300]}",
             stage="setup",
         )
-    if not _preflight_response_ok(result.stdout):
-        raise RunnerError(
-            "opencode provider preflight did not return OK; "
-            f"version {version_hint[:120]}, stdout: {result.stdout.strip()[:300]}, "
-            f"stderr: {result.stderr.strip()[:300]}",
-            stage="setup",
-        )
+    raise RunnerError(
+        "opencode provider preflight did not return OK after 3 attempts; "
+        f"version {version_hint[:120]}, stdout: {result.stdout.strip()[:300]}, "
+        f"stderr: {result.stderr.strip()[:300]}",
+        stage="setup",
+    )
 
 
 def _reject_symlinks(root: Path, *, label: str) -> None:
@@ -1129,6 +1144,14 @@ def _seed_opencode_config(opencode_home: Path) -> None:
         export_dir,
     ):
         path.mkdir(parents=True, exist_ok=True)
+
+    (opencode_config_dir / "opencode.json").write_text(
+        json.dumps(
+            {"$schema": "https://opencode.ai/config.json", "model": OPENCODE_MODEL},
+            indent=2,
+        )
+        + "\n"
+    )
 
     package_root = opencode_config_dir / "superpowers"
     staged_plugin = package_root / ".opencode" / "plugins" / "superpowers.js"
