@@ -119,20 +119,15 @@ the tool-call count (`capture_result.row_count`) is in hand. `capture_token_usag
 must return the byte total (or the usage dict) so the runner can read it — a small
 signature change.
 
-**Open decision for review — how loud?** The codebase has no logging channel; it
-signals via structured verdict fields. Two options:
-- **(A) Non-blocking warning** surfaced as a capture note in the verdict /
-  `show.py` output. Respects "token capture is measurement-only; the verdict is
-  unaffected" — but needs a small warning-surfacing field.
-- **(B) `indeterminate(stage=capture)`**, reusing the exact mechanism the adjacent
-  zero-tool-call-rows guard already uses. Loudest and most codebase-consistent,
-  and a 0-byte-with-tool-calls run *is* a capture-integrity failure — but it
-  couples a measurement metric to the verdict, contradicting the measurement-only
-  principle, and would (rarely) fail an otherwise-gradeable run.
-
-**Recommendation: (A)** — the metric is explicitly measurement-only, so a drifted
-parser shouldn't sink a gradeable verdict; a loud capture-note is enough to catch
-it. Confirm at review.
+**Loudness: non-blocking warning (decided).** The codebase has no logging
+channel — it signals via structured verdict fields — so the guard surfaces as a
+**capture-note / warning field on the verdict, rendered by `show.py`**, while the
+run still grades normally. This respects the standing principle that token
+capture is measurement-only and the pass/fail verdict is unaffected: a drifted
+parser must not sink an otherwise-gradeable run. It is deliberately *not* an
+`indeterminate(stage=capture)` (the louder, verdict-coupling option was
+considered and rejected for that reason). The warning field is the small piece of
+new plumbing this part adds.
 
 ## Testing
 
@@ -155,8 +150,8 @@ own parser; it cannot catch production kimi changing its format** (a frozen
 snapshot still parses green) — that is Part 2's job.
 
 **Guard test** — a captured run (or fixture) with ≥1 tool call but
-`tool_result_total_bytes == 0` triggers the chosen loud signal (warning field set
-/ indeterminate).
+`tool_result_total_bytes == 0` sets the non-blocking capture-warning field (and
+the run still grades).
 
 ## Risks
 
@@ -170,9 +165,10 @@ hardcode their formats' keys).
 tripwire — it observes production wire on every kimi run. The fixture regression
 test only guards against *us* breaking the parser (a frozen snapshot can't detect
 external drift). Earlier framing that called the fixture a "drift tripwire" was
-wrong; this is corrected. Residual risk: the runtime guard's loudness depends on
-the chosen surfacing (Part 2 open decision); and if a future error path emits a
-*structured* (non-string) `output`, the `isinstance(output, str)` guard silently
-drops those bytes — acceptable given 100% flat-string in the current corpus, but
-noted as a drift vector the runtime guard would catch (bytes would fall, not the
-tool-call count).
+wrong; this is corrected. Residual risk: the runtime guard is a non-blocking
+warning (by design), so it informs rather than enforces; and if a future error
+path emits a *structured* (non-string) `output`, the `isinstance(output, str)`
+guard silently drops those bytes — acceptable given 100% flat-string in the
+current corpus, but noted as a drift vector the runtime guard would catch (bytes
+would fall while the tool-call count stays positive — exactly the guard's
+trigger).
