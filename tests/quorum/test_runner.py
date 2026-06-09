@@ -475,6 +475,43 @@ def _stub_gauntlet_fail(*, run_dir, **kwargs):
     return GauntletResult(status="fail")
 
 
+def _claude_log_line() -> str:
+    # One real Claude transcript line: an assistant message carrying a tool_use
+    # (so the claude normalizer yields a tool-call row and capture is non-empty —
+    # claude is a strict-capture target) plus a usage block (so token capture
+    # produces real economics for tests that assert on cost).
+    return (
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "model": "claude-sonnet-4-6",
+                    "content": [
+                        {"type": "tool_use", "name": "Bash", "input": {"command": "echo hi"}}
+                    ],
+                    "usage": {"input_tokens": 100, "output_tokens": 50},
+                },
+            }
+        )
+        + "\n"
+    )
+
+
+def _stub_gauntlet_pass_writing_log(session_log_dir: Path):
+    """Passing-gauntlet stub that also writes a minimal claude session log.
+
+    Generic composition tests that only exercise verdict wiring still need a
+    realistic non-empty capture now that claude is a strict-capture target.
+    """
+
+    def _stub(*, run_dir, **kwargs):
+        (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
+        (session_log_dir / "session.jsonl").write_text(_claude_log_line())
+        return GauntletResult(status="pass")
+
+    return _stub
+
+
 def test_invoke_gauntlet_accepts_sanitized_env_base(tmp_path, monkeypatch):
     monkeypatch.setenv("HOST_ONLY", "must-not-leak")
     story = tmp_path / "story.md"
@@ -2790,7 +2827,10 @@ class TestRunScenario:
         (coding_agents_dir / "claude-context" / "HOWTO.md").write_text("invoke `claude`")
         out_root = tmp_path / "results"
 
-        with patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass):
+        with patch(
+            "quorum.runner.invoke_gauntlet",
+            side_effect=_stub_gauntlet_pass_writing_log(session_log_dir),
+        ):
             run_dir, verdict = run_scenario(
                 scenario_dir=sd,
                 coding_agent="claude",
@@ -2817,7 +2857,10 @@ class TestRunScenario:
         (coding_agents_dir / "claude-context").mkdir(parents=True)
         out_root = tmp_path / "results"
 
-        with patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass):
+        with patch(
+            "quorum.runner.invoke_gauntlet",
+            side_effect=_stub_gauntlet_pass_writing_log(session_log_dir),
+        ):
             run_dir, verdict = run_scenario(
                 scenario_dir=sd,
                 coding_agent="claude",
@@ -2907,6 +2950,36 @@ class TestRunScenario:
         # Capture was empty (no real CLI run) and there's a trace check →
         # composer returns indeterminate.
         assert verdict.final == "indeterminate"
+
+    def test_claude_empty_capture_is_strict_capture_indeterminate(self, tmp_path):
+        # Claude is a strict-capture target: an empty/stub transcript (e.g. the
+        # 2.1.169 nested-session persistence skip) must surface as a loud
+        # indeterminate(stage=capture) that names Claude, not a silently-masked
+        # soft verdict. No trace check is present, so only the strict-capture
+        # guard can force the indeterminate here.
+        coding_agents_dir = tmp_path / "coding-agents"
+        scenarios_dir = tmp_path / "scenarios"
+        session_log_dir = tmp_path / "logs"
+        session_log_dir.mkdir()
+        _make_coding_agent(coding_agents_dir, "claude", session_log_dir)
+        sd = scenarios_dir / "x"
+        sd.mkdir(parents=True)
+        (sd / "story.md").write_text("---\nid: x\ntitle: x\n---\nbody\n")
+        _exec(sd / "setup.sh", "#!/usr/bin/env bash\necho ok > marker\n")
+        (sd / "checks.sh").write_text("pre() { :; }\npost() { :; }\n")
+        (coding_agents_dir / "claude-context").mkdir(parents=True)
+        out_root = tmp_path / "results"
+
+        with patch("quorum.runner.invoke_gauntlet", side_effect=_stub_gauntlet_pass):
+            run_dir, verdict = run_scenario(
+                scenario_dir=sd,
+                coding_agent="claude",
+                coding_agents_dir=coding_agents_dir,
+                out_root=out_root,
+                skeleton_root=_empty_skeleton(tmp_path),
+            )
+        assert verdict.final == "indeterminate"
+        assert "no Claude transcript appeared" in verdict.final_reason
 
     def test_launch_cwd_sentinel_threads_through_to_gauntlet(self, tmp_path):
         # When setup.sh writes .quorum-launch-cwd, the runner reads it and
@@ -4576,6 +4649,9 @@ class TestRunScenario:
                     }
                 )
             )
+            # claude is a strict-capture target: a non-empty transcript is
+            # required, else the run short-circuits to indeterminate(capture).
+            (session_log_dir / "session.jsonl").write_text(_claude_log_line())
             (run_dir / ".gauntlet" / "results").mkdir(parents=True, exist_ok=True)
             return GauntletResult(status="pass")
 

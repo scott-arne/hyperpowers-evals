@@ -191,6 +191,49 @@ class RunnerError(RuntimeError):
         self.stage = stage
 
 
+class NestedClaudeCodeError(RunnerError):
+    """Raised when a claude eval is launched from inside a Claude Code session."""
+
+
+def running_inside_claude_code(env: Mapping[str, str] | None = None) -> bool:
+    """True when quorum itself is running inside a Claude Code session.
+
+    Claude Code injects CLAUDECODE=1 into the environment of the processes it
+    spawns. A `claude` agent-under-test launched from such a process inherits
+    that identity and, on Claude Code >=2.1.166, skips persisting its session
+    transcript (nested-interactive-session detection) — leaving quorum with an
+    empty tool-call capture and every claude run indeterminate.
+    """
+    resolved = os.environ if env is None else env
+    return bool(resolved.get("CLAUDECODE"))
+
+
+def guard_against_nested_claude_code(
+    coding_agents: list[str] | None,
+    env: Mapping[str, str] | None = None,
+) -> None:
+    """Refuse to run a claude eval from inside a Claude Code session.
+
+    `coding_agents` is the set of agents that will run; None means "all agents"
+    (the run-all default), which includes claude. No-op unless quorum is nested
+    AND claude is among the requested agents — other agents are unaffected by
+    CLAUDECODE.
+    """
+    resolved = os.environ if env is None else env
+    if not running_inside_claude_code(resolved):
+        return
+    if coding_agents is not None and "claude" not in coding_agents:
+        return
+    raise NestedClaudeCodeError(
+        "Refusing to run a `claude` eval from inside a Claude Code session "
+        "(CLAUDECODE is set). Claude Code >=2.1.166 does not persist a nested "
+        "interactive session's transcript, so quorum would capture no tool "
+        "calls and every claude run would be indeterminate. Run this eval from "
+        "a plain terminal outside Claude Code (or drop claude from the agent "
+        "set)."
+    )
+
+
 @dataclasses.dataclass(frozen=True)
 class AgentRuntime:
     env_file: Path | None = None
@@ -2162,6 +2205,7 @@ def _run_scenario_inner(
 
         strict_capture_names = {
             "antigravity": "Antigravity",
+            "claude": "Claude",
             "copilot": "Copilot",
             "gemini": "Gemini",
             "opencode": "OpenCode",
