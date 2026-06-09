@@ -106,6 +106,22 @@ def test_missing_usage_sidecar_is_partial(tmp_path):
     assert econ["total_est_cost_usd"] is None
 
 
+def test_coding_block_surfaces_tool_result_bytes(tmp_path):
+    _gauntlet_results(tmp_path, usage_rows=[_SONNET_ROW], result=_RESULT)
+    usage = json.loads(json.dumps(_CODING_USAGE))
+    usage["tool_result_total_bytes"] = 142772
+    (tmp_path / "coding-agent-token-usage.json").write_text(json.dumps(usage))
+    econ = build_run_economics(tmp_path)
+    assert econ["coding_agent"]["tool_result_total_bytes"] == 142772
+
+
+def test_coding_block_defaults_tool_result_bytes_to_zero(tmp_path):
+    _gauntlet_results(tmp_path, usage_rows=[_SONNET_ROW], result=_RESULT)
+    (tmp_path / "coding-agent-token-usage.json").write_text(json.dumps(_CODING_USAGE))
+    econ = build_run_economics(tmp_path)
+    assert econ["coding_agent"]["tool_result_total_bytes"] == 0
+
+
 def test_missing_coding_usage_is_partial(tmp_path):
     _gauntlet_results(tmp_path, usage_rows=[_SONNET_ROW], result=_RESULT)
     econ = build_run_economics(tmp_path)

@@ -116,6 +116,7 @@ def _coding_block(usage: dict) -> dict:
         "models": models,
         "tokens": _tokens_shell(usage),
         "est_cost_usd": usage.get("est_cost_usd"),
+        "tool_result_total_bytes": usage.get("tool_result_total_bytes", 0),
         "has_unpriced_model": has_unpriced,
         "obol": _obol_provenance(usage),
     }
