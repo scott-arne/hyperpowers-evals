@@ -7,9 +7,17 @@
 # installed copy contains literal absolute paths (no env inheritance needed —
 # tmux strips env from new sessions).
 #
+# `env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID` strips the launching Claude Code
+# session's identity. Claude Code (>=2.1.166) skips writing its session
+# transcript when it detects a nested interactive session via those inherited
+# vars; stripping them lets the eval run from inside a Claude Code session while
+# the agent under test still persists its transcript (so capture sees real tool
+# calls). If capture ever comes back empty anyway, claude is a strict-capture
+# target, so the run is a loud indeterminate(stage=capture), never a silent pass.
+#
 # Equivalent manual command (for debugging):
-#   cd "$QUORUM_AGENT_CWD" && source "$CLAUDE_ENV_FILE" && CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" claude --dangerously-skip-permissions --plugin-dir "$SUPERPOWERS_ROOT" --model opus
+#   cd "$QUORUM_AGENT_CWD" && source "$CLAUDE_ENV_FILE" && env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" claude --dangerously-skip-permissions --plugin-dir "$SUPERPOWERS_ROOT" --model opus
 set -euo pipefail
 cd "$QUORUM_AGENT_CWD" || { echo "launch-agent: cannot cd to $QUORUM_AGENT_CWD" >&2; exit 1; }
 source "$CLAUDE_ENV_FILE"
-exec env CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" claude --dangerously-skip-permissions --plugin-dir "$SUPERPOWERS_ROOT" --model opus "$@"
+exec env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" claude --dangerously-skip-permissions --plugin-dir "$SUPERPOWERS_ROOT" --model opus "$@"

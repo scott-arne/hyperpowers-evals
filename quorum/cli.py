@@ -10,11 +10,7 @@ import click
 
 from quorum.economics import backfill_run_economics
 from quorum.run_all import run_batch
-from quorum.runner import (
-    NestedClaudeCodeError,
-    guard_against_nested_claude_code,
-    run_scenario,
-)
+from quorum.runner import run_scenario
 from quorum.scaffold import (
     ScaffoldError,
     check_scenario,
@@ -73,11 +69,6 @@ def run(
     # inside setup.sh invocations.
     scenario_dir = scenario_dir.resolve()
     coding_agents_dir = coding_agents_dir.resolve()
-    try:
-        guard_against_nested_claude_code([coding_agent])
-    except NestedClaudeCodeError as e:
-        click.echo(f"error: {e}", err=True)
-        sys.exit(1)
     out_root.mkdir(parents=True, exist_ok=True)
     out_root = out_root.resolve()
     run_dir, verdict = run_scenario(
@@ -392,11 +383,6 @@ def run_all_cmd(
     scenario_filter = (
         [s.strip() for s in scenarios_csv.split(",") if s.strip()] if scenarios_csv else None
     )
-    try:
-        guard_against_nested_claude_code(agent_filter)
-    except NestedClaudeCodeError as e:
-        click.echo(f"error: {e}", err=True)
-        sys.exit(1)
     out_root.mkdir(parents=True, exist_ok=True)
     try:
         run_batch(

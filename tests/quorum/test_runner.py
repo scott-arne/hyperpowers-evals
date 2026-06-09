@@ -4255,6 +4255,23 @@ class TestRunScenario:
         assert "claude --dangerously-skip-permissions" in content
         assert "--bare" not in content
 
+    def test_checked_in_claude_launcher_strips_nested_claude_session_env(self):
+        # Claude Code (>=2.1.166) skips writing its session transcript when it
+        # detects a NESTED interactive session via the inherited CLAUDECODE and
+        # CLAUDE_CODE_SESSION_ID env vars. Stripping them lets the eval run from
+        # inside a Claude Code session and still persist the agent-under-test's
+        # transcript, so quorum captures real tool calls.
+        launcher = (
+            Path(__file__).resolve().parents[2]
+            / "coding-agents"
+            / "claude-context"
+            / "launch-agent"
+        )
+
+        content = launcher.read_text()
+
+        assert "env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID" in content
+
     def test_launch_agent_shim_substitutes_claude_env_file(
         self, tmp_path, monkeypatch
     ):

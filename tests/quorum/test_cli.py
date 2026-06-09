@@ -542,25 +542,3 @@ def test_backfill_economics_requires_target_or_all(tmp_path):
     result = runner.invoke(main, ["backfill-economics"])
     assert result.exit_code == 1
     assert "exactly one" in result.output
-
-
-def test_run_all_bails_for_claude_when_nested_in_claude_code(monkeypatch):
-    # Inside a Claude Code session a claude eval would capture nothing, so
-    # run-all must refuse loudly and never start a batch.
-    monkeypatch.setenv("CLAUDECODE", "1")
-    fake_run_batch = MagicMock()
-    monkeypatch.setattr("quorum.cli.run_batch", fake_run_batch)
-    result = CliRunner().invoke(main, ["run-all", "--coding-agents", "claude"])
-    assert result.exit_code == 1
-    assert "outside Claude Code" in result.output
-    fake_run_batch.assert_not_called()
-
-
-def test_run_all_runs_codex_when_nested_in_claude_code(monkeypatch):
-    # Only claude is affected by CLAUDECODE — a codex-only eval must still run.
-    monkeypatch.setenv("CLAUDECODE", "1")
-    fake_run_batch = MagicMock()
-    monkeypatch.setattr("quorum.cli.run_batch", fake_run_batch)
-    result = CliRunner().invoke(main, ["run-all", "--coding-agents", "codex"])
-    assert result.exit_code == 0
-    fake_run_batch.assert_called_once()
