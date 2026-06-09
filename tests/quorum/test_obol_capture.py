@@ -152,6 +152,13 @@ class TestEstimateSessionLogs:
         assert usage is not None
         assert usage["tool_result_total_bytes"] == 14
 
+    def test_kimi_real_structure_fixture_tool_result_bytes(self):
+        usage = estimate_session_logs("kimi", [FIXTURES / "kimi_wire.jsonl"])
+
+        assert usage is not None
+        assert usage["tool_result_total_bytes"] == 30
+        assert usage["total_output"] == 50
+
     def test_kimi_tool_result_bytes_edge_cases(self, tmp_path):
         f = tmp_path / "wire.jsonl"
         rows = [
