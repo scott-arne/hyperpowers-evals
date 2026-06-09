@@ -845,22 +845,25 @@ When an OpenCode run is non-passing or indeterminate:
 When a Pi run is non-passing or indeterminate:
 
 1. Confirm `pi` is installed and reachable: `pi --version`.
-2. Confirm `PI_PROVIDER`, `PI_MODEL`, `PI_API_KEY`, and `SUPERPOWERS_ROOT` are
+2. Confirm `pi-subagents` is installed: `ls "$(npm root -g)/pi-subagents"`.
+   The launcher exits 1 with `pi-subagents not found` when it is missing;
+   fix with `npm install -g pi-subagents`.
+3. Confirm `PI_PROVIDER`, `PI_MODEL`, `PI_API_KEY`, and `SUPERPOWERS_ROOT` are
    set in the shell that launches quorum.
-3. If using `azure-openai-responses`, confirm `AZURE_OPENAI_BASE_URL` or
+4. If using `azure-openai-responses`, confirm `AZURE_OPENAI_BASE_URL` or
    `AZURE_OPENAI_RESOURCE_NAME` is set.
-4. Inspect `<run>/coding-agent-config/pi.env`; it should exist, be chmod
+5. Inspect `<run>/coding-agent-config/pi.env`; it should exist, be chmod
    `0600`, and contain the runtime env expected by the launcher.
-5. Inspect `<run>/coding-agent-config/auth.json`; it should be chmod `0600`
+6. Inspect `<run>/coding-agent-config/auth.json`; it should be chmod `0600`
    and should reference `$PI_API_KEY`, not the literal secret.
-6. Confirm raw Pi sessions exist under
+7. Confirm raw Pi sessions exist under
    `<run>/coding-agent-config/sessions/*.jsonl`.
-7. If the verdict says `qa-agent-misconfigured`, look for a new Pi session
+8. If the verdict says `qa-agent-misconfigured`, look for a new Pi session
    whose header `cwd` is outside `<run>/coding-agent-workdir`.
-8. If the verdict says `unusable Pi session header`, inspect the first line of
+9. If the verdict says `unusable Pi session header`, inspect the first line of
    each new Pi session for malformed JSON or missing `cwd`.
-9. Inspect normalized behavior in `<run>/coding-agent-tool-calls.jsonl`.
-10. Render the verdict with `uv run quorum show <run-or-batch-id>`.
+10. Inspect normalized behavior in `<run>/coding-agent-tool-calls.jsonl`.
+11. Render the verdict with `uv run quorum show <run-or-batch-id>`.
 
 ### Copilot Troubleshooting
 
