@@ -4,7 +4,7 @@ You are driving Pi in a bash shell inside tmux. Pi is itself an AI agent; what a
 
 ## Launch Pi with one command
 
-Your bash starts in a scratch directory, NOT the workdir quorum prepared. quorum has generated a launcher that handles everything: it cds into the prepared workdir, sources the run-local Pi auth env file, sets the isolated `PI_CODING_AGENT_DIR`, points Pi at the isolated session directory, selects the configured model, loads the Superpowers extension from `SUPERPOWERS_ROOT`, disables ambient skill and context-file discovery, explicitly loads `SUPERPOWERS_ROOT/skills`, and enables the built-in coding tools.
+Your bash starts in a scratch directory, NOT the workdir quorum prepared. quorum has generated a launcher that handles everything: it cds into the prepared workdir, sources the run-local Pi auth env file, sets the isolated `PI_CODING_AGENT_DIR`, points Pi at the isolated session directory, selects the configured model, loads the Superpowers extension from `SUPERPOWERS_ROOT` and the `pi-subagents` extension, disables ambient skill and context-file discovery, explicitly loads `SUPERPOWERS_ROOT/skills`, and enables the built-in coding tools plus the `subagent` tool.
 
 Type this one line, verbatim, as your first action:
 
@@ -48,6 +48,8 @@ Use `wake_on_idle_log(...)` to spend one inference turn waiting until the log go
 Pi raw tool names are lowercase. quorum normalizes them to canonical names: `read` to `Read`, `write` to `Write`, `edit` to `Edit`, `bash` to `Bash`, `grep` to `Grep`, and `find` or `ls` to `Glob`.
 
 Pi does not expose Claude Code's native `Skill` tool. Superpowers skill use may appear as Pi reading `skills/<name>/SKILL.md`; quorum recognizes those `Read` calls as skill invocations.
+
+Pi also loads the `pi-subagents` extension, which provides a `subagent` tool for delegating to child agents (reviewer, worker, scout, ...). quorum normalizes `subagent` execution calls to `Agent`; management calls (`action: "list"`, `status`, ...) keep the raw name. Child agent sessions write to a subdirectory of the sessions dir named after the parent session file, so the newest `*.jsonl` directly in the sessions dir remains the main agent's log.
 
 ## Shutdown
 

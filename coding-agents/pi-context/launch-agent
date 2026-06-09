@@ -16,6 +16,16 @@ set -a
 . "$PI_ENV_FILE"
 set +a
 
+# pi-subagents provides the `subagent` delegation tool. It is a host
+# prerequisite like pi itself: npm install -g pi-subagents. --no-extensions
+# disables ambient discovery, so the package is loaded explicitly by path.
+# PI_SUBAGENTS_PKG is resolved here at launch, not substituted by quorum.
+PI_SUBAGENTS_PKG="$(npm root -g)/pi-subagents"
+if [ ! -d "$PI_SUBAGENTS_PKG" ]; then
+  echo "launch-agent: pi-subagents not found at $PI_SUBAGENTS_PKG; run: npm install -g pi-subagents" >&2
+  exit 1
+fi
+
 exec env \
   PI_CODING_AGENT_DIR="$PI_CODING_AGENT_DIR" \
   PI_OFFLINE=1 \
@@ -26,8 +36,9 @@ exec env \
     --model "$PI_MODEL" \
     --no-extensions \
     --extension "$SUPERPOWERS_ROOT" \
+    --extension "$PI_SUBAGENTS_PKG" \
     --no-skills \
     --skill "$SUPERPOWERS_ROOT/skills" \
     --no-context-files \
-    --tools read,bash,edit,write,grep,find,ls \
+    --tools read,bash,edit,write,grep,find,ls,subagent \
     "$@"

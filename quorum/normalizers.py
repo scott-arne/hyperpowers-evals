@@ -344,6 +344,7 @@ PI_TOOL_MAP: dict[str, str] = {
 
 
 PI_NATIVE_TOOLS = (set(PI_TOOL_MAP.values()) - {"Bash"}) | {
+    "Agent",
     "subagent",
     "todo",
     "manage_todo_list",
@@ -373,11 +374,18 @@ def normalize_pi_logs(raw_content: str) -> list[dict[str, Any]]:
             if block.get("type") != "toolCall":
                 continue
             name = block.get("name", "")
+            args = block.get("arguments", {})
             canonical = PI_TOOL_MAP.get(name, name)
+            # pi-subagents multiplexes one `subagent` tool: execution calls
+            # (single/chain/parallel) omit `action`; management and control
+            # calls (list, status, resume, ...) set it. Only execution calls
+            # launch subagents, so only those alias to Agent — keeping
+            # tool-count Agent 1:1 with launches, as the codex spawn_agent
+            # mapping does.
+            if name == "subagent" and isinstance(args, dict) and "action" not in args:
+                canonical = "Agent"
             source = "native" if canonical in PI_NATIVE_TOOLS else "shell"
-            results.append(
-                {"tool": canonical, "args": block.get("arguments", {}), "source": source}
-            )
+            results.append({"tool": canonical, "args": args, "source": source})
     return results
 
 

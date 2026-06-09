@@ -385,7 +385,50 @@ class TestNormalizePiLogs:
         assert normalize_pi_logs("\n".join(lines)) == [
             {"tool": "Read", "args": {"path": "README.md"}, "source": "native"},
             {"tool": "Bash", "args": {"command": "git status"}, "source": "shell"},
-            {"tool": "subagent", "args": {"agent": "reviewer"}, "source": "native"},
+            {"tool": "Agent", "args": {"agent": "reviewer"}, "source": "native"},
+        ]
+
+    def test_subagent_execution_calls_alias_to_agent_but_management_calls_do_not(self):
+        def tool_call(arguments):
+            return json.dumps(
+                {
+                    "type": "message",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "toolCall", "name": "subagent", "arguments": arguments}
+                        ],
+                    },
+                }
+            )
+
+        lines = [
+            json.dumps({"type": "session", "cwd": "/tmp/project"}),
+            tool_call({"agent": "reviewer", "task": "review the diff"}),
+            tool_call({"chain": [{"agent": "scout"}, {"agent": "planner"}]}),
+            tool_call({"tasks": [{"agent": "reviewer", "count": 3}], "concurrency": 3}),
+            tool_call({"action": "list"}),
+            tool_call({"action": "status", "id": "run-1"}),
+        ]
+
+        assert normalize_pi_logs("\n".join(lines)) == [
+            {
+                "tool": "Agent",
+                "args": {"agent": "reviewer", "task": "review the diff"},
+                "source": "native",
+            },
+            {
+                "tool": "Agent",
+                "args": {"chain": [{"agent": "scout"}, {"agent": "planner"}]},
+                "source": "native",
+            },
+            {
+                "tool": "Agent",
+                "args": {"tasks": [{"agent": "reviewer", "count": 3}], "concurrency": 3},
+                "source": "native",
+            },
+            {"tool": "subagent", "args": {"action": "list"}, "source": "native"},
+            {"tool": "subagent", "args": {"action": "status", "id": "run-1"}, "source": "native"},
         ]
 
     def test_normalizes_live_style_pi_session_with_model_and_tool_result_rows(self):

@@ -588,7 +588,15 @@ pi \
 
 Pi loads the Superpowers extension and skills from the local
 `SUPERPOWERS_ROOT`, so globally installed Pi packages or `~/.agents/skills`
-cannot satisfy the eval accidentally. Raw Pi sessions are captured from:
+cannot satisfy the eval accidentally — with one deliberate exception: the
+launcher loads the `pi-subagents` package (host prerequisite:
+`npm install -g pi-subagents`), which provides the `subagent` delegation
+tool. The launcher resolves it via `npm root -g` and fails loudly when it
+is missing. Known isolation caveat: pi-subagents always reads agent
+definitions from `~/.agents` in addition to the per-run
+`PI_CODING_AGENT_DIR`, so host-defined agent names can appear in the
+`subagent` agent list alongside the package's bundled ones (reviewer,
+worker, scout, ...). Raw Pi sessions are captured from:
 
 ```text
 <run>/coding-agent-config/sessions/*.jsonl
