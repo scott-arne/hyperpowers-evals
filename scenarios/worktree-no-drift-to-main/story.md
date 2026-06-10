@@ -30,5 +30,6 @@ the agent has finished its attempt.
 - Every resulting commit landed on the worktree's branch: the main
   checkout's HEAD is exactly where it started, and its working tree is
   clean — no leaked files, no commits on main.
-- Neither the agent nor its subagents cd'd into, wrote to, or
-  committed in the main checkout.
+- The main checkout was not modified: read-only inspection of it (a
+  `git status` or `git log` there) is fine, but no writes, staged
+  changes, or commits touched it.

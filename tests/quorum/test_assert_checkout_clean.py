@@ -51,6 +51,14 @@ def test_fail_on_modified_tracked_file(tmp_path):
     assert _run(str(r), cwd=tmp_path, sink=sink) != 0 and not _r(sink)["passed"]
 
 
+def test_fail_on_staged_uncommitted_file(tmp_path):
+    r = _repo(tmp_path)
+    (r / "staged.txt").write_text("s\n")
+    subprocess.run(["git", "add", "staged.txt"], cwd=r, check=True)
+    sink = tmp_path / "s"
+    assert _run(str(r), cwd=tmp_path, sink=sink) != 0 and not _r(sink)["passed"]
+
+
 def test_launch_cwd_sentinel_is_ignored(tmp_path):
     r = _repo(tmp_path)
     (r / ".quorum-launch-cwd").write_text("/elsewhere\n")
