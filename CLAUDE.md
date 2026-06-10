@@ -116,6 +116,15 @@ When this repo is checked out as `superpowers/evals`, quorum defaults
 export SUPERPOWERS_ROOT=/path/to/superpowers
 ```
 
+## Experiment Log
+
+Every experiment campaign gets a dated entry in `docs/experiments/` —
+hypotheses, configs, run pointers, and verdicts, with **negative results
+recorded at equal billing to wins**. Before proposing an optimization or
+behavioral change, check the log: it exists so disproofs don't get
+re-purchased. Specs in the parent repo cite these entries rather than being
+their only copy.
+
 ## Parent Superpowers Submodule
 
 `superpowers-evals` is consumed by `superpowers` as the `evals` submodule.
