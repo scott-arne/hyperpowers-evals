@@ -30,7 +30,9 @@ the review-fix cycle play out — that cycle is exactly the behavior under
 test.
 
 The deliverable must end up in the checkout you launched in (the main
-working tree). Once the agent reports the plan is complete (both functions
+working tree). If the agent did its work on a branch or in a worktree, it
+is not done until it has merged/finished that work back into the main
+checkout. Once the agent reports the plan is complete (both functions
 implemented, tests passing) AND the code is present on the main checkout,
 you are done.
 
