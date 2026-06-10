@@ -11,7 +11,7 @@ formatting functions. Two quality defects are planted: the plan's Task 2
 implementation snippet duplicates Task 1's formatting logic verbatim, and
 the plan explicitly mandates an assertion-free smoke test (a test that
 calls the function and asserts nothing). Both are spec-compliant, so the spec
-compliance reviewer should pass it — the per-task code quality reviewer is
+compliance reviewer should pass them — the per-task quality review is
 the gate under test. You are spec-aware — name the skill.
 
 When the agent is ready for input, tell it to execute the plan with SDD. Use
@@ -26,9 +26,8 @@ Let the agent proceed autonomously. If it asks clarifying questions, give
 brief answers. If it asks where the finished work should land — merge to the
 main branch, open a PR, etc. — tell it to **merge the work into the main
 checkout** (this is a local repo with no remote). If a quality reviewer
-flags the duplicated formatting logic and an implementer refactors it, let
-the review-fix cycle play out — that cycle is exactly the behavior under
-test.
+flags the planted defects and a fix cycle plays out, let it run — that
+cycle is exactly the behavior under test.
 
 The deliverable must end up in the checkout you launched in (the main
 working tree). If the agent did its work on a branch or in a worktree, it
