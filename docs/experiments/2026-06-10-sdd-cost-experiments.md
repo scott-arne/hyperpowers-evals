@@ -79,6 +79,17 @@ Kept (harmless, fidelity anchor, enables the conflict-detection rule), but
 not the big rock. The big rocks that remain: implementer turns (the actual
 work), controller turn floor, review-loop count variance.
 
+### writing-plans "No Placeholders" variants — CANNOT ELICIT (leave section alone)
+40 opus-written plans (20 unpressured 3-task, 20 pressured: 10 tasks, five
+near-identical, ~2,500-word economy target) across four guidance variants
+including a no-guidance control: zero real placeholder patterns. The only
+regex hit was a self-review attesting none exist. The failure mode the
+banned-patterns list guards against does not occur in current opus;
+variants are indistinguishable at zero. Inconclusive-by-zero ≠ pass: kept
+the existing section (cheap insurance), declined the rewrite PR. Relocation
+design preserved in the positive-instruction spec for future model
+generations.
+
 ## Measurement traps logged
 - Raw JSONL line counts overstate long-session turns 6-45% (compaction
   writes duplicate records). De-dup before counting.
