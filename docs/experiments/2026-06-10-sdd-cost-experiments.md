@@ -90,6 +90,73 @@ the existing section (cheap insurance), declined the rewrite PR. Relocation
 design preserved in the positive-instruction spec for future model
 generations.
 
+## Batch A-E (2026-06-10/11 overnight; strict-cost ladder probes)
+
+Runs launched up to 7-way parallel — wall-clock numbers carry that load;
+tokens/$ are the trustworthy metrics. Coding-agent figures quoted.
+Run mapping: `/tmp/sdd-exp/batch-AE-runs.md` (scratch).
+
+### A. Lean-vs-combo brief isolation — COST-NEUTRAL (briefs stay, justified by fidelity not dollars)
+Lean = branch HEAD minus the task-brief/report-file mechanism (model
+lines, review packages, ledger, recipes all kept). Lean fractals ×3:
+$11.61 / $12.27 / $13.25 (mean $12.38); same-night combo control $14.10;
+historical combo band $11.67-14.84 (n=8). Entirely overlapping. The
+file-handoff machinery neither costs nor saves measurable money on a
+10-task scenario; its case is requirements fidelity (exact values come
+from the brief), the conflict-detection rule, and compaction durability.
+Resolves the open "was e355795-minus-briefs the better config" question:
+no — that 44.4-min run was a tail draw.
+
+### B. Crisp-plan ceiling (strict-cost L1) — VALIDATED IN EFFECT
+New scenario `sdd-go-fractals-crisp`: same project, plan hand-rewritten
+10 → 7 right-sized tasks + `## Global Constraints` header + per-task
+`Interfaces:` lines. Crisp ×3 on combo config: $9.51 / $12.65 / $12.65
+(mean $11.60), gates 3/3. Mechanism: 20/21/24 dispatches (7 implementers
+each) vs combo's 28 (10 implementers, 13 reviews); fix waves flat
+(5/6/9 vs 7) — Interfaces lines + constraints header held review loops
+down despite coarser tasks. ≈ −$1.5/run mean at fractals scale.
+Open half: eliciting such plans from writing-plans guidance (validated
+by hand-crisped plan only) — that's the L1 follow-up PR's burden.
+
+### C. Sonnet controller (strict-cost L2 recon) — run 1: $6.68, judgment promising, n=2 pending
+claude-sonnet coding-agent (`--model sonnet` launcher). Run 1: PASS all
+gates, 31 min / 12.6M / **$6.68** — half the combo band, fastest fractals
+measured. 26/26 dispatches model-explicit; haiku used for mechanical
+fixes + README (better tiering than opus controllers showed); review
+loops + omnibus final fixer + re-reviews all followed. Judgment audit
+(narrative): caught a fixer side-effect (`go mod tidy` removed cobra)
+and re-fixed before re-review — genuine cross-check. Caveats: zero
+BLOCKED/⚠️ events arose, so the audit could not stress the escalation
+points; final review ran on sonnet, not opus (tier note). NOT a license
+to ship L2 — the spec's full N=5 + judgment-audit gates still apply.
+
+### D. Haiku task reviewers (strict-cost L3) — DEAD, as pre-registered
+Forcing config: Model Selection rewritten to put task reviewers on the
+cheapest tier. Planted-defect scenario ×5 (baseline config: 5/5 pass):
+**2 pass / 1 indeterminate / 2 fail.** Across 10 planted defects the
+per-task haiku reviewer cleanly flagged ZERO at correct severity:
+1 found-but-downgraded ("the brief explicitly specifies it" — the
+exact rationale the prompt prohibits), 9 missed or rationalized.
+Sharpest finding: haiku does not fail silent — it **advocates** for
+defects (praised the DRY violation as YAGNI; called the assert-nothing
+test plan-compliant), manufacturing justifications that can mislead the
+controller. Every passing run survived on opus-controller redundancy or
+the final review, i.e. the pass/fail gate masks the reviewer failure —
+which is why L3's acceptance was defined per-reviewer, not per-run.
+Mechanical cheapness (3-turn reviews) does NOT make review decisions
+mechanical. Do not re-propose without a structurally different design
+(e.g. haiku pre-screen + escalation, which is a new experiment, not
+this one).
+
+### E. Svelte n=2 — combo claim becomes an honest (wide) range
+Second combo svelte run: PASS, 69 min / 24.1M / $20.30 (run 1: 55.0 min
+/ 19.3M / $14.99; baseline n=1: 79.7 / 27.3M / $20.98). Driver: 9 fix
+waves across 12 tasks (run-to-run review-strictness variance), 34/34
+dispatches model-explicit. PR claim must read: time/tokens clearly
+better, cost $14.99-20.30 vs $20.98 — overlapping at the top.
+Deviation logged: controller dispatched fixes without re-review
+dispatches afterward (judgment-audit candidate).
+
 ## Measurement traps logged
 - Raw JSONL line counts overstate long-session turns 6-45% (compaction
   writes duplicate records). De-dup before counting.
