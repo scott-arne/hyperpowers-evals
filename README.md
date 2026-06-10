@@ -273,6 +273,7 @@ check failed; the record carries a `detail` string explaining why.
 - `git-branch <name>` — current branch equals name; use `detached` for detached HEAD.
 - `git-clean` — the working tree has no uncommitted changes.
 - `git-count worktrees|commits <op> <n>` — the count satisfies the comparison (`eq`, `ne`, `gt`, `gte`, `lt`, `lte`).
+- `assert-checkout-clean <path>` — passes iff `<path>` is a git work tree whose `git status --porcelain` is empty (`.quorum-launch-cwd` is ignored) and, when `record_head` recorded a HEAD at setup, HEAD is unmoved. Fails closed if `git status` errors. Pair with the `record_head` setup helper for drift detection.
 
 **Trace surface** — the Coding-Agent's normalized tool-call log (`coding-agent-tool-calls.jsonl`):
 - `tool-called <tool>` — the tool appears in the trace at least once.
