@@ -4,7 +4,7 @@ pre() {
     requires-tool npm
     file-exists 'docs/superpowers/plans/report-plan.md'
     file-contains 'docs/superpowers/plans/report-plan.md' 'formatAdminReport'
-    file-contains 'docs/superpowers/plans/report-plan.md' 'repeat(40)'
+    file-contains 'docs/superpowers/plans/report-plan.md' 'repeat\(40\)'
 }
 
 post() {
