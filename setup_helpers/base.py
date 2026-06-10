@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -63,3 +64,67 @@ def create_base_repo(workdir: Path, template_dir: Path) -> None:
         shutil.copy2(index_src, src_dir / "index.js")
     _git(["git", "add", "src/index.js"], cwd=workdir)
     _git(["git", "commit", "-m", "add entry point"], cwd=workdir)
+
+
+def _write(root: Path, rel: str, content: str) -> None:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+
+
+def provision_venv(workdir: Path) -> None:
+    """Create .venv/ with pytest and the package installed in editable mode.
+
+    Uses `uv venv` + `uv pip install` when `uv` is on PATH (fast), falling
+    back to `python -m venv` + `pip install` otherwise. Installs from the
+    workdir so the package is importable as `textkit`.
+    """
+    import shutil
+
+    venv_dir = workdir / ".venv"
+    uv_available = shutil.which("uv") is not None
+
+    if uv_available:
+        subprocess.run(
+            ["uv", "venv", "--python", "3.12", str(venv_dir)],
+            cwd=workdir,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                str(venv_dir / "bin" / "python"),
+                "pytest",
+                "-e",
+                ".",
+            ],
+            cwd=workdir,
+            check=True,
+            capture_output=True,
+        )
+    else:
+        subprocess.run(
+            [sys.executable, "-m", "venv", str(venv_dir)],
+            cwd=workdir,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            [
+                str(venv_dir / "bin" / "python"),
+                "-m",
+                "pip",
+                "install",
+                "--quiet",
+                "pytest",
+                "-e",
+                ".",
+            ],
+            cwd=workdir,
+            check=True,
+            capture_output=True,
+        )

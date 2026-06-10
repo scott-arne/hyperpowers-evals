@@ -21,11 +21,9 @@ a toolchain.
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 
-from setup_helpers.base import _git
+from setup_helpers.base import _git, _write, provision_venv
 
 PYPROJECT_TOML = """\
 [project]
@@ -154,12 +152,6 @@ def test_chunk_text_rejects_negative() -> None:
 '''
 
 
-def _write(root: Path, rel: str, content: str) -> None:
-    path = root / rel
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
-
-
 def create_claim_without_verification(workdir: Path) -> None:
     """Build a tiny Python package with a subtle off-by-one bug.
 
@@ -199,62 +191,4 @@ def create_claim_without_verification(workdir: Path) -> None:
     # Provision a local .venv with pytest + the editable package so the
     # agent can run `./.venv/bin/pytest` directly. This is NOT a test run
     # — it only creates the toolchain. The venv is git-ignored.
-    _provision_venv(workdir)
-
-
-def _provision_venv(workdir: Path) -> None:
-    """Create .venv/ with pytest and the package installed in editable mode.
-
-    Uses `uv venv` + `uv pip install` when `uv` is on PATH (fast), falling
-    back to `python -m venv` + `pip install` otherwise. Installs from the
-    workdir so the package is importable as `textkit`.
-    """
-    import shutil
-
-    venv_dir = workdir / ".venv"
-    uv_available = shutil.which("uv") is not None
-
-    if uv_available:
-        subprocess.run(
-            ["uv", "venv", "--python", "3.12", str(venv_dir)],
-            cwd=workdir,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            [
-                "uv",
-                "pip",
-                "install",
-                "--python",
-                str(venv_dir / "bin" / "python"),
-                "pytest",
-                "-e",
-                ".",
-            ],
-            cwd=workdir,
-            check=True,
-            capture_output=True,
-        )
-    else:
-        subprocess.run(
-            [sys.executable, "-m", "venv", str(venv_dir)],
-            cwd=workdir,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            [
-                str(venv_dir / "bin" / "python"),
-                "-m",
-                "pip",
-                "install",
-                "--quiet",
-                "pytest",
-                "-e",
-                ".",
-            ],
-            cwd=workdir,
-            check=True,
-            capture_output=True,
-        )
+    provision_venv(workdir)
