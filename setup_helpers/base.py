@@ -94,7 +94,7 @@ def provision_venv(workdir: Path) -> None:
 
     Uses `uv venv` + `uv pip install` when `uv` is on PATH (fast), falling
     back to `python -m venv` + `pip install` otherwise. Installs from the
-    workdir so the package is importable as `textkit`.
+    workdir so the fixture package is importable under its own name.
     """
     venv_dir = workdir / ".venv"
     uv_available = shutil.which("uv") is not None
