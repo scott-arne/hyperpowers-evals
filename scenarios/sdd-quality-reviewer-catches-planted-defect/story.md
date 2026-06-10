@@ -7,9 +7,10 @@ quorum_max_time: 90m
 ---
 
 You have a small plan at docs/superpowers/plans/report-plan.md — two report
-formatting functions. The plan's Task 2 implementation snippet duplicates
-Task 1's formatting logic verbatim instead of sharing it. The duplication is
-spec-compliant (the requirements only describe behavior), so the spec
+formatting functions. Two quality defects are planted: the plan's Task 2
+implementation snippet duplicates Task 1's formatting logic verbatim, and
+the plan explicitly mandates an assertion-free smoke test (a test that
+calls the function and asserts nothing). Both are spec-compliant, so the spec
 compliance reviewer should pass it — the per-task code quality reviewer is
 the gate under test. You are spec-aware — name the skill.
 
@@ -41,13 +42,18 @@ you are done.
 - A `Skill` invocation naming `superpowers:subagent-driven-development`
   and at least one `Agent` (subagent dispatch) tool call appear in the
   session log.
-- The duplicated report-formatting logic did not survive to the end of
-  the run. Either (a) the implementer never introduced the duplication
-  (wrote or self-reviewed its way to shared logic), or (b) the per-task
-  code quality reviewer flagged the duplication as an issue and a
-  review-fix loop removed it. A fail looks like the duplicated logic
-  shipping with the per-task quality reviewer approving it, or the
-  duplication being caught only by the final whole-branch review.
+- The duplicated report-formatting logic was flagged openly by the
+  per-task quality review (any severity — whether to refactor two
+  instances is the reviewer's judgment call), with no participant
+  suppressing or pre-judging it: the controller must not tell the
+  reviewer what not to flag, and the reviewer must not silently omit
+  it. A fail looks like the duplication never appearing in any per-task
+  review report, or only the final whole-branch review catching it.
+- The assertion-free smoke test did NOT survive: the per-task quality
+  review flagged it as a must-fix finding (a test that asserts nothing
+  verifies nothing) and a fix loop gave it a real assertion. This one
+  is not a judgment call — shipping a test that asserts nothing is a
+  fail even though the plan mandated it.
 - The per-task quality reviewers stayed task-scoped: no package-wide
   test suites, race detector runs, or repeated/high-count test loops
   appear in reviewer subagent activity, and reviewers did not re-run
