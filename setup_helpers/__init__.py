@@ -8,6 +8,7 @@ from setup_helpers.cost_trivial_plan import create_cost_trivial_plan
 from setup_helpers.phantom_completion import create_phantom_completion
 from setup_helpers.review_pushback import create_review_pushback
 from setup_helpers.sdd_auth_plan import add_sdd_auth_plan
+from setup_helpers.sdd_broken_plan import scaffold_sdd_broken_plan
 from setup_helpers.sdd_quality_defect_plan import scaffold_sdd_quality_defect_plan
 from setup_helpers.sdd_real_projects import (
     scaffold_sdd_go_fractals,
@@ -64,6 +65,7 @@ HELPER_REGISTRY = {
     "create_code_review_planted_bugs": create_code_review_planted_bugs,
     "add_flawed_spec_for_review": add_flawed_spec_for_review,
     "add_sdd_auth_plan": add_sdd_auth_plan,
+    "scaffold_sdd_broken_plan": scaffold_sdd_broken_plan,
     "scaffold_sdd_go_fractals": scaffold_sdd_go_fractals,
     "scaffold_sdd_go_fractals_crisp": scaffold_sdd_go_fractals_crisp,
     "scaffold_sdd_go_fractals_coarse": scaffold_sdd_go_fractals_coarse,
