@@ -94,7 +94,7 @@ generations.
 
 Runs launched up to 7-way parallel — wall-clock numbers carry that load;
 tokens/$ are the trustworthy metrics. Coding-agent figures quoted.
-Run mapping: `/tmp/sdd-exp/batch-AE-runs.md` (scratch).
+Run mapping: `2026-06-10-sdd-run-mapping.md` (this directory). Variant configs: `exp/*` branches in the superpowers repo + patches in the superpowers-autoresearch repo (`campaigns/*/configs/`). Micro harnesses and raw outputs: superpowers-autoresearch repo (`harnesses/`, `campaigns/*/out*`).
 
 ### A. Lean-vs-combo brief isolation — COST-NEUTRAL (briefs stay, justified by fidelity not dollars)
 Lean = branch HEAD minus the task-brief/report-file mechanism (model
