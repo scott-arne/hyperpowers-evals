@@ -13,6 +13,7 @@ from setup_helpers.sdd_real_projects import (
     scaffold_sdd_go_fractals,
     scaffold_sdd_go_fractals_crisp,
     scaffold_sdd_go_fractals_control_plan,
+    scaffold_sdd_go_fractals_critical_plan,
     scaffold_sdd_go_fractals_elicited,
     scaffold_sdd_svelte_todo,
 )
@@ -63,6 +64,7 @@ HELPER_REGISTRY = {
     "scaffold_sdd_go_fractals": scaffold_sdd_go_fractals,
     "scaffold_sdd_go_fractals_crisp": scaffold_sdd_go_fractals_crisp,
     "scaffold_sdd_go_fractals_control_plan": scaffold_sdd_go_fractals_control_plan,
+    "scaffold_sdd_go_fractals_critical_plan": scaffold_sdd_go_fractals_critical_plan,
     "scaffold_sdd_go_fractals_elicited": scaffold_sdd_go_fractals_elicited,
     "scaffold_sdd_svelte_todo": scaffold_sdd_svelte_todo,
     "scaffold_sdd_quality_defect_plan": scaffold_sdd_quality_defect_plan,
