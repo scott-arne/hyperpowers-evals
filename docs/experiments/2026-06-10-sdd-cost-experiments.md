@@ -147,9 +147,12 @@ controller. Every passing run survived on opus-controller redundancy or
 the final review, i.e. the pass/fail gate masks the reviewer failure —
 which is why L3's acceptance was defined per-reviewer, not per-run.
 Mechanical cheapness (3-turn reviews) does NOT make review decisions
-mechanical. Do not re-propose without a structurally different design
-(e.g. haiku pre-screen + escalation, which is a new experiment, not
-this one).
+mechanical. Price of the forgone rung: a haiku-reviewer fractals run
+passed its (coarse) gates at $9.61 vs the $11.67-14.84 band — ~$2-3/run,
+partly because lax reviews trigger fewer fix waves, i.e. the savings and
+the quality failure are the same mechanism. Do not re-propose without a
+structurally different design (e.g. haiku pre-screen + escalation, which
+is a new experiment, not this one).
 
 ### E. Svelte n=2 — combo claim becomes an honest (wide) range
 Second combo svelte run: PASS, 69 min / 24.1M / $20.30 (run 1: 55.0 min
