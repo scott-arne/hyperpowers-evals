@@ -108,9 +108,7 @@ def find_misplaced_codex_rollouts(
         if not cwd:
             continue
         cwd_real = os.path.realpath(cwd)
-        inside_run_dir = (
-            cwd_real == run_dir_real or cwd_real.startswith(run_dir_real + os.sep)
-        )
+        inside_run_dir = cwd_real == run_dir_real or cwd_real.startswith(run_dir_real + os.sep)
         if inside_run_dir and cwd_real != launch_cwd_real:
             misplaced.append(path)
     return misplaced
@@ -218,8 +216,8 @@ def filter_kimi_logs_by_cwd(paths: list[Path], target_cwd: str) -> list[Path]:
             if not session_dir or not work_dir:
                 continue
             session_real = os.path.realpath(session_dir)
-            inside_session = (
-                path_real == session_real or path_real.startswith(session_real + os.sep)
+            inside_session = path_real == session_real or path_real.startswith(
+                session_real + os.sep
             )
             if inside_session and os.path.realpath(work_dir) == target:
                 matched.append(path)
@@ -320,9 +318,7 @@ def normalize_codex_logs(raw_content: str) -> list[dict[str, Any]]:
             else:
                 canonical = CODEX_TOOL_MAP.get(name, name)
                 source = "native" if canonical in NATIVE_TOOLS else "shell"
-                results.append(
-                    {"tool": canonical, "args": {"input": raw_input}, "source": source}
-                )
+                results.append({"tool": canonical, "args": {"input": raw_input}, "source": source})
         elif payload_type == "local_shell_call":
             action = payload.get("action", {})
             cmd = action.get("command", [])
@@ -833,9 +829,7 @@ def _normalize_antigravity_args(name: str, raw_args: Any) -> dict[str, Any]:
         if cwd is not _MISSING:
             args["cwd"] = _antigravity_canonical_value(cwd)
     elif name == "view_file":
-        file_path = _first_arg(
-            raw_args, ("AbsolutePath", "Path", "path", "file_path", "filePath")
-        )
+        file_path = _first_arg(raw_args, ("AbsolutePath", "Path", "path", "file_path", "filePath"))
         if file_path is not _MISSING:
             args["file_path"] = _antigravity_canonical_value(file_path)
 

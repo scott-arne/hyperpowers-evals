@@ -86,9 +86,7 @@ def _make_coding_agent(coding_agents_dir: Path, name: str, session_log_dir: Path
     if name in {"claude", "claude-haiku"}:
         doc["runtime_family"] = "claude"
         doc["model"] = "opus" if name == "claude" else "claude-haiku-4-5-20251001"
-    (coding_agents_dir / f"{name}.yaml").write_text(
-        yaml.safe_dump(doc)
-    )
+    (coding_agents_dir / f"{name}.yaml").write_text(yaml.safe_dump(doc))
 
 
 def _make_antigravity_agent(
@@ -1237,9 +1235,7 @@ class TestSeedAgentConfigDir:
         entry = cfg["projects"][str(workdir.resolve())]
         assert entry["hasTrustDialogAccepted"] is True
 
-    def test_claude_family_variant_uses_claude_skeleton_and_auth(
-        self, tmp_path, monkeypatch
-    ):
+    def test_claude_family_variant_uses_claude_skeleton_and_auth(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
         skel = tmp_path / "claude-home-skeleton"
         skel.mkdir()
@@ -1277,13 +1273,9 @@ class TestSeedAgentConfigDir:
         assert env_path.read_text() == "ANTHROPIC_API_KEY='sk-test-key'\n"
         assert oct(env_path.stat().st_mode & 0o777) == "0o600"
         assert runtime.substitutions["$CLAUDE_ENV_FILE"] == str(env_path)
-        assert runtime.substitutions["$CLAUDE_ENV_FILE_SH"] == _shell_single_quote(
-            str(env_path)
-        )
+        assert runtime.substitutions["$CLAUDE_ENV_FILE_SH"] == _shell_single_quote(str(env_path))
 
-    def test_claude_target_writes_api_key_env_file_when_required(
-        self, tmp_path, monkeypatch
-    ):
+    def test_claude_target_writes_api_key_env_file_when_required(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
         cfg = CodingAgentConfig(
             name="claude",
@@ -2025,9 +2017,7 @@ class TestSeedAgentConfigDir:
         assert (cfg / ".gemini-env").exists()
         assert _gemini_transcripts(cfg) == []
 
-    def test_gemini_seed_oauth_copies_credentials_and_uses_oauth_auth(
-        self, tmp_path, monkeypatch
-    ):
+    def test_gemini_seed_oauth_copies_credentials_and_uses_oauth_auth(self, tmp_path, monkeypatch):
         sp = _make_gemini_superpowers_root(tmp_path)
         source_home = tmp_path / "source-gemini"
         source_home.mkdir()
@@ -2937,9 +2927,7 @@ class TestAntigravityProjectMarkerExclusion:
 
 
 class TestRunScenario:
-    def test_claude_family_missing_binary_fails_before_writing_env(
-        self, tmp_path, monkeypatch
-    ):
+    def test_claude_family_missing_binary_fails_before_writing_env(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
         monkeypatch.setenv("SUPERPOWERS_ROOT", str(tmp_path / "superpowers"))
         monkeypatch.setattr("quorum.runner.shutil.which", lambda _binary: None)
@@ -4507,8 +4495,7 @@ class TestRunScenario:
             'run "$QUORUM_LAUNCH_AGENT" with model "$CLAUDE_MODEL"\n'
         )
         (claude_context / "launch-agent").write_text(
-            "#!/usr/bin/env bash\n"
-            'exec "$QUORUM_LAUNCH_AGENT" --model "$CLAUDE_MODEL"\n'
+            '#!/usr/bin/env bash\nexec "$QUORUM_LAUNCH_AGENT" --model "$CLAUDE_MODEL"\n'
         )
         sd = _make_scenario(scenarios_dir, "x")
         out_root = tmp_path / "results"

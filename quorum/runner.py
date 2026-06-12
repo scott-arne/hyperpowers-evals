@@ -360,8 +360,7 @@ def _gemini_auth_type(env: Mapping[str, str] = os.environ) -> str:
         auth_type = GEMINI_AUTH_TYPE_API_KEY
     if auth_type not in GEMINI_AUTH_TYPES:
         raise RunnerError(
-            f"GEMINI_AUTH_TYPE must be one of {', '.join(GEMINI_AUTH_TYPES)}; "
-            f"got {auth_type!r}",
+            f"GEMINI_AUTH_TYPE must be one of {', '.join(GEMINI_AUTH_TYPES)}; got {auth_type!r}",
             stage="setup",
         )
     return auth_type

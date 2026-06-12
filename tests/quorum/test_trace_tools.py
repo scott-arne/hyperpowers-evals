@@ -208,9 +208,7 @@ def test_gemini_extension_linked_check(tmp_path):
     parent = tmp_path / "rundir"
     root = parent / "coding-agent-config" / ".gemini"
     (root / "extensions" / "superpowers").mkdir(parents=True)
-    (root / "extensions" / "superpowers" / ".gemini-extension-install.json").write_text(
-        "{}"
-    )
+    (root / "extensions" / "superpowers" / ".gemini-extension-install.json").write_text("{}")
     (root / "extensions" / "extension-enablement.json").write_text("{}")
     (root / "extension_integrity.json").write_text("{}")
     workdir = parent / "coding-agent-workdir"
@@ -341,8 +339,7 @@ def test_skill_before_implementation_tool_ignores_antigravity_artifacts(tmp_path
             "tool": "Write",
             "args": {
                 "file_path": (
-                    str(parent)
-                    + "/coding-agent-config/.gemini/antigravity-cli/brain/tasks.md"
+                    str(parent) + "/coding-agent-config/.gemini/antigravity-cli/brain/tasks.md"
                 )
             },
         },
@@ -350,8 +347,7 @@ def test_skill_before_implementation_tool_ignores_antigravity_artifacts(tmp_path
             "tool": "Write",
             "args": {
                 "file_path": (
-                    str(workdir)
-                    + "/docs/superpowers/specs/2026-06-01-email-validation-design.md"
+                    str(workdir) + "/docs/superpowers/specs/2026-06-01-email-validation-design.md"
                 )
             },
         },
@@ -546,14 +542,7 @@ def test_antigravity_plugin_installed_passes_when_required_files_exist(tmp_path)
     run_dir = tmp_path / "run"
     workdir = run_dir / "coding-agent-workdir"
     workdir.mkdir(parents=True)
-    plugin_root = (
-        run_dir
-        / "coding-agent-config"
-        / ".gemini"
-        / "config"
-        / "plugins"
-        / "superpowers"
-    )
+    plugin_root = run_dir / "coding-agent-config" / ".gemini" / "config" / "plugins" / "superpowers"
     (plugin_root / "skills" / "using-superpowers").mkdir(parents=True)
     (plugin_root / "plugin.json").write_text("{}")
     (plugin_root / "hooks.json").write_text("{}")
@@ -581,14 +570,7 @@ def test_antigravity_plugin_installed_fails_when_skill_missing(tmp_path):
     run_dir = tmp_path / "run"
     workdir = run_dir / "coding-agent-workdir"
     workdir.mkdir(parents=True)
-    plugin_root = (
-        run_dir
-        / "coding-agent-config"
-        / ".gemini"
-        / "config"
-        / "plugins"
-        / "superpowers"
-    )
+    plugin_root = run_dir / "coding-agent-config" / ".gemini" / "config" / "plugins" / "superpowers"
     plugin_root.mkdir(parents=True)
     (plugin_root / "plugin.json").write_text("{}")
     (plugin_root / "hooks.json").write_text("{}")
@@ -632,8 +614,7 @@ def _write_kimi_installed_entries(run_dir: Path, plugins: list[dict]) -> None:
     plugins_dir = run_dir / "coding-agent-config" / "plugins"
     plugins_dir.mkdir(parents=True)
     (plugins_dir / "installed.json").write_text(
-        json.dumps({"version": 1, "plugins": plugins})
-        + "\n"
+        json.dumps({"version": 1, "plugins": plugins}) + "\n"
     )
 
 
@@ -830,9 +811,7 @@ def test_kimi_plugin_installed_fails_when_managed_copy_exists(tmp_path):
     superpowers = tmp_path / "superpowers"
     _make_kimi_superpowers_root(superpowers)
     _write_kimi_installed(run_dir, superpowers)
-    (run_dir / "coding-agent-config" / "plugins" / "managed" / "superpowers").mkdir(
-        parents=True
-    )
+    (run_dir / "coding-agent-config" / "plugins" / "managed" / "superpowers").mkdir(parents=True)
     sink = tmp_path / "s"
 
     result = _run_kimi_plugin_installed(run_dir, workdir, sink, superpowers)
@@ -877,11 +856,7 @@ def test_copilot_bootstrap_native_skill_before_write_rejects_shell_read_only_ord
         parent,
         {
             "tool": "Bash",
-            "args": {
-                "command": (
-                    "cat plugins/superpowers/skills/brainstorming/SKILL.md"
-                )
-            },
+            "args": {"command": ("cat plugins/superpowers/skills/brainstorming/SKILL.md")},
         },
         {"tool": "Write", "args": {"file_path": str(workdir / "src/App.jsx")}},
         {"tool": "Skill", "args": {"skill": "superpowers:brainstorming"}},
