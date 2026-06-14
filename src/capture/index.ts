@@ -96,10 +96,13 @@ export interface CaptureResult {
 }
 
 // A normalized trajectory tagged with its source-file order, carried into the
-// merge so untimestamped steps fall back to (file, in-file) input order.
+// merge so untimestamped steps keep their file-relative input position.
 interface OrderedStep {
-  readonly noTimestamp: boolean;
-  readonly timestamp: string;
+  // True only when the step's whole file carried no timestamp at all — those
+  // files sink to the tail. A step that merely lacks its own timestamp but
+  // sits in a timestamped file gets a carried effectiveTs and stays in place.
+  readonly noEffectiveTs: boolean;
+  readonly effectiveTs: string;
   readonly fileIndex: number;
   readonly inFileIndex: number;
   readonly step: AtifStep;
@@ -113,13 +116,14 @@ interface OrderedStep {
  * every tool call recorded in the others. This merges the steps of all files
  * into one trajectory:
  *
- * - Steps from ALL dialects are ordered by their ISO-8601 `timestamp` where
- *   present, with a STABLE fallback (file order = the input order, then in-file
- *   order) for steps that carry no timestamp. The sort key is
- *   `(noTimestamp, ts, fileIndex, inFileIndex)` — untimestamped steps sink to
- *   the end and keep their relative input position. This is uniform across
- *   dialects; it is not gemini-specific (it subsumes the old gemini-only
- *   timestamp-ordering special case).
+ * - Steps from ALL dialects are ordered by ISO-8601 `timestamp`. A step that
+ *   lacks its own timestamp inherits one by CARRY-FORWARD from the last
+ *   timestamped step earlier in its file (carry-BACKWARD from the file's first
+ *   timestamp for leading untimestamped steps), so a mid-stream untimestamped
+ *   step keeps its file-relative position instead of sinking. Only a file with
+ *   NO timestamps at all sinks to the tail (kept in input order). The sort key
+ *   is `(noEffectiveTs, effectiveTs, fileIndex, inFileIndex)`. This is uniform
+ *   across dialects; it subsumes the old gemini-only timestamp-ordering case.
  * - `step_id` is renumbered sequentially from 1 across the merged set.
  * - Each step's `tool_calls`/`observation` are kept intact; observations already
  *   reference tool_call_ids in their own step, so renumbering step_ids preserves
@@ -141,13 +145,30 @@ function mergeTrajectories(perFile: AtifTrajectory[]): AtifTrajectory | null {
     if (envelope === undefined) {
       envelope = traj;
     }
+
+    // The file's first timestamp, used to carry BACKWARD onto any leading
+    // untimestamped steps so they stay before the first timestamped step.
+    let firstTs = '';
+    for (const s of steps) {
+      if (typeof s.timestamp === 'string' && s.timestamp !== '') {
+        firstTs = s.timestamp;
+        break;
+      }
+    }
+    const fileHasTs = firstTs !== '';
+
+    // Carry FORWARD the last-seen timestamp onto untimestamped steps so a
+    // mid-stream untimestamped step inherits its predecessor's time.
+    let lastTs = firstTs;
     for (let inFileIndex = 0; inFileIndex < steps.length; inFileIndex++) {
       const step = steps[inFileIndex] as AtifStep;
-      const timestamp =
-        typeof step.timestamp === 'string' ? step.timestamp : '';
+      const own = typeof step.timestamp === 'string' ? step.timestamp : '';
+      if (own !== '') {
+        lastTs = own;
+      }
       ordered.push({
-        noTimestamp: timestamp === '',
-        timestamp,
+        noEffectiveTs: !fileHasTs,
+        effectiveTs: own !== '' ? own : lastTs,
         fileIndex,
         inFileIndex,
         step,
@@ -160,11 +181,11 @@ function mergeTrajectories(perFile: AtifTrajectory[]): AtifTrajectory | null {
   }
 
   ordered.sort((a, b) => {
-    if (a.noTimestamp !== b.noTimestamp) {
-      return a.noTimestamp ? 1 : -1;
+    if (a.noEffectiveTs !== b.noEffectiveTs) {
+      return a.noEffectiveTs ? 1 : -1;
     }
-    if (a.timestamp !== b.timestamp) {
-      return a.timestamp < b.timestamp ? -1 : 1;
+    if (a.effectiveTs !== b.effectiveTs) {
+      return a.effectiveTs < b.effectiveTs ? -1 : 1;
     }
     if (a.fileIndex !== b.fileIndex) {
       return a.fileIndex - b.fileIndex;

@@ -181,6 +181,55 @@ test('captureToolCalls merges claude logs by message timestamp, not path', () =>
   expect(res.rowCount).toBe(3);
 });
 
+test('captureToolCalls keeps a mid-stream untimestamped step in file order', () => {
+  // A single claude log: Bash@t1, a flat top-level tool_use Read with NO
+  // timestamp, then Edit@t3. The untimestamped Read must stay BETWEEN its
+  // file neighbours, not sink to the tail. (Regression: the merge previously
+  // sorted all untimestamped steps to the end, flipping this to [Bash,Edit,Read]
+  // and breaking the order-sensitive verbs.)
+  const logDir = mkdtempSync(join(tmpdir(), 'logs-'));
+  const runDir = mkdtempSync(join(tmpdir(), 'run-'));
+  const snap = snapshotDir(logDir, '**/*.jsonl');
+
+  const assistant = (ts: string, id: string, name: string) =>
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: ts,
+      message: { content: [{ type: 'tool_use', id, name, input: {} }] },
+    });
+  // Flat top-level tool_use with no timestamp.
+  const flat = JSON.stringify({
+    type: 'tool_use',
+    id: 'c2',
+    name: 'Read',
+    input: {},
+  });
+
+  writeFileSync(
+    join(logDir, 'session.jsonl'),
+    `${assistant('2026-06-13T19:00:00.000Z', 'c1', 'Bash')}\n${flat}\n${assistant(
+      '2026-06-13T19:00:02.000Z',
+      'c3',
+      'Edit',
+    )}\n`,
+  );
+
+  const res = captureToolCalls({
+    logDir,
+    logGlob: '**/*.jsonl',
+    snapshot: snap,
+    normalizer: 'claude',
+    runDir,
+    launchCwd: runDir,
+  });
+
+  const traj = readTrajectory(runDir);
+  expect(validateTrajectory(traj).ok).toBe(true);
+  const calls = flattenToolCalls(traj);
+  expect(calls.map((c) => c.tool)).toEqual(['Bash', 'Read', 'Edit']);
+  expect(res.rowCount).toBe(3);
+});
+
 test('captureToolCalls writes no trajectory when there are no new logs', () => {
   const logDir = mkdtempSync(join(tmpdir(), 'logs-'));
   const runDir = mkdtempSync(join(tmpdir(), 'run-'));
