@@ -496,17 +496,25 @@ export function parseToolArgMatchArgs(args: string[]): ParsedToolArgMatch {
 }
 
 /**
- * Resolve the value to test for a matcher's keys: the FIRST key present in
- * args wins (jq's `// ` fallback). Returns "" if none present.
+ * Resolve the value to test for a matcher's keys, mirroring jq's `//` fallback
+ * (`.path // .file_path // ""`): the first key whose value is "present" wins,
+ * where jq treats `null` and `false` (and a missing key) as absent and falls
+ * through. An empty-string value IS present (jq keeps `""`). Returns "" if no
+ * key resolves.
  */
 function firstPresentValue(
   args: Record<string, unknown>,
   keys: string[],
 ): string {
   for (const key of keys) {
-    if (Object.hasOwn(args, key)) {
-      return String(args[key] ?? '');
+    if (!Object.hasOwn(args, key)) {
+      continue;
     }
+    const v = args[key];
+    if (v === null || v === undefined || v === false) {
+      continue;
+    }
+    return String(v);
   }
   return '';
 }

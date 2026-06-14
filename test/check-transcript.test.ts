@@ -697,6 +697,18 @@ test('tool-match-before-tool-match: fail on empty transcript (C1 contract)', () 
   expect(result.detail).toBe('tool-calls file missing or empty');
 });
 
+test('tool-arg-match fallback keys skip a present-but-null first key (jq // parity) (E2E)', async () => {
+  // `path,file_path=foo.go` mirrors jq `(.path // .file_path)`: a present-but-
+  // null `path` must fall through to `file_path`, not resolve to "". pi/kimi
+  // store the path under `path`; codex/others under `file_path`.
+  const r = await runCLI(
+    ['tool-arg-match', 'Edit', '--eq', 'path,file_path=foo.go'],
+    [call('Edit', { path: null, file_path: 'foo.go' })],
+  );
+  expect(r.exitCode).toBe(0);
+  expect(r.lastRecord?.['passed']).toBe(true);
+});
+
 // ---------------------------------------------------------------------------
 // Unknown verb
 // ---------------------------------------------------------------------------
