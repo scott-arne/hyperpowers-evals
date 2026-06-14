@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -95,38 +96,102 @@ class ClaudeAgent implements CodingAgent {
       skeletonRoot !== undefined
         ? join(skeletonRoot, `${family}-home-skeleton`)
         : undefined;
-    if (skel !== undefined && existsSync(skel)) {
+    const seeded = skel !== undefined && existsSync(skel);
+    if (seeded) {
       cpSync(skel, configDir, { recursive: true });
     } else {
       mkdirSync(configDir, { recursive: true });
     }
 
-    // Trust the project so claude doesn't prompt. Parse the existing file
-    // (boundary §4.1) rather than asserting its shape.
     const claudeJsonPath = join(configDir, '.claude.json');
-    const claudeJson = existsSync(claudeJsonPath)
-      ? ClaudeJsonSchema.parse(JSON.parse(readFileSync(claudeJsonPath, 'utf8')))
-      : ClaudeJsonSchema.parse({});
-    const projects: Record<string, unknown> = { ...claudeJson.projects };
-    projects[resolve(workdir)] = {
-      hasTrustDialogAccepted: true,
-      projectOnboardingSeenCount: 1,
-      hasClaudeMdExternalIncludesApproved: true,
-    };
-    writeFileSync(
-      claudeJsonPath,
-      `${JSON.stringify({ ...claudeJson, projects }, null, 2)}\n`,
-    );
 
-    // .claude-env carries the API key for the launcher; mode 0600 (§6.4). Read
-    // the key through the one sanctioned env module (§6.5), never process.env.
-    const apiKey = getEnv('ANTHROPIC_API_KEY') ?? '';
-    const envFile = join(configDir, CLAUDE_ENV_FILE_NAME);
-    writeFileSync(envFile, `ANTHROPIC_API_KEY=${shellSingleQuote(apiKey)}\n`, {
-      mode: 0o600,
-    });
+    // Trust the project so claude doesn't prompt — but only when a skeleton was
+    // seeded (Python _seed_agent_config_dir guards this on `seeded`: the trust
+    // block extends the .claude.json the skeleton provides; with no skeleton
+    // there is no onboarding state to extend). Parse the existing file (boundary
+    // §4.1) rather than asserting its shape.
+    if (seeded) {
+      const claudeJson = existsSync(claudeJsonPath)
+        ? ClaudeJsonSchema.parse(
+            JSON.parse(readFileSync(claudeJsonPath, 'utf8')),
+          )
+        : ClaudeJsonSchema.parse({});
+      const projects: Record<string, unknown> = { ...claudeJson.projects };
+      projects[resolve(workdir)] = {
+        hasTrustDialogAccepted: true,
+        projectOnboardingSeenCount: 1,
+        hasClaudeMdExternalIncludesApproved: true,
+        hasClaudeMdExternalIncludesWarningShown: true,
+      };
+      writeFileSync(
+        claudeJsonPath,
+        `${JSON.stringify({ ...claudeJson, projects }, null, 2)}\n`,
+      );
+    }
+
+    // When ANTHROPIC_API_KEY is a required env, seed the per-run auth: write the
+    // mode-0600 .claude-env the launcher sources, and record the API-key
+    // approval fingerprint so claude doesn't prompt "Detected a custom API
+    // key…" headless (Python gates both on `ANTHROPIC_API_KEY in required_env`).
+    if (this.config.required_env.includes('ANTHROPIC_API_KEY')) {
+      // Read the key through the one sanctioned env module (§6.5), never
+      // process.env. Empty means unset; mirror Python _require_env's setup-stage
+      // failure rather than silently writing a blank key.
+      const apiKey = getEnv('ANTHROPIC_API_KEY') ?? '';
+      if (apiKey === '') {
+        throw new ProvisionError(
+          'ANTHROPIC_API_KEY not set; cannot seed Claude auth',
+        );
+      }
+      const envFile = join(configDir, CLAUDE_ENV_FILE_NAME);
+      // writeFileSync's `mode` only applies on create; chmod after to enforce
+      // 0600 even when the file already existed (Python double-fchmods).
+      writeFileSync(
+        envFile,
+        `ANTHROPIC_API_KEY=${shellSingleQuote(apiKey)}\n`,
+        {
+          mode: 0o600,
+        },
+      );
+      chmodSync(envFile, 0o600);
+      approveClaudeApiKey(claudeJsonPath, apiKey);
+    }
     return { [this.config.agent_config_env]: configDir };
   }
+}
+
+/** Record a per-config approval for the run's API key so Claude Code does not
+ *  prompt "Detected a custom API key… use this key?" when launched headless
+ *  with ANTHROPIC_API_KEY. The fingerprint is the key's last 20 chars; it is
+ *  added to customApiKeyResponses.approved (idempotently) and scrubbed from
+ *  rejected (mirrors quorum/runner.py:_approve_claude_api_key). */
+function approveClaudeApiKey(configPath: string, apiKey: string): void {
+  const config: Record<string, unknown> = existsSync(configPath)
+    ? (JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>)
+    : {};
+  const existing = config['customApiKeyResponses'];
+  const responses: Record<string, unknown> =
+    typeof existing === 'object' && existing !== null
+      ? (existing as Record<string, unknown>)
+      : {};
+  config['customApiKeyResponses'] = responses;
+  const fingerprint = apiKey.slice(-20);
+
+  const approvedRaw = responses['approved'];
+  const approved: string[] = Array.isArray(approvedRaw)
+    ? (approvedRaw as string[])
+    : [];
+  responses['approved'] = approved;
+  if (!approved.includes(fingerprint)) {
+    approved.push(fingerprint);
+  }
+
+  const rejectedRaw = responses['rejected'];
+  responses['rejected'] = Array.isArray(rejectedRaw)
+    ? (rejectedRaw as string[]).filter((item) => item !== fingerprint)
+    : [];
+
+  writeFileSync(configPath, JSON.stringify(config));
 }
 
 /** Single-quote a value for a POSIX shell, escaping embedded single quotes.
