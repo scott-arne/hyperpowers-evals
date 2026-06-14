@@ -25,10 +25,12 @@ wall-clock and cache reads, not saving money.
 ## Dispatch list (what the controller launched, with which models)
 
 ```python
-for line in open(f'results/{run}/coding-agent-tool-calls.jsonl'):
-    if '"Agent"' in line:
-        a = json.loads(line).get('args') or {}
-        print(a.get('model', '(default→session model!)'), '|', a.get('description', ''))
+traj = json.load(open(f'results/{run}/trajectory.json'))
+for step in traj.get('steps', []):
+    for tc in step.get('tool_calls') or []:
+        if tc.get('function_name') == 'Agent':
+            a = tc.get('arguments') or {}
+            print(a.get('model', '(default→session model!)'), '|', a.get('description', ''))
 ```
 
 `(default)` means the subagent inherited the session's model — usually the most
@@ -76,7 +78,7 @@ When several runs with different SUPERPOWERS_ROOT checkouts are in flight,
 the root path leaks into the main transcript (skill paths, script
 invocations). `grep -l 'sdd-exp/<variant>'
 results/<run>/coding-agent-config/projects/*/*.jsonl` identifies the
-variant. Note: `coding-agent-tool-calls.jsonl` is only finalized at run
+variant. Note: `trajectory.json` is only finalized at run
 end — mid-run progress lives in the session transcript (count
 `"name":"Agent"` lines).
 
