@@ -2,10 +2,7 @@ import { readdirSync, statSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 import { getEnv } from '../env.ts';
-import {
-  type CommandRunner,
-  defaultCommandRunner,
-} from './command-runner.ts';
+import { type CommandRunner, defaultCommandRunner } from './command-runner.ts';
 
 // Kill gauntlet's private named-socket tmux server for a given run.
 //

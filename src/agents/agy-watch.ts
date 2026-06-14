@@ -1,10 +1,4 @@
-import {
-  closeSync,
-  existsSync,
-  fstatSync,
-  openSync,
-  readSync,
-} from 'node:fs';
+import { closeSync, existsSync, fstatSync, openSync, readSync } from 'node:fs';
 import { killRunTmuxServer } from './agy-teardown.ts';
 
 // Async watcher that tails agy.log and fires teardown on a rate-limit signal.

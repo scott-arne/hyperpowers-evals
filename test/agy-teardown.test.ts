@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { killRunTmuxServer } from '../src/agents/agy-teardown.ts';
 import type {
   CommandResult,
   CommandRunner,
 } from '../src/agents/command-runner.ts';
-import { killRunTmuxServer } from '../src/agents/agy-teardown.ts';
 import { makeTempHome } from './provision-helpers.ts';
 
 // A CommandRunner that records every tmux invocation and answers list-panes for
