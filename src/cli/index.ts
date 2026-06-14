@@ -1,5 +1,11 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Command } from 'commander';
 import type { FinalStatus, FinalVerdict } from '../contracts/verdict.ts';
@@ -56,6 +62,18 @@ function scenarioNames(root: string): string[] {
   return readdirSync(root)
     .filter((name) => existsSync(join(root, name, 'story.md')))
     .sort();
+}
+
+// Strict integer parse for a numeric option. Parity with click's IntRange,
+// which rejects any non-integer token: Number.parseInt truncates (`3.5` -> 3,
+// `8x` -> 8), so it can't gate the flag. Returns undefined for any token that
+// is not a pure decimal integer (optionally signed).
+function parseIntegerOption(value: string): number | undefined {
+  if (!/^[+-]?\d+$/.test(value)) {
+    return undefined;
+  }
+  const n = Number(value);
+  return Number.isInteger(n) ? n : undefined;
 }
 
 // Parse a CSV filter flag: undefined/empty -> undefined (no filter, = all);
@@ -262,8 +280,8 @@ program
     // Filter by scenario name; accept a path/prefixed form too (scenarios/foo
     // -> foo), symmetric with run/check.
     const scenarioFilter = csvList(opts.scenarios)?.map(scenarioName);
-    const jobs = Number.parseInt(opts.jobs, 10);
-    if (!Number.isInteger(jobs) || jobs < 1) {
+    const jobs = parseIntegerOption(opts.jobs);
+    if (jobs === undefined || jobs < 1) {
       process.stderr.write('error: --jobs must be an integer >= 1\n');
       process.exit(1);
     }
@@ -276,6 +294,18 @@ program
     ) {
       process.stderr.write('error: --tier must be sentinel|full|adhoc\n');
       process.exit(1);
+    }
+    // Validate the input roots exist at the CLI boundary (parity with Python's
+    // click.Path(exists=True, file_okay=False)): a typo'd root fails fast here
+    // rather than depending on runBatch's internal directory walk.
+    for (const [flag, dir] of [
+      ['--scenarios-root', opts.scenariosRoot],
+      ['--coding-agents-dir', opts.codingAgentsDir],
+    ] as const) {
+      if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+        process.stderr.write(`error: ${flag} does not exist: ${dir}\n`);
+        process.exit(1);
+      }
     }
     mkdirSync(resolve(opts.outRoot), { recursive: true });
     try {
