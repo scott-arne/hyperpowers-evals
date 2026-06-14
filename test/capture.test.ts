@@ -16,6 +16,7 @@ import {
   captureToolCalls,
   captureToolCallsWithRetry,
   newFilesSince,
+  sessionDurationMs,
   snapshotDir,
 } from '../src/capture/index.ts';
 
@@ -330,6 +331,46 @@ test('captureToolCallsWithRetry: genuinely empty exhausts attempts', () => {
   expect(res.rowCount).toBe(0);
   expect(res.attempts).toBe(3);
   expect(sleeps).toBe(2);
+});
+
+test('sessionDurationMs spans ISO-8601 timestamps across files', () => {
+  // Two claude/codex-style logs: the span is last-minus-first across BOTH files'
+  // ISO-8601 `timestamp` rows, parsed with Z -> +00:00, floored at 0.
+  const logDir = mkdtempSync(join(tmpdir(), 'logs-'));
+  const a = join(logDir, 'a.jsonl');
+  const b = join(logDir, 'b.jsonl');
+  writeFileSync(
+    a,
+    `${JSON.stringify({ timestamp: '2026-06-13T19:00:00.000Z' })}\n${JSON.stringify(
+      { timestamp: '2026-06-13T19:00:02.000Z' },
+    )}\n`,
+  );
+  writeFileSync(
+    b,
+    `${JSON.stringify({ timestamp: '2026-06-13T19:00:05.000Z' })}\n`,
+  );
+  expect(sessionDurationMs([a, b])).toBe(5000);
+});
+
+test('sessionDurationMs spans epoch-ms numeric time values (kimi)', () => {
+  // Kimi rows carry a numeric epoch-ms `time`; booleans must NOT be counted.
+  const logDir = mkdtempSync(join(tmpdir(), 'logs-'));
+  const f = join(logDir, 'kimi.jsonl');
+  writeFileSync(
+    f,
+    `${JSON.stringify({ time: 1000 })}\n${JSON.stringify({
+      time: true,
+    })}\n${JSON.stringify({ time: 4500 })}\n`,
+  );
+  expect(sessionDurationMs([f])).toBe(3500);
+});
+
+test('sessionDurationMs returns null when no timestamps are found', () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'logs-'));
+  const f = join(logDir, 'empty.jsonl');
+  writeFileSync(f, `${JSON.stringify({ kind: 'no-time-here' })}\nnot json\n\n`);
+  expect(sessionDurationMs([f])).toBeNull();
+  expect(sessionDurationMs(['/does/not/exist.jsonl'])).toBeNull();
 });
 
 test('captureToolCallsWithRetry: non-empty first pass does not retry', () => {

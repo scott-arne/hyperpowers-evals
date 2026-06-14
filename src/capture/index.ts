@@ -306,11 +306,61 @@ export function captureToolCallsWithRetry(
   return { ...result, attempts: used };
 }
 
-/** First-to-last timestamp span across the given session logs. Spec 1 cannot
- *  yet decode the span (the timing module lands in Spec 2), so this returns
- *  null and the walking skeleton tolerates it. */
-function sessionDurationMs(_files: readonly string[]): number | null {
-  return null;
+/** Parse an ISO-8601 timestamp string to epoch milliseconds, treating a `Z`
+ *  suffix as `+00:00` (parity with Python datetime.fromisoformat). Returns null
+ *  on any parse failure. */
+function isoToMs(ts: string): number | null {
+  const normalized = ts.endsWith('Z') ? `${ts.slice(0, -1)}+00:00` : ts;
+  const ms = new Date(normalized).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** First-to-last timestamp span (ms) across the given session logs, or null when
+ *  no timestamps are found. Scans every JSONL row for an ISO-8601 `timestamp`
+ *  string (Claude/Codex, parsed via isoToMs) AND a numeric epoch-ms `time` value
+ *  (Kimi; booleans excluded), then returns max(max - min, 0). Unreadable files,
+ *  blank/non-JSON lines, and non-object rows are skipped. Ports
+ *  quorum/timing.py session_logs_duration_ms. */
+export function sessionDurationMs(files: readonly string[]): number | null {
+  const points: number[] = [];
+  for (const filePath of files) {
+    let text: string;
+    try {
+      text = readFileSync(filePath, 'utf8');
+    } catch {
+      continue;
+    }
+    for (const line of text.split('\n')) {
+      if (line.trim() === '') {
+        continue;
+      }
+      let rec: unknown;
+      try {
+        rec = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (typeof rec !== 'object' || rec === null || Array.isArray(rec)) {
+        continue;
+      }
+      const row = rec as Record<string, unknown>;
+      const ts = row['timestamp'];
+      if (typeof ts === 'string') {
+        const ms = isoToMs(ts);
+        if (ms !== null) {
+          points.push(ms);
+        }
+      }
+      const t = row['time'];
+      if (typeof t === 'number') {
+        points.push(t);
+      }
+    }
+  }
+  if (points.length === 0) {
+    return null;
+  }
+  return Math.max(Math.trunc(Math.max(...points) - Math.min(...points)), 0);
 }
 
 /** Price the new session logs with obol and write coding-agent-token-usage.json
