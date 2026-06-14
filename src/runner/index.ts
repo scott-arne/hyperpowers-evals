@@ -8,7 +8,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { z } from 'zod';
 import { antigravityRateLimitReason } from '../agents/antigravity.ts';
 import { defaultCommandRunner } from '../agents/command-runner.ts';
@@ -22,6 +22,10 @@ import {
 import {
   captureTokenUsage,
   captureToolCallsWithRetry,
+  detectMisplacedCodexRollouts,
+  detectMisplacedPiSessions,
+  detectUnusablePiSessions,
+  diagnoseKimiUnmatchedLogs,
   snapshotDir,
 } from '../capture/index.ts';
 import { parseCodingAgentsDirective, runPhase } from '../checks/index.ts';
@@ -41,6 +45,7 @@ import type {
 } from '../contracts/verdict.ts';
 import { buildRunEconomics } from '../economics.ts';
 import { envSnapshot, getEnv } from '../env.ts';
+import { kimiLogsHaveSuperpowersSessionStart } from '../normalize/kimi.ts';
 import { hexNonce, nowStampUtc, repoRoot } from '../paths.ts';
 import { runSetup, SetupError } from '../setup-step.ts';
 import { readQuorumMaxTime } from '../story-meta.ts';
@@ -306,6 +311,246 @@ function writeIndeterminate(a: {
     error: a.error ?? null,
     economics: null,
   };
+}
+
+// Render paths relative to the session-log dir for human-facing reasons (parity
+// with Python's path.relative_to(session_log_dir)).
+function relToLogDir(logDir: string, paths: readonly string[]): string[] {
+  return paths.map((p) => relative(logDir, p));
+}
+
+// Strict-capture dialects whose run is uninterpretable without a transcript:
+// no source logs OR zero normalized rows is a capture indeterminate, regardless
+// of whether any deterministic check is present (parity with Python
+// strict_capture_names). codex is NOT here — its empty case is the post-checks
+// misplaced-rollout guard. copilot is handled by its own leak/session-state
+// branch wired alongside provisioning.
+const STRICT_CAPTURE_NAMES: Readonly<Record<string, string>> = {
+  antigravity: 'Antigravity',
+  claude: 'Claude',
+  gemini: 'Gemini',
+};
+
+export interface CaptureCascadeArgs {
+  readonly normalizer: string;
+  readonly logDir: string;
+  readonly logGlob: string;
+  readonly snapshot: ReadonlySet<string>;
+  readonly launchCwd: string;
+  readonly captureResult: {
+    readonly sourceLogs: readonly string[];
+    readonly rowCount: number;
+  };
+  readonly gauntlet: GauntletLayer;
+  readonly preRecords: readonly CheckRecord[];
+  readonly runDir: string;
+}
+
+// Per-normalizer strict-capture / diagnostic cascade (parity with the Python
+// _run_scenario_inner capture-stage block). Returns a backend-specific
+// indeterminate verdict when a strict backend produced no usable transcript, or
+// null to proceed to post-checks. Each branch is independent of whether any
+// deterministic check exists — that is the gap the generic captureEmpty path in
+// composer.ts cannot cover.
+export function captureCascadeVerdict(
+  a: CaptureCascadeArgs,
+): FinalVerdict | null {
+  const { normalizer, captureResult, gauntlet, preRecords, logDir } = a;
+  const { sourceLogs, rowCount } = captureResult;
+  const indeterminate = (finalReason: string, error: RunError): FinalVerdict =>
+    writeIndeterminate({
+      finalReason,
+      gauntlet,
+      checks: preRecords,
+      error,
+    });
+
+  if (normalizer === 'pi') {
+    if (sourceLogs.length === 0) {
+      const misplaced = detectMisplacedPiSessions({
+        logDir: a.logDir,
+        logGlob: a.logGlob,
+        snapshot: a.snapshot,
+        launchCwd: a.launchCwd,
+      });
+      if (misplaced.length > 0) {
+        const rel = relToLogDir(logDir, misplaced);
+        return indeterminate(
+          'QA agent launched Pi from the wrong cwd - likely skipped ' +
+            '`cd $QUORUM_AGENT_CWD` in the Pi launcher. See ' +
+            `${JSON.stringify(rel)} for the misplaced session(s).`,
+          {
+            stage: 'qa-agent-misconfigured',
+            message: `misplaced Pi sessions: ${JSON.stringify(rel)}`,
+          },
+        );
+      }
+      const unusable = detectUnusablePiSessions({
+        logDir: a.logDir,
+        logGlob: a.logGlob,
+        snapshot: a.snapshot,
+      });
+      if (unusable.length > 0) {
+        const rel = relToLogDir(logDir, unusable);
+        return indeterminate(
+          `unusable Pi session header(s): ${rel.join(', ')}`,
+          {
+            stage: 'capture',
+            message: `unusable Pi session headers: ${JSON.stringify(rel)}`,
+          },
+        );
+      }
+      return indeterminate(
+        `no Pi session appeared under isolated ${logDir}; cannot evaluate this run`,
+        { stage: 'capture', message: 'no Pi session captured' },
+      );
+    }
+    if (rowCount === 0) {
+      const rel = relToLogDir(logDir, sourceLogs);
+      return indeterminate(
+        `Pi session(s) normalized to zero tool-call rows: ${rel.join(', ')}`,
+        { stage: 'capture', message: 'Pi capture normalized to zero rows' },
+      );
+    }
+  }
+
+  if (normalizer === 'opencode') {
+    if (sourceLogs.length === 0) {
+      return indeterminate(
+        `no OpenCode session export appeared under isolated ${logDir}; cannot evaluate this run`,
+        { stage: 'capture', message: 'no OpenCode session export captured' },
+      );
+    }
+    if (rowCount === 0) {
+      const rel = relToLogDir(logDir, sourceLogs);
+      return indeterminate(
+        `OpenCode export(s) normalized to zero tool-call rows: ${rel.join(', ')}`,
+        {
+          stage: 'capture',
+          message: 'OpenCode capture normalized to zero rows',
+        },
+      );
+    }
+  }
+
+  const strictName = STRICT_CAPTURE_NAMES[normalizer];
+  if (strictName !== undefined) {
+    if (sourceLogs.length === 0) {
+      return indeterminate(
+        `no ${strictName} transcript appeared under isolated ${logDir}; cannot evaluate this run`,
+        { stage: 'capture', message: `no ${strictName} transcript captured` },
+      );
+    }
+    if (rowCount === 0) {
+      const rel = relToLogDir(logDir, sourceLogs);
+      return indeterminate(
+        `${strictName} transcript(s) normalized to zero tool-call rows: ${rel.join(', ')}`,
+        {
+          stage: 'capture',
+          message: `${strictName} capture normalized to zero rows`,
+        },
+      );
+    }
+  }
+
+  if (normalizer === 'kimi') {
+    if (sourceLogs.length === 0) {
+      const unmatched = diagnoseKimiUnmatchedLogs({
+        logDir: a.logDir,
+        logGlob: a.logGlob,
+        snapshot: a.snapshot,
+        launchCwd: a.launchCwd,
+      });
+      if (unmatched !== null) {
+        const rel = relToLogDir(logDir, unmatched.paths);
+        if (unmatched.stage === 'qa-agent-misconfigured') {
+          return indeterminate(
+            'Kimi wrote wire logs, but none matched the launch cwd; ' +
+              'the QA agent likely bypassed the generated launcher',
+            {
+              stage: 'qa-agent-misconfigured',
+              message: `Kimi wire logs did not match launch cwd: ${JSON.stringify(rel)}`,
+            },
+          );
+        }
+        return indeterminate(
+          'Kimi wrote wire logs, but session_index.jsonl did not ' +
+            'map them to the launch cwd; cannot evaluate this run',
+          {
+            stage: 'capture',
+            message: `Kimi wire logs were not indexed/mappable to launch cwd: ${JSON.stringify(rel)}`,
+          },
+        );
+      }
+      return indeterminate(
+        `no Kimi wire.jsonl appeared under isolated ${logDir}; cannot evaluate this run`,
+        { stage: 'capture', message: 'no Kimi wire.jsonl captured' },
+      );
+    }
+    if (rowCount === 0) {
+      const rel = relToLogDir(logDir, sourceLogs);
+      return indeterminate(
+        `Kimi wire log(s) normalized to zero tool-call rows: ${rel.join(', ')}`,
+        { stage: 'capture', message: 'Kimi capture normalized to zero rows' },
+      );
+    }
+    if (!kimiLogsHaveSuperpowersSessionStart(sourceLogs)) {
+      return indeterminate(
+        'Kimi raw wire log lacks Superpowers plugin_session_start',
+        {
+          stage: 'capture',
+          message:
+            'missing plugin_session_start plugin=superpowers skill=using-superpowers',
+        },
+      );
+    }
+  }
+
+  return null;
+}
+
+export interface CodexMisplacedArgs {
+  readonly captureEmpty: boolean;
+  readonly normalizer: string;
+  readonly logDir: string;
+  readonly logGlob: string;
+  readonly snapshot: ReadonlySet<string>;
+  readonly runDir: string;
+  readonly launchCwd: string;
+}
+
+// Codex empty-capture qa-agent-misconfigured short-circuit (parity with the
+// Python step 12b guard, which runs AFTER post-checks). An empty capture plus a
+// codex rollout sitting under run_dir but launched in a subdir other than
+// launch_cwd means the QA agent skipped `cd $QUORUM_AGENT_CWD`. Surfaced as its
+// own stage so downstream trace checks (all "never called") don't bury the cause.
+export function codexMisplacedVerdict(
+  a: CodexMisplacedArgs,
+): FinalVerdict | null {
+  if (!a.captureEmpty || a.normalizer !== 'codex') {
+    return null;
+  }
+  const misplaced = detectMisplacedCodexRollouts({
+    logDir: a.logDir,
+    logGlob: a.logGlob,
+    snapshot: a.snapshot,
+    runDir: a.runDir,
+    launchCwd: a.launchCwd,
+  });
+  if (misplaced.length === 0) {
+    return null;
+  }
+  const rel = relToLogDir(a.logDir, misplaced);
+  return writeIndeterminate({
+    finalReason:
+      'QA agent launched codex from the wrong cwd — likely skipped ' +
+      '`cd $QUORUM_AGENT_CWD` in the codex HOWTO. See ' +
+      `${JSON.stringify(rel)} for the misplaced rollout(s).`,
+    error: {
+      stage: 'qa-agent-misconfigured',
+      message: `misplaced codex rollouts: ${JSON.stringify(rel)}`,
+    },
+  });
 }
 
 // Run one scenario end to end. Always allocates a run dir and always writes
@@ -680,6 +925,29 @@ async function runInner(
   });
   const captureEmpty = capture.rowCount === 0;
 
+  // Per-normalizer strict-capture / diagnostic cascade (parity with the Python
+  // capture-stage block). A strict backend (claude/gemini/antigravity/opencode/
+  // pi/kimi) that produced no usable transcript is an indeterminate with a
+  // backend-specific reason — independent of whether any deterministic check
+  // exists, which the generic composer captureEmpty path cannot cover.
+  const cascade = captureCascadeVerdict({
+    normalizer: cfg.normalizer,
+    logDir,
+    logGlob: cfg.session_log_glob,
+    snapshot,
+    launchCwd,
+    captureResult: {
+      sourceLogs: capture.sourceLogs,
+      rowCount: capture.rowCount,
+    },
+    gauntlet,
+    preRecords: pre.records,
+    runDir,
+  });
+  if (cascade !== null) {
+    return cascade;
+  }
+
   // post-checks: again a crash is an error stage, a failure flows to compose.
   writePhase(runDir, 'checks');
   const post = await runPhase({
@@ -692,7 +960,7 @@ async function runInner(
   });
   if (post.exitCode !== 0) {
     return compose({
-      gauntlet: gauntlet ?? null,
+      gauntlet,
       checks: [...pre.records, ...post.records],
       captureEmpty,
       error: {
@@ -702,9 +970,26 @@ async function runInner(
     });
   }
 
+  // Codex empty-capture qa-agent-misconfigured short-circuit (runs after
+  // post-checks, parity with Python step 12b): an empty codex capture plus a
+  // rollout launched from the wrong cwd surfaces as its own stage rather than a
+  // wall of "never called" trace checks.
+  const codexMisplaced = codexMisplacedVerdict({
+    captureEmpty,
+    normalizer: cfg.normalizer,
+    logDir,
+    logGlob: cfg.session_log_glob,
+    snapshot,
+    runDir,
+    launchCwd,
+  });
+  if (codexMisplaced !== null) {
+    return codexMisplaced;
+  }
+
   // compose + attach economics (opaque at this layer; 4.1).
   const verdict = compose({
-    gauntlet: gauntlet ?? null,
+    gauntlet,
     checks: [...pre.records, ...post.records],
     captureEmpty,
     error: null,
