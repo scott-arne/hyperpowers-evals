@@ -98,3 +98,58 @@ test('empty capture + trace check -> indeterminate', () => {
     }).final,
   ).toBe('indeterminate');
 });
+
+// Every check-transcript verb that reads the transcript must be guarded: on an
+// empty capture its pass/fail is meaningless, so the composer must force
+// `indeterminate`. This is the dispatch table of src/cli/check-transcript.ts —
+// if a verb is added there it must be added to TRACE_PRIMITIVES, and this test
+// is the lock that catches the omission.
+const CHECK_TRANSCRIPT_VERBS = [
+  'tool-called',
+  'tool-not-called',
+  'tool-count',
+  'tool-before',
+  'tool-arg-match',
+  'tool-match-before-tool-match',
+  'skill-called',
+  'skill-not-called',
+  'skill-before-tool',
+  'skill-before-implementation-tool',
+  'implementation-tool-not-called',
+  'investigated',
+  'worktree-created',
+];
+
+for (const verb of CHECK_TRANSCRIPT_VERBS) {
+  test(`empty capture + ${verb} -> indeterminate (trace-guard covers the verb)`, () => {
+    const trace: CheckRecord = {
+      check: verb,
+      args: [],
+      negated: false,
+      passed: true,
+      detail: null,
+      phase: 'post',
+    };
+    expect(
+      compose({
+        gauntlet: G('pass'),
+        checks: [trace],
+        captureEmpty: true,
+        error: null,
+      }).final,
+    ).toBe('indeterminate');
+  });
+}
+
+// A non-transcript check (git/fs state) is NOT a trace primitive: an empty
+// capture says nothing about it, so it must NOT trigger the guard.
+test('empty capture + non-trace check (file-exists) -> not guarded', () => {
+  expect(
+    compose({
+      gauntlet: G('pass'),
+      checks: [post(true)],
+      captureEmpty: true,
+      error: null,
+    }).final,
+  ).toBe('pass');
+});

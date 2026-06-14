@@ -5,6 +5,10 @@ import type {
   RunError,
 } from './contracts/verdict.ts';
 
+// Every check-transcript verb (the record's `check` field is the verb name).
+// A non-empty capture is meaningless for any trace check, so the composer forces
+// `indeterminate` when capture was empty and any of these ran. Must stay in sync
+// with src/cli/check-transcript.ts's dispatch table.
 const TRACE_PRIMITIVES = new Set([
   'tool-called',
   'tool-not-called',
@@ -15,7 +19,10 @@ const TRACE_PRIMITIVES = new Set([
   'skill-called',
   'skill-not-called',
   'skill-before-tool',
-  'skill-before-tool-match',
+  'skill-before-implementation-tool',
+  'implementation-tool-not-called',
+  'investigated',
+  'worktree-created',
 ]);
 
 export interface ComposeArgs {
