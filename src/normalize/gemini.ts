@@ -70,10 +70,17 @@ function parseGeminiMessages(raw: string): GeminiMessage[] {
     const data = JSON.parse(raw) as unknown;
     if (typeof data === 'object' && data !== null) {
       const obj = data as Record<string, unknown>;
-      if ('messages' in obj && Array.isArray(obj['messages'])) {
-        for (const m of obj['messages']) {
-          if (typeof m === 'object' && m !== null)
-            messages.push(m as GeminiMessage);
+      if (!Array.isArray(data) && 'messages' in obj) {
+        // Match quorum/normalizers.py _gemini_messages: when the envelope has a
+        // `messages` key, iterate ONLY that value (filtering to dicts). A
+        // present-but-non-array `messages` yields no messages — the envelope
+        // object itself is NOT treated as a single message.
+        const inner = obj['messages'];
+        if (Array.isArray(inner)) {
+          for (const m of inner) {
+            if (typeof m === 'object' && m !== null)
+              messages.push(m as GeminiMessage);
+          }
         }
       } else if (Array.isArray(data)) {
         for (const m of data) {
@@ -102,8 +109,15 @@ function parseGeminiMessages(raw: string): GeminiMessage[] {
 function normalizeGeminiToolCall(tc: GeminiToolCall): AtifToolCall {
   const geminiName = tc.name ?? '';
   const canonical = GEMINI_TOOL_MAP[geminiName] ?? geminiName;
-  const rawArgs = tc.args ?? {};
-  const args: Record<string, unknown> = { ...rawArgs };
+  // Match quorum/normalizers.py _normalize_gemini_tool_call: a dict `args` is
+  // copied; any non-dict (string/number/array/null) is wrapped as
+  // {raw_args: <value>}, preserving the raw payload.
+  const rawArgs: unknown = tc.args ?? {};
+  const isDict =
+    typeof rawArgs === 'object' && rawArgs !== null && !Array.isArray(rawArgs);
+  const args: Record<string, unknown> = isDict
+    ? { ...(rawArgs as Record<string, unknown>) }
+    : { raw_args: rawArgs };
 
   if (canonical === 'Skill') {
     // Gemini passes skill via "skill" or "name" key; normalize to "skill" with namespace.

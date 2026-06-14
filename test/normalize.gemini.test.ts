@@ -318,3 +318,41 @@ test('step timestamp is undefined when no timestamp field exists on the message'
   const traj = normalizeGemini(raw, '0.1.18');
   expect(traj.steps[0]!.timestamp).toBeUndefined();
 });
+
+// D-gemini-nonarray-messages-envelope (parity vs quorum/normalizers.py
+// _gemini_messages :467-469): an object whose `messages` key is present but
+// NOT an array takes the `"messages" in data` branch and iterates that value,
+// filtering to dicts → []. The envelope object itself is NOT treated as a
+// single message, so no tool call is emitted. (TS previously fell through to
+// pushing the whole envelope, fabricating a tool call from its top-level keys.)
+test('object with a present-but-non-array messages key yields no tool calls', () => {
+  const raw = JSON.stringify({
+    messages: 'hello',
+    type: 'gemini',
+    toolCalls: [
+      { id: 'g1', name: 'run_shell_command', args: { command: 'ls' } },
+    ],
+  });
+  const traj = normalizeGemini(raw, '0.1.18');
+  const agentSteps = traj.steps.filter((s) => s.source === 'agent');
+  expect(agentSteps).toEqual([]);
+});
+
+// D-gemini-nondict-args-rawargs (parity vs quorum/normalizers.py
+// _normalize_gemini_tool_call :490): a tool call whose `args` is a non-dict
+// (string/number/array/null) is wrapped as {raw_args: <value>}, preserving the
+// raw payload. (TS previously spread a string into char-indexed keys.)
+test('non-dict tool-call args are wrapped as {raw_args: <value>}', () => {
+  const raw = JSON.stringify({
+    messages: [
+      {
+        type: 'gemini',
+        toolCalls: [{ id: 'g1', name: 'run_shell_command', args: 'rawstring' }],
+      },
+    ],
+  });
+  const traj = normalizeGemini(raw, '0.1.18');
+  const tc = traj.steps[0]!.tool_calls![0]!;
+  expect(tc.function_name).toBe('Bash');
+  expect(tc.arguments).toEqual({ raw_args: 'rawstring' });
+});

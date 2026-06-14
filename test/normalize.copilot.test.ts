@@ -143,6 +143,21 @@ test('raw_input is always included in arguments', () => {
   }
 });
 
+// D-copilot-null-arguments-default (parity vs quorum/normalizers.py :738):
+// request.get("arguments", {}) defaults to {} ONLY when the key is absent. A
+// present-but-null `arguments` passes None through, so raw_input is null — not
+// {}. (TS previously used `?? {}`, collapsing a present null to {}.)
+test('present-but-null arguments yields raw_input: null (not {})', () => {
+  const raw = JSON.stringify({
+    type: 'assistant.message',
+    data: { toolRequests: [{ name: 'bash', arguments: null }] },
+  });
+  const traj = normalizeCopilot(raw, '1.0.0');
+  const tc = traj.steps[0]!.tool_calls![0]!;
+  expect(tc.function_name).toBe('Bash');
+  expect(tc.arguments).toEqual({ raw_input: null });
+});
+
 test('multiple assistant.message lines: preserves order across messages', () => {
   const traj = normalizeCopilot(multiLineLine, '1.0.0');
   const r = validateTrajectory(traj);
