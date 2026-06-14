@@ -120,6 +120,21 @@ function writePrivateText(path: string, content: string): void {
   chmodSync(path, 0o600);
 }
 
+// Verify the `gemini` binary resolves on PATH before provisioning (Python:
+// _seed_gemini_config's `shutil.which("gemini") is None` fail-fast). node has no
+// shutil.which; probe via the injected runner (`command -v gemini`) so the
+// hermetic gate can stub the lookup, mirroring resolveKimiBinary.
+function requireGeminiBinaryOnPath(runner: CommandRunner): void {
+  const probe = runner.run('command', ['-v', 'gemini'], {
+    env: { ...envSnapshot() },
+  });
+  if (probe.status !== 0 || probe.stdout.trim() === '') {
+    throw new ProvisionError(
+      'gemini not found on PATH; cannot run Gemini evals',
+    );
+  }
+}
+
 // Copy the Gemini OAuth credential files from GEMINI_OAUTH_HOME (default
 // ~/.gemini) into the run's .gemini dir at 0600 (Python:
 // _copy_gemini_oauth_credentials). A missing source file is a setup error.
@@ -202,6 +217,12 @@ export class GeminiAgent implements CodingAgent {
         `SUPERPOWERS_ROOT is missing required Gemini Superpowers files: ${missingRoot.join(', ')}`,
       );
     }
+
+    // Fail fast if the gemini CLI is not on PATH (Python:
+    // _seed_gemini_config's shutil.which check, right after the SUPERPOWERS_ROOT
+    // validation). Without this a missing binary surfaces later as a confusing
+    // 'gemini extensions link failed (exit null)'.
+    requireGeminiBinaryOnPath(runner);
 
     // Resolve the auth type once (Python: _gemini_auth_type resolved in
     // _seed_gemini_config). A bogus value raises here, before any subprocess.

@@ -57,11 +57,41 @@ function seedSuperpowersRoot(root: string): void {
   }
 }
 
+// The adapter probes `command -v gemini` to confirm the binary is on PATH
+// (Python: shutil.which("gemini")). A responder must resolve it for any later
+// step to run. Returns a CommandResult when the call is the probe, else null.
+function geminiPathProbe(
+  command: string,
+  args: readonly string[],
+): CommandResult | null {
+  if (command === 'command' && args[0] === '-v' && args[1] === 'gemini') {
+    return { status: 0, stdout: '/usr/local/bin/gemini\n', stderr: '' };
+  }
+  return null;
+}
+
+// A responder that only resolves the PATH probe; every other call returns the
+// default success. Used by the "before any subprocess" guards: the PATH probe
+// must succeed so the test exercises the auth/key guard rather than the PATH
+// check, while still proving no `gemini extensions` subprocess ran.
+function probeOnlyResponder(
+  command: string,
+  args: readonly string[],
+): CommandResult {
+  return (
+    geminiPathProbe(command, args) ?? { status: 0, stdout: '', stderr: '' }
+  );
+}
+
 // A responder that succeeds and, on `extensions link`, lays down the manifest
 // files the adapter asserts exist (the real CLI writes them on a successful
 // link). `extensions list` returns a superpowers row.
 function successResponder(configDir: string) {
   return (command: string, args: readonly string[]): CommandResult => {
+    const probe = geminiPathProbe(command, args);
+    if (probe) {
+      return probe;
+    }
     if (
       command === 'gemini' &&
       args[0] === 'extensions' &&
@@ -173,13 +203,20 @@ test('provision seeds config dir, settings, env file, manifests, and returns env
           GEMINI_DEFAULT_AUTH_TYPE: 'gemini-api-key',
         });
 
-        // Subprocess calls: link then list, with the trust/auth env.
-        expect(runner.calls.length).toBe(2);
-        const linkCall = runner.calls[0];
-        const listCall = runner.calls[1];
-        if (linkCall === undefined || listCall === undefined) {
-          throw new Error('expected two recorded calls');
+        // Subprocess calls: PATH probe, then link, then list with trust env.
+        expect(runner.calls.length).toBe(3);
+        const probeCall = runner.calls[0];
+        const linkCall = runner.calls[1];
+        const listCall = runner.calls[2];
+        if (
+          probeCall === undefined ||
+          linkCall === undefined ||
+          listCall === undefined
+        ) {
+          throw new Error('expected three recorded calls');
         }
+        expect(probeCall.command).toBe('command');
+        expect(probeCall.args).toEqual(['-v', 'gemini']);
         expect(linkCall.command).toBe('gemini');
         expect(linkCall.args).toEqual([
           'extensions',
@@ -221,6 +258,10 @@ test('provision accepts a decorated superpowers row printed to stderr', () => {
         // row with a checkmark + version (Python: merge stdout+stderr, regex
         // tolerates a leading non-word glyph). stdout is empty.
         const runner = new FakeCommandRunner((command, args) => {
+          const probe = geminiPathProbe(command, args);
+          if (probe) {
+            return probe;
+          }
           if (
             command === 'gemini' &&
             args[0] === 'extensions' &&
@@ -306,13 +347,22 @@ test('provision throws ProvisionError when extensions link exits non-zero', () =
     withEnv(
       { GEMINI_API_KEY: API_KEY, SUPERPOWERS_ROOT: superpowersRoot },
       () => {
-        const runner = new FakeCommandRunner(() => ({
-          status: 1,
-          stdout: '',
-          stderr: 'boom',
-        }));
+        // PATH probe resolves; the `extensions link` itself exits non-zero.
+        const runner = new FakeCommandRunner((command, args) => {
+          const probe = geminiPathProbe(command, args);
+          if (probe) {
+            return probe;
+          }
+          return { status: 1, stdout: '', stderr: 'boom' };
+        });
         const agent = new GeminiAgent(CONFIG);
-        expect(() => agent.provision(home, runner)).toThrow(ProvisionError);
+        let message = '';
+        try {
+          agent.provision(home, runner);
+        } catch (err) {
+          message = err instanceof Error ? err.message : String(err);
+        }
+        expect(message).toContain('gemini extensions link failed');
       },
     );
   } finally {
@@ -335,6 +385,10 @@ test('provision redacts GEMINI_API_KEY from the link-failure stderr excerpt', ()
         // The CLI echoes the API key into its stderr on failure; the excerpt
         // baked into the error must not leak it (Python: _gemini_stderr_excerpt).
         const runner = new FakeCommandRunner((command, args) => {
+          const probe = geminiPathProbe(command, args);
+          if (probe) {
+            return probe;
+          }
           if (command === 'gemini' && args[1] === 'link') {
             return {
               status: 1,
@@ -376,6 +430,10 @@ test('provision redacts GEMINI_API_KEY from the list-failure stderr excerpt', ()
         // link succeeds (manifests written) but `list` fails with the key in
         // stderr; the list-failure excerpt must redact it too.
         const runner = new FakeCommandRunner((command, args) => {
+          const probe = geminiPathProbe(command, args);
+          if (probe) {
+            return probe;
+          }
           if (command === 'gemini' && args[1] === 'link') {
             for (const rel of EXTENSION_MANIFESTS) {
               const path = join(home.configDir, rel);
@@ -425,13 +483,23 @@ test('provision throws ProvisionError when a manifest file is missing', () => {
         // Both subprocesses succeed and `list` shows superpowers, but `link`
         // never writes the manifests -> the post-link assertion must fire.
         const runner = new FakeCommandRunner((command, args) => {
+          const probe = geminiPathProbe(command, args);
+          if (probe) {
+            return probe;
+          }
           if (command === 'gemini' && args[1] === 'list') {
             return { status: 0, stdout: 'superpowers\n', stderr: '' };
           }
           return { status: 0, stdout: '', stderr: '' };
         });
         const agent = new GeminiAgent(CONFIG);
-        expect(() => agent.provision(home, runner)).toThrow(ProvisionError);
+        let message = '';
+        try {
+          agent.provision(home, runner);
+        } catch (err) {
+          message = err instanceof Error ? err.message : String(err);
+        }
+        expect(message).toContain('expected metadata files are missing');
       },
     );
   } finally {
@@ -452,6 +520,10 @@ test('provision throws ProvisionError when extensions list omits superpowers', (
       { GEMINI_API_KEY: API_KEY, SUPERPOWERS_ROOT: superpowersRoot },
       () => {
         const runner = new FakeCommandRunner((command, args) => {
+          const probe = geminiPathProbe(command, args);
+          if (probe) {
+            return probe;
+          }
           if (
             command === 'gemini' &&
             args[0] === 'extensions' &&
@@ -468,7 +540,13 @@ test('provision throws ProvisionError when extensions list omits superpowers', (
           return { status: 0, stdout: 'some-other-ext\n', stderr: '' };
         });
         const agent = new GeminiAgent(CONFIG);
-        expect(() => agent.provision(home, runner)).toThrow(ProvisionError);
+        let message = '';
+        try {
+          agent.provision(home, runner);
+        } catch (err) {
+          message = err instanceof Error ? err.message : String(err);
+        }
+        expect(message).toContain('did not show Superpowers extension');
       },
     );
   } finally {
@@ -562,10 +640,14 @@ test('provision throws on a bogus GEMINI_AUTH_TYPE before any subprocess', () =>
         GEMINI_AUTH_TYPE: 'totally-bogus',
       },
       () => {
-        const runner = new FakeCommandRunner();
+        const runner = new FakeCommandRunner(probeOnlyResponder);
         const agent = new GeminiAgent(CONFIG);
         expect(() => agent.provision(home, runner)).toThrow(ProvisionError);
-        expect(runner.calls.length).toBe(0);
+        // The auth-type guard fires after the PATH probe but before any
+        // `gemini extensions` subprocess.
+        for (const call of runner.calls) {
+          expect(call.command).toBe('command');
+        }
       },
     );
   } finally {
@@ -624,11 +706,57 @@ test('provision throws ProvisionError when GEMINI_API_KEY is unset', () => {
     withEnv(
       { SUPERPOWERS_ROOT: superpowersRoot, GEMINI_API_KEY: undefined },
       () => {
-        const runner = new FakeCommandRunner();
+        const runner = new FakeCommandRunner(probeOnlyResponder);
         const agent = new GeminiAgent(CONFIG);
         expect(() => agent.provision(home, runner)).toThrow(ProvisionError);
-        // No subprocess should run if the key is missing.
-        expect(runner.calls.length).toBe(0);
+        // The empty-key guard fires after the PATH probe but before any
+        // `gemini extensions` subprocess.
+        for (const call of runner.calls) {
+          expect(call.command).toBe('command');
+        }
+      },
+    );
+  } finally {
+    cleanup();
+    spCleanup();
+  }
+});
+
+test('provision throws ProvisionError when the gemini binary is not on PATH', () => {
+  const { home, cleanup } = makeTempHome();
+  const { home: spHome, cleanup: spCleanup } = makeTempHome();
+  const superpowersRoot = spHome.configDir;
+  mkdirSync(superpowersRoot, { recursive: true });
+  seedSuperpowersRoot(superpowersRoot);
+
+  try {
+    withEnv(
+      { GEMINI_API_KEY: API_KEY, SUPERPOWERS_ROOT: superpowersRoot },
+      () => {
+        // `command -v gemini` reports the binary missing (non-zero, empty
+        // stdout); provisioning must fail fast before any extensions subprocess
+        // (Python: shutil.which("gemini") is None -> RunnerError).
+        const runner = new FakeCommandRunner((command, args) => {
+          if (command === 'command' && args[0] === '-v') {
+            return { status: 1, stdout: '', stderr: '' };
+          }
+          return { status: 0, stdout: '', stderr: '' };
+        });
+        const agent = new GeminiAgent(CONFIG);
+        let message = '';
+        expect(() => {
+          try {
+            agent.provision(home, runner);
+          } catch (err) {
+            message = err instanceof Error ? err.message : String(err);
+            throw err;
+          }
+        }).toThrow(ProvisionError);
+        expect(message).toContain('gemini not found on PATH');
+        // No extensions link/list ran; only the PATH probe.
+        for (const call of runner.calls) {
+          expect(call.command).toBe('command');
+        }
       },
     );
   } finally {
