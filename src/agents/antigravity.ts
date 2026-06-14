@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { AgentConfig } from '../contracts/agent-config.ts';
 import { envSnapshot, getEnv } from '../env.ts';
+import { agyLogShowsRateLimit } from './agy-watch.ts';
 import type { CommandRunner } from './command-runner.ts';
 import { type CodingAgent, ProvisionError, type RunHome } from './index.ts';
 
@@ -41,16 +42,9 @@ import { type CodingAgent, ProvisionError, type RunHome } from './index.ts';
 // stop hammering it. Mirrors runner.py ANTIGRAVITY_RATE_LIMIT_MARKER.
 export const ANTIGRAVITY_RATE_LIMIT_MARKER = 'Code Assist rate limit';
 
-// Substrings agy writes to its log/stderr when Code Assist throttles.
-// RESOURCE_EXHAUSTED is the definitive 429 signal; ratelimitexceeded
-// corroborates. Matched case-insensitively. Mirrors
-// _AGY_RATE_LIMIT_SUBSTRINGS.
-const AGY_RATE_LIMIT_SUBSTRINGS = ['resource_exhausted', 'ratelimitexceeded'];
-
-// A word-boundaried HTTP-status 429. A bare 429 matches hex trace IDs, ports,
-// and byte counts that pepper agy's streaming log; requiring a boundary avoids
-// false trips. Mirrors _AGY_429_RE.
-const AGY_429_RE = /\b429\b/;
+// The rate-limit log matcher (_agy_log_shows_rate_limit) lives in agy-watch.ts,
+// the home of the live tail watcher; this adapter shares that single source so
+// the substrings/429-boundary rule never drifts between the two call sites.
 
 // The plugin files agy plugin install must produce under
 // .gemini/config/plugins/superpowers/ (mirrors the `required` list in
@@ -300,19 +294,6 @@ function rstripDotBang(s: string): string {
     }
   }
   return s.slice(0, end);
-}
-
-// Port of _agy_log_shows_rate_limit: join the candidate texts, lowercase, and
-// look for an unambiguous Code Assist throttle signal.
-function agyLogShowsRateLimit(...texts: string[]): boolean {
-  const blob = texts
-    .filter((t) => t !== '')
-    .join('\n')
-    .toLowerCase();
-  if (AGY_RATE_LIMIT_SUBSTRINGS.some((sig) => blob.includes(sig))) {
-    return true;
-  }
-  return AGY_429_RE.test(blob);
 }
 
 // Post-run rate-limit detection for the verdict layer. quorum writes the run's
