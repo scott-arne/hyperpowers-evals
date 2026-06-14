@@ -6,12 +6,14 @@ import {
   readFileSync,
   readlinkSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import type { CommandResult } from '../src/agents/command-runner.ts';
 import { ProvisionError } from '../src/agents/index.ts';
 import { OpenCodeAgent } from '../src/agents/opencode.ts';
+import type { SpawnFn, SpawnResult } from '../src/agents/opencode-capture.ts';
 import type { AgentConfig } from '../src/contracts/agent-config.ts';
 import { FakeCommandRunner } from './fake-command-runner.ts';
 import { makeTempHome } from './provision-helpers.ts';
@@ -69,19 +71,42 @@ function withEnv(superpowersRoot: string | undefined, body: () => void): void {
   }
 }
 
-// Happy-path responder: node --check succeeds, opencode --version answers, and
-// `opencode run` replies "OK". Everything else defaults to success.
+// Happy-path CommandRunner responder. The runner now drives only the PATH
+// probes (`command -v opencode`, `command -v node`) and the staged-plugin
+// `node --check`; opencode invocations go through the injected SpawnFn. A
+// `command -v` probe must answer with a non-empty resolved path (parity with
+// shutil.which returning a path), and node --check exits 0.
 function happyResponder(
   command: string,
   args: readonly string[],
 ): CommandResult {
-  if (command === 'opencode' && args[0] === '--version') {
-    return { status: 0, stdout: 'opencode 1.2.3\n', stderr: '' };
-  }
-  if (command === 'opencode' && args[0] === 'run') {
-    return { status: 0, stdout: 'OK\n', stderr: '' };
+  if (command === 'command' && args[0] === '-v') {
+    return { status: 0, stdout: `/usr/local/bin/${args[1]}\n`, stderr: '' };
   }
   return { status: 0, stdout: '', stderr: '' };
+}
+
+// One recorded SpawnFn invocation, for preflight assertions.
+interface RecordedSpawn {
+  args: string[];
+  cwd: string;
+  env: Record<string, string>;
+}
+
+// Happy-path SpawnFn: opencode --version answers, `opencode run` replies "OK".
+function makeHappySpawn(): { spawn: SpawnFn; calls: RecordedSpawn[] } {
+  const calls: RecordedSpawn[] = [];
+  const spawn: SpawnFn = (opts) => {
+    calls.push({ args: opts.args, cwd: opts.cwd, env: opts.env });
+    if (opts.args[1] === '--version') {
+      return { stdout: 'opencode 1.2.3\n', stderr: '', exitCode: 0 };
+    }
+    if (opts.args[1] === 'run') {
+      return { stdout: 'OK\n', stderr: '', exitCode: 0 };
+    }
+    return { stdout: '', stderr: '', exitCode: 0 };
+  };
+  return { spawn, calls };
 }
 
 // The XDG isolation env the adapter must return and pass to the subprocess.
@@ -103,10 +128,11 @@ test('provision stages Superpowers into the XDG-isolated home and pins the model
   mkdirSync(spRoot, { recursive: true });
   stageSuperpowers(spRoot);
   const runner = new FakeCommandRunner(happyResponder);
+  const { spawn } = makeHappySpawn();
 
   try {
     withEnv(spRoot, () => {
-      const agent = new OpenCodeAgent(OPENCODE_CONFIG);
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
       const env = agent.provision(home, runner);
 
       const opencodeHome = home.configDir;
@@ -183,14 +209,12 @@ test('provision runs node --check then the model-pinned preflight', () => {
   mkdirSync(spRoot, { recursive: true });
   stageSuperpowers(spRoot);
   const runner = new FakeCommandRunner(happyResponder);
+  const { spawn, calls } = makeHappySpawn();
 
   try {
     withEnv(spRoot, () => {
-      const agent = new OpenCodeAgent(OPENCODE_CONFIG);
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
       agent.provision(home, runner);
-
-      // Calls: node --check <staged plugin>, opencode --version, opencode run.
-      expect(runner.calls.length).toBe(3);
 
       const stagedPlugin = join(
         home.configDir,
@@ -201,17 +225,20 @@ test('provision runs node --check then the model-pinned preflight', () => {
         'plugins',
         'superpowers.js',
       );
-      const nodeCheck = runner.calls[0];
-      expect(nodeCheck?.command).toBe('node');
+
+      // The CommandRunner drives the PATH probes + node --check (NOT opencode).
+      const nodeCheck = runner.calls.find((c) => c.command === 'node');
       expect(nodeCheck?.args).toEqual(['--check', stagedPlugin]);
+      expect(runner.calls.some((c) => c.command === 'opencode')).toBe(false);
 
-      const version = runner.calls[1];
-      expect(version?.command).toBe('opencode');
-      expect(version?.args).toEqual(['--version']);
+      // opencode --version then opencode run are SpawnFn calls (file-stdout +
+      // allowlisted env path).
+      const version = calls.find((c) => c.args[1] === '--version');
+      expect(version?.args).toEqual(['opencode', '--version']);
 
-      const run = runner.calls[2];
-      expect(run?.command).toBe('opencode');
+      const run = calls.find((c) => c.args[1] === 'run');
       expect(run?.args).toEqual([
+        'opencode',
         'run',
         '-m',
         OPENCODE_MODEL,
@@ -220,16 +247,53 @@ test('provision runs node --check then the model-pinned preflight', () => {
       ]);
       // The preflight subprocess env carries the throwaway-home XDG isolation
       // (HOME points into a temp dir, NOT the per-run home).
-      const runHome = run?.options?.env?.['HOME'];
+      const runHome = run?.env['HOME'];
       expect(typeof runHome).toBe('string');
       expect(runHome).not.toBe(home.configDir);
-      expect(run?.options?.env?.['OPENCODE_CONFIG_DIR']).toBe(
+      expect(run?.env['OPENCODE_CONFIG_DIR']).toBe(
         join(runHome ?? '', '.config', 'opencode'),
       );
       // cwd is the throwaway preflight cwd, not the per-run workdir.
-      expect(run?.options?.cwd).not.toBe(home.workdir);
+      expect(run?.cwd).not.toBe(home.workdir);
     });
   } finally {
+    cleanup();
+  }
+});
+
+// B2-opencode-preflight-env-not-allowlisted: the preflight subprocess env must
+// be the strict allowlist (no leaked host vars), not the full host env.
+test('preflight env is the strict allowlist, not the full host env', () => {
+  const { home, cleanup } = makeTempHome();
+  const spRoot = join(home.workdir, '..', 'superpowers-src');
+  mkdirSync(spRoot, { recursive: true });
+  stageSuperpowers(spRoot);
+  const runner = new FakeCommandRunner(happyResponder);
+  const { spawn, calls } = makeHappySpawn();
+
+  const prevLeak = process.env['OPENCODE_CONFIG_DIR'];
+  const prevProxy = process.env['HTTP_PROXY'];
+  process.env['OPENCODE_CONFIG_DIR'] = '/ambient/opencode';
+  process.env['HTTP_PROXY'] = 'http://leak';
+  try {
+    withEnv(spRoot, () => {
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
+      agent.provision(home, runner);
+      const run = calls.find((c) => c.args[1] === 'run');
+      // Non-allowlisted ambient vars must NOT leak into the preflight.
+      expect('HTTP_PROXY' in (run?.env ?? {})).toBe(false);
+      expect('SUPERPOWERS_ROOT' in (run?.env ?? {})).toBe(false);
+      // The ambient OPENCODE_CONFIG_DIR is overridden by the throwaway home's.
+      const runHome = run?.env['HOME'];
+      expect(run?.env['OPENCODE_CONFIG_DIR']).toBe(
+        join(runHome ?? '', '.config', 'opencode'),
+      );
+    });
+  } finally {
+    if (prevLeak === undefined) delete process.env['OPENCODE_CONFIG_DIR'];
+    else process.env['OPENCODE_CONFIG_DIR'] = prevLeak;
+    if (prevProxy === undefined) delete process.env['HTTP_PROXY'];
+    else process.env['HTTP_PROXY'] = prevProxy;
     cleanup();
   }
 });
@@ -239,31 +303,30 @@ test('provision retries the preflight and accepts a tolerant "OK." reply', () =>
   const spRoot = join(home.workdir, '..', 'superpowers-src');
   mkdirSync(spRoot, { recursive: true });
   stageSuperpowers(spRoot);
+  const runner = new FakeCommandRunner(happyResponder);
 
   // First `run` returns a non-OK reply; the second returns "OK." (trailing
   // punctuation, accepted by the tolerant normalizer).
   let runAttempts = 0;
-  const runner = new FakeCommandRunner((command, args) => {
-    if (command === 'opencode' && args[0] === '--version') {
-      return { status: 0, stdout: 'v1\n', stderr: '' };
+  const spawn: SpawnFn = (opts) => {
+    if (opts.args[1] === '--version') {
+      return { stdout: 'v1\n', stderr: '', exitCode: 0 };
     }
-    if (command === 'opencode' && args[0] === 'run') {
+    if (opts.args[1] === 'run') {
       runAttempts += 1;
       if (runAttempts === 1) {
-        return { status: 0, stdout: 'thinking...\n', stderr: '' };
+        return { stdout: 'thinking...\n', stderr: '', exitCode: 0 };
       }
-      return { status: 0, stdout: 'OK.\n', stderr: '' };
+      return { stdout: 'OK.\n', stderr: '', exitCode: 0 };
     }
-    return { status: 0, stdout: '', stderr: '' };
-  });
+    return { stdout: '', stderr: '', exitCode: 0 };
+  };
 
   try {
     withEnv(spRoot, () => {
-      const agent = new OpenCodeAgent(OPENCODE_CONFIG);
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
       agent.provision(home, runner);
-      // node --check + --version + two run attempts.
       expect(runAttempts).toBe(2);
-      expect(runner.calls.length).toBe(4);
     });
   } finally {
     cleanup();
@@ -275,18 +338,19 @@ test('provision throws ProvisionError when the preflight never returns OK', () =
   const spRoot = join(home.workdir, '..', 'superpowers-src');
   mkdirSync(spRoot, { recursive: true });
   stageSuperpowers(spRoot);
+  const runner = new FakeCommandRunner(happyResponder);
 
   // `run` always exits non-zero -> the "exit" branch of the error.
-  const runner = new FakeCommandRunner((command, args) => {
-    if (command === 'opencode' && args[0] === 'run') {
-      return { status: 1, stdout: '', stderr: 'provider unauthorized' };
+  const spawn: SpawnFn = (opts): SpawnResult => {
+    if (opts.args[1] === 'run') {
+      return { stdout: '', stderr: 'provider unauthorized', exitCode: 1 };
     }
-    return { status: 0, stdout: '', stderr: '' };
-  });
+    return { stdout: '', stderr: '', exitCode: 0 };
+  };
 
   try {
     withEnv(spRoot, () => {
-      const agent = new OpenCodeAgent(OPENCODE_CONFIG);
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
       expect(() => agent.provision(home, runner)).toThrow(ProvisionError);
     });
   } finally {
@@ -299,21 +363,22 @@ test('provision throws ProvisionError when a non-OK reply persists across 3 trie
   const spRoot = join(home.workdir, '..', 'superpowers-src');
   mkdirSync(spRoot, { recursive: true });
   stageSuperpowers(spRoot);
+  const runner = new FakeCommandRunner(happyResponder);
 
   // Exit 0 but a verbose (non-OK) reply on every attempt -> the "did not return
   // OK after 3 attempts" branch.
   let runAttempts = 0;
-  const runner = new FakeCommandRunner((command, args) => {
-    if (command === 'opencode' && args[0] === 'run') {
+  const spawn: SpawnFn = (opts): SpawnResult => {
+    if (opts.args[1] === 'run') {
       runAttempts += 1;
-      return { status: 0, stdout: 'I cannot comply\n', stderr: '' };
+      return { stdout: 'I cannot comply\n', stderr: '', exitCode: 0 };
     }
-    return { status: 0, stdout: '', stderr: '' };
-  });
+    return { stdout: '', stderr: '', exitCode: 0 };
+  };
 
   try {
     withEnv(spRoot, () => {
-      const agent = new OpenCodeAgent(OPENCODE_CONFIG);
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
       expect(() => agent.provision(home, runner)).toThrow(ProvisionError);
       // The retry loop ran the full three attempts.
       expect(runAttempts).toBe(3);
@@ -329,19 +394,85 @@ test('provision throws ProvisionError when node --check fails', () => {
   mkdirSync(spRoot, { recursive: true });
   stageSuperpowers(spRoot);
 
-  const runner = new FakeCommandRunner((command) => {
+  const runner = new FakeCommandRunner((command, args) => {
+    if (command === 'command' && args[0] === '-v') {
+      return { status: 0, stdout: `/usr/local/bin/${args[1]}\n`, stderr: '' };
+    }
     if (command === 'node') {
       return { status: 1, stdout: '', stderr: 'SyntaxError: bad plugin' };
     }
-    return { status: 0, stdout: 'OK\n', stderr: '' };
+    return { status: 0, stdout: '', stderr: '' };
   });
+  const { spawn, calls } = makeHappySpawn();
 
   try {
     withEnv(spRoot, () => {
-      const agent = new OpenCodeAgent(OPENCODE_CONFIG);
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
       expect(() => agent.provision(home, runner)).toThrow(ProvisionError);
-      // Aborted at node --check, before any opencode invocation.
-      expect(runner.calls.length).toBe(1);
+      // Aborted at node --check, before any opencode preflight invocation.
+      expect(calls.length).toBe(0);
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+// B2-opencode-node-check-unconditional: when node is absent on PATH, the
+// node --check is silently skipped (Python guards with shutil.which("node")).
+test('provision skips node --check when node is absent on PATH', () => {
+  const { home, cleanup } = makeTempHome();
+  const spRoot = join(home.workdir, '..', 'superpowers-src');
+  mkdirSync(spRoot, { recursive: true });
+  stageSuperpowers(spRoot);
+
+  // `command -v node` resolves nothing; `command -v opencode` resolves a path.
+  const runner = new FakeCommandRunner((command, args) => {
+    if (command === 'command' && args[0] === '-v') {
+      if (args[1] === 'node') return { status: 1, stdout: '', stderr: '' };
+      return { status: 0, stdout: `/usr/local/bin/${args[1]}\n`, stderr: '' };
+    }
+    if (command === 'node') {
+      throw new Error('node --check must not run when node is absent');
+    }
+    return { status: 0, stdout: '', stderr: '' };
+  });
+  const { spawn } = makeHappySpawn();
+
+  try {
+    withEnv(spRoot, () => {
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
+      // Provisioning proceeds (no node --check, preflight still runs OK).
+      expect(() => agent.provision(home, runner)).not.toThrow();
+      expect(runner.calls.some((c) => c.command === 'node')).toBe(false);
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+// B2-opencode-which-guard-dropped: a missing opencode binary fails fast with a
+// clear setup-stage error before any staging or preflight work.
+test('provision throws ProvisionError when opencode is not on PATH', () => {
+  const { home, cleanup } = makeTempHome();
+  const spRoot = join(home.workdir, '..', 'superpowers-src');
+  mkdirSync(spRoot, { recursive: true });
+  stageSuperpowers(spRoot);
+
+  const runner = new FakeCommandRunner((command, args) => {
+    if (command === 'command' && args[0] === '-v' && args[1] === 'opencode') {
+      return { status: 1, stdout: '', stderr: '' };
+    }
+    return { status: 0, stdout: `/usr/local/bin/${args[1]}\n`, stderr: '' };
+  });
+  const { spawn, calls } = makeHappySpawn();
+
+  try {
+    withEnv(spRoot, () => {
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
+      expect(() => agent.provision(home, runner)).toThrow(/opencode/);
+      expect(() => agent.provision(home, runner)).toThrow(ProvisionError);
+      // No preflight invocation when the binary is missing.
+      expect(calls.length).toBe(0);
     });
   } finally {
     cleanup();
@@ -351,13 +482,14 @@ test('provision throws ProvisionError when node --check fails', () => {
 test('provision throws ProvisionError when SUPERPOWERS_ROOT is unset', () => {
   const { home, cleanup } = makeTempHome();
   const runner = new FakeCommandRunner(happyResponder);
+  const { spawn, calls } = makeHappySpawn();
 
   try {
     withEnv(undefined, () => {
-      const agent = new OpenCodeAgent(OPENCODE_CONFIG);
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
       expect(() => agent.provision(home, runner)).toThrow(ProvisionError);
-      // No subprocess attempted when a required input is missing.
-      expect(runner.calls.length).toBe(0);
+      // No preflight attempted when a required input is missing.
+      expect(calls.length).toBe(0);
     });
   } finally {
     cleanup();
@@ -373,12 +505,72 @@ test('provision throws ProvisionError when a required plugin file is missing', (
     writeFileSync(join(spRoot, 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
   }
   const runner = new FakeCommandRunner(happyResponder);
+  const { spawn, calls } = makeHappySpawn();
 
   try {
     withEnv(spRoot, () => {
-      const agent = new OpenCodeAgent(OPENCODE_CONFIG);
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
       expect(() => agent.provision(home, runner)).toThrow(ProvisionError);
-      expect(runner.calls.length).toBe(0);
+      expect(calls.length).toBe(0);
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+// B2-opencode-stale-export-guard-dropped: pre-existing session-export files
+// under the export dir before the capture snapshot are rejected.
+test('provision throws ProvisionError on a pre-existing stale session export', () => {
+  const { home, cleanup } = makeTempHome();
+  const spRoot = join(home.workdir, '..', 'superpowers-src');
+  mkdirSync(spRoot, { recursive: true });
+  stageSuperpowers(spRoot);
+
+  // Plant a stale export matching [0-9]*-ses_*.json under the export dir.
+  const exportDir = join(home.configDir, '.quorum', 'session-exports');
+  mkdirSync(exportDir, { recursive: true });
+  writeFileSync(join(exportDir, '0000000000000001-ses_stale.json'), '{}');
+
+  const runner = new FakeCommandRunner(happyResponder);
+  const { spawn, calls } = makeHappySpawn();
+
+  try {
+    withEnv(spRoot, () => {
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
+      expect(() => agent.provision(home, runner)).toThrow(
+        /pre-existing OpenCode session exports/,
+      );
+      // No preflight when staging aborts on a dirty home.
+      expect(calls.length).toBe(0);
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+// B2-opencode-symlink-and-home-containment-dropped: a symlink under
+// SUPERPOWERS_ROOT/skills is rejected before copying.
+test('provision rejects a symlink under SUPERPOWERS_ROOT/skills', () => {
+  const { home, cleanup } = makeTempHome();
+  const spRoot = join(home.workdir, '..', 'superpowers-src');
+  mkdirSync(spRoot, { recursive: true });
+  stageSuperpowers(spRoot);
+
+  // Plant a symlink inside the skills tree.
+  const target = join(spRoot, 'skills', 'using-superpowers', 'SKILL.md');
+  const link = join(spRoot, 'skills', 'using-superpowers', 'evil-link.md');
+  symlinkSync(target, link);
+
+  const runner = new FakeCommandRunner(happyResponder);
+  const { spawn, calls } = makeHappySpawn();
+
+  try {
+    withEnv(spRoot, () => {
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
+      expect(() => agent.provision(home, runner)).toThrow(
+        /unsupported symlink/,
+      );
+      expect(calls.length).toBe(0);
     });
   } finally {
     cleanup();
@@ -391,10 +583,11 @@ test('opencode.json is a regular file and leaks no provider key', () => {
   mkdirSync(spRoot, { recursive: true });
   stageSuperpowers(spRoot);
   const runner = new FakeCommandRunner(happyResponder);
+  const { spawn } = makeHappySpawn();
 
   try {
     withEnv(spRoot, () => {
-      const agent = new OpenCodeAgent(OPENCODE_CONFIG);
+      const agent = new OpenCodeAgent(OPENCODE_CONFIG, spawn);
       agent.provision(home, runner);
       const opencodeJson = join(
         home.configDir,
