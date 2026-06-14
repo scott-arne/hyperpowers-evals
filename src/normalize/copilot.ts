@@ -143,7 +143,12 @@ export function normalizeCopilot(raw: string, version: string): AtifTrajectory {
       if (typeof name !== 'string' || !name) continue;
 
       const canonical = COPILOT_TOOL_MAP[name] ?? name;
-      const args = normalizeCopilotArgs(name, req['arguments'] ?? {});
+      // Match quorum/normalizers.py request.get("arguments", {}): default to {}
+      // ONLY when the key is absent. A present-but-null `arguments` passes
+      // through as null so raw_input preserves it (parity, not `?? {}`).
+      const rawInput =
+        req['arguments'] === undefined ? {} : (req['arguments'] as unknown);
+      const args = normalizeCopilotArgs(name, rawInput);
 
       const tc: AtifToolCall = {
         tool_call_id: `${stepId}`,
