@@ -26,6 +26,11 @@ import {
   shellSingleQuote,
 } from '../agents/index.ts';
 import {
+  exportOpencodeSessions,
+  OpenCodeCaptureError,
+  snapshotOpencodeSessions,
+} from '../agents/opencode-capture.ts';
+import {
   captureTokenUsage,
   captureToolCallsWithRetry,
   detectMisplacedCodexRollouts,
@@ -887,15 +892,40 @@ async function runInner(
     });
   }
 
-  // snapshot the agent session-log dir before the run.
-  const logDir = substituteEnv(cfg.session_log_dir, extraEnv);
-  const snapshot = snapshotDir(logDir, cfg.session_log_glob);
-
   // drive gauntlet. launch cwd honors a .quorum-launch-cwd sentinel written by
   // setup.sh (parity with Python _resolve_launch_cwd), else the workdir. A
   // sentinel naming a path that does not exist is a runner error, not a silent
-  // launch from a nonexistent cwd.
+  // launch from a nonexistent cwd. Resolved before the opencode snapshot, which
+  // is keyed on the launch cwd.
   const launchCwd = resolveLaunchCwd(workdir);
+
+  // snapshot the agent session-log dir before the run.
+  const logDir = substituteEnv(cfg.session_log_dir, extraEnv);
+
+  // opencode does not write capturable session logs on its own: snapshot the
+  // pre-existing session ids before the run so the post-run export can diff to
+  // the NEW ones (parity with Python snapshot_opencode_sessions). An
+  // OpenCodeCaptureError -> capture indeterminate.
+  let opencodeSessionSnapshot = new Set<string>();
+  if (cfg.normalizer === 'opencode') {
+    try {
+      opencodeSessionSnapshot = snapshotOpencodeSessions({
+        home: configDir,
+        launchCwd,
+      });
+    } catch (e: unknown) {
+      if (e instanceof OpenCodeCaptureError) {
+        return writeIndeterminate({
+          finalReason: `OpenCode session snapshot failed: ${e.message}`,
+          checks: pre.records,
+          error: { stage: 'capture', message: e.message },
+        });
+      }
+      throw e;
+    }
+  }
+
+  const snapshot = snapshotDir(logDir, cfg.session_log_glob);
 
   // Populate <runDir>/gauntlet-agent/context/ with the per-agent HOWTO +
   // launcher, burning resolved absolute paths into every $… placeholder. tmux
@@ -1009,6 +1039,33 @@ async function runInner(
     }
   }
 
+  // opencode: after gauntlet exits, export the NEW sessions into the file-diffed
+  // session-log dir so the generic capture can see them (parity with Python
+  // export_opencode_sessions). Without this every opencode run captures zero
+  // rows. An OpenCodeCaptureError -> capture indeterminate carrying the gauntlet
+  // layer.
+  let opencodeExportedPaths: readonly string[] = [];
+  if (cfg.normalizer === 'opencode') {
+    try {
+      opencodeExportedPaths = exportOpencodeSessions({
+        opencodeHome: configDir,
+        exportDir: logDir,
+        launchCwd,
+        snapshot: opencodeSessionSnapshot,
+      });
+    } catch (e: unknown) {
+      if (e instanceof OpenCodeCaptureError) {
+        return writeIndeterminate({
+          finalReason: `OpenCode session export failed: ${e.message}`,
+          gauntlet,
+          checks: pre.records,
+          error: { stage: 'capture', message: e.message },
+        });
+      }
+      throw e;
+    }
+  }
+
   // capture tool calls + token usage from the new session logs. The
   // empty-capture retry/guard (PRI-2081) re-diffs a session log still being
   // flushed when the post-drive diff runs, so a transient race does not become
@@ -1036,6 +1093,28 @@ async function runInner(
     launchCwd,
   });
   const captureEmpty = capture.rowCount === 0;
+
+  // opencode export/capture snapshot mismatch (parity with the Python check that
+  // runs before the strict cascade): the export wrote session files but the
+  // file-diff capture saw none as new — an export-snapshot timing problem rather
+  // than a genuinely empty run.
+  if (
+    cfg.normalizer === 'opencode' &&
+    capture.sourceLogs.length === 0 &&
+    opencodeExportedPaths.length > 0
+  ) {
+    return writeIndeterminate({
+      finalReason:
+        'OpenCode exported session files, but file-diff capture did not ' +
+        'see them as new; check export snapshot timing',
+      gauntlet,
+      checks: pre.records,
+      error: {
+        stage: 'capture',
+        message: 'OpenCode export/capture snapshot mismatch',
+      },
+    });
+  }
 
   // copilot post-capture branch (parity with the Python copilot block, which
   // runs ahead of the generic strict-capture cascade): secret-leak scan +
