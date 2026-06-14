@@ -387,6 +387,21 @@ program
       process.exit(0);
     }
 
+    // --json never schema-validates (parity with Python's json.loads ->
+    // json.dumps): a parseable-but-off-schema verdict is dumped verbatim, and
+    // unknown top-level keys survive. Only unparseable JSON exits 2.
+    if (opts.json) {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(readFileSync(join(runDir, 'verdict.json'), 'utf8'));
+      } catch {
+        process.stderr.write('malformed verdict.json\n');
+        process.exit(2);
+      }
+      process.stdout.write(`${JSON.stringify(raw, null, 2)}\n`);
+      process.exit(0);
+    }
+
     let verdict: FinalVerdict;
     try {
       verdict = FinalVerdictSchema.parse(
@@ -399,7 +414,7 @@ program
       process.exit(2);
     }
 
-    const mode: ShowMode = opts.json ? 'json' : opts.quiet ? 'quiet' : 'full';
+    const mode: ShowMode = opts.quiet ? 'quiet' : 'full';
     process.stdout.write(
       render(verdict, runDir, {
         color: opts.color && (process.stdout.isTTY ?? false),
