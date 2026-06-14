@@ -43,13 +43,14 @@ it should send the agent under test, and when it is done.
   session log").
 `;
 
-// _SETUP_TEMPLATE — verbatim from scaffold.py 40-44.
+// Scaffolded setup.sh: invokes the TS setup-helpers via the PATH-resolved
+// `setup-helpers` shim (bin-ts/setup-helpers), matching every real scenario.
 const SETUP_TEMPLATE = `#!/usr/bin/env bash
 set -euo pipefail
-uv run setup-helpers run create_base_repo
+setup-helpers run create_base_repo
 `;
 
-// _CHECKS_TEMPLATE — verbatim from scaffold.py 46-59.
+// Scaffolded checks.sh skeleton.
 const CHECKS_TEMPLATE = `# Deterministic checks for this scenario. Run by quorum.
 # pre() runs after setup.sh, before the Coding-Agent.
 # post() runs after the Coding-Agent's run is captured.

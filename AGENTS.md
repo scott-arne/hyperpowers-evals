@@ -1,40 +1,42 @@
 # Superpowers Evals
 
-Behavioral eval lab for superpowers. Python 3.11+, managed with uv.
+Behavioral eval lab for superpowers. TypeScript, runs on Bun (≥1.3).
 
 The active runner is the Gauntlet-backed **Quorum**. Code, CLI, paths, and
 inline prose all use lowercase `quorum`.
 
 ## Commands
 
-- **install**: `uv sync --extra dev`
-- **test**: `uv run pytest`
-- **test single**: `uv run pytest tests/quorum/test_runner.py -x -q`
-- **lint**: `uv run ruff check`
-- **format**: `uv run ruff format`
-- **typecheck**: `uv run ty check`
-- **validate scenarios**: `uv run quorum check`
-- **run scenario**: `uv run quorum run scenarios/<name> --coding-agent <claude|codex>`
-- **list scenarios**: `uv run quorum list`
-- **scaffold scenario**: `uv run quorum new <name>`
-- **show verdict**: `uv run quorum show [<target>]`
+- **install**: `bun install`
+- **test**: `bun test`
+- **test single**: `bun test test/runner-unit.test.ts`
+- **lint**: `bun run lint` (biome)
+- **format**: `bun run format` (biome)
+- **typecheck**: `bun run typecheck` (tsc --noEmit)
+- **check (lint+typecheck+test)**: `bun run check`
+- **validate scenarios**: `bun run quorum check`
+- **run scenario**: `bun run quorum run scenarios/<name> --coding-agent <claude|codex>`
+- **list scenarios**: `bun run quorum list`
+- **scaffold scenario**: `bun run quorum new <name>`
+- **show verdict**: `bun run quorum show [<target>]`
 
 ## Architecture
 
-- `quorum/runner.py` — per-run orchestration: setup, pre-checks, Gauntlet drive, capture, post-checks, verdict.
-- `quorum/checks.py` — sources `checks.sh`, runs `pre()`/`post()`, collects structured check records.
-- `quorum/composer.py` — composes Gauntlet-Agent verdict + deterministic checks into `pass | fail | indeterminate`.
-- `quorum/coding_agent_config.py` — per-Coding-Agent YAML loader and session-log config.
-- `quorum/capture.py` — session-log snapshot/diff, normalized tool-call capture, token capture.
-- `quorum/normalizers.py` — Coding-Agent session-log normalizers.
-- `quorum/scaffold.py` — `quorum new` / `quorum check` implementation.
-- `quorum/show.py` — verdict renderer for triage.
+- `src/runner/` — per-run orchestration: setup, pre-checks, Gauntlet drive, capture, post-checks, verdict.
+- `src/checks/` — sources `checks.sh`, runs `pre()`/`post()`, collects structured check records.
+- `src/composer.ts` — composes Gauntlet-Agent verdict + deterministic checks into `pass | fail | indeterminate`.
+- `src/contracts/` — zod schemas + types (`verdict.ts`, `agent-config.ts`, `batch.ts`, `economics.ts`, `gauntlet.ts`).
+- `src/capture/` — session-log snapshot/diff, normalized tool-call capture; `src/obol/` prices token usage.
+- `src/normalizers/` — Coding-Agent session-log normalizers (8 dialects + registry).
+- `src/agents/` — per-Coding-Agent provisioning adapters over the `command-runner.ts` seam.
+- `src/scaffold.ts` — `quorum new` / `quorum check` implementation.
+- `src/cli/` — the `quorum` CLI; `src/run-all/` the batch matrix driver; `src/scheduler/` the concurrency dispatcher; `src/dashboard/` the web matrix.
 - `bin/` — check-tool vocabulary; tools emit one JSON record each.
 - `coding-agents/<name>.yaml` — per-Coding-Agent CLI config.
 - `coding-agents/<name>-context/HOWTO.md` — instructions copied into Gauntlet-Agent context.
 - `coding-agents/<name>-home-skeleton/` — seeded into per-run `CLAUDE_CONFIG_DIR` / `CODEX_HOME`.
 - `scenarios/*/` — active scenarios, one directory each.
-- `setup_helpers/*.py` — fixture creators (CLI: `uv run setup-helpers run <helper>`).
+- `src/setup-helpers/` — fixture creators (CLI: `setup-helpers run <helper>`).
 - `fixtures/` — static fixture repos (e.g. `template-repo/`).
 
 ## Scenario Conventions
@@ -43,7 +45,7 @@ inline prose all use lowercase `quorum`.
 - Required files: `story.md`, `setup.sh`, `checks.sh`.
 - `story.md` briefs the Gauntlet-Agent and includes acceptance criteria.
 - `setup.sh` builds the fixture using `$QUORUM_WORKDIR`; prefer
-  `uv run setup-helpers run <helper>` over inline Python.
+  `setup-helpers run <helper>` (the PATH-resolved TS shim) over inline scripting.
 - `checks.sh` contains exactly `pre()` and `post()` function definitions and no
   top-level executable statements.
 - `checks.sh` should not have the executable bit set.
@@ -63,7 +65,7 @@ quorum verdicts are three-valued:
 - `indeterminate` — setup/pre-check/capture/quorum failure, Gauntlet
   `investigate`, or empty trace when trace checks are present.
 
-Triaging a non-passing quorum run starts with `uv run quorum show [<target>]`
+Triaging a non-passing quorum run starts with `bun run quorum show [<target>]`
 and `docs/superpowers/skills/triaging-a-failing-eval.md`.
 
 ## Safety
@@ -71,10 +73,8 @@ and `docs/superpowers/skills/triaging-a-failing-eval.md`.
 Static/unit checks are safe for CI:
 
 ```
-uv run ruff check
-uv run ty check
-uv run quorum check
-uv run pytest
+bun run check          # biome + tsc + bun test
+bun run quorum check   # scenario validation
 ```
 
 Live evals are trusted-maintainer operations only. They launch agent CLIs in

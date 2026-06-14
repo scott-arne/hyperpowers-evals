@@ -1,6 +1,6 @@
 # Superpowers Evals
 
-Behavioral eval lab for superpowers. Python 3.11+, managed with uv.
+Behavioral eval lab for superpowers. TypeScript, runs on Bun (≥1.3).
 
 The active runner is the Gauntlet-backed **Quorum**. Code, CLI, paths, and
 inline prose all use lowercase `quorum`; the capitalized form `Quorum` appears
@@ -17,27 +17,28 @@ messages.
 | **Gauntlet** | General-purpose QA framework; the `gauntlet` CLI. A black-box tester. | repo `~/Code/prime/gauntlet`; on `PATH` as `gauntlet` |
 | **Gauntlet-Agent** | The LLM inside Gauntlet that drives the Coding-Agent and self-grades against the story's ACs. | model e.g. `claude-sonnet-4-6`; event stream -> `<run>/gauntlet-agent/results/<runId>/run.jsonl`; verdict -> `result.{json,md}` |
 | **Coding-Agent** | The agent under test. Instances: **Claude**, **Codex**; future **Gemini**, **Pi**. | session log -> `<run>/coding-agent-config/...`; files it writes -> `<run>/coding-agent-workdir/` |
-| **Quorum** | The Python wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and final verdict composition. | repo `superpowers-evals/quorum/`; `<run>/verdict.json` |
+| **Quorum** | The TypeScript wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and final verdict composition. | repo `superpowers-evals/src/`; `<run>/verdict.json` |
 
 A run involves two LLMs: the **Gauntlet-Agent** (QA tester) and the
 **Coding-Agent** (subject). Separate models, logs, and token costs.
 
 ## Commands
 
-- **install**: `uv sync --extra dev`
-- **test**: `uv run pytest`
-- **test single**: `uv run pytest tests/quorum/test_runner.py -x -q`
-- **lint**: `uv run ruff check`
-- **format**: `uv run ruff format`
-- **typecheck**: `uv run ty check`
-- **validate scenarios**: `uv run quorum check`
-- **run scenario**: `uv run quorum run scenarios/<name> --coding-agent <claude|codex>`
-- **list scenarios**: `uv run quorum list`
-- **scaffold scenario**: `uv run quorum new <name>`
-- **show verdict**: `uv run quorum show [<target>]`
-- **run all**: `uv run quorum run-all [--coding-agents X,Y] [--jobs N]`
-- **show batch**: `uv run quorum show <batch-id>` (matrix view)
-- **dashboard**: `uv run quorum dashboard [--port N]` (web matrix: results, launch, live progress; the TS path is `bun run src/cli/index.ts dashboard`)
+- **install**: `bun install`
+- **test**: `bun test`
+- **test single**: `bun test test/runner-unit.test.ts`
+- **lint**: `bun run lint` (biome)
+- **format**: `bun run format` (biome)
+- **typecheck**: `bun run typecheck` (tsc --noEmit)
+- **check (lint+typecheck+test)**: `bun run check`
+- **validate scenarios**: `bun run quorum check`
+- **run scenario**: `bun run quorum run scenarios/<name> --coding-agent <claude|codex>`
+- **list scenarios**: `bun run quorum list`
+- **scaffold scenario**: `bun run quorum new <name>`
+- **show verdict**: `bun run quorum show [<target>]`
+- **run all**: `bun run quorum run-all [--coding-agents X,Y] [--jobs N]`
+- **show batch**: `bun run quorum show <batch-id>` (matrix view)
+- **dashboard**: `bun run quorum dashboard [--port N]` (web matrix: results, launch, live progress)
 
 Per-coding-agent config: `coding-agents/<name>.yaml`. Per-coding-agent HOWTO:
 `coding-agents/<name>-context/HOWTO.md`. Per-coding-agent home skeleton (seeded
@@ -47,22 +48,24 @@ into the per-run `CLAUDE_CONFIG_DIR` / `CODEX_HOME`):
 
 ## Architecture
 
-- `quorum/runner.py` — per-run orchestration: setup, pre-checks, Gauntlet drive, capture, post-checks, verdict.
-- `quorum/checks.py` — sources `checks.sh`, runs `pre()`/`post()`, collects structured check records.
-- `quorum/composer.py` — composes Gauntlet-Agent verdict + deterministic checks into `pass | fail | indeterminate`.
-- `quorum/coding_agent_config.py` — per-Coding-Agent YAML loader and session-log config.
-- `quorum/capture.py` — session-log snapshot/diff, normalized tool-call capture, obol-priced token capture.
-- `quorum/obol_capture.py` — all obol calls: session-log + gauntlet-sidecar cost estimation, per-file merge.
-- `quorum/timing.py` — session-log wall-clock span (`duration_ms`).
-- `quorum/normalizers.py` — Coding-Agent session-log normalizers.
-- `quorum/scaffold.py` — `quorum new` / `quorum check` implementation.
-- `src/dashboard/` (TS port, PRI-2207) — web dashboard: `scan.ts`/`view.ts` (read side over `results/`), `templates.ts` (typed HTML renderers; `cellHtml` is the single source for first paint + SSE swaps), `event-bus.ts` (bounded SSE fan-out), `orchestrator.ts` (one-session-at-a-time launch/stop over the scheduler, pid-tracked SIGINT), `server.ts` (`Bun.serve` routes + ~1s scanner loop), `index.ts` (`startDashboard`). Specs: `docs/superpowers/specs/2026-06-11-quorum-dashboard-{visual,build}-design.md`.
-- `src/setup-helpers/` (TS port, PRI-2220) — fixture creators ported 1:1 from `setup_helpers/*.py`. Each helper takes a uniform `HelperContext` (`context.ts`); `registry.ts` maps the 36 dispatchable snake_case names to entries that declare `needsTemplateDir`/`needsSuperpowersRoot` (replacing Python's signature introspection), and `KNOWN_HELPER_NAMES` (38, incl. the two library-only `add_worktree`/`detach_head`) is the single validation set `quorum check` uses. `cli.ts` is the `setup-helpers run <helper>` entrypoint. Tier-1 helpers (git + filesystem: `base.ts`, `fs.ts`, `git.ts`, `spec-fixtures.ts`, `sdd-fixtures.ts`, `cost-fixtures.ts`, `behavior-fixtures.ts`, `triggering-fixtures.ts`, the non-codex/gemini `worktree.ts` parts, shared `pulse-dashboard.ts` constants) are hermetic and unit-tested directly; Tier-2 helpers (uv venv `provisionVenv`, `linkGeminiExtension`, `installCodexSuperpowersPluginHooks` + its `codex-app-server.ts` JSON-RPC client) route subprocess calls through `agents/command-runner.ts` so tests inject fakes. The committed `bin-ts/setup-helpers` shim plus a `bin-ts/` PATH prepend in `src/setup-step.ts` make `setup.sh`'s bare `setup-helpers run …` resolve to TS under `bun run quorum` and Python under `uv run quorum`. `test/setup-helpers-differential.test.ts` is a throwaway Python↔TS byte-parity oracle (skipped without `uv`). Python `setup_helpers/*.py` remains until the purge PR. Spec/plan: `docs/superpowers/specs/2026-06-13-quorum-setup-helpers-ts-port-design.md`, `docs/superpowers/plans/2026-06-13-quorum-setup-helpers-ts-port.md`.
-- `quorum/show.py` — verdict renderer for triage.
+- `src/runner/` — per-run orchestration: setup, pre-checks, Gauntlet drive, capture, post-checks, verdict (`index.ts`); `context.ts`, `phase.ts`, `errors.ts` (staged `RunError`), `stopped.ts`.
+- `src/checks/` — sources `checks.sh`, runs `pre()`/`post()`, collects structured check records (the `bin/` tools emit them to `QUORUM_RECORD_SINK`).
+- `src/composer.ts` — composes Gauntlet-Agent verdict + deterministic checks into `pass | fail | indeterminate`.
+- `src/contracts/` — zod schemas + types: `verdict.ts` (the `verdict.json` shape), `agent-config.ts`, `batch.ts`, `economics.ts`, `gauntlet.ts`.
+- `src/capture/` — session-log snapshot/diff + normalized tool-call capture (`index.ts`), per-backend cwd filtering (`cwd-filter.ts`).
+- `src/obol/` — all obol calls: session-log + gauntlet-sidecar cost estimation, per-file merge.
+- `src/economics.ts` — assembles the economics block carried in the verdict.
+- `src/normalizers/` — per-Coding-Agent session-log normalizers (8 dialects + `index.ts` registry + `native-tools.ts`).
+- `src/agents/` — per-Coding-Agent provisioning adapters (one per agent) over the `command-runner.ts` subprocess seam.
+- `src/scaffold.ts` — `quorum new` / `quorum check` implementation.
+- `src/scheduler/` — central concurrency dispatcher (global slot cap, per-harness cap + launch spacing) over an injectable `clock.ts`; shared by `run-all` and the dashboard.
+- `src/cli/` — the `quorum` CLI (`run`/`list`/`new`/`check`/`show`/`run-all`/`dashboard`) + verdict/batch renderers; entry `index.ts` (`bun run quorum`).
+- `src/run-all/` — batch matrix driver (scenario × agent), batch dir allocation.
+- `src/dashboard/` — web dashboard: `scan.ts`/`view.ts` (read side over `results/`), `templates.ts` (typed HTML renderers; `cellHtml` is the single source for first paint + SSE swaps), `event-bus.ts` (bounded SSE fan-out), `orchestrator.ts` (one-session-at-a-time launch/stop over the scheduler, pid-tracked SIGINT), `server.ts` (`Bun.serve` routes + ~1s scanner loop), `index.ts` (`startDashboard`).
+- `src/setup-helpers/` — fixture creators. Each helper takes a uniform `HelperContext` (`context.ts`); `registry.ts` maps the dispatchable snake_case names to entries declaring `needsTemplateDir`/`needsSuperpowersRoot`, and `KNOWN_HELPER_NAMES` is the single validation set `quorum check` uses. `cli.ts` is the `setup-helpers run <helper>` entrypoint. Tier-1 helpers (git + filesystem: `base.ts`, `fs.ts`, `git.ts`, `spec-fixtures.ts`, `sdd-fixtures.ts`, `cost-fixtures.ts`, `behavior-fixtures.ts`, `triggering-fixtures.ts`, the non-codex/gemini `worktree.ts` parts, shared `pulse-dashboard.ts` constants) are hermetic and unit-tested directly; Tier-2 helpers (`provisionVenv`, `linkGeminiExtension`, `installCodexSuperpowersPluginHooks` + its `codex-app-server.ts` JSON-RPC client) route subprocess calls through `agents/command-runner.ts` so tests inject fakes. The `bin-ts/setup-helpers` shim plus a `bin-ts/` PATH prepend in `src/setup-step.ts` make `setup.sh`'s bare `setup-helpers run …` resolve to TS.
 - `bin/` — check-tool vocabulary; tools emit one JSON record each.
 - `scenarios/` — active scenarios, one directory each.
 - `coding-agents/` — per-agent YAML, context HOWTOs, and home skeletons (see "Per-coding-agent" above).
-- `setup_helpers/*.py` — fixture creators (shared CLI: `uv run setup-helpers run <helper>`).
 
 ## Scenario Conventions
 
@@ -75,7 +78,7 @@ into the per-run `CLAUDE_CONFIG_DIR` / `CODEX_HOME`):
   hand-plan scenarios only for longitudinal comparability.
 - `story.md` briefs the Gauntlet-Agent and includes evidence-demanding ACs.
 - `setup.sh` builds the fixture using `$QUORUM_WORKDIR`; prefer
-  `uv run setup-helpers run <helper>`.
+  `setup-helpers run <helper>` (the PATH-resolved TS shim).
 - `checks.sh` contains only `pre()` and `post()` function definitions.
 - `checks.sh` should not have the executable bit set.
 - Check tools run from the fixture workdir with `bin/` on `PATH`.
@@ -88,7 +91,7 @@ into the per-run `CLAUDE_CONFIG_DIR` / `CODEX_HOME`):
 Triaging a non-passing quorum run starts with:
 
 ```
-uv run quorum show [<target>]
+bun run quorum show [<target>]
 ```
 
 Then use `docs/superpowers/skills/triaging-a-failing-eval.md` for the
@@ -99,10 +102,8 @@ attribution atlas.
 These are safe for CI and routine PRs:
 
 ```
-uv run ruff check
-uv run ty check
-uv run quorum check
-uv run pytest
+bun run check          # biome + tsc + bun test
+bun run quorum check   # scenario validation
 ```
 
 Live `quorum run ...` evals are trusted-maintainer operations only. They

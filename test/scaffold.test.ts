@@ -44,7 +44,7 @@ test('newScenario writes the three files with the right modes and content', () =
 
   const setup = readFileSync(join(dir, 'setup.sh'), 'utf8');
   expect(setup).toContain('#!/usr/bin/env bash');
-  expect(setup).toContain('uv run setup-helpers run create_base_repo');
+  expect(setup).toContain('setup-helpers run create_base_repo');
   // setup.sh chmod 0o755.
   expect(permBits(join(dir, 'setup.sh'))).toBe(0o755);
 
@@ -137,7 +137,7 @@ test('checkScenario flags an unknown setup-helpers name', () => {
   const setup = join(dir, 'setup.sh');
   writeFileSync(
     setup,
-    '#!/usr/bin/env bash\nuv run setup-helpers run not_a_real_helper\n',
+    '#!/usr/bin/env bash\nsetup-helpers run not_a_real_helper\n',
   );
   chmodSync(setup, 0o755);
   expect(checkScenario(dir)).toContain(
@@ -152,7 +152,7 @@ test('checkScenario accepts multiple known helpers on one line', () => {
   const setup = join(dir, 'setup.sh');
   writeFileSync(
     setup,
-    '#!/usr/bin/env bash\nuv run setup-helpers run create_base_repo add_worktree\n',
+    '#!/usr/bin/env bash\nsetup-helpers run create_base_repo add_worktree\n',
   );
   chmodSync(setup, 0o755);
   expect(checkScenario(dir)).toEqual([]);

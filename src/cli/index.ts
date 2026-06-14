@@ -357,8 +357,8 @@ program
     }
 
     // resultsRoot is used as-given (default 'results', relative): the rendered
-    // run-dir path mirrors it, matching the Python CLI byte-for-byte. resolve()
-    // here would print an absolute run-dir and diverge from `uv run quorum show`.
+    // run-dir path mirrors it. resolve() here would print an absolute run-dir
+    // and change the displayed path.
     let runDir: string;
     try {
       runDir = resolveTarget(target, opts.resultsRoot);

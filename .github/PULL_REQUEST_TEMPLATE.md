@@ -32,10 +32,8 @@ Risk notes:
 
 ## Tests
 <!-- Paste exact commands and outcomes. At minimum, explain whether these ran:
-     uv run ruff check
-     uv run ty check
-     uv run quorum check
-     uv run pytest
+     bun run check          # biome + tsc + bun test
+     bun run quorum check   # scenario validation
 
      Live `quorum run ...` evals are not required for every PR and must stay out
      of public CI because they require credentials and permissive agent CLIs. -->

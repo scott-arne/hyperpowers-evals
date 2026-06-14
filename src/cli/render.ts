@@ -10,10 +10,9 @@ export interface RenderOptions {
 
 type Rgb = readonly [number, number, number];
 
-// Faithful port of quorum/show.py render(). The NO-COLOR text is the parity
-// target (byte-identical to the Python CLI via `diff <(bun … show) <(uv run
-// quorum … show)`); color is TTY-only and best-effort. SOURCE OF TRUTH:
-// quorum/show.py render + _format_* + the _fmt_* helpers.
+// Verdict renderer for `quorum show`. The NO-COLOR text layout is the stable
+// contract (it was kept byte-identical to the original Python `show` output);
+// color is TTY-only and best-effort.
 
 const FOOTER =
   'see docs/superpowers/skills/triaging-a-failing-eval.md for triage.';
