@@ -8,10 +8,16 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import { antigravityRateLimitReason } from '../agents/antigravity.ts';
 import { defaultCommandRunner } from '../agents/command-runner.ts';
+import {
+  CopilotAgent,
+  type CopilotProvisioning,
+  copilotGauntletEnv,
+  scanCopilotSecretLeaks,
+} from '../agents/copilot.ts';
 import { geminiAuthType } from '../agents/gemini.ts';
 import {
   CLAUDE_ENV_FILE_NAME,
@@ -189,6 +195,11 @@ export interface InvokeGauntletResult {
 export interface InvokeGauntletArgs extends GauntletArgvArgs {
   readonly launchCwd: string;
   readonly extraEnv: Record<string, string>;
+  // Base env gauntlet inherits. Defaults to the full host snapshot; copilot
+  // passes a tightly-scoped allowlist (copilotGauntletEnv) so the host
+  // environment (other provider keys, credentialed proxies) is not leaked into
+  // the agent subprocess (parity with Python's env_base).
+  readonly envBase?: Readonly<Record<string, string | undefined>> | undefined;
 }
 
 // The gauntlet child currently in flight for this process (one run per process),
@@ -215,7 +226,7 @@ function spawnGauntlet(a: InvokeGauntletArgs): Promise<GauntletExit> {
   return new Promise<GauntletExit>((resolvePromise, rejectPromise) => {
     const child = spawn('gauntlet', buildGauntletArgv(a), {
       env: {
-        ...envSnapshot(),
+        ...(a.envBase ?? envSnapshot()),
         QUORUM_AGENT_CWD: a.launchCwd,
         ...a.extraEnv,
       },
@@ -553,6 +564,83 @@ export function codexMisplacedVerdict(
   });
 }
 
+// Render a path relative to `base` when it is under it, else the absolute path
+// (parity with Python's `path.relative_to(base) if is_relative_to else path`).
+function relIfUnder(base: string, path: string): string {
+  const rel = relative(base, path);
+  return rel.startsWith('..') ? path : rel;
+}
+
+export interface CopilotCascadeArgs {
+  readonly runDir: string;
+  readonly sessionLogDir: string;
+  readonly expectedEventsLog: string;
+  readonly envFile: string;
+  readonly secretValues: readonly string[];
+  readonly sourceLogs: readonly string[];
+  readonly gauntlet: GauntletLayer;
+  readonly preRecords: readonly CheckRecord[];
+}
+
+// Copilot post-capture branch (parity with the Python copilot capture-stage
+// block). In order: (1) a secret-leak scan over the whole run dir (skipping the
+// env file that legitimately holds the secret) -> indeterminate naming the
+// leaking artifacts; (2) the expected session-state events.jsonl must be among
+// the captured source logs; (3) no UNEXPECTED session-state logs may appear.
+// Returns null to proceed when the run is clean.
+export function copilotCascadeVerdict(
+  a: CopilotCascadeArgs,
+): FinalVerdict | null {
+  const resolveP = (p: string): string => resolve(p);
+  const indeterminate = (finalReason: string, error: RunError): FinalVerdict =>
+    writeIndeterminate({
+      finalReason,
+      gauntlet: a.gauntlet,
+      checks: a.preRecords,
+      error,
+    });
+
+  const leaks = scanCopilotSecretLeaks(a.runDir, a.secretValues, [a.envFile]);
+  if (leaks.length > 0) {
+    const rel = leaks.map((p) => relIfUnder(a.runDir, p));
+    return indeterminate(
+      `Copilot secret value appeared in non-secret run artifact: ${rel.join(', ')}`,
+      {
+        stage: 'capture',
+        message: 'Copilot secret value leaked into run artifact',
+      },
+    );
+  }
+
+  const expectedResolved = resolveP(a.expectedEventsLog);
+  const sourceResolved = a.sourceLogs.map(resolveP);
+  if (a.sourceLogs.length > 0 && !sourceResolved.includes(expectedResolved)) {
+    return indeterminate(
+      `expected Copilot session-state log did not appear: ${a.expectedEventsLog}`,
+      {
+        stage: 'capture',
+        message: 'expected Copilot session-state log missing',
+      },
+    );
+  }
+
+  const unexpected = a.sourceLogs.filter(
+    (p) => resolveP(p) !== expectedResolved,
+  );
+  if (unexpected.length > 0) {
+    const rel = unexpected.map((p) => relIfUnder(a.sessionLogDir, p));
+    return indeterminate(
+      `unexpected Copilot session-state log(s) appeared: ${rel.join(', ')}`,
+      {
+        stage: 'capture',
+        message: 'unexpected Copilot session-state log captured',
+      },
+    );
+  }
+
+  return null;
+}
+
 // Run one scenario end to end. Always allocates a run dir and always writes
 // verdict.json; a thrown invariant maps to an indeterminate verdict via the
 // composer (6.1) rather than escaping.
@@ -737,17 +825,31 @@ async function runInner(
   const configDir = join(runDir, 'coding-agent-config');
   const workdir = join(runDir, 'coding-agent-workdir');
   mkdirSync(workdir, { recursive: true });
-  // skeletonRoot default = the coding-agents dir itself, so ClaudeAgent copies
-  // <codingAgentsDir>/claude-home-skeleton (parity with quorum/runner.py, which
-  // defaults skeleton_root to _quorum_repo_root()/"coding-agents").
-  const extraEnv = agent.provision(
-    {
-      configDir,
-      workdir,
-      skeletonRoot: a.skeletonRoot ?? a.codingAgentsDir,
-    },
-    defaultCommandRunner,
-  );
+  const home = {
+    configDir,
+    workdir,
+    // skeletonRoot default = the coding-agents dir itself, so ClaudeAgent copies
+    // <codingAgentsDir>/claude-home-skeleton (parity with quorum/runner.py,
+    // which defaults skeleton_root to _quorum_repo_root()/"coding-agents").
+    skeletonRoot: a.skeletonRoot ?? a.codingAgentsDir,
+  };
+  // copilot is special-cased: it mints a per-run session id, threads it through
+  // provisionCopilot, and returns the rich CopilotProvisioning record the runner
+  // needs for the $QUORUM_COPILOT_SESSION_ID substitution, the gauntlet env base,
+  // and the post-run secret-leak / session-state cascade (parity with Python's
+  // copilot branch). Every other agent uses the declarative provision() motion.
+  let copilotProvisioning: CopilotProvisioning | undefined;
+  let extraEnv: Record<string, string>;
+  if (cfg.name === 'copilot' && agent instanceof CopilotAgent) {
+    copilotProvisioning = agent.provisionCopilot(
+      home,
+      defaultCommandRunner,
+      crypto.randomUUID(),
+    );
+    extraEnv = copilotProvisioning.env;
+  } else {
+    extraEnv = agent.provision(home, defaultCommandRunner);
+  }
   // setup.sh needs QUORUM_REPO_ROOT (some fixtures resolve repo-relative paths /
   // setup-helpers against it). Parity with quorum/runner.py 1826/1831:
   //   env_extra = {"QUORUM_REPO_ROOT": str(_quorum_repo_root())}
@@ -844,10 +946,16 @@ async function runInner(
   if (cfg.name === 'pi') {
     substitutions['$PI_ENV_FILE'] = join(configDir, 'pi.env');
   }
-  if (cfg.name === 'copilot') {
-    const copilotEnvFile = join(configDir, '.copilot-env');
-    substitutions['$COPILOT_ENV_FILE'] = copilotEnvFile;
-    substitutions['$COPILOT_ENV_FILE_SH'] = shellSingleQuote(copilotEnvFile);
+  if (cfg.name === 'copilot' && copilotProvisioning !== undefined) {
+    // Use the provisioning record's env file + minted session id (parity with
+    // Python copilot_provisioning.env_file / .session_id) so the launcher's
+    // `--session-id "$QUORUM_COPILOT_SESSION_ID"` resolves and the capture can
+    // find the matching session-state/<id>/events.jsonl.
+    substitutions['$COPILOT_ENV_FILE'] = copilotProvisioning.envFile;
+    substitutions['$COPILOT_ENV_FILE_SH'] = shellSingleQuote(
+      copilotProvisioning.envFile,
+    );
+    substitutions['$QUORUM_COPILOT_SESSION_ID'] = copilotProvisioning.sessionId;
   }
   // NOTE: provision-supplied substitutions the TS provision does not yet expose:
   //   - kimi: $KIMI_ENV_FILE / $KIMI_BINARY (KimiAgent.provision RETURNS these in
@@ -855,10 +963,6 @@ async function runInner(
   //     substitution set; threading provision-substitutions back to the runner is
   //     deferred). The kimi-context launcher will carry unresolved placeholders
   //     until that lands.
-  //   - copilot: $QUORUM_COPILOT_SESSION_ID (minted inside CopilotAgent.provision;
-  //     not yet surfaced). The $COPILOT_ENV_FILE path above is derived, but the
-  //     real Python uses copilot_provisioning.env_file — verify before a live
-  //     copilot run.
   // CLAUDE needs none of these, so the claude context-dir path is COMPLETE.
   populateContextDir({
     codingAgentsDir: a.codingAgentsDir,
@@ -869,6 +973,13 @@ async function runInner(
     forbiddenPlaceholders: family === 'claude' ? ['$CLAUDE_MODEL'] : [],
   });
 
+  // copilot: gauntlet inherits a tightly-scoped allowlist instead of the full
+  // host env, and a proxy var carrying credentialed userinfo is rejected
+  // (parity with Python _copilot_gauntlet_env). copilotGauntletEnv can throw a
+  // ProvisionError (credentialed proxy) -> mapped to a setup indeterminate.
+  const gauntletEnvBase =
+    cfg.name === 'copilot' ? copilotGauntletEnv(envSnapshot()) : undefined;
+
   writePhase(runDir, 'agent');
   const { gauntlet } = await invokeGauntlet({
     storyPath,
@@ -878,6 +989,7 @@ async function runInner(
     projectPrompt: cfg.project_prompt,
     launchCwd,
     extraEnv,
+    envBase: gauntletEnvBase,
   });
 
   // antigravity: a rate-limited Code Assist backend is an environmental
@@ -924,6 +1036,25 @@ async function runInner(
     launchCwd,
   });
   const captureEmpty = capture.rowCount === 0;
+
+  // copilot post-capture branch (parity with the Python copilot block, which
+  // runs ahead of the generic strict-capture cascade): secret-leak scan +
+  // expected/unexpected session-state log checks, using the provisioning record.
+  if (cfg.normalizer === 'copilot' && copilotProvisioning !== undefined) {
+    const copilotVerdict = copilotCascadeVerdict({
+      runDir,
+      sessionLogDir: logDir,
+      expectedEventsLog: copilotProvisioning.expectedEventsLog,
+      envFile: copilotProvisioning.envFile,
+      secretValues: copilotProvisioning.secretValues,
+      sourceLogs: capture.sourceLogs,
+      gauntlet,
+      preRecords: pre.records,
+    });
+    if (copilotVerdict !== null) {
+      return copilotVerdict;
+    }
+  }
 
   // Per-normalizer strict-capture / diagnostic cascade (parity with the Python
   // capture-stage block). A strict backend (claude/gemini/antigravity/opencode/
