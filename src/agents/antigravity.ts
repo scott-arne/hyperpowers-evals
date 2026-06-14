@@ -1,15 +1,19 @@
+import { spawnSync } from 'node:child_process';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import type { AgentConfig } from '../contracts/agent-config.ts';
 import { envSnapshot, getEnv } from '../env.ts';
 import { agyLogShowsRateLimit } from './agy-watch.ts';
@@ -55,6 +59,26 @@ const REQUIRED_PLUGIN_FILES: readonly string[] = [
   join('skills', 'using-superpowers', 'SKILL.md'),
 ];
 
+// Env override for the parent of the visible-symlink workspace tree, and the
+// per-run record file the substitution writes under run_dir. Mirror the Python
+// ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV / ANTIGRAVITY_VISIBLE_LAUNCH_RECORD.
+export const ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV =
+  'QUORUM_ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT';
+export const ANTIGRAVITY_VISIBLE_LAUNCH_RECORD =
+  'antigravity-visible-launch-cwd.json';
+
+// PATH probe for the agy binary. The Python guards `shutil.which("agy") is None`
+// in _seed_antigravity_config; we mirror that with Bun.which, behind an
+// injectable seam so the hermetic gate (no agy on PATH) can stub it.
+type AgyWhichProbe = () => boolean;
+const defaultAgyWhich: AgyWhichProbe = () => Bun.which('agy') !== null;
+let agyWhichProbe: AgyWhichProbe = defaultAgyWhich;
+
+/** Override the agy PATH probe (tests only). Pass null to restore the default. */
+export function setAgyWhichForTesting(probe: AgyWhichProbe | null): void {
+  agyWhichProbe = probe ?? defaultAgyWhich;
+}
+
 export class AntigravityAgent implements CodingAgent {
   readonly config: AgentConfig;
 
@@ -74,10 +98,13 @@ export class AntigravityAgent implements CodingAgent {
         'SUPERPOWERS_ROOT not set; cannot install antigravity Superpowers plugin',
       );
     }
-    // The Python additionally guards `shutil.which("agy") is None`. We drive agy
-    // through the injected runner instead of resolving it on PATH, so the seam
-    // (and the real SpawnCommandRunner) surfaces a missing binary as a non-zero
-    // / null status that the call sites below convert to a ProvisionError.
+    // Fail fast with the precise diagnostic when agy is absent, before any work
+    // (parity with shutil.which("agy") in _seed_antigravity_config).
+    if (!agyWhichProbe()) {
+      throw new ProvisionError(
+        'agy not found on PATH; cannot run antigravity evals',
+      );
+    }
 
     mkdirSync(configDir, { recursive: true });
 
@@ -206,9 +233,16 @@ export class AntigravityAgent implements CodingAgent {
 
 // Persist no-prompt settings for the isolated Antigravity run (port of
 // _write_antigravity_settings). Parses any existing settings.json (boundary)
-// rather than asserting its shape, merges trustedWorkspaces, and pins the
-// always-proceed permission posture.
-function writeAntigravitySettings(configDir: string, workdir: string): void {
+// rather than asserting its shape, merges the given workspace into
+// trustedWorkspaces (idempotent), and pins the always-proceed permission
+// posture. Python calls this TWICE: once at provision time with the workdir,
+// and again from the runner after launch-cwd resolution with the RESOLVED
+// (possibly visible-aliased) launch cwd — so the agent trusts the actual
+// workspace. Exported so the runner (Wave 2b) can perform that second write.
+export function writeAntigravitySettings(
+  configDir: string,
+  workdir: string,
+): void {
   const settingsPath = join(
     configDir,
     '.gemini',
@@ -343,5 +377,153 @@ function walkForTranscripts(dir: string, found: string[]): void {
     } else if (entry === 'transcript.jsonl') {
       found.push(full);
     }
+  }
+}
+
+// True if any component of *path* is a dot-prefixed (hidden) directory. Mirrors
+// _path_has_hidden_component: "." and ".." themselves are not hidden.
+function pathHasHiddenComponent(path: string): boolean {
+  return path
+    .split('/')
+    .some((part) => part.startsWith('.') && part !== '.' && part !== '..');
+}
+
+// Run a read-only git probe under *cwd*. Returns the trimmed stdout and the
+// exit status. Used only for the info/exclude marker bookkeeping below; this is
+// not an agent-CLI invocation, so it does not route through the CommandRunner
+// provisioning seam (matching how setup-helpers/git.ts shells git directly).
+function gitProbe(
+  cwd: string,
+  args: string[],
+): { status: number | null; stdout: string } {
+  const proc = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+  return { status: proc.status, stdout: (proc.stdout ?? '').trim() };
+}
+
+/**
+ * Ignore Antigravity's project marker in the launch repo when one exists.
+ *
+ * Before launching agy, detect whether *launchCwd* is inside a git work tree
+ * and, if so, append `.antigravitycli/` to the repo's git info/exclude
+ * (idempotently, honoring an absolute vs relative git-path and trailing-newline
+ * normalization). This keeps agy's per-run project marker directory out of the
+ * eval repo's git status / dirty-tree assertions. Port of
+ * _exclude_antigravity_project_marker. Exported for the runner (Wave 2b).
+ */
+export function excludeAntigravityProjectMarker(launchCwd: string): void {
+  const inside = gitProbe(launchCwd, ['rev-parse', '--is-inside-work-tree']);
+  if (inside.status !== 0 || inside.stdout !== 'true') {
+    return;
+  }
+
+  const gitPath = gitProbe(launchCwd, [
+    'rev-parse',
+    '--git-path',
+    'info/exclude',
+  ]).stdout;
+  let excludePath = gitPath;
+  if (!isAbsolute(excludePath)) {
+    excludePath = join(launchCwd, excludePath);
+  }
+  mkdirSync(join(excludePath, '..'), { recursive: true });
+  const existing = existsSync(excludePath)
+    ? readFileSync(excludePath, 'utf8').split('\n')
+    : [];
+  // splitlines() drops the trailing-newline empty element; emulate that for the
+  // membership/last-line checks so we match Python's behavior exactly.
+  const lines =
+    existing.length > 0 && existing[existing.length - 1] === ''
+      ? existing.slice(0, -1)
+      : existing;
+  if (lines.includes('.antigravitycli/')) {
+    return;
+  }
+  const prefix = lines.length > 0 && lines[lines.length - 1] !== '' ? '\n' : '';
+  const current = existsSync(excludePath)
+    ? readFileSync(excludePath, 'utf8')
+    : '';
+  writeFileSync(excludePath, `${current}${prefix}.antigravitycli/\n`);
+}
+
+/**
+ * Return an Antigravity-safe launch cwd.
+ *
+ * Antigravity rejects `--add-dir` workspaces whose path contains hidden
+ * (dot-prefixed) components. Quorum runs often live under `.codex/`, so when
+ * *launchCwd* has a hidden component this exposes the same directory through a
+ * visible temp symlink alias, validates the visible root is itself non-hidden,
+ * reuses an existing matching alias, errors on a conflicting alias, and records
+ * the substitution under *runDir*. Port of _prepare_antigravity_launch_cwd.
+ * Exported for the runner (Wave 2b).
+ */
+export function prepareAntigravityLaunchCwd(
+  launchCwd: string,
+  runDir: string,
+): string {
+  if (!pathHasHiddenComponent(launchCwd)) {
+    return launchCwd;
+  }
+
+  const configuredRoot = getEnv(ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV);
+  let visibleRoot =
+    configuredRoot !== undefined && configuredRoot !== ''
+      ? expandUser(configuredRoot)
+      : join(tmpdir(), 'quorum-antigravity-workspaces');
+  if (!isAbsolute(visibleRoot)) {
+    visibleRoot = resolve(visibleRoot);
+  }
+  if (pathHasHiddenComponent(visibleRoot)) {
+    throw new ProvisionError(
+      `${ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV}=${visibleRoot} contains a ` +
+        'hidden path component; Antigravity would reject it as a workspace',
+    );
+  }
+
+  const aliasParent = join(visibleRoot, basename(runDir));
+  mkdirSync(aliasParent, { recursive: true });
+  const alias = join(aliasParent, basename(launchCwd) || 'workspace');
+  if (existsSync(alias) || isSymlink(alias)) {
+    if (isSymlink(alias) && realpathSync(alias) === realpathSync(launchCwd)) {
+      return alias;
+    }
+    throw new ProvisionError(
+      `cannot prepare Antigravity visible launch cwd; ${alias} already exists`,
+    );
+  }
+
+  symlinkSync(realpathSync(launchCwd), alias, 'dir');
+  writeFileSync(
+    join(runDir, ANTIGRAVITY_VISIBLE_LAUNCH_RECORD),
+    JSON.stringify(
+      {
+        launch_cwd: launchCwd,
+        visible_launch_cwd: alias,
+        reason: 'Antigravity rejects --add-dir paths with hidden components',
+      },
+      null,
+      2,
+    ),
+  );
+  return alias;
+}
+
+// Expand a leading ~ to the user's home dir (Python Path.expanduser parity).
+function expandUser(path: string): string {
+  if (path === '~') {
+    return homedir();
+  }
+  if (path.startsWith('~/')) {
+    return join(homedir(), path.slice(2));
+  }
+  return path;
+}
+
+// True if *path* is a symlink (lstat without following). Tolerates a missing
+// path by returning false.
+function isSymlink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
   }
 }

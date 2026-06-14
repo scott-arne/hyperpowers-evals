@@ -1,21 +1,40 @@
-import { expect, test } from 'bun:test';
+import { afterEach, beforeEach, expect, test } from 'bun:test';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  readlinkSync,
+  realpathSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import {
   ANTIGRAVITY_RATE_LIMIT_MARKER,
+  ANTIGRAVITY_VISIBLE_LAUNCH_RECORD,
+  ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV,
   AntigravityAgent,
+  excludeAntigravityProjectMarker,
+  prepareAntigravityLaunchCwd,
+  setAgyWhichForTesting,
+  writeAntigravitySettings,
 } from '../src/agents/antigravity.ts';
 import type { CommandResult } from '../src/agents/command-runner.ts';
 import { ProvisionError } from '../src/agents/index.ts';
 import type { AgentConfig } from '../src/contracts/agent-config.ts';
 import { FakeCommandRunner } from './fake-command-runner.ts';
 import { makeTempHome } from './provision-helpers.ts';
+
+// The provision() which-guard probes PATH for `agy`. CI has no agy binary, so
+// stub the probe to "present" for the provisioning tests; the dedicated
+// which-guard test overrides it to "absent".
+beforeEach(() => {
+  setAgyWhichForTesting(() => true);
+});
+afterEach(() => {
+  setAgyWhichForTesting(null);
+});
 
 // An antigravity.yaml-shaped config (mirrors coding-agents/antigravity.yaml).
 // The fields the adapter reads are agent_config_env and required_env.
@@ -487,6 +506,190 @@ test('settings.json secret-free config is a regular file (mode parity guard)', (
       // Sanity: the always-proceed posture exposes no API key on disk.
       expect(readFileSync(settingsPath, 'utf8')).not.toContain('sk-');
     });
+  } finally {
+    cleanup();
+  }
+});
+
+// B2-antigravity-which-guard-dropped: provision must fail fast with the precise
+// "agy not found on PATH" diagnostic when the binary is absent, before any work.
+test('provision throws ProvisionError when agy is not on PATH', () => {
+  const { home, cleanup } = makeTempHome();
+  const spRoot = join(home.workdir, '..', 'superpowers-src');
+  const runner = new FakeCommandRunner(happyResponder);
+
+  try {
+    withRoot(spRoot, () => {
+      setAgyWhichForTesting(() => false); // agy absent
+      const agent = new AntigravityAgent(ANTIGRAVITY_CONFIG);
+      let caught: unknown;
+      try {
+        agent.provision(home, runner);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(ProvisionError);
+      expect((caught as ProvisionError).message).toContain(
+        'agy not found on PATH',
+      );
+      // The guard precedes all subprocess work and the configDir mkdir.
+      expect(runner.calls.length).toBe(0);
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+// B2-antigravity-exclude-project-marker-missing: when launch_cwd is inside a git
+// work tree, append `.antigravitycli/` to info/exclude idempotently.
+test('excludeAntigravityProjectMarker adds .antigravitycli/ to a git work tree info/exclude', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    const repo = join(home.workdir, 'repo');
+    mkdirSync(repo, { recursive: true });
+    // A real git repo so the rev-parse checks pass via the default runner.
+    Bun.spawnSync(['git', 'init', '-q', repo]);
+    excludeAntigravityProjectMarker(repo);
+    const excludePath = join(repo, '.git', 'info', 'exclude');
+    const lines = readFileSync(excludePath, 'utf8').split('\n');
+    expect(lines).toContain('.antigravitycli/');
+    // Idempotent: a second call must not duplicate the entry.
+    excludeAntigravityProjectMarker(repo);
+    const occurrences = readFileSync(excludePath, 'utf8')
+      .split('\n')
+      .filter((l) => l === '.antigravitycli/').length;
+    expect(occurrences).toBe(1);
+  } finally {
+    cleanup();
+  }
+});
+
+test('excludeAntigravityProjectMarker is a noop outside a git work tree', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    const plain = join(home.workdir, 'plain');
+    mkdirSync(plain, { recursive: true });
+    // Must not throw and must not create a .git tree.
+    excludeAntigravityProjectMarker(plain);
+    expect(existsSync(join(plain, '.git'))).toBe(false);
+  } finally {
+    cleanup();
+  }
+});
+
+// B2-antigravity-prepare-launch-cwd-missing: a launch cwd with a hidden path
+// component (e.g. under .codex/) gets a visible temp symlink alias.
+test('prepareAntigravityLaunchCwd returns a visible symlink alias for a hidden-component cwd', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    const hidden = join(home.workdir, '.codex', 'project');
+    mkdirSync(hidden, { recursive: true });
+    const runDir = join(home.workdir, 'run-001');
+    mkdirSync(runDir, { recursive: true });
+    const visibleRoot = join(home.workdir, 'visible-ws');
+
+    const prev = process.env[ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV];
+    process.env[ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV] = visibleRoot;
+    try {
+      const alias = prepareAntigravityLaunchCwd(hidden, runDir);
+      expect(alias).not.toBe(hidden);
+      expect(lstatSync(alias).isSymbolicLink()).toBe(true);
+      // The symlink target is the realpath'd launch cwd (Python .resolve()).
+      expect(readlinkSync(alias)).toBe(realpathSync(hidden));
+      // No hidden component in the alias path.
+      expect(
+        alias.split('/').some((p) => p.startsWith('.') && p.length > 1),
+      ).toBe(false);
+      // A record of the substitution lands under run_dir.
+      const record = JSON.parse(
+        readFileSync(join(runDir, ANTIGRAVITY_VISIBLE_LAUNCH_RECORD), 'utf8'),
+      );
+      expect(record.launch_cwd).toBe(hidden);
+      expect(record.visible_launch_cwd).toBe(alias);
+      // Idempotent: a second call reuses the same alias.
+      expect(prepareAntigravityLaunchCwd(hidden, runDir)).toBe(alias);
+    } finally {
+      if (prev === undefined) {
+        delete process.env[ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV];
+      } else {
+        process.env[ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV] = prev;
+      }
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+test('prepareAntigravityLaunchCwd returns the cwd unchanged when it has no hidden component', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    const visible = join(home.workdir, 'visible', 'project');
+    mkdirSync(visible, { recursive: true });
+    const runDir = join(home.workdir, 'run-002');
+    mkdirSync(runDir, { recursive: true });
+    expect(prepareAntigravityLaunchCwd(visible, runDir)).toBe(visible);
+    expect(existsSync(join(runDir, ANTIGRAVITY_VISIBLE_LAUNCH_RECORD))).toBe(
+      false,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test('prepareAntigravityLaunchCwd rejects a hidden visible-workspace root', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    const hidden = join(home.workdir, '.codex', 'project');
+    mkdirSync(hidden, { recursive: true });
+    const runDir = join(home.workdir, 'run-003');
+    mkdirSync(runDir, { recursive: true });
+    // A visible root that itself has a hidden component must be rejected.
+    const badRoot = join(home.workdir, '.hidden-root');
+
+    const prev = process.env[ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV];
+    process.env[ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV] = badRoot;
+    try {
+      expect(() => prepareAntigravityLaunchCwd(hidden, runDir)).toThrow(
+        ProvisionError,
+      );
+    } finally {
+      if (prev === undefined) {
+        delete process.env[ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV];
+      } else {
+        process.env[ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV] = prev;
+      }
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+// B2-x-antigravity-settings-launch-cwd-not-trusted: the runner re-writes
+// settings with the RESOLVED launch cwd so trustedWorkspaces includes it.
+test('writeAntigravitySettings re-trust adds the launch cwd to an existing settings.json', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    const configDir = home.configDir;
+    const workdir = join(home.workdir, 'wd');
+    mkdirSync(workdir, { recursive: true });
+    const launchCwd = join(home.workdir, 'launch-cwd');
+    mkdirSync(launchCwd, { recursive: true });
+
+    // First write (provision-time) trusts the workdir.
+    writeAntigravitySettings(configDir, workdir);
+    // Second write (runner-time) with the resolved launch cwd.
+    writeAntigravitySettings(configDir, launchCwd);
+
+    const settingsPath = join(
+      configDir,
+      '.gemini',
+      'antigravity-cli',
+      'settings.json',
+    );
+    const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+    expect(settings.trustedWorkspaces).toContain(workdir);
+    expect(settings.trustedWorkspaces).toContain(launchCwd);
+    expect(settings.trustedWorkspaces).toContain(resolve(launchCwd));
   } finally {
     cleanup();
   }
