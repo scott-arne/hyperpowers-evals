@@ -729,6 +729,18 @@ test('tool-arg-match with no matcher flag exits 127 (E2E)', async () => {
   expect(r.lastRecord?.['passed']).toBe(false);
 });
 
+test('tool-arg-match with --matches but no spec exits 127, not a silent pass (E2E)', async () => {
+  // `--matches` with no following key=value would parse to {keys:[], expected:''}
+  // which matches every Bash call → silent pass. The CLI must reject it as a
+  // broken (non-invertible) check.
+  const r = await runCLI(
+    ['tool-arg-match', 'Bash', '--matches'],
+    [call('Bash', { command: 'ls' })],
+  );
+  expect(r.exitCode).toBe(127);
+  expect(r.lastRecord?.['passed']).toBe(false);
+});
+
 // ---------------------------------------------------------------------------
 // Record shape verification
 // ---------------------------------------------------------------------------

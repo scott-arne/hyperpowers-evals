@@ -99,6 +99,29 @@ function dispatchInner(): void {
       verbName,
     );
   }
+  // Each --eq/--matches must be followed by a well-formed `key=value` spec: a
+  // missing or keyless spec parses to {keys:[], expected:''}, which matches
+  // every call → silent pass. Reject it as a broken (non-invertible) check.
+  // Key extraction mirrors parseToolArgMatchArgs so the gate is exact.
+  if (verbName === 'tool-arg-match') {
+    for (let i = 0; i < cliArgs.length; i++) {
+      if (cliArgs[i] === '--eq' || cliArgs[i] === '--matches') {
+        const spec = cliArgs[i + 1] ?? '';
+        const eqIdx = spec.indexOf('=');
+        const keyPart = eqIdx >= 0 ? spec.slice(0, eqIdx) : '';
+        const keys = keyPart
+          .split(',')
+          .map((k) => k.trim())
+          .filter((k) => k.length > 0);
+        if (eqIdx < 0 || keys.length === 0) {
+          brokenCheck(
+            `check-transcript tool-arg-match: ${cliArgs[i]} needs a key=value spec with a non-empty key`,
+            verbName,
+          );
+        }
+      }
+    }
+  }
 
   switch (verbName) {
     case 'tool-called': {
