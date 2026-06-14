@@ -10,7 +10,16 @@ import {
 } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { z } from 'zod';
-import { antigravityRateLimitReason } from '../agents/antigravity.ts';
+import { backupCredential } from '../agents/agy-creds.ts';
+import { killRunTmuxServer } from '../agents/agy-teardown.ts';
+import { AgyRateLimitWatcher } from '../agents/agy-watch.ts';
+import {
+  ANTIGRAVITY_RATE_LIMIT_MARKER,
+  antigravityRateLimitReason,
+  excludeAntigravityProjectMarker,
+  prepareAntigravityLaunchCwd,
+  writeAntigravitySettings,
+} from '../agents/antigravity.ts';
 import { defaultCommandRunner } from '../agents/command-runner.ts';
 import {
   CopilotAgent,
@@ -187,6 +196,36 @@ export function gauntletLayerFromRunDir(runDir: string): GauntletLayer | null {
     };
   }
   return null;
+}
+
+// Kill the gauntlet tmux server driving agy for this run (parity with Python
+// _kill_gauntlet_tmux_for_run). Gauntlet runs agy in a private tmux server whose
+// pane cwd is <runDir>/gauntlet-agent/results/<runId>/scratch; the runId is
+// minted inside gauntlet, but quorum is single-run-per-dir so exactly one such
+// scratch dir exists. Globs them, takes the last, and hands it to the killer
+// (which matches the server by strict pane-path equality). The killer is
+// injectable so the watcher's teardown and tests can stub the real tmux kill.
+export function killGauntletTmuxForRun(
+  runDir: string,
+  kill: (scratchDir: string) => boolean,
+): boolean {
+  const resultsRoot = join(runDir, 'gauntlet-agent', 'results');
+  if (!existsSync(resultsRoot)) {
+    return false;
+  }
+  const scratchDirs: string[] = [];
+  for (const name of readdirSync(resultsRoot)) {
+    const scratch = join(resultsRoot, name, 'scratch');
+    if (existsSync(scratch)) {
+      scratchDirs.push(scratch);
+    }
+  }
+  scratchDirs.sort();
+  const last = scratchDirs[scratchDirs.length - 1];
+  if (last === undefined) {
+    return false;
+  }
+  return kill(last);
 }
 
 // Outcome of a gauntlet drive: always a layer, derived from the run dir's
@@ -897,7 +936,20 @@ async function runInner(
   // sentinel naming a path that does not exist is a runner error, not a silent
   // launch from a nonexistent cwd. Resolved before the opencode snapshot, which
   // is keyed on the launch cwd.
-  const launchCwd = resolveLaunchCwd(workdir);
+  let launchCwd = resolveLaunchCwd(workdir);
+
+  // antigravity launch-cwd preparation (parity with Python): (1) git-exclude the
+  // per-run project marker so it never dirties the launch repo; (2) when the
+  // launch cwd has a hidden path component (quorum runs live under .codex/ etc.)
+  // expose it through a visible temp symlink, since Antigravity rejects --add-dir
+  // workspaces with hidden components; (3) re-write trusted-workspaces settings
+  // against the RESOLVED launch cwd (provision wrote them against the raw
+  // workdir, before the sentinel/symlink was known).
+  if (cfg.normalizer === 'antigravity') {
+    excludeAntigravityProjectMarker(launchCwd);
+    launchCwd = prepareAntigravityLaunchCwd(launchCwd, runDir);
+    writeAntigravitySettings(configDir, launchCwd);
+  }
 
   // snapshot the agent session-log dir before the run.
   const logDir = substituteEnv(cfg.session_log_dir, extraEnv);
@@ -1011,29 +1063,84 @@ async function runInner(
     cfg.name === 'copilot' ? copilotGauntletEnv(envSnapshot()) : undefined;
 
   writePhase(runDir, 'agent');
-  const { gauntlet } = await invokeGauntlet({
-    storyPath,
-    targetBinary: cfg.binary,
-    runDir,
-    maxTime,
-    projectPrompt: cfg.project_prompt,
-    launchCwd,
-    extraEnv,
-    envBase: gauntletEnvBase,
-  });
 
-  // antigravity: a rate-limited Code Assist backend is an environmental
-  // indeterminate, not pass/fail (parity with quorum/runner.py, which maps it
-  // ahead of the generic empty-trace path). spawnSync blocks, so we scan the
-  // post-run agy.log rather than tailing it live; the early-teardown watcher is
-  // deferred. This precedes the capture handling.
-  if (cfg.normalizer === 'antigravity') {
+  // antigravity: agy reads auth from the live, token-rotating ~/.gemini/
+  // oauth_creds.json. A SIGKILL/tmux-kill during a refresh can corrupt it and
+  // brick the shared account — back it up before the run and verify/restore in a
+  // finally (best-effort, restore only if the live file is missing or corrupt).
+  // A live AgyRateLimitWatcher tails the run's agy.log during the drive and, on
+  // a confirmed Code Assist 429, tears down gauntlet's private tmux server so the
+  // cell fails fast instead of burning its full budget (parity with Python's
+  // invoke_gauntlet watcher + agy_creds guard).
+  const isAntigravity = cfg.normalizer === 'antigravity';
+  const credBackup = isAntigravity ? backupCredential() : null;
+  let watcher: AgyRateLimitWatcher | null = null;
+  if (isAntigravity) {
+    const agyLog = join(configDir, 'agy.log');
+    mkdirSync(join(agyLog, '..'), { recursive: true });
+    if (!existsSync(agyLog)) {
+      // Pre-touch for a stable inode: agy (not quorum) creates the log when the
+      // QA agent runs the launcher, which races the watcher's first poll.
+      writeFileSync(agyLog, '');
+    }
+    watcher = new AgyRateLimitWatcher(agyLog, runDir, {
+      teardown: (target: string) =>
+        killGauntletTmuxForRun(target, (scratch) => killRunTmuxServer(scratch)),
+    });
+    watcher.start();
+  }
+
+  let gauntlet: GauntletLayer;
+  try {
+    ({ gauntlet } = await invokeGauntlet({
+      storyPath,
+      targetBinary: cfg.binary,
+      runDir,
+      maxTime,
+      projectPrompt: cfg.project_prompt,
+      launchCwd,
+      extraEnv,
+      envBase: gauntletEnvBase,
+    }));
+  } finally {
+    if (watcher !== null) {
+      await watcher.stop();
+    }
+    if (credBackup !== null) {
+      credBackup.verifyOrRestore();
+    }
+  }
+
+  // antigravity mid-run rate-limit short-circuit (parity with Python): when the
+  // watcher tripped, agy was killed and the run dir has no usable transcript.
+  // Intercept BEFORE the capture cascade so it surfaces as a recognizable
+  // rate-limit verdict carrying ANTIGRAVITY_RATE_LIMIT_MARKER (for run_all's
+  // latch) rather than a generic empty-trace capture indeterminate.
+  if (watcher?.tripped) {
+    return writeIndeterminate({
+      finalReason:
+        'antigravity hit a Code Assist rate limit mid-run; agy was ' +
+        'killed and produced no usable transcript',
+      gauntlet,
+      checks: pre.records,
+      error: {
+        stage: 'gauntlet',
+        message: `${ANTIGRAVITY_RATE_LIMIT_MARKER}: agy hit RESOURCE_EXHAUSTED mid-run; killed`,
+      },
+    });
+  }
+
+  // antigravity: a rate-limited Code Assist backend detected in the completed
+  // agy.log (the watcher may not have tripped if the 429 landed late) is an
+  // environmental indeterminate, not pass/fail. This precedes the capture
+  // handling, parity with quorum/runner.py.
+  if (isAntigravity) {
     const reason = antigravityRateLimitReason(configDir);
     if (reason !== null) {
-      return compose({
+      return writeIndeterminate({
+        finalReason: reason,
         gauntlet,
-        checks: [...pre.records],
-        captureEmpty: false,
+        checks: pre.records,
         error: { stage: 'gauntlet', message: reason },
       });
     }
