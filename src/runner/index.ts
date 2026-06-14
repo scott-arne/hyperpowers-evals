@@ -535,7 +535,7 @@ async function runInner(
         phase: 'post',
         workdir,
         quorumBin,
-        toolCallsPath: capture.path,
+        transcriptPath: capture.path,
         runDir,
       })
     : { records: [], exitCode: 0 };

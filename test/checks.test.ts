@@ -91,21 +91,42 @@ test('parseCodingAgentsDirective returns undefined when no directive present', (
 // normalizes a record-bearing assertion-fail to exitCode 0 — the record, not the
 // exit code, is what flips RED if the guard ever vacuously passes again.
 
-test('tool-not-called FAILs against an empty tool-calls capture (no vacuous pass)', async () => {
+// An ATIF trajectory carrying a single Read tool call. A "non-empty trace that
+// lacks the asserted tool/skill" — the positive control for the empty-guard.
+const READ_ONLY_TRAJECTORY = JSON.stringify({
+  schema_version: 'ATIF-v1.7',
+  agent: { name: 'claude-code', version: 'test' },
+  steps: [
+    {
+      step_id: 1,
+      source: 'agent',
+      tool_calls: [
+        { tool_call_id: 'r1', function_name: 'Read', arguments: {} },
+      ],
+    },
+  ],
+});
+
+// An empty capture is the absence of a trajectory.json: capture removes the file
+// on a zero-row run, so check-transcript reads a missing path → empty:true.
+function missingTranscriptPath(workdir: string): string {
+  return join(workdir, 'trajectory.json');
+}
+
+test('tool-not-called FAILs against an empty trace capture (no vacuous pass)', async () => {
   const workdir = mkdtempSync(join(tmpdir(), 'wd-'));
-  const toolCallsPath = join(workdir, 'coding-agent-tool-calls.jsonl');
-  writeFileSync(toolCallsPath, '');
+  const transcriptPath = missingTranscriptPath(workdir);
   const checksSh = join(mkdtempSync(join(tmpdir(), 'scn-')), 'checks.sh');
   writeFileSync(
     checksSh,
-    'pre() { :; }\npost() {\n  tool-not-called Edit\n}\n',
+    'pre() { :; }\npost() {\n  check-transcript tool-not-called Edit\n}\n',
   );
   const { records } = await runPhase({
     checksSh,
     phase: 'post',
     workdir,
     quorumBin: BIN,
-    toolCallsPath,
+    transcriptPath,
   });
   expect(records[0]).toMatchObject({
     check: 'tool-not-called',
@@ -114,21 +135,20 @@ test('tool-not-called FAILs against an empty tool-calls capture (no vacuous pass
   });
 });
 
-test('skill-not-called FAILs against an empty tool-calls capture (no vacuous pass)', async () => {
+test('skill-not-called FAILs against an empty trace capture (no vacuous pass)', async () => {
   const workdir = mkdtempSync(join(tmpdir(), 'wd-'));
-  const toolCallsPath = join(workdir, 'coding-agent-tool-calls.jsonl');
-  writeFileSync(toolCallsPath, '');
+  const transcriptPath = missingTranscriptPath(workdir);
   const checksSh = join(mkdtempSync(join(tmpdir(), 'scn-')), 'checks.sh');
   writeFileSync(
     checksSh,
-    'pre() { :; }\npost() {\n  skill-not-called superpowers:foo\n}\n',
+    'pre() { :; }\npost() {\n  check-transcript skill-not-called superpowers:foo\n}\n',
   );
   const { records } = await runPhase({
     checksSh,
     phase: 'post',
     workdir,
     quorumBin: BIN,
-    toolCallsPath,
+    transcriptPath,
   });
   expect(records[0]).toMatchObject({
     check: 'skill-not-called',
@@ -139,19 +159,19 @@ test('skill-not-called FAILs against an empty tool-calls capture (no vacuous pas
 
 test('tool-not-called PASSes on a non-empty trace that lacks the tool (positive control)', async () => {
   const workdir = mkdtempSync(join(tmpdir(), 'wd-'));
-  const toolCallsPath = join(workdir, 'coding-agent-tool-calls.jsonl');
-  writeFileSync(toolCallsPath, '{"tool":"Read","args":{}}\n');
+  const transcriptPath = join(workdir, 'trajectory.json');
+  writeFileSync(transcriptPath, READ_ONLY_TRAJECTORY);
   const checksSh = join(mkdtempSync(join(tmpdir(), 'scn-')), 'checks.sh');
   writeFileSync(
     checksSh,
-    'pre() { :; }\npost() {\n  tool-not-called Edit\n}\n',
+    'pre() { :; }\npost() {\n  check-transcript tool-not-called Edit\n}\n',
   );
   const { records, exitCode } = await runPhase({
     checksSh,
     phase: 'post',
     workdir,
     quorumBin: BIN,
-    toolCallsPath,
+    transcriptPath,
   });
   expect(exitCode).toBe(0);
   expect(records[0]).toMatchObject({
@@ -163,19 +183,19 @@ test('tool-not-called PASSes on a non-empty trace that lacks the tool (positive 
 
 test('skill-not-called PASSes on a non-empty trace that lacks the skill (positive control)', async () => {
   const workdir = mkdtempSync(join(tmpdir(), 'wd-'));
-  const toolCallsPath = join(workdir, 'coding-agent-tool-calls.jsonl');
-  writeFileSync(toolCallsPath, '{"tool":"Read","args":{}}\n');
+  const transcriptPath = join(workdir, 'trajectory.json');
+  writeFileSync(transcriptPath, READ_ONLY_TRAJECTORY);
   const checksSh = join(mkdtempSync(join(tmpdir(), 'scn-')), 'checks.sh');
   writeFileSync(
     checksSh,
-    'pre() { :; }\npost() {\n  skill-not-called superpowers:foo\n}\n',
+    'pre() { :; }\npost() {\n  check-transcript skill-not-called superpowers:foo\n}\n',
   );
   const { records, exitCode } = await runPhase({
     checksSh,
     phase: 'post',
     workdir,
     quorumBin: BIN,
-    toolCallsPath,
+    transcriptPath,
   });
   expect(exitCode).toBe(0);
   expect(records[0]).toMatchObject({

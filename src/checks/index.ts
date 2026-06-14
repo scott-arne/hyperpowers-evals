@@ -20,8 +20,8 @@ export interface RunPhaseArgs {
   readonly workdir: string;
   /** Directory prepended to PATH so the bin/ check tools resolve (the repo bin/). */
   readonly quorumBin: string;
-  /** Optional: path to coding-agent-tool-calls.jsonl, exposed to post-checks. */
-  readonly toolCallsPath?: string;
+  /** Optional: path to the ATIF trajectory.json, exposed to transcript checks. */
+  readonly transcriptPath?: string;
   /** Optional: the run dir, exposed to post-checks that read sibling artifacts. */
   readonly runDir?: string;
 }
@@ -54,8 +54,8 @@ export async function runPhase(args: RunPhaseArgs): Promise<RunPhaseResult> {
     ...envSnapshot(),
     PATH: `${args.quorumBin}:${path}`,
     QUORUM_RECORD_SINK: sink,
-    ...(args.toolCallsPath !== undefined
-      ? { QUORUM_TOOL_CALLS_PATH: args.toolCallsPath }
+    ...(args.transcriptPath !== undefined
+      ? { QUORUM_TRANSCRIPT_PATH: args.transcriptPath }
       : {}),
     ...(args.runDir !== undefined ? { QUORUM_RUN_DIR: args.runDir } : {}),
   };
