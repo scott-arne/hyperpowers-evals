@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { pySplitlines } from './scaffold.ts';
 
 /** Raised when a story's frontmatter holds a value that fails validation. */
 export class StoryMetaError extends Error {}
@@ -15,17 +16,20 @@ function stripChar(s: string, ch: string): string {
 /**
  * Lenient frontmatter parse (not full YAML): match a leading `---\n...\n---\n`
  * block (the closing fence must be followed by a newline, mirroring Python's
- * `_FRONTMATTER` regex), split each line on its first `:`, then strip
- * whitespace and greedily strip ALL surrounding double quotes followed by ALL
- * surrounding single quotes (Python `v.strip().strip('"').strip("'")`). Missing
- * or malformed frontmatter yields an empty map rather than an error.
+ * `_FRONTMATTER` regex), split the body into lines on the full Unicode
+ * line-boundary set (Python `splitlines()`, not `split('\n')` — a bare `\r`
+ * separating two fields keeps both visible), split each line on its first `:`,
+ * then strip whitespace and greedily strip ALL surrounding double quotes
+ * followed by ALL surrounding single quotes (Python
+ * `v.strip().strip('"').strip("'")`). Missing or malformed frontmatter yields
+ * an empty map rather than an error.
  */
 function frontmatter(storyPath: string): Map<string, string> {
   const text = readFileSync(storyPath, 'utf8');
   const body = text.match(/^---\n([\s\S]*?)\n---\n/)?.[1];
   const out = new Map<string, string>();
   if (body === undefined) return out;
-  for (const line of body.split('\n')) {
+  for (const line of pySplitlines(body)) {
     const i = line.indexOf(':');
     if (i === -1) continue;
     const key = line.slice(0, i).trim();

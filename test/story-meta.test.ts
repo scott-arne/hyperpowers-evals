@@ -94,3 +94,16 @@ test('single clean-quoted value behaves identically', () => {
   const p = story(`---\nstatus: "draft"\n---\nbody`);
   expect(readStoryStatus(p)).toBe('draft');
 });
+
+// L5: Python's _frontmatter_field iterates group(1).splitlines(), which breaks
+// on the full Unicode line-boundary set (bare \r, \v, etc.). A bare carriage
+// return between two fields keeps both visible to Python. TS's split('\n')
+// only breaks on \n, so the field AFTER a bare \r gets folded into the prior
+// line and becomes invisible — readQuorumMaxTime would return null where Python
+// returns the value.
+test('resolves a field separated from the prior one by a bare carriage return', () => {
+  const p = story(
+    '---\nquorum_tier: sentinel\rquorum_max_time: 90m\n---\nbody',
+  );
+  expect(readQuorumMaxTime(p)).toBe('90m');
+});

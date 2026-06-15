@@ -210,7 +210,7 @@ program
   .action((name: string, opts: { scenariosRoot: string }) => {
     let scenarioDir: string;
     try {
-      scenarioDir = newScenario(scenarioDirFor(name, opts.scenariosRoot));
+      scenarioDir = newScenario(scenarioDirFor(name, opts.scenariosRoot), name);
     } catch (err: unknown) {
       if (err instanceof ScaffoldError) {
         process.stderr.write(`error: ${err.message}\n`);

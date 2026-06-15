@@ -231,7 +231,7 @@ const LINE_BOUNDARY = /\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]/g;
 // the separators, and emit NO trailing empty element. text.split('\n')
 // diverges by keeping \r/\v/etc. attached, adding a trailing empty line, and
 // not breaking on bare \r or the other Unicode boundaries.
-function pySplitlines(text: string): string[] {
+export function pySplitlines(text: string): string[] {
   const lines: string[] = [];
   let start = 0;
   LINE_BOUNDARY.lastIndex = 0;
