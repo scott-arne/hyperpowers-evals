@@ -1,12 +1,29 @@
-import { expect, test } from 'bun:test';
+import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import {
   CodingAgentConfigError,
   loadAgentConfig,
+  resolveSessionLogDir,
   substituteEnv,
 } from '../src/contracts/agent-config.ts';
+
+// The claude fixtures list ANTHROPIC_API_KEY in required_env, and the loader now
+// rejects unset required_env at load time (parity with Python). Set it for the
+// happy-path fixtures; RX-4 uses a deliberately-unset var to assert the failure.
+let prevKey: string | undefined;
+beforeAll(() => {
+  prevKey = process.env['ANTHROPIC_API_KEY'];
+  process.env['ANTHROPIC_API_KEY'] = 'sk-test';
+});
+afterAll(() => {
+  if (prevKey === undefined) {
+    delete process.env['ANTHROPIC_API_KEY'];
+  } else {
+    process.env['ANTHROPIC_API_KEY'] = prevKey;
+  }
+});
 
 // A claude.yaml whose only variable is the project_prompt reference.
 function writeClaudeYaml(dir: string, projectPrompt: string | undefined): void {
@@ -18,6 +35,7 @@ function writeClaudeYaml(dir: string, projectPrompt: string | undefined): void {
     'session_log_dir: "${CLAUDE_CONFIG_DIR}/projects"',
     'session_log_glob: "**/*.jsonl"',
     'normalizer: claude',
+    'model: opus',
     'required_env:',
     '  - ANTHROPIC_API_KEY',
   ];
@@ -26,6 +44,20 @@ function writeClaudeYaml(dir: string, projectPrompt: string | undefined): void {
   }
   writeFileSync(join(dir, 'claude.yaml'), `${lines.join('\n')}\n`);
 }
+
+// Write an arbitrary <name>.yaml from explicit field lines (for the validation
+// tests). Caller supplies the body lines; helper adds nothing implicitly.
+function writeYaml(dir: string, name: string, lines: readonly string[]): void {
+  writeFileSync(join(dir, `${name}.yaml`), `${lines.join('\n')}\n`);
+}
+
+const CLAUDE_BASE: readonly string[] = [
+  'binary: claude',
+  'agent_config_env: CLAUDE_CONFIG_DIR',
+  'session_log_dir: "${CLAUDE_CONFIG_DIR}/projects"',
+  'session_log_glob: "**/*.jsonl"',
+  'normalizer: claude',
+];
 
 test('loads claude.yaml into a typed AgentConfig', () => {
   const dir = mkdtempSync(join(tmpdir(), 'agents-'));
@@ -87,4 +119,114 @@ test('loadAgentConfig leaves project_prompt undefined when absent', () => {
   writeClaudeYaml(dir, undefined);
   const cfg = loadAgentConfig(dir, 'claude');
   expect(cfg.project_prompt).toBeUndefined();
+});
+
+// RX-3 — name must equal the file stem.
+test('loadAgentConfig rejects name != file stem', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agents-'));
+  writeYaml(dir, 'claude', [
+    'name: notclaude',
+    'runtime_family: claude',
+    'model: opus',
+    ...CLAUDE_BASE,
+    'required_env: []',
+  ]);
+  expect(() => loadAgentConfig(dir, 'claude')).toThrow(
+    /name must match file stem/,
+  );
+});
+
+// RX-1 — runtime_family must be a known family; absent it defaults to the name.
+test('loadAgentConfig rejects an unknown runtime_family', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agents-'));
+  writeYaml(dir, 'claude', [
+    'name: claude',
+    'runtime_family: bogus',
+    'model: opus',
+    ...CLAUDE_BASE,
+    'required_env: []',
+  ]);
+  expect(() => loadAgentConfig(dir, 'claude')).toThrow(
+    /unknown runtime_family/,
+  );
+});
+
+test('loadAgentConfig defaults runtime_family to name (known) when omitted', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agents-'));
+  writeYaml(dir, 'claude', [
+    'name: claude',
+    'model: opus',
+    ...CLAUDE_BASE,
+    'required_env: []',
+  ]);
+  // name "claude" is a known family; no runtime_family key -> loads fine.
+  expect(() => loadAgentConfig(dir, 'claude')).not.toThrow();
+});
+
+// RX-2 — a claude family requires a non-blank model.
+test('loadAgentConfig rejects a claude family with no model', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agents-'));
+  writeYaml(dir, 'claude', [
+    'name: claude',
+    'runtime_family: claude',
+    ...CLAUDE_BASE,
+    'required_env: []',
+  ]);
+  expect(() => loadAgentConfig(dir, 'claude')).toThrow(/requires model/);
+});
+
+test('loadAgentConfig rejects a blank model', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agents-'));
+  writeYaml(dir, 'claude', [
+    'name: claude',
+    'runtime_family: claude',
+    'model: "   "',
+    ...CLAUDE_BASE,
+    'required_env: []',
+  ]);
+  expect(() => loadAgentConfig(dir, 'claude')).toThrow(
+    /model must not be blank/,
+  );
+});
+
+// RX-4 — required_env must be set (non-empty) at load time.
+test('loadAgentConfig rejects an unset required_env var', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agents-'));
+  writeYaml(dir, 'claude', [
+    'name: claude',
+    'runtime_family: claude',
+    'model: opus',
+    ...CLAUDE_BASE,
+    'required_env:',
+    '  - QUORUM_DEFINITELY_UNSET_RX4',
+  ]);
+  expect(() => loadAgentConfig(dir, 'claude')).toThrow(/required env/);
+});
+
+// RX-5 — substituteEnv also handles bare $VAR and $$; resolveSessionLogDir
+// expands a leading ~.
+test('substituteEnv replaces bare $VAR from a provided map', () => {
+  expect(
+    substituteEnv('$CLAUDE_CONFIG_DIR/projects', { CLAUDE_CONFIG_DIR: '/c' }),
+  ).toBe('/c/projects');
+});
+
+test('substituteEnv unescapes $$ to a literal $', () => {
+  expect(substituteEnv('a$$b', {})).toBe('a$b');
+});
+
+test('substituteEnv leaves a lone $ and unknown bare $VAR intact', () => {
+  expect(substituteEnv('cost is $ and $UNKNOWN', { OTHER: 'y' })).toBe(
+    'cost is $ and $UNKNOWN',
+  );
+});
+
+test('resolveSessionLogDir substitutes then expands a leading ~', () => {
+  expect(resolveSessionLogDir('~/logs/${X}', { X: 'run' })).toBe(
+    join(homedir(), 'logs/run'),
+  );
+});
+
+test('resolveSessionLogDir leaves a non-leading ~ untouched', () => {
+  expect(resolveSessionLogDir('/a/~/b', {})).toBe('/a/~/b');
 });

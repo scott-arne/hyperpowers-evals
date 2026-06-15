@@ -54,7 +54,7 @@ import { compose } from '../composer.ts';
 import {
   CodingAgentConfigError,
   loadAgentConfig,
-  substituteEnv,
+  resolveSessionLogDir,
 } from '../contracts/agent-config.ts';
 import type {
   CheckRecord,
@@ -1021,8 +1021,9 @@ async function runInnerBody(
     writeAntigravitySettings(configDir, launchCwd);
   }
 
-  // snapshot the agent session-log dir before the run.
-  const logDir = substituteEnv(cfg.session_log_dir, extraEnv);
+  // snapshot the agent session-log dir before the run (substitute env vars +
+  // expand a leading ~, parity with Python resolve_session_log_dir).
+  const logDir = resolveSessionLogDir(cfg.session_log_dir, extraEnv);
 
   // opencode does not write capturable session logs on its own: snapshot the
   // pre-existing session ids before the run so the post-run export can diff to
