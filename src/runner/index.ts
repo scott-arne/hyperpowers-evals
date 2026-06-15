@@ -735,6 +735,36 @@ export function kimiLaunchSubstitutions(
   };
 }
 
+// Per-run throwaway $HOME for the coding agent under test (spec
+// docs/superpowers/specs/2026-06-15-per-run-home-isolation.md). Every coding
+// agent runs with HOME and the XDG base dirs pinned under <runDir>/home so it
+// cannot read or write the operator's real ~/.gemini, ~/.codex, ~/.claude,
+// ~/.config, ~/.cache, or XDG dirs. $QUORUM_HOME_ENV is the pre-quoted
+// `env`-line fragment each launcher splices into its `exec env …` line; it works
+// in both the quoted-VAR launcher style (claude/pi) and the unquoted-$VAR_SH
+// style (gemini) because every value is single-quoted here. Quorum's OWN
+// credential reads stay anchored to the REAL home: Bun's os.homedir() snapshots
+// $HOME at startup and ignores this per-subprocess pin (never setProcessEnv).
+export function homeEnvSubstitutions(
+  runHomeDir: string,
+): Record<string, string> {
+  const vars: ReadonlyArray<readonly [string, string]> = [
+    ['HOME', runHomeDir],
+    ['XDG_CONFIG_HOME', join(runHomeDir, '.config')],
+    ['XDG_CACHE_HOME', join(runHomeDir, '.cache')],
+    ['XDG_DATA_HOME', join(runHomeDir, '.local', 'share')],
+    ['XDG_STATE_HOME', join(runHomeDir, '.local', 'state')],
+  ];
+  const fragment = vars
+    .map(([k, v]) => `${k}=${shellSingleQuote(v)}`)
+    .join(' ');
+  return {
+    $QUORUM_AGENT_HOME: runHomeDir,
+    $QUORUM_AGENT_HOME_SH: shellSingleQuote(runHomeDir),
+    $QUORUM_HOME_ENV: fragment,
+  };
+}
+
 // Reap the agent runtime's secret temp dirs (parity with Python
 // _cleanup_agent_runtime). Each dir is removed recursively; an already-absent
 // dir is fine, but any other removal failure — or a path that survives removal —
@@ -966,6 +996,11 @@ async function runInnerBody(
   const configDir = join(runDir, 'coding-agent-config');
   const workdir = join(runDir, 'coding-agent-workdir');
   mkdirSync(workdir, { recursive: true });
+  // Throwaway $HOME for the coding agent under test — always on, every agent.
+  // Run-dir-relative so it's captured and reaped with the run (no mkdtemp / no
+  // runtimeCleanupDirs). The launchers pin HOME/XDG to it via $QUORUM_HOME_ENV.
+  const runHomeDir = join(runDir, 'home');
+  mkdirSync(runHomeDir, { recursive: true });
   const home = {
     configDir,
     workdir,
@@ -1105,6 +1140,9 @@ async function runInnerBody(
     $QUORUM_LAUNCH_AGENT_SH: shellSingleQuote(launchAgentPath),
     [`$${agentConfigEnv}`]: configDir,
     [`$${agentConfigEnv}_SH`]: shellSingleQuote(configDir),
+    // Throwaway-$HOME isolation for the coding agent (always on). Each launcher
+    // splices $QUORUM_HOME_ENV into its `exec env …` line.
+    ...homeEnvSubstitutions(runHomeDir),
   };
   // Provision-supplied substitutions (quorum's agent_runtime.substitutions). For
   // claude these are the auth env-file path the launcher sources; the path is

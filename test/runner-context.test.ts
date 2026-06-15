@@ -11,6 +11,7 @@ import { join, resolve } from 'node:path';
 import { shellSingleQuote } from '../src/agents/index.ts';
 import { populateContextDir } from '../src/runner/context.ts';
 import { RunnerError } from '../src/runner/errors.ts';
+import { homeEnvSubstitutions } from '../src/runner/index.ts';
 
 // The REAL coding-agents/ dir (sibling of test/). It carries claude-context/
 // {HOWTO.md, launch-agent}, the templates populateContextDir substitutes.
@@ -45,6 +46,8 @@ function claudeSubstitutions(opts: {
     $CLAUDE_ENV_FILE: claudeEnvFile,
     $CLAUDE_ENV_FILE_SH: shellSingleQuote(claudeEnvFile),
     $CLAUDE_MODEL: model,
+    // The runner always adds throwaway-$HOME isolation for the coding agent.
+    ...homeEnvSubstitutions(join(runDir, 'home')),
   };
 }
 
@@ -103,6 +106,16 @@ test('populateContextDir substitutes every placeholder in the claude context', (
   // transcript persistence; losing either empties capture -> indeterminate(capture).
   expect(launcher).toContain('env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID');
   expect(launcher).toContain('CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1');
+
+  // Throwaway-$HOME isolation: HOME + the XDG dirs are pinned under <runDir>/home
+  // in the launcher's exec env line, so the coding agent never touches the
+  // operator's real ~/.claude, ~/.config, ~/.cache, etc.
+  const runHomeDir = join(runDir, 'home');
+  expect(launcher).toContain(`HOME='${runHomeDir}'`);
+  expect(launcher).toContain(
+    `XDG_CONFIG_HOME='${join(runHomeDir, '.config')}'`,
+  );
+  expect(launcher).toContain(`XDG_CACHE_HOME='${join(runHomeDir, '.cache')}'`);
 
   // The shebang'd launcher is executable after substitution (mode & 0o111).
   const mode = statSync(join(ctxDir, 'launch-agent')).mode;
