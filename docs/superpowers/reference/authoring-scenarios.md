@@ -337,7 +337,10 @@ nowhere). The sentinel is harness plumbing: `assert-checkout-clean` ignores a
 - **`requires-tool <name…>`** in `pre()` guards local toolchain dependencies (e.g.
   `requires-tool go`). A missing tool fails the pre-check, which the composer maps
   to **`indeterminate`** (env-missing), not `fail` — so a run on a machine without
-  `go` is correctly "couldn't evaluate," not a false negative.
+  `go` is correctly "couldn't evaluate," not a false negative. This also covers
+  interpreters a **post**-check shells out to: if a `command-succeeds` probe runs
+  `node`/`python`, guard it with `requires-tool node` in `pre()` so a missing
+  runtime reads as `indeterminate`, not a fake `fail`.
 
 ---
 
@@ -375,9 +378,9 @@ functions invoked.
 
 | Verb | Args | Semantics |
 |---|---|---|
-| `file-exists` | `<glob>` | Pass iff ≥1 workdir-relative path matches. Supports a single `**` recursive segment plus single-segment `*`/`?`/`[…]`. A literal path matches iff it exists. |
+| `file-exists` | `<glob>` | Pass iff ≥1 workdir-relative path matches. Supports a single `**` recursive segment plus single-segment `*`/`?`/`[…]`. A literal path matches iff it exists. With a no-slash suffix, `**` matches the **basename** at any depth **including the repo root** — so `file-exists '**/*.test.js'` also matches a top-level `foo.test.js`. Handy for "the agent left a test artifact *somewhere*." |
 | `file-contains` | `<path> <ere>` | `grep -qE` semantics: file exists and ≥1 line matches the extended regex. |
-| `command-succeeds` | `<command>` | `bash -c <command>` in the workdir; pass iff exit 0. On failure, first 500 bytes of combined stdout+stderr become the detail. |
+| `command-succeeds` | `<command>` | `bash -c <command>` in the workdir; pass iff exit 0. On failure, first 500 bytes of combined stdout+stderr become the detail. **Quoting:** the command travels through the prelude into `bash -c`; single-quote the outer command and escape inner double quotes (e.g. a `node -e "…"` probe), and smoke-test the exact string with `bash -c '<command>'` before committing — a quoting slip lands silently in the assertion/127 band. |
 | `git-repo` | — | cwd is a git work tree. |
 | `git-branch` | `<name>` \| `detached` | Current branch equals `<name>`, or HEAD is detached. |
 | `git-clean` | — | `git status --porcelain` is empty. |
@@ -423,6 +426,23 @@ the Superpowers plugin is staged into a harness's isolated config:
 So `not <typo>` and `not <broken-check>` fail honestly rather than vacuously
 passing. `not` works on both namespaces, e.g.
 `not check-transcript tool-arg-match Bash --matches 'command=git worktree add'`.
+
+### Designing a check that discriminates
+
+A behavior/quality scenario lives or dies by a deterministic check that separates
+a **correct** fix from a **plausible-but-wrong** one — not merely "does it work."
+The trap: an end-to-end check (`command-succeeds 'the output is right now'`)
+passes for a symptom patch that papers over the real defect. The fix is to
+**probe the component you actually care about, directly**, rather than only the
+final output. In `systematic-debugging-fixes-root-cause` the end-to-end price is
+correct under *both* a real root-cause fix and a consumer-side guard, so the
+e2e check can't tell them apart; the discriminating check calls the upstream
+producer directly (`command-succeeds 'node -e "… getDiscountRate(\"BOGUS\") is a
+real number …"'`), which a symptom-only patch leaves returning `undefined`. Pair
+the discriminator (deterministic) with AC prose stating the same distinction
+(LLM-graded) — belt-and-braces — and **hand-verify the discriminator against all
+three states** (broken, symptom-only, root-cause) before trusting it; a check
+that can't fail the wrong-but-plausible fix is Pattern 4 waiting to happen.
 
 ### The record model
 
