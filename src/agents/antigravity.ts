@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   cpSync,
   existsSync,
   lstatSync,
@@ -59,6 +60,49 @@ const REQUIRED_PLUGIN_FILES: readonly string[] = [
   'hooks.json',
   join('skills', 'using-superpowers', 'SKILL.md'),
 ];
+
+// C1 OAuth-creds seed (spec docs/superpowers/specs/2026-06-15-per-run-home-
+// isolation.md §5C). agy reads its live, rotating OAuth token from
+// $HOME/.gemini/oauth_creds.json at RUNTIME (not from --gemini_dir). Once the
+// agent runs under the throwaway $HOME, that read would miss the operator's
+// creds, so provisioning copies them from the REAL home into the per-run
+// .gemini. These are the two files gemini's oauth-personal mode copies
+// (GEMINI_OAUTH_CREDENTIAL_FILES); agy shares the .gemini auth layout.
+const AGY_OAUTH_CREDENTIAL_FILES: readonly string[] = [
+  'oauth_creds.json',
+  'google_accounts.json',
+];
+
+// Copy agy's live OAuth credential files from the REAL home's .gemini into the
+// per-run .gemini at mode 0600. The source home is AGY_OAUTH_HOME (the test /
+// operator override) else ~/.gemini — mirroring gemini.ts's
+// copyGeminiOauthCredentials, except UNLIKE gemini we TOLERATE a missing source:
+// a missing operator credential is flagged (returned), not a ProvisionError,
+// because seeding is a runtime-auth convenience layered on top of the keyring
+// (which is per-login-user and survives the throwaway HOME), and provisioning
+// must not hard-fail an otherwise-good setup just because creds aren't seeded.
+// Bun's homedir() snapshots the REAL $HOME at startup and ignores quorum's own
+// per-subprocess HOME pin, so this always reads the operator's real ~/.gemini.
+// Returns the list of credential basenames that were absent at the source.
+export function seedAgyOauthCredentials(configDir: string): string[] {
+  const sourceHome = getEnv('AGY_OAUTH_HOME') ?? join(homedir(), '.gemini');
+  const destDir = join(configDir, '.gemini');
+  const missing: string[] = [];
+  for (const name of AGY_OAUTH_CREDENTIAL_FILES) {
+    const source = join(sourceHome, name);
+    if (!statSync(source, { throwIfNoEntry: false })?.isFile()) {
+      missing.push(name);
+      continue;
+    }
+    mkdirSync(destDir, { recursive: true });
+    const dest = join(destDir, name);
+    // writeFileSync's `mode` only applies on create; chmod after to enforce
+    // 0600 even when the file already existed.
+    writeFileSync(dest, readFileSync(source, 'utf8'), { mode: 0o600 });
+    chmodSync(dest, 0o600);
+  }
+  return missing;
+}
 
 // Env override for the parent of the visible-symlink workspace tree, and the
 // per-run record file the substitution writes under run_dir. Mirror the Python
@@ -183,6 +227,22 @@ export class AntigravityAgent implements CodingAgent {
 
     // 4. Persist no-prompt settings for the isolated run.
     writeAntigravitySettings(configDir, workdir);
+
+    // 5. C1 OAuth-creds seed. With home_config_subdir ".", configDir IS the
+    //    per-run throwaway home, so configDir/.gemini == $HOME/.gemini — exactly
+    //    where agy reads its live OAuth token at runtime. Copy the operator's
+    //    creds from the REAL home so auth survives the throwaway $HOME. Missing
+    //    source creds are tolerated (the keyring is per-login-user and may carry
+    //    auth on its own); a live agy smoke confirms whether the seed sufficed.
+    const missingCreds = seedAgyOauthCredentials(configDir);
+    if (missingCreds.length > 0) {
+      // Not fatal: flag to stderr for triage but let provisioning succeed.
+      process.stderr.write(
+        `antigravity: OAuth creds not seeded (absent at source): ${missingCreds.join(', ')}; ` +
+          'agy will rely on the per-login-user keyring at runtime. A live agy ' +
+          'smoke is required to confirm auth survives the throwaway $HOME.\n',
+      );
+    }
 
     // NOTE (B3, deferred): the Python ends _seed_antigravity_config with a
     // pre-snapshot transcript assertion — _antigravity_transcripts(configDir)
