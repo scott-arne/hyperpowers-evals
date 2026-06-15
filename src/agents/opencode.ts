@@ -29,13 +29,12 @@ import {
 // provider preflight so the eval fails fast if the configured provider cannot
 // answer.
 //
-// The agent_config_env (OPENCODE_QUORUM_HOME) value IS the opencode_home root:
-// every XDG root and the plugin staging live under home.configDir. With
-// opencode.yaml's `home_config_subdir: "."`, home.configDir IS the per-run
-// throwaway $HOME (runHomeDir), so the agent finds its config via its $HOME
-// default and the launcher need not set OPENCODE_QUORUM_HOME. opencode keys its
-// session DB off XDG_DATA_HOME (= <home>/.local/share), so this home is also the
-// session store the capture subprocess (opencodeEnv, same home) reads.
+// The opencode_home root IS home.configDir: every XDG root and the plugin
+// staging live under it. With opencode.yaml's `home_config_subdir: "."`,
+// home.configDir IS the per-run throwaway $HOME (runHomeDir = $QUORUM_AGENT_HOME),
+// so the agent finds its config via its $HOME default. opencode keys its session
+// DB off XDG_DATA_HOME (= <home>/.local/share), so this home is also the session
+// store the capture subprocess (opencodeEnv, same home) reads.
 
 // The pinned model the preflight and the run share, also written into
 // opencode.json.
@@ -273,14 +272,12 @@ export class OpenCodeAgent implements CodingAgent {
     // Provider preflight: throwaway isolated home, retry up to 3x, expect "OK".
     this.runProviderPreflight();
 
-    // Return the extra-env the runner threads into the run: the agent_config_env
-    // (OPENCODE_QUORUM_HOME) plus the XDG isolation vars (opencode_env).
-    // opencodeHome IS the agent_config_env value, so OPENCODE_QUORUM_HOME and HOME
-    // both point at it. The runner resolves session_log_dir against this map
-    // (${OPENCODE_QUORUM_HOME}/.quorum/session-exports); the launcher pins HOME via
-    // $QUORUM_HOME_ENV (= the same home) rather than reading OPENCODE_QUORUM_HOME.
+    // Return the extra-env the runner threads into the run: the XDG isolation
+    // vars (opencode_env). opencodeHome IS the per-run throwaway $HOME
+    // (= $QUORUM_AGENT_HOME), so the runner resolves session_log_dir against
+    // $QUORUM_AGENT_HOME (${QUORUM_AGENT_HOME}/.quorum/session-exports) and the
+    // launcher pins HOME to that same home via $QUORUM_HOME_ENV.
     return {
-      [this.config.agent_config_env]: opencodeHome,
       ...opencodeEnv(opencodeHome),
     };
   }

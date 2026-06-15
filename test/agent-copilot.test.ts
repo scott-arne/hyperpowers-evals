@@ -31,10 +31,9 @@ import { makeTempHome } from './provision-helpers.ts';
 const CONFIG: AgentConfig = {
   name: 'copilot',
   binary: 'copilot',
-  agent_config_env: 'COPILOT_HOME',
   // Collapsed under the throwaway $HOME: copilot finds config at $HOME/.copilot.
   home_config_subdir: '.copilot',
-  session_log_dir: '${COPILOT_HOME}/session-state',
+  session_log_dir: '${QUORUM_AGENT_HOME}/.copilot/session-state',
   session_log_glob: '**/events.jsonl',
   normalizer: 'copilot',
   required_env: ['SUPERPOWERS_ROOT'],
@@ -166,10 +165,10 @@ test('config dir collapses under the throwaway $HOME at <runHome>/.copilot', () 
   const configDir = agentConfigDir(CONFIG, runHomeDir);
   expect(configDir).toBe(join(runHomeDir, '.copilot'));
 
-  // session_log_dir resolves against the provisioning env ({COPILOT_HOME: configDir})
+  // session_log_dir resolves against the throwaway home ({QUORUM_AGENT_HOME})
   // to the session-state dir under that same collapsed config dir.
   const logDir = resolveSessionLogDir(CONFIG.session_log_dir, {
-    COPILOT_HOME: configDir,
+    QUORUM_AGENT_HOME: runHomeDir,
   });
   expect(logDir).toBe(join(runHomeDir, '.copilot', 'session-state'));
 });
@@ -221,9 +220,9 @@ test('provision stages COPILOT_HOME, writes secret env file, and stages the plug
     );
     expect(stagedPluginJson).toEqual({ name: 'superpowers', version: '0.0.0' });
 
-    // Returned env points the agent_config_env at the isolated home; no auth in it.
-    expect(returned).toEqual({ COPILOT_HOME: home.configDir });
-    expect(Object.keys(returned)).toEqual(['COPILOT_HOME']);
+    // Returned env is empty: copilot finds its config via the throwaway $HOME
+    // (.copilot), and no auth is carried in the returned env.
+    expect(returned).toEqual({});
 
     // provision() runs no subprocess here: the copilot PATH check is a real
     // Bun.which lookup, and auth came from COPILOT_GITHUB_TOKEN so the gh
@@ -492,7 +491,7 @@ test('provision does not false-fail a present binary when `command` builtin ENOE
         const returned = new CopilotAgent(
           configWithBinary(PRESENT_BINARY),
         ).provision(home, enoentRunner);
-        expect(returned).toEqual({ COPILOT_HOME: home.configDir });
+        expect(returned).toEqual({});
       },
     );
   } finally {
@@ -569,7 +568,7 @@ test('provisionCopilot returns the secret values, env file, and session-state pa
     expect(provisioning.expectedEventsLog).toBe(
       join(home.configDir, 'session-state', sessionId, 'events.jsonl'),
     );
-    expect(provisioning.env).toEqual({ COPILOT_HOME: home.configDir });
+    expect(provisioning.env).toEqual({});
   } finally {
     cleanup();
     sp.cleanup();
@@ -627,7 +626,7 @@ test('provision runs no provisioning subprocess when auth comes from the env', (
         const returned = new CopilotAgent(
           configWithBinary(PRESENT_BINARY),
         ).provision(home, runner);
-        expect(returned).toEqual({ COPILOT_HOME: home.configDir });
+        expect(returned).toEqual({});
       },
     );
     // No subprocess ran: the binary check used Bun.which, and the gh fallback
@@ -731,7 +730,7 @@ test('provision resolves a real copilot binary via a real PATH lookup (no probe 
         const returned = new CopilotAgent(
           configWithBinary(PRESENT_BINARY),
         ).provision(home, runner);
-        expect(returned).toEqual({ COPILOT_HOME: home.configDir });
+        expect(returned).toEqual({});
       },
     );
     // The PATH probe is a real Bun.which lookup, not a `command -v` subprocess,
@@ -774,7 +773,7 @@ test('provision expands a leading ~ in SUPERPOWERS_ROOT under the home dir', () 
         const returned = new CopilotAgent(
           configWithBinary(PRESENT_BINARY),
         ).provision(home, new FakeCommandRunner());
-        expect(returned).toEqual({ COPILOT_HOME: home.configDir });
+        expect(returned).toEqual({});
       },
     );
     // The plugin staged from the ~-expanded root: plugin.json copied verbatim.

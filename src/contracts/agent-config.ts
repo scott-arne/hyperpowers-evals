@@ -22,7 +22,6 @@ export const AgentConfigSchema = z.object({
   name: z.string(),
   runtime_family: z.string().optional(),
   binary: z.string(),
-  agent_config_env: z.string(),
   session_log_dir: z.string(),
   session_log_glob: z.string(),
   normalizer: z.string(),

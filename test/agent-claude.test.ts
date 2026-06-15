@@ -17,9 +17,8 @@ function claudeConfig(overrides?: Partial<AgentConfig>): AgentConfig {
   return {
     name: 'claude',
     binary: 'claude',
-    agent_config_env: 'CLAUDE_CONFIG_DIR',
     home_config_subdir: '.claude',
-    session_log_dir: '${CLAUDE_CONFIG_DIR}',
+    session_log_dir: '${QUORUM_AGENT_HOME}/.claude/projects',
     session_log_glob: '*.jsonl',
     normalizer: 'claude',
     required_env: ['ANTHROPIC_API_KEY', 'SUPERPOWERS_ROOT'],

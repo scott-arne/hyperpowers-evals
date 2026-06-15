@@ -556,7 +556,7 @@ export class CopilotAgent implements CodingAgent {
       envFile,
       secretNames: auth.secretNames,
       secretValues: auth.secretValues,
-      env: { [this.config.agent_config_env]: copilotHome },
+      env: {},
       expectedEventsLog,
     };
   }

@@ -32,14 +32,14 @@ one line above.
 OpenCode writes runtime state under the isolated home:
 
 ```
-$OPENCODE_QUORUM_HOME/.local/share/opencode/opencode.db
-$OPENCODE_QUORUM_HOME/.local/share/opencode/log/
+$QUORUM_AGENT_HOME/.local/share/opencode/opencode.db
+$QUORUM_AGENT_HOME/.local/share/opencode/log/
 ```
 
 After the run, quorum exports matching sessions to:
 
 ```
-$OPENCODE_QUORUM_HOME/.quorum/session-exports/[0-9]*-ses_*.json
+$QUORUM_AGENT_HOME/.quorum/session-exports/[0-9]*-ses_*.json
 ```
 
 Those exported JSON files are the ground truth for tool calls and are what
@@ -51,7 +51,7 @@ When OpenCode is busy, wait for it to finish rather than repeatedly polling the
 screen. If you need to inspect local logs, use the isolated log directory:
 
 ```
-find "$OPENCODE_QUORUM_HOME/.local/share/opencode/log" -maxdepth 1 -type f -print 2>/dev/null
+find "$QUORUM_AGENT_HOME/.local/share/opencode/log" -maxdepth 1 -type f -print 2>/dev/null
 ```
 
 ## Shutdown

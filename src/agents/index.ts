@@ -22,7 +22,7 @@ import { writePrivateFileNoFollow } from './private-file.ts';
 /** The isolated home a run hands an agent to provision. Absence is undefined
  *  (§5.5): a missing skeleton root is undefined, never null. */
 export interface RunHome {
-  /** The agent_config_env dir (e.g. CLAUDE_CONFIG_DIR / CODEX_HOME). */
+  /** The agent's isolated config dir (<runHome>/<home_config_subdir>). */
   readonly configDir: string;
   /** The dir the coding agent runs in (resolves project-trust paths). */
   readonly workdir: string;
@@ -68,7 +68,7 @@ const ClaudeJsonSchema = z
   .passthrough();
 
 /** Declarative agents whose provisioning is fully driven by YAML. Just creates
- *  the isolated config dir and points the agent_config_env at it. */
+ *  the isolated config dir; the agent finds it via its $HOME default. */
 class DefaultAgent implements CodingAgent {
   readonly config: AgentConfig;
   constructor(config: AgentConfig) {
@@ -76,7 +76,7 @@ class DefaultAgent implements CodingAgent {
   }
   provision(home: RunHome): Record<string, string> {
     mkdirSync(home.configDir, { recursive: true });
-    return { [this.config.agent_config_env]: home.configDir };
+    return {};
   }
 }
 
@@ -150,7 +150,7 @@ class ClaudeAgent implements CodingAgent {
       );
       approveClaudeApiKey(claudeJsonPath, apiKey);
     }
-    return { [this.config.agent_config_env]: configDir };
+    return {};
   }
 }
 

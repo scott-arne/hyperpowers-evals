@@ -18,16 +18,15 @@ import type { AgentConfig } from '../src/contracts/agent-config.ts';
 import { FakeCommandRunner } from './fake-command-runner.ts';
 import { makeTempHome } from './provision-helpers.ts';
 
-// The gemini.yaml surface the adapter depends on (agent_config_env + required_env).
-// home_config_subdir "." collapses the config dir into the throwaway $HOME; the
-// adapter writes under home.configDir regardless, so it is carried here only to
-// mirror the real YAML.
+// The gemini.yaml surface the adapter depends on (home_config_subdir +
+// required_env). home_config_subdir "." collapses the config dir into the
+// throwaway $HOME; the adapter writes under home.configDir regardless, so it is
+// carried here only to mirror the real YAML.
 const CONFIG: AgentConfig = {
   name: 'gemini',
   binary: 'gemini',
-  agent_config_env: 'GEMINI_CLI_HOME',
   home_config_subdir: '.',
-  session_log_dir: '${GEMINI_CLI_HOME}/.gemini/tmp',
+  session_log_dir: '${QUORUM_AGENT_HOME}/.gemini/tmp',
   session_log_glob: '**/chats/**/*.json*',
   normalizer: 'gemini',
   required_env: ['GEMINI_API_KEY', 'SUPERPOWERS_ROOT'],
@@ -247,9 +246,9 @@ test('provision seeds config dir, settings, env file, manifests, and returns env
           expect(existsSync(join(home.configDir, rel))).toBe(true);
         }
 
-        // Returned env: agent_config_env + trust/auth vars.
+        // Returned env: just the trust/auth vars (gemini finds its config via
+        // the throwaway $HOME, so no config-dir var is returned).
         expect(env).toEqual({
-          GEMINI_CLI_HOME: home.configDir,
           GEMINI_CLI_TRUST_WORKSPACE: 'true',
           GEMINI_DEFAULT_AUTH_TYPE: 'gemini-api-key',
         });

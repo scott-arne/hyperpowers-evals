@@ -240,6 +240,10 @@ export interface InvokeGauntletResult {
 
 export interface InvokeGauntletArgs extends GauntletArgvArgs {
   readonly launchCwd: string;
+  // The per-run throwaway home. Exposed to the gauntlet child as
+  // QUORUM_AGENT_HOME (mirroring the QUORUM_AGENT_CWD exposure) so tooling that
+  // drives the agent can locate the agent's collapsed config dir.
+  readonly runHomeDir: string;
   readonly extraEnv: Record<string, string>;
   // Base env gauntlet inherits. Defaults to the full host snapshot; copilot
   // passes a tightly-scoped allowlist (copilotGauntletEnv) so the host
@@ -274,6 +278,7 @@ function spawnGauntlet(a: InvokeGauntletArgs): Promise<GauntletExit> {
       env: {
         ...(a.envBase ?? envSnapshot()),
         QUORUM_AGENT_CWD: a.launchCwd,
+        QUORUM_AGENT_HOME: a.runHomeDir,
         ...a.extraEnv,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1034,6 +1039,7 @@ async function runInnerBody(
     workdir,
     repoRoot: checksRepoRoot,
     runDir,
+    configDir,
   });
   if (pre.exitCode !== 0) {
     return compose({
@@ -1075,8 +1081,10 @@ async function runInnerBody(
   }
 
   // snapshot the agent session-log dir before the run (substitute env vars +
-  // expand a leading ~).
-  const logDir = resolveSessionLogDir(cfg.session_log_dir, extraEnv);
+  // expand a leading ~). session_log_dir templates reference $QUORUM_AGENT_HOME.
+  const logDir = resolveSessionLogDir(cfg.session_log_dir, {
+    QUORUM_AGENT_HOME: runHomeDir,
+  });
 
   // opencode does not write capturable session logs on its own: snapshot the
   // pre-existing session ids before the run so the post-run export can diff to
@@ -1107,7 +1115,6 @@ async function runInnerBody(
   // strips arbitrary env from new sessions, so the QA agent reads concrete
   // paths from the substituted files rather than from env inheritance.
   const family = cfg.runtime_family ?? cfg.name;
-  const agentConfigEnv = cfg.agent_config_env;
   const launchAgentPath = join(
     runDir,
     'gauntlet-agent',
@@ -1120,8 +1127,6 @@ async function runInnerBody(
     $SUPERPOWERS_ROOT: getEnv('SUPERPOWERS_ROOT') ?? '',
     $QUORUM_LAUNCH_AGENT: launchAgentPath,
     $QUORUM_LAUNCH_AGENT_SH: shellSingleQuote(launchAgentPath),
-    [`$${agentConfigEnv}`]: configDir,
-    [`$${agentConfigEnv}_SH`]: shellSingleQuote(configDir),
     // Throwaway-$HOME isolation for the coding agent (always on). Each launcher
     // splices $QUORUM_HOME_ENV into its `exec env …` line.
     ...homeEnvSubstitutions(runHomeDir),
@@ -1220,6 +1225,7 @@ async function runInnerBody(
       maxTime,
       projectPrompt: cfg.project_prompt,
       launchCwd,
+      runHomeDir,
       extraEnv,
       envBase: gauntletEnvBase,
     }));
@@ -1393,6 +1399,7 @@ async function runInnerBody(
     repoRoot: checksRepoRoot,
     transcriptPath: capture.path,
     runDir,
+    configDir,
   });
   if (post.exitCode !== 0) {
     return compose({

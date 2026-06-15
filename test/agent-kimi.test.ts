@@ -27,16 +27,15 @@ import { FakeCommandRunner } from './fake-command-runner.ts';
 import { makeTempHome } from './provision-helpers.ts';
 
 // A kimi.yaml-shaped config (mirrors coding-agents/kimi.yaml). The fields the
-// adapter reads are binary, agent_config_env (KIMI_CODE_HOME), and required_env.
+// adapter reads are binary, home_config_subdir, and required_env.
 // `binary` is a REAL on-PATH executable so resolveKimiBinary's in-process
 // Bun.which (mirroring shutil.which, H3) resolves it — there is no `command -v`
 // subprocess probe to stub.
 const KIMI_CONFIG: AgentConfig = {
   name: 'kimi',
   binary: 'sh',
-  agent_config_env: 'KIMI_CODE_HOME',
   home_config_subdir: '.kimi-code',
-  session_log_dir: '${KIMI_CODE_HOME}/sessions',
+  session_log_dir: '${QUORUM_AGENT_HOME}/.kimi-code/sessions',
   session_log_glob: '**/wire.jsonl',
   normalizer: 'kimi',
   required_env: ['SUPERPOWERS_ROOT', 'KIMI_MODEL_API_KEY'],
@@ -201,8 +200,9 @@ test('provision seeds KIMI_CODE_HOME, runs the preflight, installs the plugin', 
         const agent = new KimiAgent(KIMI_CONFIG);
         const env = agent.provision(home, runner);
 
-        // Returned env: KIMI_CODE_HOME -> configDir, plus the launcher pointers.
-        expect(env['KIMI_CODE_HOME']).toBe(home.configDir);
+        // Returned env: the launcher pointers only (kimi finds KIMI_CODE_HOME via
+        // its $HOME/.kimi-code default, so it is not returned).
+        expect(env['KIMI_CODE_HOME']).toBeUndefined();
         expect(env['KIMI_BINARY']).toBe(RESOLVED_BINARY);
         expect(typeof env['KIMI_ENV_FILE']).toBe('string');
         expect(existsSync(env['KIMI_ENV_FILE'] ?? '')).toBe(true);
@@ -1138,8 +1138,9 @@ test('oauth path seeds the host credential files into KIMI_CODE_HOME and runs th
         const agent = new KimiAgent(KIMI_CONFIG);
         const env = agent.provision(home, runner);
 
-        // Returned env: KIMI_CODE_HOME -> configDir + launcher pointers.
-        expect(env['KIMI_CODE_HOME']).toBe(home.configDir);
+        // Returned env: the launcher pointers only (kimi finds KIMI_CODE_HOME via
+        // its $HOME/.kimi-code default, so it is not returned).
+        expect(env['KIMI_CODE_HOME']).toBeUndefined();
         expect(env['KIMI_BINARY']).toBe(RESOLVED_BINARY);
         expect(existsSync(env['KIMI_ENV_FILE'] ?? '')).toBe(true);
 

@@ -23,14 +23,13 @@ import { FakeCommandRunner } from './fake-command-runner.ts';
 import { makeTempHome } from './provision-helpers.ts';
 
 // A codex.yaml-shaped config (mirrors coding-agents/codex.yaml). The fields the
-// adapter reads are agent_config_env (CODEX_HOME) and required_env. required_env
-// no longer carries OPENAI_API_KEY (codex uses ChatGPT subscription auth).
+// adapter reads are home_config_subdir and required_env. required_env no longer
+// carries OPENAI_API_KEY (codex uses ChatGPT subscription auth).
 const CODEX_CONFIG: AgentConfig = {
   name: 'codex',
   binary: 'codex',
-  agent_config_env: 'CODEX_HOME',
   home_config_subdir: '.codex',
-  session_log_dir: '${CODEX_HOME}/sessions',
+  session_log_dir: '${QUORUM_AGENT_HOME}/.codex/sessions',
   session_log_glob: '**/rollout-*.jsonl',
   normalizer: 'codex',
   required_env: ['SUPERPOWERS_ROOT'],
@@ -186,8 +185,9 @@ test('provision copies subscription auth and stages the trusted plugin hook', ()
       const agent = new CodexAgent(CODEX_CONFIG, appServer);
       const env = agent.provision(home, runner);
 
-      // Returned env: at minimum CODEX_HOME -> configDir.
-      expect(env).toEqual({ CODEX_HOME: home.configDir });
+      // Returned env is empty: codex finds CODEX_HOME via its $HOME/.codex
+      // default, so no config-dir var is returned.
+      expect(env).toEqual({});
 
       // Config dir exists and the host subscription auth was copied in, 0600.
       expect(existsSync(home.configDir)).toBe(true);

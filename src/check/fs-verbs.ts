@@ -505,14 +505,11 @@ export function verbAntigravityPluginInstalled(
   _args: string[],
   ctx: CheckContext,
 ): CheckOutcome {
-  const runDir = ctx.env('QUORUM_RUN_DIR');
-  if (!runDir) {
-    return fail('QUORUM_RUN_DIR is not set');
+  const configDir = ctx.env('QUORUM_AGENT_CONFIG_DIR');
+  if (!configDir) {
+    return fail('QUORUM_AGENT_CONFIG_DIR is not set');
   }
-  const root = join(
-    runDir,
-    'coding-agent-config/.gemini/config/plugins/superpowers',
-  );
+  const root = join(configDir, '.gemini/config/plugins/superpowers');
   const result = filesExistUnder(root, [
     'plugin.json',
     'hooks.json',
@@ -529,11 +526,11 @@ export function verbCopilotPluginInstalled(
   _args: string[],
   ctx: CheckContext,
 ): CheckOutcome {
-  const runDir = ctx.env('QUORUM_RUN_DIR');
-  const home = runDir
-    ? join(runDir, 'coding-agent-config')
-    : (ctx.env('COPILOT_HOME') ?? '');
-  const root = join(home, 'plugins/superpowers');
+  const configDir = ctx.env('QUORUM_AGENT_CONFIG_DIR');
+  if (!configDir) {
+    return fail('QUORUM_AGENT_CONFIG_DIR is not set');
+  }
+  const root = join(configDir, 'plugins/superpowers');
   const result = filesExistUnder(root, [
     '.claude-plugin/plugin.json',
     'hooks/hooks.json',
@@ -554,14 +551,14 @@ export function verbOpencodePluginInstalled(
   _args: string[],
   ctx: CheckContext,
 ): CheckOutcome {
-  const runDir = ctx.env('QUORUM_RUN_DIR');
-  const home = runDir
-    ? join(runDir, 'coding-agent-config')
-    : (ctx.env('OPENCODE_QUORUM_HOME') ?? '');
-  const configDir = join(home, '.config/opencode');
-  const plugin = join(configDir, 'plugins/superpowers.js');
+  const configDir = ctx.env('QUORUM_AGENT_CONFIG_DIR');
+  if (!configDir) {
+    return fail('QUORUM_AGENT_CONFIG_DIR is not set');
+  }
+  const opencodeConfig = join(configDir, '.config/opencode');
+  const plugin = join(opencodeConfig, 'plugins/superpowers.js');
   const usingSkill = join(
-    configDir,
+    opencodeConfig,
     'superpowers/skills/using-superpowers/SKILL.md',
   );
   if (!exists(plugin)) {
@@ -578,11 +575,11 @@ export function verbGeminiExtensionLinked(
   _args: string[],
   ctx: CheckContext,
 ): CheckOutcome {
-  const runDir = ctx.env('QUORUM_RUN_DIR');
-  if (!runDir) {
-    return fail('QUORUM_RUN_DIR is not set');
+  const configDir = ctx.env('QUORUM_AGENT_CONFIG_DIR');
+  if (!configDir) {
+    return fail('QUORUM_AGENT_CONFIG_DIR is not set');
   }
-  const root = join(runDir, 'coding-agent-config/.gemini');
+  const root = join(configDir, '.gemini');
   const result = filesExistUnder(root, [
     'extensions/superpowers/.gemini-extension-install.json',
     'extensions/extension-enablement.json',
@@ -603,16 +600,16 @@ export function verbKimiPluginInstalled(
   _args: string[],
   ctx: CheckContext,
 ): CheckOutcome {
-  const runDir = ctx.env('QUORUM_RUN_DIR');
-  if (!runDir) {
-    return fail('QUORUM_RUN_DIR is not set');
+  const configDir = ctx.env('QUORUM_AGENT_CONFIG_DIR');
+  if (!configDir) {
+    return fail('QUORUM_AGENT_CONFIG_DIR is not set');
   }
   const superpowersRoot = ctx.env('SUPERPOWERS_ROOT');
   if (!superpowersRoot) {
     return fail('SUPERPOWERS_ROOT is not set');
   }
 
-  const kimiHome = join(runDir, 'coding-agent-config');
+  const kimiHome = configDir;
   const installed = join(kimiHome, 'plugins/installed.json');
   const managedRoot = join(kimiHome, 'plugins/managed/superpowers');
 
@@ -715,15 +712,9 @@ export function verbCodexNativeHookConfigured(
   _args: string[],
   ctx: CheckContext,
 ): CheckOutcome {
-  let codexHomeDir: string;
-  const codexHome = ctx.env('CODEX_HOME');
-  const runDir = ctx.env('QUORUM_RUN_DIR');
-  if (codexHome) {
-    codexHomeDir = codexHome;
-  } else if (runDir) {
-    codexHomeDir = join(runDir, 'coding-agent-config');
-  } else {
-    codexHomeDir = 'coding-agent-config';
+  const codexHomeDir = ctx.env('QUORUM_AGENT_CONFIG_DIR');
+  if (!codexHomeDir) {
+    return fail('QUORUM_AGENT_CONFIG_DIR is not set');
   }
 
   const config = resolve(ctx.cwd, join(codexHomeDir, 'config.toml'));

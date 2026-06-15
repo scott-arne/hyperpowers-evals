@@ -275,13 +275,21 @@ export class GeminiAgent implements CodingAgent {
       copyGeminiOauthCredentials(configDir);
     }
 
-    // Env passed to the gemini subprocesses.
+    // Trust/auth vars the launcher needs (returned to the runner). These are
+    // genuine gemini-read knobs, not the config-dir token.
     const agentVars: Record<string, string> = {
-      GEMINI_CLI_HOME: configDir,
       GEMINI_CLI_TRUST_WORKSPACE: 'true',
       GEMINI_DEFAULT_AUTH_TYPE: authType,
     };
-    const subprocessEnv = { ...envSnapshot(), ...agentVars };
+    // The provisioning subprocesses additionally need GEMINI_CLI_HOME pointed at
+    // the isolated config dir so the link/list run against it. The launched agent
+    // finds its config via the throwaway $HOME default, so GEMINI_CLI_HOME is
+    // NOT returned — it is preflight-only.
+    const subprocessEnv = {
+      ...envSnapshot(),
+      ...agentVars,
+      GEMINI_CLI_HOME: configDir,
+    };
 
     // gemini extensions link <SUPERPOWERS_ROOT> --consent
     const link = runner.run(
@@ -331,6 +339,6 @@ export class GeminiAgent implements CodingAgent {
       );
     }
 
-    return { [this.config.agent_config_env]: configDir, ...agentVars };
+    return { ...agentVars };
   }
 }

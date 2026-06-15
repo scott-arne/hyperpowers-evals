@@ -274,17 +274,16 @@ function readPiOauthSettings(settingsPath: string): {
 // settings.json, and pi.env. Auth is OAuth-or-env: when PI_API_KEY is set it
 // uses the api-key path (auth.json's key field is the literal "$PI_API_KEY"
 // placeholder, expanded later by the launcher from pi.env); otherwise it seeds
-// the host OAuth login into the isolated config dir. The returned env map carries
-// only the agent_config_env -> configDir mapping; every secret lives in the
-// written files, never in the returned env.
+// the host OAuth login into the isolated config dir. The returned env map is
+// empty; every secret lives in the written files, never in the returned env.
 //
 // PI_CODING_AGENT_DIR collapse: home.configDir is rooted under the throwaway
 // $HOME at <runHome>/.pi/agent (pi.yaml: home_config_subdir ".pi/agent"), which
 // is exactly where pi defaults its config + session dir when neither
 // PI_CODING_AGENT_DIR nor --session-dir is set. provision seeds the files under
 // configDir; the launcher omits the config-dir var and --session-dir, so pi
-// discovers it all via the isolated $HOME. The returned agent_config_env ->
-// configDir mapping resolves session_log_dir's ${PI_CODING_AGENT_DIR} for
+// discovers it all via the isolated $HOME. The runner resolves session_log_dir
+// against $QUORUM_AGENT_HOME (${QUORUM_AGENT_HOME}/.pi/agent/sessions) for
 // capture and bakes the path into the HOWTO/launcher.
 export class PiAgent implements CodingAgent {
   readonly config: AgentConfig;
@@ -313,7 +312,7 @@ export class PiAgent implements CodingAgent {
     const apiKey = getEnv('PI_API_KEY');
     if (apiKey === undefined || apiKey === '') {
       seedPiOauth(configDir);
-      return { [this.config.agent_config_env]: configDir };
+      return {};
     }
 
     const provider = requirePiEnv('PI_PROVIDER', 'configure Pi provider');
@@ -344,6 +343,6 @@ export class PiAgent implements CodingAgent {
 
     writePiEnvFile(configDir, provider, model, apiKey, extraEnv);
 
-    return { [this.config.agent_config_env]: configDir };
+    return {};
   }
 }

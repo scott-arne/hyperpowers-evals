@@ -14,9 +14,8 @@ function cfg(name: string, runtimeFamily?: string): AgentConfig {
   return {
     name,
     binary: name,
-    agent_config_env: 'X_HOME',
     home_config_subdir: '.',
-    session_log_dir: '${X_HOME}',
+    session_log_dir: '${QUORUM_AGENT_HOME}',
     session_log_glob: '*.jsonl',
     normalizer: name,
     required_env: [],

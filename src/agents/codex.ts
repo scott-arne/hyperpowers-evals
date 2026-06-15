@@ -170,7 +170,8 @@ export class CodexAgent implements CodingAgent {
     // 2. Stage Superpowers as a trusted Codex plugin hook.
     this.installPluginHooks(configDir, workdir, superpowersRoot);
 
-    return { [this.config.agent_config_env]: configDir };
+    // No extra env: Codex finds CODEX_HOME via its $HOME/.codex default.
+    return {};
   }
 
   // Seed ChatGPT subscription auth into the isolated per-run CODEX_HOME. Reads

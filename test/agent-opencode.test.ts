@@ -24,14 +24,13 @@ import { FakeCommandRunner } from './fake-command-runner.ts';
 import { makeTempHome } from './provision-helpers.ts';
 
 // An opencode.yaml-shaped config (mirrors coding-agents/opencode.yaml). The
-// fields the adapter reads are agent_config_env (OPENCODE_QUORUM_HOME) and
-// required_env (SUPERPOWERS_ROOT).
+// fields the adapter reads are home_config_subdir and required_env
+// (SUPERPOWERS_ROOT).
 const OPENCODE_CONFIG: AgentConfig = {
   name: 'opencode',
   binary: 'opencode',
-  agent_config_env: 'OPENCODE_QUORUM_HOME',
   home_config_subdir: '.',
-  session_log_dir: '${OPENCODE_QUORUM_HOME}/.quorum/session-exports',
+  session_log_dir: '${QUORUM_AGENT_HOME}/.quorum/session-exports',
   session_log_glob: '[0-9]*-ses_*.json',
   normalizer: 'opencode',
   required_env: ['SUPERPOWERS_ROOT'],
@@ -198,9 +197,9 @@ test('provision stages Superpowers into the XDG-isolated home and pins the model
       expect(lstatSync(pluginLink).isSymbolicLink()).toBe(true);
       expect(readlinkSync(pluginLink)).toBe(stagedPlugin);
 
-      // Returned env: agent_config_env -> opencode_home, plus the XDG vars.
+      // Returned env: just the XDG isolation vars (opencode finds its config via
+      // the throwaway $HOME, so no config-dir var is returned).
       expect(env).toEqual({
-        OPENCODE_QUORUM_HOME: opencodeHome,
         ...expectedXdg(opencodeHome),
       });
     });

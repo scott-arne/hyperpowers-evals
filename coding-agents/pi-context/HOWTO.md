@@ -19,7 +19,7 @@ Do not hand-type a bare `pi` or reconstruct the command yourself. Launching from
 Pi writes JSONL session logs under:
 
 ```text
-$PI_CODING_AGENT_DIR/sessions/**/*.jsonl
+$QUORUM_AGENT_HOME/.pi/agent/sessions/**/*.jsonl
 ```
 
 Without an explicit `--session-dir`, Pi nests sessions one level deeper, under a per-launch-cwd subdir (`sessions/<cwd-encoded>/<ts>_<uuid>.jsonl`), so traverse that extra level.
@@ -29,7 +29,7 @@ The session JSONL is ground truth for tool calls and agent actions. The screen c
 Find the newest session:
 
 ```bash
-find "$PI_CODING_AGENT_DIR/sessions" -name '*.jsonl' -exec ls -t {} + 2>/dev/null | head -1
+find "$QUORUM_AGENT_HOME/.pi/agent/sessions" -name '*.jsonl' -exec ls -t {} + 2>/dev/null | head -1
 ```
 
 Tail that file to inspect recent activity.
@@ -39,7 +39,7 @@ Tail that file to inspect recent activity.
 When Pi is busy, do not poll the screen with repeated sleeps. Register the session glob once after launch, then block-wait:
 
 ```text
-watch_logs(glob="$PI_CODING_AGENT_DIR/sessions/**/*.jsonl")
+watch_logs(glob="$QUORUM_AGENT_HOME/.pi/agent/sessions/**/*.jsonl")
 wake_on_idle_log(idle_ms=60000, timeout_ms=240000)
 ```
 

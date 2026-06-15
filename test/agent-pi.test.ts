@@ -91,9 +91,8 @@ function piConfig(): AgentConfig {
   return {
     name: 'pi',
     binary: 'pi',
-    agent_config_env: 'PI_CODING_AGENT_DIR',
     home_config_subdir: '.pi/agent',
-    session_log_dir: '${PI_CODING_AGENT_DIR}/sessions',
+    session_log_dir: '${QUORUM_AGENT_HOME}/.pi/agent/sessions',
     session_log_glob: '**/*.jsonl',
     normalizer: 'pi',
     required_env: ['SUPERPOWERS_ROOT', 'PI_PROVIDER', 'PI_MODEL', 'PI_API_KEY'],
@@ -215,9 +214,9 @@ test('provision seeds the config dir, sessions subdir, and all config files', ()
       );
       expect(mode600(envPath)).toBe(0o600);
 
-      // Returned env: exactly the agent_config_env -> configDir mapping. No
-      // secrets leak into the returned env.
-      expect(returned).toEqual({ PI_CODING_AGENT_DIR: home.configDir });
+      // Returned env is empty: pi finds its config via the throwaway $HOME
+      // (.pi/agent), and no secrets leak into the returned env.
+      expect(returned).toEqual({});
     });
   } finally {
     sp.cleanup();
@@ -385,7 +384,7 @@ test('pi genuinely absent from PATH throws a precise setup error (Bun.which)', (
 });
 
 // H3 positive: a real `pi` executable on PATH resolves via Bun.which and
-// provisioning proceeds, returning the agent_config_env mapping.
+// provisioning proceeds, returning an empty env map.
 test('pi present on PATH resolves via Bun.which and provisions', () => {
   const { home, cleanup } = makeTempHome();
   const sp = makeSuperpowersRoot();
@@ -396,7 +395,7 @@ test('pi present on PATH resolves via Bun.which and provisions', () => {
     withEnv({ ...BASE_ENV, SUPERPOWERS_ROOT: sp.root }, () => {
       const agent = new PiAgent(piConfig());
       const returned = agent.provision(home);
-      expect(returned).toEqual({ PI_CODING_AGENT_DIR: home.configDir });
+      expect(returned).toEqual({});
     });
   } finally {
     if (prevPath === undefined) {
@@ -528,7 +527,7 @@ test('oauth path seeds the host auth.json into the isolated config dir', () => {
         );
         expect(envBody).not.toContain('PI_API_KEY');
 
-        expect(returned).toEqual({ PI_CODING_AGENT_DIR: home.configDir });
+        expect(returned).toEqual({});
       },
     );
   } finally {

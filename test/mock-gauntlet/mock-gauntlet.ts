@@ -5,8 +5,8 @@
 // literal `gauntlet` (see test/mock-gauntlet/gauntlet), which execs this file.
 // Given MOCK_GAUNTLET_FIXTURE, it drops a canned result.json (+ usage.jsonl if
 // present) into the project dir's gauntlet-agent results, and a canned claude
-// session log under CLAUDE_CONFIG_DIR/projects so the runner's snapshot/diff
-// sees it, then exits 0. It emulates:
+// session log under $QUORUM_AGENT_HOME/.claude/projects so the runner's
+// snapshot/diff sees it, then exits 0. It emulates:
 //   gauntlet run <story> --adapter tui --target <t> --project-dir <dir>
 //           --state-dir gauntlet-agent --silent [--max-time ...] [...]
 // The special `hang` fixture is the exception: it parks (see below) so the
@@ -54,13 +54,14 @@ if (fixture === 'hang') {
   }
 
   // 2) canned coding-agent session log into
-  // CLAUDE_CONFIG_DIR/projects/mock/<runId>.jsonl. That dir is under the resolved
-  // session_log_dir (${CLAUDE_CONFIG_DIR}/projects), so the runner diffs it in.
+  // $QUORUM_AGENT_HOME/.claude/projects/mock/<runId>.jsonl. That dir is under the
+  // resolved session_log_dir (${QUORUM_AGENT_HOME}/.claude/projects), where the
+  // real claude writes via its $HOME/.claude default, so the runner diffs it in.
   const sessionSrc = join(fixtureDir, 'claude-session.jsonl');
   if (existsSync(sessionSrc)) {
-    const configDir = process.env['CLAUDE_CONFIG_DIR'];
-    if (configDir !== undefined && configDir !== '') {
-      const dest = join(configDir, 'projects', 'mock');
+    const agentHome = process.env['QUORUM_AGENT_HOME'];
+    if (agentHome !== undefined && agentHome !== '') {
+      const dest = join(agentHome, '.claude', 'projects', 'mock');
       mkdirSync(dest, { recursive: true });
       cpSync(sessionSrc, join(dest, `${runId}.jsonl`));
     }

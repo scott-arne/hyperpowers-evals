@@ -38,13 +38,13 @@ the creds quorum seeded — keep the launcher's `HOME` pin.)
 Antigravity writes raw transcripts as JSONL files under:
 
 ```
-$ANTIGRAVITY_CONFIG_DIR/.gemini/antigravity-cli/brain/**/transcript.jsonl
+$QUORUM_AGENT_HOME/.gemini/antigravity-cli/brain/**/transcript.jsonl
 ```
 
 The CLI log is written to:
 
 ```
-$ANTIGRAVITY_CONFIG_DIR/agy.log
+$QUORUM_AGENT_HOME/agy.log
 ```
 
 The transcripts are ground truth for Antigravity tool calls and agent actions.
@@ -55,10 +55,10 @@ agent is still active. When the screen and logs disagree, trust the logs.
 Find the newest transcript:
 
 ```
-find "$ANTIGRAVITY_CONFIG_DIR/.gemini/antigravity-cli/brain" -name transcript.jsonl -exec ls -t {} + 2>/dev/null | head -1
+find "$QUORUM_AGENT_HOME/.gemini/antigravity-cli/brain" -name transcript.jsonl -exec ls -t {} + 2>/dev/null | head -1
 ```
 
-Tail that file or `$ANTIGRAVITY_CONFIG_DIR/agy.log` to inspect recent activity.
+Tail that file or `$QUORUM_AGENT_HOME/agy.log` to inspect recent activity.
 
 ## Waiting for Antigravity to work
 
@@ -66,7 +66,7 @@ When Antigravity is busy, do not poll the screen with repeated sleeps. Register
 the transcript glob once after launch, then block-wait:
 
 ```
-watch_logs(glob="$ANTIGRAVITY_CONFIG_DIR/.gemini/antigravity-cli/brain/**/transcript.jsonl")
+watch_logs(glob="$QUORUM_AGENT_HOME/.gemini/antigravity-cli/brain/**/transcript.jsonl")
 wake_on_idle_log(idle_ms=60000, timeout_ms=240000)
 ```
 

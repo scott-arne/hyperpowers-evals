@@ -40,7 +40,7 @@ the workdir before you start.
 ## Observing what Codex is doing
 
 Codex writes rollout logs as JSONL files under
-`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` — one file per
+`$QUORUM_AGENT_HOME/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` — one file per
 (sub)agent, organized by date. Because this run has its own throwaway
 `$HOME` (with `CODEX_HOME` under it at `$HOME/.codex`), anything in there
 is from this session.
@@ -54,7 +54,7 @@ when the two disagree.
 To peek at recent activity:
 
 ```
-ls -t "$CODEX_HOME"/sessions/**/rollout-*.jsonl | head -1
+ls -t "$QUORUM_AGENT_HOME"/.codex/sessions/**/rollout-*.jsonl | head -1
 ```
 
 `tail` or `jq` that file to see Codex's tool invocations.
@@ -70,7 +70,7 @@ the agent into a degenerate empty-turn state on long-haul runs.
 Instead, register the rollout glob once after launch, then block-wait:
 
 ```
-watch_logs(glob="$CODEX_HOME/sessions/**/rollout-*.jsonl")
+watch_logs(glob="$QUORUM_AGENT_HOME/.codex/sessions/**/rollout-*.jsonl")
 wake_on_idle_log(idle_ms=60000, timeout_ms=240000)
 ```
 

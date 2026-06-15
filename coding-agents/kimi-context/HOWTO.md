@@ -32,13 +32,13 @@ reconstruct the command yourself.
 Kimi writes session metadata under:
 
 ```
-$KIMI_CODE_HOME/session_index.jsonl
+$QUORUM_AGENT_HOME/.kimi-code/session_index.jsonl
 ```
 
 The active session's wire log lives under:
 
 ```
-$KIMI_CODE_HOME/sessions/**/agents/main/wire.jsonl
+$QUORUM_AGENT_HOME/.kimi-code/sessions/**/agents/main/wire.jsonl
 ```
 
 The wire log is ground truth for Kimi tool calls and agent actions. The screen
@@ -48,7 +48,7 @@ screen and logs disagree, trust the log.
 Find the newest wire log:
 
 ```
-find "$KIMI_CODE_HOME/sessions" -name wire.jsonl -exec ls -t {} + 2>/dev/null | head -1
+find "$QUORUM_AGENT_HOME/.kimi-code/sessions" -name wire.jsonl -exec ls -t {} + 2>/dev/null | head -1
 ```
 
 Tail that file to inspect recent activity.
@@ -59,7 +59,7 @@ When Kimi is busy, do not poll the screen with repeated sleeps. Register the
 wire-log glob once after launch, then block-wait:
 
 ```
-watch_logs(glob="$KIMI_CODE_HOME/sessions/**/wire.jsonl")
+watch_logs(glob="$QUORUM_AGENT_HOME/.kimi-code/sessions/**/wire.jsonl")
 wake_on_idle_log(idle_ms=60000, timeout_ms=240000)
 ```
 

@@ -33,9 +33,8 @@ function writeClaudeYaml(dir: string, projectPrompt: string | undefined): void {
     'name: claude',
     'runtime_family: claude',
     'binary: claude',
-    'agent_config_env: CLAUDE_CONFIG_DIR',
     'home_config_subdir: ".claude"',
-    'session_log_dir: "${CLAUDE_CONFIG_DIR}/projects"',
+    'session_log_dir: "${QUORUM_AGENT_HOME}/.claude/projects"',
     'session_log_glob: "**/*.jsonl"',
     'normalizer: claude',
     'model: opus',
@@ -56,9 +55,8 @@ function writeYaml(dir: string, name: string, lines: readonly string[]): void {
 
 const CLAUDE_BASE: readonly string[] = [
   'binary: claude',
-  'agent_config_env: CLAUDE_CONFIG_DIR',
   'home_config_subdir: ".claude"',
-  'session_log_dir: "${CLAUDE_CONFIG_DIR}/projects"',
+  'session_log_dir: "${QUORUM_AGENT_HOME}/.claude/projects"',
   'session_log_glob: "**/*.jsonl"',
   'normalizer: claude',
 ];
@@ -71,9 +69,8 @@ test('loads claude.yaml into a typed AgentConfig', () => {
       'name: claude',
       'runtime_family: claude',
       'binary: claude',
-      'agent_config_env: CLAUDE_CONFIG_DIR',
       'home_config_subdir: ".claude"',
-      'session_log_dir: "${CLAUDE_CONFIG_DIR}/projects"',
+      'session_log_dir: "${QUORUM_AGENT_HOME}/.claude/projects"',
       'session_log_glob: "**/*.jsonl"',
       'normalizer: claude',
       'required_env:',
@@ -245,8 +242,7 @@ test('AgentConfigSchema requires home_config_subdir', () => {
     AgentConfigSchema.parse({
       name: 'x',
       binary: 'x',
-      agent_config_env: 'X_HOME',
-      session_log_dir: '${X_HOME}/sessions',
+      session_log_dir: '${QUORUM_AGENT_HOME}/sessions',
       session_log_glob: '*.jsonl',
       normalizer: 'x',
     }),
@@ -257,9 +253,8 @@ test('AgentConfigSchema requires home_config_subdir', () => {
 const CONFIG_DIR_BASE = AgentConfigSchema.parse({
   name: 'x',
   binary: 'x',
-  agent_config_env: 'X_HOME',
   home_config_subdir: '.',
-  session_log_dir: '${X_HOME}/sessions',
+  session_log_dir: '${QUORUM_AGENT_HOME}/sessions',
   session_log_glob: '*.jsonl',
   normalizer: 'x',
 });

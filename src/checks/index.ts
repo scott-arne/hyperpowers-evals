@@ -32,6 +32,11 @@ export interface RunPhaseArgs {
   readonly transcriptPath?: string;
   /** Optional: the run dir, exposed to post-checks that read sibling artifacts. */
   readonly runDir?: string;
+  /**
+   * Optional: the coding-agent's isolated config dir, exposed to the bootstrap
+   * verbs as QUORUM_AGENT_CONFIG_DIR (= <runHome>/<home_config_subdir>).
+   */
+  readonly configDir?: string;
 }
 
 export interface RunPhaseResult {
@@ -72,6 +77,9 @@ export async function runPhase(args: RunPhaseArgs): Promise<RunPhaseResult> {
       ? { QUORUM_TRANSCRIPT_PATH: args.transcriptPath }
       : {}),
     ...(args.runDir !== undefined ? { QUORUM_RUN_DIR: args.runDir } : {}),
+    ...(args.configDir !== undefined
+      ? { QUORUM_AGENT_CONFIG_DIR: args.configDir }
+      : {}),
   };
 
   try {

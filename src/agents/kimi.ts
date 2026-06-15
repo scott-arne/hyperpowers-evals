@@ -201,12 +201,11 @@ export class KimiAgent implements CodingAgent {
     // the kimi home (configDir).
     writeEffectiveKimiConfig(configDir, runtimeEnv, kimiBinary);
 
-    // The env map the launcher needs: KIMI_CODE_HOME (agent_config_env), plus the
-    // runtime env-file path and resolved binary as the $KIMI_ENV_FILE /
-    // $KIMI_BINARY launch-agent substitutions; the launcher sources $KIMI_ENV_FILE
-    // and execs $KIMI_BINARY.
+    // The env map the launcher needs: the runtime env-file path and resolved
+    // binary as the $KIMI_ENV_FILE / $KIMI_BINARY launch-agent substitutions; the
+    // launcher sources $KIMI_ENV_FILE and execs $KIMI_BINARY. Kimi finds
+    // KIMI_CODE_HOME via its $HOME/.kimi-code default, so it is not passed here.
     return {
-      [this.config.agent_config_env]: configDir,
       KIMI_ENV_FILE: envFilePath,
       KIMI_BINARY: kimiBinary,
     };

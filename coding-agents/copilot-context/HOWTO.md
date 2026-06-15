@@ -36,20 +36,20 @@ where quorum seeded the config.
 Copilot writes session-state events under the isolated home:
 
 ```
-$COPILOT_HOME/session-state/**/events.jsonl
+$QUORUM_AGENT_HOME/.copilot/session-state/**/events.jsonl
 ```
 
 For this run, the launcher passes the session id that quorum generated, so the
 expected event file is under:
 
 ```
-$COPILOT_HOME/session-state/$QUORUM_COPILOT_SESSION_ID/events.jsonl
+$QUORUM_AGENT_HOME/.copilot/session-state/$QUORUM_COPILOT_SESSION_ID/events.jsonl
 ```
 
 Copilot CLI logs are written under:
 
 ```
-$COPILOT_HOME/logs
+$QUORUM_AGENT_HOME/.copilot/logs
 ```
 
 The session-state `events.jsonl` files are the ground truth for tool calls and
@@ -62,8 +62,8 @@ When Copilot is busy, wait for it to finish rather than repeatedly polling the
 screen. If you need to inspect local state, use the isolated paths:
 
 ```
-find $COPILOT_HOME_SH/session-state -name events.jsonl -type f -print 2>/dev/null
-find $COPILOT_HOME_SH/logs -type f -print 2>/dev/null
+find $QUORUM_AGENT_HOME_SH/.copilot/session-state -name events.jsonl -type f -print 2>/dev/null
+find $QUORUM_AGENT_HOME_SH/.copilot/logs -type f -print 2>/dev/null
 ```
 
 ## Shutdown

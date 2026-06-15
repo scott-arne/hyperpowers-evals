@@ -38,13 +38,13 @@ inheritance.
 Claude reads its config from its `$HOME/.claude` default, a per-run
 isolated dir quorum seeds (with dialog-bypass state) before launch, so
 no user-installed plugins or projects from the host machine affect this
-run. The `$CLAUDE_CONFIG_DIR` paths below are burned in by quorum at
+run. The `$QUORUM_AGENT_HOME/.claude` paths below are burned in by quorum at
 runtime to that same isolated `.claude` dir.
 
 ## Observing what Claude is doing
 
 Claude writes its session log as JSONL files under
-`$CLAUDE_CONFIG_DIR/projects/<derived-path>/<UUID>.jsonl`. The
+`$QUORUM_AGENT_HOME/.claude/projects/<derived-path>/<UUID>.jsonl`. The
 `<derived-path>` is the launch cwd with every `/` replaced by `-`. The
 filename itself is a UUIDv4 (e.g.
 `7206a2c2-95f3-46e9-9bc8-8f6a863fcfc6.jsonl`).
@@ -66,7 +66,7 @@ see "Waiting for Claude to work" below.
 Find the active session file:
 
 ```
-find "$CLAUDE_CONFIG_DIR/projects" -name '*.jsonl' -mmin -5 -print
+find "$QUORUM_AGENT_HOME/.claude/projects" -name '*.jsonl' -mmin -5 -print
 ```
 
 Tail it as JSONL:
@@ -89,7 +89,7 @@ long-haul runs.
 Instead, register the rollout glob once after launch, then block-wait:
 
 ```
-watch_logs(glob="$CLAUDE_CONFIG_DIR/projects/**/*.jsonl")
+watch_logs(glob="$QUORUM_AGENT_HOME/.claude/projects/**/*.jsonl")
 wake_on_idle_log(idle_ms=60000, timeout_ms=240000)
 ```
 

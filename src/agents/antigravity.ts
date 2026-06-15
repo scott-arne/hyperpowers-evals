@@ -241,10 +241,9 @@ export class AntigravityAgent implements CodingAgent {
     // — belongs with the capture/runtime stage, not setup, and depends on the
     // capture snapshot machinery. Not handled here.
 
-    // The env map: just the agent_config_env -> configDir. (agy reads its
-    // isolated state via the --gemini_dir flag we pass on each CLI invocation,
-    // not via an env var, so there are no extra vars.)
-    return { [this.config.agent_config_env]: configDir };
+    // No extra env: agy finds its isolated state via the --gemini_dir flag the
+    // launcher passes (= $QUORUM_AGENT_HOME/.gemini), not via an env var.
+    return {};
   }
 
   // Validate the Gemini Code Assist backend with a throwaway --gemini_dir so the

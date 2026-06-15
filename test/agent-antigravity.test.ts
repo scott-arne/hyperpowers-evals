@@ -71,13 +71,12 @@ afterEach(() => {
 });
 
 // An antigravity.yaml-shaped config (mirrors coding-agents/antigravity.yaml).
-// The fields the adapter reads are agent_config_env and required_env.
+// The fields the adapter reads are home_config_subdir and required_env.
 const ANTIGRAVITY_CONFIG: AgentConfig = {
   name: 'antigravity',
   binary: 'agy',
-  agent_config_env: 'ANTIGRAVITY_CONFIG_DIR',
   home_config_subdir: '.',
-  session_log_dir: '${ANTIGRAVITY_CONFIG_DIR}/.gemini/antigravity-cli/brain',
+  session_log_dir: '${QUORUM_AGENT_HOME}/.gemini/antigravity-cli/brain',
   session_log_glob: '**/transcript.jsonl',
   normalizer: 'antigravity',
   required_env: ['SUPERPOWERS_ROOT'],
@@ -198,8 +197,9 @@ test('provision seeds the .gemini tree, preflights, installs the plugin, and wri
       const agent = new AntigravityAgent(ANTIGRAVITY_CONFIG);
       const env = agent.provision(home, runner);
 
-      // Returned env: ANTIGRAVITY_CONFIG_DIR -> configDir, nothing else.
-      expect(env).toEqual({ ANTIGRAVITY_CONFIG_DIR: home.configDir });
+      // Returned env is empty: agy finds its isolated state via the launcher's
+      // --gemini_dir flag (= $QUORUM_AGENT_HOME/.gemini), not via an env var.
+      expect(env).toEqual({});
 
       // Config dir + the installed plugin tree exist.
       expect(existsSync(home.configDir)).toBe(true);
@@ -333,7 +333,7 @@ test('preflight tolerates punctuation/case/whitespace in the OK reply', () => {
     withRoot(spRoot, () => {
       const agent = new AntigravityAgent(ANTIGRAVITY_CONFIG);
       const env = agent.provision(home, runner);
-      expect(env).toEqual({ ANTIGRAVITY_CONFIG_DIR: home.configDir });
+      expect(env).toEqual({});
     });
   } finally {
     cleanup();
