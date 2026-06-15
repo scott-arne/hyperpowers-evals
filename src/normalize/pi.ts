@@ -1,5 +1,6 @@
 import {
   ATIF_SCHEMA_VERSION,
+  type AtifMetrics,
   type AtifStep,
   type AtifToolCall,
   type AtifTrajectory,
@@ -22,6 +23,9 @@ interface PiEntry {
   message?: {
     role?: string;
     content?: PiContentBlock[];
+    model?: string;
+    provider?: string;
+    usage?: PiUsage;
   };
 }
 
@@ -30,6 +34,57 @@ interface PiContentBlock {
   name?: string;
   arguments?: unknown;
   id?: string;
+}
+
+interface PiUsage {
+  input?: unknown;
+  output?: unknown;
+  cacheRead?: unknown;
+  cacheWrite?: unknown;
+  cost?: { total?: unknown };
+}
+
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+/**
+ * Map a pi `message.usage` block to ATIF step metrics + extra.
+ *   input→prompt_tokens, output→completion_tokens, cacheRead→cached_tokens,
+ *   cost.total→cost_usd; cacheWrite→extra.cache_write.
+ * Returns undefined when the message carries no usage fields at all.
+ */
+function piMessageUsage(
+  usage: PiUsage | undefined,
+  provider: string | undefined,
+): {
+  metrics?: AtifMetrics | undefined;
+  extra?: Record<string, unknown> | undefined;
+} {
+  const metrics: AtifMetrics = {};
+  if (usage && typeof usage === 'object') {
+    const prompt = numberOrUndefined(usage.input);
+    const completion = numberOrUndefined(usage.output);
+    const cached = numberOrUndefined(usage.cacheRead);
+    const cost = numberOrUndefined(usage.cost?.total);
+    if (prompt !== undefined) metrics.prompt_tokens = prompt;
+    if (completion !== undefined) metrics.completion_tokens = completion;
+    if (cached !== undefined) metrics.cached_tokens = cached;
+    if (cost !== undefined) metrics.cost_usd = cost;
+  }
+
+  const extra: Record<string, unknown> = {};
+  if (provider) extra['provider'] = provider;
+  const cacheWrite = numberOrUndefined(usage?.cacheWrite);
+  if (cacheWrite !== undefined && cacheWrite !== 0)
+    extra['cache_write'] = cacheWrite;
+
+  return {
+    metrics: Object.keys(metrics).length > 0 ? metrics : undefined,
+    extra: Object.keys(extra).length > 0 ? extra : undefined,
+  };
 }
 
 /**
@@ -63,6 +118,20 @@ export function normalizePi(raw: string, version: string): AtifTrajectory {
     const content = message['content'];
     if (!Array.isArray(content)) continue;
 
+    // Per-message usage. pi logs model/provider/usage on the assistant
+    // message; attach it to the FIRST step the message produces so a
+    // multi-toolCall message does not double-count its tokens. A usage-bearing
+    // text-only message (no toolCall blocks) still records a metrics-only step
+    // so its tokens/cost are not dropped.
+    const model = typeof message.model === 'string' ? message.model : undefined;
+    const { metrics, extra } = piMessageUsage(message.usage, message.provider);
+    const applyUsage = (step: AtifStep): void => {
+      if (model) step.model_name = model;
+      if (metrics) step.metrics = metrics;
+      if (extra) step.extra = extra;
+    };
+    let messageUsageAttached = false;
+
     for (const block of content) {
       if (!block || typeof block !== 'object') continue;
       const b = block as PiContentBlock;
@@ -93,11 +162,26 @@ export function normalizePi(raw: string, version: string): AtifTrajectory {
         arguments: args,
       };
 
-      steps.push({
+      const step: AtifStep = {
         step_id: stepId++,
         source: 'agent',
         tool_calls: [tc],
-      });
+      };
+
+      if (!messageUsageAttached && (model || metrics || extra)) {
+        applyUsage(step);
+        messageUsageAttached = true;
+      }
+
+      steps.push(step);
+    }
+
+    // Text-only assistant message that nonetheless carries usage: emit a
+    // metrics-only agent step so the tokens/cost survive.
+    if (!messageUsageAttached && (metrics || extra)) {
+      const step: AtifStep = { step_id: stepId++, source: 'agent' };
+      applyUsage(step);
+      steps.push(step);
     }
   }
 
