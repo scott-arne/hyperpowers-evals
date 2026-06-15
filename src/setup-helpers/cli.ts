@@ -95,7 +95,7 @@ async function main(argv: readonly string[]): Promise<number> {
 }
 
 if (import.meta.main) {
-  // The bin/setup-helpers shim's `exec bun run` inherits this exit code,
-  // preserving the Python CLI's 2-vs-1 distinction.
+  // The prelude's `setup-helpers` function (`bun run …/cli.ts "$@"`) inherits
+  // this exit code, preserving the Python CLI's 2-vs-1 distinction.
   process.exit(await main(process.argv.slice(2)));
 }

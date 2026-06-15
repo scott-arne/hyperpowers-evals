@@ -1,8 +1,9 @@
 // Prove the sourced check prelude (src/checks/prelude.sh) emits records that are
-// BYTE-IDENTICAL to the legacy bin/ shims. Each prelude function still execs the
-// same src/cli/check-tool.ts, so the {check,args,negated,passed,detail} line must
-// match the shim's exactly. Covered: file-exists, git-count (a passing AND a
-// failing op), and a negated `not file-exists`.
+// BYTE-IDENTICAL to invoking the check-tool CLI directly. Each prelude function
+// just execs `check-tool.ts <verb> "$@"`, so the {check,args,negated,passed,
+// detail} line must match the direct CLI's exactly — the prelude wrapper must
+// add no record-perturbing behavior. Covered: file-exists, git-count (a passing
+// AND a failing op), and a negated `not file-exists`.
 
 import { expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -11,8 +12,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const REPO = resolve(import.meta.dir, '..');
-const BIN = resolve(REPO, 'bin');
 const PRELUDE = resolve(REPO, 'src', 'checks', 'prelude.sh');
+const CHECK_TOOL = resolve(REPO, 'src', 'cli', 'check-tool.ts');
 
 function workdir(): string {
   return mkdtempSync(join(tmpdir(), 'pre-wd-'));
@@ -33,10 +34,10 @@ function gitCommit(dir: string, file: string): void {
   spawnSync('git', ['commit', '-qm', file], opts);
 }
 
-/** Run a verb via the legacy bin/ shim; return the raw record line. */
-function viaShim(tool: string, args: string[], cwd: string): string {
+/** Run a verb by invoking the check-tool CLI directly; return the record line. */
+function viaCli(verb: string, args: string[], cwd: string): string {
   const sink = join(mkdtempSync(join(tmpdir(), 'pre-sink-')), 'r.jsonl');
-  spawnSync(join(BIN, tool), args, {
+  spawnSync('bun', ['run', CHECK_TOOL, verb, ...args], {
     cwd,
     env: { ...process.env, QUORUM_RECORD_SINK: sink },
     encoding: 'utf8',
@@ -57,35 +58,35 @@ function viaPrelude(verb: string, verbArgs: string[], cwd: string): string {
   return readFileSync(sink, 'utf8');
 }
 
-test('prelude file-exists record is byte-identical to the bin/ shim', () => {
+test('prelude file-exists record is byte-identical to the direct check-tool CLI', () => {
   const wd = workdir();
   writeFileSync(join(wd, 'present.txt'), 'x');
   expect(viaPrelude('file-exists', ['present.txt'], wd)).toBe(
-    viaShim('file-exists', ['present.txt'], wd),
+    viaCli('file-exists', ['present.txt'], wd),
   );
 });
 
-test('prelude git-count (passing op) record is byte-identical to the bin/ shim', () => {
+test('prelude git-count (passing op) record is byte-identical to the direct check-tool CLI', () => {
   const wd = workdir();
   gitInit(wd);
   gitCommit(wd, 'a');
   expect(viaPrelude('git-count', ['commits', 'eq', '1'], wd)).toBe(
-    viaShim('git-count', ['commits', 'eq', '1'], wd),
+    viaCli('git-count', ['commits', 'eq', '1'], wd),
   );
 });
 
-test('prelude git-count (failing op) record is byte-identical to the bin/ shim', () => {
+test('prelude git-count (failing op) record is byte-identical to the direct check-tool CLI', () => {
   const wd = workdir();
   gitInit(wd);
   gitCommit(wd, 'a');
   expect(viaPrelude('git-count', ['commits', 'eq', '5'], wd)).toBe(
-    viaShim('git-count', ['commits', 'eq', '5'], wd),
+    viaCli('git-count', ['commits', 'eq', '5'], wd),
   );
 });
 
-test('prelude `not file-exists` (miss) negated record is byte-identical to the bin/ shim', () => {
+test('prelude `not file-exists` (miss) negated record is byte-identical to the direct check-tool CLI', () => {
   const wd = workdir();
   expect(viaPrelude('not', ['file-exists', 'nope.txt'], wd)).toBe(
-    viaShim('not', ['file-exists', 'nope.txt'], wd),
+    viaCli('not', ['file-exists', 'nope.txt'], wd),
   );
 });

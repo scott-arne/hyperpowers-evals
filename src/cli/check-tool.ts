@@ -1,12 +1,13 @@
-// check-tool CLI — the single typed dispatcher behind the bin/ check shims.
+// check-tool CLI — the single typed dispatcher behind the bare check verbs.
 //
 // Usage: bun run check-tool.ts <verb> [args...]
 //
-// Each bin/ check tool is a thin shim that execs this CLI with its own name as
-// <verb> (e.g. bin/file-exists → `check-tool.ts file-exists "$@"`). This
-// generalizes the check-transcript precedent: all check LOGIC lives in
-// src/check/ as pure verb functions; this file owns record emission + the
-// 127 crash-band exit discipline.
+// Each check verb is a bash function (defined by the sourced prelude,
+// src/checks/prelude.sh) that execs this CLI with its own name as <verb>
+// (e.g. file-exists → `check-tool.ts file-exists "$@"`). This generalizes the
+// check-transcript precedent: all check LOGIC lives in src/check/ as pure verb
+// functions; this file owns record emission + the 127 crash-band exit
+// discipline.
 //
 // Exit codes (parity with the old bash tools + check-transcript):
 //   0   — check passed

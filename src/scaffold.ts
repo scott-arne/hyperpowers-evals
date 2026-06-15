@@ -45,8 +45,8 @@ it should send the agent under test, and when it is done.
   session log").
 `;
 
-// Scaffolded setup.sh: invokes the TS setup-helpers via the PATH-resolved
-// `setup-helpers` shim (bin/setup-helpers), matching every real scenario.
+// Scaffolded setup.sh: invokes the TS setup-helpers via the bare `setup-helpers`
+// verb (defined by the sourced check prelude), matching every real scenario.
 const SETUP_TEMPLATE = `#!/usr/bin/env bash
 set -euo pipefail
 setup-helpers run create_base_repo
