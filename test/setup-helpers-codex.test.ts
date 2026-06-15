@@ -26,11 +26,11 @@ function fakeSuperpowers(): string {
   writeFileSync(join(root, 'skills', 'x.md'), 'hi\n');
   mkdirSync(join(root, '.git'), { recursive: true }); // must be IGNORED everywhere
   writeFileSync(join(root, '.git', 'HEAD'), 'ref\n');
-  // A nested dir literally named `evals` with a `results/` child: copytree
-  // prunes `results` ONLY inside a dir whose basename is `evals`, at any depth.
+  // A top-level `evals` submodule: the unified plugin-stage helper drops it
+  // WHOLESALE (results/ and everything else) — none of it is part of the plugin.
   mkdirSync(join(root, 'evals', 'results'), { recursive: true });
-  writeFileSync(join(root, 'evals', 'results', 'junk.txt'), 'x\n'); // pruned
-  writeFileSync(join(root, 'evals', 'keep.txt'), 'y\n'); // copied
+  writeFileSync(join(root, 'evals', 'results', 'junk.txt'), 'x\n'); // dropped
+  writeFileSync(join(root, 'evals', 'keep.txt'), 'y\n'); // dropped (whole evals/)
   return root;
 }
 
@@ -56,8 +56,9 @@ describe('installCodexSuperpowersPluginHooks', () => {
       const pluginRoot = join(home, 'plugins/cache/debug/superpowers/local');
       expect(existsSync(join(pluginRoot, 'skills/x.md'))).toBe(true);
       expect(existsSync(join(pluginRoot, '.git'))).toBe(false); // ignored everywhere
-      expect(existsSync(join(pluginRoot, 'evals/keep.txt'))).toBe(true); // evals/ copied
-      expect(existsSync(join(pluginRoot, 'evals/results'))).toBe(false); // results/ pruned in evals/
+      // The whole top-level evals/ submodule is dropped — neither its keep.txt
+      // nor results/ is staged.
+      expect(existsSync(join(pluginRoot, 'evals'))).toBe(false);
       const config = await Bun.file(join(home, 'config.toml')).text();
       expect(config).toContain('plugin_hooks = true');
       expect(config).toContain('[plugins."superpowers@debug"]');

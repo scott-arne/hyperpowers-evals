@@ -1,10 +1,8 @@
 // Worktree helpers for the worktree scenarios. addWorktree/detachHead are
 // library functions (not dispatchable); the rest are HelperContext helpers.
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -20,6 +18,7 @@ import {
 import type { HelperContext } from './context.ts';
 import { writeFixtureFile } from './fs.ts';
 import { runGit, runGitAllowFail } from './git.ts';
+import { stageSuperpowersPlugin } from './plugin-stage.ts';
 
 // The committed implementation plan seeded into the caller-consent fixture.
 const CALLER_CONSENT_PLAN = `# Custom Greeting Implementation Plan
@@ -102,34 +101,6 @@ export function symlinkSuperpowers(ctx: HelperContext): void {
   symlinkSync(target, link);
 }
 
-// Dirs excluded from the staged Gemini extension copy (at any depth). The whole
-// `evals` submodule is dropped: when SUPERPOWERS_ROOT is a superpowers checkout,
-// evals/ holds the eval harness's own output (results/, worktrees, run dirs) and
-// node_modules — `gemini extensions link` copies the linked dir wholesale into
-// the per-run Gemini home, so linking the raw root recursively copies prior run
-// output and explodes the destination path. (.git and node_modules are likewise
-// not part of the extension.) This is the per-eval analogue of
-// _ignore_codex_plugin_copy; see linkGeminiExtension's staging note for why the
-// exclusion is broader here (whole `evals`, not just `evals/results`).
-const GEMINI_EXTENSION_STAGE_IGNORE: ReadonlySet<string> = new Set<string>([
-  '.git',
-  'evals',
-  'node_modules',
-]);
-
-function ignoreGeminiExtensionStage(
-  _src: string,
-  names: string[],
-): Set<string> {
-  const ignored = new Set<string>();
-  for (const name of names) {
-    if (GEMINI_EXTENSION_STAGE_IGNORE.has(name)) {
-      ignored.add(name);
-    }
-  }
-  return ignored;
-}
-
 // Links superpowers as a Gemini CLI extension and injects project context.
 // Extensions are global, but GEMINI.md context loading is project-scoped, so the
 // temp workdir needs a GEMINI.md with absolute @imports. The extension name
@@ -169,7 +140,7 @@ export function linkGeminiExtension(ctx: HelperContext): void {
   if (existsSync(stageDir)) {
     rmSync(stageDir, { recursive: true, force: true });
   }
-  copyTreeWithIgnore(root, stageDir, ignoreGeminiExtensionStage);
+  stageSuperpowersPlugin(root, stageDir);
 
   // Gemini extensions are global; replace any prior link so this run tests the
   // requested SUPERPOWERS_ROOT checkout rather than a stale install. Status is
@@ -215,70 +186,6 @@ function readGeminiExtensionName(
     return parsed.data.name;
   }
   return fallback;
-}
-
-// Dirs ignored in EVERY directory during the plugin copy.
-const CODEX_PLUGIN_IGNORE_ALWAYS: ReadonlySet<string> = new Set<string>([
-  '.git',
-  '.mypy_cache',
-  '.pytest_cache',
-  '.ruff_cache',
-  '.ty',
-  '.venv',
-  '__pycache__',
-  'node_modules',
-]);
-
-// The always-ignored set, plus `results` only when the directory being walked is
-// itself named `evals` (at any depth). Invoked per-directory with that
-// directory's absolute path + its entry names; returns the subset to skip.
-function ignoreCodexPluginCopy(src: string, names: string[]): Set<string> {
-  const ignored = new Set<string>();
-  for (const name of names) {
-    if (CODEX_PLUGIN_IGNORE_ALWAYS.has(name)) {
-      ignored.add(name);
-    }
-  }
-  if (basename(src) === 'evals') {
-    if (names.includes('results')) {
-      ignored.add('results');
-    }
-  }
-  return ignored;
-}
-
-// A per-directory ignore predicate: given a source directory's absolute path and
-// its entry names, return the subset of names to skip.
-type IgnorePredicate = (src: string, names: string[]) => Set<string>;
-
-// Recursive copy honoring a per-directory ignore predicate. The predicate is
-// consulted with each source directory's absolute path and its entry names;
-// matched names are skipped entirely (their subtrees are never walked).
-function copyTreeWithIgnore(
-  src: string,
-  dest: string,
-  ignore: IgnorePredicate = ignoreCodexPluginCopy,
-): void {
-  mkdirSync(dest, { recursive: true });
-  const entries = readdirSync(src, { withFileTypes: true });
-  const names = entries.map((e) => e.name);
-  const ignored = ignore(src, names);
-  for (const entry of entries) {
-    if (ignored.has(entry.name)) {
-      continue;
-    }
-    const srcPath = join(src, entry.name);
-    const destPath = join(dest, entry.name);
-    if (entry.isDirectory()) {
-      copyTreeWithIgnore(srcPath, destPath, ignore);
-    } else if (entry.isSymbolicLink()) {
-      // Copy symlinks as files: copyFileSync follows the link and copies the
-      // target's contents.
-      copyFileSync(srcPath, destPath);
-    } else {
-      copyFileSync(srcPath, destPath);
-    }
-  }
 }
 
 // Escape a TOML basic string: `\` -> `\\` then `"` -> `\"`.
@@ -405,8 +312,7 @@ export async function installCodexSuperpowersPluginHooks(
     'superpowers',
     'local',
   );
-  mkdirSync(dirname(pluginRoot), { recursive: true });
-  copyTreeWithIgnore(superpowersRoot, pluginRoot);
+  stageSuperpowersPlugin(superpowersRoot, pluginRoot);
 
   const configPath = join(codexHome, 'config.toml');
   writeCodexPluginHooksConfig(configPath);

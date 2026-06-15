@@ -1,5 +1,4 @@
 import {
-  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -14,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import type { AgentConfig } from '../contracts/agent-config.ts';
 import { envSnapshot, getEnv } from '../env.ts';
+import { stageSuperpowersPlugin } from '../setup-helpers/plugin-stage.ts';
 import type { CommandRunner } from './command-runner.ts';
 import { type CodingAgent, ProvisionError, type RunHome } from './index.ts';
 import {
@@ -218,23 +218,19 @@ export class OpenCodeAgent implements CodingAgent {
       )}\n`,
     );
 
-    // Stage the plugin: copy superpowers.js into package_root/.opencode/plugins,
-    // copytree skills, then symlink config/plugins/superpowers.js -> staged file.
+    // Stage the whole plugin into package_root via the shared helper, then
+    // symlink config/plugins/superpowers.js -> the staged plugin entry. The helper
+    // drops eval output + VCS/build cruft; .opencode/plugins/superpowers.js and
+    // skills/ come along as part of the plugin payload.
     const packageRoot = join(opencodeConfigDir, 'superpowers');
+    stageSuperpowersPlugin(superpowersRoot, packageRoot);
     const stagedPlugin = join(
       packageRoot,
       '.opencode',
       'plugins',
       'superpowers.js',
     );
-    mkdirSync(join(packageRoot, '.opencode', 'plugins'), { recursive: true });
-    cpSync(pluginSrc, stagedPlugin);
-
     const stagedSkills = join(packageRoot, 'skills');
-    if (existsSync(stagedSkills) || isSymlink(stagedSkills)) {
-      rmSync(stagedSkills, { recursive: true, force: true });
-    }
-    cpSync(join(superpowersRoot, 'skills'), stagedSkills, { recursive: true });
 
     const pluginLinkDir = join(opencodeConfigDir, 'plugins');
     const pluginLink = join(pluginLinkDir, 'superpowers.js');

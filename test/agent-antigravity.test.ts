@@ -19,7 +19,6 @@ import {
   ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV,
   AntigravityAgent,
   excludeAntigravityProjectMarker,
-  isExcludedFromPluginStage,
   prepareAntigravityLaunchCwd,
   seedAgyOauthCredentials,
   setAgyWhichForTesting,
@@ -776,26 +775,6 @@ test('writeAntigravitySettings re-trust adds the launch cwd to an existing setti
 // run from within a superpowers checkout, SUPERPOWERS_ROOT nests the entire
 // evals/ submodule (results/, worktrees, node_modules) — not part of the plugin —
 // which recursively explodes the copy. Stage a clean copy and install from that.
-test('isExcludedFromPluginStage excludes evals/.claude/.git/node_modules at the root', () => {
-  const root = '/srv/superpowers';
-  expect(isExcludedFromPluginStage(`${root}/evals`, root)).toBe(true);
-  // .claude holds dev worktrees (each a full checkout w/ its own evals/results).
-  expect(isExcludedFromPluginStage(`${root}/.claude`, root)).toBe(true);
-  expect(isExcludedFromPluginStage(`${root}/.git`, root)).toBe(true);
-  expect(isExcludedFromPluginStage(`${root}/node_modules`, root)).toBe(true);
-  // .git / node_modules excluded at any depth.
-  expect(isExcludedFromPluginStage(`${root}/skills/.git`, root)).toBe(true);
-  // plugin content is kept — including the .claude-plugin manifest dir.
-  expect(isExcludedFromPluginStage(`${root}/skills`, root)).toBe(false);
-  expect(isExcludedFromPluginStage(`${root}/hooks`, root)).toBe(false);
-  expect(isExcludedFromPluginStage(`${root}/.claude-plugin`, root)).toBe(false);
-  expect(isExcludedFromPluginStage(`${root}/gemini-extension.json`, root)).toBe(
-    false,
-  );
-  // a nested (non-root) `evals` dir is NOT excluded — only the root submodule.
-  expect(isExcludedFromPluginStage(`${root}/skills/evals`, root)).toBe(false);
-});
-
 test('stageAntigravityPluginSource copies the plugin without the evals subtree', () => {
   const root = mkdtempSync(join(tmpdir(), 'sp-root-'));
   try {
