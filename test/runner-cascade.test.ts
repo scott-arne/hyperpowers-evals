@@ -87,6 +87,32 @@ test('codex is NOT a strict-capture name (its empty case is handled post-checks)
   expect(v).toBe(null);
 });
 
+test('strict-capture: copilot with no source logs -> capture indeterminate', () => {
+  const v = captureCascadeVerdict(base({ normalizer: 'copilot' }));
+  expect(v?.final).toBe('indeterminate');
+  expect(v?.final_reason).toContain('no Copilot transcript appeared');
+  expect(v?.error?.stage).toBe('capture');
+  expect(v?.gauntlet).toEqual(GAUNTLET);
+});
+
+test('strict-capture: copilot with source logs but zero rows -> capture indeterminate', () => {
+  const logDir = freshLogDir();
+  const logPath = join(logDir, 'events.jsonl');
+  writeFileSync(logPath, '{}');
+  const v = captureCascadeVerdict(
+    base({
+      normalizer: 'copilot',
+      logDir,
+      captureResult: { sourceLogs: [logPath], rowCount: 0 },
+    }),
+  );
+  expect(v?.final).toBe('indeterminate');
+  expect(v?.final_reason).toContain(
+    'Copilot transcript(s) normalized to zero tool-call rows',
+  );
+  expect(v?.error?.stage).toBe('capture');
+});
+
 test('pi: no source logs -> "no Pi session appeared" capture indeterminate', () => {
   const v = captureCascadeVerdict(base({ normalizer: 'pi' }));
   expect(v?.final_reason).toContain('no Pi session appeared');

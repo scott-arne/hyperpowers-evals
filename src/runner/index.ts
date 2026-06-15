@@ -378,11 +378,13 @@ function relToLogDir(logDir: string, paths: readonly string[]): string[] {
 // no source logs OR zero normalized rows is a capture indeterminate, regardless
 // of whether any deterministic check is present (parity with Python
 // strict_capture_names). codex is NOT here — its empty case is the post-checks
-// misplaced-rollout guard. copilot is handled by its own leak/session-state
-// branch wired alongside provisioning.
+// misplaced-rollout guard. copilot's leak/session-state checks run first in
+// copilotCascadeVerdict; its no-transcript/zero-row floor lives here (the
+// copilot branch is guarded by source_logs, so it cannot cover the empty case).
 const STRICT_CAPTURE_NAMES: Readonly<Record<string, string>> = {
   antigravity: 'Antigravity',
   claude: 'Claude',
+  copilot: 'Copilot',
   gemini: 'Gemini',
 };
 
