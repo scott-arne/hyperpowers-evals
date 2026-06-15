@@ -270,6 +270,20 @@ function expectReadonly(mount: string): void {
   expect(mount.split(',').some((part) => part.includes('readonly'))).toBe(true);
 }
 
+function envValue(args: string[], name: string): string | undefined {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--env') {
+      const value = args[i + 1];
+      if (value?.startsWith(`${name}=`)) {
+        return value.slice(name.length + 1);
+      }
+    } else if (arg?.startsWith(`--env=${name}=`)) {
+      return arg.slice(`--env=${name}=`.length);
+    }
+  }
+}
+
 function expectDockerfileArg(dockerfile: string | undefined): void {
   expect(dockerfile).toBeDefined();
   expect(resolve(REPO, dockerfile ?? '')).toBe(
@@ -352,6 +366,38 @@ describe('scripts/evals-container', () => {
         mountForTarget(args, '/workspace/evals/results'),
         join(REPO, 'results'),
       );
+    } finally {
+      rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
+  test('up gives the numeric container user writable home and XDG state under /tmp', () => {
+    const harness = makeHarness();
+    try {
+      const superpowersRoot = makeSuperpowersRoot(harness.root);
+      const proc = runWrapper(harness, [
+        '--superpowers-root',
+        superpowersRoot,
+        'up',
+      ]);
+
+      expect(proc.error).toBeUndefined();
+      expect(proc.status).toBe(0);
+      const args = dockerCommand(harness.dockerLog, 'run');
+      expect(envValue(args, 'HOME')).toBe('/tmp/superpowers-evals-home');
+      expect(envValue(args, 'XDG_CACHE_HOME')).toBe(
+        '/tmp/superpowers-evals-home/.cache',
+      );
+      expect(envValue(args, 'XDG_CONFIG_HOME')).toBe(
+        '/tmp/superpowers-evals-home/.config',
+      );
+      expect(envValue(args, 'XDG_STATE_HOME')).toBe(
+        '/tmp/superpowers-evals-home/.local/state',
+      );
+      expect(envValue(args, 'TMPDIR')).toBe('/tmp');
+      expect(args.slice(-3, -1)).toEqual(['bash', '-lc']);
+      expect(args.at(-1)).toContain('mkdir -p "$HOME"');
+      expect(args.at(-1)).toContain('exec sleep infinity');
     } finally {
       rmSync(harness.root, { recursive: true, force: true });
     }
@@ -498,6 +544,23 @@ describe('scripts/evals-container', () => {
     }
   });
 
+  test('up rejects mount sources with commas before calling Docker', () => {
+    const harness = makeHarness();
+    try {
+      const commaRoot = join(harness.root, 'superpowers,with-comma');
+      mkdirSync(commaRoot);
+      const proc = runWrapper(harness, ['--superpowers-root', commaRoot, 'up']);
+
+      expect(proc.error).toBeUndefined();
+      expect(proc.status).not.toBe(0);
+      expect(proc.stderr).toContain('comma');
+      expect(proc.stderr).toContain(commaRoot);
+      expect(dockerLogLines(harness.dockerLog)).toEqual([]);
+    } finally {
+      rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
   test('up fails before Docker when an explicit auth directory is missing', () => {
     const harness = makeHarness();
     try {
@@ -547,15 +610,8 @@ describe('scripts/evals-container', () => {
     const harness = makeHarness();
     try {
       const name = 'evals-running-container';
-      const superpowersRoot = makeSuperpowersRoot(harness.root);
       writeDockerState(harness, { exists: true, running: true, name });
-      const proc = runWrapper(harness, [
-        '--name',
-        name,
-        '--superpowers-root',
-        superpowersRoot,
-        'up',
-      ]);
+      const proc = runWrapper(harness, ['--name', name, 'up']);
 
       expect(proc.error).toBeUndefined();
       expect(proc.status).toBe(0);
@@ -571,15 +627,8 @@ describe('scripts/evals-container', () => {
     const harness = makeHarness();
     try {
       const name = 'evals-stopped-container';
-      const superpowersRoot = makeSuperpowersRoot(harness.root);
       writeDockerState(harness, { exists: true, running: false, name });
-      const proc = runWrapper(harness, [
-        '--name',
-        name,
-        '--superpowers-root',
-        superpowersRoot,
-        'up',
-      ]);
+      const proc = runWrapper(harness, ['--name', name, 'up']);
 
       expect(proc.error).toBeUndefined();
       expect(proc.status).toBe(0);
@@ -587,6 +636,32 @@ describe('scripts/evals-container', () => {
         name,
       ]);
       expect(dockerCommandsNamed(harness.dockerLog, 'run')).toEqual([]);
+      expectNoGenericInspect(harness.dockerLog);
+    } finally {
+      rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
+  test('up refuses to reuse an existing container when explicit mounts were requested', () => {
+    const harness = makeHarness();
+    try {
+      const name = 'evals-existing-container';
+      const envFile = writeEnvFile(harness.root);
+      writeDockerState(harness, { exists: true, running: true, name });
+      const proc = runWrapper(harness, [
+        '--name',
+        name,
+        '--env-file',
+        envFile,
+        'up',
+      ]);
+
+      expect(proc.error).toBeUndefined();
+      expect(proc.status).not.toBe(0);
+      expect(proc.stderr).toContain(name);
+      expect(proc.stderr).toContain('down');
+      expect(dockerCommandsNamed(harness.dockerLog, 'run')).toEqual([]);
+      expect(dockerCommandsNamed(harness.dockerLog, 'start')).toEqual([]);
       expectNoGenericInspect(harness.dockerLog);
     } finally {
       rmSync(harness.root, { recursive: true, force: true });

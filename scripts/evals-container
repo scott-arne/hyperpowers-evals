@@ -35,6 +35,7 @@ image_tag="superpowers-evals:local"
 
 container_name=""
 superpowers_root=""
+superpowers_root_explicit=false
 env_file=""
 env_file_explicit=false
 
@@ -91,6 +92,7 @@ while [[ $# -gt 0 ]]; do
     --superpowers-root)
       [[ $# -ge 2 ]] || die "missing value for --superpowers-root"
       superpowers_root=$2
+      superpowers_root_explicit=true
       shift 2
       ;;
     --env-file)
@@ -168,6 +170,13 @@ validate_auth_dir() {
   [[ -d "$dir" ]] || die "$label auth directory does not exist: $dir"
 }
 
+reject_mount_source() {
+  local label source
+  label=$1
+  source=$2
+  [[ "$source" != *","* ]] || die "$label path contains a comma, which Docker --mount cannot parse: $source"
+}
+
 if [[ "$auth_codex_explicit" == true ]]; then
   validate_auth_dir codex "$auth_codex"
   auth_codex=$(physical_dir "$auth_codex")
@@ -196,12 +205,39 @@ elif [[ -d "$HOME/.pi" ]]; then
   auth_pi="$HOME/.pi"
 fi
 
+reject_mount_source "evals root" "$evals_root"
+reject_mount_source "Superpowers root" "$superpowers_root"
+if [[ -n "$env_file" ]]; then
+  reject_mount_source "env file" "$env_file"
+fi
+if [[ -n "$auth_codex" ]]; then
+  reject_mount_source "codex auth" "$auth_codex"
+fi
+if [[ -n "$auth_gemini" ]]; then
+  reject_mount_source "gemini auth" "$auth_gemini"
+fi
+if [[ -n "$auth_kimi" ]]; then
+  reject_mount_source "kimi auth" "$auth_kimi"
+fi
+if [[ -n "$auth_pi" ]]; then
+  reject_mount_source "pi auth" "$auth_pi"
+fi
+
 container_exists() {
   docker container inspect "$container_name" >/dev/null 2>&1
 }
 
 container_running() {
   [[ "$(docker container inspect -f '{{.State.Running}}' "$container_name" 2>/dev/null)" == true ]]
+}
+
+mount_config_explicit() {
+  [[ "$superpowers_root_explicit" == true \
+    || "$env_file_explicit" == true \
+    || "$auth_codex_explicit" == true \
+    || "$auth_gemini_explicit" == true \
+    || "$auth_kimi_explicit" == true \
+    || "$auth_pi_explicit" == true ]]
 }
 
 probe_results_mount() {
@@ -231,6 +267,10 @@ run_up() {
   mkdir -p "$evals_root/results"
 
   if container_exists; then
+    if mount_config_explicit; then
+      die "$container_name already exists; run scripts/evals-container down before changing mounts or credentials"
+    fi
+
     if container_running; then
       printf '%s\n' "$container_name"
       return 0
@@ -247,6 +287,11 @@ run_up() {
     local mode=${3:-}
     mounts+=(--mount "type=bind,source=$source,target=$target$mode")
   }
+
+  local container_home=/tmp/superpowers-evals-home
+  local container_cache_home="$container_home/.cache"
+  local container_config_home="$container_home/.config"
+  local container_state_home="$container_home/.local/state"
 
   add_bind_mount "$evals_root" /workspace/evals
   add_bind_mount "$superpowers_root" /workspace/superpowers
@@ -273,9 +318,14 @@ run_up() {
     --name "$container_name" \
     --user "$(id -u):$(id -g)" \
     --workdir /workspace/evals \
+    --env "HOME=$container_home" \
+    --env "XDG_CACHE_HOME=$container_cache_home" \
+    --env "XDG_CONFIG_HOME=$container_config_home" \
+    --env "XDG_STATE_HOME=$container_state_home" \
+    --env "TMPDIR=/tmp" \
     "${mounts[@]}" \
     "$image_tag" \
-    sleep infinity
+    bash -lc 'mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" && exec sleep infinity'
 }
 
 case "$command" in

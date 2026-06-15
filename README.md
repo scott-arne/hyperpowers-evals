@@ -112,7 +112,9 @@ OAuth/file auth sources are also read-only. Existing `~/.codex`, `~/.gemini`,
 `/auth/kimi-code`, and `/auth/pi`. Use `--auth codex=<dir>`,
 `--auth gemini=<dir>`, `--auth kimi=<dir>`, or `--auth pi=<dir>` to override a
 source. The container runtime does not mount the Docker socket or publish
-dashboard ports.
+dashboard ports. The image does not include Antigravity's desktop `agy`
+installer; Antigravity evals are not container-ready until there is a headless
+install path for `agy` in the image.
 
 Run one scenario:
 
