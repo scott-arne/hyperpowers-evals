@@ -16,7 +16,7 @@ messages.
 |---|---|---|
 | **Gauntlet** | General-purpose QA framework; the `gauntlet` CLI. A black-box tester. | repo `~/Code/prime/gauntlet`; on `PATH` as `gauntlet` |
 | **Gauntlet-Agent** | The LLM inside Gauntlet that drives the Coding-Agent and self-grades against the story's ACs. | model e.g. `claude-sonnet-4-6`; event stream -> `<run>/gauntlet-agent/results/<runId>/run.jsonl`; verdict -> `result.{json,md}` |
-| **Coding-Agent** | The agent under test. Instances: **Claude**, **Codex**; future **Gemini**, **Pi**. | session log -> under the per-run throwaway `$HOME` (`<run>/home/<agent-config-subdir>/...`, e.g. `.claude`/`.codex`); files it writes -> `<run>/coding-agent-workdir/` |
+| **Coding-Agent** | The agent under test. Instances: **Claude**, **Claude Haiku**, **Claude Sonnet**, **Codex**, **Antigravity**, **Gemini**, **Kimi**, **OpenCode**, **Pi**, and **Copilot**. | session log -> under the per-run throwaway `$HOME` (`<run>/home/<agent-config-subdir>/...`, e.g. `.claude`/`.codex`); files it writes -> `<run>/coding-agent-workdir/` |
 | **Quorum** | The TypeScript wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and final verdict composition. | repo `superpowers-evals/src/`; `<run>/verdict.json` |
 
 A run involves two LLMs: the **Gauntlet-Agent** (QA tester) and the
@@ -32,7 +32,7 @@ A run involves two LLMs: the **Gauntlet-Agent** (QA tester) and the
 - **typecheck**: `bun run typecheck` (tsc --noEmit)
 - **check (lint+typecheck+test)**: `bun run check`
 - **validate scenarios**: `bun run quorum check`
-- **run scenario**: `bun run quorum run scenarios/<name> --coding-agent <claude|codex>`
+- **run scenario**: `bun run quorum run scenarios/<name> --coding-agent <agent>`
 - **list scenarios**: `bun run quorum list`
 - **scaffold scenario**: `bun run quorum new <name>`
 - **show verdict**: `bun run quorum show [<target>]`
@@ -42,9 +42,9 @@ A run involves two LLMs: the **Gauntlet-Agent** (QA tester) and the
 
 Per-coding-agent config: `coding-agents/<name>.yaml`. Per-coding-agent HOWTO:
 `coding-agents/<name>-context/HOWTO.md`. Each agent seeds its config under the
-per-run throwaway `$HOME` (e.g. `<runDir>/home/.claude` / `<runDir>/home/.codex`)
-at provision time; no committed home skeleton ships. Spec:
-`docs/superpowers/specs/2026-05-22-harness-model-design.md`.
+per-run throwaway `$HOME` (e.g. `<runDir>/home/.claude` /
+`<runDir>/home/.codex`) at provision time; no committed home skeleton ships.
+Spec: `docs/superpowers/specs/2026-05-22-harness-model-design.md`.
 
 ## Architecture
 
@@ -56,7 +56,7 @@ at provision time; no committed home skeleton ships. Spec:
 - `src/obol/` — obol cost estimation: `estimateTrajectory` prices the coding-agent ATIF `trajectory.json` (obol `"atif"` dialect, honoring embedded `cost_usd` else its rate tables), `estimateUsageSidecar` prices the gauntlet usage sidecar (obol `"obol"` dialect); `mergeEstimates` folds obol `CostEstimate`s into the `TokenUsage` shape.
 - `src/economics.ts` — assembles the economics block carried in the verdict.
 - `src/atif/` — ATIF v1.7 canonical transcript: `types.ts` (the `Trajectory` shape), `project.ts` (`flattenToolCalls` → `{tool,args}` view), `validate.ts`.
-- `src/normalize/` — per-Coding-Agent session-log → ATIF `Trajectory` normalizers (8 dialects).
+- `src/normalize/` — per-Coding-Agent session-log → ATIF `Trajectory` normalizers.
 - `src/detect/` — skill-invocation and implementation-path detectors used by the transcript checks.
 - `src/check/` + `src/cli/check-tool.ts` + `src/cli/check-transcript.ts` — the typed check-tool dispatcher behind every bare-verb prelude function. `fs-verbs.ts` holds the filesystem/git/env verbs (`file-exists`, `file-contains`, `command-succeeds`, `git-*`, `assert-checkout-clean`, `requires-tool`, `files-exist`) plus the 6 per-harness bootstrap checks (`*-installed`/hook/extension, incl. the ported kimi-jq and codex-toml logic); `transcript-dispatch.ts` runs the 13 trace verbs (`verbs.ts`) and is shared by `check-transcript.ts`; `dispatch.ts` is the verb table + the in-process `negate` (`not`); `record.ts` is the sole record emitter. `check-tool.ts` owns the 127 crash-band exit discipline; every verb emits one `{check,args,negated,passed,detail}` record. `src/checks/prelude.sh` defines one shell function per verb (its vocabulary read from `Object.keys(FS_VERBS)` via `src/cli/list-check-verbs.ts`, so it can't drift) that execs `check-tool.ts <verb>`.
 - `src/agents/` — per-Coding-Agent provisioning adapters (one per agent) over the `command-runner.ts` subprocess seam.
@@ -125,6 +125,11 @@ or dangerous-mode launches to public CI.
 ANTHROPIC_API_KEY=sk-...
 OPENAI_API_KEY=sk-...
 ```
+
+Agent-specific live credentials are documented in `README.md`. The common
+cases are Anthropic for Claude variants, OpenAI/provider keys for OpenCode,
+Gemini API key or OAuth, Kimi API key or OAuth, Pi API key or OAuth, Copilot
+GitHub auth, and local Codex subscription auth.
 
 quorum does **not** auto-discover `SUPERPOWERS_ROOT` — export it explicitly to
 your `superpowers` checkout (the directory that contains this `evals/` tree).

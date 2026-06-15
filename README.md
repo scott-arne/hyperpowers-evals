@@ -1,10 +1,10 @@
 # Superpowers Evals
 
 Behavioral eval lab for [superpowers](https://github.com/obra/superpowers).
-**Quorum** drives real coding-agent CLIs (Claude, Claude Haiku, Codex,
-Antigravity, Gemini, Kimi, OpenCode, Pi, and Copilot) through a Gauntlet QA
-agent and grades them against scenario acceptance criteria plus deterministic
-post-checks.
+**Quorum** drives real coding-agent CLIs (Claude, Claude Haiku, Claude
+Sonnet, Codex, Antigravity, Gemini, Kimi, OpenCode, Pi, and Copilot) through a
+Gauntlet QA agent and grades them against scenario acceptance criteria plus
+deterministic post-checks.
 
 Code, CLI, paths, and inline prose all use lowercase `quorum`; the capitalized
 form `Quorum` appears in headings and the actor table.
@@ -32,7 +32,8 @@ CI.
 
 Live evals run the Coding-Agent under test with broad execution power:
 
-- Claude and Claude Haiku use `--dangerously-skip-permissions`.
+- Claude, Claude Haiku, and Claude Sonnet use
+  `--dangerously-skip-permissions`.
 - Codex uses `--dangerously-bypass-approvals-and-sandbox`.
 - Antigravity uses `--dangerously-skip-permissions` and relies on local
   browser/keyring auth for `agy`.
@@ -118,9 +119,69 @@ OAuth/file auth sources are also read-only. Existing `~/.codex`, `~/.gemini`,
 source. Kimi uses the image's Linux `/usr/local/bin/kimi`; `/auth/kimi-code` is
 only the OAuth credential source. The container runtime does not mount the
 Docker socket or publish dashboard ports. The image does not include
-Antigravity's desktop `agy`
-installer; Antigravity evals are not container-ready until there is a headless
-install path for `agy` in the image.
+Antigravity's desktop `agy` installer; Antigravity evals are not
+container-ready until there is a headless install path for `agy` in the image.
+
+### Real Agent Sweep In The Container
+
+Use the container for the real suite when you want host isolation plus
+host-visible artifacts. Put live credentials in `.env.container` (or pass
+`--env-file <file>` to `up`):
+
+```bash
+ANTHROPIC_API_KEY=...
+OPENAI_API_KEY=...
+GEMINI_API_KEY=...          # or GEMINI_AUTH_TYPE=oauth-personal
+KIMI_MODEL_API_KEY=...      # unless using mounted Kimi OAuth
+PI_PROVIDER=...
+PI_MODEL=...
+PI_API_KEY=...              # unless using mounted Pi OAuth
+COPILOT_GITHUB_TOKEN=...
+```
+
+Then run the readiness gates:
+
+```bash
+scripts/evals-container build
+scripts/evals-container down || true
+scripts/evals-container up
+scripts/evals-container exec evals-tool-versions
+scripts/evals-container exec quorum check
+```
+
+Start with the sentinel suite:
+
+```bash
+scripts/evals-container exec quorum run-all \
+  --tier sentinel \
+  --coding-agents claude,claude-haiku,claude-sonnet,codex,kimi \
+  --jobs 4 \
+  --no-cursor
+
+for agent in gemini opencode pi copilot; do
+  scripts/evals-container exec quorum run-all \
+    --tier sentinel \
+    --coding-agents "$agent" \
+    --jobs 1 \
+    --no-cursor
+done
+```
+
+To run the full ready suite, run the same commands without `--tier sentinel`.
+`run-all` writes each batch under `results/batches/<batch-id>/` and each run
+under `results/<scenario>-<agent>-<timestamp>-<nonce>/`; render a batch with:
+
+```bash
+scripts/evals-container exec quorum show <batch-id>
+```
+
+Do not include Antigravity in the container sweep yet. The image does not ship
+the desktop `agy` CLI; run Antigravity host-side until a headless installer is
+available:
+
+```bash
+bun run quorum run-all --coding-agents antigravity --jobs 1 --no-cursor
+```
 
 Run one scenario:
 
@@ -128,9 +189,9 @@ Run one scenario:
 bun run quorum run scenarios/triggering-writing-plans --coding-agent claude
 ```
 
-Agent names are `claude`, `claude-haiku`, `codex`, `antigravity`, `gemini`,
-`kimi`, `opencode`, `pi`, and `copilot`; not every scenario is valid for every
-agent.
+Agent names are `claude`, `claude-haiku`, `claude-sonnet`, `codex`,
+`antigravity`, `gemini`, `kimi`, `opencode`, `pi`, and `copilot`; not every
+scenario is valid for every agent.
 
 Trusted-maintainer Claude Haiku smoke:
 
@@ -161,15 +222,16 @@ bun run quorum check my-new-scenario
 
 `quorum check` with no arguments validates every scenario.
 
-Run the full matrix:
+Run a local matrix:
 
 ```bash
 bun run quorum run-all --coding-agents claude,codex --jobs 2
 ```
 
-`run-all` runs every scenario against every Coding-Agent, filtered by each
-scenario's `# coding-agents:` directive. View the resulting matrix with
-`bun run quorum show <batch-id>`.
+`run-all` runs every included scenario against every selected Coding-Agent,
+filtered by each scenario's `# coding-agents:` directive. View the resulting
+matrix with `bun run quorum show <batch-id>`. For the containerized all-agent
+operator recipe, use "Real Agent Sweep In The Container" above.
 
 For all-harness trusted-maintainer sweeps, do not put every Coding-Agent in one
 `run-all --jobs N` command when you need a hard global concurrency cap. Agents
@@ -301,7 +363,7 @@ messages.
 |---|---|---|
 | **Gauntlet** | General-purpose QA framework; the `gauntlet` CLI. A black-box tester. | repo `~/Code/prime/gauntlet`; on `PATH` as `gauntlet` |
 | **Gauntlet-Agent** | The LLM *inside* Gauntlet that drives the Coding-Agent and self-grades against the story's ACs. | model e.g. `claude-sonnet-4-6`; event stream → `<run>/gauntlet-agent/results/<runId>/run.jsonl`; verdict → `result.{json,md}` |
-| **Coding-Agent** | The agent under test — the SUT. Instances: **Claude**, **Claude Haiku**, **Codex**, **Antigravity**, **Gemini**, **Kimi**, **OpenCode**, **Pi**, **Copilot**. | config + session log under its throwaway `$HOME` at `<run>/home/…`; the files it writes → `<run>/coding-agent-workdir/` |
+| **Coding-Agent** | The agent under test — the SUT. Instances: **Claude**, **Claude Haiku**, **Claude Sonnet**, **Codex**, **Antigravity**, **Gemini**, **Kimi**, **OpenCode**, **Pi**, **Copilot**. | config + session log under its throwaway `$HOME` at `<run>/home/…`; the files it writes → `<run>/coding-agent-workdir/` |
 | **Quorum** | The TypeScript/Bun wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and the final verdict. | repo `superpowers-evals/src/`; `<run>/verdict.json` |
 
 A run involves **two** LLMs — the **Gauntlet-Agent** (QA tester) and the
@@ -473,19 +535,20 @@ local Superpowers plugin and skills under the home's XDG dirs; Pi seeds
 run-local auth and settings under `<run>/home/.pi/agent`; Copilot stages the
 local Superpowers plugin under `<run>/home/.copilot` and writes a private
 `.copilot-env`). All authored once per agent and shared across scenarios.
-`claude-haiku` is a Claude Code target variant that uses the Claude
-runtime/context and the same `ANTHROPIC_API_KEY` path as `claude`.
+`claude-haiku` and `claude-sonnet` are Claude Code target variants that use the
+Claude runtime/context and the same `ANTHROPIC_API_KEY` path as `claude`.
 
 | Coding-Agent | CLI | Required environment |
 | --- | --- | --- |
 | `claude` | Claude Code | `ANTHROPIC_API_KEY`, `SUPERPOWERS_ROOT` |
 | `claude-haiku` | Claude Code (Haiku target variant) | `ANTHROPIC_API_KEY`, `SUPERPOWERS_ROOT` |
+| `claude-sonnet` | Claude Code (Sonnet target variant) | `ANTHROPIC_API_KEY`, `SUPERPOWERS_ROOT` |
 | `codex` | Codex CLI | `SUPERPOWERS_ROOT`; local ChatGPT subscription login via `codex login` |
 | `antigravity` | Google Antigravity CLI (`agy`) | `SUPERPOWERS_ROOT` |
 | `gemini` | Gemini CLI (`gemini`) | `GEMINI_API_KEY` or `GEMINI_AUTH_TYPE=oauth-personal`; `SUPERPOWERS_ROOT` |
-| `kimi` | Kimi Code | `KIMI_MODEL_API_KEY`, `SUPERPOWERS_ROOT` |
+| `kimi` | Kimi Code | `KIMI_MODEL_API_KEY` or Kimi OAuth login; `SUPERPOWERS_ROOT` |
 | `opencode` | OpenCode CLI | `SUPERPOWERS_ROOT`, provider credentials for the selected OpenCode model |
-| `pi` | Pi CLI (`pi`) | `SUPERPOWERS_ROOT`, `PI_PROVIDER`, `PI_MODEL`, `PI_API_KEY` |
+| `pi` | Pi CLI (`pi`) | `PI_PROVIDER`, `PI_MODEL`, and `PI_API_KEY`, or Pi OAuth login; `SUPERPOWERS_ROOT` |
 | `copilot` | GitHub Copilot CLI (`copilot`) | `SUPERPOWERS_ROOT`, plus `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, GitHub CLI auth, or `COPILOT_PROVIDER_BASE_URL` |
 
 For `PI_PROVIDER=azure-openai-responses`, set either `AZURE_OPENAI_BASE_URL`
@@ -1063,22 +1126,25 @@ When a Pi run is non-passing or indeterminate:
 2. Confirm `pi-subagents` is installed: `ls "$(npm root -g)/pi-subagents"`.
    The launcher exits 1 with `pi-subagents not found` when it is missing;
    fix with `npm install -g pi-subagents`.
-3. Confirm `PI_PROVIDER`, `PI_MODEL`, `PI_API_KEY`, and `SUPERPOWERS_ROOT` are
-   set in the shell that launches quorum.
-4. If using `azure-openai-responses`, confirm `AZURE_OPENAI_BASE_URL` or
+3. Confirm `SUPERPOWERS_ROOT` is set in the shell that launches quorum.
+4. For API-key auth, confirm `PI_PROVIDER`, `PI_MODEL`, and `PI_API_KEY` are
+   set. For OAuth auth, confirm the mounted/source Pi login exists under
+   `PI_OAUTH_HOME/agent` or `~/.pi/agent`.
+5. If using `azure-openai-responses`, confirm `AZURE_OPENAI_BASE_URL` or
    `AZURE_OPENAI_RESOURCE_NAME` is set.
-5. Inspect `<run>/home/.pi/agent/pi.env`; it should exist, be chmod
+6. Inspect `<run>/home/.pi/agent/pi.env`; it should exist, be chmod
    `0600`, and contain the runtime env expected by the launcher.
-6. Inspect `<run>/home/.pi/agent/auth.json`; it should be chmod `0600`
-   and should reference `$PI_API_KEY`, not the literal secret.
-7. Confirm raw Pi sessions exist under
+7. Inspect `<run>/home/.pi/agent/auth.json`; it should be chmod `0600`.
+   API-key runs should reference `$PI_API_KEY`, not the literal secret; OAuth
+   runs should contain the copied host OAuth login.
+8. Confirm raw Pi sessions exist under
    `<run>/home/.pi/agent/sessions/**/*.jsonl`.
-8. If the verdict says `qa-agent-misconfigured`, look for a new Pi session
+9. If the verdict says `qa-agent-misconfigured`, look for a new Pi session
    whose header `cwd` is outside `<run>/coding-agent-workdir`.
-9. If the verdict says `unusable Pi session header`, inspect the first line of
+10. If the verdict says `unusable Pi session header`, inspect the first line of
    each new Pi session for malformed JSON or missing `cwd`.
-10. Inspect normalized behavior in `<run>/trajectory.json`.
-11. Render the verdict with `bun run quorum show <run-or-batch-id>`.
+11. Inspect normalized behavior in `<run>/trajectory.json`.
+12. Render the verdict with `bun run quorum show <run-or-batch-id>`.
 
 ### Copilot Troubleshooting
 
