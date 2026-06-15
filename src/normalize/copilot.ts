@@ -1,5 +1,6 @@
 import {
   ATIF_SCHEMA_VERSION,
+  type AtifFinalMetrics,
   type AtifStep,
   type AtifToolCall,
   type AtifTrajectory,
@@ -111,6 +112,53 @@ interface CopilotToolRequest {
   arguments?: unknown;
 }
 
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+/**
+ * Extract the session-total usage from a `session.shutdown` event into ATIF
+ * `final_metrics` + the trajectory model name. Copilot logs the full token
+ * breakdown only at shutdown: `modelMetrics.<model>.usage` carries
+ * `inputTokens` (which INCLUDES `cacheReadTokens`), `outputTokens`, and
+ * `cacheReadTokens`; the non-cached prompt count is `tokenDetails.input`.
+ */
+function shutdownFinalMetrics(data: Record<string, unknown>): {
+  finalMetrics?: AtifFinalMetrics | undefined;
+  model?: string | undefined;
+} {
+  const tokenDetails = data['tokenDetails'];
+  if (!tokenDetails || typeof tokenDetails !== 'object') return {};
+  const td = tokenDetails as Record<string, unknown>;
+
+  const countOf = (key: string): number | undefined => {
+    const slot = td[key];
+    if (!slot || typeof slot !== 'object') return undefined;
+    return numberOrUndefined((slot as Record<string, unknown>)['tokenCount']);
+  };
+
+  const prompt = countOf('input');
+  const completion = countOf('output');
+  const cached = countOf('cache_read');
+
+  const finalMetrics: AtifFinalMetrics = {};
+  if (prompt !== undefined) finalMetrics.total_prompt_tokens = prompt;
+  if (completion !== undefined)
+    finalMetrics.total_completion_tokens = completion;
+  if (cached !== undefined)
+    finalMetrics.extra = { total_cached_tokens: cached };
+
+  const model =
+    typeof data['currentModel'] === 'string'
+      ? (data['currentModel'] as string)
+      : undefined;
+
+  if (Object.keys(finalMetrics).length === 0) return { model };
+  return { finalMetrics, model };
+}
+
 /**
  * Convert a Copilot CLI session-state JSONL log into an ATIF v1.7 trajectory.
  *
@@ -120,6 +168,8 @@ interface CopilotToolRequest {
 export function normalizeCopilot(raw: string, version: string): AtifTrajectory {
   const steps: AtifStep[] = [];
   let stepId = 1;
+  let finalMetrics: AtifFinalMetrics | undefined;
+  let agentModel: string | undefined;
 
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
@@ -130,11 +180,35 @@ export function normalizeCopilot(raw: string, version: string): AtifTrajectory {
       continue;
     }
     if (!entry || typeof entry !== 'object') continue;
+
+    if (entry['type'] === 'session.shutdown') {
+      const data = entry['data'];
+      if (data && typeof data === 'object') {
+        const { finalMetrics: fm, model } = shutdownFinalMetrics(
+          data as Record<string, unknown>,
+        );
+        if (fm) finalMetrics = fm;
+        if (model) agentModel = model;
+      }
+      continue;
+    }
+
     if (entry['type'] !== 'assistant.message') continue;
     const data = entry['data'];
     if (!data || typeof data !== 'object') continue;
     const toolRequests = data['toolRequests'];
     if (!Array.isArray(toolRequests)) continue;
+
+    // Per-message usage. Copilot logs only the completion count
+    // (`outputTokens`) and `model` per assistant message; the full
+    // input/cache breakdown lands at session.shutdown → final_metrics.
+    // Attach the message metrics to the FIRST step it produces so a
+    // multi-toolRequest message does not double-count its tokens.
+    const d = data as Record<string, unknown>;
+    const messageModel =
+      typeof d['model'] === 'string' ? d['model'] : undefined;
+    const completion = numberOrUndefined(d['outputTokens']);
+    let messageUsageAttached = false;
 
     for (const request of toolRequests) {
       if (!request || typeof request !== 'object') continue;
@@ -156,11 +230,23 @@ export function normalizeCopilot(raw: string, version: string): AtifTrajectory {
         arguments: args,
       };
 
-      steps.push({
+      const step: AtifStep = {
         step_id: stepId++,
         source: 'agent',
         tool_calls: [tc],
-      });
+      };
+
+      if (!messageUsageAttached) {
+        if (messageModel) step.model_name = messageModel;
+        if (completion !== undefined) {
+          step.metrics = { completion_tokens: completion };
+        }
+        if (messageModel || completion !== undefined) {
+          messageUsageAttached = true;
+        }
+      }
+
+      steps.push(step);
     }
   }
 
@@ -173,6 +259,9 @@ export function normalizeCopilot(raw: string, version: string): AtifTrajectory {
     agent: { name: 'copilot', version },
     steps,
   };
+
+  if (agentModel) traj.agent.model_name = agentModel;
+  if (finalMetrics) traj.final_metrics = finalMetrics;
 
   const result = validateTrajectory(traj);
   if (!result.ok) {

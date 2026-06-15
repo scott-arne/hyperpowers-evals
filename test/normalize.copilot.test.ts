@@ -205,3 +205,107 @@ test('step_ids are sequential from 1', () => {
   const ids = traj.steps.map((s) => s.step_id);
   expect(ids).toEqual(ids.map((_, i) => i + 1));
 });
+
+// ---------------------------------------------------------------------------
+// ATIF usage metrics (spec 2026-06-15-atif-usage-unification.md)
+// Real shape from /tmp/quorum-live-results4/...-copilot-.../events.jsonl:
+//   assistant.message carries `model` + `outputTokens` (a bare completion count;
+//   copilot logs no per-message input/cache). The full breakdown lands only at
+//   session shutdown: session.shutdown.modelMetrics.<model>.usage{inputTokens,
+//   outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens} where
+//   inputTokens INCLUDES cacheReadTokens; the non-cached prompt is
+//   tokenDetails.input.tokenCount. Session totals → final_metrics + agent.model_name.
+// ---------------------------------------------------------------------------
+
+const usageLog = [
+  JSON.stringify({
+    type: 'assistant.message',
+    data: {
+      model: 'gpt-5.4',
+      outputTokens: 234,
+      toolRequests: [{ name: 'bash', arguments: { command: 'ls' } }],
+    },
+  }),
+  JSON.stringify({
+    type: 'assistant.message',
+    data: {
+      model: 'gpt-5.4',
+      outputTokens: 55,
+      toolRequests: [{ name: 'view', arguments: { file: 'README.md' } }],
+    },
+  }),
+  JSON.stringify({
+    type: 'session.shutdown',
+    data: {
+      currentModel: 'gpt-5.4',
+      tokenDetails: {
+        input: { tokenCount: 26055 },
+        cache_read: { tokenCount: 58880 },
+        output: { tokenCount: 571 },
+      },
+      modelMetrics: {
+        'gpt-5.4': {
+          usage: {
+            inputTokens: 84935,
+            outputTokens: 571,
+            cacheReadTokens: 58880,
+            cacheWriteTokens: 0,
+            reasoningTokens: 422,
+          },
+        },
+      },
+    },
+  }),
+].join('\n');
+
+test('assistant.message step carries model_name and completion_tokens from outputTokens', () => {
+  const traj = normalizeCopilot(usageLog, '1.0.0');
+  const r = validateTrajectory(traj);
+  expect(r.errors).toEqual([]);
+  const agentSteps = traj.steps.filter((s) => s.source === 'agent');
+  expect(agentSteps[0]!.model_name).toBe('gpt-5.4');
+  expect(agentSteps[0]!.metrics).toEqual({ completion_tokens: 234 });
+  expect(agentSteps[1]!.model_name).toBe('gpt-5.4');
+  expect(agentSteps[1]!.metrics).toEqual({ completion_tokens: 55 });
+});
+
+test('session.shutdown totals populate final_metrics and agent.model_name', () => {
+  const traj = normalizeCopilot(usageLog, '1.0.0');
+  // prompt = non-cached input (tokenDetails.input); completion = output;
+  // cache-read carried in final_metrics.extra (no top-level cached field).
+  expect(traj.final_metrics).toEqual({
+    total_prompt_tokens: 26055,
+    total_completion_tokens: 571,
+    extra: { total_cached_tokens: 58880 },
+  });
+  expect(traj.agent.model_name).toBe('gpt-5.4');
+});
+
+test('logs without usage produce no metrics or final_metrics', () => {
+  const traj = normalizeCopilot(basicLine, '1.0.0');
+  expect(traj.final_metrics).toBeUndefined();
+  expect(traj.agent.model_name).toBeUndefined();
+  for (const step of traj.steps) {
+    expect(step.metrics).toBeUndefined();
+  }
+});
+
+test('multi-toolRequest message: completion_tokens attach to first step only (no double-count)', () => {
+  const raw = JSON.stringify({
+    type: 'assistant.message',
+    data: {
+      model: 'gpt-5.4',
+      outputTokens: 99,
+      toolRequests: [
+        { name: 'bash', arguments: { command: 'a' } },
+        { name: 'bash', arguments: { command: 'b' } },
+      ],
+    },
+  });
+  const traj = normalizeCopilot(raw, '1.0.0');
+  const agentSteps = traj.steps.filter((s) => s.source === 'agent');
+  expect(agentSteps.length).toBe(2);
+  expect(agentSteps[0]!.metrics).toEqual({ completion_tokens: 99 });
+  expect(agentSteps[0]!.model_name).toBe('gpt-5.4');
+  expect(agentSteps[1]!.metrics).toBeUndefined();
+});
