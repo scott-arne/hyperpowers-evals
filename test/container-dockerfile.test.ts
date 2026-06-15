@@ -17,6 +17,7 @@ function expectInstallIntent(source: string, token: string): void {
 test('container Dockerfile uses the official Ubuntu 26.04 LTS base', () => {
   const source = dockerfileSource();
 
+  expect(source).toMatch(/^# syntax=docker\/dockerfile:/m);
   expect(source).toMatch(/^FROM ubuntu:26\.04$/m);
   expect(source).not.toContain('mcr.microsoft.com/devcontainers');
   expect(source).not.toContain('ubuntu24.04');
@@ -65,7 +66,7 @@ test('container Dockerfile installs headless agent CLIs without desktop IDE spra
     '@factory/cli',
     '@qoder-ai/qodercli',
     '@qwen-code/qwen-code',
-    '@moonshot-ai/kimi-code',
+    '@moonshot-ai/kimi-code@0.15.0',
     '@kilocode/cli',
     'openclaw',
     '@sourcegraph/amp',
@@ -90,6 +91,7 @@ test('container Dockerfile installs headless agent CLIs without desktop IDE spra
     '/usr/local/bin/kilo',
     '/usr/local/bin/droid',
     '/usr/local/bin/cn',
+    '/usr/local/bin/kimi',
     '/usr/local/bin/cursor-agent',
   ]) {
     expectInstallIntent(source, commandIntent);
@@ -108,6 +110,7 @@ test('container Dockerfile installs headless agent CLIs without desktop IDE spra
   expect(source).toContain(
     'chmod -R a+rX "$UV_TOOL_DIR" "$UV_PYTHON_INSTALL_DIR"',
   );
+  expect(source).not.toContain('[[');
   expect(source).not.toContain('uv tool install --tool-dir');
   expect(source).toContain('ARG TARGETARCH');
   expect(source).toContain('amd64) goose_arch=x86_64');
@@ -133,6 +136,11 @@ test('container Dockerfile installs headless agent CLIs without desktop IDE spra
 test('container Dockerfile exposes quorum shims and stable workspace entrypoint', () => {
   const source = dockerfileSource();
 
+  expect(source).toContain('COPY --from=gauntlet /package.json /opt/gauntlet/');
+  expect(source).toContain('COPY --from=gauntlet /src /opt/gauntlet/src');
+  expect(source).toContain('bun install --frozen-lockfile --ignore-scripts');
+  expect(source).toContain('exec bun /opt/gauntlet/src/index.ts "$@"');
+  expect(source).toContain('gauntlet config --json');
   expect(source).toContain('COPY container/bin/quorum /usr/local/bin/quorum');
   expect(source).toContain(
     'COPY container/bin/evals-tool-versions /usr/local/bin/evals-tool-versions',

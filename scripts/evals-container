@@ -8,6 +8,7 @@ usage: scripts/evals-container [options] <build|up|down|status|shell|exec> [args
 options:
   --name <name>
   --superpowers-root <dir>
+  --gauntlet-root <dir>
   --env-file <file>
   --auth <codex|gemini|kimi|pi>=<dir>
 USAGE
@@ -36,6 +37,8 @@ image_tag="superpowers-evals:local"
 container_name=""
 superpowers_root=""
 superpowers_root_explicit=false
+gauntlet_root=""
+gauntlet_root_explicit=false
 env_file=""
 env_file_explicit=false
 
@@ -95,6 +98,12 @@ while [[ $# -gt 0 ]]; do
       superpowers_root_explicit=true
       shift 2
       ;;
+    --gauntlet-root)
+      [[ $# -ge 2 ]] || die "missing value for --gauntlet-root"
+      gauntlet_root=$2
+      gauntlet_root_explicit=true
+      shift 2
+      ;;
     --env-file)
       [[ $# -ge 2 ]] || die "missing value for --env-file"
       env_file=$2
@@ -139,6 +148,10 @@ case "$command" in
     ;;
 esac
 
+if [[ "$command" != exec && $# -gt 0 ]]; then
+  die "unexpected argument after $command: $1 (put options before the command)"
+fi
+
 if [[ -z "$container_name" ]]; then
   root_hash=$(printf '%s' "$evals_root" | shasum | awk '{print substr($1,1,12)}')
   container_name="superpowers-evals-$root_hash"
@@ -150,6 +163,32 @@ else
   [[ -d "$superpowers_root" ]] || die "superpowers root does not exist: $superpowers_root"
   superpowers_root=$(physical_dir "$superpowers_root")
 fi
+
+default_gauntlet_root() {
+  if [[ -n "${GAUNTLET_ROOT:-}" ]]; then
+    printf '%s\n' "$GAUNTLET_ROOT"
+    return 0
+  fi
+
+  if [[ -d "$HOME/.bun/install/global/node_modules/gauntlet" ]]; then
+    printf '%s\n' "$HOME/.bun/install/global/node_modules/gauntlet"
+    return 0
+  fi
+
+  return 1
+}
+
+resolve_gauntlet_root() {
+  if [[ "$gauntlet_root_explicit" != true ]]; then
+    gauntlet_root=$(default_gauntlet_root || true)
+  fi
+
+  [[ -n "$gauntlet_root" ]] || die "Gauntlet root not found; set GAUNTLET_ROOT or pass --gauntlet-root"
+  [[ -d "$gauntlet_root" ]] || die "Gauntlet root does not exist: $gauntlet_root"
+  gauntlet_root=$(physical_dir "$gauntlet_root")
+  [[ -f "$gauntlet_root/package.json" ]] || die "Gauntlet root missing package.json: $gauntlet_root"
+  reject_mount_source "Gauntlet root" "$gauntlet_root"
+}
 
 if [[ "$env_file_explicit" == true ]]; then
   [[ -f "$env_file" ]] || die "env file does not exist: $env_file"
@@ -345,7 +384,12 @@ run_up() {
 
 case "$command" in
   build)
-    docker build -t "$image_tag" -f "$evals_root/container/Dockerfile" "$evals_root"
+    resolve_gauntlet_root
+    docker build \
+      --build-context "gauntlet=$gauntlet_root" \
+      -t "$image_tag" \
+      -f "$evals_root/container/Dockerfile" \
+      "$evals_root"
     ;;
   up)
     run_up

@@ -100,6 +100,10 @@ parent Superpowers checkout at `/workspace/superpowers`, and host
 with `--superpowers-root <dir>` when the default parent path is not the system
 under test.
 
+The image build also needs a local Gauntlet checkout. The wrapper discovers it
+from `GAUNTLET_ROOT` or a Bun global `bun link` install; use
+`--gauntlet-root <dir>` with `build` to choose explicitly.
+
 Credentials enter through read-only mounts. The wrapper uses `.env.container`
 first, then `.env`, and mounts the first one found at
 `/run/evals/credentials.env`; pass `--env-file <file>` to choose explicitly.
@@ -111,8 +115,10 @@ OAuth/file auth sources are also read-only. Existing `~/.codex`, `~/.gemini`,
 `~/.kimi-code`, and `~/.pi` directories mount to `/auth/codex`, `/auth/gemini`,
 `/auth/kimi-code`, and `/auth/pi`. Use `--auth codex=<dir>`,
 `--auth gemini=<dir>`, `--auth kimi=<dir>`, or `--auth pi=<dir>` to override a
-source. The container runtime does not mount the Docker socket or publish
-dashboard ports. The image does not include Antigravity's desktop `agy`
+source. Kimi uses the image's Linux `/usr/local/bin/kimi`; `/auth/kimi-code` is
+only the OAuth credential source. The container runtime does not mount the
+Docker socket or publish dashboard ports. The image does not include
+Antigravity's desktop `agy`
 installer; Antigravity evals are not container-ready until there is a headless
 install path for `agy` in the image.
 

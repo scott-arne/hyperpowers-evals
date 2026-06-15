@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM ubuntu:26.04
 
 ARG GOOSE_VERSION=1.31.1
@@ -91,7 +92,7 @@ RUN npm install -g \
     @factory/cli \
     @qoder-ai/qodercli \
     @qwen-code/qwen-code \
-    @moonshot-ai/kimi-code \
+    @moonshot-ai/kimi-code@0.15.0 \
     @kilocode/cli \
     openclaw \
     @sourcegraph/amp \
@@ -101,7 +102,8 @@ RUN npm install -g \
     @mariozechner/pi-coding-agent \
   && if command -v kilocode >/dev/null 2>&1 && ! command -v kilo >/dev/null 2>&1; then ln -s "$(command -v kilocode)" /usr/local/bin/kilo; fi \
   && if command -v factory >/dev/null 2>&1 && ! command -v droid >/dev/null 2>&1; then ln -s "$(command -v factory)" /usr/local/bin/droid; fi \
-  && if command -v continue >/dev/null 2>&1 && ! command -v cn >/dev/null 2>&1; then ln -s "$(command -v continue)" /usr/local/bin/cn; fi
+  && if command -v continue >/dev/null 2>&1 && ! command -v cn >/dev/null 2>&1; then ln -s "$(command -v continue)" /usr/local/bin/cn; fi \
+  && if command -v kimi >/dev/null 2>&1 && [ "$(command -v kimi)" != /usr/local/bin/kimi ]; then ln -s "$(command -v kimi)" /usr/local/bin/kimi; fi
 
 RUN mkdir -p /opt/cursor-agent \
   && curl -fsSL https://cursor.com/install | HOME=/opt/cursor-agent bash \
@@ -125,6 +127,20 @@ RUN case "$TARGETARCH" in \
   && install -m 0755 /tmp/goose /usr/local/bin/goose \
   && rm -f /tmp/goose /tmp/goose.tar.gz \
   && goose --version
+
+COPY --from=gauntlet /package.json /opt/gauntlet/
+COPY --from=gauntlet /bun.lock /opt/gauntlet/
+RUN cd /opt/gauntlet \
+  && bun install --frozen-lockfile --ignore-scripts
+COPY --from=gauntlet /tsconfig.json /opt/gauntlet/
+COPY --from=gauntlet /src /opt/gauntlet/src
+RUN printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'exec bun /opt/gauntlet/src/index.ts "$@"' \
+    > /usr/local/bin/gauntlet \
+  && chmod +x /usr/local/bin/gauntlet \
+  && gauntlet config --json >/dev/null
 
 COPY container/bin/quorum /usr/local/bin/quorum
 COPY container/bin/evals-tool-versions /usr/local/bin/evals-tool-versions

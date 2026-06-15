@@ -6,7 +6,7 @@
 
 **Architecture:** A host-side `scripts/evals-container` wrapper builds and manages one long-lived workspace container. The container bind-mounts evals at `/workspace/evals`, Superpowers at `/workspace/superpowers`, and writes quorum results to `/workspace/evals/results`. Secrets enter only through read-only mounts: one dotenv file at `/run/evals/credentials.env` and optional auth source directories under `/auth/*`. A `/usr/local/bin/quorum` shim sources the credential file only for quorum invocations, exports the auth source variables, exports `SUPERPOWERS_ROOT`, and execs the existing Bun CLI.
 
-**Tech Stack:** Docker, Bash, Ubuntu 26.04 via `mcr.microsoft.com/devcontainers/base:3.0.1-ubuntu26.04`, Bun/TypeScript tests for wrapper behavior, existing quorum TypeScript CLI.
+**Tech Stack:** Docker, Bash, official `ubuntu:26.04`, Bun/TypeScript tests for wrapper behavior, existing quorum TypeScript CLI.
 
 **Spec:** `docs/superpowers/specs/2026-06-15-container-runtime-design.md`
 
@@ -21,7 +21,7 @@
 - No automatic live evals in static validation.
 - No host `$HOME` mount. Per-agent homes remain quorum's per-run homes under `results/<run>/home`.
 - Do not pass the host environment wholesale into Docker. Only mount the credential dotenv file read-only, then source it inside the quorum shim.
-- Kimi installs the official `@moonshot-ai/kimi-code` CLI in the image. `KIMI_OAUTH_HOME=/auth/kimi-code` still supplies OAuth credentials and, when present, an auth-source `bin/kimi` that the adapter searches before the global PATH. Do not invent any additional Kimi installer.
+- Kimi installs the official `@moonshot-ai/kimi-code` CLI in the image. `KIMI_OAUTH_HOME=/auth/kimi-code` supplies OAuth credentials only; the container shim sets `KIMI_BINARY=/usr/local/bin/kimi` so a readonly host auth tree cannot supply the executable.
 - Antigravity credentials use `AGY_OAUTH_HOME=/auth/gemini`. Treat `antigravity` as unavailable in the container unless `agy` is present on PATH from a non-desktop installer; do not install the desktop `.deb` to get it.
 
 ## File Structure
@@ -46,10 +46,10 @@ Modify only if needed:
 - [ ] Run:
 
 ```bash
-docker manifest inspect mcr.microsoft.com/devcontainers/base:3.0.1-ubuntu26.04 >/tmp/quorum-devcontainer-base.json
+docker manifest inspect ubuntu:26.04 >/tmp/quorum-devcontainer-base.json
 ```
 
-- [ ] Expected: exit 0. If it fails, stop and inspect the Microsoft devcontainer tags for an explicit Ubuntu 26.04-compatible tag. Do not silently switch to 24.04.
+- [ ] Expected: exit 0. Do not silently switch to 24.04.
 - [ ] Run:
 
 ```bash
@@ -114,7 +114,7 @@ bun test test/evals-container.test.ts
 **Interface:**
 
 ```bash
-scripts/evals-container [--name <container-name>] [--superpowers-root <dir>] [--env-file <file>] [--auth <name=dir>] <command> [args...]
+scripts/evals-container [--name <container-name>] [--superpowers-root <dir>] [--gauntlet-root <dir>] [--env-file <file>] [--auth <name=dir>] <command> [args...]
 ```
 
 Commands:
@@ -309,7 +309,8 @@ EOF
 **Base:**
 
 ```dockerfile
-FROM mcr.microsoft.com/devcontainers/base:3.0.1-ubuntu26.04
+# syntax=docker/dockerfile:1.7
+FROM ubuntu:26.04
 ```
 
 **System packages:** install with `apt-get` and `--no-install-recommends`:
@@ -351,7 +352,7 @@ Add `/usr/local/bin/fd` symlink to `fdfind` when Ubuntu installs the binary unde
 
 **Toolchains and package managers:**
 
-- Install Node LTS from NodeSource or the devcontainer-supported apt source already present in the base image. Verify `node --version` and `npm --version`.
+- Install Node LTS from NodeSource. Verify `node --version` and `npm --version`.
 - Install Bun with the official installer into `/usr/local/bun`, then symlink `bun` into `/usr/local/bin`.
 - Install `uv` with Astral's installer into `/usr/local/bin`.
 - Install Rust through `rustup` into `/usr/local/rustup` and `/usr/local/cargo`, then expose `rustc` and `cargo` on PATH.
@@ -381,8 +382,9 @@ cline
 **Agent CLIs to install outside npm:**
 
 - Cursor CLI: use the official `https://cursor.com/install` script with `HOME=/opt/cursor-agent`, then symlink the installed `cursor-agent` binary to `/usr/local/bin/cursor-agent`.
-- Aider: install `aider-chat` with `uv tool install --tool-dir /opt/uv-tools --python 3.12 aider-chat`, then symlink `/opt/uv-tools/aider` to `/usr/local/bin/aider`.
-- Goose: install pinned `.deb` `https://github.com/aaif-goose/goose/releases/download/v1.31.1/goose_1.31.1_amd64.deb`.
+- Aider: install `aider-chat` with `uv tool install --python 3.12 aider-chat`; keep uv tool state world-readable for the numeric container user.
+- Goose: install the pinned release tarball for the Docker target architecture (`x86_64` or `aarch64`).
+- Gauntlet: copy a local Gauntlet checkout from the Docker BuildKit named context `gauntlet`, run `bun install --frozen-lockfile --ignore-scripts` in `/opt/gauntlet`, and expose `/usr/local/bin/gauntlet`.
 
 **Do not install:**
 
@@ -405,7 +407,7 @@ CMD ["sleep", "infinity"]
 - [ ] Run a syntax/build smoke:
 
 ```bash
-docker build --progress=plain -t superpowers-evals:local -f container/Dockerfile .
+scripts/evals-container build
 ```
 
 - [ ] If the build fails because an external installer moved or a package name changed, root-cause the specific failing install. Do not remove the agent from the image just to get a green build; either fix the installer or explicitly document that the current upstream has no non-interactive Linux install path.
@@ -416,7 +418,7 @@ git add container/Dockerfile
 git commit -F - <<'EOF'
 feat(container): add rich evals Dockerfile
 
-Adds the Ubuntu 26.04 devcontainer-style image for quorum evals. The image
+Adds the Ubuntu 26.04 workspace image for quorum evals. The image
 includes broad implementation toolchains plus the current known headless coding
 agent CLIs from quorum and the earlier harness install catalog.
 

@@ -66,7 +66,7 @@ The wrapper starts a named container with these paths:
 /run/evals/credentials.env  optional read-only dotenv credential file
 /auth/codex               optional read-only Codex auth source
 /auth/gemini              optional read-only Gemini/agy OAuth source
-/auth/kimi-code           optional read-only Kimi OAuth/install source
+/auth/kimi-code           optional read-only Kimi OAuth source
 /auth/pi                  optional read-only Pi OAuth source
 ```
 
@@ -88,16 +88,16 @@ unwritable results path is a hard error.
 
 ## Image
 
-The image should be a rich Ubuntu 26.04 dev workstation based on Microsoft's
-devcontainer base image. The verified 26.04 tag is:
+The image should be a rich Ubuntu 26.04 dev workstation. The first implemented
+runtime uses the official Ubuntu 26.04 base because the Microsoft devcontainer
+26.04 tag was not available to the real local Docker builder:
 
 ```dockerfile
-FROM mcr.microsoft.com/devcontainers/base:3.0.1-ubuntu26.04
+FROM ubuntu:26.04
 ```
 
-Do not silently fall back to Ubuntu 24.04. If the tag is unavailable during
-implementation, check the available Microsoft devcontainer tags and choose an
-explicit 26.04-compatible tag.
+Do not silently fall back to Ubuntu 24.04. If a richer upstream base is chosen
+later, it must still be an explicit Ubuntu 26.04-compatible base.
 
 The image should include broad implementation tooling because coding agents will
 use it for real development work, not only eval runner work:
@@ -107,8 +107,14 @@ use it for real development work, not only eval runner work:
 - build basics: `build-essential`, `pkg-config`, common SSL, sqlite, zlib, and
   compression development libraries;
 - language/toolchain stack: Go, Rust, Node/npm, Bun, Python, `uv`, `mise`, Ruby;
-- quorum requirements: Bun compatible with this repo, Gauntlet CLI, and the
+- quorum requirements: Bun compatible with this repo, the Gauntlet CLI, and the
   normal shell tools used by scenarios and checks.
+
+Gauntlet is not installed from npm. The wrapper passes a local Gauntlet checkout
+as a Docker BuildKit named context (`gauntlet=...`), and the image installs that
+source into `/opt/gauntlet` with Bun. The wrapper discovers the checkout from
+`GAUNTLET_ROOT` or a Bun global `bun link` install, or accepts
+`--gauntlet-root <dir>` explicitly during `build`.
 
 Install current quorum Coding-Agent CLIs plus old-harness CLI-only candidates
 where the install path is known:
@@ -161,7 +167,9 @@ default, and exposes them through source variables:
 /auth/codex      -> CODEX_AUTH_HOME
 /auth/gemini     -> GEMINI_OAUTH_HOME; Antigravity should use the same mounted
                     source through an explicit adapter-supported source var
-/auth/kimi-code  -> KIMI_OAUTH_HOME
+/auth/kimi-code  -> KIMI_OAUTH_HOME; the container shim also sets
+                    KIMI_BINARY=/usr/local/bin/kimi so this readonly host
+                    auth tree is not treated as the executable source
 /auth/pi         -> PI_OAUTH_HOME
 ```
 
@@ -221,6 +229,7 @@ Wrapper flags before the subcommand override defaults:
 ```bash
 --name <container-name>
 --superpowers-root <dir>
+--gauntlet-root <dir>   # build only; defaults from GAUNTLET_ROOT or bun link
 --env-file <file>
 --auth codex=<dir>
 --auth gemini=<dir>

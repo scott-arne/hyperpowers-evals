@@ -72,6 +72,7 @@ test('container/bin/quorum preserves the in-container launch contract', () => {
   expect(source).toContain('export GEMINI_OAUTH_HOME=/auth/gemini');
   expect(source).toContain('export AGY_OAUTH_HOME=/auth/gemini');
   expect(source).toContain('export KIMI_OAUTH_HOME=/auth/kimi-code');
+  expect(source).toContain('export KIMI_BINARY=/usr/local/bin/kimi');
   expect(source).toContain('export PI_OAUTH_HOME=/auth/pi');
   expect(source).toContain('exec bun run src/cli/index.ts "$@"');
 });

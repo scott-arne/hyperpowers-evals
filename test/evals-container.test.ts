@@ -153,6 +153,7 @@ function makeHarness(extraEnv: NodeJS.ProcessEnv = {}): {
   root: string;
   dockerLog: string;
   dockerState: string;
+  gauntletRoot: string;
   env: NodeJS.ProcessEnv;
 } {
   const root = mkdtempSync(join(tmpdir(), 'evals-container-'));
@@ -161,6 +162,9 @@ function makeHarness(extraEnv: NodeJS.ProcessEnv = {}): {
   const docker = join(bin, 'docker');
   const dockerLog = join(root, 'docker.log');
   const dockerState = join(root, 'docker-state');
+  const gauntletRoot = join(root, 'gauntlet');
+  mkdirSync(gauntletRoot);
+  writeFileSync(join(gauntletRoot, 'package.json'), '{"name":"gauntlet"}\n');
   writeFileSync(docker, FAKE_DOCKER);
   chmodSync(docker, 0o755);
 
@@ -168,12 +172,14 @@ function makeHarness(extraEnv: NodeJS.ProcessEnv = {}): {
     root,
     dockerLog,
     dockerState,
+    gauntletRoot,
     env: {
       ...Bun.env,
       ...extraEnv,
       EVALS_CONTAINER_DOCKER_LOG: dockerLog,
       EVALS_CONTAINER_DOCKER_STATE: dockerState,
       EVALS_CONTAINER_FAKE_RESULTS_HOST_DIR: join(REPO, 'results'),
+      GAUNTLET_ROOT: gauntletRoot,
       PATH: `${bin}:${Bun.env['PATH'] ?? ''}`,
     },
   };
@@ -345,9 +351,51 @@ describe('scripts/evals-container', () => {
       const dockerfileIndex = args.indexOf('-f');
       expect(dockerfileIndex).toBeGreaterThanOrEqual(0);
       expectDockerfileArg(args[dockerfileIndex + 1]);
+      const contextIndex = args.indexOf('--build-context');
+      expect(contextIndex).toBeGreaterThanOrEqual(0);
+      expect(args[contextIndex + 1]).toBe(
+        `gauntlet=${realpathSync(harness.gauntletRoot)}`,
+      );
       expect(args[args.length - 1]).toBe(REPO);
     } finally {
       rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
+  test('build fails before Docker when the Gauntlet checkout is missing', () => {
+    const harness = makeHarness({ GAUNTLET_ROOT: undefined });
+    try {
+      rmSync(harness.gauntletRoot, { recursive: true, force: true });
+
+      const proc = runWrapper(harness, [
+        '--gauntlet-root',
+        harness.gauntletRoot,
+        'build',
+      ]);
+
+      expect(proc.error).toBeUndefined();
+      expect(proc.status).not.toBe(0);
+      expect(proc.stderr).toContain('Gauntlet root does not exist');
+      expect(dockerLogLines(harness.dockerLog)).toEqual([]);
+    } finally {
+      rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
+  test('non-exec commands reject arguments placed after the command', () => {
+    for (const command of ['build', 'up', 'down', 'status', 'shell']) {
+      const harness = makeHarness();
+      try {
+        const proc = runWrapper(harness, [command, '--env-file', 'prod.env']);
+
+        expect(proc.error).toBeUndefined();
+        expect(proc.status).not.toBe(0);
+        expect(proc.stderr).toContain(`unexpected argument after ${command}`);
+        expect(proc.stderr).toContain('put options before the command');
+        expect(dockerLogLines(harness.dockerLog)).toEqual([]);
+      } finally {
+        rmSync(harness.root, { recursive: true, force: true });
+      }
     }
   });
 

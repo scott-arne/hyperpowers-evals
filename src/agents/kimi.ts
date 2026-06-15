@@ -260,6 +260,36 @@ function kimiInstallHome(): string {
   return getEnv('KIMI_OAUTH_HOME') ?? join(homedir(), '.kimi-code');
 }
 
+function explicitKimiBinary(): string | undefined {
+  const value = getEnv('KIMI_BINARY');
+  if (value === undefined || value.trim() === '') {
+    return undefined;
+  }
+  return value;
+}
+
+function resolveExplicitKimiBinary(binary: string): string {
+  const pathLike =
+    binary.startsWith('~') || binary.includes('/') || binary.includes('\\');
+  if (!pathLike) {
+    const resolved = Bun.which(binary, { PATH: envSnapshot()['PATH'] ?? '' });
+    if (resolved === null || resolved === '') {
+      throw new ProvisionError(
+        `KIMI_BINARY '${binary}' not found on PATH; cannot run Kimi evals`,
+      );
+    }
+    return resolved;
+  }
+
+  const resolved = resolve(expanduser(binary));
+  if (!existsSync(resolved) || !statSync(resolved).isFile()) {
+    throw new ProvisionError(
+      `KIMI_BINARY does not name an executable file: ${resolved}`,
+    );
+  }
+  return resolved;
+}
+
 // PATH lookup via Bun.which, with the kimi install's bin dir
 // (<KIMI_OAUTH_HOME>/bin) prepended so a bare `kimi` resolves to the engine
 // binary that is NOT on the host PATH by default. A pure in-process PATH walk
@@ -269,6 +299,11 @@ function kimiInstallHome(): string {
 // the binary is missing. The resolved ABSOLUTE path is what the launcher execs,
 // so launch-time PATH is irrelevant.
 function resolveKimiBinary(binary: string): string {
+  const explicit = explicitKimiBinary();
+  if (explicit !== undefined) {
+    return resolveExplicitKimiBinary(explicit);
+  }
+
   const hostPath = envSnapshot()['PATH'] ?? '';
   const binDir = join(kimiInstallHome(), 'bin');
   const searchPath =
@@ -677,12 +712,14 @@ function buildKimiSubprocessEnv(
       out[key] = value;
     }
   }
-  // Prepend the kimi install's bin dir so the kimi process (and any `kimi`
-  // re-invocation) resolves the engine binary that is not on the host PATH by
-  // default. The launcher sources this env file, so the launch PATH carries it.
-  const binDir = join(kimiInstallHome(), 'bin');
-  const pathSep = sep === '\\' ? ';' : ':';
-  out['PATH'] = out['PATH'] ? `${binDir}${pathSep}${out['PATH']}` : binDir;
+  if (explicitKimiBinary() === undefined) {
+    // Prepend the kimi install's bin dir so the kimi process (and any `kimi`
+    // re-invocation) resolves the engine binary that is not on the host PATH by
+    // default. The launcher sources this env file, so the launch PATH carries it.
+    const binDir = join(kimiInstallHome(), 'bin');
+    const pathSep = sep === '\\' ? ';' : ':';
+    out['PATH'] = out['PATH'] ? `${binDir}${pathSep}${out['PATH']}` : binDir;
+  }
   for (const [key, value] of Object.entries(base)) {
     if (
       value !== undefined &&

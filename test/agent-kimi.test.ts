@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -162,6 +163,11 @@ function writeKimiPreflightSession(
     join(kimiHome, 'session_index.jsonl'),
     `${JSON.stringify(row)}\n`,
   );
+}
+
+function writeExecutable(path: string): void {
+  writeFileSync(path, '#!/bin/sh\nexit 0\n');
+  chmodSync(path, 0o755);
 }
 
 // Happy preflight responder: the binary is resolved in-process via Bun.which (H3),
@@ -525,6 +531,70 @@ test('provision throws ProvisionError naming the binary when it is not on PATH',
       },
     );
   } finally {
+    cleanup();
+  }
+});
+
+test('explicit KIMI_BINARY wins over the OAuth home bin directory', () => {
+  const { home, cleanup } = makeTempHome();
+  const spRoot = join(home.workdir, '..', 'superpowers-src');
+  mkdirSync(spRoot, { recursive: true });
+  stageSuperpowers(spRoot);
+  const runner = new FakeCommandRunner(happyResponder);
+  const explicitBinDir = mkdtempSync(
+    join(tmpdir(), 'quorum-kimi-explicit-bin-'),
+  );
+  const explicitBinary = join(explicitBinDir, 'kimi');
+  writeExecutable(explicitBinary);
+  const oauthHome = mkdtempSync(join(tmpdir(), 'quorum-kimi-oauth-bin-'));
+  mkdirSync(join(oauthHome, 'bin'));
+  writeExecutable(join(oauthHome, 'bin', 'kimi'));
+
+  const token = 'preflight-token-explicit-binary';
+  const sentinelPath = join(spRoot, '..', 'sentinel-explicit-binary.json');
+  const sentinel = {
+    schema: 1,
+    agent: 'kimi',
+    kimi_binary: explicitBinary,
+    model: 'kimi-for-coding',
+    provider: 'kimi',
+    base_url: 'https://api.kimi.com/coding/v1',
+    preflight_token_sha256: createHash('sha256').update(token).digest('hex'),
+  };
+  writeFileSync(sentinelPath, JSON.stringify(sentinel));
+
+  try {
+    withEnv(
+      {
+        SUPERPOWERS_ROOT: spRoot,
+        KIMI_MODEL_API_KEY: API_KEY,
+        KIMI_BINARY: explicitBinary,
+        KIMI_OAUTH_HOME: oauthHome,
+        KIMI_MODEL_NAME: undefined,
+        QUORUM_KIMI_PREFLIGHT_SENTINEL: sentinelPath,
+        QUORUM_KIMI_PREFLIGHT_TOKEN: token,
+      },
+      () => {
+        const agent = new KimiAgent({ ...KIMI_CONFIG, binary: 'kimi' });
+        const env = agent.provision(home, runner);
+
+        expect(env['KIMI_BINARY']).toBe(explicitBinary);
+        expect(runner.calls.length).toBe(0);
+
+        const envFileBody = readFileSync(env['KIMI_ENV_FILE'] ?? '', 'utf8');
+        expect(envFileBody).not.toContain(`${oauthHome}/bin`);
+        const summary = JSON.parse(
+          readFileSync(
+            join(home.configDir, 'effective-kimi-model-config.json'),
+            'utf8',
+          ),
+        );
+        expect(summary.kimi_binary).toBe(explicitBinary);
+      },
+    );
+  } finally {
+    rmSync(explicitBinDir, { recursive: true, force: true });
+    rmSync(oauthHome, { recursive: true, force: true });
     cleanup();
   }
 });
