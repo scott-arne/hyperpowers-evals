@@ -19,6 +19,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { envSnapshot } from '../env.ts';
+import { xdgHomeEnv } from './home-env.ts';
 
 export class OpenCodeCaptureError extends Error {
   constructor(message: string) {
@@ -39,16 +40,13 @@ export class OpenCodeTimeoutError extends Error {
   }
 }
 
-// quorum/opencode_capture.py:opencode_env — the XDG-isolation env the OpenCode
-// subprocess receives. HOME and every XDG root live under opencodeHome.
+// The XDG-isolation env the OpenCode subprocess receives. HOME and every XDG
+// root live under opencodeHome — the SAME standard `xdgHomeEnv` the launcher
+// pins via `$QUORUM_HOME_ENV`, so the agent run and its capture subprocess agree
+// on the isolated home (plus opencode's own OPENCODE_CONFIG_DIR).
 export function opencodeEnv(opencodeHome: string): Record<string, string> {
   return {
-    HOME: opencodeHome,
-    XDG_CONFIG_HOME: join(opencodeHome, '.config'),
-    XDG_DATA_HOME: join(opencodeHome, '.local', 'share'),
-    XDG_STATE_HOME: join(opencodeHome, '.local', 'state'),
-    XDG_CACHE_HOME: join(opencodeHome, '.cache'),
-    TMPDIR: join(opencodeHome, '.tmp'),
+    ...xdgHomeEnv(opencodeHome),
     OPENCODE_CONFIG_DIR: join(opencodeHome, '.config', 'opencode'),
   };
 }

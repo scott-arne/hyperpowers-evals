@@ -18,13 +18,14 @@ describe('homeEnvSubstitutions', () => {
   const runHomeDir = '/runs/r1/home';
   const subs = homeEnvSubstitutions(runHomeDir);
 
-  test('$QUORUM_HOME_ENV: HOME + the four XDG dirs, each single-quoted under the run home', () => {
+  test('$QUORUM_HOME_ENV: HOME + the four XDG dirs + TMPDIR, each single-quoted under the run home', () => {
     expect(subs['$QUORUM_HOME_ENV']).toBe(
       "HOME='/runs/r1/home' " +
         "XDG_CONFIG_HOME='/runs/r1/home/.config' " +
         "XDG_CACHE_HOME='/runs/r1/home/.cache' " +
         "XDG_DATA_HOME='/runs/r1/home/.local/share' " +
-        "XDG_STATE_HOME='/runs/r1/home/.local/state'",
+        "XDG_STATE_HOME='/runs/r1/home/.local/state' " +
+        "TMPDIR='/runs/r1/home/.tmp'",
     );
   });
 

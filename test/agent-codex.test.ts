@@ -612,10 +612,9 @@ test('codex launch-agent isolates HOME, XDG, TMPDIR and scrubs OPENAI_API_KEY', 
     ),
     'utf8',
   );
-  expect(launcher).toContain('HOME="$codex_agent_home"');
-  expect(launcher).toContain('XDG_CONFIG_HOME=');
-  expect(launcher).toContain('XDG_DATA_HOME=');
-  expect(launcher).toContain('TMPDIR=');
+  // HOME/XDG/TMPDIR isolation comes from the shared $QUORUM_HOME_ENV token (the
+  // standard every agent uses); codex keeps its OPENAI_API_KEY strip + CODEX_HOME.
+  expect(launcher).toContain('$QUORUM_HOME_ENV');
   expect(launcher).toContain('-u OPENAI_API_KEY');
   expect(launcher).toContain('CODEX_HOME="$CODEX_HOME"');
 });

@@ -29,6 +29,7 @@ import {
   scanCopilotSecretLeaks,
 } from '../agents/copilot.ts';
 import { geminiAuthType } from '../agents/gemini.ts';
+import { xdgHomeEnv, xdgHomeSubdirs } from '../agents/home-env.ts';
 import {
   CLAUDE_ENV_FILE_NAME,
   ProvisionError,
@@ -748,14 +749,7 @@ export function kimiLaunchSubstitutions(
 export function homeEnvSubstitutions(
   runHomeDir: string,
 ): Record<string, string> {
-  const vars: ReadonlyArray<readonly [string, string]> = [
-    ['HOME', runHomeDir],
-    ['XDG_CONFIG_HOME', join(runHomeDir, '.config')],
-    ['XDG_CACHE_HOME', join(runHomeDir, '.cache')],
-    ['XDG_DATA_HOME', join(runHomeDir, '.local', 'share')],
-    ['XDG_STATE_HOME', join(runHomeDir, '.local', 'state')],
-  ];
-  const fragment = vars
+  const fragment = Object.entries(xdgHomeEnv(runHomeDir))
     .map(([k, v]) => `${k}=${shellSingleQuote(v)}`)
     .join(' ');
   return {
@@ -998,9 +992,13 @@ async function runInnerBody(
   mkdirSync(workdir, { recursive: true });
   // Throwaway $HOME for the coding agent under test — always on, every agent.
   // Run-dir-relative so it's captured and reaped with the run (no mkdtemp / no
-  // runtimeCleanupDirs). The launchers pin HOME/XDG to it via $QUORUM_HOME_ENV.
+  // runtimeCleanupDirs). The launchers pin HOME/XDG/TMPDIR to it via
+  // $QUORUM_HOME_ENV; pre-create the XDG base dirs + TMPDIR so every agent (and
+  // opencode's capture subprocess) finds them present.
   const runHomeDir = join(runDir, 'home');
-  mkdirSync(runHomeDir, { recursive: true });
+  for (const dir of [runHomeDir, ...xdgHomeSubdirs(runHomeDir)]) {
+    mkdirSync(dir, { recursive: true });
+  }
   const home = {
     configDir,
     workdir,
