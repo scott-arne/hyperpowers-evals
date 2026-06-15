@@ -78,6 +78,42 @@ Install:
 bun install
 ```
 
+## Container Runtime
+
+The Docker runtime keeps the evals checkout, the Superpowers checkout under
+test, and all run artifacts bind-mounted on the host while running quorum inside
+a rich Ubuntu workspace container.
+
+```bash
+scripts/evals-container build
+scripts/evals-container up
+scripts/evals-container exec quorum list
+scripts/evals-container exec quorum check
+scripts/evals-container exec quorum run scenarios/triggering-writing-plans --coding-agent codex
+scripts/evals-container exec quorum run-all --coding-agents claude,codex --jobs 2
+scripts/evals-container down
+```
+
+By default the wrapper mounts this evals checkout at `/workspace/evals`, the
+parent Superpowers checkout at `/workspace/superpowers`, and host
+`results/` at `/workspace/evals/results`. Override the Superpowers checkout
+with `--superpowers-root <dir>` when the default parent path is not the system
+under test.
+
+Credentials enter through read-only mounts. The wrapper uses `.env.container`
+first, then `.env`, and mounts the first one found at
+`/run/evals/credentials.env`; pass `--env-file <file>` to choose explicitly.
+The host environment is not passed wholesale. Only the in-container `quorum`
+shim sources that dotenv file, so `scripts/evals-container exec bash ...` does
+not automatically receive live eval credentials.
+
+OAuth/file auth sources are also read-only. Existing `~/.codex`, `~/.gemini`,
+`~/.kimi-code`, and `~/.pi` directories mount to `/auth/codex`, `/auth/gemini`,
+`/auth/kimi-code`, and `/auth/pi`. Use `--auth codex=<dir>`,
+`--auth gemini=<dir>`, `--auth kimi=<dir>`, or `--auth pi=<dir>` to override a
+source. The container runtime does not mount the Docker socket or publish
+dashboard ports.
+
 Run one scenario:
 
 ```bash
