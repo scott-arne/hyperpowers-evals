@@ -5,10 +5,11 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import { backupCredential } from '../agents/agy-creds.ts';
 import { killRunTmuxServer } from '../agents/agy-teardown.ts';
@@ -687,6 +688,48 @@ export function copilotCascadeVerdict(
   return null;
 }
 
+// Secret temp dirs an agent's provisioning created OUTSIDE the run artifact
+// root, to be reaped after the run (parity with Python AgentRuntime.cleanup_dirs,
+// which only kimi populates). kimi writes a mode-0600 runtime env file into a
+// run-scoped mkdtemp kept out of the run root so capture never snapshots it; the
+// dir to reap is the env file's parent. Derived from the provision env map ($KIMI
+// _ENV_FILE) rather than threading a runtime record back through provision().
+export function runtimeCleanupDirs(
+  extraEnv: Readonly<Record<string, string>>,
+): string[] {
+  const kimiEnvFile = extraEnv['KIMI_ENV_FILE'];
+  return kimiEnvFile === undefined ? [] : [dirname(kimiEnvFile)];
+}
+
+// Reap the agent runtime's secret temp dirs (parity with Python
+// _cleanup_agent_runtime). Each dir is removed recursively; an already-absent
+// dir is fine, but any other removal failure — or a path that survives removal —
+// is a setup-stage RunnerError so a leaked secret dir fails the run (mapped to
+// indeterminate by runScenario) rather than silently persisting on disk.
+export function cleanupAgentRuntime(cleanupDirs: readonly string[]): void {
+  for (const dir of cleanupDirs) {
+    try {
+      rmSync(dir, { recursive: true });
+    } catch (e: unknown) {
+      if (e instanceof Error && 'code' in e && e.code === 'ENOENT') {
+        continue;
+      }
+      const detail = (e instanceof Error ? e.message : String(e)).slice(0, 200);
+      throw new RunnerError(
+        `agent runtime cleanup failed for ${dir}: ${detail}`,
+        'setup',
+      );
+    }
+  }
+  const leftovers = cleanupDirs.filter((dir) => existsSync(dir));
+  if (leftovers.length > 0) {
+    throw new RunnerError(
+      `agent runtime cleanup failed; path remains: ${leftovers.join(', ')}`,
+      'setup',
+    );
+  }
+}
+
 // Run one scenario end to end. Always allocates a run dir and always writes
 // verdict.json; a thrown invariant maps to an indeterminate verdict via the
 // composer (6.1) rather than escaping.
@@ -799,9 +842,27 @@ function resolveLaunchCwd(workdir: string): string {
   return resolved;
 }
 
+// Thin wrapper guaranteeing agent-runtime teardown on EVERY exit path of the
+// run body — normal return, early indeterminate return, or throw (parity with
+// Python _run_scenario_inner's `finally: _cleanup_agent_runtime`). cleanupDirs
+// starts empty and is populated by the body right after provisioning, so a crash
+// before provisioning reaps nothing and a crash after still reaps the secret dir.
 async function runInner(
   a: RunScenarioArgs,
   runDir: string,
+): Promise<FinalVerdict> {
+  const cleanupDirs: string[] = [];
+  try {
+    return await runInnerBody(a, runDir, cleanupDirs);
+  } finally {
+    cleanupAgentRuntime(cleanupDirs);
+  }
+}
+
+async function runInnerBody(
+  a: RunScenarioArgs,
+  runDir: string,
+  cleanupDirs: string[],
 ): Promise<FinalVerdict> {
   writePhase(runDir, 'setup');
   // Early guards run in strict parity-order with quorum _run_scenario_inner,
@@ -896,6 +957,13 @@ async function runInner(
   } else {
     extraEnv = agent.provision(home, defaultCommandRunner);
   }
+  // Track any secret temp dir provisioning created outside the run root (kimi's
+  // runtime-env mkdtemp) so the runInner finally reaps it (parity with Python
+  // AgentRuntime.cleanup_dirs). Pushed AFTER provision returns, so this covers
+  // the success path and every later run-exit; a provision that THROWS after
+  // writing the secret file is the one window not covered here (Python guards it
+  // with an internal try/except in _seed_kimi_config).
+  cleanupDirs.push(...runtimeCleanupDirs(extraEnv));
   // setup.sh needs QUORUM_REPO_ROOT (some fixtures resolve repo-relative paths /
   // setup-helpers against it). Parity with quorum/runner.py 1826/1831:
   //   env_extra = {"QUORUM_REPO_ROOT": str(_quorum_repo_root())}
