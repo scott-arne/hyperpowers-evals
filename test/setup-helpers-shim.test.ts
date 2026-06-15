@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { runGit } from '../src/setup-helpers/git.ts';
 import { runSetup } from '../src/setup-step.ts';
 
-describe('bin-ts shim via runSetup', () => {
+describe('bin setup-helpers shim via runSetup', () => {
   test('bare `setup-helpers` resolves to the TS impl', () => {
     const scenarioDir = mkdtempSync(join(tmpdir(), 'sh-scn-'));
     const workdir = mkdtempSync(join(tmpdir(), 'sh-work-'));
@@ -28,7 +28,7 @@ describe('bin-ts shim via runSetup', () => {
   });
 
   test('shim propagates CLI exit codes (2 usage, 1 error)', () => {
-    const shim = join(process.cwd(), 'bin-ts', 'setup-helpers');
+    const shim = join(process.cwd(), 'bin', 'setup-helpers');
     const workdir = mkdtempSync(join(tmpdir(), 'sh-ec-'));
     try {
       const env = {

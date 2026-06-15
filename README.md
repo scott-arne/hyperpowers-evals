@@ -827,7 +827,7 @@ picker reappearing in a tmux attach is the usual symptom):
 CLAUDE_CONFIG_DIR=/tmp/claude-source claude
 
 # 2. Rebuild the fixture; commit the diff.
-bin/refresh-claude-home-skeleton --source /tmp/claude-source
+scripts/refresh-claude-home-skeleton --source /tmp/claude-source
 git diff coding-agents/claude-home-skeleton/   # sanity-check the scrubbed result
 git commit coding-agents/claude-home-skeleton/ -m "quorum: refresh Claude skeleton"
 ```
@@ -905,16 +905,19 @@ src/
   setup-helpers/        scenario fixture builders + the `setup-helpers` CLI (dispatch registry)
   contracts/            zod schemas at the JSON boundaries (verdict, batch, economics, gauntlet, agent-config)
   scaffold.ts           `quorum new` / `quorum check`
-  setup-step.ts         runs scenario setup.sh (puts bin-ts/ on PATH so setup-helpers resolves)
+  setup-step.ts         runs scenario setup.sh (puts bin/ on PATH so setup-helpers resolves)
   story-meta.ts         story.md frontmatter (quorum_max_time, quorum_tier, status)
   env.ts                the single process.env boundary
   paths.ts              repo root, UTC stamps, nonces
   invariant.ts          assertNever exhaustiveness guard for closed unions
-bin/                    check-tool vocabulary (bash): _record, file-exists, file-contains,
-                        command-succeeds, git-repo, git-branch, git-clean, git-count,
-                        tool-called, tool-count, tool-before, tool-arg-match, skill-called,
-                        skill-before-tool, not, and more; refresh-claude-home-skeleton operator script
-bin-ts/                 the `setup-helpers` shim → the TypeScript CLI
+  check/                typed check verbs: fs-verbs.ts (file/git/env + bootstrap),
+                        dispatch.ts (table + `not`), transcript-dispatch.ts, record.ts (sole emitter)
+  cli/check-tool.ts     the dispatcher behind every bin/ check shim
+bin/                    thin shims only — one 5-line `exec bun run check-tool.ts <verb>`
+                        per check verb (file-exists, file-contains, command-succeeds, git-*,
+                        assert-checkout-clean, requires-tool, not, files-exist, the *-installed/
+                        hook/extension checks); plus the check-transcript and setup-helpers shims
+scripts/                operator scripts: refresh-claude-home-skeleton, run-with-log
 coding-agents/          per-Coding-Agent material:
   <name>.yaml             CLI config
   <name>-context/         HOWTO prose for the Gauntlet-Agent

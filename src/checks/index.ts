@@ -9,9 +9,11 @@ import {
 } from '../contracts/verdict.ts';
 import { envSnapshot, getEnv } from '../env.ts';
 
-// A bin/ tool emits one of these per line into QUORUM_RECORD_SINK (see bin/_record):
-// {check, args, negated, passed, detail}. The phase is injected by quorum, not the
-// tool, so the sink-line schema is the full CheckRecord minus its phase field.
+// A bin/ check tool emits one of these per line into QUORUM_RECORD_SINK. The
+// tools are thin shims over the typed dispatcher (src/cli/check-tool.ts), whose
+// sole record emitter is src/check/record.ts: {check, args, negated, passed,
+// detail}. The phase is injected by quorum, not the tool, so the sink-line
+// schema is the full CheckRecord minus its phase field.
 const SinkRecordSchema = CheckRecordSchema.omit({ phase: true });
 
 export interface RunPhaseArgs {

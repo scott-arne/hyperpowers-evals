@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -38,6 +39,57 @@ test('pre() emitting a passing file-exists record is collected', async () => {
     phase: 'pre',
   });
   expect(record?.args).toEqual(['present.txt']);
+});
+
+test('not file-exists (miss) emits a single negated record under the inner name via runPhase', async () => {
+  const workdir = mkdtempSync(join(tmpdir(), 'wd-'));
+  const checksSh = checksShWith(
+    'pre() {\n  not file-exists nope.txt\n}\npost() { :; }\n',
+  );
+  const { records, exitCode } = await runPhase({
+    checksSh,
+    phase: 'pre',
+    workdir,
+    quorumBin: BIN,
+  });
+  expect(exitCode).toBe(0);
+  expect(records).toHaveLength(1);
+  expect(records[0]).toMatchObject({
+    check: 'file-exists',
+    args: ['nope.txt'],
+    negated: true,
+    passed: true,
+    phase: 'pre',
+  });
+});
+
+test('git-count commits via runPhase emits the byte-shaped record', async () => {
+  const workdir = mkdtempSync(join(tmpdir(), 'wd-'));
+  const opts = { cwd: workdir, encoding: 'utf8' as const };
+  spawnSync('git', ['init', '-q'], opts);
+  spawnSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/main'], opts);
+  spawnSync('git', ['config', 'user.email', 't@t'], opts);
+  spawnSync('git', ['config', 'user.name', 't'], opts);
+  writeFileSync(join(workdir, 'a'), 'a');
+  spawnSync('git', ['add', '-A'], opts);
+  spawnSync('git', ['commit', '-qm', 'one'], opts);
+  const checksSh = checksShWith(
+    'pre() {\n  git-repo\n  git-branch main\n  git-count commits eq 1\n}\npost() { :; }\n',
+  );
+  const { records, exitCode } = await runPhase({
+    checksSh,
+    phase: 'pre',
+    workdir,
+    quorumBin: BIN,
+  });
+  expect(exitCode).toBe(0);
+  expect(records).toHaveLength(3);
+  expect(records.map((r) => r.check)).toEqual([
+    'git-repo',
+    'git-branch',
+    'git-count',
+  ]);
+  expect(records.every((r) => r.passed)).toBe(true);
 });
 
 test('rc 0 with no records yields exitCode 0 and no records', async () => {

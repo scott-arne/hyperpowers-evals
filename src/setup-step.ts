@@ -31,7 +31,7 @@ export function runSetup(
     cwd: workdir,
     env: {
       ...envSnapshot(),
-      PATH: `${join(repoRoot(), 'bin-ts')}:${getEnv('PATH') ?? ''}`,
+      PATH: `${join(repoRoot(), 'bin')}:${getEnv('PATH') ?? ''}`,
       QUORUM_WORKDIR: workdir,
       ...envExtra,
     },
