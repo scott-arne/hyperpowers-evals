@@ -21,7 +21,7 @@
 - No automatic live evals in static validation.
 - No host `$HOME` mount. Per-agent homes remain quorum's per-run homes under `results/<run>/home`.
 - Do not pass the host environment wholesale into Docker. Only mount the credential dotenv file read-only, then source it inside the quorum shim.
-- Kimi is container-ready through `KIMI_OAUTH_HOME=/auth/kimi-code`; the adapter resolves the binary from that source home's `bin/` when OAuth auth is used. Do not invent a second Kimi installer in the Dockerfile.
+- Kimi installs the official `@moonshot-ai/kimi-code` CLI in the image. `KIMI_OAUTH_HOME=/auth/kimi-code` still supplies OAuth credentials and, when present, an auth-source `bin/kimi` that the adapter searches before the global PATH. Do not invent any additional Kimi installer.
 - Antigravity credentials use `AGY_OAUTH_HOME=/auth/gemini`. Treat `antigravity` as unavailable in the container unless `agy` is present on PATH from a non-desktop installer; do not install the desktop `.deb` to get it.
 
 ## File Structure
@@ -369,6 +369,7 @@ opencode-ai
 @anthropic-ai/claude-code
 @qoder-ai/qodercli
 @qwen-code/qwen-code
+@moonshot-ai/kimi-code
 @mariozechner/pi-coding-agent
 openclaw
 @sourcegraph/amp
