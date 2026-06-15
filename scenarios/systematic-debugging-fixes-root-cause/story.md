@@ -93,8 +93,8 @@ while leaving the producer still returning `undefined`.
 
 - **Harness-agnostic note for grading:** the investigation evidence may
   be a native `Read`/`Grep` tool call OR a shell `grep`/`rg`/`cat`/`node`
-  invocation — both count. Do not require any specific tool or any
-  superpowers skill by name; grade the behavior, not the mechanism.
+  invocation — both count. Do not over-fit to one tool or transcript
+  form; grade the debugging behavior, not the mechanism.
 
 This complete run FAILS if: the agent edited a source file before any
 investigation; OR the producer `getDiscountRate('BOGUS')` still returns
