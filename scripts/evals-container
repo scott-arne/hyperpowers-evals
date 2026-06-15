@@ -1,0 +1,319 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+usage: scripts/evals-container [options] <build|up|down|status|shell|exec> [args...]
+
+options:
+  --name <name>
+  --superpowers-root <dir>
+  --env-file <file>
+  --auth <codex|gemini|kimi|pi>=<dir>
+USAGE
+}
+
+die() {
+  printf 'evals-container: %s\n' "$*" >&2
+  exit 1
+}
+
+physical_dir() {
+  (cd "$1" && pwd -P)
+}
+
+physical_file() {
+  local parent basename
+  parent=$(dirname "$1")
+  basename=$(basename "$1")
+  printf '%s/%s\n' "$(cd "$parent" && pwd -P)" "$basename"
+}
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+evals_root=$(cd "$script_dir/.." && pwd -P)
+image_tag="superpowers-evals:local"
+
+container_name=""
+superpowers_root=""
+env_file=""
+env_file_explicit=false
+
+auth_codex=""
+auth_gemini=""
+auth_kimi=""
+auth_pi=""
+auth_codex_explicit=false
+auth_gemini_explicit=false
+auth_kimi_explicit=false
+auth_pi_explicit=false
+
+parse_auth() {
+  local spec name dir
+  spec=$1
+  name=${spec%%=*}
+  dir=${spec#*=}
+
+  if [[ "$name" == "$spec" || -z "$dir" ]]; then
+    die "expected --auth <codex|gemini|kimi|pi>=<dir>"
+  fi
+
+  case "$name" in
+    codex)
+      auth_codex=$dir
+      auth_codex_explicit=true
+      ;;
+    gemini)
+      auth_gemini=$dir
+      auth_gemini_explicit=true
+      ;;
+    kimi)
+      auth_kimi=$dir
+      auth_kimi_explicit=true
+      ;;
+    pi)
+      auth_pi=$dir
+      auth_pi_explicit=true
+      ;;
+    *)
+      die "unsupported auth mount: $name"
+      ;;
+  esac
+}
+
+command=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name)
+      [[ $# -ge 2 ]] || die "missing value for --name"
+      container_name=$2
+      shift 2
+      ;;
+    --superpowers-root)
+      [[ $# -ge 2 ]] || die "missing value for --superpowers-root"
+      superpowers_root=$2
+      shift 2
+      ;;
+    --env-file)
+      [[ $# -ge 2 ]] || die "missing value for --env-file"
+      env_file=$2
+      env_file_explicit=true
+      shift 2
+      ;;
+    --auth)
+      [[ $# -ge 2 ]] || die "missing value for --auth"
+      parse_auth "$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      [[ $# -gt 0 ]] || die "missing command"
+      command=$1
+      shift
+      break
+      ;;
+    -*)
+      die "unknown option: $1"
+      ;;
+    *)
+      command=$1
+      shift
+      break
+      ;;
+  esac
+done
+
+[[ -n "$command" ]] || die "missing command"
+
+case "$command" in
+  build|up|down|status|shell|exec)
+    ;;
+  *)
+    usage >&2
+    die "unknown command: $command"
+    ;;
+esac
+
+if [[ -z "$container_name" ]]; then
+  root_hash=$(printf '%s' "$evals_root" | shasum | awk '{print substr($1,1,12)}')
+  container_name="superpowers-evals-$root_hash"
+fi
+
+if [[ -z "$superpowers_root" ]]; then
+  superpowers_root=$(cd "$evals_root/.." && pwd -P)
+else
+  [[ -d "$superpowers_root" ]] || die "superpowers root does not exist: $superpowers_root"
+  superpowers_root=$(physical_dir "$superpowers_root")
+fi
+
+if [[ "$env_file_explicit" == true ]]; then
+  [[ -f "$env_file" ]] || die "env file does not exist: $env_file"
+  [[ -r "$env_file" ]] || die "env file is not readable: $env_file"
+  env_file=$(physical_file "$env_file")
+else
+  if [[ -f "$evals_root/.env.container" ]]; then
+    env_file="$evals_root/.env.container"
+  elif [[ -f "$evals_root/.env" ]]; then
+    env_file="$evals_root/.env"
+  fi
+fi
+
+validate_auth_dir() {
+  local label dir
+  label=$1
+  dir=$2
+  [[ -d "$dir" ]] || die "$label auth directory does not exist: $dir"
+}
+
+if [[ "$auth_codex_explicit" == true ]]; then
+  validate_auth_dir codex "$auth_codex"
+  auth_codex=$(physical_dir "$auth_codex")
+elif [[ -d "$HOME/.codex" ]]; then
+  auth_codex="$HOME/.codex"
+fi
+
+if [[ "$auth_gemini_explicit" == true ]]; then
+  validate_auth_dir gemini "$auth_gemini"
+  auth_gemini=$(physical_dir "$auth_gemini")
+elif [[ -d "$HOME/.gemini" ]]; then
+  auth_gemini="$HOME/.gemini"
+fi
+
+if [[ "$auth_kimi_explicit" == true ]]; then
+  validate_auth_dir kimi "$auth_kimi"
+  auth_kimi=$(physical_dir "$auth_kimi")
+elif [[ -d "$HOME/.kimi-code" ]]; then
+  auth_kimi="$HOME/.kimi-code"
+fi
+
+if [[ "$auth_pi_explicit" == true ]]; then
+  validate_auth_dir pi "$auth_pi"
+  auth_pi=$(physical_dir "$auth_pi")
+elif [[ -d "$HOME/.pi" ]]; then
+  auth_pi="$HOME/.pi"
+fi
+
+container_exists() {
+  docker container inspect "$container_name" >/dev/null 2>&1
+}
+
+container_running() {
+  [[ "$(docker container inspect -f '{{.State.Running}}' "$container_name" 2>/dev/null)" == true ]]
+}
+
+probe_results_mount() {
+  local cleanup_probe host_probe_path probe probe_name
+  probe_name=".evals-container-probe.$$.$RANDOM"
+  host_probe_path="$evals_root/results/$probe_name"
+  probe='set -euo pipefail
+results_dir=/workspace/evals/results
+test -d "$results_dir"
+test -w "$results_dir"
+: > "$results_dir/'"$probe_name"'"'
+  cleanup_probe='rm -f /workspace/evals/results/'"$probe_name"
+
+  if ! docker exec "$container_name" bash -lc "$probe"; then
+    die "results directory is not usable at /workspace/evals/results"
+  fi
+
+  if [[ ! -f "$host_probe_path" ]]; then
+    docker exec "$container_name" bash -lc "$cleanup_probe" >/dev/null 2>&1 || true
+    die "results directory is not host-visible at /workspace/evals/results"
+  fi
+
+  rm -f "$host_probe_path" || true
+}
+
+run_up() {
+  mkdir -p "$evals_root/results"
+
+  if container_exists; then
+    if container_running; then
+      printf '%s\n' "$container_name"
+      return 0
+    fi
+
+    docker start "$container_name"
+    return 0
+  fi
+
+  local mounts=()
+  add_bind_mount() {
+    local source=$1
+    local target=$2
+    local mode=${3:-}
+    mounts+=(--mount "type=bind,source=$source,target=$target$mode")
+  }
+
+  add_bind_mount "$evals_root" /workspace/evals
+  add_bind_mount "$superpowers_root" /workspace/superpowers
+  add_bind_mount "$evals_root/results" /workspace/evals/results
+
+  if [[ -n "$env_file" ]]; then
+    add_bind_mount "$env_file" /run/evals/credentials.env ",readonly"
+  fi
+  if [[ -n "$auth_codex" ]]; then
+    add_bind_mount "$auth_codex" /auth/codex ",readonly"
+  fi
+  if [[ -n "$auth_gemini" ]]; then
+    add_bind_mount "$auth_gemini" /auth/gemini ",readonly"
+  fi
+  if [[ -n "$auth_kimi" ]]; then
+    add_bind_mount "$auth_kimi" /auth/kimi-code ",readonly"
+  fi
+  if [[ -n "$auth_pi" ]]; then
+    add_bind_mount "$auth_pi" /auth/pi ",readonly"
+  fi
+
+  docker run \
+    -d \
+    --name "$container_name" \
+    --user "$(id -u):$(id -g)" \
+    --workdir /workspace/evals \
+    "${mounts[@]}" \
+    "$image_tag" \
+    sleep infinity
+}
+
+case "$command" in
+  build)
+    docker build -t "$image_tag" -f "$evals_root/container/Dockerfile" "$evals_root"
+    ;;
+  up)
+    run_up
+    ;;
+  down)
+    if container_exists; then
+      if container_running; then
+        docker stop "$container_name"
+      fi
+      docker rm "$container_name"
+    else
+      printf '%s: missing\n' "$container_name"
+    fi
+    ;;
+  status)
+    if container_exists; then
+      if container_running; then
+        printf '%s: exists, running\n' "$container_name"
+      else
+        printf '%s: exists, stopped\n' "$container_name"
+      fi
+    else
+      printf '%s: missing\n' "$container_name"
+    fi
+    ;;
+  shell)
+    docker exec -it "$container_name" bash
+    ;;
+  exec)
+    [[ $# -gt 0 ]] || die "missing command for exec"
+    if [[ "${1:-}" == "quorum" ]]; then
+      probe_results_mount
+    fi
+    docker exec "$container_name" "$@"
+    ;;
+esac
