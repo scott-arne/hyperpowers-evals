@@ -28,11 +28,11 @@ inline prose all use lowercase `quorum`.
 - `src/contracts/` — zod schemas + types (`verdict.ts`, `agent-config.ts`, `batch.ts`, `economics.ts`, `gauntlet.ts`).
 - `src/capture/` — session-log snapshot/diff + ATIF capture: normalizes each new log to an ATIF `Trajectory`, merges by timestamp, writes `trajectory.json`; `src/obol/` prices token usage.
 - `src/atif/` + `src/normalize/` + `src/detect/` — ATIF v1.7 transcript (types/project/validate), the 8 per-Coding-Agent → ATIF normalizers, and the skill/implementation-path detectors.
-- `src/check/` + `src/cli/check-transcript.ts` — the `check-transcript <verb>` CLI (reads `QUORUM_TRANSCRIPT_PATH`, runs the 13 trace verbs, emits one record).
+- `src/check/` + `src/cli/check-tool.ts` + `src/cli/check-transcript.ts` — the typed check-tool dispatcher behind every `bin/` shim: `fs-verbs.ts` (file/git/env verbs + bootstrap checks), `transcript-dispatch.ts` (13 trace verbs, shared with `check-transcript`), `dispatch.ts` (verb table + in-process `not`), `record.ts` (sole emitter). Each verb emits one record; the 127 crash-band is preserved.
 - `src/agents/` — per-Coding-Agent provisioning adapters over the `command-runner.ts` seam.
 - `src/scaffold.ts` — `quorum new` / `quorum check` implementation.
 - `src/cli/` — the `quorum` CLI; `src/run-all/` the batch matrix driver; `src/scheduler/` the concurrency dispatcher; `src/dashboard/` the web matrix.
-- `bin/` — check-tool vocabulary; tools emit one JSON record each.
+- `bin/` — thin shims only: one 5-line `exec bun run check-tool.ts <verb>` per check verb, plus `check-transcript` and `setup-helpers` shims. Operator scripts live in `scripts/`.
 - `coding-agents/<name>.yaml` — per-Coding-Agent CLI config.
 - `coding-agents/<name>-context/HOWTO.md` — instructions copied into Gauntlet-Agent context.
 - `coding-agents/<name>-home-skeleton/` — seeded into per-run `CLAUDE_CONFIG_DIR` / `CODEX_HOME`.

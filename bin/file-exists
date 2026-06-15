@@ -1,45 +1,5 @@
 #!/usr/bin/env bash
-_RECORD_CHECK=file-exists
-_RECORD_ARGS=("$@")
-source "$(dirname "$0")/_record"
-# Pass iff at least one path matches the glob (handles globs without shopt extglob).
-# Contract: $1 is a glob pattern (workdir-relative). Literal paths
-# containing spaces are not supported (use file-contains for those).
-matches=()
-if [[ "$1" == *'**'* ]]; then
-    # Recursive glob. macOS ships bash 3.2, which has no `globstar`, so a
-    # plain `**` expansion never recurses — it behaves like a single `*`
-    # and silently misses nested matches. Route `**` patterns through
-    # `find`, which is consistent across bash versions.
-    #   prefix = literal dirs before the first `**/`  (".", if none)
-    #   suffix = pattern after the last `**/`
-    suffix="${1##*\*\*/}"
-    prefix="${1%%\*\*/*}"
-    prefix="${prefix%/}"
-    [ -z "$prefix" ] && prefix="."
-    if [[ "$suffix" == */* ]]; then
-        # A slash survives in the tail (e.g. a/**/b/c) — match the whole
-        # relative path; find's `-path` `*` crosses `/`.
-        while IFS= read -r m; do matches+=("$m"); done \
-            < <(find "$prefix" -path "*/$suffix" 2>/dev/null)
-    else
-        while IFS= read -r m; do matches+=("$m"); done \
-            < <(find "$prefix" -name "$suffix" 2>/dev/null)
-    fi
-else
-    shopt -s nullglob
-    matches=( $1 )
-    shopt -u nullglob
-fi
-# Filter to only actually-existing paths (handles the case where $1 is a
-# literal filename with no glob chars — nullglob does not suppress it).
-existing=()
-for m in "${matches[@]}"; do
-    [ -e "$m" ] && existing+=("$m")
-done
-if [ "${#existing[@]}" -gt 0 ]; then
-    record_pass
-else
-    record_fail "no path matched: $1"
-    exit 1
-fi
+# Thin shim: dispatch to the typed check-tool CLI using this tool's name as the
+# verb. All check LOGIC lives in src/check/ (see src/cli/check-tool.ts).
+here="$(cd "$(dirname "$0")/.." && pwd)"
+exec bun run "$here/src/cli/check-tool.ts" "$(basename "$0")" "$@"

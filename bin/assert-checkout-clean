@@ -1,28 +1,5 @@
 #!/usr/bin/env bash
-_RECORD_CHECK=assert-checkout-clean; _RECORD_ARGS=("$@")
-source "$(dirname "$0")/_record"
-path="$1"
-
-if ! git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    record_fail "$path is not a git work tree"; exit 1
-fi
-
-# .quorum-launch-cwd is harness plumbing (the launch-cwd sentinel written
-# by setup.sh into the primary workdir), not agent drift — ignore it.
-if ! status_out=$(git -C "$path" status --porcelain 2>/dev/null); then
-    record_fail "git status failed at $path"; exit 1
-fi
-dirty=$(printf '%s' "$status_out" | grep -vE '^\?\? \.quorum-launch-cwd$' || true)
-if [ -n "$dirty" ]; then
-    record_fail "tree at $path not clean: $(printf '%s' "$dirty" | head -3 | tr '\n' ' ')"; exit 1
-fi
-
-recorded="$(git -C "$path" rev-parse --absolute-git-dir)/quorum-recorded-head"
-if [ -f "$recorded" ]; then
-    head_now=$(git -C "$path" rev-parse HEAD)
-    head_then=$(tr -d '[:space:]' < "$recorded")
-    if [ "$head_now" != "$head_then" ]; then
-        record_fail "HEAD at $path moved: $head_then -> $head_now"; exit 1
-    fi
-fi
-record_pass
+# Thin shim: dispatch to the typed check-tool CLI using this tool's name as the
+# verb. All check LOGIC lives in src/check/ (see src/cli/check-tool.ts).
+here="$(cd "$(dirname "$0")/.." && pwd)"
+exec bun run "$here/src/cli/check-tool.ts" "$(basename "$0")" "$@"
