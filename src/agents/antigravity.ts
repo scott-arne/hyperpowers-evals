@@ -1,7 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
-  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -15,9 +14,10 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import type { AgentConfig } from '../contracts/agent-config.ts';
 import { envSnapshot, getEnv } from '../env.ts';
+import { stageSuperpowersPlugin } from '../setup-helpers/plugin-stage.ts';
 import { agyLogShowsRateLimit } from './agy-watch.ts';
 import type { CommandResult, CommandRunner } from './command-runner.ts';
 import { type CodingAgent, ProvisionError, type RunHome } from './index.ts';
@@ -118,36 +118,14 @@ export function setAgyWhichForTesting(probe: AgyWhichProbe | null): void {
   agyWhichProbe = probe ?? defaultAgyWhich;
 }
 
-// agy `plugin install <path>` deep-copies the given path into the per-run gemini
-// home. When evals run from within a superpowers checkout, SUPERPOWERS_ROOT nests
-// the entire evals/ submodule (results/, worktrees, node_modules) — none of it
-// part of the plugin — which recursively explodes the copy. Exclude eval output
-// + VCS/build cruft so only the plugin is staged and installed.
-export function isExcludedFromPluginStage(src: string, root: string): boolean {
-  const name = basename(src);
-  // VCS/build artifacts are never part of the plugin, at any depth.
-  if (name === '.git' || name === 'node_modules') {
-    return true;
-  }
-  // Top-level non-plugin trees: the `evals` submodule and `.claude` (dev
-  // worktrees + local state — each worktree is itself a full checkout with its
-  // own evals/results/fixtures). `.claude-plugin` (the plugin manifest) is a
-  // different name and is preserved.
-  if (resolve(dirname(src)) === resolve(root)) {
-    return name === 'evals' || name === '.claude';
-  }
-  return false;
-}
-
 // Stage a clean copy of the Superpowers plugin (sans eval output / cruft) into a
 // fresh temp dir and return its path. The caller hands it to `agy plugin install`
 // and removes it afterward (agy copies it into the gemini home at install time).
+// agy `plugin install <path>` deep-copies the given path, so the eval output and
+// VCS/build cruft that stageSuperpowersPlugin drops would otherwise explode it.
 export function stageAntigravityPluginSource(superpowersRoot: string): string {
   const staged = mkdtempSync(join(tmpdir(), 'quorum-agy-plugin-'));
-  cpSync(superpowersRoot, staged, {
-    recursive: true,
-    filter: (src: string) => !isExcludedFromPluginStage(src, superpowersRoot),
-  });
+  stageSuperpowersPlugin(superpowersRoot, staged);
   return staged;
 }
 

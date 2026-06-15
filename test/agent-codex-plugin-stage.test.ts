@@ -8,17 +8,12 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  CodexAgent,
-  isCodexPluginCopyExcluded,
-  isUnderDir,
-} from '../src/agents/codex.ts';
+import { CodexAgent } from '../src/agents/codex.ts';
 import type {
   AppServerClient,
   AppServerHook,
   ReadHookArgs,
 } from '../src/agents/codex-app-server.ts';
-import { ProvisionError } from '../src/agents/index.ts';
 import type { AgentConfig } from '../src/contracts/agent-config.ts';
 import { FakeCommandRunner } from './fake-command-runner.ts';
 import { makeTempHome } from './provision-helpers.ts';
@@ -40,7 +35,7 @@ const HAPPY_HOOK: AppServerHook = {
 };
 
 // Records every readHook call so a test can assert the app-server step was
-// reached (or, for the self-copy guard, never reached) and returns a canned hook.
+// reached and returns a canned hook.
 class FakeAppServerClient implements AppServerClient {
   readonly calls: ReadHookArgs[] = [];
   readHook(args: ReadHookArgs): AppServerHook {
@@ -82,54 +77,15 @@ function withHostAuth(
   }
 }
 
-// === Change 2: the entire evals/ subtree at the superpowers root is excluded ===
+const PLUGIN_ROOT_SEGMENTS = [
+  'plugins',
+  'cache',
+  'debug',
+  'superpowers',
+  'local',
+] as const;
 
-test('isCodexPluginCopyExcluded excludes <root>/evals (basename evals, parent is root)', () => {
-  const root = '/some/superpowers';
-  expect(isCodexPluginCopyExcluded(join(root, 'evals'), root)).toBe(true);
-});
-
-test('isCodexPluginCopyExcluded keeps <root>/skills, <root>/hooks, <root>/docs', () => {
-  const root = '/some/superpowers';
-  expect(isCodexPluginCopyExcluded(join(root, 'skills'), root)).toBe(false);
-  expect(isCodexPluginCopyExcluded(join(root, 'hooks'), root)).toBe(false);
-  expect(isCodexPluginCopyExcluded(join(root, 'docs'), root)).toBe(false);
-});
-
-test('isCodexPluginCopyExcluded excludes <root>/.claude (dev worktrees) but keeps .claude-plugin', () => {
-  const root = '/some/superpowers';
-  // .claude at root holds dev worktrees — each a full checkout with its own
-  // evals/results — and is not part of the plugin.
-  expect(isCodexPluginCopyExcluded(join(root, '.claude'), root)).toBe(true);
-  // .claude-plugin (the plugin manifest dir) must survive.
-  expect(isCodexPluginCopyExcluded(join(root, '.claude-plugin'), root)).toBe(
-    false,
-  );
-  // a nested (non-root) .claude is NOT excluded by the root rule.
-  expect(isCodexPluginCopyExcluded(join(root, 'skills', '.claude'), root)).toBe(
-    false,
-  );
-});
-
-test('isCodexPluginCopyExcluded does not exclude a nested evals dir whose parent is not the root', () => {
-  const root = '/some/superpowers';
-  expect(
-    isCodexPluginCopyExcluded(join(root, 'skills', 'foo', 'evals'), root),
-  ).toBe(false);
-});
-
-test('isCodexPluginCopyExcluded still excludes the always-ignored set anywhere', () => {
-  const root = '/some/superpowers';
-  expect(isCodexPluginCopyExcluded(join(root, '.git'), root)).toBe(true);
-  expect(isCodexPluginCopyExcluded(join(root, 'node_modules'), root)).toBe(
-    true,
-  );
-  expect(
-    isCodexPluginCopyExcluded(join(root, 'skills', 'node_modules'), root),
-  ).toBe(true);
-});
-
-test('provision drops the whole evals subtree but copies skills and hooks', () => {
+test('provision stages skills and hooks and drops the whole evals subtree', () => {
   const { home, cleanup } = makeTempHome();
   const root = mkdtempSync(join(tmpdir(), 'codex-sproot-'));
   mkdirSync(join(root, 'skills'), { recursive: true });
@@ -150,14 +106,7 @@ test('provision drops the whole evals subtree but copies skills and hooks', () =
     withHostAuth(authParent, root, () => {
       const agent = new CodexAgent(CODEX_CONFIG, appServer);
       agent.provision(home, new FakeCommandRunner());
-      const pluginRoot = join(
-        home.configDir,
-        'plugins',
-        'cache',
-        'debug',
-        'superpowers',
-        'local',
-      );
+      const pluginRoot = join(home.configDir, ...PLUGIN_ROOT_SEGMENTS);
       expect(existsSync(join(pluginRoot, 'skills', 'a-skill.md'))).toBe(true);
       expect(existsSync(join(pluginRoot, 'hooks', 'session-start'))).toBe(true);
       // The entire evals/ subtree is excluded.
@@ -170,29 +119,13 @@ test('provision drops the whole evals subtree but copies skills and hooks', () =
   }
 });
 
-// === Change 3: self-copy fail-fast guard ===
-
-test('isUnderDir is true when child is strictly under parent', () => {
-  expect(isUnderDir('/a/b/c', '/a/b')).toBe(true);
-  expect(isUnderDir('/a/b/c/d', '/a/b')).toBe(true);
-});
-
-test('isUnderDir is true when child equals parent', () => {
-  expect(isUnderDir('/a/b', '/a/b')).toBe(true);
-});
-
-test('isUnderDir is false for disjoint and prefix-but-not-child paths', () => {
-  expect(isUnderDir('/a/x', '/a/b')).toBe(false);
-  // "/a/bc" must NOT count as under "/a/b" (no false prefix match).
-  expect(isUnderDir('/a/bc', '/a/b')).toBe(false);
-});
-
-test('provision throws a clear ProvisionError when the out-root is under SUPERPOWERS_ROOT', () => {
+test('provision succeeds when the out-root resolves UNDER SUPERPOWERS_ROOT', () => {
   const root = mkdtempSync(join(tmpdir(), 'codex-selfcopy-'));
   mkdirSync(join(root, 'skills'), { recursive: true });
   writeFileSync(join(root, 'skills', 'a-skill.md'), '# skill\n');
   // The run home (and thus pluginRoot) lives UNDER the superpowers root — the
-  // self-copy condition cpSync rejects cryptically.
+  // default results/ out-root. The shared plugin-stage helper skips the evals
+  // subtree that holds the dest, so the copy never recurses into itself.
   const configDir = join(root, 'evals', 'run', 'coding-agent-config');
   const workdir = join(root, 'evals', 'run', 'coding-agent-workdir');
   mkdirSync(workdir, { recursive: true });
@@ -203,14 +136,15 @@ test('provision throws a clear ProvisionError when the out-root is under SUPERPO
   try {
     withHostAuth(authParent, root, () => {
       const agent = new CodexAgent(CODEX_CONFIG, appServer);
-      expect(() => agent.provision(home, new FakeCommandRunner())).toThrow(
-        ProvisionError,
-      );
-      expect(() => agent.provision(home, new FakeCommandRunner())).toThrow(
-        /SUPERPOWERS_ROOT/,
-      );
-      // The guard fires before the app-server read.
-      expect(appServer.calls.length).toBe(0);
+      expect(() =>
+        agent.provision(home, new FakeCommandRunner()),
+      ).not.toThrow();
+      const pluginRoot = join(configDir, ...PLUGIN_ROOT_SEGMENTS);
+      expect(existsSync(join(pluginRoot, 'skills', 'a-skill.md'))).toBe(true);
+      // The evals subtree that contains pluginRoot is never staged.
+      expect(existsSync(join(pluginRoot, 'evals'))).toBe(false);
+      // Provisioning ran to completion, reaching the app-server hook read.
+      expect(appServer.calls.length).toBe(1);
     });
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -218,7 +152,7 @@ test('provision throws a clear ProvisionError when the out-root is under SUPERPO
   }
 });
 
-test('provision does not throw the self-copy guard when out-root is disjoint from SUPERPOWERS_ROOT', () => {
+test('provision succeeds when out-root is disjoint from SUPERPOWERS_ROOT', () => {
   const { home, cleanup } = makeTempHome();
   const root = mkdtempSync(join(tmpdir(), 'codex-disjoint-'));
   mkdirSync(join(root, 'skills'), { recursive: true });

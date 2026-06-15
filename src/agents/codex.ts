@@ -6,10 +6,11 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import type { AgentConfig } from '../contracts/agent-config.ts';
 import { getEnv } from '../env.ts';
+import { stageSuperpowersPlugin } from '../setup-helpers/plugin-stage.ts';
 import {
   APP_SERVER_TIMEOUT_MS,
   type AppServerClient,
@@ -61,69 +62,6 @@ const CodexAuthSchema = z
     tokens: CodexTokensSchema,
   })
   .passthrough();
-
-// Dirs under SUPERPOWERS_ROOT ignored when staging the plugin. These are
-// excluded by basename anywhere in the tree.
-const PLUGIN_COPY_IGNORE = new Set<string>([
-  '.git',
-  '.mypy_cache',
-  '.pytest_cache',
-  '.ruff_cache',
-  '.ty',
-  '.venv',
-  '__pycache__',
-  'node_modules',
-]);
-
-// Decide whether a source path is excluded from the staged Codex plugin copy.
-//
-// Two rules, applied in order:
-//   1. Always drop the PLUGIN_COPY_IGNORE basenames (.git, node_modules, …)
-//      anywhere in the tree.
-//   2. Drop the ENTIRE `evals/` submodule at the superpowers root — `src`
-//      resolving to `<superpowersRoot>/evals` (basename `evals` AND parent is
-//      the root). Excluding the directory prunes its whole subtree (results/,
-//      worktrees/, node_modules/, …), none of which belongs in the staged
-//      plugin. The parent-is-root guard means a legitimate nested `evals` dir
-//      deeper in the tree (e.g. inside a skill fixture) is still copied.
-//
-// The whole `<root>/evals` subtree is excluded (not just `evals/results`):
-// live evals run from a superpowers checkout whose `evals/` submodule carries
-// results/, per-run worktrees, and node_modules — all wasteful and fragile to
-// stage.
-export function isCodexPluginCopyExcluded(
-  src: string,
-  superpowersRoot: string,
-): boolean {
-  if (PLUGIN_COPY_IGNORE.has(basename(src))) {
-    return true;
-  }
-  // Top-level non-plugin trees: the `evals` submodule and `.claude` (dev
-  // worktrees — each a full checkout with its own evals/results). `.claude-plugin`
-  // (the plugin manifest) is a different name and is preserved; a nested `.claude`
-  // / `evals` deeper in the tree is still copied (the parent-is-root guard).
-  const name = basename(src);
-  if (
-    (name === 'evals' || name === '.claude') &&
-    resolve(src) === resolve(superpowersRoot, name)
-  ) {
-    return true;
-  }
-  return false;
-}
-
-// Realpath-safe directory containment: true when `child` is `parent` itself or
-// strictly under it. Resolves both to absolute paths and compares with a
-// trailing separator so `/a/bc` does not count as under `/a/b` (no false-prefix
-// match). Used by the self-copy fail-fast guard.
-export function isUnderDir(child: string, parent: string): boolean {
-  const resolvedChild = resolve(child);
-  const resolvedParent = resolve(parent);
-  if (resolvedChild === resolvedParent) {
-    return true;
-  }
-  return resolvedChild.startsWith(resolvedParent + sep);
-}
 
 export class CodexAgent implements CodingAgent {
   readonly config: AgentConfig;
@@ -258,21 +196,7 @@ export class CodexAgent implements CodingAgent {
       'local',
     );
 
-    // Fail-fast self-copy guard: when the eval out-root is INSIDE
-    // SUPERPOWERS_ROOT, pluginRoot (dest) is a subdirectory of the copy source,
-    // and cpSync dies with a cryptic "cannot copy X to a subdirectory of self".
-    // Surface a clear, actionable error before the copy instead.
-    if (isUnderDir(pluginRoot, superpowersRoot)) {
-      throw new ProvisionError(
-        `Codex plugin copy would recurse into itself: the eval out-root resolves under SUPERPOWERS_ROOT (${superpowersRoot}). Pass --out-root pointing OUTSIDE SUPERPOWERS_ROOT.`,
-      );
-    }
-
-    mkdirSync(dirname(pluginRoot), { recursive: true });
-    cpSync(superpowersRoot, pluginRoot, {
-      recursive: true,
-      filter: (src: string) => !isCodexPluginCopyExcluded(src, superpowersRoot),
-    });
+    stageSuperpowersPlugin(superpowersRoot, pluginRoot);
 
     const configPath = join(configDir, 'config.toml');
     writePluginHooksConfig(configPath);
@@ -287,13 +211,6 @@ export class CodexAgent implements CodingAgent {
     });
     appendTrustedHook(configPath, hook.key, hook.currentHash);
   }
-}
-
-// node:path basename without a default-export import (verbatimModuleSyntax).
-function basename(p: string): string {
-  const parts = p.split('/');
-  const last = parts[parts.length - 1];
-  return last ?? p;
 }
 
 // Enable plugins/hooks and the superpowers@debug plugin. The trailing
