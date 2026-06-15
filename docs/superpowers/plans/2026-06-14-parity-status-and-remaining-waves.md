@@ -59,8 +59,18 @@ Ran `/par` (2 competing adversarial reviewers) + `roborev review --branch --base
 ## ⚠️ RECURRING HAZARD — local `atif-graft` drift
 Every `isolation:'worktree'` agent fan-out has moved the LOCAL `atif-graft` branch forward onto parity commits (its `git reset --hard origin/ts-python-parity` moves whatever branch the agent worktree was based on). `origin/atif-graft` stays correct at `21f1a8a`. **Before any atif-graft PR work, run:** `git -C <atif-graft-worktree> reset --hard origin/atif-graft`. A stray `git push` from that worktree would FF-contaminate the PR branch with parity commits.
 
+## LIVE EVAL TESTS — first pass run (2026-06-15, smoke scenario `00-quorum-smoke-hello-world`)
+Ran real `quorum run` live (serf `.env` keys sourced inline, `SUPERPOWERS_ROOT=/Users/jesse/git/superpowers/superpowers`). Validated the full pipeline (provisioning → gauntlet → ATIF capture → checks → economics → verdict) for 3 agents:
+- ✅ **claude** PASS ($0.25, full economics) · ✅ **gemini** PASS (coding economics partial) · ✅ **opencode** PASS (coding economics partial)
+- ⚠️ **codex** indeterminate: (a) when out-root is INSIDE `SUPERPOWERS_ROOT` the plugin install self-copies → use `--out-root` outside; (b) then "codex app-server returned no response" — likely codex auth not present in a non-interactive shell.
+- ⚠️ **antigravity** indeterminate: `agy` plugin install recursively copies `SUPERPOWERS_ROOT` (which here contains `evals/.../results/` of prior runs) → path explosion. Setup artifact of the nested-worktree layout.
+- ⛔ **pi** / **kimi**: RX-4 (our own new load-time required_env check) correctly REJECTS them here — `PI_*` / `KIMI_MODEL_API_KEY` unset in the non-interactive Bash env. Need Jesse's interactive shell. **kimi also: `coding-agents/kimi.yaml` says `binary: kimi` but the real binary is `kimi-code`** (config/path mismatch — fix to `kimi-code` or symlink).
+- ⛔ **copilot**: no GH token in this env.
+- Findings to follow up: (1) kimi.yaml binary name; (2) codex/antigravity plugin-install copies the WHOLE `SUPERPOWERS_ROOT` — fragile if it contains `results/`/large trees (guard: fail fast if out-root under SUPERPOWERS_ROOT, or exclude results/); (3) partial coding economics for gemini/opencode — likely obol can't price those models (graceful degradation by design — confirm, probably not a bug).
+- ⚠️ **Incident:** I accidentally echoed the `ANTHROPIC_API_KEY` value into the session transcript via a bad `${VAR:-UNSET}` shell expansion. Jesse: rotate at end of evening. Never interpolate a secret var into output again.
+
 ## LATER — finish
-1. **REAL live eval tests** (Jesse's explicit next ask) — the consolidated review proved the live-eval agent paths are under-covered by unit/mock gates. Build real live-eval coverage (kimi/copilot/opencode/antigravity launch + capture). Needs serf `.env` keys; trusted-maintainer only, never public CI.
+0. **Finish live evals** in Jesse's env: pi/kimi/copilot (need his keys); fix kimi.yaml `binary` first. Optionally codify a `live-smoke` runner.
 2. **Finish / PRs** (confirm strategy with Jesse): `atif-graft` → `main` is its own PR (ATIF graft + purge + cleanup). `ts-python-parity` → stacked on it (clean linear descendant: merge-base == atif-graft tip, 0 divergent). Show Jesse the diffs before opening. Per repo `CLAUDE.md`: one problem per PR; disclose agent authorship.
 3. **Parent submodule bump**: after a merge to `main` here, open the follow-up PR in the parent `superpowers` repo (target `dev`) bumping the `evals` submodule pointer.
 
