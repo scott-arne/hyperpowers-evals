@@ -43,9 +43,25 @@ Ground truth for "is X a real parity gap" = the **flat-JSONL Python frozen on `o
 - Intentionally SKIPPED (sanctioned divergence): Python's "non-Claude variants not supported in v1" check — TS is multi-agent and the rule is redundant for every real config (runtime_family == name).
 - Borderline (NOT done, skip unless asked): `run-dir-collision-tolerance` (`mkdir exist_ok=False` vs `recursive:true`) — real but no realistic exposure.
 
-## LATER — review & finish
-1. **Consolidated adversarial review** of the whole parity branch once Wave 2b + Wave 3 are in: `/par` (2 competing adversarial reviewers, disqualified for inflated findings) **and** `roborev review --branch --wait --base atif-graft` (diff vs `atif-graft` to isolate the parity delta; use `--base origin/main` for the full stack). Triage real findings, fix (TDD), re-verify. Converge (≤1 clean round).
-2. **Finish / PRs** (confirm strategy with Jesse): `atif-graft` → `main` is its own PR (ATIF graft + purge + cleanup). `ts-python-parity` → either `main` or stacked on the `atif-graft` PR. Both target the right base; show Jesse the diffs before opening. Per repo `CLAUDE.md`: one problem per PR; disclose agent authorship.
+## CONSOLIDATED REVIEW — DONE (fixes merged at `03e7c91`, 884 pass)
+Ran `/par` (2 competing adversarial reviewers) + `roborev review --branch --base atif-graft` (job 1066) + collated earlier open roborev (1062/1063). Earlier roborev: all addressed except the kimi launch-subs gap (1063#1), which was fixed here. Fixed ALL confirmed findings via an 8-group disjoint-file fan-out (TDD, merged sequentially, branches+worktrees cleaned):
+- **H1** kimi `$KIMI_ENV_FILE`/`$KIMI_BINARY` launch substitutions wired (was unwired → live kimi aborted under `set -u`). `kimiLaunchSubstitutions` helper in runner.
+- **H2** kimi preflight secret leak — `sanitizeKimiDiagnostic` was dead code; now wraps `KimiAgent.provision` so no raw `KIMI_MODEL_API_KEY` reaches `verdict.json`.
+- **H3** `command -v <bin>` probes (copilot/gemini/opencode/pi/kimi) → `Bun.which` (the builtin-not-an-executable bug false-failed Linux provisioning).
+- **H4** `setup.sh` >1 MB output → `maxBuffer: Infinity` (ENOBUFS was mislabeled a spawn failure).
+- **M1** opencode timeout was swallowed as success (`exitCode ?? 0`) → `spawnOutcome` decision + `OpenCodeTimeoutError`, preflight aborts on first timeout.
+- **M2** copilot leak-scan followed symlinked dirs (`statSync`) → `lstatSync`, no symlink descent.
+- **M3** agy-teardown lexical path match → realpath both sides (tmux 429-kill was missing on macOS `/tmp`→`/private/tmp`).
+- **L1** `quorum new foo/bar` story id; **L2** copilot/gemini `~` expansion of SUPERPOWERS_ROOT; **L3** runPhase `maxBuffer`; **L5** story-meta `splitlines`; **L6** antigravity git-path exit check.
+- **L4 (NEEDS JESSE'S CONFIRM)** signal-killed pre()/post() with records: fixed to MATCH PYTHON (negative returncode → records-clean, exit 0). Debatable — an OOM/timeout SIGKILL mid-phase with partial records is now treated as clean. Reverse if you'd rather treat it as a crash.
+- A notable pattern: the impactful new findings clustered in **live-eval agent paths** (kimi/copilot/opencode/antigravity) that are mock-tested, not driven live — which is why unit gates missed them. → motivates the live-eval-tests phase.
+
+## ⚠️ RECURRING HAZARD — local `atif-graft` drift
+Every `isolation:'worktree'` agent fan-out has moved the LOCAL `atif-graft` branch forward onto parity commits (its `git reset --hard origin/ts-python-parity` moves whatever branch the agent worktree was based on). `origin/atif-graft` stays correct at `21f1a8a`. **Before any atif-graft PR work, run:** `git -C <atif-graft-worktree> reset --hard origin/atif-graft`. A stray `git push` from that worktree would FF-contaminate the PR branch with parity commits.
+
+## LATER — finish
+1. **REAL live eval tests** (Jesse's explicit next ask) — the consolidated review proved the live-eval agent paths are under-covered by unit/mock gates. Build real live-eval coverage (kimi/copilot/opencode/antigravity launch + capture). Needs serf `.env` keys; trusted-maintainer only, never public CI.
+2. **Finish / PRs** (confirm strategy with Jesse): `atif-graft` → `main` is its own PR (ATIF graft + purge + cleanup). `ts-python-parity` → stacked on it (clean linear descendant: merge-base == atif-graft tip, 0 divergent). Show Jesse the diffs before opening. Per repo `CLAUDE.md`: one problem per PR; disclose agent authorship.
 3. **Parent submodule bump**: after a merge to `main` here, open the follow-up PR in the parent `superpowers` repo (target `dev`) bumping the `evals` submodule pointer.
 
 ## CONVENTIONS every wave follows
