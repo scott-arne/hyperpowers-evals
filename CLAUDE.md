@@ -126,9 +126,10 @@ ANTHROPIC_API_KEY=sk-...
 OPENAI_API_KEY=sk-...
 ```
 
-When this repo is checked out as `superpowers/evals`, quorum defaults
-`SUPERPOWERS_ROOT` to the parent `superpowers` checkout. In a standalone
-`superpowers-evals` clone, export it explicitly:
+quorum does **not** auto-discover `SUPERPOWERS_ROOT` — export it explicitly to
+your `superpowers` checkout (the directory that contains this `evals/` tree).
+Provisioning and every `needsSuperpowersRoot` setup-helper read it and fail fast
+if it is unset:
 
 ```
 export SUPERPOWERS_ROOT=/path/to/superpowers
