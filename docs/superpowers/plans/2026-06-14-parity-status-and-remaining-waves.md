@@ -53,24 +53,28 @@ Ran `/par` (2 competing adversarial reviewers) + `roborev review --branch --base
 - **M2** copilot leak-scan followed symlinked dirs (`statSync`) → `lstatSync`, no symlink descent.
 - **M3** agy-teardown lexical path match → realpath both sides (tmux 429-kill was missing on macOS `/tmp`→`/private/tmp`).
 - **L1** `quorum new foo/bar` story id; **L2** copilot/gemini `~` expansion of SUPERPOWERS_ROOT; **L3** runPhase `maxBuffer`; **L5** story-meta `splitlines`; **L6** antigravity git-path exit check.
-- **L4 (NEEDS JESSE'S CONFIRM)** signal-killed pre()/post() with records: fixed to MATCH PYTHON (negative returncode → records-clean, exit 0). Debatable — an OOM/timeout SIGKILL mid-phase with partial records is now treated as clean. Reverse if you'd rather treat it as a crash.
+- **L4** signal-killed pre()/post() → CRASH regardless of records (`54ef2fc`). Jesse's call: a killed phase is never "clean". Deliberate divergence from Python (records still surfaced; exit lands in the ≥128 crash band).
 - A notable pattern: the impactful new findings clustered in **live-eval agent paths** (kimi/copilot/opencode/antigravity) that are mock-tested, not driven live — which is why unit gates missed them. → motivates the live-eval-tests phase.
+
+> **DIRECTIVE SHIFT (2026-06-15):** Jesse — "ignore python parity in favor of making good, working software." From here, decisions optimize for correctness, not matching Python. (Ratifies L4 + the codex/antigravity copy fixes, which already left Python behind.)
 
 ## ⚠️ RECURRING HAZARD — local `atif-graft` drift
 Every `isolation:'worktree'` agent fan-out has moved the LOCAL `atif-graft` branch forward onto parity commits (its `git reset --hard origin/ts-python-parity` moves whatever branch the agent worktree was based on). `origin/atif-graft` stays correct at `21f1a8a`. **Before any atif-graft PR work, run:** `git -C <atif-graft-worktree> reset --hard origin/atif-graft`. A stray `git push` from that worktree would FF-contaminate the PR branch with parity commits.
 
-## LIVE EVAL TESTS — first pass run (2026-06-15, smoke scenario `00-quorum-smoke-hello-world`)
-Ran real `quorum run` live (serf `.env` keys sourced inline, `SUPERPOWERS_ROOT=/Users/jesse/git/superpowers/superpowers`). Validated the full pipeline (provisioning → gauntlet → ATIF capture → checks → economics → verdict) for 3 agents:
-- ✅ **claude** PASS ($0.25, full economics) · ✅ **gemini** PASS (coding economics partial) · ✅ **opencode** PASS (coding economics partial)
-- ⚠️ **codex** indeterminate: (a) when out-root is INSIDE `SUPERPOWERS_ROOT` the plugin install self-copies → use `--out-root` outside; (b) then "codex app-server returned no response" — likely codex auth not present in a non-interactive shell.
-- ⚠️ **antigravity** indeterminate: `agy` plugin install recursively copies `SUPERPOWERS_ROOT` (which here contains `evals/.../results/` of prior runs) → path explosion. Setup artifact of the nested-worktree layout.
-- ⛔ **pi** / **kimi**: RX-4 (our own new load-time required_env check) correctly REJECTS them here — `PI_*` / `KIMI_MODEL_API_KEY` unset in the non-interactive Bash env. Need Jesse's interactive shell. **kimi also: `coding-agents/kimi.yaml` says `binary: kimi` but the real binary is `kimi-code`** (config/path mismatch — fix to `kimi-code` or symlink).
-- ⛔ **copilot**: no GH token in this env.
-- Findings to follow up: (1) kimi.yaml binary name; (2) codex/antigravity plugin-install copies the WHOLE `SUPERPOWERS_ROOT` — fragile if it contains `results/`/large trees (guard: fail fast if out-root under SUPERPOWERS_ROOT, or exclude results/); (3) partial coding economics for gemini/opencode — likely obol can't price those models (graceful degradation by design — confirm, probably not a bug).
-- ⚠️ **Incident:** I accidentally echoed the `ANTHROPIC_API_KEY` value into the session transcript via a bad `${VAR:-UNSET}` shell expansion. Jesse: rotate at end of evening. Never interpolate a secret var into output again.
+## LIVE EVAL TESTS — coverage status (smoke `00-quorum-smoke-hello-world`, out-root OUTSIDE SUPERPOWERS_ROOT)
+Goal (Jesse): prove CLEAN live coverage of EVERY harness. Run with serf `.env` sourced inline (never echoed) + `SUPERPOWERS_ROOT=/Users/jesse/git/superpowers/superpowers`. Validated pipeline = provisioning → gauntlet → ATIF capture → checks → economics → verdict.
+- ✅ **claude** PASS (full economics) · ✅ **gemini** PASS · ✅ **opencode** PASS · ✅ **antigravity** PASS (after the two fixes below; trajectory captured)
+- ⚠️ **codex** — copy fixes VERIFIED (clears the staged-copy + self-copy guard); now blocked at **codex 0.133.0 app-server: responds to `initialize` (id 1) but NOT `hooks/list` (id 2)** → `no response for request 2`. NOT auth (`~/.codex/auth.json` present, initialize answered). Likely 0.133.0 protocol drift — app-server may now require an `initialized` notification before further requests, or `hooks/list` was renamed/changed. NEEDS protocol research against codex 0.133.0 (`src/agents/codex-app-server.ts:buildHandshakeInput`); do NOT guess the protocol.
+- ⛔ **pi** / **kimi** / **copilot** — need Jesse's interactive env (my Bash shell lacks `PI_*`, `KIMI_MODEL_API_KEY`, `kimi-code` on PATH, and a GH token). RX-4 correctly gates pi/kimi here. kimi binary fixed → `kimi-code`. Run these in Jesse's shell to prove coverage.
+- Economics: partial coding economics for gemini/opencode/antigravity = obol can't extract those agents' coding-agent tokens (verified: `captureTokenUsage` passes the right family+logs; obol returns null). Behavioral eval is CLEAN (PASS + trajectory). Under "make it work" it's an optional future improvement (our-own token math), not a coverage blocker.
+- Fixes landed for live coverage: kimi.yaml `binary: kimi-code` + codex exclude-evals + self-copy guard (`a2a5758`, merged `180b44c`); antigravity clean staged plugin (exclude root `evals`+`.claude`, keep `.claude-plugin`) + capture `dot:true` glob so `**` descends agy's `.system_generated/logs/transcript.jsonl` (`f150905`).
+- ⚠️ **Incident:** accidentally echoed the `ANTHROPIC_API_KEY` value into the transcript via a bad `${VAR:-UNSET}` expansion. Jesse: rotate at end of evening. Never interpolate a secret var into output.
+
+## PLANNED — per-run custom `$HOME` (Jesse, 2026-06-15)
+"We're going to eventually need to at least set a custom `$HOME` for every single eval run." The robust isolation primitive: every agent reads home-relative global state (`~/.gemini`, `~/.codex`, `~/.claude`, `~/.config`, keyrings) which leaks personal state in and makes runs non-hermetic. A throwaway per-run `$HOME` would isolate all of it at once and subsumes a whole class of findings (agy reading global gemini state, codex auth seeding, etc.). Not yet implemented — design + wire `$HOME=<run>/home` (or a mkdtemp) into every agent launch + the gauntlet drive.
 
 ## LATER — finish
-0. **Finish live evals** in Jesse's env: pi/kimi/copilot (need his keys); fix kimi.yaml `binary` first. Optionally codify a `live-smoke` runner.
+0. **Finish live coverage** in Jesse's env: codex (`hooks/list` protocol research), pi/kimi/copilot (keys). Codify a `live-smoke` runner (`quorum run-all --scenarios 00-quorum-smoke-hello-world --coding-agents <all> --out-root /tmp/... --jobs 1`).
 2. **Finish / PRs** (confirm strategy with Jesse): `atif-graft` → `main` is its own PR (ATIF graft + purge + cleanup). `ts-python-parity` → stacked on it (clean linear descendant: merge-base == atif-graft tip, 0 divergent). Show Jesse the diffs before opening. Per repo `CLAUDE.md`: one problem per PR; disclose agent authorship.
 3. **Parent submodule bump**: after a merge to `main` here, open the follow-up PR in the parent `superpowers` repo (target `dev`) bumping the `evals` submodule pointer.
 
