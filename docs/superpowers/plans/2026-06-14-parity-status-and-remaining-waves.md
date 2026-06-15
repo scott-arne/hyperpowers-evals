@@ -2,6 +2,29 @@
 
 > Written 2026-06-14 to survive a context compaction. If you're resuming cold, read this top-to-bottom first. It captures branch state, what's merged, the in-flight Wave 2b, the remaining Wave 3, the review/finish steps, and the conventions every wave follows.
 
+## ⏩ RESUME HERE — 2026-06-15 (session 2; read this first)
+
+Branch `ts-python-parity` has grown FAR past "parity": ATIF graft + parity + live-eval hardening + **economics-on-ATIF** + tooling. Tip `6ce2029` (or later). `atif-graft` still `21f1a8a` (its own PR). Gate: **983 pass**. `quorum check` green.
+
+**DONE this session (all merged + pushed to ts-python-parity):**
+- **Live coverage: 8/8 agents PASS** a real smoke (`00-quorum-smoke-hello-world`, run with serf `.env` sourced inline + `SUPERPOWERS_ROOT=/Users/jesse/git/superpowers/superpowers`, `--out-root` OUTSIDE SUPERPOWERS_ROOT). Fixes that got there: codex app-server stdin-grace (`sh -c '{ cat; sleep 3; } | codex app-server'`), antigravity clean-staged plugin + `dot:true` capture glob, copilot via `gh auth token`, pi+kimi **oauth-or-env** auth (kimi binary `~/.kimi-code/bin/kimi` via PATH; needs `kimi login` on host), codex/antigravity plugin-copy excludes root `evals`+`.claude`.
+- **ATIF-usage unification** (spec `docs/superpowers/specs/2026-06-15-atif-usage-unification.md`): all 8 normalizers fill `AtifStep.metrics`/`final_metrics` (DISJOINT buckets: prompt=UNCACHED input, cached=cache_read, cache_write in extra, completion=output[+reasoning]); economics prices the trajectory via the **obol `atif` dialect** (`estimateTrajectory`→`estimatePath(traj,"atif")`); **deleted** `src/obol/fallback.ts` + per-agent `DIALECTS`/`estimateSessionLogs` raw-log parsing. Evergreen per-format doc: `docs/superpowers/reference/atif-normalizers.md` (incl. the **single-source invariant** — each agent reports usage in ONE place; copilot was a hybrid → final_metrics-only). Token math VERIFIED twice (arithmetic audit + native-log cross-check, all 8 MATCH).
+- **Live ATIF-sourced coding-$ matrix:** claude 55K/$0.11, codex 31K/$0.08, gemini 34K/$0.06, opencode 52K/$0.13, copilot 144K/$0.11, pi 20K/$0.06, kimi 57K/**unpriced**, antigravity **null** (agy emits no usage — honest). 7/8 captured, 6/8 priced.
+
+**obol `atif` dialect:** lives in `/Users/jesse/git/prime-radiant-inc/obol` branch `atif-dialect` (pushed). ts-python-parity's `package.json` points `@primeradianthq/obol` at a LOCAL tarball `file:.../obol/dist-pack/primeradianthq-obol-0.5.0-atif.1.tgz`. **Before shippable: publish obol 0.5.0 + repoint the dep** (explicit step WITH Jesse).
+
+**IN FLIGHT (background subagent — merge when it lands; disjoint files → clean):**
+- `rfix-bin-cleanup` (agent `a52662dd`): the bin/ TS-dispatcher cleanup per `docs/superpowers/specs/2026-06-15-bin-check-tool-architecture.md` — kill `bin-ts/`, check tools → TS, `scripts/` for maintenance, preserve record/negation/127-crash-band invariants. LARGE; may land partial-but-green. Touches bin/, src/check/, src/checks/index.ts, src/cli/index.ts, src/setup-step.ts, scripts/. When it lands: `cd` to the parity worktree, `git merge --no-ff origin/rfix-bin-cleanup`, `bun install && bun run check && bun run quorum check`, push, delete branch, prune its worktree, reset atif-graft drift.
+- DONE this session: `rfix-costs-batch` (merged `6ce2029`) + the read-only cross-check (`a6f4c8fc`, all 8 token numbers verified faithful to native logs, no branch).
+
+**REMAINING (in order):**
+1. Merge `rfix-bin-cleanup` when it lands (steps above).
+2. **Per-run `$HOME` isolation** (spec `docs/superpowers/specs/2026-06-15-per-run-home-isolation.md`) — do AFTER bin/ (they share the env-composition layer: setup-step, runner gauntlet env, launch-agents, PATH). antigravity exempt first (C2).
+3. kimi-code pricing — **PUNTED** (add a rate to obol later; "add to obol, per-token if a public rate exists").
+4. obol publish + dep repoint; then the eventual PR(s) — branch scope is now huge, discuss slicing with Jesse.
+
+**Directive shift (still in effect):** "ignore python parity in favor of making good, working software." **Hazards:** isolation:'worktree' fan-outs move LOCAL `atif-graft` onto parity commits (reset it: `git -C <atif-graft-worktree> reset --hard origin/atif-graft`); the Bash cwd can reset to the atif-graft worktree (always `cd` to the parity worktree first); run-all skips draft scenarios unless `--include-drafts`. **Security:** I leaked `ANTHROPIC_API_KEY` via a bad `${VAR:-UNSET}` echo — Jesse rotating at end of evening; NEVER interpolate a secret into output.
+
 ## TL;DR
 Two stacked branches off `origin/main` (Matt's TS rewrite of the `quorum` eval harness, which still carries the Python original):
 - **`atif-graft`** — the ATIF graft: purge Python, make ATIF v1.7 the canonical transcript (`trajectory.json`), replace the 13 `bin/` trace tools with one `check-transcript` CLI, + cleanup. Converged & green, its own PR. ~27 commits over main.
