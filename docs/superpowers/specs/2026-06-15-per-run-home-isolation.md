@@ -2,7 +2,7 @@
 
 > Status: design (2026-06-15). Jesse: "we're going to eventually need to at least set a custom `$HOME` for every single eval run." Authored from a read-only code survey (Bun ≥1.3).
 >
-> **DECISION (Jesse, 2026-06-15): NOT gated. 100% on for ALL runs, ALL agents (incl. antigravity) + the gauntlet drive.** This supersedes the phased flag rollout (§9) and the C2 antigravity-exemption (§5C): there is no `QUORUM_ISOLATE_HOME` flag, and antigravity takes **C1** (seed agy's live OAuth creds into the throwaway `$HOME/.gemini`; the keyring is per-login-user, not home-relative, so it survives). The rest of this doc's mechanics (W1–W6, the Bun `homedir()` fact, the auth-seeding strategy) stand; only the "behind a flag" / "exempt agy" framing is overridden.
+> **DECISION (Jesse, 2026-06-15): the requirement is that THE CODING AGENTS run in an isolated `$HOME`. NOT gated — unconditional for all 8 agents-under-test.** In scope: every coding-agent launcher (W3) — the four un-pinned (claude/gemini/pi/antigravity) plus confirming the four already-pinned (codex/copilot/opencode/kimi). **Out of scope:** the gauntlet drive (no W2) and `setup.sh` (no W6) — both stay on the real home, so the §8.3 fixture-cache-redownload risk does not apply. This supersedes the phased flag rollout (§9) and the C2 antigravity-exemption (§5C): there is no `QUORUM_ISOLATE_HOME` flag, and antigravity takes **C1** (seed agy's live OAuth creds into the throwaway `$HOME/.gemini`; the keyring is per-login-user, not home-relative, so it survives). The rest of this doc's mechanics (W1, W3, W4, W5, the Bun `homedir()` fact, the auth-seeding strategy) stand.
 
 ## 1. Goal
 
