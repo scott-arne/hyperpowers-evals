@@ -1,6 +1,8 @@
 # Design: Per-Run Throwaway `$HOME` for Quorum Eval Runs
 
-> Status: design (2026-06-15). Jesse: "we're going to eventually need to at least set a custom `$HOME` for every single eval run." Implementation is phased; this doc is the plan + decision record. Authored from a read-only code survey (Bun ≥1.3).
+> Status: design (2026-06-15). Jesse: "we're going to eventually need to at least set a custom `$HOME` for every single eval run." Authored from a read-only code survey (Bun ≥1.3).
+>
+> **DECISION (Jesse, 2026-06-15): NOT gated. 100% on for ALL runs, ALL agents (incl. antigravity) + the gauntlet drive.** This supersedes the phased flag rollout (§9) and the C2 antigravity-exemption (§5C): there is no `QUORUM_ISOLATE_HOME` flag, and antigravity takes **C1** (seed agy's live OAuth creds into the throwaway `$HOME/.gemini`; the keyring is per-login-user, not home-relative, so it survives). The rest of this doc's mechanics (W1–W6, the Bun `homedir()` fact, the auth-seeding strategy) stand; only the "behind a flag" / "exempt agy" framing is overridden.
 
 ## 1. Goal
 
