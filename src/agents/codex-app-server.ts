@@ -1,17 +1,14 @@
 // Synchronous, timed JSON-RPC client for `codex app-server --listen stdio://`,
 // used by CodexAgent provisioning to read the staged Superpowers SessionStart
-// hook's key + currentHash. Mirrors setup_helpers/worktree.py's
-// _read_codex_superpowers_hook + _read_codex_app_server_response (15s deadline)
-// + _select_codex_superpowers_hook + _terminate_codex_app_server.
+// hook's key + currentHash.
 //
 // provision() is synchronous (it returns an env map), so this client is too:
 // it pipes the initialize (id 1) + hooks/list (id 2) requests as one stdin
-// payload and scans the collected stdout for the id-2 response. The Python
-// drives a persistent process with a per-read selector deadline; the synchronous
+// payload and scans the collected stdout for the id-2 response. The synchronous
 // model can't interleave reads, but it MUST still be bounded — without a
 // deadline a non-flushing app-server blocks provisioning forever. So the spawn
-// seam carries a `timeout`, and a timed-out spawn surfaces the same diagnostic
-// the Python deadline path raises (with the captured stderr for triage).
+// seam carries a `timeout`, and a timed-out spawn surfaces a diagnostic with the
+// captured stderr for triage.
 //
 // 0.133.0 EOF-race fix: codex-cli 0.133.0's stdio transport
 // (app-server-transport/src/transport/stdio.rs:50-79) closes the connection the
@@ -38,7 +35,7 @@ import { ProvisionError } from './index.ts';
 
 const PLUGIN_ID = 'superpowers@debug';
 
-// Default per-handshake deadline, matching worktree.py's 15s selector deadline.
+// Default per-handshake deadline.
 export const APP_SERVER_TIMEOUT_MS = 15_000;
 
 // Seconds to hold codex's stdin pipe open after writing the requests, before the
@@ -168,8 +165,7 @@ export class SpawnAppServerClient implements AppServerClient {
 }
 
 // The compact JSON-RPC requests piped to `codex app-server` stdin: initialize
-// (id 1) then hooks/list (id 2) for the run's workdir. Mirrors
-// _read_codex_superpowers_hook's two requests.
+// (id 1) then hooks/list (id 2) for the run's workdir.
 export function buildHandshakeInput(workdir: string): string {
   const initialize = {
     jsonrpc: '2.0',
@@ -209,8 +205,7 @@ interface HooksListResponse {
 }
 
 // Scan newline-delimited JSON-RPC lines for the response with the given id,
-// surfacing an `error` member as a ProvisionError (mirrors
-// _read_codex_app_server_response's id-match + error branch).
+// surfacing an `error` member as a ProvisionError.
 export function parseAppServerResponse(
   stdout: string,
   requestId: number,
@@ -238,9 +233,9 @@ export function parseAppServerResponse(
   );
 }
 
-// Mirrors _select_codex_superpowers_hook: exactly one superpowers@debug plugin
-// SessionStart hook, firing on `startup`, dispatched through run-hook.cmd, with
-// a known trust status and a key + currentHash.
+// Require exactly one superpowers@debug plugin SessionStart hook, firing on
+// `startup`, dispatched through run-hook.cmd, with a known trust status and a
+// key + currentHash.
 function selectSuperpowersHook(response: HooksListResponse): AppServerHook {
   const data = response.result?.data ?? [];
   const hooks: HookEntry[] = [];

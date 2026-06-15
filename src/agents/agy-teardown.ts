@@ -18,9 +18,8 @@ import { type CommandRunner, defaultCommandRunner } from './command-runner.ts';
 // paths (not substring) guards against false-matching a sibling directory such
 // as `scratch-extra`.
 //
-// Port of quorum/agy_teardown.py — the tmux subprocess calls route through the
-// injectable CommandRunner seam (mirroring the Python `runner=subprocess.run`
-// injection) so tests inject a fake instead of shelling out to real tmux.
+// The tmux subprocess calls route through the injectable CommandRunner seam so
+// tests inject a fake instead of shelling out to real tmux.
 
 export interface KillRunTmuxServerOptions {
   /** Injectable tmux runner. Defaults to the shared SpawnCommandRunner. */
@@ -29,9 +28,9 @@ export interface KillRunTmuxServerOptions {
   readonly listSockets?: () => string[];
 }
 
-// Mirror Python pathlib.Path(...).resolve(): resolve symlinks but never throw on
-// a missing path (fs.realpathSync throws ENOENT; fall back to a non-resolving
-// resolve()). Both the scratch dir and the tmux-reported pane path must be
+// Resolve symlinks but never throw on a missing path (fs.realpathSync throws
+// ENOENT; fall back to a non-resolving resolve()). Both the scratch dir and the
+// tmux-reported pane path must be
 // resolved this way: on macOS /tmp -> /private/tmp, so a purely lexical resolve()
 // would false-negative when one side reports the realpath and the other the
 // symlinked path, silently skipping the kill.

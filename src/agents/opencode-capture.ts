@@ -1,11 +1,11 @@
 // OpenCode session capture/export from isolated per-run state.
 //
-// Port of quorum/opencode_capture.py. OpenCode does not write capturable session
-// logs to disk on its own: snapshotOpencodeSessions records the existing session
-// ids before a run, then exportOpencodeSessions runs `opencode export <id>` per
-// new session and writes `<created>-<id>.json` files plus an export manifest into
-// the per-run export dir. The runner (Wave 2b) wires these around the gauntlet
-// drive; this module is the building block.
+// OpenCode does not write capturable session logs to disk on its own:
+// snapshotOpencodeSessions records the existing session ids before a run, then
+// exportOpencodeSessions runs `opencode export <id>` per new session and writes
+// `<created>-<id>.json` files plus an export manifest into the per-run export
+// dir. The runner wires these around the gauntlet drive; this module is the
+// building block.
 
 import {
   closeSync,
@@ -32,7 +32,7 @@ export class OpenCodeCaptureError extends Error {
 // NOT throw on timeout — it kills the child and returns { exitCode: null,
 // signalCode: 'SIGTERM' }. defaultSpawn detects that and raises this so the
 // isTimeoutError branch surfaces a timed-out diagnostic instead of silently
-// parsing empty stdout as a success (M1-opencode-timeout-swallowed-as-success).
+// parsing empty stdout as a success.
 export class OpenCodeTimeoutError extends Error {
   constructor(message: string) {
     super(message);
@@ -51,10 +51,10 @@ export function opencodeEnv(opencodeHome: string): Record<string, string> {
   };
 }
 
-// quorum/opencode_capture.py:OPENCODE_ENV_ALLOWLIST — the fixed set of host env
-// vars an opencode subprocess may inherit. Everything else (proxy vars, ambient
-// OPENCODE_CONFIG_DIR, other harness vars) is scrubbed so the subprocess exercises
-// the pinned provider, not opencode's ambient-key auto-selection.
+// The fixed set of host env vars an opencode subprocess may inherit. Everything
+// else (proxy vars, ambient OPENCODE_CONFIG_DIR, other harness vars) is scrubbed
+// so the subprocess exercises the pinned provider, not opencode's ambient-key
+// auto-selection.
 export const OPENCODE_ENV_ALLOWLIST: ReadonlySet<string> = new Set([
   'PATH',
   'TERM',
@@ -79,9 +79,8 @@ export const OPENCODE_ENV_ALLOWLIST: ReadonlySet<string> = new Set([
 
 export const OPENCODE_CAPTURE_TIMEOUT_MS = 30_000;
 
-// quorum/opencode_capture.py:opencode_run_env — filter os.environ to the
-// allowlist, setdefault PATH/TERM/LANG (POSIX os.defpath = "/bin:/usr/bin"),
-// then overlay the XDG isolation vars.
+// Filter the host env to the allowlist, default PATH/TERM/LANG (PATH falls back
+// to the POSIX default "/bin:/usr/bin"), then overlay the XDG isolation vars.
 export function opencodeRunEnv(opencodeHome: string): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(envSnapshot())) {
@@ -115,7 +114,7 @@ export type SpawnFn = (opts: {
 // timeout fired); a clean exit reports a numeric exitCode and a null/undefined
 // signalCode. A killed child (null exit, or any signal present) MUST be treated
 // as a timeout, never coerced to exit 0. A clean exit 0 is success; any other
-// exit is a failure. (M1-opencode-timeout-swallowed-as-success)
+// exit is a failure.
 export function spawnOutcome(result: {
   exitCode: number | null;
   signalCode?: string | null;
@@ -126,12 +125,11 @@ export function spawnOutcome(result: {
   return result.exitCode === 0 ? 'success' : 'failure';
 }
 
-// quorum/opencode_capture.py:run_opencode_command docstring — the opencode binary
-// ends every command with a bare process.exit(), which discards stdout that has
-// not yet drained. Through a pipe, payloads >64KiB arrive truncated at the
-// pipe-buffer boundary (still exit 0) and tiny replies can vanish under load. A
-// regular-file stdout drains synchronously, so the payload survives. stderr stays
-// piped (always small).
+// The opencode binary ends every command with a bare process.exit(), which
+// discards stdout that has not yet drained. Through a pipe, payloads >64KiB
+// arrive truncated at the pipe-buffer boundary (still exit 0) and tiny replies
+// can vanish under load. A regular-file stdout drains synchronously, so the
+// payload survives. stderr stays piped (always small).
 export function defaultSpawn(opts: {
   args: string[];
   cwd: string;
@@ -199,8 +197,8 @@ export function runOpencodeCommand(
   });
 }
 
-// Mirror Python os.path.realpath: resolve symlinks but never throw on a missing
-// path (fs.realpathSync throws ENOENT; fall back to a non-resolving resolve).
+// Resolve symlinks but never throw on a missing path (fs.realpathSync throws
+// ENOENT; fall back to a non-resolving resolve).
 function realpathSafe(value: string): string {
   try {
     return realpathSync(value);

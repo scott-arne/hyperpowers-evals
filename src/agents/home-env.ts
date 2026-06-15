@@ -22,7 +22,7 @@ export function xdgHomeEnv(homeDir: string): Record<string, string> {
 
 // The directories `xdgHomeEnv` points at (every value except HOME). Created up
 // front by the runner so every agent — and its capture subprocess — finds them
-// present (codex/opencode previously each `mkdir -p`'d these inline).
+// present.
 export function xdgHomeSubdirs(homeDir: string): string[] {
   const { HOME: _home, ...subdirs } = xdgHomeEnv(homeDir);
   return Object.values(subdirs);

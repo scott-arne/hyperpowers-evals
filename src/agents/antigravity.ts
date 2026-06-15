@@ -22,15 +22,12 @@ import { agyLogShowsRateLimit } from './agy-watch.ts';
 import type { CommandResult, CommandRunner } from './command-runner.ts';
 import { type CodingAgent, ProvisionError, type RunHome } from './index.ts';
 
-// Antigravity-family provisioning. Ports the SETUP portion of
-// quorum/runner.py:_seed_antigravity_config (lines 800-863), plus its two
-// helpers _run_antigravity_auth_preflight (697-767) and
-// _write_antigravity_settings (768-799). provision() is SETUP ONLY: it seeds
-// the per-run ANTIGRAVITY_CONFIG_DIR/.gemini tree so the agy CLI boots against
-// an authenticated, Superpowers-equipped, no-prompt Antigravity workspace.
+// Antigravity-family provisioning. provision() is SETUP ONLY: it seeds the
+// per-run ANTIGRAVITY_CONFIG_DIR/.gemini tree so the agy CLI boots against an
+// authenticated, Superpowers-equipped, no-prompt Antigravity workspace.
 //
-// The Python ceremony has two subprocess interactions, both driven through the
-// injected CommandRunner so the hermetic gate stubs them:
+// The setup has two subprocess interactions, both driven through the injected
+// CommandRunner so the hermetic gate stubs them:
 //   1. agy auth preflight: a throwaway --gemini_dir + --print "Reply with
 //      EXACTLY OK." that validates the Gemini Code Assist backend is reachable
 //      and not rate-limited, against isolated state we discard afterward.
@@ -45,16 +42,15 @@ import { type CodingAgent, ProvisionError, type RunHome } from './index.ts';
 
 // The marker the runner threads into a setup-stage RunnerError when the Gemini
 // Code Assist backend is throttled, so run-all can latch the rate window and
-// stop hammering it. Mirrors runner.py ANTIGRAVITY_RATE_LIMIT_MARKER.
+// stop hammering it.
 export const ANTIGRAVITY_RATE_LIMIT_MARKER = 'Code Assist rate limit';
 
-// The rate-limit log matcher (_agy_log_shows_rate_limit) lives in agy-watch.ts,
-// the home of the live tail watcher; this adapter shares that single source so
-// the substrings/429-boundary rule never drifts between the two call sites.
+// The rate-limit log matcher lives in agy-watch.ts, the home of the live tail
+// watcher; this adapter shares that single source so the substrings/429-boundary
+// rule never drifts between the two call sites.
 
 // The plugin files agy plugin install must produce under
-// .gemini/config/plugins/superpowers/ (mirrors the `required` list in
-// _seed_antigravity_config). Relative to the plugin root.
+// .gemini/config/plugins/superpowers/. Relative to the plugin root.
 const REQUIRED_PLUGIN_FILES: readonly string[] = [
   'plugin.json',
   'hooks.json',
@@ -105,16 +101,14 @@ export function seedAgyOauthCredentials(configDir: string): string[] {
 }
 
 // Env override for the parent of the visible-symlink workspace tree, and the
-// per-run record file the substitution writes under run_dir. Mirror the Python
-// ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV / ANTIGRAVITY_VISIBLE_LAUNCH_RECORD.
+// per-run record file the substitution writes under run_dir.
 export const ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT_ENV =
   'QUORUM_ANTIGRAVITY_VISIBLE_WORKSPACE_ROOT';
 export const ANTIGRAVITY_VISIBLE_LAUNCH_RECORD =
   'antigravity-visible-launch-cwd.json';
 
-// PATH probe for the agy binary. The Python guards `shutil.which("agy") is None`
-// in _seed_antigravity_config; we mirror that with Bun.which, behind an
-// injectable seam so the hermetic gate (no agy on PATH) can stub it.
+// PATH probe for the agy binary, via Bun.which behind an injectable seam so the
+// hermetic gate (no agy on PATH) can stub it.
 type AgyWhichProbe = () => boolean;
 const defaultAgyWhich: AgyWhichProbe = () => Bun.which('agy') !== null;
 let agyWhichProbe: AgyWhichProbe = defaultAgyWhich;
@@ -169,15 +163,13 @@ export class AntigravityAgent implements CodingAgent {
   provision(home: RunHome, runner: CommandRunner): Record<string, string> {
     const { configDir, workdir } = home;
 
-    // Port of _seed_antigravity_config (SETUP portion only).
     const superpowersRoot = getEnv('SUPERPOWERS_ROOT');
     if (superpowersRoot === undefined || superpowersRoot === '') {
       throw new ProvisionError(
         'SUPERPOWERS_ROOT not set; cannot install antigravity Superpowers plugin',
       );
     }
-    // Fail fast with the precise diagnostic when agy is absent, before any work
-    // (parity with shutil.which("agy") in _seed_antigravity_config).
+    // Fail fast with the precise diagnostic when agy is absent, before any work.
     if (!agyWhichProbe()) {
       throw new ProvisionError(
         'agy not found on PATH; cannot run antigravity evals',
@@ -214,7 +206,7 @@ export class AntigravityAgent implements CodingAgent {
       );
     }
 
-    // 3. Verify the Superpowers plugin files the Python asserts.
+    // 3. Verify the required Superpowers plugin files landed.
     const pluginRoot = join(geminiDir, 'config', 'plugins', 'superpowers');
     const missing = REQUIRED_PLUGIN_FILES.filter(
       (rel) => !existsSync(join(pluginRoot, rel)),
@@ -244,25 +236,23 @@ export class AntigravityAgent implements CodingAgent {
       );
     }
 
-    // NOTE (B3, deferred): the Python ends _seed_antigravity_config with a
-    // pre-snapshot transcript assertion — _antigravity_transcripts(configDir)
-    // must be empty before the capture snapshot, else provisioning leaked a
-    // transcript. That guard belongs with the capture/runtime stage, not setup,
-    // and depends on the capture snapshot machinery (B3). Left unported here.
+    // NOTE: a pre-snapshot transcript assertion — the configDir transcripts must
+    // be empty before the capture snapshot, else provisioning leaked a transcript
+    // — belongs with the capture/runtime stage, not setup, and depends on the
+    // capture snapshot machinery. Not handled here.
 
-    // The env map the Python returns: just the agent_config_env -> configDir.
-    // (agy reads its isolated state via the --gemini_dir flag we pass on each
-    // CLI invocation, not via an env var, so there are no extra vars.)
+    // The env map: just the agent_config_env -> configDir. (agy reads its
+    // isolated state via the --gemini_dir flag we pass on each CLI invocation,
+    // not via an env var, so there are no extra vars.)
     return { [this.config.agent_config_env]: configDir };
   }
 
-  // Port of _run_antigravity_auth_preflight: validate the Gemini Code Assist
-  // backend with a throwaway --gemini_dir so the real per-run config dir stays
-  // pristine. The Python uses a 90s subprocess timeout; the synchronous
-  // CommandRunner has no timeout knob, so the live SpawnCommandRunner inherits
-  // the process default and the gate stubs the call entirely. This is a
-  // one-shot --print invocation (not a persistent/bidirectional process), so
-  // the synchronous seam models it faithfully.
+  // Validate the Gemini Code Assist backend with a throwaway --gemini_dir so the
+  // real per-run config dir stays pristine. The synchronous CommandRunner has no
+  // timeout knob, so the live SpawnCommandRunner inherits the process default and
+  // the gate stubs the call entirely. This is a one-shot --print invocation (not
+  // a persistent/bidirectional process), so the synchronous seam models it
+  // faithfully.
   private runAuthPreflight(runner: CommandRunner): void {
     const tmp = mkdtempSync(join(tmpdir(), 'quorum-antigravity-preflight-'));
     try {
@@ -319,8 +309,8 @@ export class AntigravityAgent implements CodingAgent {
       }
 
       // The real agy writes a transcript under the isolated --gemini_dir; its
-      // presence proves the --gemini_dir isolation seam took effect. Mirrors the
-      // Python glob of <gemini_dir>/antigravity-cli/brain/**/transcript.jsonl.
+      // presence proves the --gemini_dir isolation seam took effect (checked by
+      // globbing <gemini_dir>/antigravity-cli/brain/**/transcript.jsonl).
       const transcripts = antigravityTranscriptsUnder(geminiDir);
       if (transcripts.length === 0) {
         throw new ProvisionError(
@@ -333,14 +323,13 @@ export class AntigravityAgent implements CodingAgent {
   }
 }
 
-// Persist no-prompt settings for the isolated Antigravity run (port of
-// _write_antigravity_settings). Parses any existing settings.json (boundary)
-// rather than asserting its shape, merges the given workspace into
-// trustedWorkspaces (idempotent), and pins the always-proceed permission
-// posture. Python calls this TWICE: once at provision time with the workdir,
-// and again from the runner after launch-cwd resolution with the RESOLVED
-// (possibly visible-aliased) launch cwd — so the agent trusts the actual
-// workspace. Exported so the runner (Wave 2b) can perform that second write.
+// Persist no-prompt settings for the isolated Antigravity run. Parses any
+// existing settings.json (boundary) rather than asserting its shape, merges the
+// given workspace into trustedWorkspaces (idempotent), and pins the
+// always-proceed permission posture. Called TWICE: once at provision time with
+// the workdir, and again from the runner after launch-cwd resolution with the
+// RESOLVED (possibly visible-aliased) launch cwd — so the agent trusts the actual
+// workspace. Exported so the runner can perform that second write.
 export function writeAntigravitySettings(
   configDir: string,
   workdir: string,
@@ -355,7 +344,7 @@ export function writeAntigravitySettings(
     ? parseSettings(readFileSync(settingsPath, 'utf8'))
     : {};
 
-  // setdefault("trustedWorkspaces", []) then append the run workdir in both its
+  // Default trustedWorkspaces to [], then append the run workdir in both its
   // literal and resolved forms (de-duplicated, order-preserving).
   const existingTrusted = settings['trustedWorkspaces'];
   const trusted: string[] = Array.isArray(existingTrusted)
@@ -387,13 +376,13 @@ export function writeAntigravitySettings(
   mkdirSync(join(configDir, '.gemini', 'antigravity-cli'), {
     recursive: true,
   });
-  // json.dumps(settings, indent=2): 2-space indent, no trailing newline.
+  // 2-space indent, no trailing newline.
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
 }
 
-// Parse an existing settings.json into a plain object. A non-object payload
-// (the Python json.loads would yield a non-dict) is unusable as a settings map;
-// surface it as a ProvisionError rather than silently discarding it.
+// Parse an existing settings.json into a plain object. A non-object payload is
+// unusable as a settings map; surface it as a ProvisionError rather than silently
+// discarding it.
 function parseSettings(text: string): Record<string, unknown> {
   let parsed: unknown;
   try {
@@ -409,16 +398,15 @@ function parseSettings(text: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-// Normalize the auth-preflight reply tolerantly (port of
-// _preflight_response_ok). The preflight asks agy to "Reply with EXACTLY OK." A
-// compliant model occasionally appends punctuation or differs in case; strip
-// trailing . and ! plus whitespace and uppercase, but still reject empty
-// (rate-limited / dead) or verbose replies.
+// Normalize the auth-preflight reply tolerantly. The preflight asks agy to
+// "Reply with EXACTLY OK." A compliant model occasionally appends punctuation or
+// differs in case; strip trailing . and ! plus whitespace and uppercase, but
+// still reject empty (rate-limited / dead) or verbose replies.
 function preflightResponseOk(stdout: string): boolean {
   return rstripDotBang(stdout.trim()).trim().toUpperCase() === 'OK';
 }
 
-// Mirror Python str.rstrip(".!"): strip any trailing run of . or ! characters.
+// Strip any trailing run of . or ! characters.
 function rstripDotBang(s: string): string {
   let end = s.length;
   while (end > 0) {
@@ -433,15 +421,14 @@ function rstripDotBang(s: string): string {
 }
 
 // Post-run rate-limit detection for the verdict layer. quorum writes the run's
-// agy log to <configDir>/agy.log (parity with quorum/runner.py). Scanning the
-// log after the run yields the indeterminate VERDICT. Returns the reason string
-// when rate-limited, else null.
+// agy log to <configDir>/agy.log. Scanning the log after the run yields the
+// indeterminate VERDICT. Returns the reason string when rate-limited, else null.
 //
-// The live counterparts now exist as modules awaiting runner (Wave 2b) wiring:
-// AgyRateLimitWatcher (agy-watch.ts) tails the log mid-run and fires
-// killRunTmuxServer (agy-teardown.ts) on the first signal for early teardown;
-// backupCredential/verifyOrRestore (agy-creds.ts) guard the shared OAuth token
-// around the mid-run kill. This post-run scan stays as the verdict-layer signal.
+// The live counterparts: AgyRateLimitWatcher (agy-watch.ts) tails the log mid-run
+// and fires killRunTmuxServer (agy-teardown.ts) on the first signal for early
+// teardown; backupCredential/verifyOrRestore (agy-creds.ts) guard the shared
+// OAuth token around the mid-run kill. This post-run scan is the verdict-layer
+// signal.
 export function antigravityRateLimitReason(configDir: string): string | null {
   const agyLog = join(configDir, 'agy.log');
   if (!existsSync(agyLog)) {
@@ -459,9 +446,8 @@ export function antigravityRateLimitReason(configDir: string): string | null {
   return `${ANTIGRAVITY_RATE_LIMIT_MARKER}: the run's agy.log shows Code Assist 429 / RESOURCE_EXHAUSTED. The Gemini Code Assist rate/quota window is exhausted; wait for it to refresh before re-running antigravity.`;
 }
 
-// Port of the preflight's transcript glob (a focused
-// _antigravity_transcripts on an arbitrary gemini_dir): recursively collect
-// **/transcript.jsonl under <geminiDir>/antigravity-cli/brain.
+// The preflight's transcript glob on an arbitrary gemini_dir: recursively
+// collect **/transcript.jsonl under <geminiDir>/antigravity-cli/brain.
 function antigravityTranscriptsUnder(geminiDir: string): string[] {
   const brain = join(geminiDir, 'antigravity-cli', 'brain');
   if (!existsSync(brain)) {
@@ -484,8 +470,8 @@ function walkForTranscripts(dir: string, found: string[]): void {
   }
 }
 
-// True if any component of *path* is a dot-prefixed (hidden) directory. Mirrors
-// _path_has_hidden_component: "." and ".." themselves are not hidden.
+// True if any component of *path* is a dot-prefixed (hidden) directory. "." and
+// ".." themselves are not hidden.
 function pathHasHiddenComponent(path: string): boolean {
   return path
     .split('/')
@@ -513,8 +499,7 @@ const gitProbe: GitProbe = (cwd, args) => {
  * and, if so, append `.antigravitycli/` to the repo's git info/exclude
  * (idempotently, honoring an absolute vs relative git-path and trailing-newline
  * normalization). This keeps agy's per-run project marker directory out of the
- * eval repo's git status / dirty-tree assertions. Port of
- * _exclude_antigravity_project_marker. Exported for the runner (Wave 2b).
+ * eval repo's git status / dirty-tree assertions. Exported for the runner.
  */
 export function excludeAntigravityProjectMarker(
   launchCwd: string,
@@ -525,10 +510,9 @@ export function excludeAntigravityProjectMarker(
     return;
   }
 
-  // Python runs this probe with check=True. A non-zero exit must raise rather
-  // than yield "" — an empty git-path collapses excludePath to launchCwd, so the
-  // later writeFileSync would target a directory (EISDIR) instead of failing
-  // cleanly here.
+  // A non-zero exit must raise rather than yield "" — an empty git-path collapses
+  // excludePath to launchCwd, so the later writeFileSync would target a directory
+  // (EISDIR) instead of failing cleanly here.
   const gitPathProbe = probe(launchCwd, [
     'rev-parse',
     '--git-path',
@@ -549,8 +533,7 @@ export function excludeAntigravityProjectMarker(
   const existing = existsSync(excludePath)
     ? readFileSync(excludePath, 'utf8').split('\n')
     : [];
-  // splitlines() drops the trailing-newline empty element; emulate that for the
-  // membership/last-line checks so we match Python's behavior exactly.
+  // Drop the trailing-newline empty element for the membership/last-line checks.
   const lines =
     existing.length > 0 && existing[existing.length - 1] === ''
       ? existing.slice(0, -1)
@@ -573,8 +556,7 @@ export function excludeAntigravityProjectMarker(
  * *launchCwd* has a hidden component this exposes the same directory through a
  * visible temp symlink alias, validates the visible root is itself non-hidden,
  * reuses an existing matching alias, errors on a conflicting alias, and records
- * the substitution under *runDir*. Port of _prepare_antigravity_launch_cwd.
- * Exported for the runner (Wave 2b).
+ * the substitution under *runDir*. Exported for the runner.
  */
 export function prepareAntigravityLaunchCwd(
   launchCwd: string,
@@ -627,7 +609,7 @@ export function prepareAntigravityLaunchCwd(
   return alias;
 }
 
-// Expand a leading ~ to the user's home dir (Python Path.expanduser parity).
+// Expand a leading ~ to the user's home dir.
 function expandUser(path: string): string {
   if (path === '~') {
     return homedir();

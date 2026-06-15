@@ -24,11 +24,10 @@ import {
   type SpawnFn,
 } from './opencode-capture.ts';
 
-// OpenCode-family provisioning. Ports quorum/runner.py:_seed_opencode_config
-// (lines 1174-1271) plus _run_opencode_provider_preflight (lines 864-931).
-// provision() is SETUP ONLY: it stages Superpowers into an XDG-isolated OpenCode
-// home, pins the model, and runs a throwaway-home provider preflight so the eval
-// fails fast if the configured provider cannot answer.
+// OpenCode-family provisioning. provision() is SETUP ONLY: it stages Superpowers
+// into an XDG-isolated OpenCode home, pins the model, and runs a throwaway-home
+// provider preflight so the eval fails fast if the configured provider cannot
+// answer.
 //
 // The agent_config_env (OPENCODE_QUORUM_HOME) value IS the opencode_home root:
 // every XDG root and the plugin staging live under home.configDir. With
@@ -38,19 +37,18 @@ import {
 // session DB off XDG_DATA_HOME (= <home>/.local/share), so this home is also the
 // session store the capture subprocess (opencodeEnv, same home) reads.
 
-// quorum/runner.py:180 — the pinned model the preflight and the run share, also
-// written into opencode.json. Reproduced verbatim.
+// The pinned model the preflight and the run share, also written into
+// opencode.json.
 const OPENCODE_MODEL = 'openai/gpt-5.5';
 
-// quorum/runner.py:175 — OPENCODE_EXPORT_SUBDIR = Path(".quorum/session-exports").
 const OPENCODE_EXPORT_SUBDIR = '.quorum/session-exports';
 
-// quorum/runner.py:1198 — the stale-export glob (coding-agents/opencode.yaml
-// session_log_glob): files named `<16-digit created>-ses_<id>.json`.
+// The stale-export glob (coding-agents/opencode.yaml session_log_glob): files
+// named `<16-digit created>-ses_<id>.json`.
 const STALE_EXPORT_RE = /^[0-9].*-ses_.*\.json$/;
 
-// quorum/runner.py:667 — _preflight_response_ok. Normalize trailing punctuation,
-// whitespace, and case; accept only a bare "OK", reject empty / verbose replies.
+// Normalize trailing punctuation, whitespace, and case; accept only a bare "OK",
+// reject empty / verbose replies.
 function preflightResponseOk(stdout: string): boolean {
   return (
     stdout
@@ -61,8 +59,7 @@ function preflightResponseOk(stdout: string): boolean {
   );
 }
 
-// lstat-based symlink probe that never throws on a missing path (parity with the
-// Python `path.is_symlink()` short-circuits).
+// lstat-based symlink probe that never throws on a missing path.
 function isSymlink(path: string): boolean {
   try {
     return lstatSync(path).isSymbolicLink();
@@ -71,8 +68,8 @@ function isSymlink(path: string): boolean {
   }
 }
 
-// quorum/runner.py:1181-1206 _reject_symlinks: refuse any symlink under `root`
-// (recursively). A missing root is fine — the required-files check reports it.
+// Refuse any symlink under `root` (recursively). A missing root is fine — the
+// required-files check reports it.
 function rejectSymlinks(root: string, label: string): void {
   if (isSymlink(root)) {
     throw new ProvisionError(`${label} contains unsupported symlink: ${root}`);
@@ -85,8 +82,8 @@ function rejectSymlinks(root: string, label: string): void {
   }
 }
 
-// quorum/runner.py:1006 _require_under_home: a staged path must resolve under the
-// isolated opencode_home (no escape via symlink or traversal).
+// A staged path must resolve under the isolated opencode_home (no escape via
+// symlink or traversal).
 function requireUnderHome(path: string, opencodeHome: string): void {
   const homeReal = resolve(opencodeHome);
   const pathReal = resolve(path);
@@ -99,7 +96,7 @@ function requireUnderHome(path: string, opencodeHome: string): void {
 }
 
 // Recursively yield every path under `root` (depth-first), for the under-home
-// containment audit (parity with the Python `rglob("*")`).
+// containment audit.
 function* walk(root: string): Generator<string> {
   if (!existsSync(root) || !statSync(root).isDirectory()) {
     return;
@@ -113,10 +110,9 @@ function* walk(root: string): Generator<string> {
   }
 }
 
-// quorum/runner.py:1181-1182 / 1247 — PATH lookups, mirroring shutil.which.
-// Bun.which resolves a real PATH entry; a `command -v` shell builtin ENOENTs on
-// Linux (no `command` executable) and would falsely report not-found
-// (H3-opencode-command-v-probe-false-not-found).
+// PATH lookups. Bun.which resolves a real PATH entry; a `command -v` shell
+// builtin ENOENTs on Linux (no `command` executable) and would falsely report
+// not-found.
 function binaryOnPath(binary: string): boolean {
   return Bun.which(binary, { PATH: envSnapshot()['PATH'] ?? '' }) !== null;
 }
@@ -137,8 +133,7 @@ export class OpenCodeAgent implements CodingAgent {
   provision(home: RunHome, runner: CommandRunner): Record<string, string> {
     const opencodeHome = home.configDir;
 
-    // _seed_opencode_config: SUPERPOWERS_ROOT is required. Read env ONLY via the
-    // sanctioned env module.
+    // SUPERPOWERS_ROOT is required. Read env ONLY via the sanctioned env module.
     const superpowersRoot = getEnv('SUPERPOWERS_ROOT');
     if (superpowersRoot === undefined || superpowersRoot === '') {
       throw new ProvisionError(
@@ -146,9 +141,9 @@ export class OpenCodeAgent implements CodingAgent {
       );
     }
 
-    // quorum/runner.py:1181-1182 — fail fast when the opencode binary is absent,
-    // before any staging, so a missing binary yields a precise diagnostic instead
-    // of an opaque downstream preflight spawn failure.
+    // Fail fast when the opencode binary is absent, before any staging, so a
+    // missing binary yields a precise diagnostic instead of an opaque downstream
+    // preflight spawn failure.
     if (!binaryOnPath('opencode')) {
       throw new ProvisionError(
         'opencode not found on PATH; cannot run opencode evals',
@@ -174,9 +169,9 @@ export class OpenCodeAgent implements CodingAgent {
       );
     }
 
-    // quorum/runner.py:1198-1205 — refuse to proceed if pre-existing session
-    // exports already sit under the export dir before the capture snapshot, so a
-    // prior run's exports cannot be mis-attributed to this run.
+    // Refuse to proceed if pre-existing session exports already sit under the
+    // export dir before the capture snapshot, so a prior run's exports cannot be
+    // mis-attributed to this run.
     const exportDir = join(opencodeHome, OPENCODE_EXPORT_SUBDIR);
     const staleExports = existsSync(exportDir)
       ? readdirSync(exportDir)
@@ -192,12 +187,11 @@ export class OpenCodeAgent implements CodingAgent {
       );
     }
 
-    // quorum/runner.py:1207 — reject any symlink under SUPERPOWERS_ROOT/skills
-    // before copying it into the isolated home.
+    // Reject any symlink under SUPERPOWERS_ROOT/skills before copying it into the
+    // isolated home.
     rejectSymlinks(join(superpowersRoot, 'skills'), 'SUPERPOWERS_ROOT skills');
 
-    // Create the XDG-isolated dirs and the session-export dir (the Python loops
-    // over exactly these six paths with parents=True, exist_ok=True).
+    // Create the XDG-isolated dirs and the session-export dir.
     const opencodeConfigDir = join(opencodeHome, '.config', 'opencode');
     for (const dir of [
       opencodeConfigDir,
@@ -211,9 +205,8 @@ export class OpenCodeAgent implements CodingAgent {
     }
 
     // opencode.json: pin the model so the provider matches the preflight. Not a
-    // secret file — written with default mode (parity: the Python writes no
-    // mode-0600 secret file for OpenCode; provider keys reach opencode only via
-    // the subprocess env, never a quorum-authored file).
+    // secret file — written with default mode; provider keys reach opencode only
+    // via the subprocess env, never a quorum-authored file.
     writeFileSync(
       join(opencodeConfigDir, 'opencode.json'),
       `${JSON.stringify(
@@ -252,10 +245,9 @@ export class OpenCodeAgent implements CodingAgent {
     }
     symlinkSync(stagedPlugin, pluginLink);
 
-    // node --check the staged plugin ONLY when node is on PATH (mirror the Python
-    // `shutil.which("node")` guard: a host without node skips the check and
-    // proceeds, rather than failing on an unspawnable binary). A non-zero check
-    // when node IS present is a hard ProvisionError.
+    // node --check the staged plugin ONLY when node is on PATH: a host without
+    // node skips the check and proceeds, rather than failing on an unspawnable
+    // binary. A non-zero check when node IS present is a hard ProvisionError.
     if (binaryOnPath('node')) {
       const node = getEnv('OPENCODE_NODE_BIN') ?? 'node';
       const nodeCheck = runner.run(node, ['--check', stagedPlugin], {
@@ -268,9 +260,9 @@ export class OpenCodeAgent implements CodingAgent {
       }
     }
 
-    // quorum/runner.py:1261-1265 — prove the staged plugin, the plugin symlink,
-    // the staged skills dir, and every file beneath it resolve under the isolated
-    // home (no escape via symlink or traversal).
+    // Prove the staged plugin, the plugin symlink, the staged skills dir, and
+    // every file beneath it resolve under the isolated home (no escape via
+    // symlink or traversal).
     requireUnderHome(stagedPlugin, opencodeHome);
     requireUnderHome(pluginLink, opencodeHome);
     requireUnderHome(stagedSkills, opencodeHome);
@@ -293,10 +285,9 @@ export class OpenCodeAgent implements CodingAgent {
     };
   }
 
-  // Port of _run_opencode_provider_preflight (runner.py 864-931). Builds a
-  // throwaway isolated home, probes `opencode --version`, then up to 3x runs
-  // `opencode run -m <model> --dangerously-skip-permissions "Reply with EXACTLY
-  // OK."` and accepts the first exit-0 "OK" reply. Drives opencode through
+  // Build a throwaway isolated home, probe `opencode --version`, then up to 3x
+  // run `opencode run -m <model> --dangerously-skip-permissions "Reply with
+  // EXACTLY OK."` and accept the first exit-0 "OK" reply. Drives opencode through
   // runOpencodeCommand (regular-file stdout + allowlisted env) so the bare
   // process.exit() cannot truncate the reply and no host vars leak in.
   private runProviderPreflight(): void {
@@ -315,8 +306,8 @@ export class OpenCodeAgent implements CodingAgent {
         mkdirSync(dir, { recursive: true });
       }
 
-      // Version probe (best-effort, like the Python try/except). A failed probe
-      // only weakens the diagnostic hint, never aborts.
+      // Version probe (best-effort). A failed probe only weakens the diagnostic
+      // hint, never aborts.
       let versionHint = 'unknown';
       try {
         const version = runOpencodeCommand(['--version'], {
@@ -352,9 +343,8 @@ export class OpenCodeAgent implements CodingAgent {
             },
           );
         } catch (e) {
-          // quorum/runner.py:_run_opencode_provider_preflight — a TimeoutExpired
-          // raises on the FIRST timeout; it is NOT swallowed and retried. Surface
-          // it as a setup-stage ProvisionError with the same message.
+          // A timeout raises on the FIRST occurrence; it is NOT swallowed and
+          // retried. Surface it as a setup-stage ProvisionError.
           if (e instanceof OpenCodeTimeoutError) {
             throw new ProvisionError(
               'opencode provider preflight timed out after 90s',

@@ -16,14 +16,12 @@ import type { CommandRunner } from './command-runner.ts';
 import { type CodingAgent, ProvisionError, type RunHome } from './index.ts';
 import { writePrivateFileNoFollow } from './private-file.ts';
 
-// Copilot provisioning adapter (PRI-2207 Spec 2). Ports the Python oracle
-// quorum/runner.py: _resolve_copilot_auth_env, _gh_auth_token,
-// _write_copilot_env_file, _stage_copilot_superpowers_plugin,
-// _seed_copilot_config. provision() is SETUP: it verifies the copilot binary is
-// on PATH, stages the isolated COPILOT_HOME, writes a mode-0600 secret env file,
-// and stages the superpowers plugin from SUPERPOWERS_ROOT. PATH presence checks
-// (copilot, gh) use Bun.which (a real PATH lookup); the only subprocess is the
-// `gh auth token` auth fallback, routed through the injectable `runner` seam.
+// Copilot provisioning adapter. provision() is SETUP: it verifies the copilot
+// binary is on PATH, stages the isolated COPILOT_HOME, writes a mode-0600 secret
+// env file, and stages the superpowers plugin from SUPERPOWERS_ROOT. PATH
+// presence checks (copilot, gh) use Bun.which (a real PATH lookup); the only
+// subprocess is the `gh auth token` auth fallback, routed through the injectable
+// `runner` seam.
 //
 // provisionCopilot() takes a per-run session id (minted by the runner) so it can
 // run the pre-snapshot session-state guard and return the CopilotProvisioning
@@ -31,16 +29,15 @@ import { writePrivateFileNoFollow } from './private-file.ts';
 // the runner threads into the $QUORUM_COPILOT_SESSION_ID substitution, the
 // gauntlet env allowlist, and the post-run secret-leak scan.
 //
-// RUNNER-side (not provisioning): _copilot_gauntlet_env env allowlist +
+// RUNNER-side (not provisioning): the gauntlet env allowlist +
 // credentialed-proxy rejection (the spawnGauntlet env) and the post-run
-// _scan_copilot_secret_leaks over run_dir. The building blocks for both are
-// exported here (copilotGauntletEnv, scanCopilotSecretLeaks) so the runner just
-// calls them.
+// secret-leak scan over run_dir. The building blocks for both are exported here
+// (copilotGauntletEnv, scanCopilotSecretLeaks) so the runner just calls them.
 
 const COPILOT_ENV_FILE_NAME = '.copilot-env';
 
 // Plugin files required to exist under SUPERPOWERS_ROOT before staging and
-// under the staged plugin after staging (oracle COPILOT_REQUIRED_SUPERPOWERS_FILES).
+// under the staged plugin after staging.
 const COPILOT_REQUIRED_SUPERPOWERS_FILES: readonly string[] = [
   '.claude-plugin/plugin.json',
   'hooks/hooks.json',
@@ -51,8 +48,7 @@ const COPILOT_REQUIRED_SUPERPOWERS_FILES: readonly string[] = [
   'skills/using-superpowers/references/copilot-tools.md',
 ];
 
-// Provider env vars copied verbatim when COPILOT_PROVIDER_BASE_URL is set
-// (oracle COPILOT_PROVIDER_ENV_NAMES).
+// Provider env vars copied verbatim when COPILOT_PROVIDER_BASE_URL is set.
 const COPILOT_PROVIDER_ENV_NAMES: readonly string[] = [
   'COPILOT_PROVIDER_BASE_URL',
   'COPILOT_PROVIDER_TYPE',
@@ -68,14 +64,14 @@ const COPILOT_PROVIDER_ENV_NAMES: readonly string[] = [
   'COPILOT_MODEL',
 ];
 
-// Provider secret env names, in the oracle's order, used to pick which provider
-// values are secrets for the env file (the B3 leak scan uses the same set).
+// Provider secret env names, used to pick which provider values are secrets for
+// the env file (the leak scan uses the same set).
 const COPILOT_PROVIDER_SECRET_NAMES: readonly string[] = [
   'COPILOT_PROVIDER_API_KEY',
   'COPILOT_PROVIDER_BEARER_TOKEN',
 ];
 
-// Subdirs the oracle creates under COPILOT_HOME during _seed_copilot_config.
+// Subdirs created under COPILOT_HOME during provisioning.
 const COPILOT_HOME_SUBDIRS: readonly string[] = [
   '.quorum',
   '.cache',
@@ -85,7 +81,7 @@ const COPILOT_HOME_SUBDIRS: readonly string[] = [
 ];
 
 // Proxy env vars whose values must not carry credentialed userinfo when copilot
-// runs (oracle COPILOT_PROXY_ENV_NAMES). Exported for the runner's gauntlet env.
+// runs. Exported for the runner's gauntlet env.
 export const COPILOT_PROXY_ENV_NAMES: readonly string[] = [
   'HTTP_PROXY',
   'HTTPS_PROXY',
@@ -97,7 +93,7 @@ export const COPILOT_PROXY_ENV_NAMES: readonly string[] = [
 
 // The env vars the runner forwards into the gauntlet/copilot process. Auth
 // secrets do NOT appear here — they go to the mode-0600 env file. Exported for
-// the runner's spawnGauntlet (oracle COPILOT_GAUNTLET_ENV_ALLOWLIST).
+// the runner's spawnGauntlet.
 export const COPILOT_GAUNTLET_ENV_ALLOWLIST: readonly string[] = [
   'PATH',
   'TERM',
@@ -129,19 +125,19 @@ export const COPILOT_GAUNTLET_ENV_ALLOWLIST: readonly string[] = [
 ];
 
 // Single-quote a value for a POSIX shell, escaping embedded single quotes.
-// Mirrors the oracle _shell_single_quote and the ClaudeAgent shellSingleQuote.
+// Matches the ClaudeAgent shellSingleQuote.
 function shellSingleQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-// Port of _copilot_offline_requested: truthy COPILOT_OFFLINE values.
+// Truthy COPILOT_OFFLINE values.
 function copilotOfflineRequested(): boolean {
   const value = (getEnv('COPILOT_OFFLINE') ?? '').trim().toLowerCase();
   return value === '1' || value === 'true' || value === 'yes';
 }
 
-// Recursively reject any symlink under `root` (oracle _reject_symlinks). A
-// missing root is fine (the caller's required-files check reports absence).
+// Recursively reject any symlink under `root`. A missing root is fine (the
+// caller's required-files check reports absence).
 function rejectSymlinks(root: string, label: string): void {
   if (isSymlink(root)) {
     throw new ProvisionError(`${label} contains unsupported symlink: ${root}`);
@@ -162,8 +158,8 @@ function isSymlink(path: string): boolean {
   }
 }
 
-// Port of _reject_copilot_staging_source_symlinks: source trees and hook files
-// must not contain symlinks before they are copied into the isolated home.
+// Source trees and hook files must not contain symlinks before they are copied
+// into the isolated home.
 function rejectCopilotStagingSourceSymlinks(spRoot: string): void {
   rejectSymlinks(join(spRoot, 'skills'), 'SUPERPOWERS_ROOT skills');
   rejectSymlinks(
@@ -184,9 +180,8 @@ function rejectCopilotStagingSourceSymlinks(spRoot: string): void {
   }
 }
 
-// Expand a leading ~ to HOME (mirrors Path.expanduser for the common case the
-// oracle hits at _require_copilot_superpowers_root). Reads HOME only through
-// env.ts, like the pi/kimi adapters.
+// Expand a leading ~ to HOME. Reads HOME only through env.ts, like the pi/kimi
+// adapters.
 function expanduser(p: string): string {
   if (p === '~' || p.startsWith('~/')) {
     const home = getEnv('HOME');
@@ -197,10 +192,9 @@ function expanduser(p: string): string {
   return p;
 }
 
-// Port of _require_copilot_superpowers_root: SUPERPOWERS_ROOT must be set, free
-// of staging-source symlinks, and contain every required plugin file. The
-// oracle calls Path(superpowers_root).expanduser(), so a leading ~ is expanded
-// before resolving (otherwise resolve('~/sp') yields a literal "~" dir).
+// SUPERPOWERS_ROOT must be set, free of staging-source symlinks, and contain
+// every required plugin file. A leading ~ is expanded before resolving
+// (otherwise resolve('~/sp') yields a literal "~" dir).
 function requireCopilotSuperpowersRoot(superpowersRootValue: string): string {
   if (!superpowersRootValue) {
     throw new ProvisionError(
@@ -228,8 +222,8 @@ function isFile(path: string): boolean {
   }
 }
 
-// Port of _require_copilot_path_under_home: staged paths must resolve under the
-// isolated COPILOT_HOME (no escape via symlink or traversal).
+// Staged paths must resolve under the isolated COPILOT_HOME (no escape via
+// symlink or traversal).
 function requireCopilotPathUnderHome(path: string, copilotHome: string): void {
   const homeReal = resolve(copilotHome);
   const pathReal = resolve(path);
@@ -243,19 +237,18 @@ function requireCopilotPathUnderHome(path: string, copilotHome: string): void {
 }
 
 // Resolved auth env plus which entries are secret (for the env file and the
-// B3 leak scan). Mirrors the (values, secret_names, secret_values) tuple.
+// leak scan).
 interface CopilotAuthEnv {
   readonly values: Record<string, string>;
   readonly secretNames: readonly string[];
   readonly secretValues: readonly string[];
 }
 
-// Port of _gh_auth_token: shell `gh auth token` as the final auth fallback,
-// tolerant of gh-not-on-PATH and a non-zero exit (both yield no token). The
-// presence check mirrors the oracle's shutil.which("gh") with Bun.which (a real
-// PATH lookup; the prior `command -v gh` probe ENOENTs through the no-shell
-// spawnSync seam and false-fails on Linux). The `gh auth token` call itself
-// still routes through the injectable runner so the hermetic gate stubs it.
+// Shell `gh auth token` as the final auth fallback, tolerant of gh-not-on-PATH
+// and a non-zero exit (both yield no token). The presence check uses Bun.which
+// (a real PATH lookup); a `command -v gh` probe ENOENTs through the no-shell
+// spawnSync seam and false-fails on Linux. The `gh auth token` call itself
+// routes through the injectable runner so the hermetic gate stubs it.
 function ghAuthToken(runner: CommandRunner): string | undefined {
   if (Bun.which('gh', { PATH: envSnapshot()['PATH'] ?? '' }) === null) {
     return undefined;
@@ -268,9 +261,9 @@ function ghAuthToken(runner: CommandRunner): string | undefined {
   return token || undefined;
 }
 
-// Port of _resolve_copilot_auth_env. Offline requires a provider base url; a
-// provider base url copies the provider env block; otherwise fall back to a
-// GitHub token from the env chain, and finally to `gh auth token`.
+// Resolve the copilot auth env. Offline requires a provider base url; a provider
+// base url copies the provider env block; otherwise fall back to a GitHub token
+// from the env chain, and finally to `gh auth token`.
 function resolveCopilotAuthEnv(runner: CommandRunner): CopilotAuthEnv {
   const providerBaseUrl = getEnv('COPILOT_PROVIDER_BASE_URL');
   if (copilotOfflineRequested() && !providerBaseUrl) {
@@ -318,11 +311,10 @@ function resolveCopilotAuthEnv(runner: CommandRunner): CopilotAuthEnv {
   };
 }
 
-// Port of _write_copilot_env_file: write COPILOT_HOME/.copilot-env at mode 0600
-// with sorted KEY='value' lines (shell-quoted). Returns the file path. The write
-// goes through the shared O_NOFOLLOW writer so a pre-placed symlink at the
-// destination cannot redirect the secret (the oracle fchmods 0600 both before
-// and after writing).
+// Write COPILOT_HOME/.copilot-env at mode 0600 with sorted KEY='value' lines
+// (shell-quoted). Returns the file path. The write goes through the shared
+// O_NOFOLLOW writer so a pre-placed symlink at the destination cannot redirect
+// the secret.
 function writeCopilotEnvFile(
   copilotHome: string,
   values: Readonly<Record<string, string>>,
@@ -337,9 +329,9 @@ function writeCopilotEnvFile(
   return envFile;
 }
 
-// Port of _stage_copilot_superpowers_plugin: copy the plugin tree from
-// SUPERPOWERS_ROOT into COPILOT_HOME/plugins/superpowers, verify required files
-// exist, and verify every staged path stays under the isolated home.
+// Copy the plugin tree from SUPERPOWERS_ROOT into COPILOT_HOME/plugins/
+// superpowers, verify required files exist, and verify every staged path stays
+// under the isolated home.
 function stageCopilotSuperpowersPlugin(
   spRoot: string,
   copilotHome: string,
@@ -386,10 +378,9 @@ function stageCopilotSuperpowersPlugin(
   return pluginRoot;
 }
 
-// Recursively yield every path under `root` (oracle os.walk/Path.rglob('*')).
-// A symlinked directory is yielded as a path but never descended into, so the
-// walk cannot escape `root` through a symlink (os.walk does not follow
-// symlinked dirs by default). lstat (not stat) classifies the entry itself.
+// Recursively yield every path under `root`. A symlinked directory is yielded as
+// a path but never descended into, so the walk cannot escape `root` through a
+// symlink. lstat (not stat) classifies the entry itself.
 function walk(root: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(root)) {
@@ -403,9 +394,8 @@ function walk(root: string): string[] {
   return out;
 }
 
-// Port of _proxy_url_has_userinfo: true when the URL carries user[:pass]@ in its
-// authority. A scheme-less value is treated as authority. Exported only via the
-// gauntlet-env helper.
+// True when the URL carries user[:pass]@ in its authority. A scheme-less value
+// is treated as authority. Exported only via the gauntlet-env helper.
 function proxyUrlHasUserinfo(value: string): boolean {
   const candidate = value.trim();
   if (!candidate) {
@@ -423,10 +413,10 @@ function proxyUrlHasUserinfo(value: string): boolean {
   }
 }
 
-// RUNNER-side building block (oracle _copilot_gauntlet_env). Project `host_env`
-// down to the allowlist; reject a proxy var that carries credentialed userinfo
-// (so the proxy password is never forwarded into the agent process). Exported
-// for the runner's spawnGauntlet env; provisioning does not call it.
+// RUNNER-side building block. Project `host_env` down to the allowlist; reject a
+// proxy var that carries credentialed userinfo (so the proxy password is never
+// forwarded into the agent process). Exported for the runner's spawnGauntlet env;
+// provisioning does not call it.
 export function copilotGauntletEnv(
   hostEnv: Readonly<Record<string, string | undefined>>,
 ): Record<string, string> {
@@ -446,12 +436,12 @@ export function copilotGauntletEnv(
   return env;
 }
 
-// RUNNER-side building block (oracle _scan_copilot_secret_leaks). Recursively
-// scan `runDir` for any of the raw secret byte sequences, skipping symlinks,
-// non-files, and the resolved `excludedPaths` (the env file legitimately holds
-// the secret). Returns the leaking file paths. Empty/blank secrets short-circuit
-// to no scan. Exported for the runner's post-run check; provisioning supplies the
-// secretValues via CopilotProvisioning.
+// RUNNER-side building block. Recursively scan `runDir` for any of the raw
+// secret byte sequences, skipping symlinks, non-files, and the resolved
+// `excludedPaths` (the env file legitimately holds the secret). Returns the
+// leaking file paths. Empty/blank secrets short-circuit to no scan. Exported for
+// the runner's post-run check; provisioning supplies the secretValues via
+// CopilotProvisioning.
 export function scanCopilotSecretLeaks(
   runDir: string,
   secretValues: readonly string[],
@@ -485,10 +475,10 @@ export function scanCopilotSecretLeaks(
   return leaks;
 }
 
-// The rich provisioning record the runner needs (oracle CopilotProvisioning):
-// the minted session id, the env file, the secret names/values for the leak
-// scan, the env map gauntlet passes to the CLI, and the session-state
-// events.jsonl path the capture diff validates.
+// The rich provisioning record the runner needs: the minted session id, the env
+// file, the secret names/values for the leak scan, the env map gauntlet passes
+// to the CLI, and the session-state events.jsonl path the capture diff
+// validates.
 export interface CopilotProvisioning {
   readonly sessionId: string;
   readonly envFile: string;
@@ -498,11 +488,11 @@ export interface CopilotProvisioning {
   readonly expectedEventsLog: string;
 }
 
-// Port of the shutil.which("copilot") guard in _seed_copilot_config. Bun.which
-// does a real PATH lookup (the matching idiom the antigravity adapter and the
-// claude preflight use); the prior `command -v` probe shelled the `command`
-// builtin through the no-shell spawnSync seam, which ENOENTs and false-fails on
-// Linux. Raise ProvisionError when the binary is absent.
+// Guard that the copilot binary is on PATH. Bun.which does a real PATH lookup
+// (the matching idiom the antigravity adapter and the claude preflight use); a
+// `command -v` probe shells the `command` builtin through the no-shell spawnSync
+// seam, which ENOENTs and false-fails on Linux. Raise ProvisionError when the
+// binary is absent.
 function requireCopilotBinaryOnPath(binary: string): void {
   if (Bun.which(binary, { PATH: envSnapshot()['PATH'] ?? '' }) === null) {
     throw new ProvisionError(
@@ -537,7 +527,7 @@ export class CopilotAgent implements CodingAgent {
     requireCopilotBinaryOnPath(this.config.binary);
 
     // Resolve auth first so a missing/invalid credential fails before any dir
-    // is created (matches the oracle's ordering in _seed_copilot_config).
+    // is created.
     const auth = resolveCopilotAuthEnv(runner);
     const envFile = writeCopilotEnvFile(copilotHome, auth.values);
 
@@ -571,10 +561,10 @@ export class CopilotAgent implements CodingAgent {
     };
   }
 
-  // CodingAgent contract. The runner wiring that mints and threads a per-run
-  // session id is Wave 2b; until then, provision() mints its own so the binary
-  // check, auth resolution, and plugin staging still run. Wave 2b should call
-  // provisionCopilot() directly to capture the CopilotProvisioning record.
+  // CodingAgent contract. When the runner does not thread a per-run session id,
+  // provision() mints its own so the binary check, auth resolution, and plugin
+  // staging still run. A caller that needs the full CopilotProvisioning record
+  // calls provisionCopilot() directly with its own session id.
   provision(
     home: RunHome,
     runner: CommandRunner,

@@ -15,20 +15,19 @@ import type { CommandRunner } from './command-runner.ts';
 import { type CodingAgent, ProvisionError, type RunHome } from './index.ts';
 import { writePrivateFileNoFollow } from './private-file.ts';
 
-// Gemini-family provisioning (mirrors quorum/runner.py _seed_gemini_config):
-// install the Superpowers CLI extension into an isolated GEMINI_CLI_HOME without
-// invoking the model. Writes .gemini/settings.json (auth selectedType) and a
-// mode-0600 .gemini-env carrying GEMINI_API_KEY, then shells out to
-// `gemini extensions link ... --consent` + `gemini extensions list` through the
-// injected CommandRunner and verifies the install manifests landed.
+// Gemini-family provisioning: install the Superpowers CLI extension into an
+// isolated GEMINI_CLI_HOME without invoking the model. Writes
+// .gemini/settings.json (auth selectedType) and a mode-0600 .gemini-env carrying
+// GEMINI_API_KEY, then shells out to `gemini extensions link ... --consent` +
+// `gemini extensions list` through the injected CommandRunner and verifies the
+// install manifests landed.
 
-// Name of the secret env file written into GEMINI_CLI_HOME (Python:
-// GEMINI_ENV_FILE_NAME). Shell-quoted like ClaudeAgent's .claude-env.
+// Name of the secret env file written into GEMINI_CLI_HOME. Shell-quoted like
+// ClaudeAgent's .claude-env.
 const GEMINI_ENV_FILE_NAME = '.gemini-env';
 
-// Gemini auth-type values (Python: GEMINI_AUTH_TYPE_{API_KEY,OAUTH},
-// GEMINI_AUTH_TYPES). api-key mode seeds GEMINI_API_KEY; oauth-personal copies
-// the local OAuth credential files instead.
+// Gemini auth-type values. api-key mode seeds GEMINI_API_KEY; oauth-personal
+// copies the local OAuth credential files instead.
 const GEMINI_AUTH_TYPE_API_KEY = 'gemini-api-key';
 const GEMINI_AUTH_TYPE_OAUTH = 'oauth-personal';
 const GEMINI_AUTH_TYPES: readonly string[] = [
@@ -36,17 +35,16 @@ const GEMINI_AUTH_TYPES: readonly string[] = [
   GEMINI_AUTH_TYPE_OAUTH,
 ];
 
-// OAuth credential files the adapter copies from GEMINI_OAUTH_HOME (Python:
-// _copy_gemini_oauth_credentials).
+// OAuth credential files the adapter copies from GEMINI_OAUTH_HOME.
 const GEMINI_OAUTH_CREDENTIAL_FILES: readonly string[] = [
   'oauth_creds.json',
   'google_accounts.json',
 ];
 
-// Resolve the requested Gemini auth type (Python: _gemini_auth_type). An empty
-// or unset GEMINI_AUTH_TYPE defaults to api-key; anything outside the known set
-// is a setup error. Exported so the runner can mirror it into the launcher's
-// $GEMINI_AUTH_TYPE substitutions without duplicating the resolution.
+// Resolve the requested Gemini auth type. An empty or unset GEMINI_AUTH_TYPE
+// defaults to api-key; anything outside the known set is a setup error. Exported
+// so the runner can mirror it into the launcher's $GEMINI_AUTH_TYPE
+// substitutions without duplicating the resolution.
 export function geminiAuthType(): string {
   const raw = getEnv('GEMINI_AUTH_TYPE')?.trim();
   const authType = raw ? raw : GEMINI_AUTH_TYPE_API_KEY;
@@ -58,8 +56,7 @@ export function geminiAuthType(): string {
   return authType;
 }
 
-// Files that must exist under SUPERPOWERS_ROOT for the extension to install
-// (Python: GEMINI_REQUIRED_SUPERPOWERS_FILES).
+// Files that must exist under SUPERPOWERS_ROOT for the extension to install.
 const GEMINI_REQUIRED_SUPERPOWERS_FILES: readonly string[] = [
   'gemini-extension.json',
   'GEMINI.md',
@@ -67,8 +64,8 @@ const GEMINI_REQUIRED_SUPERPOWERS_FILES: readonly string[] = [
   'skills/using-superpowers/references/gemini-tools.md',
 ];
 
-// Manifest files `gemini extensions link` writes on success (Python: the
-// `metadata` list). Missing any of these means the link silently no-op'd.
+// Manifest files `gemini extensions link` writes on success. Missing any of
+// these means the link silently no-op'd.
 const GEMINI_EXTENSION_MANIFESTS: readonly string[] = [
   join(
     '.gemini',
@@ -98,10 +95,10 @@ function shellSingleQuote(s: string): string {
   return `'${s.replaceAll("'", `'\\''`)}'`;
 }
 
-// Build the stderr excerpt baked into a gemini link/list failure error (Python:
-// _gemini_stderr_excerpt). Strip, replace any occurrence of GEMINI_API_KEY with
-// '[redacted]' so a CLI that echoes the key into stderr cannot leak it into the
-// error text (and thence verdict.json / logs), then truncate to 300 chars.
+// Build the stderr excerpt baked into a gemini link/list failure error. Strip,
+// replace any occurrence of GEMINI_API_KEY with '[redacted]' so a CLI that
+// echoes the key into stderr cannot leak it into the error text (and thence
+// verdict.json / logs), then truncate to 300 chars.
 function geminiStderrExcerpt(stderr: string): string {
   const apiKey = getEnv('GEMINI_API_KEY') ?? '';
   let excerpt = stderr.trim();
@@ -111,16 +108,15 @@ function geminiStderrExcerpt(stderr: string): string {
   return excerpt.slice(0, 300);
 }
 
-// Write `content` to `path` at mode 0600, creating parent dirs (Python:
-// _write_private_text). The write goes through the shared O_NOFOLLOW writer so a
-// pre-placed symlink at the destination cannot redirect the secret.
+// Write `content` to `path` at mode 0600, creating parent dirs. The write goes
+// through the shared O_NOFOLLOW writer so a pre-placed symlink at the destination
+// cannot redirect the secret.
 function writePrivateText(path: string, content: string): void {
   mkdirSync(join(path, '..'), { recursive: true });
   writePrivateFileNoFollow(path, content);
 }
 
-// Expand a leading ~ to HOME (mirrors Path.expanduser for the common case the
-// oracle hits at runner.py:577). Reads HOME only through env.ts.
+// Expand a leading ~ to HOME. Reads HOME only through env.ts.
 function expanduser(p: string): string {
   if (p === '~' || p.startsWith('~/')) {
     const home = getEnv('HOME');
@@ -131,8 +127,7 @@ function expanduser(p: string): string {
   return p;
 }
 
-// Verify the `gemini` binary resolves on PATH before provisioning (Python:
-// _seed_gemini_config's `shutil.which("gemini") is None` fail-fast). Use
+// Verify the `gemini` binary resolves on PATH before provisioning. Use
 // Bun.which against the sanctioned PATH snapshot — `command -v` would have to run
 // through a shell, and the subprocess seam's spawnSync has none, so on Linux that
 // probe ENOENTs and falsely reports the binary missing.
@@ -145,8 +140,8 @@ function requireGeminiBinaryOnPath(): void {
 }
 
 // Copy the Gemini OAuth credential files from GEMINI_OAUTH_HOME (default
-// ~/.gemini) into the run's .gemini dir at 0600 (Python:
-// _copy_gemini_oauth_credentials). A missing source file is a setup error.
+// ~/.gemini) into the run's .gemini dir at 0600. A missing source file is a
+// setup error.
 function copyGeminiOauthCredentials(configDir: string): void {
   const sourceHome = getEnv('GEMINI_OAUTH_HOME') ?? join(homedir(), '.gemini');
   for (const name of GEMINI_OAUTH_CREDENTIAL_FILES) {
@@ -163,9 +158,9 @@ function copyGeminiOauthCredentials(configDir: string): void {
   }
 }
 
-// Detect a `superpowers` row in `gemini extensions list` output (Python:
-// _gemini_extension_list_shows_superpowers): a line whose first word is
-// `superpowers` (case-insensitive) optionally followed by whitespace or `(`.
+// Detect a `superpowers` row in `gemini extensions list` output: a line whose
+// first word is `superpowers` (case-insensitive) optionally followed by
+// whitespace or `(`.
 // A leading non-word glyph + space is tolerated so a decorated row like
 // "✓ superpowers (5.1.0)" matches. Callers pass stdout+stderr merged because
 // newer gemini prints the listing to stderr.
@@ -179,8 +174,8 @@ function extensionListShowsSuperpowers(output: string): boolean {
 }
 
 // Transcripts gemini would write under .gemini/tmp/**/chats/**/*.json* — none
-// should exist after pure provisioning (Python: _gemini_transcripts). Returns
-// the GEMINI_CLI_HOME-relative paths found.
+// should exist after pure provisioning. Returns the GEMINI_CLI_HOME-relative
+// paths found.
 function geminiTranscripts(configDir: string): string[] {
   const tmpDir = join(configDir, '.gemini', 'tmp');
   if (!existsSync(tmpDir)) {
@@ -210,9 +205,8 @@ export class GeminiAgent implements CodingAgent {
   provision(home: RunHome, runner: CommandRunner): Record<string, string> {
     const { configDir } = home;
 
-    // SUPERPOWERS_ROOT must be set and carry the required extension files
-    // (Python: _require_gemini_superpowers_root, which Path(...).expanduser()s
-    // the raw value before every filesystem touch).
+    // SUPERPOWERS_ROOT must be set and carry the required extension files. The
+    // raw value is expanduser()'d before every filesystem touch.
     const superpowersRaw = getEnv('SUPERPOWERS_ROOT') ?? '';
     if (!superpowersRaw) {
       throw new ProvisionError(
@@ -229,19 +223,17 @@ export class GeminiAgent implements CodingAgent {
       );
     }
 
-    // Fail fast if the gemini CLI is not on PATH (Python:
-    // _seed_gemini_config's shutil.which check, right after the SUPERPOWERS_ROOT
-    // validation). Without this a missing binary surfaces later as a confusing
-    // 'gemini extensions link failed (exit null)'.
+    // Fail fast if the gemini CLI is not on PATH, right after the
+    // SUPERPOWERS_ROOT validation. Without this a missing binary surfaces later
+    // as a confusing 'gemini extensions link failed (exit null)'.
     requireGeminiBinaryOnPath();
 
-    // Resolve the auth type once (Python: _gemini_auth_type resolved in
-    // _seed_gemini_config). A bogus value raises here, before any subprocess.
+    // Resolve the auth type once. A bogus value raises here, before any
+    // subprocess.
     const authType = geminiAuthType();
 
-    // GEMINI_API_KEY seeds the secret env file, but only in api-key mode
-    // (Python: _write_gemini_env_file guards on auth_type). In oauth mode the
-    // key is absent by design.
+    // GEMINI_API_KEY seeds the secret env file, but only in api-key mode. In
+    // oauth mode the key is absent by design.
     const apiKey = getEnv('GEMINI_API_KEY') ?? '';
     if (authType === GEMINI_AUTH_TYPE_API_KEY && !apiKey) {
       throw new ProvisionError(
@@ -252,8 +244,8 @@ export class GeminiAgent implements CodingAgent {
     mkdirSync(configDir, { recursive: true });
 
     // .gemini/settings.json: merge into any existing file and set
-    // security.auth.selectedType to the resolved auth type (Python:
-    // _write_gemini_settings). JSON.stringify with indent 2, no trailing newline.
+    // security.auth.selectedType to the resolved auth type. JSON.stringify with
+    // indent 2, no trailing newline.
     const settingsPath = join(configDir, '.gemini', 'settings.json');
     const settings = existsSync(settingsPath)
       ? GeminiSettingsSchema.parse(
@@ -272,8 +264,7 @@ export class GeminiAgent implements CodingAgent {
 
     // .gemini-env carries GEMINI_API_KEY for the launcher in api-key mode;
     // oauth mode writes an empty file (still 0600) and copies the OAuth
-    // credentials into .gemini instead (Python: _write_gemini_env_file +
-    // _copy_gemini_oauth_credentials).
+    // credentials into .gemini instead.
     const envFile = join(configDir, GEMINI_ENV_FILE_NAME);
     const envContent =
       authType === GEMINI_AUTH_TYPE_API_KEY
@@ -284,7 +275,7 @@ export class GeminiAgent implements CodingAgent {
       copyGeminiOauthCredentials(configDir);
     }
 
-    // Env passed to the gemini subprocesses (Python: the `env` dict).
+    // Env passed to the gemini subprocesses.
     const agentVars: Record<string, string> = {
       GEMINI_CLI_HOME: configDir,
       GEMINI_CLI_TRUST_WORKSPACE: 'true',
@@ -322,7 +313,7 @@ export class GeminiAgent implements CodingAgent {
       );
     }
 
-    // The link must have written its install manifests (Python: `metadata`).
+    // The link must have written its install manifests.
     const missingManifests = GEMINI_EXTENSION_MANIFESTS.filter(
       (rel) => !existsSync(join(configDir, rel)),
     );
@@ -332,7 +323,7 @@ export class GeminiAgent implements CodingAgent {
       );
     }
 
-    // Provisioning must not have run the model (Python: _gemini_transcripts).
+    // Provisioning must not have run the model.
     const transcripts = geminiTranscripts(configDir);
     if (transcripts.length > 0) {
       throw new ProvisionError(
