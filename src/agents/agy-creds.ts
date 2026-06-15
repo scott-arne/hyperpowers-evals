@@ -16,13 +16,10 @@ import { join } from 'node:path';
 // (A4 of the agy reliability spec). Back the file up before the run; read it
 // back after: if it is now missing or corrupt JSON, restore it. A legitimate
 // token refresh changes the bytes but leaves valid JSON — that is left alone.
-//
-// Port of quorum/agy_creds.py — public API is camelCase TS, the logic matches.
 
 const DEFAULT_CRED_PATH = join(homedir(), '.gemini', 'oauth_creds.json');
 
-// Mutable indirection so tests can point at a temp credential file, mirroring
-// the Python tests' monkeypatch of quorum.agy_creds._CRED_PATH.
+// Mutable indirection so tests can point at a temp credential file.
 let credPath: string = DEFAULT_CRED_PATH;
 
 /** Override the credential path (tests only). Pass null to restore the default. */

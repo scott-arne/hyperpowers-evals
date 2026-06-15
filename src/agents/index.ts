@@ -55,9 +55,9 @@ export class ProvisionError extends Error {
 }
 
 /** Basename of the per-run Claude auth env file ClaudeAgent.provision writes
- *  under configDir (mirrors quorum CLAUDE_ENV_FILE_NAME = ".claude-env"). The
- *  runner derives the $CLAUDE_ENV_FILE substitution from this deterministic
- *  path, so the constant is the single source of truth for both sides. */
+ *  under configDir. The runner derives the $CLAUDE_ENV_FILE substitution from
+ *  this deterministic path, so the constant is the single source of truth for
+ *  both sides. */
 export const CLAUDE_ENV_FILE_NAME = '.claude-env';
 
 /** The minimal `.claude.json` surface quorum reads/writes: an object whose
@@ -67,9 +67,8 @@ const ClaudeJsonSchema = z
   .object({ projects: z.record(z.unknown()).optional() })
   .passthrough();
 
-/** Declarative agents whose provisioning is fully driven by YAML (Spec 2
- *  widens this set). Just creates the isolated config dir and points the
- *  agent_config_env at it. */
+/** Declarative agents whose provisioning is fully driven by YAML. Just creates
+ *  the isolated config dir and points the agent_config_env at it. */
 class DefaultAgent implements CodingAgent {
   readonly config: AgentConfig;
   constructor(config: AgentConfig) {
@@ -106,10 +105,9 @@ class ClaudeAgent implements CodingAgent {
     const claudeJsonPath = join(configDir, '.claude.json');
 
     // Trust the project so claude doesn't prompt — but only when a skeleton was
-    // seeded (Python _seed_agent_config_dir guards this on `seeded`: the trust
-    // block extends the .claude.json the skeleton provides; with no skeleton
-    // there is no onboarding state to extend). Parse the existing file (boundary
-    // §4.1) rather than asserting its shape.
+    // seeded: the trust block extends the .claude.json the skeleton provides;
+    // with no skeleton there is no onboarding state to extend. Parse the existing
+    // file (boundary §4.1) rather than asserting its shape.
     if (seeded) {
       const claudeJson = existsSync(claudeJsonPath)
         ? ClaudeJsonSchema.parse(
@@ -132,11 +130,11 @@ class ClaudeAgent implements CodingAgent {
     // When ANTHROPIC_API_KEY is a required env, seed the per-run auth: write the
     // mode-0600 .claude-env the launcher sources, and record the API-key
     // approval fingerprint so claude doesn't prompt "Detected a custom API
-    // key…" headless (Python gates both on `ANTHROPIC_API_KEY in required_env`).
+    // key…" headless. Both are gated on ANTHROPIC_API_KEY being a required env.
     if (this.config.required_env.includes('ANTHROPIC_API_KEY')) {
       // Read the key through the one sanctioned env module (§6.5), never
-      // process.env. Empty means unset; mirror Python _require_env's setup-stage
-      // failure rather than silently writing a blank key.
+      // process.env. Empty means unset; fail at the setup stage rather than
+      // silently writing a blank key.
       const apiKey = getEnv('ANTHROPIC_API_KEY') ?? '';
       if (apiKey === '') {
         throw new ProvisionError(
@@ -145,8 +143,7 @@ class ClaudeAgent implements CodingAgent {
       }
       const envFile = join(configDir, CLAUDE_ENV_FILE_NAME);
       // The mode-0600 secret env file goes through the shared O_NOFOLLOW writer
-      // so a pre-placed symlink at the destination cannot redirect the API key
-      // (Python double-fchmods 0600 around an O_NOFOLLOW open).
+      // so a pre-placed symlink at the destination cannot redirect the API key.
       writePrivateFileNoFollow(
         envFile,
         `ANTHROPIC_API_KEY=${shellSingleQuote(apiKey)}\n`,
@@ -161,7 +158,7 @@ class ClaudeAgent implements CodingAgent {
  *  prompt "Detected a custom API key… use this key?" when launched headless
  *  with ANTHROPIC_API_KEY. The fingerprint is the key's last 20 chars; it is
  *  added to customApiKeyResponses.approved (idempotently) and scrubbed from
- *  rejected (mirrors quorum/runner.py:_approve_claude_api_key). */
+ *  rejected. */
 function approveClaudeApiKey(configPath: string, apiKey: string): void {
   const config: Record<string, unknown> = existsSync(configPath)
     ? (JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>)
@@ -192,15 +189,14 @@ function approveClaudeApiKey(configPath: string, apiKey: string): void {
 }
 
 /** Single-quote a value for a POSIX shell, escaping embedded single quotes.
- *  Exported for reuse by the runner's context-dir _SH substitutions (mirrors
- *  quorum/runner.py:_shell_single_quote). */
+ *  Exported for reuse by the runner's context-dir _SH substitutions. */
 export function shellSingleQuote(s: string): string {
   return `'${s.replaceAll("'", `'\\''`)}'`;
 }
 
-// name -> custom adapter factory (Spec 2). Each dialect with provisioning beyond
-// the declarative default registers here; everything else falls through to
-// DefaultAgent. Mirrors the per-name dispatch in quorum/runner.py.
+// name -> custom adapter factory. Each dialect with provisioning beyond the
+// declarative default registers here; everything else falls through to
+// DefaultAgent.
 const CUSTOM_AGENTS: Readonly<
   Record<string, (config: AgentConfig) => CodingAgent>
 > = {

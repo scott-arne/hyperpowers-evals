@@ -7,14 +7,12 @@ import { killRunTmuxServer } from './agy-teardown.ts';
 // not stream the agy tmux pane, so polling the log is the sole way to detect
 // RESOURCE_EXHAUSTED / 429 while the agy run is in flight.
 //
-// Port of quorum/agy_watch.py. The Python version is a threading.Thread daemon;
-// the TS version is a class with start()/stop() backed by an async poll loop
-// (not a busy thread). Semantics preserved: fire teardown once, clean stop, no
-// leaked timer.
+// A class with start()/stop() backed by an async poll loop (not a busy thread):
+// fire teardown once, clean stop, no leaked timer.
 
 // Substrings agy writes to its log/stderr when the Gemini Code Assist backend
 // throttles. RESOURCE_EXHAUSTED is the definitive 429 signal; ratelimitexceeded
-// corroborates. Matched case-insensitively. Mirrors _AGY_RATE_LIMIT_SUBSTRINGS.
+// corroborates. Matched case-insensitively.
 const AGY_RATE_LIMIT_SUBSTRINGS = ['resource_exhausted', 'ratelimitexceeded'];
 // A bare "429" matches hex trace IDs (e.g. 0x...e4291...), ports, and byte
 // counts that pepper agy's streaming log, false-tripping the mid-run watcher
@@ -25,8 +23,7 @@ const AGY_429_RE = /\b429\b/;
  * True if any of *texts* contains an unambiguous Code Assist rate-limit signal.
  *
  * Pure predicate. Joins truthy texts with newlines, lowercases, and matches the
- * rate-limit substrings or a word-boundaried 429. Port of
- * quorum/runner._agy_log_shows_rate_limit.
+ * rate-limit substrings or a word-boundaried 429.
  */
 export function agyLogShowsRateLimit(...texts: string[]): boolean {
   const blob = texts
@@ -44,7 +41,7 @@ export type TeardownFn = (target: string) => unknown;
 export interface AgyRateLimitWatcherOptions {
   /** Injectable teardown callback. Defaults to killRunTmuxServer. */
   readonly teardown?: TeardownFn;
-  /** Poll interval in milliseconds. Defaults to 500 (Python 0.5s). */
+  /** Poll interval in milliseconds. Defaults to 500. */
   readonly pollIntervalMs?: number;
 }
 
@@ -141,8 +138,8 @@ export class AgyRateLimitWatcher {
   }
 
   // Read the bytes appended past *offset* and decode them (utf-8, lossy on
-  // partial multibyte tails, matching Python's errors="replace"). Returns the
-  // raw bytes consumed so the caller advances the offset by bytes, not chars.
+  // partial multibyte tails). Returns the raw bytes consumed so the caller
+  // advances the offset by bytes, not chars.
   private readFrom(offset: number): { text: string; bytesRead: number } {
     const fd = openSync(this.logPath, 'r');
     try {

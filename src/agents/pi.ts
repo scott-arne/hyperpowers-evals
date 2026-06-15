@@ -13,9 +13,9 @@ import { envSnapshot, getEnv } from '../env.ts';
 import { type CodingAgent, ProvisionError, type RunHome } from './index.ts';
 import { writePrivateFileNoFollow } from './private-file.ts';
 
-// Pi azure-openai-responses provider passes through these env vars into pi.env
-// (mirrors PI_AZURE_ENV_NAMES in quorum/runner.py). Order is preserved for the
-// membership scan; the pi.env writer re-sorts before emitting.
+// Pi azure-openai-responses provider passes through these env vars into pi.env.
+// Order is preserved for the membership scan; the pi.env writer re-sorts before
+// emitting.
 const PI_AZURE_ENV_NAMES = [
   'AZURE_OPENAI_BASE_URL',
   'AZURE_OPENAI_RESOURCE_NAME',
@@ -23,12 +23,11 @@ const PI_AZURE_ENV_NAMES = [
   'AZURE_OPENAI_DEPLOYMENT_NAME_MAP',
 ] as const;
 
-// Characters Python's shlex.quote treats as safe (its _find_unsafe regex is
+// Characters shlex.quote treats as safe (its unsafe-char regex is
 // [^\w@%+=:,./-]). A value built only from these is emitted bare; anything else
 // (including the empty string) is single-quoted with embedded quotes escaped as
-// '\''. Reproduced here so pi.env matches the Python oracle byte-for-byte; the
-// repo's shellSingleQuote always-quotes, which would diverge for bare values
-// like gpt-4o.
+// '\''. pi.env needs these shlex.quote semantics: the repo's shellSingleQuote
+// always-quotes, which would needlessly quote bare values like gpt-4o.
 const SHLEX_SAFE = /^[A-Za-z0-9@%+=:,./_-]+$/;
 
 function shlexQuote(value: string): string {
@@ -38,8 +37,8 @@ function shlexQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-// Require an env value via the sanctioned env module. Mirrors _require_env: an
-// unset OR empty value is a setup failure.
+// Require an env value via the sanctioned env module. An unset OR empty value is
+// a setup failure.
 function requirePiEnv(name: string, purpose: string): string {
   const value = getEnv(name);
   if (value === undefined || value === '') {
@@ -48,9 +47,9 @@ function requirePiEnv(name: string, purpose: string): string {
   return value;
 }
 
-// Provider-specific pass-through env. Mirrors _pi_provider_extra_env: only the
-// azure-openai-responses provider contributes extras, and it requires at least
-// one of base-url / resource-name. Other providers contribute nothing.
+// Provider-specific pass-through env. Only the azure-openai-responses provider
+// contributes extras, and it requires at least one of base-url / resource-name.
+// Other providers contribute nothing.
 function piProviderExtraEnv(provider: string): Record<string, string> {
   if (provider !== 'azure-openai-responses') {
     return {};
@@ -105,8 +104,7 @@ function writePiEnvFile(
   writeFileSync(join(configDir, 'pi.env'), lines.join('\n'), { mode: 0o600 });
 }
 
-// Expand a leading ~ to HOME (mirrors Path.expanduser for the common case the
-// oracle hits at runner.py:1342). Reads HOME only through env.ts.
+// Expand a leading ~ to HOME. Reads HOME only through env.ts.
 function expanduser(p: string): string {
   if (p === '~' || p.startsWith('~/')) {
     const home = getEnv('HOME');
@@ -117,9 +115,8 @@ function expanduser(p: string): string {
   return p;
 }
 
-// Pi support files a usable SUPERPOWERS_ROOT must contain (mirrors the `required`
-// list in _require_pi_superpowers_source). The .pi extension and the
-// using-superpowers skill + its pi-tools reference are what make a Pi run
+// Pi support files a usable SUPERPOWERS_ROOT must contain. The .pi extension and
+// the using-superpowers skill + its pi-tools reference are what make a Pi run
 // actually load Superpowers; a checkout missing any of them would provision
 // silently and produce a meaningless eval.
 const PI_SUPPORT_FILES = [
@@ -138,9 +135,8 @@ function isFile(path: string): boolean {
 }
 
 // Verify SUPERPOWERS_ROOT actually carries the Pi support files before
-// provisioning (mirrors _require_pi_superpowers_source, runner.py:1277-1289).
-// Raises naming every absent path so a broken checkout fails loudly at setup
-// rather than running without Superpowers.
+// provisioning. Raises naming every absent path so a broken checkout fails
+// loudly at setup rather than running without Superpowers.
 function requirePiSuperpowersSource(superpowersRoot: string): void {
   const missing = PI_SUPPORT_FILES.map((rel) =>
     join(superpowersRoot, rel),
@@ -152,11 +148,10 @@ function requirePiSuperpowersSource(superpowersRoot: string): void {
   }
 }
 
-// Require the `pi` binary on PATH (mirrors `shutil.which("pi") is None`,
-// runner.py:1345-1346). Use Bun.which against the sanctioned PATH snapshot — a
-// `command -v` probe would have to run through a shell, and a shell-less
-// spawnSync ENOENTs on Linux and falsely reports the binary missing. A missing
-// binary is a setup failure with a precise message instead of an opaque
+// Require the `pi` binary on PATH. Use Bun.which against the sanctioned PATH
+// snapshot — a `command -v` probe would have to run through a shell, and a
+// shell-less spawnSync ENOENTs on Linux and falsely reports the binary missing. A
+// missing binary is a setup failure with a precise message instead of an opaque
 // downstream launch error.
 function requirePiOnPath(): void {
   if (Bun.which('pi', { PATH: envSnapshot()['PATH'] ?? '' }) === null) {
@@ -187,11 +182,11 @@ const PiSettingsSchema = z
   .passthrough();
 
 // Seed the host OAuth login into the isolated PI_CODING_AGENT_DIR so the run
-// authenticates via OAuth instead of an env-var key. Mirrors codex's
-// _seed_codex_auth: copy the host auth.json verbatim (mode 0600, O_NOFOLLOW so a
-// pre-placed symlink can't redirect the credential), then write settings.json +
-// pi.env carrying the resolved provider/model (env override else host settings)
-// and NO PI_API_KEY. Throws a clear setup error when no host login exists or the
+// authenticates via OAuth instead of an env-var key. Like codex's auth seeding,
+// copy the host auth.json verbatim (mode 0600, O_NOFOLLOW so a pre-placed
+// symlink can't redirect the credential), then write settings.json + pi.env
+// carrying the resolved provider/model (env override else host settings) and NO
+// PI_API_KEY. Throws a clear setup error when no host login exists or the
 // provider/model can't be determined.
 function seedPiOauth(configDir: string): void {
   const agentDir = piOauthAgentDir();
@@ -283,14 +278,14 @@ function readPiOauthSettings(settingsPath: string): {
 // only the agent_config_env -> configDir mapping; every secret lives in the
 // written files, never in the returned env.
 //
-// PI_CODING_AGENT_DIR collapse: home.configDir is now rooted under the throwaway
+// PI_CODING_AGENT_DIR collapse: home.configDir is rooted under the throwaway
 // $HOME at <runHome>/.pi/agent (pi.yaml: home_config_subdir ".pi/agent"), which
 // is exactly where pi defaults its config + session dir when neither
-// PI_CODING_AGENT_DIR nor --session-dir is set. provision seeds the same files
-// under configDir as before; the launcher omits the config-dir var and
-// --session-dir, so pi discovers it all via the isolated $HOME. The returned
-// agent_config_env -> configDir mapping still resolves session_log_dir's
-// ${PI_CODING_AGENT_DIR} for capture and bakes the path into the HOWTO/launcher.
+// PI_CODING_AGENT_DIR nor --session-dir is set. provision seeds the files under
+// configDir; the launcher omits the config-dir var and --session-dir, so pi
+// discovers it all via the isolated $HOME. The returned agent_config_env ->
+// configDir mapping resolves session_log_dir's ${PI_CODING_AGENT_DIR} for
+// capture and bakes the path into the HOWTO/launcher.
 export class PiAgent implements CodingAgent {
   readonly config: AgentConfig;
   constructor(config: AgentConfig) {
