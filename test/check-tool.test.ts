@@ -1,8 +1,9 @@
 // Tests for the unified check-tool dispatcher and its non-transcript verbs.
 //
 // Strategy (mirrors test/check-transcript.test.ts): exercise each verb both
-// directly (the verbX functions over a CheckContext) and end-to-end (spawn the
-// bin/ shim with a temp fixture + record sink, asserting exit code + record).
+// directly (the verbX functions over a CheckContext) and end-to-end (source the
+// check prelude and call the verb function with a temp fixture + record sink,
+// asserting exit code + record).
 
 import { expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -24,7 +25,8 @@ import {
   verbRequiresTool,
 } from '../src/check/fs-verbs.ts';
 
-const BIN = resolve(import.meta.dir, '..', 'bin');
+const REPO = resolve(import.meta.dir, '..');
+const PRELUDE = resolve(REPO, 'src', 'checks', 'prelude.sh');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -65,7 +67,11 @@ interface ShimResult {
   records: Record<string, unknown>[];
 }
 
-/** Run a bin/ check shim from `cwd` with a record sink; parse the records. */
+/**
+ * Run a check verb via the sourced prelude from `cwd` with a record sink; parse
+ * the records. The prelude defines each verb as a function delegating to
+ * check-tool.ts, so this exercises the same path scenario checks.sh use.
+ */
 function runShim(
   tool: string,
   args: string[],
@@ -73,11 +79,21 @@ function runShim(
   env: Record<string, string> = {},
 ): ShimResult {
   const sink = join(mkdtempSync(join(tmpdir(), 'ct-sink-')), 'records.jsonl');
-  const proc = spawnSync(join(BIN, tool), args, {
-    cwd,
-    env: { ...process.env, QUORUM_RECORD_SINK: sink, ...env },
-    encoding: 'utf8',
-  });
+  const quoted = args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+  const proc = spawnSync(
+    'bash',
+    ['-c', `source '${PRELUDE}'; ${tool} ${quoted}`],
+    {
+      cwd,
+      env: {
+        ...process.env,
+        QUORUM_REPO_ROOT: REPO,
+        QUORUM_RECORD_SINK: sink,
+        ...env,
+      },
+      encoding: 'utf8',
+    },
+  );
   let records: Record<string, unknown>[] = [];
   try {
     records = readFileSync(sink, 'utf8')
@@ -439,7 +455,7 @@ test('runVerb: unknown verb returns null', () => {
 });
 
 // ---------------------------------------------------------------------------
-// End-to-end via the bin/ shims (record shape + exit codes)
+// End-to-end via the check prelude (record shape + exit codes)
 // ---------------------------------------------------------------------------
 
 test('E2E: file-exists shim emits a byte-shaped record and exits 0', () => {
@@ -517,10 +533,10 @@ test('E2E: unknown verb exits 127 with a fail record', () => {
   expect(rec['passed']).toBe(false);
 });
 
-test('E2E: setup-helpers shim resolves to the TS CLI', () => {
-  // The bin/setup-helpers shim must exist and be the unified dir's entry.
-  const proc = spawnSync(join(BIN, 'setup-helpers'), [], {
-    env: process.env,
+test('E2E: setup-helpers prelude function resolves to the TS CLI', () => {
+  // The prelude's setup-helpers function must delegate to the unified CLI.
+  const proc = spawnSync('bash', ['-c', `source '${PRELUDE}'; setup-helpers`], {
+    env: { ...process.env, QUORUM_REPO_ROOT: REPO },
     encoding: 'utf8',
   });
   // Missing `run` subcommand → usage error exit 2 (the CLI's distinction).
