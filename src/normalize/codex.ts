@@ -31,8 +31,14 @@ function asTokenUsage(value: unknown): CodexTokenUsage | undefined {
 // logged by codex; cost is priced downstream by obol.
 function finalMetricsFromUsage(usage: CodexTokenUsage): AtifFinalMetrics {
   const fm: AtifFinalMetrics = {};
+  // ATIF token buckets are DISJOINT (prompt = UNCACHED input). codex's
+  // input_tokens INCLUDES cached input, so subtract the cached portion; the
+  // cached count rides in extra.total_cached_tokens below.
   if (typeof usage.input_tokens === 'number')
-    fm.total_prompt_tokens = usage.input_tokens;
+    fm.total_prompt_tokens = Math.max(
+      0,
+      usage.input_tokens - (usage.cached_input_tokens ?? 0),
+    );
   const completion =
     (usage.output_tokens ?? 0) + (usage.reasoning_output_tokens ?? 0);
   if (

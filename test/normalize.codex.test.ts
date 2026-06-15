@@ -297,8 +297,9 @@ test('final cumulative token_count maps to final_metrics (reasoning folded into 
   ].join('\n');
   const traj = normalizeCodex(raw, '1.0.0');
   expect(traj.final_metrics).toBeDefined();
-  // prompt = input_tokens; completion = output + reasoning_output; cached.
-  expect(traj.final_metrics!.total_prompt_tokens).toBe(378285);
+  // ATIF buckets are DISJOINT: codex input_tokens INCLUDES cached, so prompt =
+  // UNCACHED input (input − cached); completion = output + reasoning; cached in extra.
+  expect(traj.final_metrics!.total_prompt_tokens).toBe(378285 - 330752);
   expect(traj.final_metrics!.total_completion_tokens).toBe(9437 + 4970);
   expect(traj.final_metrics!.extra?.['total_cached_tokens']).toBe(330752);
 });
