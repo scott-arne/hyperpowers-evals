@@ -81,7 +81,7 @@ bun run check
 bun run quorum check
 ```
 
-Run one local scenario when you do not need container isolation:
+Run one local scenario outside the container:
 
 ```bash
 bun run quorum run scenarios/triggering-writing-plans --coding-agent claude
@@ -128,17 +128,17 @@ Superpowers checkout at `/workspace/superpowers`, and host `results/` at
 `--superpowers-root <dir>` when the default parent path is not the system under
 test.
 
-The image build also needs a local Gauntlet checkout. The wrapper discovers it
+The image build needs a local Gauntlet checkout. The wrapper discovers it
 from `GAUNTLET_ROOT` or a Bun global `bun link` install; use
 `--gauntlet-root <dir>` with `build` to choose explicitly.
 
 Credentials are read-only mounts. By default, `up` uses `.env.container` first,
 then `.env`, and mounts the first one found at `/run/evals/credentials.env`.
-Pass `--env-file <file>` before `up` to choose explicitly. The host environment
-is not passed wholesale; only the in-container `quorum` shim sources the dotenv
-file, so `scripts/evals-container exec bash ...` does not automatically receive
-live eval credentials. Use `down` before changing the env-file mount on an
-existing container.
+Pass `--env-file <file>` before `up` to choose explicitly. The wrapper does not
+pass the host environment wholesale; only the in-container `quorum` shim sources
+the dotenv file, so `scripts/evals-container exec bash ...` does not
+automatically receive live eval credentials. Use `down` before changing the
+env-file mount on an existing container.
 
 OAuth/file auth sources are also read-only. Existing `~/.codex`, `~/.gemini`,
 `~/.kimi-code`, and `~/.pi` directories mount to `/auth/codex`, `/auth/gemini`,
@@ -173,8 +173,8 @@ scripts/evals-container exec quorum show <batch-id>
 ```
 
 The container runtime does not mount the Docker socket, publish dashboard ports,
-or include desktop IDEs. The image does not include Antigravity's desktop `agy`
-installer; run Antigravity host-side until there is a headless install path:
+or include desktop IDEs. The image omits Antigravity's desktop `agy` installer;
+run Antigravity host-side until there is a headless install path:
 
 ```bash
 bun run quorum run-all --coding-agents antigravity --jobs 1 --no-cursor

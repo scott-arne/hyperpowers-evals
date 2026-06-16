@@ -1,8 +1,8 @@
 # Coding-Agent Care And Feeding
 
-This guide is for running and triaging the agent CLIs that quorum tests. For
-scenario authoring, use [scenario-authoring.md](scenario-authoring.md). For
-adding a new agent target, use [adding-a-coding-agent.md](adding-a-coding-agent.md).
+Use this guide to run and triage the agent CLIs that quorum tests. For scenario
+authoring, use [scenario-authoring.md](scenario-authoring.md). For adding a new
+agent target, use [adding-a-coding-agent.md](adding-a-coding-agent.md).
 
 Live evals are trusted-maintainer operations. They launch agent CLIs with broad
 tool access and preserve raw transcripts, tool calls, filesystem state, and
@@ -48,9 +48,9 @@ scripts/evals-container down || true
 scripts/evals-container --env-file /path/to/evals.env up
 ```
 
-The wrapper mounts the file read-only at `/run/evals/credentials.env`. The host
-environment is not passed wholesale. Only the in-container `quorum` shim sources
-that dotenv file, so `scripts/evals-container exec bash ...` does not
+The wrapper mounts the file read-only at `/run/evals/credentials.env`. It does
+not pass the host environment wholesale. Only the in-container `quorum` shim
+sources that dotenv file, so `scripts/evals-container exec bash ...` does not
 automatically receive live eval credentials.
 
 OAuth/file auth directories are also mounted read-only:
@@ -106,15 +106,15 @@ under `results/<scenario>-<agent>-<timestamp>-<nonce>/`; render a batch with:
 scripts/evals-container exec quorum show <batch-id>
 ```
 
-Do not include Antigravity in the container sweep yet. The image does not ship a
+Leave Antigravity out of the container sweep for now. The image ships no
 headless `agy` install path, so Antigravity remains host-side.
 
 ## Host-Side Sweeps
 
-For all-harness trusted-maintainer sweeps, do not put every Coding-Agent in one
-`run-all --jobs N` command when you need a hard global concurrency cap. Agents
-with `max_concurrency: 1` in `coding-agents/*.yaml` run in dedicated lanes beside
-the shared `--jobs` pool, so one broad batch can exceed `N` live cells.
+For all-harness trusted-maintainer sweeps, split batches when you need a hard
+global concurrency cap. Agents with `max_concurrency: 1` in
+`coding-agents/*.yaml` run in dedicated lanes beside the shared `--jobs` pool,
+so one broad `run-all --jobs N` batch can exceed `N` live cells.
 
 Prefer grouped batches:
 
@@ -153,8 +153,8 @@ View results with `bun run quorum show <batch-id>`.
 
 Claude targets seed `<run>/home/.claude` with project trust and API-key
 approval. Recent Claude Code boots straight to the prompt on
-`ANTHROPIC_API_KEY` plus that trust block, so quorum does not ship a committed
-Claude home skeleton.
+`ANTHROPIC_API_KEY` plus that trust block, so quorum ships no committed Claude
+home skeleton.
 
 Smoke:
 
@@ -208,8 +208,8 @@ home and runs `agy` with `--dangerously-skip-permissions` and an explicit
 runs an isolated auth preflight, and installs the Superpowers plugin from
 `SUPERPOWERS_ROOT`.
 
-Antigravity auth is local browser/keyring state owned by the maintainer running
-the eval. It is not an environment-only CI credential model.
+Antigravity auth uses local browser/keyring state owned by the maintainer
+running the eval. It cannot run from environment-only CI credentials.
 
 Useful evidence:
 

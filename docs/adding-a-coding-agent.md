@@ -1,8 +1,8 @@
 # Adding A Coding-Agent
 
-This is the checklist for adding a new quorum Coding-Agent target. Keep the
-shape narrow: one target name, one YAML config, one launcher/HOWTO, one
-provisioning adapter when needed, and one normalizer.
+Use this checklist to add a new quorum Coding-Agent target. Keep the shape
+narrow: one target name, one YAML config, one launcher/HOWTO, one provisioning
+adapter when needed, and one normalizer.
 
 For running existing targets, use
 [coding-agent-care-and-feeding.md](coding-agent-care-and-feeding.md).
@@ -10,16 +10,16 @@ For running existing targets, use
 ## Before You Start
 
 Confirm the CLI can run headlessly in a terminal and produce inspectable
-session evidence. A desktop-only IDE integration is not enough for quorum.
+session evidence. A desktop-only IDE integration cannot satisfy quorum.
 
 Decide:
 
 - Target name, e.g. `myagent`, used in `--coding-agent myagent`.
-- Required credentials and whether they are environment variables, OAuth files,
+- Required credentials, and whether they use environment variables, OAuth files,
   or both.
 - Where the CLI stores config and sessions when `HOME` is a throwaway directory.
 - How Superpowers is installed or staged from `SUPERPOWERS_ROOT`.
-- Which raw logs prove behavior and can be normalized into ATIF.
+- Which raw logs prove behavior and normalize into ATIF.
 
 Do not add public-CI live runs. Live evals are trusted-maintainer operations.
 
@@ -49,13 +49,13 @@ Do not add public-CI live runs. Live evals are trusted-maintainer operations.
    copying, preflight checks, plugin staging, and launcher substitutions. Route
    subprocesses through `src/agents/command-runner.ts` so tests can fake them.
 
-5. Register the target in `src/agents/index.ts` and the agent config schema
-   surface as needed.
+5. Register the target in `src/agents/index.ts` and update the agent config
+   schema if the target needs new fields.
 
 6. Add `src/normalize/<name>.ts`.
 
-   Convert the raw session evidence into ATIF `Trajectory` rows. The normalized
-   trace is what transcript checks read as `<run>/trajectory.json`.
+   Convert the raw session evidence into ATIF `Trajectory` rows. Transcript
+   checks read the normalized trace at `<run>/trajectory.json`.
 
 7. Wire capture/economics behavior only where the shared path cannot cover the
    new target.
@@ -66,8 +66,8 @@ Do not add public-CI live runs. Live evals are trusted-maintainer operations.
 
 8. Add a bootstrap scenario gated to the new agent.
 
-   Use a `# coding-agents: <name>` directive in `checks.sh` and check both
-   provisioning evidence and behavioral evidence when possible.
+   Use a `# coding-agents: <name>` directive in `checks.sh` and check
+   provisioning and behavioral evidence when possible.
 
 9. Update docs.
 
@@ -77,7 +77,7 @@ Do not add public-CI live runs. Live evals are trusted-maintainer operations.
 
 ## Implementation Rules
 
-- Keep each run's agent state under `<run>/home`; do not symlink or read the
+- Keep each run's agent state under `<run>/home`; never symlink or read the
   operator's real `~/.<agent>` at runtime.
 - Seed credentials into the run home before launch, with chmod `0600` for
   secret-bearing files.
@@ -104,7 +104,7 @@ bun run quorum run scenarios/<name>-superpowers-bootstrap --coding-agent <name>
 bun run quorum show <run-dir>
 ```
 
-For the smoke to be useful, verify:
+For a useful smoke, verify:
 
 - The CLI launched under `<run>/home`, not the operator's real home.
 - Superpowers was installed or staged from `SUPERPOWERS_ROOT`.
