@@ -1,4 +1,4 @@
-// SDD-fixture helpers. The nine scaffoldSdd* fixture-reading helpers copy
+// SDD-fixture helpers. The four scaffoldSdd* fixture-reading helpers copy
 // design.md + plan.md out of fixtures/ and commit a clean-slate repo; the five
 // embedded-body helpers (auth/broken/quality/yagni/spec-constraint) write their
 // plan bodies inline. The PLAN_BODY constants carry literal backslash-n
@@ -35,28 +35,8 @@ export function scaffoldSddGoFractals(ctx: HelperContext): void {
   scaffoldFromFixture(ctx.workdir, 'sdd-go-fractals');
 }
 
-export function scaffoldSddGoFractalsCrisp(ctx: HelperContext): void {
-  scaffoldFromFixture(ctx.workdir, 'sdd-go-fractals-crisp');
-}
-
-export function scaffoldSddGoFractalsCriticalPlan(ctx: HelperContext): void {
-  scaffoldFromFixture(ctx.workdir, 'sdd-go-fractals-critical-plan');
-}
-
-export function scaffoldSddGoFractalsStripped(ctx: HelperContext): void {
-  scaffoldFromFixture(ctx.workdir, 'sdd-go-fractals-stripped');
-}
-
-export function scaffoldSddGoFractalsCoarse(ctx: HelperContext): void {
-  scaffoldFromFixture(ctx.workdir, 'sdd-go-fractals-coarse');
-}
-
 export function scaffoldSddGoFractalsElicited(ctx: HelperContext): void {
   scaffoldFromFixture(ctx.workdir, 'sdd-go-fractals-elicited');
-}
-
-export function scaffoldSddGoFractalsControlPlan(ctx: HelperContext): void {
-  scaffoldFromFixture(ctx.workdir, 'sdd-go-fractals-control-plan');
 }
 
 export function scaffoldSddSvelteTodo(ctx: HelperContext): void {
