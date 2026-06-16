@@ -172,6 +172,13 @@ under `results/<scenario>-<agent>-<timestamp>-<nonce>/`; render a batch with:
 scripts/evals-container exec quorum show <batch-id>
 ```
 
+`run-all` prints a periodic liveness heartbeat
+(`⋯ … · running N/jobs · done D · queued Q · [agent:scenario, …]`); tune it with
+`--heartbeat-seconds <n>` (`0` disables). Interrupting a batch — Ctrl-C, or the
+`exec` session closing — stops it gracefully: the queue is cancelled, in-flight
+runs are SIGINT'd (and recorded as stopped), and the batch footer is still
+written, so `finished_at` is never left null.
+
 The container runtime does not mount the Docker socket, publish dashboard ports,
 or include desktop IDEs. The image omits Antigravity's desktop `agy` installer;
 run Antigravity host-side until there is a headless install path:

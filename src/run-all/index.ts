@@ -23,6 +23,7 @@ import {
   type KillFn,
   stopBatch,
 } from './child-stop.ts';
+import { HeartbeatTracker, heartbeatLine } from './heartbeat.ts';
 import {
   agentLaunchSpacingSeconds,
   agentMaxConcurrency,
@@ -210,6 +211,24 @@ export interface RunBatchArgs {
   // Invoked when a SECOND signal arrives during shutdown; defaults to a hard
   // process exit so the operator is never stuck behind a wedged child.
   readonly hardExit?: () => void;
+  // Seconds between liveness heartbeats; 0 disables. Defaults to 30.
+  readonly heartbeatSeconds?: number;
+  // Heartbeat-timer seam. The default schedules `tick` every `seconds` on an
+  // unref'd interval and returns a stopper; tests inject a fake to fire ticks
+  // synchronously. Returns a no-op stopper when seconds <= 0.
+  readonly startHeartbeat?: (tick: () => void, seconds: number) => () => void;
+}
+
+// Schedule the heartbeat tick on an unref'd interval (so it never keeps the
+// process alive on its own — the in-flight child promises do that) and return a
+// stopper. seconds <= 0 disables it.
+function startHeartbeatTimer(tick: () => void, seconds: number): () => void {
+  if (seconds <= 0) {
+    return () => {};
+  }
+  const timer = setInterval(tick, seconds * 1000);
+  (timer as { unref?: () => void }).unref?.();
+  return () => clearInterval(timer);
 }
 
 // Install the graceful-stop handler for the signals an interrupted batch can
@@ -270,6 +289,8 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
     installSignals = installStopSignals,
     kill,
     hardExit = hardExitProcess,
+    heartbeatSeconds = 30,
+    startHeartbeat = startHeartbeatTimer,
   } = args;
   if (jobs < 1) {
     throw new Error(`jobs must be >= 1, got ${jobs}`);
@@ -364,11 +385,15 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
     result.run_id !== null &&
     isRateLimitedVerdict(readVerdict(join(outRoot, result.run_id)));
 
+  // Liveness: a tracker fed every scheduler event, read by the heartbeat timer.
+  const heartbeat = new HeartbeatTracker(runnableEntries.length);
+
   // run-all consumes the scheduler's event stream: render the completion / skip
   // line, append the results.jsonl record, and tally cost. Scheduler lifecycle
   // events feed dashboard state, not the plain CLI output; batch_done's summary
   // is printed after the drive resolves.
   const onEvent = (event: SchedulerEvent): void => {
+    heartbeat.onEvent(event);
     if (event.kind === 'cell_finished') {
       const idx = matrixIdxFor(event.idx);
       const final = finalStatusForResult(event.result, outRoot);
@@ -440,10 +465,14 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
     stopBatch(handle, pidRegistry.pids, kill);
   };
   const uninstallSignals = installSignals(onSignal);
+  const stopHeartbeat = startHeartbeat(() => {
+    println(heartbeatLine(heartbeat.snapshot(new Date(), jobs)));
+  }, heartbeatSeconds);
   try {
     await handle.done;
   } finally {
     uninstallSignals();
+    stopHeartbeat();
   }
 
   const finishedAt = new Date();

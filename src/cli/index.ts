@@ -122,6 +122,7 @@ interface RunAllOptions {
   readonly outRoot: string;
   readonly tier?: string;
   readonly includeDrafts: boolean;
+  readonly heartbeatSeconds: string;
 }
 
 const program = new Command();
@@ -288,6 +289,11 @@ program
   .option('--out-root <dir>', 'results root', 'results')
   .option('--tier <tier>', 'restrict to sentinel|full|adhoc')
   .option('--include-drafts', 'include status: draft scenarios', false)
+  .option(
+    '--heartbeat-seconds <n>',
+    'seconds between liveness heartbeats (0 disables)',
+    String(30),
+  )
   .action(async (opts: RunAllOptions) => {
     const agentFilter = csvList(opts.codingAgents);
     // Filter by scenario name; accept a path/prefixed form too (scenarios/foo
@@ -296,6 +302,13 @@ program
     const jobs = parseIntegerOption(opts.jobs);
     if (jobs === undefined || jobs < 1) {
       process.stderr.write('error: --jobs must be an integer >= 1\n');
+      process.exit(1);
+    }
+    const heartbeatSeconds = parseIntegerOption(opts.heartbeatSeconds);
+    if (heartbeatSeconds === undefined || heartbeatSeconds < 0) {
+      process.stderr.write(
+        'error: --heartbeat-seconds must be an integer >= 0\n',
+      );
       process.exit(1);
     }
     const { tier } = opts;
@@ -330,6 +343,7 @@ program
         ...(scenarioFilter !== undefined ? { scenarioFilter } : {}),
         tier: tier ?? null,
         includeDrafts: opts.includeDrafts,
+        heartbeatSeconds,
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

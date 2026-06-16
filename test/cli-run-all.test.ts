@@ -81,6 +81,55 @@ test('run-all rejects the removed output-mode option', () => {
   expect(proc.stderr).toContain(`unknown option '${removedOutputModeOption}'`);
 });
 
+test('run-all rejects a non-integer --heartbeat-seconds value (e.g. 1.5)', () => {
+  // Asserts the validation message specifically, so an unimplemented flag
+  // (commander's "unknown option") fails this test rather than passing it.
+  const root = mkdtempSync(join(tmpdir(), 'scn-'));
+  const out = mkdtempSync(join(tmpdir(), 'out-'));
+  const proc = spawnSync(
+    'bun',
+    [
+      CLI,
+      'run-all',
+      '--heartbeat-seconds',
+      '1.5',
+      '--scenarios-root',
+      root,
+      '--coding-agents-dir',
+      root,
+      '--out-root',
+      out,
+    ],
+    { encoding: 'utf8' },
+  );
+  expect(proc.status).not.toBe(0);
+  expect(proc.stderr).toContain('--heartbeat-seconds must be an integer');
+});
+
+test('run-all accepts --heartbeat-seconds 0 (heartbeat disabled)', () => {
+  // Empty roots -> 0 runnable cells -> the batch completes and exits 0, proving
+  // the flag parses and 0 is a valid (disabling) value.
+  const root = mkdtempSync(join(tmpdir(), 'scn-'));
+  const out = mkdtempSync(join(tmpdir(), 'out-'));
+  const proc = spawnSync(
+    'bun',
+    [
+      CLI,
+      'run-all',
+      '--heartbeat-seconds',
+      '0',
+      '--scenarios-root',
+      root,
+      '--coding-agents-dir',
+      root,
+      '--out-root',
+      out,
+    ],
+    { encoding: 'utf8' },
+  );
+  expect(proc.status).toBe(0);
+});
+
 test('run-all errors when --scenarios-root does not exist', () => {
   // Python declares run-all's --scenarios-root as click.Path(exists=True),
   // failing fast at the CLI boundary on a missing root.
