@@ -11,15 +11,8 @@ import { repoRoot } from '../src/paths.ts';
 // decision — this frozen allowlist makes any silent (un)pin land RED instead of
 // quietly changing matrix coverage. Verified against the live scenarios dir on disk.
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
-  'antigravity-superpowers-bootstrap',
-  'codex-native-hooks-bootstrap',
   'codex-subagent-wait-mapping',
   'codex-tool-mapping-comprehension',
-  'copilot-superpowers-bootstrap',
-  'gemini-superpowers-bootstrap',
-  'kimi-superpowers-bootstrap',
-  'opencode-superpowers-bootstrap',
-  'pi-superpowers-bootstrap',
   'sdd-spec-context-consumed',
   'worktree-creation-under-pressure',
   'worktree-no-drift-to-main',
