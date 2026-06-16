@@ -19,6 +19,11 @@ import {
   writeBatchHeader,
 } from './batch-index.ts';
 import {
+  createChildPidRegistry,
+  type KillFn,
+  stopBatch,
+} from './child-stop.ts';
+import {
   agentLaunchSpacingSeconds,
   agentMaxConcurrency,
   buildMatrix,
@@ -196,6 +201,38 @@ export interface RunBatchArgs {
   // drive spacing deterministically — but run-all's own behavior tests use the
   // real clock with instant fake invokes (no spacing configured).
   readonly clock?: Clock;
+  // Process-signal seam. The default installs SIGINT/SIGTERM/SIGHUP handlers that
+  // run the graceful stop; it returns an uninstaller. Tests inject a fake to
+  // capture and drive the handler synchronously without real signals.
+  readonly installSignals?: (handler: () => void) => () => void;
+  // The kill used to SIGINT in-flight children on stop; defaults to process.kill.
+  readonly kill?: KillFn;
+  // Invoked when a SECOND signal arrives during shutdown; defaults to a hard
+  // process exit so the operator is never stuck behind a wedged child.
+  readonly hardExit?: () => void;
+}
+
+// Install the graceful-stop handler for the signals an interrupted batch can
+// receive: SIGINT (Ctrl-C), SIGTERM (docker stop / kill), and SIGHUP (the
+// foreground exec session or terminal going away — the most likely cause of a
+// silently truncated batch). Returns an uninstaller run in runBatch's finally so
+// handlers never leak past the drive.
+function installStopSignals(handler: () => void): () => void {
+  const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+  for (const signal of signals) {
+    process.on(signal, handler);
+  }
+  return () => {
+    for (const signal of signals) {
+      process.off(signal, handler);
+    }
+  };
+}
+
+// The second-signal fallback: exit with the conventional SIGINT code so a wedged
+// child can never strand the operator.
+function hardExitProcess(): void {
+  process.exit(130);
 }
 
 type Final = 'pass' | 'fail' | 'indeterminate' | 'unknown';
@@ -230,6 +267,9 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
     invoke = invokeChild,
     stream = process.stdout,
     clock = new RealClock(),
+    installSignals = installStopSignals,
+    kill,
+    hardExit = hardExitProcess,
   } = args;
   if (jobs < 1) {
     throw new Error(`jobs must be >= 1, got ${jobs}`);
@@ -304,9 +344,14 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
   const matrixIdxFor = (schedulerIdx: number): number =>
     matrixIdxForRunnable[schedulerIdx - 1] ?? schedulerIdx;
 
+  // Track in-flight child pids so a signal can SIGINT them. The registry wraps
+  // invoke; its pid set stays honest (added on spawn, dropped on settle).
+  const pidRegistry = createChildPidRegistry();
+  const trackedInvoke = pidRegistry.track(invoke);
+
   // The scheduler invokes a cell; adapt the MatrixEntry to invoke_child's args.
   const invokeCell = (entry: MatrixEntry): Promise<ChildResult> =>
-    invoke({
+    trackedInvoke({
       scenarioDir: entry.scenarioDir,
       codingAgent: entry.codingAgent,
       codingAgentsDir,
@@ -369,7 +414,7 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
     }
   };
 
-  const { done } = runSchedule({
+  const handle = runSchedule({
     cells: runnableEntries,
     jobs,
     capFor: (h) => agentMaxConcurrency(codingAgentsDir, h),
@@ -379,7 +424,27 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
     isRateLimited,
     onEvent,
   });
-  await done;
+
+  // On the first signal, drive the graceful stop: cancel the queue and SIGINT
+  // in-flight children, then let `done` resolve normally so the footer below
+  // still runs (the bug that produced finished_at: null was no handler at all). A
+  // second signal hard-exits past any wedged child. Handlers are uninstalled in
+  // the finally so they never leak past the drive.
+  let stopping = false;
+  const onSignal = (): void => {
+    if (stopping) {
+      hardExit();
+      return;
+    }
+    stopping = true;
+    stopBatch(handle, pidRegistry.pids, kill);
+  };
+  const uninstallSignals = installSignals(onSignal);
+  try {
+    await handle.done;
+  } finally {
+    uninstallSignals();
+  }
 
   const finishedAt = new Date();
   writeBatchFooter({ batchDir, finishedAt: finishedAt.toISOString() });

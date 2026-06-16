@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { z } from 'zod';
 import { ANTIGRAVITY_RATE_LIMIT_MARKER } from '../agents/antigravity.ts';
-import type { ChildResult, MatrixEntry } from '../contracts/batch.ts';
 import { runnable } from '../contracts/batch.ts';
 import {
   allocateBatchDir,
@@ -10,7 +9,8 @@ import {
   writeBatchFooter,
   writeBatchHeader,
 } from '../run-all/batch-index.ts';
-import type { InvokeChildArgs, InvokeFn } from '../run-all/index.ts';
+import { createChildPidRegistry, stopBatch } from '../run-all/child-stop.ts';
+import type { InvokeFn } from '../run-all/index.ts';
 import { invokeChild } from '../run-all/index.ts';
 import {
   agentLaunchSpacingSeconds,
@@ -98,11 +98,10 @@ export class Orchestrator {
   private readonly jobs: number;
   private readonly invoke: InvokeFn;
   private readonly onEvent: ((event: SchedulerEvent) => void) | undefined;
-  // The live in-flight child OS pids; stop() SIGINTs each. Added via the wrapped
-  // invoke's onPid, removed when that child's invoke settles, so the set only
-  // ever holds genuinely-live children (the ESRCH guard in stop() is the race net
-  // for the window between child exit and removal).
-  private readonly childPids = new Set<number>();
+  // The live in-flight child OS pids (kept honest by the registry's wrapper);
+  // stop() SIGINTs each. trackedInvoke is `invoke` wrapped to register pids.
+  private readonly pidRegistry = createChildPidRegistry();
+  private readonly trackedInvoke: InvokeFn;
   private isActive = false;
   // Set by stop(); polled by the scheduler's shouldAbort so still-queued cells
   // skip 'stopped'. Never auto-cleared mid-session — a fresh launch() resets it.
@@ -120,6 +119,7 @@ export class Orchestrator {
     this.codingAgentsDir = args.codingAgentsDir;
     this.jobs = args.jobs;
     this.invoke = args.invoke ?? invokeChild;
+    this.trackedInvoke = this.pidRegistry.track(this.invoke);
     this.onEvent = args.onEvent;
   }
 
@@ -181,7 +181,13 @@ export class Orchestrator {
       capFor: (h) => agentMaxConcurrency(this.codingAgentsDir, h),
       spacingFor: (h) => agentLaunchSpacingSeconds(this.codingAgentsDir, h),
       clock: new RealClock(),
-      invoke: (entry) => this.trackingInvoke(entry),
+      invoke: (entry) =>
+        this.trackedInvoke({
+          scenarioDir: entry.scenarioDir,
+          codingAgent: entry.codingAgent,
+          codingAgentsDir: this.codingAgentsDir,
+          outRoot: this.resultsRoot,
+        }),
       isRateLimited: (result) =>
         result.run_id !== null &&
         readIsRateLimited(join(this.resultsRoot, result.run_id)),
@@ -224,45 +230,13 @@ export class Orchestrator {
     this.onEvent?.(event);
   }
 
-  // Wrap the underlying invoke so a child's pid is tracked for the lifetime of
-  // its run and dropped the instant it settles. onPid (called synchronously after
-  // spawn) adds it; the finally removes it — keeping the set honest so stop()
-  // only ever SIGINTs genuinely-live children.
-  private async trackingInvoke(entry: MatrixEntry): Promise<ChildResult> {
-    const spawned: number[] = [];
-    const childArgs: InvokeChildArgs = {
-      scenarioDir: entry.scenarioDir,
-      codingAgent: entry.codingAgent,
-      codingAgentsDir: this.codingAgentsDir,
-      outRoot: this.resultsRoot,
-      onPid: (pid) => {
-        spawned.push(pid);
-        this.childPids.add(pid);
-      },
-    };
-    try {
-      return await this.invoke(childArgs);
-    } finally {
-      for (const pid of spawned) {
-        this.childPids.delete(pid);
-      }
-    }
-  }
-
-  // Cancel everything still queued and SIGINT every tracked in-flight child,
-  // driving the runner's graceful-stop path (the runner's SIGINT handler writes a
-  // stopped verdict). SIGTERM is deliberately NOT used — without a handler it
-  // kills children verdict-less. ESRCH (process already gone) is swallowed.
+  // Cancel everything still queued and SIGINT every tracked in-flight child via
+  // the shared stop routine (requestStop + SIGINT, ESRCH swallowed). SIGINT — not
+  // SIGTERM — drives the runner's graceful-stop path (its handler writes a stopped
+  // verdict); SIGTERM would kill children verdict-less.
   stop(): void {
     this.stopRequested = true;
-    this.handle?.requestStop();
-    for (const pid of this.childPids) {
-      try {
-        process.kill(pid, 'SIGINT');
-      } catch {
-        // ProcessLookupError / ESRCH: the child already exited; nothing to do.
-      }
-    }
+    stopBatch(this.handle, this.pidRegistry.pids);
   }
 
   // Await the most recent launch's drive (footer + active clear included). Tests
