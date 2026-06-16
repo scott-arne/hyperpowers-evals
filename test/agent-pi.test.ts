@@ -296,14 +296,23 @@ test('azure-openai-responses without base-url/resource-name throws ProvisionErro
   }
 });
 
-test('missing required env throws ProvisionError', () => {
+test('no PI_API_KEY and no oauth login throws ProvisionError', () => {
   const { home, cleanup } = makeTempHome();
+  // Point PI_OAUTH_HOME at an empty dir so the OAuth fallback finds no host
+  // login. Without this, the outcome depends on whether the machine running the
+  // suite happens to have a real ~/.pi login — which made this test flaky
+  // (it passed in CI but failed on any developer box logged in to Pi).
+  const emptyHome = mkdtempSync(join(tmpdir(), 'quorum-pi-noauth-'));
   try {
-    withEnv({ ...BASE_ENV, PI_API_KEY: undefined }, () => {
-      const agent = new PiAgent(piConfig());
-      expect(() => agent.provision(home)).toThrow(ProvisionError);
-    });
+    withEnv(
+      { ...BASE_ENV, PI_API_KEY: undefined, PI_OAUTH_HOME: emptyHome },
+      () => {
+        const agent = new PiAgent(piConfig());
+        expect(() => agent.provision(home)).toThrow(ProvisionError);
+      },
+    );
   } finally {
+    rmSync(emptyHome, { recursive: true, force: true });
     cleanup();
   }
 });
