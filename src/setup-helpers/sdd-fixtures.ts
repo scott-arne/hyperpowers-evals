@@ -31,6 +31,10 @@ function scaffoldFromFixture(workdir: string, fixtureName: string): void {
   runGit(['commit', '-m', 'initial: design + plan'], workdir);
 }
 
+// The base scenario's plan is elicited from gpt-5.5 (the codex CLI following
+// this repo's writing-plans skill, 2026-06-16); sdd-go-fractals-elicited carries
+// the opus-elicited plan. Same design.md, two frontier models — cross-model SDD
+// execution coverage.
 export function scaffoldSddGoFractals(ctx: HelperContext): void {
   scaffoldFromFixture(ctx.workdir, 'sdd-go-fractals');
 }
