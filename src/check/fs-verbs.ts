@@ -745,3 +745,45 @@ export function verbCodexNativeHookConfigured(
   }
   return pass('Codex native Superpowers hook configured');
 }
+
+// bootstrap-installed — dispatch to the per-harness install check for the
+// current coding-agent (QUORUM_CODING_AGENT). Claude variants and pi have no
+// dedicated install verb; their bootstrap is proven behaviorally, so this
+// passes for them. An unknown or unset agent indicates a wiring bug -> fail.
+type BootstrapVerb = (args: string[], ctx: CheckContext) => CheckOutcome;
+
+const BOOTSTRAP_DELEGATES: Record<string, BootstrapVerb> = {
+  antigravity: verbAntigravityPluginInstalled,
+  codex: verbCodexNativeHookConfigured,
+  copilot: verbCopilotPluginInstalled,
+  gemini: verbGeminiExtensionLinked,
+  kimi: verbKimiPluginInstalled,
+  opencode: verbOpencodePluginInstalled,
+};
+
+const BOOTSTRAP_NO_CHECK = new Set([
+  'claude',
+  'claude-haiku',
+  'claude-sonnet',
+  'pi',
+]);
+
+export function verbBootstrapInstalled(
+  args: string[],
+  ctx: CheckContext,
+): CheckOutcome {
+  const agent = ctx.env('QUORUM_CODING_AGENT');
+  if (!agent) {
+    return fail('QUORUM_CODING_AGENT is not set');
+  }
+  const delegate = BOOTSTRAP_DELEGATES[agent];
+  if (delegate) {
+    return delegate(args, ctx);
+  }
+  if (BOOTSTRAP_NO_CHECK.has(agent)) {
+    return pass(
+      `no dedicated install check for ${agent}; behavioral proof covers bootstrap`,
+    );
+  }
+  return fail(`unrecognized coding-agent: ${agent}`);
+}

@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import {
   type CheckContext,
   verbAntigravityPluginInstalled,
+  verbBootstrapInstalled,
   verbCodexNativeHookConfigured,
   verbCopilotPluginInstalled,
   verbGeminiExtensionLinked,
@@ -396,4 +397,54 @@ test('codex-native-hook-configured fails when the trusted hook hash is absent', 
   const out = verbCodexNativeHookConfigured([], ctxFor(cfg));
   expect(out.passed).toBe(false);
   expect(out.detail).toContain('trusted hook hash missing');
+});
+
+// ---------------------------------------------------------------------------
+// bootstrap-installed: dispatch on QUORUM_CODING_AGENT
+// ---------------------------------------------------------------------------
+
+test('bootstrap-installed routes to the per-harness delegate (gemini)', () => {
+  // Unstaged config -> the gemini delegate fails with its own message, which
+  // proves routing without needing to stage the gemini file set.
+  const cfg = configDir();
+  const out = verbBootstrapInstalled(
+    [],
+    ctxFor(cfg, { QUORUM_CODING_AGENT: 'gemini' }),
+  );
+  expect(out.passed).toBe(false);
+  expect(out.detail).toContain('Gemini');
+});
+
+test('bootstrap-installed passes for claude variants (no dedicated check)', () => {
+  for (const agent of ['claude', 'claude-haiku', 'claude-sonnet']) {
+    const out = verbBootstrapInstalled(
+      [],
+      ctxFor(configDir(), { QUORUM_CODING_AGENT: agent }),
+    );
+    expect(out.passed).toBe(true);
+    expect(out.detail).toContain('no dedicated install check');
+  }
+});
+
+test('bootstrap-installed passes for pi (no dedicated check)', () => {
+  const out = verbBootstrapInstalled(
+    [],
+    ctxFor(configDir(), { QUORUM_CODING_AGENT: 'pi' }),
+  );
+  expect(out.passed).toBe(true);
+});
+
+test('bootstrap-installed fails for an unrecognized agent', () => {
+  const out = verbBootstrapInstalled(
+    [],
+    ctxFor(configDir(), { QUORUM_CODING_AGENT: 'bogus' }),
+  );
+  expect(out.passed).toBe(false);
+  expect(out.detail).toContain('unrecognized');
+});
+
+test('bootstrap-installed fails when QUORUM_CODING_AGENT is unset', () => {
+  const out = verbBootstrapInstalled([], { cwd: '/tmp', env: () => undefined });
+  expect(out.passed).toBe(false);
+  expect(out.detail).toContain('QUORUM_CODING_AGENT');
 });
