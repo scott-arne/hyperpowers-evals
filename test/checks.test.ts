@@ -271,6 +271,22 @@ test('a phase emitting >1 MB still collects its records (no ENOBUFS discard)', a
   });
 });
 
+test('QUORUM_CODING_AGENT is exported to the checks child env', async () => {
+  const workdir = mkdtempSync(join(tmpdir(), 'wd-'));
+  const checksSh = checksShWith(
+    'pre() {\n  command-succeeds \'test "$QUORUM_CODING_AGENT" = gemini\'\n}\npost() { :; }\n',
+  );
+  const { records, exitCode } = await runPhase({
+    checksSh,
+    phase: 'pre',
+    workdir,
+    repoRoot: REPO,
+    codingAgent: 'gemini',
+  });
+  expect(exitCode).toBe(0);
+  expect(records[0]).toMatchObject({ check: 'command-succeeds', passed: true });
+});
+
 test('parseCodingAgentsDirective reads a leading "# coding-agents:" csv', () => {
   const checksSh = join(mkdtempSync(join(tmpdir(), 'scn-')), 'checks.sh');
   writeFileSync(

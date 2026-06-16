@@ -1041,6 +1041,7 @@ async function runInnerBody(
     repoRoot: checksRepoRoot,
     runDir,
     configDir,
+    codingAgent: a.codingAgent,
   });
   if (pre.exitCode !== 0) {
     return compose({
@@ -1401,6 +1402,7 @@ async function runInnerBody(
     transcriptPath: capture.path,
     runDir,
     configDir,
+    codingAgent: a.codingAgent,
   });
   if (post.exitCode !== 0) {
     return compose({

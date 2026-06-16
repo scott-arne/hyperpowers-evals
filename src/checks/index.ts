@@ -37,6 +37,11 @@ export interface RunPhaseArgs {
    * verbs as QUORUM_AGENT_CONFIG_DIR (= <runHome>/<home_config_subdir>).
    */
   readonly configDir?: string;
+  /**
+   * Optional: the coding-agent config name (e.g. `codex`, `claude-sonnet`),
+   * exposed to checks as QUORUM_CODING_AGENT so a verb can dispatch per-agent.
+   */
+  readonly codingAgent?: string;
 }
 
 export interface RunPhaseResult {
@@ -79,6 +84,9 @@ export async function runPhase(args: RunPhaseArgs): Promise<RunPhaseResult> {
     ...(args.runDir !== undefined ? { QUORUM_RUN_DIR: args.runDir } : {}),
     ...(args.configDir !== undefined
       ? { QUORUM_AGENT_CONFIG_DIR: args.configDir }
+      : {}),
+    ...(args.codingAgent !== undefined
+      ? { QUORUM_CODING_AGENT: args.codingAgent }
       : {}),
   };
 
