@@ -5,6 +5,7 @@ Each Coding-Agent writes a different session-log format; `src/normalize/<agent>.
 ## Shared conventions (all normalizers)
 
 - **Tool calls / skills** → `step.tool_calls` / `step.observation` (drives `check-transcript`). Not covered further here.
+- **Subagent-dispatch prompt → canonical `prompt` arg.** ATIF `arguments` is free-form (Harbor RFC 0001 blesses no dispatch key), so we set the convention: each normalizer aliases its subagent tool to `Agent`, and the dispatch instruction is canonicalized to the `prompt` key — so cross-harness checks (`tool-arg-match Agent --matches prompt=…`) are portable instead of silently failing where the key differs. claude/gemini/antigravity/copilot/opencode emit `prompt` natively; codex (`spawn_agent`) and pi (`subagent`) emit `task`, rewritten to `prompt` by `src/normalize/agent-prompt.ts` (lossless — the raw key survives in the retained session log). **kimi has no subagent→`Agent` alias yet** — a known gap; any `Agent` transcript check is unsatisfiable on kimi until its normalizer adds one.
 - **Token usage → ATIF metrics.** Per assistant/turn: `step.metrics` + `step.model_name`. Session-total-only logs: `trajectory.final_metrics` + `agent.model_name`.
 - **Buckets are DISJOINT** (no overlap), so they sum cleanly and map 1:1 to obol's `{input, cache_read, cache_write, output}`:
   - `metrics.prompt_tokens` = **UNCACHED** input

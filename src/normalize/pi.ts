@@ -6,6 +6,7 @@ import {
   type AtifTrajectory,
 } from '../atif/types.ts';
 import { validateTrajectory } from '../atif/validate.ts';
+import { canonicalizeAgentPrompt } from './agent-prompt.ts';
 
 // Reverse mapping: Pi tool names → canonical names.
 const PI_TOOL_MAP: Record<string, string> = {
@@ -156,11 +157,11 @@ export function normalizePi(raw: string, version: string): AtifTrajectory {
         }
       }
 
-      const tc: AtifToolCall = {
+      const tc: AtifToolCall = canonicalizeAgentPrompt({
         tool_call_id: b['id'] ?? `${stepId}`,
         function_name: canonical,
         arguments: args,
-      };
+      });
 
       const step: AtifStep = {
         step_id: stepId++,

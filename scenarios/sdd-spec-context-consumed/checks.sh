@@ -1,4 +1,8 @@
-# coding-agents: claude,codex
+# coding-agents: claude,codex,gemini,antigravity,copilot,opencode,pi
+# Runs on every harness whose normalizer emits a canonical `Agent` dispatch with
+# a `prompt` arg — i.e. all but kimi, whose normalizer has no subagent→Agent alias
+# yet (so `tool-arg-match Agent` can't match). codex/pi carry the prompt under
+# `task` natively; src/normalize/agent-prompt.ts canonicalizes it to `prompt`.
 
 pre() {
     git-repo

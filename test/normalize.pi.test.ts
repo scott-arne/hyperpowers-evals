@@ -146,6 +146,21 @@ test('subagent (execution, no action key) maps to Agent', () => {
   expect(agentStep!.tool_calls![0]!.arguments['agent']).toBe('reviewer');
 });
 
+test('subagent dispatch canonicalizes the task arg to prompt', () => {
+  const lines = [
+    sessionHeader,
+    makeSubagentLine({ agent: 'reviewer', task: 'review the diff' }),
+  ].join('\n');
+  const traj = normalizePi(lines, '0.3.0');
+  const tc = traj.steps.find(
+    (s) => s.tool_calls?.[0]?.function_name === 'Agent',
+  )!.tool_calls![0]!;
+  // task → prompt (the canonical, cross-harness dispatch-instruction key)
+  expect(tc.arguments['prompt']).toBe('review the diff');
+  expect(tc.arguments['task']).toBeUndefined();
+  expect(tc.arguments['agent']).toBe('reviewer'); // other args preserved
+});
+
 test('all standard Pi tool names map correctly', () => {
   const traj = normalizePi(allToolsLines, '0.3.0');
   const r = validateTrajectory(traj);

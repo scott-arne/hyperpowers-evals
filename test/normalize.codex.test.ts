@@ -158,11 +158,15 @@ test('apply_patch (function_call) maps to Edit', () => {
   expect(typeof tc.arguments['patch']).toBe('string');
 });
 
-test('spawn_agent maps to Agent', () => {
+test('spawn_agent maps to Agent and canonicalizes the task arg to prompt', () => {
   const traj = normalizeCodex(spawnAgentLine, '1.0.0');
   const tc = traj.steps[0]!.tool_calls![0]!;
   expect(tc.function_name).toBe('Agent');
-  expect(tc.arguments['task']).toBe('review the PR');
+  // ATIF arguments are free-form; we canonicalize the dispatch instruction to
+  // `prompt` (the key claude/gemini/etc. already use) so cross-harness
+  // transcript checks (`tool-arg-match Agent --matches prompt=…`) are portable.
+  expect(tc.arguments['prompt']).toBe('review the PR');
+  expect(tc.arguments['task']).toBeUndefined();
 });
 
 test('wait_agent and close_agent are kept verbatim (not aliased)', () => {

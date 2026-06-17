@@ -6,6 +6,7 @@ import {
   type AtifTrajectory,
 } from '../atif/types.ts';
 import { validateTrajectory } from '../atif/validate.ts';
+import { canonicalizeAgentPrompt } from './agent-prompt.ts';
 
 // Codex token usage lives in `event_msg` rows whose payload.type is
 // "token_count". `info.total_token_usage` is the running session cumulative
@@ -178,11 +179,11 @@ function normalizePayload(payload: CodexPayload): AtifToolCall | null {
       };
     }
     const canonical = CODEX_TOOL_MAP[name] ?? name;
-    return {
+    return canonicalizeAgentPrompt({
       tool_call_id: callId,
       function_name: canonical,
       arguments: args,
-    };
+    });
   }
 
   if (payload.type === 'custom_tool_call') {
