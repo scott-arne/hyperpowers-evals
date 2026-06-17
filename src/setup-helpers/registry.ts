@@ -32,7 +32,6 @@ import {
 import {
   addFlawedSpecForReview,
   createSpecTargetsWrongComponent,
-  createSpecTargetsWrongComponentWithCheckpoint,
   createSpecWritingBlindSpot,
 } from './spec-fixtures.ts';
 import {
@@ -90,9 +89,6 @@ export const REGISTRY: Record<string, RegistryEntry> = {
   create_review_pushback: { fn: createReviewPushback },
   create_spec_targets_wrong_component: {
     fn: createSpecTargetsWrongComponent,
-  },
-  create_spec_targets_wrong_component_with_checkpoint: {
-    fn: createSpecTargetsWrongComponentWithCheckpoint,
   },
   add_auth_execution_plan: { fn: addAuthExecutionPlan },
   create_writing_plans_skeleton: { fn: createWritingPlansSkeleton },

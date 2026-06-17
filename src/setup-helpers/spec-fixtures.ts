@@ -65,31 +65,6 @@ AdminPanel uses but with a smaller limit.
 5. No changes to AdminPanel itself
 `;
 
-const CLAUDE_MD_WITH_CHECKPOINT = `# Pulse Dashboard
-
-Internal team dashboard for Pulse Corp.
-
-**install**: npm ci
-**dev**: npm run dev
-**test**: npm test
-**build**: npm run build
-**lint**: npm run lint
-
-## Implementation Verification Checklist
-
-Before implementing any feature from a design spec:
-
-1. Read the design spec completely
-2. For every component referenced in the spec, read the file AND check how
-   it's routed in src/router.tsx
-3. Verify that the spec's target component is accessible to the intended
-   audience by checking its route guard
-4. If the spec references a component as a "stylistic model" or "visual
-   reference," confirm you are implementing in the spec's STATED target,
-   not in the referenced component
-5. Cite the routing evidence in your implementation plan before writing any code
-`;
-
 // The deliberately flawed spec.
 const SPEC_BODY = `# Test Feature Design
 
@@ -197,22 +172,6 @@ export function createSpecTargetsWrongComponent(ctx: HelperContext): void {
   );
   runGit(['add', '-A'], ctx.workdir);
   runGit(['commit', '-m', 'add team pulse widget design spec'], ctx.workdir);
-}
-
-// Builds the identical baseline repo, then APPENDS a 6th commit overwriting
-// CLAUDE.md with the verification checklist (scoped `git add CLAUDE.md`, never
-// amend).
-export function createSpecTargetsWrongComponentWithCheckpoint(
-  ctx: HelperContext,
-): void {
-  createSpecTargetsWrongComponent(ctx);
-
-  writeFixtureFile(ctx.workdir, 'CLAUDE.md', CLAUDE_MD_WITH_CHECKPOINT);
-  runGit(['add', 'CLAUDE.md'], ctx.workdir);
-  runGit(
-    ['commit', '-m', 'add implementation verification checklist to CLAUDE.md'],
-    ctx.workdir,
-  );
 }
 
 // No init — layers a single flawed-spec commit onto an existing repo (scoped

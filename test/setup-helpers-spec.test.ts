@@ -4,11 +4,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runGit } from '../src/setup-helpers/git.ts';
-import { CLAUDE_MD } from '../src/setup-helpers/pulse-dashboard.ts';
 import {
   addFlawedSpecForReview,
   createSpecTargetsWrongComponent,
-  createSpecTargetsWrongComponentWithCheckpoint,
   createSpecWritingBlindSpot,
 } from '../src/setup-helpers/spec-fixtures.ts';
 
@@ -56,23 +54,6 @@ describe('spec fixtures', () => {
     }
   });
 
-  test('checkpoint variant appends commit 6 and CLAUDE.md has the checklist', () => {
-    const dir = tmp();
-    try {
-      createSpecTargetsWrongComponentWithCheckpoint({ workdir: dir } as never);
-      const s = subjects(dir);
-      expect(s.length).toBe(6);
-      expect(s[5]).toBe(
-        'add implementation verification checklist to CLAUDE.md',
-      );
-      const claude = runGit(['show', 'HEAD:CLAUDE.md'], dir);
-      expect(claude).toContain('Implementation Verification Checklist');
-      expect(claude).not.toBe(CLAUDE_MD);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
   // Python parity (L-helper-missing-workdir-mkdir): the scratch-building spec
   // helpers must create $QUORUM_WORKDIR before `git init` when it is absent.
   test('each scratch spec helper creates the workdir when it does not exist', () => {
@@ -81,7 +62,6 @@ describe('spec fixtures', () => {
       const cases: Array<[string, (ctx: never) => void]> = [
         ['blind-spot', createSpecWritingBlindSpot],
         ['wrong-component', createSpecTargetsWrongComponent],
-        ['checkpoint', createSpecTargetsWrongComponentWithCheckpoint],
       ];
       for (const [name, helper] of cases) {
         const missing = join(base, name, 'nested', 'workdir');
