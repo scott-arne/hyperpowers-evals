@@ -24,6 +24,45 @@ test('Skill tool with different skill name → false', () => {
   ).toBe(false);
 });
 
+// --- Forked namespace: match on the skill dir segment, not the namespace ---
+
+test('Skill tool with forked hyperpowers: namespace, same dir → true', () => {
+  // The hyperpowers fork invokes hyperpowers:foo where the scenario asserts
+  // superpowers:foo; both name the same `foo` skill dir.
+  expect(
+    isSkillInvocation(call('Skill', { skill: 'hyperpowers:foo' }), name, dir),
+  ).toBe(true);
+});
+
+test('Skill tool with forked namespace but different dir → false', () => {
+  expect(
+    isSkillInvocation(
+      call('Skill', { skill: 'hyperpowers:other' }),
+      name,
+      dir,
+    ),
+  ).toBe(false);
+});
+
+test('Skill tool with bare skill name (no namespace), same dir → true', () => {
+  expect(isSkillInvocation(call('Skill', { skill: 'foo' }), name, dir)).toBe(
+    true,
+  );
+});
+
+test('Skill tool asserted under hyperpowers: name still matches superpowers: invocation', () => {
+  // Symmetry: a scenario authored with a hyperpowers: assertion must also match
+  // an upstream superpowers: invocation, so the detector is namespace-agnostic
+  // in both directions.
+  expect(
+    isSkillInvocation(
+      call('Skill', { skill: 'superpowers:brainstorming' }),
+      'hyperpowers:brainstorming',
+      'brainstorming',
+    ),
+  ).toBe(true);
+});
+
 // --- Shell reads via Bash ---
 
 test('Bash with superpowers/ prefix in path → true', () => {

@@ -24,8 +24,22 @@ export function isSkillInvocation(
   const safeDir = escapeRegex(dir);
 
   // 1. Native Skill tool
+  //
+  // Match on the skill's directory segment (the part after the last `:`)
+  // rather than the full `<namespace>:<dir>` string, so a forked plugin that
+  // renames the invocation namespace still matches. The hyperpowers fork of
+  // Superpowers invokes `hyperpowers:brainstorming` where upstream scenarios
+  // assert `superpowers:brainstorming`; both name the same `brainstorming`
+  // skill dir. A different skill (e.g. `superpowers:other` vs dir `foo`) still
+  // fails because the segment differs. The shell/Read branches below already
+  // key off `dir` and are namespace-agnostic in the same way.
   if (call.tool === 'Skill') {
-    return String(call.args['skill'] ?? '') === name;
+    const invoked = String(call.args['skill'] ?? '');
+    if (!invoked) return false;
+    const invokedDir = invoked.includes(':')
+      ? invoked.slice(invoked.lastIndexOf(':') + 1)
+      : invoked;
+    return invokedDir === dir;
   }
 
   // 2. Shell tools: Bash, Shell, LocalShellCall
