@@ -6,21 +6,19 @@ function escapeRegex(s: string): string {
 }
 
 /**
- * Returns true when the tool call represents an agent loading skill `name`
- * whose directory segment is `dir`. Three patterns are recognized:
+ * Returns true when the tool call represents an agent loading the skill whose
+ * directory segment is `dir`. Matching keys off the skill *dir*, not a
+ * namespace, so it is agnostic to which plugin (superpowers/hyperpowers/…)
+ * exposes the skill. Three patterns are recognized:
  *
- *   1. Native Skill tool call with matching `.args.skill`.
+ *   1. Native Skill tool call whose `.args.skill` dir segment is `dir`.
  *   2. Shell command (Bash / Shell / LocalShellCall) whose command/cmd
  *      contains `skills/(superpowers/)?<dir>/SKILL.md` with appropriate
  *      word-boundary characters on each side.
  *   3. Read call whose file_path/path ends with
  *      `(^|/)skills/(superpowers/)?<dir>/SKILL.md`.
  */
-export function isSkillInvocation(
-  call: ToolCallView,
-  name: string,
-  dir: string,
-): boolean {
+export function isSkillInvocation(call: ToolCallView, dir: string): boolean {
   const safeDir = escapeRegex(dir);
 
   // 1. Native Skill tool

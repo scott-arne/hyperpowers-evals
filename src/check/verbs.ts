@@ -144,7 +144,7 @@ export function verbSkillCalled(
   const dir = skill.includes(':')
     ? skill.slice(skill.lastIndexOf(':') + 1)
     : skill;
-  const count = calls.filter((c) => isSkillInvocation(c, skill, dir)).length;
+  const count = calls.filter((c) => isSkillInvocation(c, dir)).length;
   if (count > 0) {
     return { passed: true, detail: `Skill(${skill}) called ${count} time(s)` };
   }
@@ -166,7 +166,7 @@ export function verbSkillNotCalled(
   if (empty) {
     return { passed: false, detail: 'tool-calls file missing or empty' };
   }
-  const count = calls.filter((c) => isSkillInvocation(c, skill, dir)).length;
+  const count = calls.filter((c) => isSkillInvocation(c, dir)).length;
   if (count === 0) {
     return { passed: true, detail: `Skill(${skill}) never called` };
   }
@@ -195,7 +195,7 @@ export function verbSkillBeforeTool(
   }
 
   const toolIdx = calls.findIndex((c) => c.tool === tool);
-  const skillIdx = calls.findIndex((c) => isSkillInvocation(c, skill, dir));
+  const skillIdx = calls.findIndex((c) => isSkillInvocation(c, dir));
 
   if (toolIdx < 0) {
     return { passed: true, detail: `no ${tool} call — assertion is vacuous` };
@@ -236,7 +236,7 @@ export function verbSkillBeforeImplementationTool(
     return { passed: false, detail: 'tool-calls file missing or empty' };
   }
 
-  const skillIdx = calls.findIndex((c) => isSkillInvocation(c, skill, dir));
+  const skillIdx = calls.findIndex((c) => isSkillInvocation(c, dir));
   const toolCallIdx = calls.findIndex(
     (c) => c.tool === tool && isImplementationPath(c),
   );
