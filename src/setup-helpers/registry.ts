@@ -11,6 +11,7 @@ import {
   createPhantomCompletion,
   createReviewPushback,
 } from './behavior-fixtures.ts';
+import { seedCodexPluginCc } from './codex-seed.ts';
 import type { Helper, HelperContext } from './context.ts';
 import {
   createCostCheckboxPage,
@@ -111,6 +112,7 @@ export const REGISTRY: Record<string, RegistryEntry> = {
   create_cost_trivial_plan: { fn: createCostTrivialPlan },
   create_cost_large_files: { fn: createCostLargeFiles },
   record_head: { fn: recordHeadHelper },
+  seed_codex_plugin_cc: { fn: seedCodexPluginCc },
 };
 
 // The full Python HELPER_REGISTRY key set (39) — the 37 dispatchable plus the
