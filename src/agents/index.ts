@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import type { AgentConfig } from '../contracts/agent-config.ts';
@@ -110,11 +111,16 @@ class ClaudeAgent implements CodingAgent {
       `${JSON.stringify({ ...claudeJson, projects }, null, 2)}\n`,
     );
 
-    // When ANTHROPIC_API_KEY is a required env, seed the per-run auth: write the
-    // mode-0600 .claude-env the launcher sources, and record the API-key
-    // approval fingerprint so claude doesn't prompt "Detected a custom API
-    // key…" headless. Both are gated on ANTHROPIC_API_KEY being a required env.
-    if (this.config.required_env.includes('ANTHROPIC_API_KEY')) {
+    // Seed the per-run auth env-file the launcher sources. Two mutually
+    // exclusive modes, selected by required_env:
+    //   - Bedrock (CLAUDE_CODE_USE_BEDROCK present): write the Bedrock + AWS
+    //     forwarding vars; no API key, no API-key approval.
+    //   - API key (ANTHROPIC_API_KEY present): write the key + record the
+    //     approval fingerprint so claude doesn't prompt headless.
+    const envFile = join(configDir, CLAUDE_ENV_FILE_NAME);
+    if (this.config.required_env.includes('CLAUDE_CODE_USE_BEDROCK')) {
+      writePrivateFileNoFollow(envFile, this.bedrockEnvFileContents());
+    } else if (this.config.required_env.includes('ANTHROPIC_API_KEY')) {
       // Read the key through the one sanctioned env module (§6.5), never
       // process.env. Empty means unset; fail at the setup stage rather than
       // silently writing a blank key.
@@ -124,16 +130,70 @@ class ClaudeAgent implements CodingAgent {
           'ANTHROPIC_API_KEY not set; cannot seed Claude auth',
         );
       }
-      const envFile = join(configDir, CLAUDE_ENV_FILE_NAME);
       // The mode-0600 secret env file goes through the shared O_NOFOLLOW writer
       // so a pre-placed symlink at the destination cannot redirect the API key.
+      // `export` so the sourced value reaches the launcher's `exec env … claude`
+      // child (the Bedrock branch exports its vars the same way).
       writePrivateFileNoFollow(
         envFile,
-        `ANTHROPIC_API_KEY=${shellSingleQuote(apiKey)}\n`,
+        `export ANTHROPIC_API_KEY=${shellSingleQuote(apiKey)}\n`,
       );
       approveClaudeApiKey(claudeJsonPath, apiKey);
     }
     return {};
+  }
+
+  /** Build the .claude-env contents for Bedrock auth. Exports CLAUDE_CODE_USE_BEDROCK
+   *  and AWS_REGION (both required), forwards whichever AWS auth vars are present
+   *  (profile or static keys), and — because the launcher repoints $HOME to the
+   *  throwaway dir — anchors AWS_CONFIG_FILE / AWS_SHARED_CREDENTIALS_FILE at the
+   *  operator's real home so the SDK still resolves a named profile. Every value
+   *  is shell-quoted; the file is sourced by the launcher under `set -u`. */
+  private bedrockEnvFileContents(): string {
+    const lines: string[] = [];
+    const useBedrock = getEnv('CLAUDE_CODE_USE_BEDROCK') ?? '';
+    const region = getEnv('AWS_REGION') ?? '';
+    if (useBedrock === '') {
+      throw new ProvisionError(
+        'CLAUDE_CODE_USE_BEDROCK not set; cannot seed Bedrock Claude auth',
+      );
+    }
+    if (region === '') {
+      throw new ProvisionError(
+        'AWS_REGION not set; cannot seed Bedrock Claude auth',
+      );
+    }
+    lines.push(
+      `export CLAUDE_CODE_USE_BEDROCK=${shellSingleQuote(useBedrock)}`,
+    );
+    lines.push(`export AWS_REGION=${shellSingleQuote(region)}`);
+
+    // Forward AWS auth that is actually set. Profile auth needs the config files
+    // anchored at the REAL home (the launcher pins $HOME away from it); static
+    // keys/session tokens are self-contained and need no files.
+    const profile = getEnv('AWS_PROFILE') ?? '';
+    if (profile !== '') {
+      const realAwsDir = join(homedir(), '.aws');
+      lines.push(`export AWS_PROFILE=${shellSingleQuote(profile)}`);
+      lines.push(
+        `export AWS_CONFIG_FILE=${shellSingleQuote(join(realAwsDir, 'config'))}`,
+      );
+      lines.push(
+        `export AWS_SHARED_CREDENTIALS_FILE=${shellSingleQuote(join(realAwsDir, 'credentials'))}`,
+      );
+    }
+    for (const key of [
+      'AWS_DEFAULT_REGION',
+      'AWS_ACCESS_KEY_ID',
+      'AWS_SECRET_ACCESS_KEY',
+      'AWS_SESSION_TOKEN',
+    ]) {
+      const value = getEnv(key) ?? '';
+      if (value !== '') {
+        lines.push(`export ${key}=${shellSingleQuote(value)}`);
+      }
+    }
+    return `${lines.join('\n')}\n`;
   }
 }
 

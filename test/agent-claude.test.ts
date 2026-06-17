@@ -190,7 +190,7 @@ test('provision re-enforces 0600 on a pre-existing looser-perm .claude-env', () 
       agent.provision(home, undefined as never);
 
       expect(readFileSync(envFile, 'utf8')).toBe(
-        `ANTHROPIC_API_KEY='${API_KEY}'\n`,
+        `export ANTHROPIC_API_KEY='${API_KEY}'\n`,
       );
       expect(statSync(envFile).mode & 0o777).toBe(0o600);
     });
@@ -219,6 +219,132 @@ test('provision skips env-file and approval when ANTHROPIC_API_KEY is not requir
         expect(claudeJson.customApiKeyResponses).toBeUndefined();
       }
     });
+  } finally {
+    cleanup();
+  }
+});
+
+// --- Bedrock auth (claude-bedrock.yaml) ---
+// The claude-bedrock surface: runtime_family claude, required_env carries
+// CLAUDE_CODE_USE_BEDROCK (the trigger) instead of ANTHROPIC_API_KEY.
+function bedrockConfig(overrides?: Partial<AgentConfig>): AgentConfig {
+  return {
+    name: 'claude-bedrock',
+    binary: 'claude',
+    home_config_subdir: '.claude',
+    session_log_dir: '${QUORUM_AGENT_HOME}/.claude/projects',
+    session_log_glob: '*.jsonl',
+    normalizer: 'claude',
+    required_env: ['CLAUDE_CODE_USE_BEDROCK', 'AWS_REGION', 'SUPERPOWERS_ROOT'],
+    runtime_family: 'claude',
+    model: 'us.anthropic.claude-opus-4-8',
+    ...overrides,
+  };
+}
+
+// Bedrock + profile auth: the env-file exports CLAUDE_CODE_USE_BEDROCK and
+// AWS_REGION, forwards AWS_PROFILE, and anchors the AWS config/credentials files
+// at the real home so the throwaway HOME does not hide the profile. No API key,
+// no approval block, file is 0600.
+test('provision (bedrock, profile) writes Bedrock env-file with AWS file anchors and no API key', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv(
+      {
+        ANTHROPIC_API_KEY: undefined,
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        AWS_REGION: 'us-east-1',
+        AWS_PROFILE: 'claude-code',
+        AWS_ACCESS_KEY_ID: undefined,
+        AWS_SECRET_ACCESS_KEY: undefined,
+        AWS_SESSION_TOKEN: undefined,
+        AWS_DEFAULT_REGION: undefined,
+      },
+      () => {
+        const agent = resolveAgent(bedrockConfig());
+        agent.provision(home, undefined as never);
+
+        const envFile = join(home.configDir, '.claude-env');
+        expect(existsSync(envFile)).toBe(true);
+        const body = readFileSync(envFile, 'utf8');
+        expect(body).toContain("export CLAUDE_CODE_USE_BEDROCK='1'");
+        expect(body).toContain("export AWS_REGION='us-east-1'");
+        expect(body).toContain("export AWS_PROFILE='claude-code'");
+        expect(body).toContain('export AWS_CONFIG_FILE=');
+        expect(body).toContain('export AWS_SHARED_CREDENTIALS_FILE=');
+        expect(body).toContain('/.aws/config');
+        expect(body).toContain('/.aws/credentials');
+        // No API key in Bedrock mode.
+        expect(body).not.toContain('ANTHROPIC_API_KEY');
+        // 0600 perms.
+        expect(statSync(envFile).mode & 0o777).toBe(0o600);
+        // No API-key approval block written.
+        const claudeJsonPath = join(home.configDir, '.claude.json');
+        const claudeJson: {
+          customApiKeyResponses?: unknown;
+          projects: Record<string, unknown>;
+        } = JSON.parse(readFileSync(claudeJsonPath, 'utf8'));
+        expect(claudeJson.customApiKeyResponses).toBeUndefined();
+        // Trust block still written (so the workspace-trust prompt never fires).
+        expect(Object.keys(claudeJson.projects).length).toBe(1);
+      },
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+// Bedrock + static keys: when no AWS_PROFILE is set, forward static keys and the
+// session token; do not write the profile-only AWS file anchors.
+test('provision (bedrock, static keys) forwards static AWS keys without file anchors', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv(
+      {
+        ANTHROPIC_API_KEY: undefined,
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        AWS_REGION: 'us-west-2',
+        AWS_PROFILE: undefined,
+        AWS_ACCESS_KEY_ID: 'AKIAEXAMPLE',
+        AWS_SECRET_ACCESS_KEY: 'secret123',
+        AWS_SESSION_TOKEN: 'token123',
+      },
+      () => {
+        const agent = resolveAgent(bedrockConfig());
+        agent.provision(home, undefined as never);
+
+        const body = readFileSync(join(home.configDir, '.claude-env'), 'utf8');
+        expect(body).toContain("export AWS_ACCESS_KEY_ID='AKIAEXAMPLE'");
+        expect(body).toContain("export AWS_SECRET_ACCESS_KEY='secret123'");
+        expect(body).toContain("export AWS_SESSION_TOKEN='token123'");
+        expect(body).not.toContain('AWS_PROFILE');
+        expect(body).not.toContain('AWS_CONFIG_FILE');
+      },
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+// Bedrock provisioning fails at setup when AWS_REGION is unset, rather than
+// writing a half-configured auth file.
+test('provision (bedrock) throws when AWS_REGION is unset', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv(
+      {
+        ANTHROPIC_API_KEY: undefined,
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        AWS_REGION: undefined,
+        AWS_PROFILE: 'claude-code',
+      },
+      () => {
+        const agent = resolveAgent(bedrockConfig());
+        expect(() => agent.provision(home, undefined as never)).toThrow(
+          /AWS_REGION/,
+        );
+      },
+    );
   } finally {
     cleanup();
   }
