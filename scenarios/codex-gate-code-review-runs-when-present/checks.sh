@@ -1,8 +1,10 @@
 # Codex code review gate FIRES when codex-plugin-cc is present. A stub Codex is
 # seeded into the agent's plugin home; this scenario asserts the gate actually
 # runs the Codex companion (not just that the skill loaded). The gate is
-# Claude-only, so restrict to the claude agent.
-# coding-agents: claude
+# Claude-Code-only, so restrict to the Claude-family agents. The directive
+# matches the literal --coding-agent name (not runtime_family), so every Claude
+# variant must be listed explicitly.
+# coding-agents: claude, claude-bedrock, claude-sonnet, claude-haiku
 
 pre() {
     git-repo
