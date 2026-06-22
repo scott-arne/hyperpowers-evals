@@ -1,11 +1,16 @@
 import { expect, test } from 'bun:test';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
+  realpathSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveAgent } from '../src/agents/index.ts';
 import type { AgentConfig } from '../src/contracts/agent-config.ts';
@@ -323,6 +328,58 @@ test('provision (bedrock, static keys) forwards static AWS keys without file anc
     );
   } finally {
     cleanup();
+  }
+});
+
+// Bedrock + SSO profile: provision symlinks the real ~/.aws/sso/cache (and
+// cli/cache) into the throwaway run home so the SDK — which finds the SSO token
+// via HOME, not AWS_CONFIG_FILE — can resolve the operator's `aws sso login`
+// token under the pinned HOME.
+test('anchorAwsTokenCaches symlinks the real SSO + CLI caches into the run home', () => {
+  const { home, cleanup } = makeTempHome();
+  const fakeRealHome = mkdtempSync(join(tmpdir(), 'quorum-realhome-'));
+  const realAwsDir = join(fakeRealHome, '.aws');
+  mkdirSync(join(realAwsDir, 'sso', 'cache'), { recursive: true });
+  mkdirSync(join(realAwsDir, 'cli', 'cache'), { recursive: true });
+  writeFileSync(
+    join(realAwsDir, 'sso', 'cache', 'token.json'),
+    '{"accessToken":"x"}',
+  );
+  try {
+    const { anchorAwsTokenCaches } = require('../src/agents/index.ts');
+    const runHome = join(home.configDir, '..');
+    mkdirSync(runHome, { recursive: true });
+    anchorAwsTokenCaches(runHome, realAwsDir);
+
+    const ssoLink = join(runHome, '.aws', 'sso', 'cache');
+    const cliLink = join(runHome, '.aws', 'cli', 'cache');
+    expect(lstatSync(ssoLink).isSymbolicLink()).toBe(true);
+    expect(lstatSync(cliLink).isSymbolicLink()).toBe(true);
+    expect(realpathSync(ssoLink)).toBe(
+      realpathSync(join(realAwsDir, 'sso', 'cache')),
+    );
+    expect(existsSync(join(ssoLink, 'token.json'))).toBe(true);
+  } finally {
+    cleanup();
+    rmSync(fakeRealHome, { recursive: true, force: true });
+  }
+});
+
+// Best-effort: when the real cache dirs are absent (static-key auth, or SSO
+// never logged in), the helper creates no symlink and does not throw.
+test('anchorAwsTokenCaches is a no-op when the real cache dirs are absent', () => {
+  const { home, cleanup } = makeTempHome();
+  const fakeRealHome = mkdtempSync(join(tmpdir(), 'quorum-realhome-'));
+  const realAwsDir = join(fakeRealHome, '.aws'); // intentionally not created
+  try {
+    const { anchorAwsTokenCaches } = require('../src/agents/index.ts');
+    const runHome = join(home.configDir, '..');
+    mkdirSync(runHome, { recursive: true });
+    expect(() => anchorAwsTokenCaches(runHome, realAwsDir)).not.toThrow();
+    expect(existsSync(join(runHome, '.aws', 'sso', 'cache'))).toBe(false);
+  } finally {
+    cleanup();
+    rmSync(fakeRealHome, { recursive: true, force: true });
   }
 });
 

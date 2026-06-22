@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
@@ -46,6 +54,56 @@ export class ProvisionError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ProvisionError';
+  }
+}
+
+/**
+ * Make the operator's real AWS token caches resolvable under a run's throwaway
+ * $HOME. The AWS SDK locates the SSO token cache via `getHomeDir()` (the HOME
+ * env var), NOT via AWS_CONFIG_FILE / AWS_SHARED_CREDENTIALS_FILE — and the
+ * launcher pins HOME to `runHome` (which has no `.aws`). So a profile that
+ * resolves credentials from an `aws sso login` token (or an assume-role cache)
+ * would fail with "SSO session invalid" even though the config files are
+ * anchored. Symlink the real `sso/cache` and `cli/cache` dirs into
+ * `<runHome>/.aws/...` so the token resolves.
+ *
+ * Best-effort and narrow by design: each link is created only when its real
+ * source dir exists (static-key auth and not-yet-logged-in cases are untouched),
+ * and only the token-cache subdirs are exposed — not the whole `~/.aws` — because
+ * the agent runs with --dangerously-skip-permissions.
+ *
+ * @param runHome - the per-run throwaway home root (HOME the launcher pins).
+ * @param realAwsDir - the operator's real `.aws` directory.
+ */
+export function anchorAwsTokenCaches(
+  runHome: string,
+  realAwsDir: string,
+): void {
+  for (const rel of [join('sso', 'cache'), join('cli', 'cache')]) {
+    const realCache = join(realAwsDir, rel);
+    if (!existsSync(realCache)) continue; // best-effort: nothing to anchor
+    const linkPath = join(runHome, '.aws', rel);
+    // Create the parent (e.g. <runHome>/.aws/sso) but NOT the leaf — the leaf is
+    // the symlink itself.
+    mkdirSync(join(linkPath, '..'), { recursive: true });
+    // Fresh run home: linkPath normally does not exist. If a symlink we own is
+    // already there (e.g. a re-provision), replace it; never follow into a
+    // non-symlink we didn't create.
+    if (isSymlink(linkPath)) {
+      rmSync(linkPath);
+    } else if (existsSync(linkPath)) {
+      continue; // unexpected real dir/file at the destination — leave it alone
+    }
+    symlinkSync(realCache, linkPath);
+  }
+}
+
+/** True iff `p` exists and is a symlink (lstat does not follow). */
+function isSymlink(p: string): boolean {
+  try {
+    return lstatSync(p).isSymbolicLink();
+  } catch {
+    return false;
   }
 }
 
