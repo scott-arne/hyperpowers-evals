@@ -62,10 +62,12 @@ export class ProvisionError extends Error {
  * $HOME. The AWS SDK locates the SSO token cache via `getHomeDir()` (the HOME
  * env var), NOT via AWS_CONFIG_FILE / AWS_SHARED_CREDENTIALS_FILE — and the
  * launcher pins HOME to `runHome` (which has no `.aws`). So a profile that
- * resolves credentials from an `aws sso login` token (or an assume-role cache)
- * would fail with "SSO session invalid" even though the config files are
- * anchored. Symlink the real `sso/cache` and `cli/cache` dirs into
- * `<runHome>/.aws/...` so the token resolves.
+ * resolves credentials from an `aws sso login` token would fail with "SSO
+ * session invalid" even though the config files are anchored. Symlink the real
+ * `sso/cache` (read by the AWS JS SDK for the SSO token) into `<runHome>/.aws/...`
+ * so the token resolves. `cli/cache` (the AWS CLI's assume-role/STS cache, not
+ * read by the JS SDK) is anchored too as a harmless best-effort include for any
+ * tool that does consult it.
  *
  * Best-effort and narrow by design: each link is created only when its real
  * source dir exists (static-key auth and not-yet-logged-in cases are untouched),

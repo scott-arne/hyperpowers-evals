@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { resolveAgent } from '../src/agents/index.ts';
+import { anchorAwsTokenCaches, resolveAgent } from '../src/agents/index.ts';
 import type { AgentConfig } from '../src/contracts/agent-config.ts';
 import { makeTempHome } from './provision-helpers.ts';
 
@@ -346,7 +346,6 @@ test('anchorAwsTokenCaches symlinks the real SSO + CLI caches into the run home'
     '{"accessToken":"x"}',
   );
   try {
-    const { anchorAwsTokenCaches } = require('../src/agents/index.ts');
     const runHome = join(home.configDir, '..');
     mkdirSync(runHome, { recursive: true });
     anchorAwsTokenCaches(runHome, realAwsDir);
@@ -372,11 +371,55 @@ test('anchorAwsTokenCaches is a no-op when the real cache dirs are absent', () =
   const fakeRealHome = mkdtempSync(join(tmpdir(), 'quorum-realhome-'));
   const realAwsDir = join(fakeRealHome, '.aws'); // intentionally not created
   try {
-    const { anchorAwsTokenCaches } = require('../src/agents/index.ts');
     const runHome = join(home.configDir, '..');
     mkdirSync(runHome, { recursive: true });
     expect(() => anchorAwsTokenCaches(runHome, realAwsDir)).not.toThrow();
     expect(existsSync(join(runHome, '.aws', 'sso', 'cache'))).toBe(false);
+  } finally {
+    cleanup();
+    rmSync(fakeRealHome, { recursive: true, force: true });
+  }
+});
+
+// Mixed case: only sso/cache present (cli/cache absent). Each rel is anchored
+// independently, so the sso link is created and no cli link is left behind.
+test('anchorAwsTokenCaches anchors sso/cache even when cli/cache is absent', () => {
+  const { home, cleanup } = makeTempHome();
+  const fakeRealHome = mkdtempSync(join(tmpdir(), 'quorum-realhome-'));
+  const realAwsDir = join(fakeRealHome, '.aws');
+  mkdirSync(join(realAwsDir, 'sso', 'cache'), { recursive: true });
+  // cli/cache intentionally NOT created
+  try {
+    const runHome = join(home.configDir, '..');
+    mkdirSync(runHome, { recursive: true });
+    anchorAwsTokenCaches(runHome, realAwsDir);
+    expect(
+      lstatSync(join(runHome, '.aws', 'sso', 'cache')).isSymbolicLink(),
+    ).toBe(true);
+    expect(existsSync(join(runHome, '.aws', 'cli', 'cache'))).toBe(false);
+  } finally {
+    cleanup();
+    rmSync(fakeRealHome, { recursive: true, force: true });
+  }
+});
+
+// Leave-alone: a real (non-symlink) dir already at the destination is neither
+// replaced nor followed — its contents survive untouched.
+test('anchorAwsTokenCaches leaves a pre-existing real dir at the destination untouched', () => {
+  const { home, cleanup } = makeTempHome();
+  const fakeRealHome = mkdtempSync(join(tmpdir(), 'quorum-realhome-'));
+  const realAwsDir = join(fakeRealHome, '.aws');
+  mkdirSync(join(realAwsDir, 'sso', 'cache'), { recursive: true });
+  try {
+    const runHome = join(home.configDir, '..');
+    // Pre-create a REAL dir at the link destination.
+    const dest = join(runHome, '.aws', 'sso', 'cache');
+    mkdirSync(dest, { recursive: true });
+    writeFileSync(join(dest, 'preexisting.txt'), 'keep me');
+    anchorAwsTokenCaches(runHome, realAwsDir);
+    // Still a real dir (not replaced with a symlink), and its content is intact.
+    expect(lstatSync(dest).isSymbolicLink()).toBe(false);
+    expect(existsSync(join(dest, 'preexisting.txt'))).toBe(true);
   } finally {
     cleanup();
     rmSync(fakeRealHome, { recursive: true, force: true });
