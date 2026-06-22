@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { z } from 'zod';
 import type { AgentConfig } from '../contracts/agent-config.ts';
 import { getEnv } from '../env.ts';
@@ -180,6 +180,13 @@ class ClaudeAgent implements CodingAgent {
     const envFile = join(configDir, CLAUDE_ENV_FILE_NAME);
     if (this.config.required_env.includes('CLAUDE_CODE_USE_BEDROCK')) {
       writePrivateFileNoFollow(envFile, this.bedrockEnvFileContents());
+      // The SDK finds the SSO/assume-role token cache via HOME (which the
+      // launcher pins to the run home), not via the anchored AWS_*_FILE vars.
+      // For profile auth, symlink the operator's real token caches in so the
+      // `aws sso login` session resolves. Best-effort; static-key auth needs none.
+      if ((getEnv('AWS_PROFILE') ?? '') !== '') {
+        anchorAwsTokenCaches(dirname(configDir), join(homedir(), '.aws'));
+      }
     } else if (this.config.required_env.includes('ANTHROPIC_API_KEY')) {
       // Read the key through the one sanctioned env module (§6.5), never
       // process.env. Empty means unset; fail at the setup stage rather than

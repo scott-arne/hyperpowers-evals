@@ -10,7 +10,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { anchorAwsTokenCaches, resolveAgent } from '../src/agents/index.ts';
 import type { AgentConfig } from '../src/contracts/agent-config.ts';
@@ -443,6 +443,71 @@ test('provision (bedrock) throws when AWS_REGION is unset', () => {
         expect(() => agent.provision(home, undefined as never)).toThrow(
           /AWS_REGION/,
         );
+      },
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+// Integration: provision wires anchorAwsTokenCaches for the Bedrock+profile
+// case. os.homedir() is not redirectable in-process, so this asserts against
+// the real ~/.aws when present (a dev/CI box with an `aws sso login` session)
+// and otherwise verifies the best-effort no-throw path. Either way provision
+// must not break.
+test('provision (bedrock, profile) wires SSO cache anchoring without throwing', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv(
+      {
+        ANTHROPIC_API_KEY: undefined,
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        AWS_REGION: 'us-east-1',
+        AWS_PROFILE: 'claude-code',
+        AWS_ACCESS_KEY_ID: undefined,
+        AWS_SECRET_ACCESS_KEY: undefined,
+        AWS_SESSION_TOKEN: undefined,
+      },
+      () => {
+        const agent = resolveAgent(bedrockConfig());
+        expect(() => agent.provision(home, undefined as never)).not.toThrow();
+        const runHome = join(home.configDir, '..');
+        const realSso = join(homedir(), '.aws', 'sso', 'cache');
+        const linkPath = join(runHome, '.aws', 'sso', 'cache');
+        if (existsSync(realSso)) {
+          // Real SSO cache present → provision anchored it.
+          expect(lstatSync(linkPath).isSymbolicLink()).toBe(true);
+        } else {
+          // No real cache → best-effort skip, no link created.
+          expect(existsSync(linkPath)).toBe(false);
+        }
+      },
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+// Static-key auth (no AWS_PROFILE) must NOT create any .aws symlink in the run
+// home — the token caches are only relevant to profile/SSO auth.
+test('provision (bedrock, static keys) does not anchor SSO caches', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv(
+      {
+        ANTHROPIC_API_KEY: undefined,
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        AWS_REGION: 'us-west-2',
+        AWS_PROFILE: undefined,
+        AWS_ACCESS_KEY_ID: 'AKIAEXAMPLE',
+        AWS_SECRET_ACCESS_KEY: 'secret123',
+        AWS_SESSION_TOKEN: 'token123',
+      },
+      () => {
+        const agent = resolveAgent(bedrockConfig());
+        agent.provision(home, undefined as never);
+        const runHome = join(home.configDir, '..');
+        expect(existsSync(join(runHome, '.aws'))).toBe(false);
       },
     );
   } finally {
