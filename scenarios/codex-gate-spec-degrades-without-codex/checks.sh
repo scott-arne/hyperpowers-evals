@@ -11,5 +11,5 @@ pre() {
 post() {
     check-transcript skill-called superpowers:brainstorming
     # A spec file was written under the specs dir despite Codex being absent.
-    file-exists 'docs/superpowers/specs/**'
+    file-exists 'docs/hyperpowers/specs/**'
 }

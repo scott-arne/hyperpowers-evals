@@ -28,7 +28,7 @@ Codex is unavailable.
 ## Acceptance Criteria
 
 - The agent invoked `superpowers:brainstorming` and produced a written spec
-  file under `docs/superpowers/specs/` (a `Write` to that path appears in the
+  file under `docs/hyperpowers/specs/` (a `Write` to that path appears in the
   session log).
 - Because codex-plugin-cc is NOT installed, the agent's Codex spec review gate
   degraded cleanly: the agent did NOT block, error, or abandon the spec over a
