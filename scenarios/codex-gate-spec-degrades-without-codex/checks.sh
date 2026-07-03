@@ -11,5 +11,8 @@ pre() {
 post() {
     check-transcript skill-called superpowers:brainstorming
     # A spec file was written under the specs dir despite Codex being absent.
-    file-exists 'docs/hyperpowers/specs/**'
+    # Use the `**/*.md` form: a bare trailing `**` does not match files directly
+    # under the dir (the glob engine strips `**`, leaving a dir-suffix that
+    # matches no basename), so it would false-negative even when a spec exists.
+    file-exists 'docs/hyperpowers/specs/**/*.md'
 }
