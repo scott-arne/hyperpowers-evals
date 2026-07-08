@@ -3,6 +3,10 @@ id: codex-gate-converges-on-reraise
 title: Codex code gate converges after the blocking finding is addressed, without thrashing
 status: ready
 quorum_tier: full
+# Reviewer subagent + Codex round 1 + fix loop + round 2 re-review does not fit
+# the 10m default on slower backends (observed: budget expired mid-fix-loop on
+# claude-bedrock/opus with the detached-launch watch pattern).
+quorum_max_time: 20m
 tags: codex-review-gate, requesting-code-review, convergence, present
 ---
 

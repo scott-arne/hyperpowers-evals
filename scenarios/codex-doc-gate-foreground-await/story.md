@@ -4,6 +4,11 @@ title: Codex plan review gate awaits the review in the foreground, never backgro
 status: ready
 quorum_tier: full
 tags: codex-review-gate, writing-plans, await, present
+# Spec/codebase research + plan write + Codex plan gate (+ re-review) does not
+# fit the 10m default on slower backends (observed: budget expired during the
+# pre-write research phase on claude-bedrock/opus while every deterministic
+# post-check still passed).
+quorum_max_time: 20m
 ---
 
 You are a developer who has an approved design spec and wants an implementation

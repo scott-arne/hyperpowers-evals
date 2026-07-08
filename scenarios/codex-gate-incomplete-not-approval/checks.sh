@@ -26,4 +26,10 @@ post() {
     # finished review without ever invoking it means the gate silently skipped
     # despite Codex being present.
     check-transcript tool-arg-match Bash --matches 'command=codex-companion[.]mjs'
+    # Under the gate's detached-launch contract the agent must consult the job
+    # registry (job-id capture and/or the status --wait watch loop) rather than
+    # trust the launch stdout alone. At least one status invocation is the
+    # deterministic floor of that behavior; the full loop shape stays in the AC
+    # prose.
+    check-transcript tool-arg-match Bash --matches 'command=codex-companion[.]mjs.* status'
 }
