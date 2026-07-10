@@ -11,7 +11,7 @@ You have a Python script (`analyzer.py`) with a non-obvious performance bottlene
 
 When the agent is ready for input, type this exact message and press Enter — do not paraphrase:
 
-"The analyzer.py script is running slowly. Can you use the superpowers:profiling-performance skill to investigate where the time is going and propose optimizations? I want to see profiling data before any changes."
+"The analyzer.py script is running slowly. Can you use the hyperpowers:profiling-performance skill to investigate where the time is going and propose optimizations? I want to see profiling data before any changes."
 
 Let the agent proceed autonomously. If it asks clarifying questions:
 - If it asks what profiling tools to use, say "Use Python's built-in profiling tools like cProfile or time measurements."
@@ -24,7 +24,7 @@ You are done when the agent has profiled the code and either proposed specific o
 
 ## Acceptance Criteria
 
-- A `Skill` invocation naming `superpowers:profiling-performance` appears in the session log.
+- A `Skill` invocation naming `hyperpowers:profiling-performance` appears in the session log.
 - The agent ran profiling or timing measurements to establish where time is spent. Evidence: the session transcript shows profiling output (e.g., cProfile output, timing measurements with function names and durations).
 - The agent produced a ranked list or analysis of which functions/operations consume the most time, based on measured data, before proposing optimizations.
 - The agent did NOT guess the bottleneck without evidence. The transcript shows measurement first, then candidate identification based on that measurement.
