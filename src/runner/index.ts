@@ -316,11 +316,35 @@ function spawnGauntlet(a: InvokeGauntletArgs): Promise<GauntletExit> {
 export async function invokeGauntlet(
   a: InvokeGauntletArgs,
 ): Promise<InvokeGauntletResult> {
-  await spawnGauntlet(a);
-  const gauntlet = gauntletLayerFromRunDir(a.runDir) ?? {
+  const exit = await spawnGauntlet(a);
+  const fromRunDir = gauntletLayerFromRunDir(a.runDir);
+  if (fromRunDir !== null) {
+    return { gauntlet: fromRunDir };
+  }
+  // No parseable result: gauntlet died before writing one (startup failure —
+  // e.g. no LLM provider configured). Its stderr is the only diagnostic, so
+  // persist it as a run artifact and carry a tail in the synthesized layer's
+  // reasoning; otherwise the run surfaces only the downstream "no transcript"
+  // capture error and the real cause is unrecoverable (observed 2026-07-10:
+  // four runs went generic-indeterminate hiding a gauntlet auth error).
+  const stderrTail = exit.stderr.trim().slice(-500);
+  if (exit.stderr.trim() !== '') {
+    try {
+      writeFileSync(
+        join(a.runDir, 'gauntlet-agent', 'gauntlet-stderr.log'),
+        exit.stderr,
+      );
+    } catch {
+      // Best-effort artifact; the reasoning tail below still carries the cause.
+    }
+  }
+  const gauntlet = {
     status: 'investigate' as const,
-    summary: '',
-    reasoning: '',
+    summary:
+      stderrTail === ''
+        ? ''
+        : `gauntlet exited (status ${exit.status ?? 'signal'}) without writing a result`,
+    reasoning: stderrTail === '' ? '' : `gauntlet stderr (tail): ${stderrTail}`,
     run_id: null,
   };
   return { gauntlet };
