@@ -124,7 +124,12 @@ or dangerous-mode launches to public CI.
 
 Host-side live evals need `SUPERPOWERS_ROOT` plus the selected agent's auth.
 Common keys are `ANTHROPIC_API_KEY` for Claude variants and provider keys such
-as `OPENAI_API_KEY` for OpenCode, depending on its selected model.
+as `OPENAI_API_KEY` for OpenCode, depending on its selected model. Claude also
+runs against Bedrock (`claude-bedrock`: `CLAUDE_CODE_USE_BEDROCK`, `AWS_REGION`,
+AWS creds) and Vertex AI (`claude-vertex`: `CLAUDE_CODE_USE_VERTEX`,
+`CLOUD_ML_REGION`, `ANTHROPIC_VERTEX_PROJECT_ID`, Google ADC) — or use
+`claude-auto`, which detects the provider from the host environment and picks
+the matching auth and model automatically.
 
 Agent-specific live credentials are documented in `README.md`. The common
 cases are Anthropic for Claude variants, OpenAI/provider keys for OpenCode,

@@ -31,15 +31,19 @@
 #   cd "$QUORUM_AGENT_CWD" && set -a && source "$CLAUDE_ENV_FILE" && set +a && env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID HOME="$QUORUM_AGENT_HOME" CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --dangerously-skip-permissions --plugin-dir "$SUPERPOWERS_ROOT" --model "$CLAUDE_MODEL"
 #
 # Auth is carried entirely by $CLAUDE_ENV_FILE, which provision() writes per run
-# in one of two modes:
+# in one of three modes (pinned by the agent config's required_env, or detected
+# from the host env for claude-auto.yaml):
 #   - API key: `export ANTHROPIC_API_KEY=…` (+ the .claude.json approval block).
 #   - Bedrock: `export CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION`, and whichever AWS
 #     auth vars are present (AWS_PROFILE + AWS_CONFIG_FILE/AWS_SHARED_CREDENTIALS_FILE
 #     anchored at the operator's real home, or static AWS keys).
+#   - Vertex: `export CLAUDE_CODE_USE_VERTEX=1`, `CLOUD_ML_REGION`,
+#     `ANTHROPIC_VERTEX_PROJECT_ID`, and GOOGLE_APPLICATION_CREDENTIALS anchored
+#     at the operator's real ADC (the pinned $HOME hides ~/.config/gcloud).
 # The launcher sources that file and lets its exported vars flow into the
 # `exec env … claude` child — it no longer names ANTHROPIC_API_KEY itself, so the
-# same launcher serves both the API-key (claude.yaml) and Bedrock
-# (claude-bedrock.yaml) agents. The project-trust block provision() writes into
+# same launcher serves the API-key (claude.yaml), Bedrock (claude-bedrock.yaml),
+# Vertex (claude-vertex.yaml), and auto-detected (claude-auto.yaml) agents. The project-trust block provision() writes into
 # .claude.json suppresses the trust prompt. No onboarding skeleton, IS_DEMO, or
 # marketplace-disable is needed — claude boots headless and runs/auto-completes
 # onboarding each run. (IS_DEMO=1 is NOT used: it skips that first-run flow on a

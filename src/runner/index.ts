@@ -34,6 +34,7 @@ import {
   CLAUDE_ENV_FILE_NAME,
   ProvisionError,
   resolveAgent,
+  resolveClaudeAutoModel,
   shellSingleQuote,
 } from '../agents/index.ts';
 import {
@@ -1141,7 +1142,12 @@ async function runInnerBody(
     const claudeEnvFile = join(configDir, CLAUDE_ENV_FILE_NAME);
     substitutions['$CLAUDE_ENV_FILE'] = claudeEnvFile;
     substitutions['$CLAUDE_ENV_FILE_SH'] = shellSingleQuote(claudeEnvFile);
-    substitutions['$CLAUDE_MODEL'] = cfg.model ?? '';
+    // `model: auto` (claude-auto.yaml) defers to the host environment: the
+    // host's ANTHROPIC_MODEL, else the detected provider's Opus id. May throw
+    // ProvisionError (no provider signal) -> mapped to a setup indeterminate,
+    // same as the copilot provisioning path below.
+    substitutions['$CLAUDE_MODEL'] =
+      cfg.model === 'auto' ? resolveClaudeAutoModel() : (cfg.model ?? '');
   }
   // Per-agent env-file substitutions the runner derives from configDir as
   // deterministic config-dir-relative paths.

@@ -12,7 +12,13 @@ import {
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { anchorAwsTokenCaches, resolveAgent } from '../src/agents/index.ts';
+import {
+  anchorAwsTokenCaches,
+  detectClaudeProvider,
+  resolveAgent,
+  resolveClaudeAutoModel,
+  vertexAdcExportLine,
+} from '../src/agents/index.ts';
 import type { AgentConfig } from '../src/contracts/agent-config.ts';
 import { makeTempHome } from './provision-helpers.ts';
 
@@ -204,26 +210,31 @@ test('provision re-enforces 0600 on a pre-existing looser-perm .claude-env', () 
   }
 });
 
-// B1-claude-api-key-approval (gating): when ANTHROPIC_API_KEY is NOT in
-// required_env, the adapter must not write a .claude-env or approval block
-// (Python gates both on `ANTHROPIC_API_KEY in required_env`).
-test('provision skips env-file and approval when ANTHROPIC_API_KEY is not required', () => {
+// Contract change (claude-auto): a config that pins NO provider var no longer
+// silently skips auth seeding — provision auto-detects the provider from the
+// host env instead (see the claude-auto tests below). With only an API key in
+// the env, the auto path seeds API-key auth exactly like the pinned path.
+test('provision (no pinned provider) auto-detects instead of silently skipping auth', () => {
   const { home, cleanup } = makeTempHome();
   try {
-    withEnv({ ANTHROPIC_API_KEY: API_KEY }, () => {
-      const agent = resolveAgent(
-        claudeConfig({ required_env: ['SUPERPOWERS_ROOT'] }),
-      );
-      agent.provision(home, undefined as never);
-      expect(existsSync(join(home.configDir, '.claude-env'))).toBe(false);
-      const claudeJsonPath = join(home.configDir, '.claude.json');
-      if (existsSync(claudeJsonPath)) {
-        const claudeJson: { customApiKeyResponses?: unknown } = JSON.parse(
-          readFileSync(claudeJsonPath, 'utf8'),
+    withEnv(
+      {
+        ANTHROPIC_API_KEY: API_KEY,
+        CLAUDE_CODE_USE_BEDROCK: undefined,
+        CLAUDE_CODE_USE_VERTEX: undefined,
+      },
+      () => {
+        const agent = resolveAgent(
+          claudeConfig({ required_env: ['SUPERPOWERS_ROOT'] }),
         );
-        expect(claudeJson.customApiKeyResponses).toBeUndefined();
-      }
-    });
+        agent.provision(home, undefined as never);
+        const envFile = join(home.configDir, '.claude-env');
+        expect(existsSync(envFile)).toBe(true);
+        expect(readFileSync(envFile, 'utf8')).toContain(
+          `export ANTHROPIC_API_KEY='${API_KEY}'`,
+        );
+      },
+    );
   } finally {
     cleanup();
   }
@@ -513,4 +524,306 @@ test('provision (bedrock, static keys) does not anchor SSO caches', () => {
   } finally {
     cleanup();
   }
+});
+
+// --- Vertex auth (claude-vertex.yaml) ---
+// The claude-vertex surface: runtime_family claude, required_env carries
+// CLAUDE_CODE_USE_VERTEX (the trigger) instead of ANTHROPIC_API_KEY.
+function vertexConfig(overrides?: Partial<AgentConfig>): AgentConfig {
+  return {
+    name: 'claude-vertex',
+    binary: 'claude',
+    home_config_subdir: '.claude',
+    session_log_dir: '${QUORUM_AGENT_HOME}/.claude/projects',
+    session_log_glob: '*.jsonl',
+    normalizer: 'claude',
+    required_env: [
+      'CLAUDE_CODE_USE_VERTEX',
+      'CLOUD_ML_REGION',
+      'ANTHROPIC_VERTEX_PROJECT_ID',
+      'SUPERPOWERS_ROOT',
+    ],
+    runtime_family: 'claude',
+    ...overrides,
+  };
+}
+
+// Every provider-signal var the adapter reads, pinned per test so results do
+// not depend on the host's real Claude provider (dev boxes have live Vertex or
+// Bedrock env).
+const PROVIDER_ENV_CLEARED: Record<string, string | undefined> = {
+  ANTHROPIC_API_KEY: undefined,
+  ANTHROPIC_MODEL: undefined,
+  CLAUDE_CODE_USE_BEDROCK: undefined,
+  CLAUDE_CODE_USE_VERTEX: undefined,
+  CLOUD_ML_REGION: undefined,
+  ANTHROPIC_VERTEX_PROJECT_ID: undefined,
+  GOOGLE_APPLICATION_CREDENTIALS: undefined,
+  GOOGLE_CLOUD_PROJECT: undefined,
+  GOOGLE_CLOUD_LOCATION: undefined,
+  AWS_REGION: undefined,
+  AWS_PROFILE: undefined,
+  AWS_ACCESS_KEY_ID: undefined,
+  AWS_SECRET_ACCESS_KEY: undefined,
+  AWS_SESSION_TOKEN: undefined,
+};
+
+// Vertex: the env-file exports the three provider vars, anchors ADC via the
+// operator-set GOOGLE_APPLICATION_CREDENTIALS, forwards the optional Google
+// Cloud context, and carries no API key or approval block. File is 0600.
+test('provision (vertex) writes Vertex env-file with ADC anchor and no API key', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv(
+      {
+        ...PROVIDER_ENV_CLEARED,
+        CLAUDE_CODE_USE_VERTEX: '1',
+        CLOUD_ML_REGION: 'global',
+        ANTHROPIC_VERTEX_PROJECT_ID: 'proj-example',
+        GOOGLE_APPLICATION_CREDENTIALS: '/tmp/fake-adc.json',
+        GOOGLE_CLOUD_PROJECT: 'proj-example',
+      },
+      () => {
+        const agent = resolveAgent(vertexConfig());
+        agent.provision(home, undefined as never);
+
+        const envFile = join(home.configDir, '.claude-env');
+        expect(existsSync(envFile)).toBe(true);
+        const body = readFileSync(envFile, 'utf8');
+        expect(body).toContain("export CLAUDE_CODE_USE_VERTEX='1'");
+        expect(body).toContain("export CLOUD_ML_REGION='global'");
+        expect(body).toContain(
+          "export ANTHROPIC_VERTEX_PROJECT_ID='proj-example'",
+        );
+        expect(body).toContain(
+          "export GOOGLE_APPLICATION_CREDENTIALS='/tmp/fake-adc.json'",
+        );
+        expect(body).toContain("export GOOGLE_CLOUD_PROJECT='proj-example'");
+        // Unset optional context is not forwarded.
+        expect(body).not.toContain('GOOGLE_CLOUD_LOCATION');
+        // No API key in Vertex mode.
+        expect(body).not.toContain('ANTHROPIC_API_KEY');
+        // 0600 perms.
+        expect(statSync(envFile).mode & 0o777).toBe(0o600);
+        // No API-key approval block written.
+        const claudeJsonPath = join(home.configDir, '.claude.json');
+        const claudeJson: { customApiKeyResponses?: unknown } = JSON.parse(
+          readFileSync(claudeJsonPath, 'utf8'),
+        );
+        expect(claudeJson.customApiKeyResponses).toBeUndefined();
+      },
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+// Vertex provisioning fails at setup when a required provider var is unset,
+// rather than writing a half-configured auth file.
+test('provision (vertex) throws when CLOUD_ML_REGION is unset', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv(
+      {
+        ...PROVIDER_ENV_CLEARED,
+        CLAUDE_CODE_USE_VERTEX: '1',
+        ANTHROPIC_VERTEX_PROJECT_ID: 'proj-example',
+        GOOGLE_APPLICATION_CREDENTIALS: '/tmp/fake-adc.json',
+      },
+      () => {
+        const agent = resolveAgent(vertexConfig());
+        expect(() => agent.provision(home, undefined as never)).toThrow(
+          /CLOUD_ML_REGION/,
+        );
+      },
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+// ADC anchor precedence: an operator-set GOOGLE_APPLICATION_CREDENTIALS is
+// forwarded as-is; otherwise the well-known file under the real gcloud dir is
+// exported; with neither, fail at setup with the gcloud fix in the message.
+test('vertexAdcExportLine forwards an operator-set GOOGLE_APPLICATION_CREDENTIALS', () => {
+  withEnv({ GOOGLE_APPLICATION_CREDENTIALS: '/tmp/op-adc.json' }, () => {
+    expect(vertexAdcExportLine('/nonexistent-gcloud')).toBe(
+      "export GOOGLE_APPLICATION_CREDENTIALS='/tmp/op-adc.json'",
+    );
+  });
+});
+
+test('vertexAdcExportLine anchors the well-known ADC file when present', () => {
+  const gcloudDir = mkdtempSync(join(tmpdir(), 'quorum-gcloud-'));
+  const adc = join(gcloudDir, 'application_default_credentials.json');
+  writeFileSync(adc, '{"type":"authorized_user"}');
+  try {
+    withEnv({ GOOGLE_APPLICATION_CREDENTIALS: undefined }, () => {
+      expect(vertexAdcExportLine(gcloudDir)).toBe(
+        `export GOOGLE_APPLICATION_CREDENTIALS='${adc}'`,
+      );
+    });
+  } finally {
+    rmSync(gcloudDir, { recursive: true, force: true });
+  }
+});
+
+test('vertexAdcExportLine throws with the gcloud fix when no ADC exists', () => {
+  const gcloudDir = mkdtempSync(join(tmpdir(), 'quorum-gcloud-'));
+  try {
+    withEnv({ GOOGLE_APPLICATION_CREDENTIALS: undefined }, () => {
+      expect(() => vertexAdcExportLine(gcloudDir)).toThrow(
+        /gcloud auth application-default login/,
+      );
+    });
+  } finally {
+    rmSync(gcloudDir, { recursive: true, force: true });
+  }
+});
+
+// --- Provider auto-detection (claude-auto.yaml) ---
+// The claude-auto surface: required_env pins NO provider var, so provision
+// detects the provider from the host environment.
+function autoConfig(overrides?: Partial<AgentConfig>): AgentConfig {
+  return {
+    name: 'claude-auto',
+    binary: 'claude',
+    home_config_subdir: '.claude',
+    session_log_dir: '${QUORUM_AGENT_HOME}/.claude/projects',
+    session_log_glob: '*.jsonl',
+    normalizer: 'claude',
+    required_env: ['SUPERPOWERS_ROOT'],
+    runtime_family: 'claude',
+    model: 'auto',
+    ...overrides,
+  };
+}
+
+// The explicit provider switch wins over an incidental API key: an operator
+// who moved to Vertex often still carries a stale ANTHROPIC_API_KEY.
+test('detectClaudeProvider prefers the CLAUDE_CODE_USE_* switch over a stale API key', () => {
+  withEnv(
+    {
+      ...PROVIDER_ENV_CLEARED,
+      CLAUDE_CODE_USE_VERTEX: '1',
+      ANTHROPIC_API_KEY: API_KEY,
+    },
+    () => {
+      expect(detectClaudeProvider()).toBe('vertex');
+    },
+  );
+  withEnv(
+    {
+      ...PROVIDER_ENV_CLEARED,
+      CLAUDE_CODE_USE_BEDROCK: '1',
+      ANTHROPIC_API_KEY: API_KEY,
+    },
+    () => {
+      expect(detectClaudeProvider()).toBe('bedrock');
+    },
+  );
+  withEnv({ ...PROVIDER_ENV_CLEARED, ANTHROPIC_API_KEY: API_KEY }, () => {
+    expect(detectClaudeProvider()).toBe('api-key');
+  });
+  withEnv(PROVIDER_ENV_CLEARED, () => {
+    expect(detectClaudeProvider()).toBe(null);
+  });
+});
+
+// Both switches set at once is ambiguous: fail loud rather than pick one.
+test('detectClaudeProvider throws when both provider switches are set', () => {
+  withEnv(
+    {
+      ...PROVIDER_ENV_CLEARED,
+      CLAUDE_CODE_USE_VERTEX: '1',
+      CLAUDE_CODE_USE_BEDROCK: '1',
+    },
+    () => {
+      expect(() => detectClaudeProvider()).toThrow(/unambiguous/);
+    },
+  );
+});
+
+// claude-auto on a Vertex host seeds the Vertex env-file.
+test('provision (claude-auto) seeds Vertex auth when the host is Vertex', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv(
+      {
+        ...PROVIDER_ENV_CLEARED,
+        CLAUDE_CODE_USE_VERTEX: '1',
+        CLOUD_ML_REGION: 'global',
+        ANTHROPIC_VERTEX_PROJECT_ID: 'proj-example',
+        GOOGLE_APPLICATION_CREDENTIALS: '/tmp/fake-adc.json',
+      },
+      () => {
+        const agent = resolveAgent(autoConfig());
+        agent.provision(home, undefined as never);
+        const body = readFileSync(join(home.configDir, '.claude-env'), 'utf8');
+        expect(body).toContain("export CLAUDE_CODE_USE_VERTEX='1'");
+        expect(body).not.toContain('ANTHROPIC_API_KEY');
+      },
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+// claude-auto with only an API key seeds the API-key env-file + approval.
+test('provision (claude-auto) seeds API-key auth when only ANTHROPIC_API_KEY is set', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv({ ...PROVIDER_ENV_CLEARED, ANTHROPIC_API_KEY: API_KEY }, () => {
+      const agent = resolveAgent(autoConfig());
+      agent.provision(home, undefined as never);
+      const body = readFileSync(join(home.configDir, '.claude-env'), 'utf8');
+      expect(body).toContain(`export ANTHROPIC_API_KEY='${API_KEY}'`);
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+// claude-auto with no provider signal fails at setup with the fix options.
+test('provision (claude-auto) throws when no provider signal is present', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv(PROVIDER_ENV_CLEARED, () => {
+      const agent = resolveAgent(autoConfig());
+      expect(() => agent.provision(home, undefined as never)).toThrow(
+        /no Claude provider detected/,
+      );
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+// model: auto — the host's ANTHROPIC_MODEL wins; otherwise the detected
+// provider's Opus id; no provider signal throws.
+test('resolveClaudeAutoModel resolves from ANTHROPIC_MODEL, then provider default', () => {
+  withEnv(
+    {
+      ...PROVIDER_ENV_CLEARED,
+      CLAUDE_CODE_USE_VERTEX: '1',
+      ANTHROPIC_MODEL: 'claude-fable-5',
+    },
+    () => {
+      expect(resolveClaudeAutoModel()).toBe('claude-fable-5');
+    },
+  );
+  withEnv({ ...PROVIDER_ENV_CLEARED, CLAUDE_CODE_USE_VERTEX: '1' }, () => {
+    expect(resolveClaudeAutoModel()).toBe('claude-opus-4-8');
+  });
+  withEnv({ ...PROVIDER_ENV_CLEARED, CLAUDE_CODE_USE_BEDROCK: '1' }, () => {
+    expect(resolveClaudeAutoModel()).toBe('us.anthropic.claude-opus-4-8');
+  });
+  withEnv({ ...PROVIDER_ENV_CLEARED, ANTHROPIC_API_KEY: API_KEY }, () => {
+    expect(resolveClaudeAutoModel()).toBe('opus');
+  });
+  withEnv(PROVIDER_ENV_CLEARED, () => {
+    expect(() => resolveClaudeAutoModel()).toThrow(
+      /no Claude provider detected/,
+    );
+  });
 });

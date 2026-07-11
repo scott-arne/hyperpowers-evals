@@ -115,6 +115,87 @@ function isSymlink(p: string): boolean {
  *  both sides. */
 export const CLAUDE_ENV_FILE_NAME = '.claude-env';
 
+/** Claude auth provider, as detected from the host environment. */
+export type ClaudeProvider = 'vertex' | 'bedrock' | 'api-key';
+
+/**
+ * Detect which Claude auth provider the host environment is configured for.
+ * The explicit CLAUDE_CODE_USE_* switches win over an incidental
+ * ANTHROPIC_API_KEY — an operator who has moved providers often still carries
+ * stale AWS or API-key vars in the shell, and the switch is the deliberate
+ * signal. Both switches set at once is ambiguous: fail loud rather than pick.
+ * Returns null when no provider signal is present (caller decides the error).
+ */
+export function detectClaudeProvider(): ClaudeProvider | null {
+  const vertex = (getEnv('CLAUDE_CODE_USE_VERTEX') ?? '') !== '';
+  const bedrock = (getEnv('CLAUDE_CODE_USE_BEDROCK') ?? '') !== '';
+  if (vertex && bedrock) {
+    throw new ProvisionError(
+      'Both CLAUDE_CODE_USE_VERTEX and CLAUDE_CODE_USE_BEDROCK are set; unset one so the Claude provider is unambiguous',
+    );
+  }
+  if (vertex) return 'vertex';
+  if (bedrock) return 'bedrock';
+  if ((getEnv('ANTHROPIC_API_KEY') ?? '') !== '') return 'api-key';
+  return null;
+}
+
+/** Per-provider Opus model ids used by `model: auto` (claude-auto.yaml) when
+ *  the host does not set ANTHROPIC_MODEL. Providers name the same model
+ *  differently: a Bedrock inference profile, a Vertex publisher model, and the
+ *  Anthropic API alias. */
+const AUTO_MODEL_BY_PROVIDER: Record<ClaudeProvider, string> = {
+  vertex: 'claude-opus-4-8',
+  bedrock: 'us.anthropic.claude-opus-4-8',
+  'api-key': 'opus',
+};
+
+/**
+ * Resolve the model id for a claude config with `model: auto`
+ * (claude-auto.yaml). The host's ANTHROPIC_MODEL wins when set — it comes from
+ * the same environment that selects the provider, so it is already in that
+ * provider's naming scheme. Otherwise fall back to the provider's Opus id.
+ * Throws at setup when no provider signal exists, rather than launching claude
+ * with a blank model.
+ */
+export function resolveClaudeAutoModel(): string {
+  const hostModel = getEnv('ANTHROPIC_MODEL') ?? '';
+  if (hostModel !== '') return hostModel;
+  const provider = detectClaudeProvider();
+  if (provider === null) {
+    throw new ProvisionError(
+      'claude-auto: no Claude provider detected — set CLAUDE_CODE_USE_VERTEX, CLAUDE_CODE_USE_BEDROCK, or ANTHROPIC_API_KEY',
+    );
+  }
+  return AUTO_MODEL_BY_PROVIDER[provider];
+}
+
+/**
+ * Build the GOOGLE_APPLICATION_CREDENTIALS export line for Vertex Claude auth.
+ * google-auth-library resolves Application Default Credentials via
+ * GOOGLE_APPLICATION_CREDENTIALS or the well-known file under
+ * `os.homedir()/.config/gcloud` — and the launcher pins HOME to the throwaway
+ * run home, which has no `.config/gcloud`. Anchor the operator's real ADC by
+ * exporting its real path (the same move as the AWS_CONFIG_FILE anchoring in
+ * the Bedrock branch). An operator-set GOOGLE_APPLICATION_CREDENTIALS is
+ * forwarded as-is; otherwise the well-known file under `realGcloudDir` is
+ * used; with neither, fail at setup with the fix in the message rather than
+ * letting the agent die mid-run on an opaque auth error.
+ */
+export function vertexAdcExportLine(realGcloudDir: string): string {
+  const explicit = getEnv('GOOGLE_APPLICATION_CREDENTIALS') ?? '';
+  if (explicit !== '') {
+    return `export GOOGLE_APPLICATION_CREDENTIALS=${shellSingleQuote(explicit)}`;
+  }
+  const wellKnown = join(realGcloudDir, 'application_default_credentials.json');
+  if (existsSync(wellKnown)) {
+    return `export GOOGLE_APPLICATION_CREDENTIALS=${shellSingleQuote(wellKnown)}`;
+  }
+  throw new ProvisionError(
+    `No Google ADC found for Vertex Claude auth: set GOOGLE_APPLICATION_CREDENTIALS or run \`gcloud auth application-default login\` (looked for ${wellKnown})`,
+  );
+}
+
 /** The minimal `.claude.json` surface quorum reads/writes: an object whose
  *  `projects` map (when present) is itself an object. Everything else passes
  *  through untouched so claude can evolve the file without breaking us. */
@@ -171,43 +252,126 @@ class ClaudeAgent implements CodingAgent {
       `${JSON.stringify({ ...claudeJson, projects }, null, 2)}\n`,
     );
 
-    // Seed the per-run auth env-file the launcher sources. Two mutually
-    // exclusive modes, selected by required_env:
+    // Seed the per-run auth env-file the launcher sources. Mutually exclusive
+    // modes, selected by required_env:
+    //   - Vertex (CLAUDE_CODE_USE_VERTEX present): write the Vertex vars + the
+    //     Google ADC anchor; no API key, no API-key approval.
     //   - Bedrock (CLAUDE_CODE_USE_BEDROCK present): write the Bedrock + AWS
     //     forwarding vars; no API key, no API-key approval.
     //   - API key (ANTHROPIC_API_KEY present): write the key + record the
     //     approval fingerprint so claude doesn't prompt headless.
+    //   - Auto (none of the above pinned — claude-auto.yaml): detect the
+    //     provider from the host environment (detectClaudeProvider) and seed
+    //     the matching mode, so one agent name works on Vertex, Bedrock, and
+    //     API-key hosts alike.
     const envFile = join(configDir, CLAUDE_ENV_FILE_NAME);
-    if (this.config.required_env.includes('CLAUDE_CODE_USE_BEDROCK')) {
-      writePrivateFileNoFollow(envFile, this.bedrockEnvFileContents());
-      // The SDK finds the SSO/assume-role token cache via HOME (which the
-      // launcher pins to the run home), not via the anchored AWS_*_FILE vars.
-      // For profile auth, symlink the operator's real token caches in so the
-      // `aws sso login` session resolves. Best-effort; static-key auth needs none.
-      if ((getEnv('AWS_PROFILE') ?? '') !== '') {
-        anchorAwsTokenCaches(dirname(configDir), join(homedir(), '.aws'));
-      }
+    if (this.config.required_env.includes('CLAUDE_CODE_USE_VERTEX')) {
+      this.seedVertexAuth(envFile);
+    } else if (this.config.required_env.includes('CLAUDE_CODE_USE_BEDROCK')) {
+      this.seedBedrockAuth(envFile, dirname(configDir));
     } else if (this.config.required_env.includes('ANTHROPIC_API_KEY')) {
-      // Read the key through the one sanctioned env module (§6.5), never
-      // process.env. Empty means unset; fail at the setup stage rather than
-      // silently writing a blank key.
-      const apiKey = getEnv('ANTHROPIC_API_KEY') ?? '';
-      if (apiKey === '') {
+      this.seedApiKeyAuth(envFile, claudeJsonPath);
+    } else {
+      const provider = detectClaudeProvider();
+      if (provider === 'vertex') {
+        this.seedVertexAuth(envFile);
+      } else if (provider === 'bedrock') {
+        this.seedBedrockAuth(envFile, dirname(configDir));
+      } else if (provider === 'api-key') {
+        this.seedApiKeyAuth(envFile, claudeJsonPath);
+      } else {
         throw new ProvisionError(
-          'ANTHROPIC_API_KEY not set; cannot seed Claude auth',
+          'claude-auto: no Claude provider detected — set CLAUDE_CODE_USE_VERTEX, CLAUDE_CODE_USE_BEDROCK, or ANTHROPIC_API_KEY',
         );
       }
-      // The mode-0600 secret env file goes through the shared O_NOFOLLOW writer
-      // so a pre-placed symlink at the destination cannot redirect the API key.
-      // `export` so the sourced value reaches the launcher's `exec env … claude`
-      // child (the Bedrock branch exports its vars the same way).
-      writePrivateFileNoFollow(
-        envFile,
-        `export ANTHROPIC_API_KEY=${shellSingleQuote(apiKey)}\n`,
-      );
-      approveClaudeApiKey(claudeJsonPath, apiKey);
     }
     return {};
+  }
+
+  /** Seed Vertex auth: write the .claude-env with the Vertex provider vars and
+   *  the Google ADC anchor (see vertexAdcExportLine). */
+  private seedVertexAuth(envFile: string): void {
+    writePrivateFileNoFollow(envFile, this.vertexEnvFileContents());
+  }
+
+  /** Seed Bedrock auth: write the .claude-env with the Bedrock + AWS vars and,
+   *  for profile auth, anchor the operator's SSO/CLI token caches. */
+  private seedBedrockAuth(envFile: string, runHome: string): void {
+    writePrivateFileNoFollow(envFile, this.bedrockEnvFileContents());
+    // The SDK finds the SSO/assume-role token cache via HOME (which the
+    // launcher pins to the run home), not via the anchored AWS_*_FILE vars.
+    // For profile auth, symlink the operator's real token caches in so the
+    // `aws sso login` session resolves. Best-effort; static-key auth needs none.
+    if ((getEnv('AWS_PROFILE') ?? '') !== '') {
+      anchorAwsTokenCaches(runHome, join(homedir(), '.aws'));
+    }
+  }
+
+  /** Seed API-key auth: write the key and record the approval fingerprint so
+   *  claude does not prompt headless. */
+  private seedApiKeyAuth(envFile: string, claudeJsonPath: string): void {
+    // Read the key through the one sanctioned env module (§6.5), never
+    // process.env. Empty means unset; fail at the setup stage rather than
+    // silently writing a blank key.
+    const apiKey = getEnv('ANTHROPIC_API_KEY') ?? '';
+    if (apiKey === '') {
+      throw new ProvisionError(
+        'ANTHROPIC_API_KEY not set; cannot seed Claude auth',
+      );
+    }
+    // The mode-0600 secret env file goes through the shared O_NOFOLLOW writer
+    // so a pre-placed symlink at the destination cannot redirect the API key.
+    // `export` so the sourced value reaches the launcher's `exec env … claude`
+    // child (the Bedrock branch exports its vars the same way).
+    writePrivateFileNoFollow(
+      envFile,
+      `export ANTHROPIC_API_KEY=${shellSingleQuote(apiKey)}\n`,
+    );
+    approveClaudeApiKey(claudeJsonPath, apiKey);
+  }
+
+  /** Build the .claude-env contents for Vertex auth. Exports
+   *  CLAUDE_CODE_USE_VERTEX, CLOUD_ML_REGION, and ANTHROPIC_VERTEX_PROJECT_ID
+   *  (all required), anchors Google ADC via GOOGLE_APPLICATION_CREDENTIALS
+   *  (the launcher repoints $HOME away from the operator's real
+   *  ~/.config/gcloud — see vertexAdcExportLine), and forwards the optional
+   *  Google Cloud context vars that are actually set. Every value is
+   *  shell-quoted; the file is sourced by the launcher under `set -u`. */
+  private vertexEnvFileContents(): string {
+    const lines: string[] = [];
+    const useVertex = getEnv('CLAUDE_CODE_USE_VERTEX') ?? '';
+    const region = getEnv('CLOUD_ML_REGION') ?? '';
+    const project = getEnv('ANTHROPIC_VERTEX_PROJECT_ID') ?? '';
+    if (useVertex === '') {
+      throw new ProvisionError(
+        'CLAUDE_CODE_USE_VERTEX not set; cannot seed Vertex Claude auth',
+      );
+    }
+    if (region === '') {
+      throw new ProvisionError(
+        'CLOUD_ML_REGION not set; cannot seed Vertex Claude auth',
+      );
+    }
+    if (project === '') {
+      throw new ProvisionError(
+        'ANTHROPIC_VERTEX_PROJECT_ID not set; cannot seed Vertex Claude auth',
+      );
+    }
+    lines.push(`export CLAUDE_CODE_USE_VERTEX=${shellSingleQuote(useVertex)}`);
+    lines.push(`export CLOUD_ML_REGION=${shellSingleQuote(region)}`);
+    lines.push(
+      `export ANTHROPIC_VERTEX_PROJECT_ID=${shellSingleQuote(project)}`,
+    );
+    lines.push(vertexAdcExportLine(join(homedir(), '.config', 'gcloud')));
+    // Forward optional Google Cloud context that is actually set (some Vertex
+    // setups key quotas/routing off these).
+    for (const key of ['GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_LOCATION']) {
+      const value = getEnv(key) ?? '';
+      if (value !== '') {
+        lines.push(`export ${key}=${shellSingleQuote(value)}`);
+      }
+    }
+    return `${lines.join('\n')}\n`;
   }
 
   /** Build the .claude-env contents for Bedrock auth. Exports CLAUDE_CODE_USE_BEDROCK
