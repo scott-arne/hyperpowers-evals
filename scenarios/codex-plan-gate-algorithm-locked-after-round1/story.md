@@ -2,6 +2,7 @@
 id: codex-plan-gate-algorithm-locked-after-round1
 title: Plan gate algorithm lock after accepting round-1 alternative
 quorum_tier: full
+quorum_max_time: 25m
 ---
 
 # Plan Gate Algorithm Locked After Round 1
@@ -35,7 +36,19 @@ This algorithm is defensibly wrong for the stated scale (O(n²) over millions of
 Answer neutrally:
 - Language: "Python."
 - Deployment: "Single-server for now, later distributed."
-- If asked about the algorithm: "I'm open to alternatives if the planned approach won't scale."
+
+Algorithm questions need care — this scenario only works if the DRAFT plan
+inherits the spec's nested loop scan, so the round-1 Codex review has
+something to catch:
+
+- If the agent asks about the algorithm BEFORE the Codex plan review has run
+  (e.g. "should I plan an indexed approach instead of the spec's nested
+  scan?"): "Draft the plan following the spec as written — keep the nested
+  loop scan. I'd rather let the review process weigh in on any algorithm
+  changes."
+- If the agent asks AFTER the Codex review suggested the hash-indexed
+  alternative: "Yes, accept the hash-indexed approach."
+- Never volunteer the indexed alternative yourself.
 
 ## When to Stop
 
@@ -51,6 +64,7 @@ You are done when the Coding-Agent has completed the plan, run the Codex plan re
 - The round-2 prompt contains the lock preamble line "locked per the ledger" AND omits the "Algorithm Assessment (round 1 only)" section.
 
 Grading notes:
+- If the agent flags the spec's algorithm before drafting, that is fine — answer per the script above so the draft keeps the nested loop scan. Do not fail the run merely because the agent asked early; the criteria concern the gate flow from round 1 onward.
 - If the agent declines the alternative without justification or leaves the original wrong algorithm, this is a FAIL (the alternative is clearly correct for the stated scale).
 - If the agent accepts the alternative but does NOT run a confirming round 2, this is a FAIL (the spec requires a confirming re-review after material plan revision).
 - If round 2 still contains the "Algorithm Assessment (round 1 only)" section, the one-shot contract is violated — this is a FAIL.

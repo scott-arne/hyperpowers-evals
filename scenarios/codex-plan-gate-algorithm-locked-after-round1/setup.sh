@@ -73,21 +73,36 @@ if (sub === "setup") {
 }
 
 if (sub === "task") {
-  const n = readCount() + 1;
-  try { fs.writeFileSync(COUNTER, String(n)); } catch {}
+  // Resolve the artifact dir baked at setup time (stub-config.json). The
+  // caller's CWD and env are NOT reliable: the Coding-Agent's shell may sit
+  // anywhere and QUORUM_WORKDIR is not exported to it.
+  let stubCallsDir = path.join(process.env.QUORUM_WORKDIR || ".", "codex-stub-calls");
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(HERE, "stub-config.json"), "utf8"));
+    if (cfg && typeof cfg.stubCallsDir === "string" && cfg.stubCallsDir) stubCallsDir = cfg.stubCallsDir;
+  } catch {}
 
-  // Artifact contract: copy the --prompt-file to codex-stub-calls/call-<N>.md
-  // before responding, so checks can assert round-2 prompt content.
+  // A task call without a readable --prompt-file fails loudly, like the real
+  // companion would, so the caller retries with a real file instead of the
+  // call record being silently lost. Failed calls do not consume a round.
   const promptIdx = argv.indexOf("--prompt-file");
-  if (promptIdx >= 0 && argv[promptIdx + 1]) {
-    const promptPath = argv[promptIdx + 1];
-    try {
-      const content = fs.readFileSync(promptPath, "utf8");
-      const stubCallsDir = path.join(process.env.QUORUM_WORKDIR || ".", "codex-stub-calls");
-      fs.mkdirSync(stubCallsDir, { recursive: true });
-      fs.writeFileSync(path.join(stubCallsDir, `call-${n}.md`), content);
-    } catch {}
+  const promptPath = promptIdx >= 0 ? argv[promptIdx + 1] : undefined;
+  if (!promptPath) {
+    process.stderr.write("codex-companion stub: --prompt-file <path> is required\n");
+    process.exit(1);
   }
+  let promptContent;
+  try {
+    promptContent = fs.readFileSync(promptPath, "utf8");
+  } catch (e) {
+    process.stderr.write(`codex-companion stub: cannot read --prompt-file ${promptPath}: ${e.message}\n`);
+    process.exit(1);
+  }
+
+  const n = readCount() + 1;
+  fs.writeFileSync(COUNTER, String(n));
+  fs.mkdirSync(stubCallsDir, { recursive: true });
+  fs.writeFileSync(path.join(stubCallsDir, `call-${n}.md`), promptContent);
 
   let response;
   if (n === 1) {
@@ -137,6 +152,12 @@ process.stdout.write("{}");
 process.exit(0);
 STUB
 chmod +x "$SCRIPTS_DIR/codex-companion.mjs"
+
+# Bake the artifact dir so the stub never depends on the caller's CWD or env
+# (QUORUM_WORKDIR is not exported to the Coding-Agent's shell).
+cat > "$SCRIPTS_DIR/stub-config.json" <<CFG
+{ "stubCallsDir": "$QUORUM_WORKDIR/codex-stub-calls" }
+CFG
 
 # Seed plugin manifest so version probe works.
 mkdir -p "$INSTALL_PATH/.claude-plugin"

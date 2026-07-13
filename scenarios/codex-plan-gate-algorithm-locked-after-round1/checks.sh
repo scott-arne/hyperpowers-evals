@@ -1,3 +1,4 @@
+# coding-agents: claude, claude-vertex, claude-bedrock, claude-auto, claude-sonnet, claude-haiku
 pre() {
     git-repo
     git-branch main
@@ -15,7 +16,9 @@ post() {
     file-contains 'codex-stub-calls/call-2.md' 'locked per the ledger'
     # The round-2 prompt omits the Algorithm Assessment section (one-shot contract).
     not file-contains 'codex-stub-calls/call-2.md' 'Algorithm Assessment (round 1 only)'
-    # The ledger lock exists in the per-run home cache (quorum pins $HOME to the
-    # run's throwaway home, so this greps only this run's gate scratch).
-    command-succeeds "grep -rq 'Algorithm locked:' \"$HOME/.cache/hyperpowers/codex-review\""
+    # The ledger lock exists in this run's throwaway-home cache. Checks run
+    # host-side, so $HOME here is the HOST home — grep the pinned run home via
+    # QUORUM_RUN_DIR instead (a bare $HOME grep can pass on stale state left
+    # by unrelated sessions on this machine).
+    command-succeeds "grep -rq 'Algorithm locked:' \"$QUORUM_RUN_DIR/home/.cache/hyperpowers/codex-review\""
 }

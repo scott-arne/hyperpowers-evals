@@ -11,10 +11,12 @@ import { repoRoot } from '../src/paths.ts';
 // decision — this frozen allowlist makes any silent (un)pin land RED instead of
 // quietly changing matrix coverage. Verified against the live scenarios dir on disk.
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
+  'codex-approach-gate-fires-on-architecture',
   'codex-doc-gate-foreground-await',
   'codex-gate-code-review-runs-when-present',
   'codex-gate-converges-on-reraise',
   'codex-gate-incomplete-not-approval',
+  'codex-plan-gate-algorithm-locked-after-round1',
   'codex-subagent-wait-mapping',
   'codex-tool-mapping-comprehension',
   'sdd-spec-context-consumed',

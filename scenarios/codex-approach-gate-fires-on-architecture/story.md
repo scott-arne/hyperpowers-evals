@@ -2,6 +2,7 @@
 id: codex-approach-gate-fires-on-architecture
 title: Approach gate fires on architecture decision and excludes own candidates
 quorum_tier: full
+quorum_max_time: 25m
 ---
 
 # Approach Gate Fires on Architecture-Rich Brainstorm
@@ -16,9 +17,7 @@ You are bringing an architecture-rich idea to `hyperpowers:brainstorming`. You w
 
 Send this exact message to the Coding-Agent. Do NOT paraphrase or reword it:
 
-> Let's build a distributed job queue system. The queue should handle task scheduling, retries, and dead-letter processing. I expect this will involve architectural decisions about storage, coordination, and worker distribution.
->
-> FIXTURE-IDEA-7Q4
+> Let's build a distributed job queue system — internal codename FIXTURE-IDEA-7Q4. The queue should handle task scheduling, retries, and dead-letter processing. I expect this will involve architectural decisions about storage, coordination, and worker distribution.
 
 ## Responding to Questions
 
