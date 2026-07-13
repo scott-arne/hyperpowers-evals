@@ -148,7 +148,14 @@ describe('seed_codex_plugin_cc', () => {
           'utf8',
         ),
       );
-      expect(out).toBe(reg.plugins['codex@openai-codex'][0].installPath);
+      // The probe prints two lines: the install path, then the installed
+      // codex-plugin-cc version — "unknown" here because the seed ships no
+      // .claude-plugin/plugin.json manifest.
+      const [installPath, version] = out.split('\n');
+      expect(installPath).toBe(
+        reg.plugins['codex@openai-codex'][0].installPath,
+      );
+      expect(version).toBe('unknown');
     } finally {
       rmSync(runDir, { recursive: true, force: true });
     }
