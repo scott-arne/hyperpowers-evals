@@ -6,7 +6,7 @@
 # came back clean rather than thrashing — lives in the story's Acceptance
 # Criteria (graded by the Gauntlet-Agent). Claude-Code-only gate; every Claude
 # variant is listed explicitly.
-# coding-agents: claude, claude-bedrock, claude-sonnet, claude-haiku
+# coding-agents: claude, claude-auto, claude-vertex, claude-bedrock, claude-sonnet, claude-haiku
 
 pre() {
     git-repo

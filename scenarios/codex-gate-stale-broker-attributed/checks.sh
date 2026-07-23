@@ -7,7 +7,7 @@
 # Acceptance Criteria (graded by the Gauntlet-Agent). The gate is
 # Claude-Code-only, so restrict to the Claude-family agents. The directive
 # matches the literal --coding-agent name, so every Claude variant is listed.
-# coding-agents: claude, claude-bedrock, claude-sonnet, claude-haiku
+# coding-agents: claude, claude-auto, claude-vertex, claude-bedrock, claude-sonnet, claude-haiku
 
 pre() {
     git-repo

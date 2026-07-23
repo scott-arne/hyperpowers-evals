@@ -4,7 +4,7 @@
 # Claude-Code-only, so restrict to the Claude-family agents. The directive
 # matches the literal --coding-agent name (not runtime_family), so every Claude
 # variant must be listed explicitly.
-# coding-agents: claude, claude-bedrock, claude-sonnet, claude-haiku
+# coding-agents: claude, claude-auto, claude-vertex, claude-bedrock, claude-sonnet, claude-haiku
 
 pre() {
     git-repo
