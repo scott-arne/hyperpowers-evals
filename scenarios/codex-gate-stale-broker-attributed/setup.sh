@@ -78,27 +78,46 @@ cat > "$PLUGINS_DIR/installed_plugins.json" <<JSON
 JSON
 
 # Seed a dead broker for the scenario repo: a state dir with broker.json
-# whose sessionDir does not exist (gone temp dir, mid-session purge).
-# Use the scenario repo basename to match broker-state-dir's name fallback.
-REPO_BASE="$(basename "$QUORUM_WORKDIR")"
+# whose sessionDir does not exist (gone temp dir).
+# Use the repo realpath basename to match broker-state-dir's name fallback,
+# and write state.json workspaceRoot evidence so the name-independent
+# evidence scan also resolves it.
+REPO_REAL="$(cd "$QUORUM_WORKDIR" && pwd -P)"
+REPO_BASE="$(basename "$REPO_REAL")"
 STATE_ROOT="$HOME_DIR/.claude/plugins/data/codex-openai-codex/state"
 STATE_DIR="$STATE_ROOT/$REPO_BASE-0123456789abcdef"
 mkdir -p "$STATE_DIR"
 
 # The broker.json shape: endpoint, pidFile, logFile, sessionDir, pid.
-# sessionDir points to a path that does not exist (dead broker signal).
-# pid is a plausible live-ish value that won't match a real broker process.
+# sessionDir points to a path that does not exist (dead broker signal) and
+# lives under the run home so nothing on the host can accidentally create it.
+GONE_DIR="$HOME_DIR/gone-cxc-dir"
 cat > "$STATE_DIR/broker.json" <<BROKER
 {
-  "endpoint": "unix:/tmp/gone-session-dir/broker.sock",
-  "pidFile": "/tmp/gone-session-dir/broker.pid",
-  "logFile": "/tmp/gone-session-dir/broker.log",
-  "sessionDir": "/tmp/gone-session-dir",
+  "endpoint": "unix:$GONE_DIR/broker.sock",
+  "pidFile": "$GONE_DIR/broker.pid",
+  "logFile": "$GONE_DIR/broker.log",
+  "sessionDir": "$GONE_DIR",
   "pid": 99999
 }
 BROKER
 
-# Set the state root override so codex-preflight finds this fixture.
-export HYPERPOWERS_CODEX_STATE_ROOT="$STATE_ROOT"
-# Prove the broker check fires BEFORE setup (Task 3 contract).
-export HYPERPOWERS_CODEX_SETUP_JSON='{"ready":true}'
+cat > "$STATE_DIR/state.json" <<STATE
+{ "version": 1, "jobs": [ { "id": "task-fixture", "workspaceRoot": "$REPO_REAL" } ] }
+STATE
+
+# CRITICAL fixture mechanic: hyperpowers' own session-start janitor sweeps
+# this exact state root at session start and would QUARANTINE the planted
+# dead broker before the gate ever runs (live-verified: the first run of
+# this scenario self-healed, preflight correctly reported ok). To stage the
+# MID-SESSION death this scenario tests, make the state dir read-only so the
+# janitor's rename fails silently (best-effort by contract) — which also
+# mirrors the real-world "EPERM ... unlink broker.json" companion symptom.
+# The gate's preflight only READS here, so stale-broker attribution still
+# fires. (Note: `rm -rf results/<run>` later needs a chmod -R u+w first.)
+chmod 555 "$STATE_DIR"
+
+# No env exports here: setup.sh's environment dies with this process. None
+# are needed — the fixture sits at the default state root under the pinned
+# run HOME, and the stub companion answers `setup --json` with ready:true
+# itself (so the broker check demonstrably fires before setup readiness).

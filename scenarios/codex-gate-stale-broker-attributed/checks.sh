@@ -30,8 +30,15 @@ post() {
     # finished review without ever invoking it means the gate silently skipped
     # despite Codex being present.
     check-transcript tool-arg-match Bash --matches 'command=codex-preflight'
-    # The preflight reported stale-broker, and the agent surfaced the attributed
-    # notice: transcript contains the status name and the recovery command.
-    check-transcript content-contains --needle 'stale-broker'
-    check-transcript content-contains --needle 'broker.json.stale-'
+    # The dead broker fixture must SURVIVE the session: hyperpowers' session-
+    # start janitor would quarantine it, but the fixture dir is read-only, so
+    # broker.json must still exist post-run — proving the agent saw a live
+    # stale-broker condition rather than a self-healed one.
+    command-succeeds 'find "$QUORUM_AGENT_CONFIG_DIR/plugins/data/codex-openai-codex/state" -type f -name "broker.json" | grep -q .'
+    # There is no transcript-content check verb (the trace vocabulary is tool/
+    # skill-shaped), so the judgment that the agent emitted the attributed
+    # "[status: stale-broker]" notice with the verbatim recovery command — and
+    # fabricated no Codex verdict — lives in the story's Acceptance Criteria,
+    # graded by the Gauntlet-Agent. Asserting it here with a nonexistent verb
+    # crashed the post-checks (exit 127) in the first live run.
 }
