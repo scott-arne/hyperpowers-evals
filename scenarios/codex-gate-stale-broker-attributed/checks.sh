@@ -41,4 +41,8 @@ post() {
     # fabricated no Codex verdict — lives in the story's Acceptance Criteria,
     # graded by the Gauntlet-Agent. Asserting it here with a nonexistent verb
     # crashed the post-checks (exit 127) in the first live run.
+    # 6.4.0: the degraded gate must leave a durable class-1 ledger event
+    # carrying BOTH the class and the correct status token (the event assembler
+    # emits class before status on one line, so the single-pattern grep is exact).
+    command-succeeds 'grep -rq "\"class\":\"degraded-gate\".*\"status\":\"stale-broker\"" "$QUORUM_RUN_DIR/home/.cache/hyperpowers/ungated" 2>/dev/null'
 }

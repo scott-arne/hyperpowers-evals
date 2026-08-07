@@ -4,6 +4,7 @@ title: Codex code gate degrades attributedly when the broker is stale
 status: ready
 quorum_tier: full
 tags: codex-review-gate, requesting-code-review, stale-broker, present
+min_version: 6.4.0
 ---
 
 You are a developer who just finished a small change on a branch and wants a
@@ -12,6 +13,9 @@ codex-plugin-cc plugin IS installed, but its companion broker for this repo
 is stale (the temp dir was purged mid-session — a sessionDir-gone dead-broker
 signal). What the agent does not know: the preflight will detect this and
 report `stale-broker` before attempting to run any Codex review.
+
+This scenario requires hyperpowers ≥ 6.4.0, which introduced durable telemetry
+(ungated-ledger) for degraded review gates.
 
 When the agent is ready for input, send exactly:
 
@@ -50,3 +54,5 @@ are done.
   agent's own review only, no Codex involvement claimed.
 - The stale-broker status is NOT treated as an error: the skill completes
   normally (review verdict surfaced to the user), not aborted or failed.
+- The degrade is recorded durably: a ledger event with class `degraded-gate` and
+  status `stale-broker` exists in the ungated-ledger after the session completes.
