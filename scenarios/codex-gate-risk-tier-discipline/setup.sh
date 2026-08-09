@@ -76,5 +76,7 @@ setup-helpers run seed_codex_plugin_cc
 
 # Enable the detached job protocol for this scenario (code gates need it).
 # Create a marker file in the agent's home directory.
-AGENT_HOME="$(dirname "$QUORUM_AGENT_CONFIG_DIR")"
-touch "$AGENT_HOME/.codex-stub-job-protocol"
+# The agent's throwaway $HOME is a sibling of the workdir (runner makes
+# <runDir>/coding-agent-workdir and <runDir>/home before setup.sh runs).
+HOME_DIR="$(dirname "$QUORUM_WORKDIR")/home"
+touch "$HOME_DIR/.codex-stub-job-protocol"
