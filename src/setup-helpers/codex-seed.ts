@@ -47,7 +47,7 @@ const sub = argv[0];
 const homeDir = homedir();
 const jobProtocolEnabled = process.env.CODEX_STUB_JOB_PROTOCOL === '1' ||
                            existsSync(join(homeDir, '.codex-stub-job-protocol'));
-const STATE_DIR = process.env.CODEX_STUB_STATE_DIR || join(tmpdir(), 'codex-stub');
+const STATE_DIR = process.env.CODEX_STUB_STATE_DIR || join(homeDir, '.cache', 'codex-stub');
 const STATE_FILE = join(STATE_DIR, 'jobs.json');
 
 function loadState() {
@@ -78,7 +78,7 @@ if (jobProtocolEnabled) {
   if (sub === "adversarial-review") {
     // Register a job in state and exit; status/result commands will track it
     const state = loadState();
-    const jobId = \`job-\${Date.now()}\`;
+    const jobId = \`job-\${Date.now()}-\${process.pid}-\${Math.random().toString(36).slice(2, 9)}\`;
     state.jobs.push({
       id: jobId,
       status: 'queued',
