@@ -35,9 +35,9 @@ function agentHomeFromWorkdir(workdir: string): string {
 const STUB_COMPANION = `#!/usr/bin/env node
 // Deterministic stub of codex-plugin-cc's codex-companion.mjs, seeded by the
 // hyperpowers-evals codex-seed setup-helper. Real Codex is never invoked.
-const { readFileSync, writeFileSync, existsSync, mkdirSync } = require('fs');
-const { join } = require('path');
-const { homedir, tmpdir } = require('os');
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 
 const argv = process.argv.slice(2);
 const sub = argv[0];
@@ -93,7 +93,7 @@ if (jobProtocolEnabled) {
 
   if (sub === "status") {
     const state = loadState();
-    const targetId = argv[1];
+    const targetId = argv.slice(1).find(a => !a.startsWith('--'));
 
     if (argv.includes('--json') && !targetId) {
       // status --json: report running/finished jobs
