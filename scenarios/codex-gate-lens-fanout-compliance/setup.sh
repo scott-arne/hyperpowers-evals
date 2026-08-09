@@ -7,7 +7,13 @@ set -euo pipefail
 # dossier-backed three-lens fan-out: dossier assembled before lens launches,
 # one logical round, exactly 3 lens-*-prompt.md files, per-lens normalization,
 # merged verdict per the capture-set rule.
+
 setup-helpers run create_base_repo
+
+# Enable the detached job protocol for this scenario (lens fan-out needs it).
+# Create a marker file in the agent's home directory.
+AGENT_HOME="$(dirname "$QUORUM_AGENT_CONFIG_DIR")"
+touch "$AGENT_HOME/.codex-stub-job-protocol"
 
 # Create a feature branch with a small committed change (the completed task).
 git checkout -b feature/add-utils

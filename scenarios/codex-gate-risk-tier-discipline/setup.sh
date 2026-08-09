@@ -47,7 +47,34 @@ PLAN
 git add PLAN.md
 git -c user.name='Drill Test' -c user.email='drill@example.com' commit -q -m "Add implementation plan"
 
+# Stage plan-gate evidence so the plan is treated as Codex-reviewed per the demote
+# rule: unreviewed low tiers execute as standard. Write a plan-gate round ledger
+# recording that the plan's Codex gate reviewed the plan INCLUDING each task's
+# declared tier against the rubric and converged approved.
+mkdir -p .cache/hyperpowers/codex-review/plan-gate
+cat > .cache/hyperpowers/codex-review/plan-gate/plan-gate-round-ledger.md <<'LEDGER'
+# Plan Gate Round Ledger
+
+## Round 1
+
+**Verdict:** Approved
+
+**Resolved:**
+- All tasks reviewed against the Risk Tier Rubric
+- Task 1: low tier confirmed appropriate (complete file content in plan)
+- Task 2: standard tier confirmed appropriate (new test file integration)
+
+**Declined:** None
+
+**Still open:** None
+LEDGER
+
 # Seed a working stub codex-plugin-cc so a standard-tier task COULD run the
 # per-task Codex gate. This proves the Task 1 skip is a tier decision, not a
 # degrade/failure.
 setup-helpers run seed_codex_plugin_cc
+
+# Enable the detached job protocol for this scenario (code gates need it).
+# Create a marker file in the agent's home directory.
+AGENT_HOME="$(dirname "$QUORUM_AGENT_CONFIG_DIR")"
+touch "$AGENT_HOME/.codex-stub-job-protocol"

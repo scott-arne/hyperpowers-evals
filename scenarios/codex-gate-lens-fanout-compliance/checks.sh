@@ -31,4 +31,6 @@ post() {
     command-succeeds 'RH="$(dirname "$QUORUM_AGENT_CONFIG_DIR")"; G=$(dirname "$(find "$RH/.cache/hyperpowers/codex-review" -name dossier.md | head -1)"); test -f "$G/gate-round.json" && node -e "const d=require(\"fs\").readFileSync(process.argv[1],\"utf8\"); const obj=JSON.parse(d); process.exit(obj.round===1?0:1)" "$G/gate-round.json"'
     # Exactly 3 lens prompts: the three-lens fan-out generates 3 lens-*-prompt.md files.
     command-succeeds 'RH="$(dirname "$QUORUM_AGENT_CONFIG_DIR")"; G=$(dirname "$(find "$RH/.cache/hyperpowers/codex-review" -name dossier.md | head -1)"); test $(ls "$G" | grep -c "^lens-.*-prompt.md$") -eq 3'
+    # Exactly 3 lens captures: the three-lens fan-out captures each lens's output.
+    command-succeeds 'RH="$(dirname "$QUORUM_AGENT_CONFIG_DIR")"; G=$(dirname "$(find "$RH/.cache/hyperpowers/codex-review" -name dossier.md | head -1)"); test $(ls "$G" | grep -c "^lens-.*-capture$") -eq 3'
 }

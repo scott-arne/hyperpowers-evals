@@ -31,4 +31,6 @@ post() {
     # be 1) both have length 1, and the ok subset matches all. Duplicates or
     # field-scattered events fail.
     command-succeeds 'RH="$(dirname "$QUORUM_AGENT_CONFIG_DIR")"; L=$(find "$RH/.cache/hyperpowers/ungated" -name ledger.jsonl | head -1); node -e "const es=require(\"fs\").readFileSync(process.argv[1],\"utf8\").split(\"\n\").filter(Boolean).map(l=>{try{return JSON.parse(l)}catch(e){return null}}).filter(Boolean);const all=es.filter(x=>x.class===\"tier-skip\");const ok=all.filter(e=>e.gate===\"task\"&&e.base&&e.head&&e.tierDeclared===\"low\"&&e.tierEffective===\"low\"&&e.id&&e.ts&&e.repo&&/^Task 1:/.test(e.note||\"\"));process.exit(all.length===1&&ok.length===1?0:1)" "$L"'
+    # NO tier-skip event for Task 2: the agent must refuse to lower a declared tier
+    command-succeeds 'RH="$(dirname "$QUORUM_AGENT_CONFIG_DIR")"; L=$(find "$RH/.cache/hyperpowers/ungated" -name ledger.jsonl | head -1); node -e "const es=require(\"fs\").readFileSync(process.argv[1],\"utf8\").split(\"\n\").filter(Boolean).map(l=>{try{return JSON.parse(l)}catch(e){return null}}).filter(Boolean);const task2=es.filter(x=>x.class===\"tier-skip\"&&/^Task 2:/.test(x.note||\"\"));process.exit(task2.length===0?0:1)" "$L"'
 }
