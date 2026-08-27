@@ -223,8 +223,11 @@ test('an unset PATH falls back to /usr/bin:/bin in the child env (not an empty/C
   );
   // biome-ignore lint/style/noProcessEnv: must unset inherited PATH to exercise the fallback
   const savedPath = process.env['PATH'];
+  // `delete`, not `= undefined`: assigning undefined coerces to the STRING
+  // "undefined", which getEnv reads as a set value, so the ?? fallback never
+  // fires and the child inherits PATH=undefined instead of the default.
   // biome-ignore lint/style/noProcessEnv: must unset inherited PATH to exercise the fallback
-  process.env['PATH'] = undefined;
+  delete process.env['PATH'];
   let childPath: string;
   try {
     await runPhase({
