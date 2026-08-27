@@ -83,6 +83,7 @@ describe('seedCodexPluginCc smoke test', () => {
       const launchResult = spawnSync(
         'node',
         [companion, 'adversarial-review', '--json', 'dummy-arg'],
+        // biome-ignore lint/style/noProcessEnv: the stub companion is a real node subprocess and needs the inherited env
         { encoding: 'utf8', env: { ...process.env, HOME: home } },
       );
       expect(launchResult.status).toBe(0);
@@ -90,6 +91,7 @@ describe('seedCodexPluginCc smoke test', () => {
       // status --json lists running/finished jobs
       const statusResult = spawnSync('node', [companion, 'status', '--json'], {
         encoding: 'utf8',
+        // biome-ignore lint/style/noProcessEnv: the stub companion is a real node subprocess and needs the inherited env
         env: { ...process.env, HOME: home },
       });
       expect(statusResult.status).toBe(0);
@@ -105,6 +107,7 @@ describe('seedCodexPluginCc smoke test', () => {
         const waitResult = spawnSync(
           'node',
           [companion, 'status', jobId, '--wait', '--json'],
+          // biome-ignore lint/style/noProcessEnv: the stub companion is a real node subprocess and needs the inherited env
           { encoding: 'utf8', env: { ...process.env, HOME: home } },
         );
         expect(waitResult.status).toBe(0);
@@ -120,6 +123,7 @@ describe('seedCodexPluginCc smoke test', () => {
       const resultResult = spawnSync(
         'node',
         [companion, 'result', jobId, '--json'],
+        // biome-ignore lint/style/noProcessEnv: the stub companion is a real node subprocess and needs the inherited env
         { encoding: 'utf8', env: { ...process.env, HOME: home } },
       );
       expect(resultResult.status).toBe(0);
@@ -171,7 +175,8 @@ describe('seedCodexPluginCc smoke test', () => {
         [companion1, 'adversarial-review', '--json', 'arg1'],
         {
           encoding: 'utf8',
-          env: { HOME: home1, PATH: process.env.PATH || '' },
+          // biome-ignore lint/style/noProcessEnv: the spawned node needs a real PATH; only HOME is overridden, to isolate the two stub homes
+          env: { HOME: home1, PATH: process.env['PATH'] || '' },
         },
       );
       expect(launch1.status).toBe(0);
@@ -182,7 +187,8 @@ describe('seedCodexPluginCc smoke test', () => {
         [companion2, 'adversarial-review', '--json', 'arg2'],
         {
           encoding: 'utf8',
-          env: { HOME: home2, PATH: process.env.PATH || '' },
+          // biome-ignore lint/style/noProcessEnv: the spawned node needs a real PATH; only HOME is overridden, to isolate the two stub homes
+          env: { HOME: home2, PATH: process.env['PATH'] || '' },
         },
       );
       expect(launch2.status).toBe(0);
@@ -190,7 +196,8 @@ describe('seedCodexPluginCc smoke test', () => {
       // status --json in home1 should only see home1's job
       const status1 = spawnSync('node', [companion1, 'status', '--json'], {
         encoding: 'utf8',
-        env: { HOME: home1, PATH: process.env.PATH || '' },
+        // biome-ignore lint/style/noProcessEnv: the spawned node needs a real PATH; only HOME is overridden, to isolate the two stub homes
+        env: { HOME: home1, PATH: process.env['PATH'] || '' },
       });
       expect(status1.status).toBe(0);
       const status1Out = JSON.parse(status1.stdout);
@@ -199,7 +206,8 @@ describe('seedCodexPluginCc smoke test', () => {
       // status --json in home2 should only see home2's job
       const status2 = spawnSync('node', [companion2, 'status', '--json'], {
         encoding: 'utf8',
-        env: { HOME: home2, PATH: process.env.PATH || '' },
+        // biome-ignore lint/style/noProcessEnv: the spawned node needs a real PATH; only HOME is overridden, to isolate the two stub homes
+        env: { HOME: home2, PATH: process.env['PATH'] || '' },
       });
       expect(status2.status).toBe(0);
       const status2Out = JSON.parse(status2.stdout);
