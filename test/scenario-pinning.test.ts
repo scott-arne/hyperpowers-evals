@@ -10,16 +10,36 @@ import { repoRoot } from '../src/paths.ts';
 // to specific coding-agents, so the set of pinned scenarios is a deliberate harness
 // decision — this frozen allowlist makes any silent (un)pin land RED instead of
 // quietly changing matrix coverage. Verified against the live scenarios dir on disk.
+//
+// The `brainstorming-*`, `codex-gate-*`, and `sdd-*` entries are fork-added
+// scenarios pinned to the Claude family. Each exercises gate machinery that only
+// exists in Claude Code — the Codex review gates, the approach gate, SDD's fix
+// loop — so running them against a harness with no gate at all would measure
+// nothing and score it as a failure.
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
+  'brainstorming-bounded-fires-approach-gate',
+  'brainstorming-bounded-fires-visual-companion',
+  'brainstorming-router-escalates-b1-userid-param',
+  'brainstorming-router-escalates-b2-config-module',
+  'brainstorming-router-escalates-b3-logging',
+  'brainstorming-router-escalates-b4-reusable-validation',
+  'brainstorming-router-escalates-b5-prefs-storage',
+  'brainstorming-router-no-downgrade',
   'codex-approach-gate-fires-on-architecture',
   'codex-doc-gate-foreground-await',
   'codex-gate-code-review-runs-when-present',
   'codex-gate-converges-on-reraise',
   'codex-gate-incomplete-not-approval',
+  'codex-gate-lens-fanout-compliance',
+  'codex-gate-risk-tier-discipline',
+  'codex-gate-stale-broker-attributed',
   'codex-plan-gate-algorithm-locked-after-round1',
   'codex-subagent-wait-mapping',
   'codex-tool-mapping-comprehension',
+  'sdd-de-minimis-carveout',
+  'sdd-plan-scoped-scratch',
   'sdd-spec-context-consumed',
+  'sdd-unified-fix-loop',
   'worktree-creation-under-pressure',
   'worktree-no-drift-to-main',
 ]);
