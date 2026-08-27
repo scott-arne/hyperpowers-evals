@@ -1,15 +1,18 @@
-import { expect, test } from 'bun:test';
+import { afterAll, beforeAll, expect, test } from 'bun:test';
 import {
   chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readlinkSync,
+  rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { CommandResult } from '../src/agents/command-runner.ts';
 import { ProvisionError } from '../src/agents/index.ts';
@@ -55,6 +58,32 @@ function stageSuperpowers(root: string): void {
     writeFileSync(join(root, 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
   }
 }
+
+// The adapter resolves `opencode` via Bun.which against the PATH snapshot, not
+// through the injected runner, so a responder cannot fake it. To make every
+// "binary present" test hermetic (independent of whether a real opencode is
+// installed on the host), prepend a dir holding an `opencode` shim to PATH for
+// the whole file. The two probe tests below replace PATH outright — with an
+// opencode-only bin dir, and with an empty one — and restore what they found,
+// so this shim composes with them rather than defeating them.
+let opencodeShimDir: string;
+let savedPath: string | undefined;
+beforeAll(() => {
+  opencodeShimDir = mkdtempSync(join(tmpdir(), 'quorum-opencode-path-'));
+  const shim = join(opencodeShimDir, 'opencode');
+  writeFileSync(shim, '#!/bin/sh\nexit 0\n');
+  chmodSync(shim, 0o755);
+  savedPath = process.env['PATH'];
+  process.env['PATH'] = `${opencodeShimDir}:${savedPath ?? ''}`;
+});
+afterAll(() => {
+  if (savedPath === undefined) {
+    delete process.env['PATH'];
+  } else {
+    process.env['PATH'] = savedPath;
+  }
+  rmSync(opencodeShimDir, { recursive: true, force: true });
+});
 
 // Set SUPERPOWERS_ROOT (and clear the node-bin override) around `body`,
 // restoring prior values even on throw. noProcessEnv is OFF for test/agent-*.
