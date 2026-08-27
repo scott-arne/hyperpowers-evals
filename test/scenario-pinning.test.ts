@@ -27,6 +27,7 @@ const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'brainstorming-router-no-downgrade',
   'codex-approach-gate-fires-on-architecture',
   'codex-doc-gate-foreground-await',
+  'codex-gate-backstop-finding-forces-choice',
   'codex-gate-code-review-runs-when-present',
   'codex-gate-converges-on-reraise',
   'codex-gate-incomplete-not-approval',
