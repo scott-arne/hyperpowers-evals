@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Reclaim disk from completed run directories by deleting the agent
+# infrastructure quorum reinstalls on every run. Evidence is never touched:
+# trajectory.json, verdict.json, phase.json, token usage, session transcripts,
+# gauntlet-agent output, coding-agent workdirs, and the SDD scratch cache
+# (home/.cache/hyperpowers -- ledgers, gate rounds, lens output) all survive.
+#
+# A run costs ~12M of reinstallable infrastructure against ~1M of evidence.
+# Left alone, results/ reached 3.8G across 118 runs.
+
+usage() {
+  cat <<'USAGE'
+usage: scripts/strip-runs [options]
+
+Delete regenerable agent infrastructure from completed run directories.
+
+options:
+  --results-root <dir>    run directory root (default: <repo>/results)
+  --min-age-minutes <n>   skip runs touched more recently (default: 60)
+  --run <name>            strip only this run directory; repeatable
+  --dry-run               report what would be deleted, delete nothing
+  -h, --help
+USAGE
+}
+
+die() {
+  printf 'strip-runs: %s\n' "$*" >&2
+  exit 1
+}
+
+# Paths are relative to a run directory. Each is reinstalled or reseeded by
+# the next run: the CLI itself, the plugin marketplace clone and its caches,
+# the scenario-seeded plugin state (setup.sh rewrites it), and the CLI cache.
+STRIP_PATHS=(
+  'home/.local/share/claude'
+  'home/.claude/plugins/marketplaces'
+  'home/.claude/plugins/cache'
+  'home/.claude/plugins/data'
+  'home/.cache/claude'
+)
+
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+RESULTS_ROOT="$REPO_ROOT/results"
+MIN_AGE_MINUTES=60
+DRY_RUN=0
+SELECTED=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --results-root) [ $# -ge 2 ] || die "--results-root needs a value"; RESULTS_ROOT="$2"; shift 2 ;;
+    --min-age-minutes) [ $# -ge 2 ] || die "--min-age-minutes needs a value"; MIN_AGE_MINUTES="$2"; shift 2 ;;
+    --run) [ $# -ge 2 ] || die "--run needs a value"; SELECTED+=("$2"); shift 2 ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; die "unknown argument: $1" ;;
+  esac
+done
+
+case "$MIN_AGE_MINUTES" in
+  ''|*[!0-9]*) die "--min-age-minutes must be a non-negative integer" ;;
+esac
+
+[ -d "$RESULTS_ROOT" ] || die "results root not found: $RESULTS_ROOT"
+RESULTS_ROOT=$(cd "$RESULTS_ROOT" && pwd -P)
+
+# du reports in KB on both BSD and GNU when handed -k.
+disk_kb() {
+  du -sk "$1" 2>/dev/null | cut -f1
+}
+
+candidates() {
+  if [ ${#SELECTED[@]} -gt 0 ]; then
+    printf '%s\n' "${SELECTED[@]}"
+    return
+  fi
+  # Underscore-prefixed directories are curated evidence, not quorum output.
+  find "$RESULTS_ROOT" -mindepth 1 -maxdepth 1 -type d ! -name '_*' -exec basename {} \; | sort
+}
+
+before_kb=$(disk_kb "$RESULTS_ROOT")
+stripped=0
+skipped_recent=0
+skipped_empty=0
+failures=0
+
+while IFS= read -r name; do
+  [ -n "$name" ] || continue
+  run="$RESULTS_ROOT/$name"
+
+  [ -d "$run" ] || { printf 'skip %-70s (not a directory)\n' "$name"; continue; }
+  # home/ is the only thing this script touches; its absence means there is
+  # nothing here to strip, whatever else the directory is.
+  [ -d "$run/home" ] || { skipped_empty=$((skipped_empty + 1)); continue; }
+
+  # An in-flight run is still writing. Directory mtime is the cheapest
+  # available signal and errs toward leaving things alone.
+  if [ -z "$(find "$run" -maxdepth 0 -mmin +"$MIN_AGE_MINUTES" 2>/dev/null)" ]; then
+    printf 'skip %-70s (touched within %s min)\n' "$name" "$MIN_AGE_MINUTES"
+    skipped_recent=$((skipped_recent + 1))
+    continue
+  fi
+
+  run_before=$(disk_kb "$run")
+  hit=0
+  for rel in "${STRIP_PATHS[@]}"; do
+    target="$run/$rel"
+    [ -e "$target" ] || continue
+    if [ "$DRY_RUN" -eq 1 ]; then
+      [ "$hit" -eq 1 ] || printf '%s\n' "$name"
+      hit=1
+      printf '  would remove %s (%s KB)\n' "$rel" "$(disk_kb "$target")"
+      continue
+    fi
+    hit=1
+    # Agent runs leave read-only files behind; without this rm reports
+    # permission denied and silently leaves most of the tree in place.
+    chmod -R u+w "$target" 2>/dev/null || true
+    rm -rf -- "$target" || { printf 'FAILED %s/%s\n' "$name" "$rel" >&2; failures=$((failures + 1)); }
+  done
+
+  if [ "$hit" -eq 0 ]; then
+    skipped_empty=$((skipped_empty + 1))
+    continue
+  fi
+
+  stripped=$((stripped + 1))
+  if [ "$DRY_RUN" -eq 0 ]; then
+    printf 'strip %-70s %s KB -> %s KB\n' "$name" "$run_before" "$(disk_kb "$run")"
+  fi
+done < <(candidates)
+
+after_kb=$(disk_kb "$RESULTS_ROOT")
+printf '\n%s: %d run(s) stripped, %d already clean, %d skipped as recent\n' \
+  "$([ "$DRY_RUN" -eq 1 ] && echo 'dry run' || echo 'done')" \
+  "$stripped" "$skipped_empty" "$skipped_recent"
+printf 'results root: %s KB -> %s KB\n' "$before_kb" "$after_kb"
+
+[ "$failures" -eq 0 ] || die "$failures path(s) could not be removed"

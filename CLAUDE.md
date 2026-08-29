@@ -120,6 +120,30 @@ launch agent CLIs in permissive modes and can capture sensitive transcripts,
 tool calls, filesystem state, and token data. Do not add live evals, API keys,
 or dangerous-mode launches to public CI.
 
+## Run Directory Upkeep
+
+Every live run leaves agent infrastructure under `<run>/home/`: the CLI
+install, the plugin marketplace clone and its caches, and the CLI cache. That
+is ~12M in a typical run and reached 75M in one, against roughly 3M of actual
+evidence. Unmanaged, `results/` reached 3.8G across 118 runs.
+
+After a session of live evals:
+
+```
+scripts/strip-runs          # --dry-run reports without deleting
+```
+
+It removes only reinstallable paths, skips runs touched in the last hour so
+in-flight work is safe, and leaves everything a verdict or a committed note
+might cite: `trajectory.json`, `verdict.json`, `phase.json`, session
+transcripts, `gauntlet-agent/`, `coding-agent-workdir/`, and the SDD scratch
+cache at `home/.cache/hyperpowers` (ledgers, gate rounds, lens output).
+
+Do not bulk-delete run directories. Eval-evidence notes in the parent repo
+cite runs by ID, and the directory is what keeps those claims re-checkable.
+Underscore-prefixed directories under `results/` are curated evidence rather
+than quorum output; `strip-runs` skips them.
+
 ## Host Env For Live Evals
 
 Host-side live evals need `SUPERPOWERS_ROOT` plus the selected agent's auth.
