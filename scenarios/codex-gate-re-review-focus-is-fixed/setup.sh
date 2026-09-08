@@ -348,10 +348,16 @@ const M = JSON.parse(fs.readFileSync(path.join(HERE, "manifest.json"), "utf8"));
 const mode = process.argv[2];
 const WORD_BOUND = 250;
 
-// Markdown emphasis and quoting are typography, not content: the agent may drop
-// the backticks around a path or the ** around "blocking". Strip them from both
-// sides, then collapse whitespace, so the comparison is about text and order.
-const norm = (s) => s.replace(/[`*"'‘’“”]/g, "").replace(/\s+/g, " ").trim();
+// Markdown emphasis, quoting, and dash style are typography, not content: the
+// agent may drop the backticks around a path, drop the ** around "blocking", or
+// retype an em dash as an ASCII hyphen. Fold all three on both sides, then
+// collapse whitespace, so the comparison is about text and order.
+const norm = (s) =>
+  s
+    .replace(/[`*"'‘’“”]/g, "")
+    .replace(/[—–]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
 const countWords = (s) => norm(s).split(" ").filter(Boolean).length;
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const anyOf = (list) => `(?:${list.map(escape).join("|")})`;
