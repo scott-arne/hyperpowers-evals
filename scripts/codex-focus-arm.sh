@@ -2,15 +2,16 @@
 # codex-focus-arm.sh <hyperpowers-root> <codex-plugin-root> <control|treatment> <out-dir>
 # Reviews fixtures M, H, and O with real Codex three times each under one focus
 # text and normalizes every capture with hyperpowers' verdict-normalize.
-# Each fixture becomes a two-commit git repo: base = lib.js without the %
-# branch, head = the fixture as checked in. Runs are sequential and blocking;
-# launch this script with the shell tool's background option and watch its
-# log, never a bare foreground call a harness timeout can kill mid-review.
+# Each fixture becomes a two-commit git repo: base = checked-in lib.base.js,
+# head = the fixture's lib.js. Asserts both parse and pass tests before reviewing.
+# Runs are sequential and blocking; launch this script with the shell tool's
+# background option and watch its log, never a bare foreground call a harness
+# timeout can kill mid-review.
 #
-# Round 2 change: composes the production round-1 prompt shape (lens skeleton
-# plus recipe focus) for both arms. Control = original recipe text without
-# calibration; treatment = with the reworded calibration.
-set -uo pipefail
+# Round 3 change: uses checked-in lib.base.js instead of filtering (round 2's
+# filter left lines after trim, producing broken bases). Asserts both revisions
+# parse and test before reviewing.
+set -euo pipefail
 root="${1:?hyperpowers root}"; codex="${2:?codex-plugin-cc root}"; arm="${3:?control|treatment}"; out="${4:?out dir}"
 here="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$out"
@@ -43,11 +44,24 @@ for fx in M H O; do
   work="$(mktemp -d "${TMPDIR:-/tmp}/focus-arm-$fx.XXXXXX")"
   cp "$here/fixtures/codex-focus-arm/$fx/"* "$work/"
   git -C "$work" init -q
-  # Base: the same module without the % branch (and without formatRate for O).
-  node -e 'const fs=require("fs");const p=process.argv[1];const s=fs.readFileSync(p,"utf8").split("\n").filter(l=>!/endsWith\("%"\)|slice\(0, -1\)|body === ""|digits|^    if \(body === ""\) return NaN;$|^    return Number\(body\) \/ 100;$|^  }$/.test(l.trim())).join("\n");fs.writeFileSync(p,s)' "$work/lib.js"
+  
+  # Base: checked-in lib.base.js
+  cp "$here/fixtures/codex-focus-arm/$fx/lib.base.js" "$work/lib.js"
+  
+  # Assert base parses and tests pass
+  node --check "$work/lib.js"
+  ( cd "$work" && node test.js > /dev/null )
+  
   git -C "$work" -c user.email=t@t -c user.name=t add -A && git -C "$work" -c user.email=t@t -c user.name=t commit -qm base
   base="$(git -C "$work" rev-parse HEAD)"
+  
+  # Head: fixture's lib.js
   cp "$here/fixtures/codex-focus-arm/$fx/lib.js" "$work/lib.js"
+  
+  # Assert head parses and tests pass
+  node --check "$work/lib.js"
+  ( cd "$work" && node test.js > /dev/null )
+  
   git -C "$work" -c user.email=t@t -c user.name=t commit -qam "accept percent strings"
   git -C "$work" diff "$base" HEAD > "$work/review.diff"
   
