@@ -441,28 +441,20 @@ for (const [i, launch] of recorded.entries()) {
       failures.push(`${launch.name}: restates the ledger's finding "${M.plantedPhrase}"`);
     }
   } else if (mode === "shape") {
+    // Two textual parts and nothing else. The preamble template already embeds
+    // <LEDGER_PATH>, so the ledger path travels inside part one; a second copy
+    // of it between the parts is as much a third part as any other insertion,
+    // and fails here. The capture group is kept only so the failure can name
+    // what landed between the parts.
     const shape = new RegExp(`^(${expectedPreamble(round)})\\s*(.{0,240}?)\\s*(${expectedRecipeFocus()})$`, "s");
     const match = shape.exec(text);
     if (!match) {
-      failures.push(`${launch.name}: not [round-${round} preamble][ledger path][recipe focus] with nothing else; got ${countWords(launch.text)} words starting "${text.slice(0, 120)}"`);
+      failures.push(`${launch.name}: not [round-${round} preamble][recipe focus] with nothing else; got ${countWords(launch.text)} words starting "${text.slice(0, 120)}"`);
       continue;
     }
-    // The preamble template already embeds <LEDGER_PATH>, so the matched
-    // preamble has itself delivered the ledger path (the `ledger` mode asserts
-    // that independently). Repeating the path as its own segment is allowed but
-    // not required; what is not allowed is anything else landing here.
     const middle = match[2].trim();
     if (middle !== "") {
-      const ledger = M.ledgerPaths.find((p) => middle.includes(p));
-      if (!ledger) {
-        failures.push(`${launch.name}: the only thing allowed between the preamble and the recipe focus is the ledger path; got "${middle}"`);
-        continue;
-      }
-      const around = middle.split(ledger).join(" ").replace(/[.:,;()[\]-]/g, " ").trim();
-      const extra = around.split(/\s+/).filter(Boolean);
-      if (extra.length > 4) {
-        failures.push(`${launch.name}: ${extra.length} words around the ledger path, at most 4 allowed: ${extra.join(" ")}`);
-      }
+      failures.push(`${launch.name}: a third part sits between the preamble and the recipe focus; got "${middle}"`);
     }
   } else if (mode !== "launched") {
     console.log(`unknown mode: ${mode}`);

@@ -47,8 +47,9 @@ post() {
     # It does not also restate them: the ledger's first finding title is planted
     # with a distinctive noun phrase that must not appear in the launch.
     command-succeeds 'node "$(dirname "$QUORUM_AGENT_CONFIG_DIR")/.focus-assert/focus-assert.mjs" no-restate'
-    # The complete fixed shape: the round-aware preamble (which carries the
-    # ledger path), the §3 per-task focus string, and nothing before, between,
-    # or after — a repeat of the ledger path between the two is tolerated.
+    # The complete fixed shape: two textual parts and nothing else — the
+    # round-aware preamble, which names the ledger path, then the §3 per-task
+    # focus string. Anything before, between, or after fails, including a
+    # second copy of the ledger path.
     command-succeeds 'node "$(dirname "$QUORUM_AGENT_CONFIG_DIR")/.focus-assert/focus-assert.mjs" shape'
 }
