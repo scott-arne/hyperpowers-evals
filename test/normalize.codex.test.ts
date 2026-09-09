@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import { flattenToolCalls } from '../src/atif/project.ts';
 import { validateTrajectory } from '../src/atif/validate.ts';
 import { isImplementationPath } from '../src/detect/implementation.ts';
+import { isSkillInvocation } from '../src/detect/skill.ts';
 import { normalizeCodex } from '../src/normalize/codex.ts';
 
 test('codex apply_patch (function_call) exposes file paths for implementation-path checks', () => {
@@ -341,4 +342,109 @@ test('no token_count events => no final_metrics, no model_name', () => {
   const traj = normalizeCodex(functionCallLine, '1.0.0');
   expect(traj.final_metrics).toBeUndefined();
   expect(traj.agent.model_name).toBeUndefined();
+});
+
+// ---------------------------------------------------------------------------
+// The `exec` tool: a JavaScript program, not a shell string
+//
+// Newer Codex builds stop calling exec_command as a tool. They call one `exec`
+// tool whose input is a program that calls tools.exec_command({cmd}) — often
+// several at once inside a Promise.all. Left opaque, the shell commands the
+// agent ran are invisible to every command-shaped check (skill reads,
+// tool-arg-match on Bash.command, investigated, worktree-created). The
+// programs below are verbatim from the archived
+// tdd-runs-the-project-suite Codex runs, with the run directory shortened.
+// ---------------------------------------------------------------------------
+
+const execProgramLine = (input: string, callId: string) =>
+  JSON.stringify({
+    type: 'response_item',
+    payload: { type: 'custom_tool_call', name: 'exec', input, call_id: callId },
+  });
+
+test('exec program yields one Bash call per tools.exec_command', () => {
+  const program = `const r = await Promise.all([
+  tools.exec_command({cmd:"npm test -- tests/parser.test.js","workdir":"/run/wd","yield_time_ms":30000,"max_output_tokens":12000}),
+  tools.exec_command({cmd:"npm test","workdir":"/run/wd","yield_time_ms":30000,"max_output_tokens":20000})
+]);
+text(r.length);`;
+  const calls = flattenToolCalls(
+    normalizeCodex(execProgramLine(program, 'c1'), 'test'),
+  );
+  expect(calls.map((c) => c.tool)).toEqual(['Bash', 'Bash']);
+  expect(calls.map((c) => c.args['command'])).toEqual([
+    'npm test -- tests/parser.test.js',
+    'npm test',
+  ]);
+});
+
+test('exec-wrapped SKILL.md read is a skill invocation', () => {
+  const program = `const r = await Promise.all([
+  tools.exec_command({cmd:"sed -n '1,240p' '/run/home/.codex/plugins/cache/debug/superpowers/local/skills/systematic-debugging/SKILL.md'","workdir":"/run/wd","yield_time_ms":10000,"max_output_tokens":20000}),
+  tools.exec_command({cmd:"sed -n '1,280p' '/run/home/.codex/plugins/cache/debug/superpowers/local/skills/test-driven-development/SKILL.md'","workdir":"/run/wd","yield_time_ms":10000,"max_output_tokens":30000})
+]);
+for (const x of r) text(x.output);
+`;
+  const calls = flattenToolCalls(
+    normalizeCodex(execProgramLine(program, 'c2'), 'test'),
+  );
+  expect(
+    calls.some((c) => isSkillInvocation(c, 'test-driven-development')),
+  ).toBe(true);
+  expect(calls.some((c) => isSkillInvocation(c, 'brainstorming'))).toBe(false);
+});
+
+test('exec program with no exec_command keeps the raw call (nothing is dropped)', () => {
+  const program = `const patch = "*** Begin Patch\\n*** Update File: /run/wd/src/parser.js\\n@@\\n-old\\n+new\\n*** End Patch";
+text(await tools.apply_patch(patch));
+`;
+  const calls = flattenToolCalls(
+    normalizeCodex(execProgramLine(program, 'c3'), 'test'),
+  );
+  expect(calls.length).toBe(1);
+  expect(calls[0]?.tool).toBe('exec');
+  expect(calls[0]?.args['input']).toBe(program);
+});
+
+test('exec program escapes are decoded into the shell command', () => {
+  const program = `await tools.exec_command({cmd:"printf 'a\\tb\\n' && grep -q \\"x=1\\" f"});`;
+  const calls = flattenToolCalls(
+    normalizeCodex(execProgramLine(program, 'c4'), 'test'),
+  );
+  expect(calls[0]?.args['command']).toBe(
+    'printf \'a\tb\n\' && grep -q "x=1" f',
+  );
+});
+
+test('a repeated exec payload is deduplicated, not partially dropped', () => {
+  const program = `await Promise.all([
+  tools.exec_command({cmd:"git status --short"}),
+  tools.exec_command({cmd:"git diff"})
+]);`;
+  const raw = [
+    execProgramLine(program, 'dup'),
+    execProgramLine(program, 'dup'),
+  ].join('\n');
+  const calls = flattenToolCalls(normalizeCodex(raw, 'test'));
+  expect(calls.map((c) => c.args['command'])).toEqual([
+    'git status --short',
+    'git diff',
+  ]);
+});
+
+test('exec as a function_call payload is unwrapped the same way', () => {
+  const line = JSON.stringify({
+    type: 'response_item',
+    payload: {
+      type: 'function_call',
+      name: 'exec',
+      arguments: JSON.stringify({
+        input: 'await tools.exec_command({cmd:"npm test"});',
+      }),
+      call_id: 'c5',
+    },
+  });
+  const calls = flattenToolCalls(normalizeCodex(line, 'test'));
+  expect(calls.map((c) => c.tool)).toEqual(['Bash']);
+  expect(calls[0]?.args['command']).toBe('npm test');
 });
