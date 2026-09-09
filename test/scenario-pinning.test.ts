@@ -15,10 +15,13 @@ import { repoRoot } from '../src/paths.ts';
 // scenarios pinned to the Claude family. Each exercises gate machinery that only
 // exists in Claude Code — the Codex review gates, the approach gate, SDD's fix
 // loop — so running them against a harness with no gate at all would measure
-// nothing and score it as a failure. `tdd-runs-the-project-suite` is pinned for
-// a different reason: it is fork-side evidence for one upstream port, and its
-// arms are only comparable across the three actors that were measured.
+// nothing and score it as a failure. `tdd-runs-the-project-suite` and
+// `brainstorming-asks-tooling-question` are pinned for a further reason: each is
+// fork-side evidence for one upstream port, and its arms are only comparable
+// across the actors that were measured — three for the first, one for the
+// second.
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
+  'brainstorming-asks-tooling-question',
   'brainstorming-bounded-fires-approach-gate',
   'brainstorming-bounded-fires-visual-companion',
   'brainstorming-router-escalates-b1-userid-param',
