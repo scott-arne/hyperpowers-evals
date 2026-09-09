@@ -19,7 +19,11 @@ import { repoRoot } from '../src/paths.ts';
 // `brainstorming-asks-tooling-question` are pinned for a further reason: each is
 // fork-side evidence for one upstream port, and its arms are only comparable
 // across the actors that were measured — three for the first, one for the
-// second.
+// second. `executing-plans-keeps-inline-request` and
+// `requesting-code-review-hands-off-to-receiving` are the Arm D pair supplying
+// after-the-fact evidence for the two routing edits 6.13.0 shipped; both assert
+// on Claude Code's `Agent` dispatch tool and the second runs through the Codex
+// code gate, so neither measures anything on a harness without them.
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'brainstorming-asks-tooling-question',
   'brainstorming-bounded-fires-approach-gate',
@@ -43,6 +47,8 @@ const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'codex-plan-gate-algorithm-locked-after-round1',
   'codex-subagent-wait-mapping',
   'codex-tool-mapping-comprehension',
+  'executing-plans-keeps-inline-request',
+  'requesting-code-review-hands-off-to-receiving',
   'sdd-de-minimis-carveout',
   'sdd-plan-scoped-scratch',
   'sdd-spec-context-consumed',
