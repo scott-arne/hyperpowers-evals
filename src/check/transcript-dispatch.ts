@@ -15,6 +15,7 @@ import {
   verbImplementationToolNotCalled,
   verbInvestigated,
   verbSkillBeforeImplementationTool,
+  verbSkillBeforeMutation,
   verbSkillBeforeTool,
   verbSkillCalled,
   verbSkillNotCalled,
@@ -40,6 +41,7 @@ const REQUIRED_ARGS: Record<string, number> = {
   'skill-not-called': 1,
   'skill-before-tool': 2,
   'skill-before-implementation-tool': 2,
+  'skill-before-mutation': 1,
   'implementation-tool-not-called': 1,
   investigated: 0,
   'worktree-created': 0,
@@ -154,6 +156,10 @@ function dispatchInner(
     }
     case 'skill-before-implementation-tool': {
       const r = verbSkillBeforeImplementationTool(calls, empty, args);
+      return ok(r.passed, r.detail);
+    }
+    case 'skill-before-mutation': {
+      const r = verbSkillBeforeMutation(calls, empty, args);
       return ok(r.passed, r.detail);
     }
     case 'implementation-tool-not-called': {

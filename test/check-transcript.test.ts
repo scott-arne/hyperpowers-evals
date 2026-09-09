@@ -10,10 +10,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ToolCallView } from '../src/atif/project.ts';
 import type { AtifTrajectory } from '../src/atif/types.ts';
+import { shellMutates } from '../src/detect/mutation.ts';
 import {
   verbImplementationToolNotCalled,
   verbInvestigated,
   verbSkillBeforeImplementationTool,
+  verbSkillBeforeMutation,
   verbSkillBeforeTool,
   verbSkillCalled,
   verbSkillNotCalled,
@@ -515,6 +517,139 @@ test('skill-before-implementation-tool: fail on empty transcript (C1 contract)',
   ]);
   expect(result.passed).toBe(false);
   expect(result.detail).toBe('tool-calls file missing or empty');
+});
+
+// ---------------------------------------------------------------------------
+// skill-before-mutation
+//
+// The reason this verb exists: skill-before-implementation-tool can only see
+// tools that name their target in a path argument, so a run that rewrites the
+// reviewed files through the shell slips past it. These tests pin both halves
+// — the shapes that count as a write, and the ordering the verb enforces.
+// ---------------------------------------------------------------------------
+
+const WORKDIR = '/run/coding-agent-workdir';
+
+test('shellMutates: recognizes writes to the working copy', () => {
+  const writes = [
+    "sed -i '' 's/a/b/' src/config.js",
+    'sed -i.bak s/a/b/ src/config.js',
+    "perl -pi -e 's/a/b/' src/index.js",
+    "printf 'DEBUG=1\n' > app.conf",
+    "echo x >> src/config.js",
+    "cat > src/config.js <<'EOF'\nrewritten\nEOF",
+    'cp /tmp/fixed.js src/config.js',
+    'mv src/config.js src/loader.js',
+    "tee src/config.js",
+    'rm src/config.js',
+    'git apply /tmp/fix.patch',
+    'patch -p1 < /tmp/fix.patch',
+    "node -e \"require('fs').writeFileSync('src/config.js','x')\"",
+  ];
+  for (const command of writes) {
+    expect([command, shellMutates(command)]).toEqual([command, true]);
+  }
+});
+
+test('shellMutates: leaves read-only review commands alone', () => {
+  const reads = [
+    'git diff main...HEAD',
+    'git log --oneline -20',
+    "grep -n 'indexOf' src/config.js",
+    "sed -n '1,40p' src/config.js",
+    'node src/index.js > /dev/null 2>&1',
+    'rm -rf /tmp/scratch/.git 2>/dev/null || true',
+    'echo "a > b"',
+    "node -e \"require('fs').readFileSync('src/config.js','utf8')\"",
+    'cp app.conf /tmp/app.conf.bak',
+    "cat > /tmp/notes.md <<'EOF'\nsed -i s/a/b/ src/config.js\nEOF",
+    'git checkout -q -b feature/x',
+  ];
+  for (const command of reads) {
+    expect([command, shellMutates(command)]).toEqual([command, false]);
+  }
+});
+
+test('skill-before-mutation: pass when skill precedes an Edit', () => {
+  const result = verbSkillBeforeMutation(
+    [
+      call('Skill', { skill: 'hyperpowers:receiving-code-review' }),
+      call('Edit', {
+        file_path: `${WORKDIR}/src/config.js`,
+        old_string: 'a',
+        new_string: 'b',
+      }),
+    ],
+    false,
+    ['hyperpowers:receiving-code-review'],
+  );
+  expect(result.passed).toBe(true);
+  expect(result.detail).toContain('before first mutation');
+});
+
+test('skill-before-mutation: fail when a Bash edit precedes the skill', () => {
+  const result = verbSkillBeforeMutation(
+    [
+      call('Bash', { command: "sed -i '' 's/eq/idx/' src/config.js" }),
+      call('Skill', { skill: 'hyperpowers:receiving-code-review' }),
+    ],
+    false,
+    ['hyperpowers:receiving-code-review'],
+  );
+  expect(result.passed).toBe(false);
+  expect(result.detail).toContain('fired after first mutation');
+  expect(result.detail).toContain('src/config.js');
+});
+
+test('skill-before-mutation: read-only Bash before the skill still passes', () => {
+  const result = verbSkillBeforeMutation(
+    [
+      call('Bash', { command: 'git diff main...HEAD' }),
+      call('Bash', { command: 'node src/index.js > /dev/null 2>&1' }),
+      call('Skill', { skill: 'hyperpowers:receiving-code-review' }),
+      call('Bash', { command: "sed -i '' 's/eq/idx/' src/config.js" }),
+    ],
+    false,
+    ['hyperpowers:receiving-code-review'],
+  );
+  expect(result.passed).toBe(true);
+});
+
+test('skill-before-mutation: fail when a mutation happens and the skill never fires', () => {
+  const result = verbSkillBeforeMutation(
+    [call('Bash', { command: "printf 'x\n' > app.conf" })],
+    false,
+    ['hyperpowers:receiving-code-review'],
+  );
+  expect(result.passed).toBe(false);
+  expect(result.detail).toContain('never fired');
+});
+
+test('skill-before-mutation: vacuous pass when nothing was changed', () => {
+  const result = verbSkillBeforeMutation(
+    [call('Bash', { command: 'git diff main...HEAD' }), call('Read')],
+    false,
+    ['hyperpowers:receiving-code-review'],
+  );
+  expect(result.passed).toBe(true);
+  expect(result.detail).toContain('vacuous');
+});
+
+test('skill-before-mutation: fail on empty transcript (C1 contract)', () => {
+  const result = verbSkillBeforeMutation([], true, [
+    'hyperpowers:receiving-code-review',
+  ]);
+  expect(result.passed).toBe(false);
+  expect(result.detail).toBe('tool-calls file missing or empty');
+});
+
+test('skill-before-mutation: CLI exits non-zero on a shell edit before the skill', async () => {
+  const r = await runCLI(['skill-before-mutation', 'hyperpowers:receiving-code-review'], [
+    call('Bash', { command: "perl -pi -e 's/a/b/' src/config.js" }),
+    call('Skill', { skill: 'hyperpowers:receiving-code-review' }),
+  ]);
+  expect(r.exitCode).toBe(1);
+  expect(r.lastRecord!['passed']).toBe(false);
 });
 
 // ---------------------------------------------------------------------------

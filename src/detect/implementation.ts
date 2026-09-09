@@ -41,14 +41,15 @@ export function toolPath(call: ToolCallView): string {
 const WORKDIR_SEPARATOR = '/coding-agent-workdir/';
 
 /**
- * Return the path relative to the coding-agent workdir, or "" if the path
- * is empty, absolute-but-not-under-workdir, or unavailable.
+ * Reduce a raw path to its workdir-relative form, or "" when it names nothing
+ * inside the agent's working copy.
  *
  * Splits on the `/coding-agent-workdir/` segment — if that literal segment
- * appears multiple times, the portion after the LAST one is returned.
+ * appears multiple times, the portion after the LAST one is returned. An
+ * absolute path with no such segment is somewhere else on the host (a scratch
+ * file, a device) and reduces to "".
  */
-export function implementationRelpath(call: ToolCallView): string {
-  const p = toolPath(call);
+export function workdirRelpath(p: string): string {
   if (p === '') return '';
 
   if (p.includes(WORKDIR_SEPARATOR)) {
@@ -61,14 +62,26 @@ export function implementationRelpath(call: ToolCallView): string {
   return p;
 }
 
+/**
+ * Return the path relative to the coding-agent workdir, or "" if the path
+ * is empty, absolute-but-not-under-workdir, or unavailable.
+ */
+export function implementationRelpath(call: ToolCallView): string {
+  return workdirRelpath(toolPath(call));
+}
+
 const EXCLUDED_RE =
   /(^|\/)\.git(\/|$)|(^|\/)node_modules(\/|$)|^docs\/superpowers\/|^\.gitignore$|^\.antigravitycli(\/|$)/;
+
+/** True when a workdir-relative path names a real implementation file. */
+export function isImplementationRel(rel: string): boolean {
+  return rel !== '' && !EXCLUDED_RE.test(rel);
+}
 
 /**
  * Return true when the tool call targets an implementation file — i.e.
  * it has a non-empty workdir-relative path that is not in an excluded tree.
  */
 export function isImplementationPath(call: ToolCallView): boolean {
-  const rel = implementationRelpath(call);
-  return rel !== '' && !EXCLUDED_RE.test(rel);
+  return isImplementationRel(implementationRelpath(call));
 }

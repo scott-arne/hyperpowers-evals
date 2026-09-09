@@ -418,6 +418,7 @@ of an agent-agnostic scenario so a missing install reads as indeterminate
 | `skill-not-called` | `<skill>` | **Negative.** Empty capture → FAIL. |
 | `skill-before-tool` | `<skill> <tool>` | Skill precedes the tool. **Vacuous-pass:** no `<tool>` call → pass. Empty capture → FAIL. |
 | `skill-before-implementation-tool` | `<skill> <tool>` | Skill precedes the first *implementation-file* use of the tool. **Vacuous-pass** when there is no implementation call. "Implementation" excludes `.git`, `node_modules`, `docs/superpowers/`, `.gitignore`, `.antigravitycli` (`src/detect/implementation.ts`). |
+| `skill-before-mutation` | `<skill>` | Skill precedes the first change to a working-copy file **by any route**: the path-argument editors, or a `Bash` command with a write-capable shape (`sed -i`, `> file`, `cp`/`mv`, `tee`, `patch`, `git apply`, an interpreter one-liner that writes). **Vacuous-pass** when nothing was changed. Read-only shell does not count (`src/detect/mutation.ts`). |
 | `implementation-tool-not-called` | `<tool>` | **Negative.** No implementation-file use of `<tool>`. Empty capture → FAIL. |
 | `investigated` | — | A native `Read`/`Grep`, or a shell `grep`/`rg` via `Bash`, occurred (cross-harness). |
 | `worktree-created` | — | `EnterWorktree`, or `git worktree add` via `Bash`. |
@@ -506,9 +507,9 @@ relative path up out of the workdir.
 
 ### Vacuous-pass verbs and empty capture
 
-Three verbs **pass when their precondition is absent** because the "before"
-anchor never fired: `skill-before-tool`, `skill-before-implementation-tool`, and
-`tool-match-before-tool-match`. This is by design: "X before Y" is vacuously true
+Four verbs **pass when their precondition is absent** because the "before"
+anchor never fired: `skill-before-tool`, `skill-before-implementation-tool`,
+`skill-before-mutation`, and `tool-match-before-tool-match`. This is by design: "X before Y" is vacuously true
 when there is no Y. Pair them with a positive verb (e.g. `skill-called`) when you
 need to assert the skill *did* fire.
 
@@ -646,6 +647,13 @@ post() {
 `skill-called` is the positive anchor; the two `skill-before-implementation-tool`
 checks are vacuous-pass if the agent never edited/wrote an implementation file;
 the positive check carries the weight.
+
+Naming tools this way only covers the ones that carry a file path in an
+argument. If the ordering itself is the thing under test — the run is a failure
+when the file changed first, whoever changed it — use `skill-before-mutation`
+instead: an agent that reaches for `sed -i` or `printf > file` satisfies the
+`Edit`/`Write` pair vacuously, having changed exactly the file the assertion
+was meant to protect.
 
 ### Judgment / quality — `scenarios/code-review-catches-planted-bugs`
 

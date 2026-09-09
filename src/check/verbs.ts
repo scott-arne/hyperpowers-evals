@@ -11,6 +11,7 @@ import {
   implementationRelpath,
   isImplementationPath,
 } from '../detect/implementation.ts';
+import { isMutatingCall, mutationDescription } from '../detect/mutation.ts';
 import { isSkillInvocation } from '../detect/skill.ts';
 import { posixToJsRegex } from './regex.ts';
 
@@ -266,6 +267,59 @@ export function verbSkillBeforeImplementationTool(
   return {
     passed: false,
     detail: `Skill(${skill}) at line ${skillIdx + 1} fired after implementation ${tool} at line ${toolCallIdx + 1} (${toolRelpath})`,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// skill-before-mutation <skill>   [NEGATIVE-guard on empty]
+// ---------------------------------------------------------------------------
+//
+// Same question as skill-before-implementation-tool, asked of every way a file
+// can change rather than one named tool. `... <skill> Edit` and `... <skill>
+// Write` together still pass a run that rewrote the reviewed files with
+// `sed -i` or a redirection before the skill was ever entered; this verb does
+// not. See src/detect/mutation.ts for which shell shapes count.
+export function verbSkillBeforeMutation(
+  calls: ToolCallView[],
+  empty: boolean,
+  args: string[],
+): VerbResult {
+  const skill = args[0] ?? '';
+  const dir = skill.includes(':')
+    ? skill.slice(skill.lastIndexOf(':') + 1)
+    : skill;
+
+  if (empty) {
+    return { passed: false, detail: 'tool-calls file missing or empty' };
+  }
+
+  const skillIdx = calls.findIndex((c) => isSkillInvocation(c, dir));
+  const mutationIdx = calls.findIndex(isMutatingCall);
+
+  if (mutationIdx < 0) {
+    return {
+      passed: true,
+      detail: 'no file was changed — assertion is vacuous',
+    };
+  }
+
+  const what = mutationDescription(calls[mutationIdx] as ToolCallView);
+
+  if (skillIdx < 0) {
+    return {
+      passed: false,
+      detail: `first mutation at line ${mutationIdx + 1} ${what} but Skill(${skill}) never fired`,
+    };
+  }
+  if (skillIdx < mutationIdx) {
+    return {
+      passed: true,
+      detail: `Skill(${skill}) at line ${skillIdx + 1} before first mutation at line ${mutationIdx + 1} ${what}`,
+    };
+  }
+  return {
+    passed: false,
+    detail: `Skill(${skill}) at line ${skillIdx + 1} fired after first mutation at line ${mutationIdx + 1} ${what}`,
   };
 }
 

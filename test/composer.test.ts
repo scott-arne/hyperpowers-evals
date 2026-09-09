@@ -115,6 +115,7 @@ const CHECK_TRANSCRIPT_VERBS = [
   'skill-not-called',
   'skill-before-tool',
   'skill-before-implementation-tool',
+  'skill-before-mutation',
   'implementation-tool-not-called',
   'investigated',
   'worktree-created',

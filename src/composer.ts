@@ -27,6 +27,7 @@ const TRACE_PRIMITIVES = new Set([
   'skill-not-called',
   'skill-before-tool',
   'skill-before-implementation-tool',
+  'skill-before-mutation',
   'implementation-tool-not-called',
   'investigated',
   'worktree-created',

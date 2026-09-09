@@ -59,8 +59,11 @@ post() {
     # SKILL.md instead of through the native Skill tool; `skill-called` above
     # covers presence in that case.
     check-transcript tool-match-before-tool-match Agent '[Rr]eview' Skill 'receiving-code-review'
-    # ...and BEFORE any fix landed. Vacuous when nothing was edited, which is a
-    # legitimate outcome: not every finding has to be acted on.
-    check-transcript skill-before-implementation-tool hyperpowers:receiving-code-review Edit
-    check-transcript skill-before-implementation-tool hyperpowers:receiving-code-review Write
+    # ...and BEFORE any fix landed, by whatever route the fix took. Naming Edit
+    # and Write covered only the tools that carry a file_path argument, so a run
+    # that rewrote the reviewed file with `sed -i`, a redirection or `perl -pi`
+    # -- implementing a finding on sight, which is the failure under test --
+    # satisfied both assertions vacuously. Vacuous when nothing was changed at
+    # all, which is a legitimate outcome: not every finding has to be acted on.
+    check-transcript skill-before-mutation hyperpowers:receiving-code-review
 }
