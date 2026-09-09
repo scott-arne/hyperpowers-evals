@@ -44,14 +44,17 @@ post() {
 
     # The user's tooling selection reached the spec's Global Constraints. awk
     # opens the section at a markdown heading whose text is "global
-    # constraints" (any level, case-insensitive, tolerating bold markers and
-    # trailing words) and closes it at the next heading, so a mention of pytest
-    # under Testing cannot satisfy this. Inside that section, one of the two
-    # tools the story's driver names has to appear as a whole word. Hand-checked
-    # against a spec with no Global Constraints section but pytest under
-    # Testing, a Global Constraints section naming no tooling, and no spec at
-    # all: all three fail.
-    command-succeeds 'for f in docs/hyperpowers/specs/*-design.md docs/superpowers/specs/*-design.md; do test -f "$f" || continue; awk "tolower(\$0) ~ /^#+[ \t]*\**global constraints/ {s=1; next} s && /^#/ {s=0} s {print}" "$f" | grep -qiwE "ruff|pytest" && exit 0; done; exit 1'
+    # constraints" (any level, case-insensitive, tolerating bold markers, a
+    # section number like "2." or "4.2", and trailing words) and closes it at
+    # the next heading, so a mention of pytest under Testing cannot satisfy
+    # this. Inside that section, one of the two tools the story's driver names
+    # has to appear as a whole word. Hand-checked against a spec with no Global
+    # Constraints section but pytest under Testing, a Global Constraints
+    # section naming no tooling, and no spec at all: all three fail. The
+    # section-number tolerance was added after a run wrote "## 2. Global
+    # Constraints" with the selection correctly recorded under it and the
+    # oracle scored it a miss.
+    command-succeeds 'for f in docs/hyperpowers/specs/*-design.md docs/superpowers/specs/*-design.md; do test -f "$f" || continue; awk "tolower(\$0) ~ /^#+[ \t]*\**[ \t]*([0-9][0-9.)]*[ \t]+)?\**[ \t]*global constraints/ {s=1; next} s && /^#/ {s=0} s {print}" "$f" | grep -qiwE "ruff|pytest" && exit 0; done; exit 1'
 
     # The Codex spec gate really ran against a real answer. The seeded stub
     # appends one line per invocation to calls.log, tagged with the canned
