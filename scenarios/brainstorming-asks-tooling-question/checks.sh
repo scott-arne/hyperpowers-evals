@@ -52,4 +52,13 @@ post() {
     # Testing, a Global Constraints section naming no tooling, and no spec at
     # all: all three fail.
     command-succeeds 'for f in docs/hyperpowers/specs/*-design.md docs/superpowers/specs/*-design.md; do test -f "$f" || continue; awk "tolower(\$0) ~ /^#+[ \t]*\**global constraints/ {s=1; next} s && /^#/ {s=0} s {print}" "$f" | grep -qiwE "ruff|pytest" && exit 0; done; exit 1'
+
+    # The Codex spec gate really ran against a real answer. The seeded stub
+    # appends one line per invocation to calls.log, tagged with the canned
+    # answer it returned, so this proves the session took the normal
+    # architectural path rather than the degraded one a stub that answers `{}`
+    # forces. The approach gate is deliberately not asserted: it is conditional
+    # on there being two or more genuinely different architectures, and a design
+    # space this small may legitimately skip it.
+    command-succeeds 'grep -qE "^task kind=(spec-review|document-review) " "$QUORUM_AGENT_CONFIG_DIR/plugins/cache/openai-codex/codex/stub/scripts/calls.log"'
 }
