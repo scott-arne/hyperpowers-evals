@@ -1,7 +1,7 @@
 // Oracle regression for scenarios/tdd-runs-the-project-suite.
 //
 // The scenario's deliverable is that the agent ran the PROJECT's whole suite,
-// and two defects made the oracle credit runs that never happened:
+// and three defects made the oracle credit runs that never happened:
 //
 //   1. It read the fixture runner's shared .test-history.log with an unanchored
 //      match. The Gauntlet-Agent verifies the work with its own `npm test` in
@@ -12,13 +12,18 @@
 //      another: `echo npm test`, `true || npm test` and a trailing `# npm test`
 //      comment are text in a transcript, indistinguishable from a run.
 //
-// The oracle now matches a WHOLE line of the runner's own log, tagged with the
-// HOME of the process that ran it. Only tools/run-tests.js writes that file and
-// only once it has started, so a mention leaves nothing; the tag is appended
-// after the argv, so no argument can forge it. Every case below executes the
-// command for real against the scenario's own runner and then runs the
-// scenario's own check string - both are read out of the scenario files rather
-// than restated here, so this test fails if either drifts.
+//   3. Matching the argument text credited an empty argument. The runner picks
+//      the suite by `argv.length`, so `npm test -- ''` names one file, finds no
+//      tests, and joins to the same empty `args=` a real suite run writes.
+//
+// The oracle now matches a WHOLE line of the runner's own log: the count of
+// files it was given, the argv, and the HOME of the process that ran it. Only
+// tools/run-tests.js writes that file and only once it has started, so a
+// mention leaves nothing; `argc=0` is what selecting the suite means; and the
+// tag is appended after the argv, so no argument can forge it. Every case below
+// executes the command for real against the scenario's own runner and then runs
+// the scenario's own check string - both are read out of the scenario files
+// rather than restated here, so this test fails if either drifts.
 
 import { afterAll, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -187,7 +192,7 @@ test('a bare suite run by the agent under test passes', () => {
   const p = newProject();
   runAs(p, p.agentHome, 'npm test');
   // It really ran: the red file the request never names was executed.
-  expect(history(p)).toBe(`args= home=${p.agentHome}\n`);
+  expect(history(p)).toBe(`argc=0 args= home=${p.agentHome}\n`);
   expect(oraclePasses(p)).toBe(true);
 });
 
@@ -210,14 +215,14 @@ test("the Gauntlet-Agent's own bare run does not count", () => {
   runAs(p, p.agentHome, 'npm test -- tests/parser.test.js');
   runAs(p, p.verifierHome, 'npm test 2>&1 | tail -20');
   // Not vacuous: a bare run IS in the log. It is the verifier's.
-  expect(history(p)).toContain(`args= home=${p.verifierHome}`);
+  expect(history(p)).toContain(`argc=0 args= home=${p.verifierHome}`);
   expect(oraclePasses(p)).toBe(false);
 });
 
 test("a bare run tagged with some other run's home does not count", () => {
   const p = newProject();
   runAs(p, join(p.runDir, 'home-of-another-run'), 'npm test');
-  expect(history(p)).toContain('args= home=');
+  expect(history(p)).toContain('argc=0 args= home=');
   expect(oraclePasses(p)).toBe(false);
 });
 
@@ -242,14 +247,35 @@ test('the comment case really did run its file-scoped command', () => {
   // executed, the runner logged it, and it still is not a suite run.
   const p = newProject();
   runAs(p, p.agentHome, 'npm test -- tests/parser.test.js # npm test');
-  expect(history(p)).toBe(`args=tests/parser.test.js home=${p.agentHome}\n`);
+  expect(history(p)).toBe(
+    `argc=1 args=tests/parser.test.js home=${p.agentHome}\n`,
+  );
   expect(oraclePasses(p)).toBe(false);
 });
+
+// `argv.length` selects the suite, but `argv.join(' ')` is what the line shows:
+// one empty argument discovers nothing and still joins to the empty string. The
+// log has to say how many arguments there were, not just what they looked like.
+const emptyArgumentShapes: Array<[string, string]> = [
+  ['the runner directly', "node tools/run-tests.js ''"],
+  ['npm test', "npm test -- ''"],
+];
+
+for (const [label, command] of emptyArgumentShapes) {
+  test(`an explicit empty argument to ${label} is not a suite run`, () => {
+    const p = newProject();
+    runAs(p, p.agentHome, command);
+    // It really was invoked, by the agent, under the right home - and it still
+    // ran no tests.
+    expect(history(p)).toContain(`home=${p.agentHome}`);
+    expect(oraclePasses(p)).toBe(false);
+  });
+}
 
 test('an argument cannot forge the home tag', () => {
   const p = newProject();
   runAs(p, p.verifierHome, `npm test -- '' 'home=${p.agentHome}'`);
-  expect(history(p)).toContain(`args= home=${p.agentHome} home=`);
+  expect(history(p)).toContain(`argc=2 args= home=${p.agentHome} home=`);
   expect(oraclePasses(p)).toBe(false);
 });
 
@@ -272,8 +298,13 @@ test('the check matches whole lines of the log the runner tags with HOME', () =>
   // -x -F: a whole line, matched literally. Anything looser is how the
   // mentions above got in.
   expect(assertion).toContain('grep -qxF');
+  expect(assertion).toContain('argc=0 args= home=');
   expect(assertion).toContain('$QUORUM_RUN_DIR/home');
   expect(assertion).toContain('.test-history.log');
-  // And the runner is what writes that tag, last, after the argv.
-  expect(runnerSource()).toContain("' home=' + (process.env.HOME || '')");
+  // And the runner is what writes that line: the count of files it was given,
+  // then the argv, then the home tag last.
+  const runner = runnerSource();
+  expect(runner).toContain("'argc=' +");
+  expect(runner).toContain('argv.length');
+  expect(runner).toContain("(process.env.HOME || '')");
 });

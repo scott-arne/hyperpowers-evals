@@ -27,12 +27,16 @@ pre() {
 
 post() {
     check-transcript skill-called superpowers:test-driven-development
-    # The Coding-Agent ran the suite bare. Two things have to hold, and one line
-    # of the runner's log carries both:
+    # The Coding-Agent ran the suite bare. Three things have to hold, and one
+    # line of the runner's log carries all of them:
     #   * it EXECUTED. Only tools/run-tests.js writes this file, and only once
     #     it has actually started, so `echo npm test`, `true || npm test` and a
     #     trailing `# npm test` comment leave no line at all. A transcript
     #     regex cannot tell those apart from a real run.
+    #   * it SELECTED THE SUITE. The runner discovers every test file when it
+    #     is given no arguments, so the line has to say `argc=0`. Reading the
+    #     argument text alone is not enough: `npm test -- ''` passes one
+    #     argument, discovers nothing, and joins to an empty `args=`.
     #   * the AGENT UNDER TEST ran it, not the verifier. Every coding agent is
     #     launched with HOME pinned to the per-run throwaway home
     #     ($QUORUM_RUN_DIR/home); the Gauntlet-Agent, which verifies the work
@@ -42,9 +46,9 @@ post() {
     #     _logs, while the Gauntlet-Agent's landed in the operator's ~/.npm/
     #     _logs at the timestamp of its own `npm test`.
     # grep -x -F matches the WHOLE line against a fixed string, so a suite run
-    # is a line with nothing at all between `args=` and the home tag, and no
+    # is `argc=0` with nothing at all between `args=` and the home tag, and no
     # argument can forge one.
-    command-succeeds 'grep -qxF "args= home=$QUORUM_RUN_DIR/home" .test-history.log'
+    command-succeeds 'grep -qxF "argc=0 args= home=$QUORUM_RUN_DIR/home" .test-history.log'
     # The requested change actually landed: a commented-out setting no longer
     # parses as a setting. Probes the parser directly, so a run that only edited
     # tests cannot pass.
