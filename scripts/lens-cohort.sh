@@ -38,7 +38,14 @@ for (const key of fs.readdirSync(base)) {
 }
 if (!rows.length) { console.log("no round-1 lens captures at or after " + since); process.exit(0); }
 const byRun = {}; for (const r of rows) (byRun[r.run] = byRun[r.run] || []).push(r);
-const batches = Object.values(byRun).filter(b => b.length >= 3);
+const canonical = new Set(["correctness", "contracts-and-integration", "tests-and-evidence"]);
+const allBatches = Object.entries(byRun).filter(([_, b]) => b.length >= 3);
+const batches = [], excluded = [];
+for (const [run, b] of allBatches) {
+  const lenses = new Set(b.map(r => r.lens));
+  if (lenses.size === canonical.size && [...canonical].every(x => lenses.has(x))) batches.push(b);
+  else excluded.push({ run, lenses: [...lenses].sort() });
+}
 const words = t => new Set(String(t).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
 const jac = (a, b) => { const A = words(a), B = words(b); const i = [...A].filter(x => B.has(x)).length; const u = new Set([...A, ...B]).size; return u ? i / u : 0; };
 const per = {};
@@ -48,8 +55,11 @@ for (const b of batches) for (const r of b) {
   for (const t of r.titles) { p.findings++; if (b.some(o => o.lens !== r.lens && o.titles.some(u => jac(t, u) >= 0.5))) p.dup++; }
 }
 console.log("complete round-1 batches: " + batches.length);
+if (excluded.length) console.log("excluded batches: " + excluded.length + " — " + excluded.map(e => path.basename(e.run) + ": [" + e.lenses.join(", ") + "]").join("; "));
 for (const [lens, p] of Object.entries(per)) {
-  const decided = p.approved + p.blocking; const rate = decided ? Math.round(100 * p.blocking / decided) : null; const dup = p.findings ? Math.round(100 * p.dup / p.findings) : null;
-  console.log(lens + ": approved " + p.approved + ", blocking " + p.blocking + ", incomplete " + p.incomplete + "; blocking rate " + (rate === null ? "-" : rate + "%") + "; blocking findings " + p.findings + ", duplicated by another lens " + (dup === null ? "-" : dup + "%"));
+  const decided = p.approved + p.blocking; const rate = decided ? (100 * p.blocking / decided).toFixed(1) : null; const dup = p.findings ? (100 * p.dup / p.findings).toFixed(1) : null;
+  const blockingFlag = decided && p.blocking * 100 >= 60 * decided ? "meets-60%-threshold" : "below-60%-threshold";
+  const dupFlag = p.findings && p.dup * 100 >= 80 * p.findings ? "meets-80%-threshold" : "below-80%-threshold";
+  console.log(lens + ": approved " + p.approved + ", blocking " + p.blocking + ", incomplete " + p.incomplete + "; blocking rate " + p.blocking + "/" + decided + " = " + (rate === null ? "-" : rate + "%") + " (" + blockingFlag + "); blocking findings " + p.findings + ", duplicated by another lens " + p.dup + "/" + p.findings + " = " + (dup === null ? "-" : dup + "%") + " (" + dupFlag + ")");
 }
 JS
