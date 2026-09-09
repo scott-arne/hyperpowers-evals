@@ -1,4 +1,6 @@
 import { expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { flattenToolCalls } from '../src/atif/project.ts';
 import { validateTrajectory } from '../src/atif/validate.ts';
 import { isImplementationPath } from '../src/detect/implementation.ts';
@@ -345,15 +347,19 @@ test('no token_count events => no final_metrics, no model_name', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The `exec` tool: a JavaScript program, not a shell string
+// The `exec` tool: what ran, not what was written
 //
 // Newer Codex builds stop calling exec_command as a tool. They call one `exec`
-// tool whose input is a program that calls tools.exec_command({cmd}) — often
-// several at once inside a Promise.all. Left opaque, the shell commands the
-// agent ran are invisible to every command-shaped check (skill reads,
-// tool-arg-match on Bash.command, investigated, worktree-created). The
-// programs below are verbatim from the archived
-// tdd-runs-the-project-suite Codex runs, with the run directory shortened.
+// tool whose input is a JavaScript program that calls tools.exec_command({cmd})
+// — often several at once inside a Promise.all. That program is the REQUEST.
+// Reading shell commands out of its source credits text that never executed: a
+// command quoted in a string, sitting in a comment, guarded by a branch that is
+// never taken, or carried inside an apply_patch body all look like runs.
+//
+// The rollout separately records what did execute, as `item_completed` events
+// (CommandExecution / FileChange) emitted after each action, in execution
+// order, each with its own id. Those events are the source of truth here, and
+// the tests below pin both halves: executions are normalized, mentions are not.
 // ---------------------------------------------------------------------------
 
 const execProgramLine = (input: string, callId: string) =>
@@ -362,77 +368,181 @@ const execProgramLine = (input: string, callId: string) =>
     payload: { type: 'custom_tool_call', name: 'exec', input, call_id: callId },
   });
 
-test('exec program yields one Bash call per tools.exec_command', () => {
-  const program = `const r = await Promise.all([
-  tools.exec_command({cmd:"npm test -- tests/parser.test.js","workdir":"/run/wd","yield_time_ms":30000,"max_output_tokens":12000}),
-  tools.exec_command({cmd:"npm test","workdir":"/run/wd","yield_time_ms":30000,"max_output_tokens":20000})
-]);
-text(r.length);`;
-  const calls = flattenToolCalls(
-    normalizeCodex(execProgramLine(program, 'c1'), 'test'),
+const commandExecutionLine = (
+  id: string,
+  script: string,
+  status = 'completed',
+  exitCode = 0,
+) =>
+  JSON.stringify({
+    type: 'event_msg',
+    payload: {
+      type: 'item_completed',
+      item: {
+        id,
+        item_type: 'command_execution',
+        type: 'CommandExecution',
+        command: ['/opt/homebrew/bin/zsh', '-lc', script],
+        aggregated_output: '',
+        exit_code: exitCode,
+        status,
+      },
+    },
+  });
+
+const fileChangeLine = (id: string, paths: string[]) =>
+  JSON.stringify({
+    type: 'event_msg',
+    payload: {
+      type: 'item_completed',
+      item: {
+        id,
+        type: 'FileChange',
+        changes: Object.fromEntries(paths.map((p) => [p, { kind: 'update' }])),
+        status: 'completed',
+      },
+    },
+  });
+
+const bashCommands = (raw: string): string[] =>
+  flattenToolCalls(normalizeCodex(raw, 'test'))
+    .filter((c) => c.tool === 'Bash')
+    .map((c) => String(c.args['command']));
+
+const callIds = (raw: string): string[] =>
+  normalizeCodex(raw, 'test').steps.flatMap((s) =>
+    (s.tool_calls ?? []).map((c) => c.tool_call_id ?? ''),
   );
-  expect(calls.map((c) => c.tool)).toEqual(['Bash', 'Bash']);
-  expect(calls.map((c) => c.args['command'])).toEqual([
+
+test('recorded command executions become Bash calls in execution order', () => {
+  const raw = [
+    commandExecutionLine('exec-1', 'npm test -- tests/parser.test.js'),
+    commandExecutionLine('exec-2', 'npm test'),
+  ].join('\n');
+  expect(bashCommands(raw)).toEqual([
     'npm test -- tests/parser.test.js',
     'npm test',
   ]);
+  expect(callIds(raw)).toEqual(['exec-1', 'exec-2']);
 });
 
-test('exec-wrapped SKILL.md read is a skill invocation', () => {
-  const program = `const r = await Promise.all([
-  tools.exec_command({cmd:"sed -n '1,240p' '/run/home/.codex/plugins/cache/debug/superpowers/local/skills/systematic-debugging/SKILL.md'","workdir":"/run/wd","yield_time_ms":10000,"max_output_tokens":20000}),
-  tools.exec_command({cmd:"sed -n '1,280p' '/run/home/.codex/plugins/cache/debug/superpowers/local/skills/test-driven-development/SKILL.md'","workdir":"/run/wd","yield_time_ms":10000,"max_output_tokens":30000})
-]);
-for (const x of r) text(x.output);
-`;
-  const calls = flattenToolCalls(
-    normalizeCodex(execProgramLine(program, 'c2'), 'test'),
+test('a command that exited non-zero still ran, and is normalized', () => {
+  // status is the OUTCOME, not whether it executed. The archived treatment
+  // run's decisive bare `npm test` is a "failed" item (the pre-existing red
+  // test), so filtering on "completed" would drop the evidence.
+  const raw = commandExecutionLine('exec-red', 'npm test', 'failed', 1);
+  expect(bashCommands(raw)).toEqual(['npm test']);
+});
+
+test('a recorded file change becomes an Edit carrying every changed path', () => {
+  const raw = fileChangeLine('exec-fc', [
+    '/run/coding-agent-workdir/src/parser.js',
+    '/run/coding-agent-workdir/tests/parser.test.js',
+  ]);
+  const call = flattenToolCalls(normalizeCodex(raw, 'test')).find(
+    (c) => c.tool === 'Edit',
+  )!;
+  expect(call.args['file_path']).toBe(
+    '/run/coding-agent-workdir/src/parser.js',
   );
+  expect(call.args['file_paths']).toEqual([
+    '/run/coding-agent-workdir/src/parser.js',
+    '/run/coding-agent-workdir/tests/parser.test.js',
+  ]);
+  expect(isImplementationPath(call)).toBe(true);
+});
+
+test('a recorded SKILL.md read is a skill invocation', () => {
+  const raw = commandExecutionLine(
+    'exec-skill',
+    "sed -n '1,280p' '/run/home/.codex/plugins/cache/debug/superpowers/local/skills/test-driven-development/SKILL.md'",
+  );
+  const calls = flattenToolCalls(normalizeCodex(raw, 'test'));
   expect(
     calls.some((c) => isSkillInvocation(c, 'test-driven-development')),
   ).toBe(true);
   expect(calls.some((c) => isSkillInvocation(c, 'brainstorming'))).toBe(false);
 });
 
-test('exec program with no exec_command keeps the raw call (nothing is dropped)', () => {
-  const program = `const patch = "*** Begin Patch\\n*** Update File: /run/wd/src/parser.js\\n@@\\n-old\\n+new\\n*** End Patch";
-text(await tools.apply_patch(patch));
-`;
+// The four ways exec program source lies about what ran. Each is checked twice:
+// alone (nothing executed, so nothing may be credited) and beside a real
+// execution (only the real one may be credited).
+const mentionsThatNeverRan: Array<[string, string]> = [
+  [
+    'a string literal',
+    `const note = 'await tools.exec_command({cmd:"npm test"})';\ntext(note);`,
+  ],
+  [
+    'a comment',
+    `// await tools.exec_command({cmd:"npm test"})\ntext('nothing to run');`,
+  ],
+  [
+    'an unreachable branch',
+    `if (false) { await tools.exec_command({cmd:"npm test"}); }\ntext('skipped');`,
+  ],
+  [
+    'an apply_patch payload',
+    `const patch = [
+  '*** Begin Patch',
+  '*** Update File: /run/wd/NOTES.md',
+  '@@',
+  '-old',
+  '+run await tools.exec_command({cmd:"npm test"}) before shipping',
+  '*** End Patch',
+].join('\\n');
+text(await tools.apply_patch(patch));`,
+  ],
+];
+
+for (const [label, program] of mentionsThatNeverRan) {
+  test(`exec_command inside ${label} is not a command that ran`, () => {
+    expect(bashCommands(execProgramLine(program, 'mention'))).toEqual([]);
+    const raw = [
+      execProgramLine(program, 'mention'),
+      commandExecutionLine('exec-1', 'git status --short'),
+    ].join('\n');
+    expect(bashCommands(raw)).toEqual(['git status --short']);
+  });
+}
+
+test('an apply_patch whose body quotes exec_command yields an Edit, never a Bash', () => {
+  const line = JSON.stringify({
+    type: 'response_item',
+    payload: {
+      type: 'custom_tool_call',
+      name: 'apply_patch',
+      input:
+        '*** Begin Patch\n*** Update File: NOTES.md\n@@\n-old\n+await tools.exec_command({cmd:"npm test"})\n*** End Patch\n',
+      call_id: 'p1',
+    },
+  });
+  const calls = flattenToolCalls(normalizeCodex(line, 'test'));
+  expect(calls.map((c) => c.tool)).toEqual(['Edit']);
+  expect(calls[0]?.args['file_path']).toBe('NOTES.md');
+});
+
+test('the exec request is skipped when the log records what ran (no double count)', () => {
+  const program = `await tools.exec_command({cmd:"npm test",workdir:"/run/wd"});`;
+  const raw = [
+    execProgramLine(program, 'c1'),
+    commandExecutionLine('exec-1', 'npm test'),
+  ].join('\n');
+  expect(bashCommands(raw)).toEqual(['npm test']);
+  expect(callIds(raw)).toEqual(['exec-1']);
+});
+
+test('a log with no completion events keeps the exec request as an opaque call', () => {
+  // Older builds record no outcomes. Nothing is invented from the source, and
+  // nothing is dropped either: the request stays visible as what it is.
+  const program = `await tools.exec_command({cmd:"npm test"});`;
   const calls = flattenToolCalls(
-    normalizeCodex(execProgramLine(program, 'c3'), 'test'),
+    normalizeCodex(execProgramLine(program, 'c1'), 'test'),
   );
-  expect(calls.length).toBe(1);
-  expect(calls[0]?.tool).toBe('exec');
+  expect(calls.map((c) => c.tool)).toEqual(['exec']);
   expect(calls[0]?.args['input']).toBe(program);
 });
 
-test('exec program escapes are decoded into the shell command', () => {
-  const program = `await tools.exec_command({cmd:"printf 'a\\tb\\n' && grep -q \\"x=1\\" f"});`;
-  const calls = flattenToolCalls(
-    normalizeCodex(execProgramLine(program, 'c4'), 'test'),
-  );
-  expect(calls[0]?.args['command']).toBe(
-    'printf \'a\tb\n\' && grep -q "x=1" f',
-  );
-});
-
-test('a repeated exec payload is deduplicated, not partially dropped', () => {
-  const program = `await Promise.all([
-  tools.exec_command({cmd:"git status --short"}),
-  tools.exec_command({cmd:"git diff"})
-]);`;
-  const raw = [
-    execProgramLine(program, 'dup'),
-    execProgramLine(program, 'dup'),
-  ].join('\n');
-  const calls = flattenToolCalls(normalizeCodex(raw, 'test'));
-  expect(calls.map((c) => c.args['command'])).toEqual([
-    'git status --short',
-    'git diff',
-  ]);
-});
-
-test('exec as a function_call payload is unwrapped the same way', () => {
+test('exec as a function_call payload is skipped the same way', () => {
   const line = JSON.stringify({
     type: 'response_item',
     payload: {
@@ -444,7 +554,56 @@ test('exec as a function_call payload is unwrapped the same way', () => {
       call_id: 'c5',
     },
   });
-  const calls = flattenToolCalls(normalizeCodex(line, 'test'));
-  expect(calls.map((c) => c.tool)).toEqual(['Bash']);
-  expect(calls[0]?.args['command']).toBe('npm test');
+  const raw = [line, commandExecutionLine('exec-1', 'npm run lint')].join('\n');
+  expect(bashCommands(raw)).toEqual(['npm run lint']);
+});
+
+test('a repeated completion event is deduplicated by item id', () => {
+  const raw = [
+    commandExecutionLine('exec-dup', 'git diff'),
+    commandExecutionLine('exec-dup', 'git diff'),
+  ].join('\n');
+  expect(bashCommands(raw)).toEqual(['git diff']);
+});
+
+test('a real codex rollout yields the commands it executed, in order, with unique ids', () => {
+  // Captured from the archived tdd-runs-the-project-suite treatment run
+  // (codex actor), trimmed to its tool rows with the run directory shortened.
+  // It carries both halves of the problem: 8 `exec` request programs and the
+  // 16 completion events they produced.
+  const raw = readFileSync(
+    join(import.meta.dir, 'fixtures/codex-exec-events-real.jsonl'),
+    'utf8',
+  );
+  const traj = normalizeCodex(raw, 'test');
+  expect(validateTrajectory(traj).ok).toBe(true);
+
+  const calls = flattenToolCalls(traj);
+  expect(calls.length).toBe(16);
+
+  const ids = callIds(raw);
+  expect(new Set(ids).size).toBe(ids.length);
+
+  const npmRuns = calls
+    .filter((c) => c.tool === 'Bash')
+    .map((c) => String(c.args['command']))
+    .filter((c) => c.startsWith('npm test'));
+  // Two file-scoped runs (red, then green) and then the whole suite — the
+  // ordering the scenario is built to detect.
+  expect(npmRuns).toEqual([
+    'npm test -- tests/parser.test.js',
+    'npm test -- tests/parser.test.js',
+    'npm test',
+  ]);
+
+  const edited = calls
+    .filter((c) => c.tool === 'Edit')
+    .map((c) => String(c.args['file_path']));
+  expect(edited).toEqual([
+    '/run/coding-agent-workdir/tests/parser.test.js',
+    '/run/coding-agent-workdir/src/parser.js',
+  ]);
+  expect(
+    calls.some((c) => isSkillInvocation(c, 'test-driven-development')),
+  ).toBe(true);
 });

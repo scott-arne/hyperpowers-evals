@@ -157,115 +157,111 @@ function withPatchPaths(
 }
 
 // ---------------------------------------------------------------------------
-// The `exec` tool
+// The `exec` tool, and why its program source is not read
 //
 // Newer Codex builds do not expose exec_command as a tool. They expose one
-// `exec` tool whose input is a JavaScript program that calls
-// `tools.exec_command({cmd: "..."})`, frequently several at once:
+// `exec` tool whose input is a JavaScript PROGRAM that calls
+// `tools.exec_command({cmd: "..."})` / `tools.apply_patch(...)`, often several
+// at once:
 //
 //   const r = await Promise.all([
 //     tools.exec_command({cmd:"npm test", "workdir":"/w"}),
 //   ]);
 //
-// Recorded as {function_name:'exec', arguments:{input}}, that program is opaque
-// to every command-shaped check — skill reads (detect/skill.ts keys off the
-// Bash/Shell command text), tool-arg-match on Bash.command, investigated,
-// worktree-created — so a Codex run silently scores as if it had run no shell
-// command at all. Unwrapping each cmd into its own Bash call gives this build
-// the same shape the older exec_command function_call already normalizes to.
+// That program is a REQUEST, not a record. Its source text says what the model
+// wrote, not what ran, and the two differ in ways no amount of parsing fixes:
+// `if (false) await tools.exec_command({cmd:"npm test"})`, the same call inside
+// a string or a comment, and an apply_patch body that happens to quote it all
+// read as a test run. Scanning the source credits commands that never executed.
+//
+// The rollout already records what did execute. Each shell command comes back
+// as its own completion event
+//
+//   {"type":"event_msg","payload":{"type":"item_completed","item":{
+//      "type":"CommandExecution","id":"exec-<uuid>",
+//      "command":["/opt/homebrew/bin/zsh","-lc","npm test"],
+//      "status":"completed","exit_code":0, ...}}}
+//
+// and each applied patch as an item of type FileChange whose `changes` map is
+// keyed by absolute path. Those events are emitted by the harness after the
+// process ran, one per command, in execution order, with a unique id — so they
+// are the source of truth for Bash and Edit calls here.
+//
+// `status` is the OUTCOME, not whether the command ran: a command that exits
+// non-zero is recorded as "failed". Both statuses are real executions and both
+// are normalized. (The archived treatment run's bare `npm test` is a "failed"
+// item — the pre-existing red test — so filtering on "completed" would drop the
+// very command that run is evidence for.)
+//
+// A log carrying completion events therefore SKIPS the `exec` request rows:
+// their outcomes are already covered, and emitting both would double-count.
+// A log with no completion events (an older build) keeps the previous
+// behaviour and records the request as an opaque `exec` call. Nothing anywhere
+// parses program source.
 // ---------------------------------------------------------------------------
 
-const JS_STRING_ESCAPES: Record<string, string> = {
-  n: '\n',
-  t: '\t',
-  r: '\r',
-  b: '\b',
-  f: '\f',
-  v: '\v',
-  '0': '\0',
-};
+interface CodexCompletedItem {
+  readonly type?: unknown;
+  readonly id?: unknown;
+  readonly command?: unknown;
+  readonly changes?: unknown;
+}
+
+/** The `item` of an `item_completed` event_msg row, or null for anything else. */
+function completedItem(
+  entry: Record<string, unknown>,
+): CodexCompletedItem | null {
+  const payload = entry['payload'];
+  if (!payload || typeof payload !== 'object') return null;
+  if ((payload as { type?: unknown }).type !== 'item_completed') return null;
+  const item = (payload as { item?: unknown }).item;
+  if (!item || typeof item !== 'object') return null;
+  return item as CodexCompletedItem;
+}
 
 /**
- * Read the JavaScript string literal whose opening quote is at `start`,
- * resolving the escapes a shell command can carry. Returns null when `start` is
- * not a quote or the literal never closes.
+ * The shell text of a recorded CommandExecution argv. Codex records the exec as
+ * the shell invocation that ran it (`["/bin/zsh","-lc","<script>"]`), so the
+ * script is the argument after the -c flag; any other shape is joined verbatim.
  */
-function readStringLiteral(src: string, start: number): string | null {
-  const quote = src[start];
-  if (quote !== '"' && quote !== "'" && quote !== '`') return null;
-
-  let out = '';
-  for (let i = start + 1; i < src.length; i++) {
-    const ch = src[i] as string;
-    if (ch === quote) return out;
-    if (ch !== '\\') {
-      out += ch;
-      continue;
-    }
-    const esc = src[i + 1];
-    if (esc === undefined) return null;
-    i++;
-    if (esc === 'u' && src[i + 1] === '{') {
-      const close = src.indexOf('}', i + 2);
-      const hex = close < 0 ? '' : src.slice(i + 2, close);
-      if (/^[0-9a-fA-F]{1,6}$/.test(hex)) {
-        out += String.fromCodePoint(Number.parseInt(hex, 16));
-        i = close;
-        continue;
-      }
-    }
-    if (esc === 'u' || esc === 'x') {
-      const width = esc === 'u' ? 4 : 2;
-      const hex = src.slice(i + 1, i + 1 + width);
-      if (hex.length === width && /^[0-9a-fA-F]+$/.test(hex)) {
-        out += String.fromCharCode(Number.parseInt(hex, 16));
-        i += width;
-        continue;
-      }
-    }
-    // Anything else (\\, \", \', \`, a line continuation, an unknown escape)
-    // stands for the character itself.
-    out += JS_STRING_ESCAPES[esc] ?? esc;
-  }
-  return null;
+function shellText(command: unknown): string | null {
+  if (!Array.isArray(command) || command.length === 0) return null;
+  const argv = command.map((a) => String(a));
+  const flag = argv.findIndex((a) => /^-[a-z]*c$/.test(a));
+  if (flag >= 0 && flag + 1 < argv.length) return argv[flag + 1] as string;
+  return argv.join(' ');
 }
 
-/** Every shell command an `exec` program runs, in program order. */
-export function execProgramCommands(program: string): string[] {
-  const commands: string[] = [];
-  const callRe = /\bexec_command\s*\(/g;
-  const starts: number[] = [];
-  for (let m = callRe.exec(program); m !== null; m = callRe.exec(program)) {
-    starts.push(m.index + m[0].length);
+/** Bash/Edit calls for one completed item; [] for the item types ATIF ignores. */
+function normalizeCompletedItem(item: CodexCompletedItem): AtifToolCall[] {
+  const callId = typeof item.id === 'string' ? item.id : '';
+  if (item.type === 'CommandExecution') {
+    const command = shellText(item.command);
+    if (command === null) return [];
+    return [
+      { tool_call_id: callId, function_name: 'Bash', arguments: { command } },
+    ];
   }
-
-  for (let i = 0; i < starts.length; i++) {
-    const from = starts[i] as number;
-    // Bound the key search at the next call so a call with no cmd key cannot
-    // borrow the following call's command.
-    const to = starts[i + 1] ?? program.length;
-    const key = /(?:^|[{,\s])["']?cmd["']?\s*:\s*/.exec(
-      program.slice(from, to),
-    );
-    if (key === null) continue;
-    const cmd = readStringLiteral(program, from + key.index + key[0].length);
-    if (cmd !== null) commands.push(cmd);
+  if (item.type === 'FileChange') {
+    const changes = item.changes;
+    const paths =
+      changes && typeof changes === 'object' ? Object.keys(changes) : [];
+    if (paths.length === 0) return [];
+    return [
+      {
+        tool_call_id: callId,
+        function_name: 'Edit',
+        arguments: { file_path: paths[0], file_paths: paths },
+      },
+    ];
   }
-  return commands;
+  return [];
 }
 
-/** One payload becomes N shell calls. The call_id is suffixed so the caller's
- *  dedup still drops a repeated payload whole, rather than keeping the first
- *  command of a fresh payload and discarding the rest. */
-function bashCalls(callId: string, commands: string[]): AtifToolCall[] {
-  return commands.map((command, i) => ({
-    tool_call_id: callId ? `${callId}#${i + 1}` : '',
-    function_name: 'Bash',
-    arguments: { command },
-  }));
-}
-
-function normalizePayload(payload: CodexPayload): AtifToolCall[] {
+function normalizePayload(
+  payload: CodexPayload,
+  execRecorded: boolean,
+): AtifToolCall[] {
   if (payload.type === 'function_call') {
     const p = payload as CodexFunctionCallPayload;
     const name = p.name ?? '';
@@ -282,11 +278,9 @@ function normalizePayload(payload: CodexPayload): AtifToolCall[] {
         },
       ];
     }
-    if (name === 'exec') {
-      const program = typeof args['input'] === 'string' ? args['input'] : '';
-      const commands = execProgramCommands(program);
-      if (commands.length > 0) return bashCalls(callId, commands);
-    }
+    // The request row for a build that also records completion events: what it
+    // asked for is already covered by what ran.
+    if (name === 'exec' && execRecorded) return [];
     if (name === 'apply_patch') {
       return [
         {
@@ -319,10 +313,7 @@ function normalizePayload(payload: CodexPayload): AtifToolCall[] {
         },
       ];
     }
-    if (name === 'exec') {
-      const commands = execProgramCommands(p.input ?? '');
-      if (commands.length > 0) return bashCalls(callId, commands);
-    }
+    if (name === 'exec' && execRecorded) return [];
     const canonical = CODEX_TOOL_MAP[name] ?? name;
     return [
       {
@@ -356,6 +347,10 @@ function normalizePayload(payload: CodexPayload): AtifToolCall[] {
  *   {"type": "response_item", "payload": {"type": "function_call", ...}}
  *   {"type": "response_item", "payload": {"type": "custom_tool_call", ...}}
  *   {"type": "response_item", "payload": {"type": "local_shell_call", ...}}
+ *   {"type": "event_msg", "payload": {"type": "item_completed", "item": ...}}
+ *
+ * The item_completed events are the record of what ACTUALLY executed (see the
+ * `exec` section above); the response_item rows are the requests.
  *
  * All tool calls are collected into a single agent step, since Codex rollout
  * logs do not carry separate message/turn structure. Each tool call gets its
@@ -365,15 +360,47 @@ export function normalizeCodex(raw: string, version: string): AtifTrajectory {
   const steps: AtifStep[] = [];
   let stepId = 1;
 
+  const lines = raw.split('\n');
+
+  // Does this log record execution outcomes? If it does, the `exec` request
+  // rows are redundant and are skipped below. Cheap substring guard first so
+  // the pre-pass does not JSON.parse a whole rollout twice.
+  let execRecorded = false;
+  for (const line of lines) {
+    if (!line.includes('item_completed')) continue;
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (entry['type'] !== 'event_msg') continue;
+    const item = completedItem(entry);
+    if (
+      item &&
+      (item.type === 'CommandExecution' || item.type === 'FileChange')
+    ) {
+      execRecorded = true;
+      break;
+    }
+  }
+
   // Deduplicate local_shell_call by a synthetic id since they lack call_id.
-  // For function_call and custom_tool_call, deduplicate by call_id.
+  // For function_call, custom_tool_call and the completion events, deduplicate
+  // by call_id / item id.
   const seenCallIds = new Set<string>();
+
+  const emit = (tc: AtifToolCall): void => {
+    if (tc.tool_call_id && seenCallIds.has(tc.tool_call_id)) return;
+    if (tc.tool_call_id) seenCallIds.add(tc.tool_call_id);
+    steps.push({ step_id: stepId++, source: 'agent', tool_calls: [tc] });
+  };
 
   // Last cumulative session usage and model, harvested from the non-tool rows.
   let sessionUsage: CodexTokenUsage | undefined;
   let modelName: string | undefined;
 
-  for (const line of raw.split('\n')) {
+  for (const line of lines) {
     if (!line.trim()) continue;
     let entry: Record<string, unknown>;
     try {
@@ -382,7 +409,8 @@ export function normalizeCodex(raw: string, version: string): AtifTrajectory {
       continue;
     }
 
-    // token_count events ride on `event_msg` rows, not `response_item`.
+    // token_count and item_completed both ride on `event_msg` rows, not
+    // `response_item`.
     if (entry['type'] === 'event_msg') {
       const payload = entry['payload'];
       if (
@@ -398,6 +426,13 @@ export function normalizeCodex(raw: string, version: string): AtifTrajectory {
               )
             : undefined;
         if (total) sessionUsage = total;
+        continue;
+      }
+      // Emitted in execution order, so appending here keeps the trajectory in
+      // the order the commands actually ran.
+      const item = completedItem(entry);
+      if (item) {
+        for (const tc of normalizeCompletedItem(item)) emit(tc);
       }
       continue;
     }
@@ -419,19 +454,8 @@ export function normalizeCodex(raw: string, version: string): AtifTrajectory {
     // Codex uses "payload" (real runs) or "item" (test fixtures using item key).
     const payload = (entry['payload'] ?? entry['item'] ?? {}) as CodexPayload;
 
-    // One payload can carry several shell calls (an `exec` program running a
-    // Promise.all of exec_commands), so this is a list.
-    for (const tc of normalizePayload(payload)) {
-      // Deduplicate: skip if we've seen this call_id (non-empty).
-      if (tc.tool_call_id && seenCallIds.has(tc.tool_call_id)) continue;
-      if (tc.tool_call_id) seenCallIds.add(tc.tool_call_id);
-
-      steps.push({
-        step_id: stepId++,
-        source: 'agent',
-        tool_calls: [tc],
-      });
-    }
+    // A skipped `exec` request contributes no calls, so this is a list.
+    for (const tc of normalizePayload(payload, execRecorded)) emit(tc);
   }
 
   // ATIF requires at least one step. If log was empty/unparseable, emit a
