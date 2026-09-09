@@ -38,7 +38,7 @@ export function toolPath(call: ToolCallView): string {
   return canonicalString(raw);
 }
 
-const WORKDIR_SEPARATOR = '/coding-agent-workdir/';
+export const WORKDIR_SEPARATOR = '/coding-agent-workdir/';
 
 /**
  * Reduce a raw path to its workdir-relative form, or "" when it names nothing

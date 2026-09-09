@@ -570,6 +570,26 @@ test('shellMutates: leaves read-only review commands alone', () => {
   }
 });
 
+// Found live: a control run reproduced the reviewed file in a scratch directory
+// to reason about it, and the redirection there was scored as an edit to the
+// file under review. Paths are relative, so the only thing separating the two
+// cases is which directory the shell is standing in.
+test('shellMutates: follows cd out of, and back into, the working copy', () => {
+  const outside =
+    'rm -rf /tmp/cfg-run && mkdir -p /tmp/cfg-run/src && cd /tmp/cfg-run && ' +
+    `git --git-dir=${WORKDIR}/.git show HEAD:src/config.js > src/config.js`;
+  expect(shellMutates(outside)).toBe(false);
+
+  const outsideThenBack = `cd /tmp/scratch && cd ${WORKDIR} && printf 'x\n' > app.conf`;
+  expect(shellMutates(outsideThenBack)).toBe(true);
+
+  const returnsWithDash = "cd /tmp/scratch && cd - && printf 'x\n' > app.conf";
+  expect(shellMutates(returnsWithDash)).toBe(true);
+
+  // Even standing outside, an absolute path back into the working copy counts.
+  expect(shellMutates(`cd /tmp/scratch && printf 'x\n' > ${WORKDIR}/app.conf`)).toBe(true);
+});
+
 test('skill-before-mutation: pass when skill precedes an Edit', () => {
   const result = verbSkillBeforeMutation(
     [

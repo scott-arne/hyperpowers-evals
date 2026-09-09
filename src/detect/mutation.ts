@@ -16,6 +16,7 @@
 
 import type { ToolCallView } from '../atif/project.ts';
 import {
+  WORKDIR_SEPARATOR,
   isImplementationPath,
   isImplementationRel,
   workdirRelpath,
@@ -177,12 +178,26 @@ function unquote(word: string): string {
  * True when a shell word names a file inside the working copy. A word the
  * shell would expand — a variable, a glob, a home reference — cannot be
  * resolved here, so it is refused rather than guessed at.
+ *
+ * `outside` says an earlier `cd` in the same command moved the shell out of
+ * the working copy, which makes every relative path mean something else. A
+ * review session that copies the branch into a scratch directory and runs it
+ * there writes `src/config.js` under /tmp, not the file it is reviewing.
  */
-function isWorkdirTarget(word: string): boolean {
+function isWorkdirTarget(word: string, outside: boolean): boolean {
   const raw = unquote(word);
   if (raw === '' || /[$*?~]/.test(raw) || raw.startsWith('-')) return false;
   if (raw.startsWith('/dev/')) return false;
+  if (outside && !namesWorkdir(raw)) return false;
   return isImplementationRel(workdirRelpath(raw));
+}
+
+/** True when an absolute path points into (or at) the agent's working copy. */
+function namesWorkdir(raw: string): boolean {
+  return (
+    raw.includes(WORKDIR_SEPARATOR) ||
+    raw.endsWith(WORKDIR_SEPARATOR.slice(0, -1))
+  );
 }
 
 /** A segment split into its redirections and the words that remain. */
@@ -328,9 +343,10 @@ function streamEditorTargets(rest: string[]): string[] | null {
 }
 
 /** True when one pipeline segment writes a file inside the working copy. */
-function segmentMutates(seg: Segment): boolean {
+function segmentMutates(seg: Segment, outside: boolean): boolean {
   const { targets: redirected, command } = splitRedirections(seg);
-  if (redirected.some(isWorkdirTarget)) return true;
+  const names = (w: string): boolean => isWorkdirTarget(w, outside);
+  if (redirected.some(names)) return true;
 
   const words = tokens(command);
   let i = 0;
@@ -355,24 +371,24 @@ function segmentMutates(seg: Segment): boolean {
     case 'gawk':
     case 'awk': {
       const targets = streamEditorTargets(rest);
-      return targets !== null && targets.some(isWorkdirTarget);
+      return targets !== null && targets.some(names);
     }
     case 'tee':
-      return operands.some(isWorkdirTarget);
+      return operands.some(names);
     case 'cp':
     case 'mv':
     case 'install':
       return (
         operands.length >= 2 &&
-        isWorkdirTarget(operands[operands.length - 1] as string)
+        names(operands[operands.length - 1] as string)
       );
     case 'rm':
     case 'truncate':
-      return operands.some(isWorkdirTarget);
+      return operands.some(names);
     case 'dd':
       return rest
         .filter((w) => w.startsWith('of='))
-        .some((w) => isWorkdirTarget(w.slice(3)));
+        .some((w) => names(w.slice(3)));
     case 'patch':
       // patch names its targets inside the diff, not on the command line.
       return true;
@@ -394,15 +410,53 @@ function segmentMutates(seg: Segment): boolean {
   // target scratch, and the path alone may only be read.
   if (INTERPRETER_WRITE_RE.test(command.raw)) {
     const literals = (command.raw.match(/['"]([^'"\n]+)['"]/g) ?? []).map(unquote);
-    return literals.some(isWorkdirTarget);
+    return literals.some(names);
   }
 
   return false;
 }
 
+/**
+ * Where a `cd` leaves the shell, or null when the segment is not a `cd`.
+ * `true` means "outside the working copy", so relative paths after it no
+ * longer name reviewed files.
+ */
+function cdLeavesWorkdir(seg: Segment, outside: boolean): boolean | null {
+  const words = tokens(seg);
+  let i = 0;
+  while (
+    i < words.length &&
+    (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i] as string) ||
+      WRAPPERS.has(words[i] as string))
+  ) {
+    i++;
+  }
+  const name = words[i] === undefined ? '' : unquote(words[i] as string);
+  if (name !== 'cd' && name !== 'pushd') return null;
+
+  const operand = words
+    .slice(i + 1)
+    .find((w) => w === '-' || !w.startsWith('-'));
+  if (operand === undefined) return true; // bare `cd` goes to $HOME
+  const raw = unquote(operand);
+  if (raw === '-') return false; // back where it came from, normally the workdir
+  if (raw.startsWith('/')) return !namesWorkdir(raw);
+  if (/[$*?~]/.test(raw)) return true; // unresolvable: do not claim it is the workdir
+  return outside; // a relative cd keeps whichever side it was already on
+}
+
 /** True when a Bash command writes a file inside the agent's working copy. */
 export function shellMutates(command: string): boolean {
-  return segments(command).some(segmentMutates);
+  let outside = false;
+  for (const seg of segments(command)) {
+    const moved = cdLeavesWorkdir(seg, outside);
+    if (moved !== null) {
+      outside = moved;
+      continue;
+    }
+    if (segmentMutates(seg, outside)) return true;
+  }
+  return false;
 }
 
 /**
