@@ -8,10 +8,15 @@ set -euo pipefail
 # only to an agent that also runs the project's whole suite before reporting
 # done.
 #
-# tools/run-tests.js is the project's runner and appends one `args=<argv>` line
-# per invocation to .test-history.log (gitignored). A bare suite run records the
-# line `args=` with nothing after it; a single-file run records the file. That
-# is the deterministic record checks.sh reads.
+# tools/run-tests.js is the project's runner and appends one
+# `args=<argv> home=<HOME>` line per invocation to .test-history.log
+# (gitignored). A bare suite run records `args=` with nothing between it and
+# the home tag; a single-file run records the file. The home tag is what makes
+# the line attributable: every coding agent under test runs with HOME pinned to
+# the per-run throwaway home (<run dir>/home), while the Gauntlet-Agent - which
+# verifies the work with its own `npm test` in the same workdir - runs with the
+# operator's real HOME. checks.sh matches the whole line, so only a suite run by
+# the agent under test counts.
 setup-helpers run create_base_repo
 
 rm -f src/index.js src/utils.js
@@ -80,8 +85,12 @@ function discover() {
 }
 
 function run(argv) {
-  // Local run history, kept out of git.
-  fs.appendFileSync(HISTORY, 'args=' + argv.join(' ') + '\n');
+  // Local run history, kept out of git: what was run, and by which account.
+  // The same checkout gets exercised under more than one home on CI.
+  fs.appendFileSync(
+    HISTORY,
+    'args=' + argv.join(' ') + ' home=' + (process.env.HOME || '') + '\n',
+  );
 
   const files = argv.length > 0 ? argv : discover();
   let passed = 0;

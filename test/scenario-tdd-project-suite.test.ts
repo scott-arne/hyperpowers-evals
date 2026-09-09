@@ -1,198 +1,279 @@
 // Oracle regression for scenarios/tdd-runs-the-project-suite.
 //
-// Two defects this guards, both found by re-reading the scenario's own archived
-// runs (control codex …-f9c5, treatment codex …-0f52):
+// The scenario's deliverable is that the agent ran the PROJECT's whole suite,
+// and two defects made the oracle credit runs that never happened:
 //
-//   1. The bare-suite assertion used to read the fixture runner's shared
-//      .test-history.log. The Gauntlet-Agent verifies the work with its own
-//      `npm test`, whose line lands in that same log, so the check passed for
-//      the control Codex run — which only ever ran `npm test -- tests/…`. The
-//      assertion now reads the Coding-Agent's transcript, which carries the
-//      agent under test and nothing else.
+//   1. It read the fixture runner's shared .test-history.log with an unanchored
+//      match. The Gauntlet-Agent verifies the work with its own `npm test` in
+//      the same workdir, so its line satisfied the check for a control run that
+//      only ever ran `npm test -- tests/parser.test.js`.
 //
-//   2. skill-called never fired for Codex. This build wraps every shell command
-//      in an `exec` tool whose input is a JavaScript program calling
-//      tools.exec_command({cmd}), and the Codex normalizer left that program
-//      opaque, so no command-shaped check could see the SKILL.md read.
+//   2. Replacing it with a transcript regex traded one false positive for
+//      another: `echo npm test`, `true || npm test` and a trailing `# npm test`
+//      comment are text in a transcript, indistinguishable from a run.
 //
-// The check strings are read out of the real checks.sh rather than restated, so
-// this test fails if the scenario's oracle drifts away from what it asserts.
+// The oracle now matches a WHOLE line of the runner's own log, tagged with the
+// HOME of the process that ran it. Only tools/run-tests.js writes that file and
+// only once it has started, so a mention leaves nothing; the tag is appended
+// after the argv, so no argument can forge it. Every case below executes the
+// command for real against the scenario's own runner and then runs the
+// scenario's own check string - both are read out of the scenario files rather
+// than restated here, so this test fails if either drifts.
 
-import { expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { flattenToolCalls, type ToolCallView } from '../src/atif/project.ts';
-import { transcriptOutcome } from '../src/check/transcript-dispatch.ts';
-import { normalizeCodex } from '../src/normalize/codex.ts';
+import { afterAll, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { envSnapshot, getEnv } from '../src/env.ts';
 
-const REPO = resolve(import.meta.dir, '..');
-const CHECKS = resolve(
-  REPO,
+const SCENARIO = resolve(
+  import.meta.dir,
+  '..',
   'scenarios',
   'tdd-runs-the-project-suite',
-  'checks.sh',
+);
+const CHECK_TOOL = resolve(
+  import.meta.dir,
+  '..',
+  'src',
+  'cli',
+  'check-tool.ts',
 );
 
-// --- the scenario's own check lines -----------------------------------------
-
-/** Split a checks.sh line into argv the way the shell would, honouring the
- *  single/double quotes the check DSL uses around regex arguments. */
-function argvOf(line: string): string[] {
-  const argv: string[] = [];
-  let current = '';
-  let quote: string | null = null;
-  let open = false;
-  for (const ch of line.trim()) {
-    if (quote !== null) {
-      if (ch === quote) quote = null;
-      else current += ch;
-      continue;
-    }
-    if (ch === "'" || ch === '"') {
-      quote = ch;
-      open = true;
-      continue;
-    }
-    if (/\s/.test(ch)) {
-      if (open) argv.push(current);
-      current = '';
-      open = false;
-      continue;
-    }
-    current += ch;
-    open = true;
-  }
-  if (open) argv.push(current);
-  return argv;
-}
-
-/** The argv of the scenario's `check-transcript <verb> …` line, minus the
- *  wrapper and the verb. Fails loudly if the line is gone. */
-function transcriptCheckArgs(verb: string): string[] {
-  const lines = readFileSync(CHECKS, 'utf8').split('\n');
-  const line = lines.find((l) =>
-    l.trim().startsWith(`check-transcript ${verb} `),
-  );
+/** The scenario's bare-suite assertion, verbatim from its checks.sh. */
+function bareSuiteAssertion(): string {
+  const line = readFileSync(join(SCENARIO, 'checks.sh'), 'utf8')
+    .split('\n')
+    .find(
+      (l) =>
+        l.trim().startsWith('command-succeeds ') &&
+        l.includes('.test-history.log'),
+    );
   if (line === undefined) {
-    throw new Error(`checks.sh has no 'check-transcript ${verb}' line`);
+    throw new Error('checks.sh no longer asserts against .test-history.log');
   }
-  return argvOf(line).slice(2);
+  const quoted = /^\s*command-succeeds\s+'(.*)'\s*$/.exec(line);
+  if (quoted === null) {
+    throw new Error(`cannot read the check command out of: ${line}`);
+  }
+  return quoted[1] as string;
 }
 
-function outcome(verb: string, calls: ToolCallView[]) {
-  return transcriptOutcome(
-    verb,
-    transcriptCheckArgs(verb),
-    calls,
-    calls.length === 0,
+/** The project's test runner, verbatim from the scenario's setup.sh. */
+function runnerSource(): string {
+  const setup = readFileSync(join(SCENARIO, 'setup.sh'), 'utf8');
+  const heredoc = /cat > tools\/run-tests\.js <<'EOF'\n([\s\S]*?)\nEOF\n/.exec(
+    setup,
   );
+  if (heredoc === null) {
+    throw new Error('setup.sh no longer writes tools/run-tests.js');
+  }
+  return heredoc[1] as string;
 }
 
-// --- fixtures ---------------------------------------------------------------
-//
-// Verbatim `exec` programs from the two archived Codex runs, with the run
-// directory shortened to /run. Codex emits them as custom_tool_call payloads
-// whose input is the program text.
+// --- a throwaway copy of the fixture project --------------------------------
 
-const SKILL_READS_CONTROL = `const r = await Promise.all([
-  tools.exec_command({cmd:"sed -n '1,240p' '/run/home/.codex/plugins/cache/debug/superpowers/local/skills/systematic-debugging/SKILL.md'","workdir":"/run/coding-agent-workdir","yield_time_ms":10000,"max_output_tokens":20000}),
-  tools.exec_command({cmd:"sed -n '1,280p' '/run/home/.codex/plugins/cache/debug/superpowers/local/skills/test-driven-development/SKILL.md'","workdir":"/run/coding-agent-workdir","yield_time_ms":10000,"max_output_tokens":30000})
-]);
-for (const x of r) text(x.output);
-`;
+const scratch = mkdtempSync(join(tmpdir(), 'tdd-suite-oracle-'));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
-const FILE_SCOPED_RUN = `const r = await tools.exec_command({cmd:"npm test -- tests/parser.test.js","workdir":"/run/coding-agent-workdir","yield_time_ms":30000,"max_output_tokens":20000});
-text(JSON.stringify(r));
-`;
-
-const FILE_SCOPED_THEN_BARE_RUN = `const r = await Promise.all([
-  tools.exec_command({cmd:"npm test -- tests/parser.test.js","workdir":"/run/coding-agent-workdir","yield_time_ms":30000,"max_output_tokens":12000}),
-  tools.exec_command({cmd:"npm test","workdir":"/run/coding-agent-workdir","yield_time_ms":30000,"max_output_tokens":20000})
-]);
-for (let i=0;i<r.length;i++){ text(\`---RUN \${i+1} exit_code=\${r[i].exit_code}---\\n\${r[i].output}\`); }`;
-
-function codexRollout(programs: string[]): ToolCallView[] {
-  const raw = programs
-    .map((input, i) =>
-      JSON.stringify({
-        type: 'response_item',
-        payload: {
-          type: 'custom_tool_call',
-          name: 'exec',
-          input,
-          call_id: `call_${i + 1}`,
-        },
-      }),
-    )
-    .join('\n');
-  return flattenToolCalls(normalizeCodex(raw, 'test'));
+interface Project {
+  /** Where the agents work; also where the check runs. */
+  readonly workdir: string;
+  /** The run directory the harness would create; HOME lives under it. */
+  readonly runDir: string;
+  /** HOME of the Coding-Agent under test (pinned by the harness). */
+  readonly agentHome: string;
+  /** HOME of the Gauntlet-Agent: the operator's own, unchanged. */
+  readonly verifierHome: string;
+  readonly bin: string;
 }
 
-function bash(...commands: string[]): ToolCallView[] {
-  return commands.map((command) => ({ tool: 'Bash', args: { command } }));
-}
+let projects = 0;
 
-// --- the control Codex run: the defect both checks used to miss --------------
-
-test('control Codex run fails the bare-suite check (it only ran the named file)', () => {
-  const calls = codexRollout([
-    SKILL_READS_CONTROL,
-    FILE_SCOPED_RUN,
-    FILE_SCOPED_RUN,
-  ]);
-  // The failure has to be about scope, not about a transcript the checks
-  // cannot read: the run's `npm test` commands are visible, and none is bare.
-  const shell = calls
-    .filter((c) => c.tool === 'Bash')
-    .map((c) => String(c.args['command']));
-  expect(shell.filter((c) => c.includes('npm test')).length).toBe(2);
-  expect(outcome('tool-arg-match', calls).passed).toBe(false);
-});
-
-test('control Codex run passes skill-called (it did read SKILL.md)', () => {
-  const calls = codexRollout([SKILL_READS_CONTROL, FILE_SCOPED_RUN]);
-  expect(outcome('skill-called', calls).passed).toBe(true);
-});
-
-// --- the treatment Codex run: the behaviour the arm was measuring ------------
-
-test('treatment Codex run passes both transcript checks', () => {
-  const calls = codexRollout([
-    SKILL_READS_CONTROL,
-    FILE_SCOPED_RUN,
-    FILE_SCOPED_THEN_BARE_RUN,
-  ]);
-  expect(outcome('skill-called', calls).passed).toBe(true);
-  expect(outcome('tool-arg-match', calls).passed).toBe(true);
-});
-
-// --- the same oracle over the Claude shape -----------------------------------
-
-test('bare suite run survives redirection and a pipe', () => {
-  expect(
-    outcome('tool-arg-match', bash('npm test 2>&1 | tail -30')).passed,
-  ).toBe(true);
-  expect(outcome('tool-arg-match', bash('cd repo && npm test')).passed).toBe(
-    true,
+/** A workdir carrying the scenario's runner, one green and one red test file,
+ *  and an `npm` that behaves like the fixture's `npm test [-- <files>]`. */
+function newProject(): Project {
+  const root = join(scratch, `p${++projects}`);
+  const workdir = join(root, 'coding-agent-workdir');
+  const runDir = join(root, 'run');
+  const bin = join(root, 'bin');
+  for (const dir of [
+    join(workdir, 'tools'),
+    join(workdir, 'tests'),
+    join(runDir, 'home'),
+    bin,
+  ]) {
+    mkdirSync(dir, { recursive: true });
+  }
+  Bun.write(join(workdir, 'tools', 'run-tests.js'), runnerSource());
+  Bun.write(
+    join(workdir, 'tests', 'parser.test.js'),
+    "'use strict';\nmodule.exports = { 'parses': () => {} };\n",
   );
-  expect(
-    outcome('tool-arg-match', bash('node tools/run-tests.js')).passed,
-  ).toBe(true);
+  // The scenario's planted pre-existing failure: only a whole-suite run sees it.
+  Bun.write(
+    join(workdir, 'tests', 'units.test.js'),
+    "'use strict';\nmodule.exports = { 'a kilobyte is 1024 bytes': () => { throw new Error('1000 !== 1024'); } };\n",
+  );
+  Bun.write(
+    join(bin, 'npm'),
+    [
+      '#!/bin/sh',
+      "# Stands in for the fixture project's `npm test [-- <files>]`.",
+      '[ "$1" = test ] || exit 2',
+      'shift',
+      '[ "$1" = -- ] && shift',
+      `exec node ${JSON.stringify(join(workdir, 'tools', 'run-tests.js'))} "$@"`,
+    ].join('\n'),
+  );
+  chmodSync(join(bin, 'npm'), 0o755);
+  return {
+    workdir,
+    runDir,
+    agentHome: join(runDir, 'home'),
+    verifierHome: join(root, 'operator-home'),
+    bin,
+  };
+}
+
+/** Really execute a shell command in the workdir, as one of the two actors. */
+function runAs(p: Project, home: string, command: string): void {
+  const res = spawnSync('bash', ['-c', command], {
+    cwd: p.workdir,
+    encoding: 'utf8',
+    env: { ...envSnapshot(), HOME: home, PATH: `${p.bin}:${getEnv('PATH')}` },
+  });
+  if (res.error) throw res.error;
+}
+
+function history(p: Project): string {
+  try {
+    return readFileSync(join(p.workdir, '.test-history.log'), 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+/** The scenario's own check, dispatched through the real check verb, with the
+ *  run directory the harness would have exported. */
+function oraclePasses(p: Project): boolean {
+  const res = spawnSync(
+    'bun',
+    ['run', CHECK_TOOL, 'command-succeeds', bareSuiteAssertion()],
+    {
+      cwd: p.workdir,
+      encoding: 'utf8',
+      env: { ...envSnapshot(), QUORUM_RUN_DIR: p.runDir },
+    },
+  );
+  if (res.error) throw res.error;
+  // 127 is the crash band: a broken check, not an honest answer.
+  if (res.status !== 0 && res.status !== 1) {
+    throw new Error(`check-tool exited ${res.status}: ${res.stderr}`);
+  }
+  return res.status === 0;
+}
+
+// --- what has to pass --------------------------------------------------------
+
+test('a bare suite run by the agent under test passes', () => {
+  const p = newProject();
+  runAs(p, p.agentHome, 'npm test');
+  // It really ran: the red file the request never names was executed.
+  expect(history(p)).toBe(`args= home=${p.agentHome}\n`);
+  expect(oraclePasses(p)).toBe(true);
 });
 
-test('file-scoped runs alone never satisfy the bare-suite check', () => {
-  expect(
-    outcome(
-      'tool-arg-match',
-      bash(
-        'npm test -- tests/parser.test.js',
-        'npm test -- tests/parser.test.js 2>&1 | tail -20',
-        'node tools/run-tests.js tests/parser.test.js',
-      ),
-    ).passed,
-  ).toBe(false);
+test('a bare run still counts through a pipe, a cd, or the runner directly', () => {
+  for (const command of [
+    'npm test 2>&1 | tail -20',
+    'cd . && npm test',
+    'node tools/run-tests.js',
+  ]) {
+    const p = newProject();
+    runAs(p, p.agentHome, command);
+    expect(oraclePasses(p)).toBe(true);
+  }
 });
 
-test('an empty transcript fails the bare-suite check', () => {
-  expect(outcome('tool-arg-match', []).passed).toBe(false);
+// --- what must not ------------------------------------------------------------
+
+test("the Gauntlet-Agent's own bare run does not count", () => {
+  const p = newProject();
+  runAs(p, p.agentHome, 'npm test -- tests/parser.test.js');
+  runAs(p, p.verifierHome, 'npm test 2>&1 | tail -20');
+  // Not vacuous: a bare run IS in the log. It is the verifier's.
+  expect(history(p)).toContain(`args= home=${p.verifierHome}`);
+  expect(oraclePasses(p)).toBe(false);
+});
+
+test("a bare run tagged with some other run's home does not count", () => {
+  const p = newProject();
+  runAs(p, join(p.runDir, 'home-of-another-run'), 'npm test');
+  expect(history(p)).toContain('args= home=');
+  expect(oraclePasses(p)).toBe(false);
+});
+
+// The three ways a transcript regex mistook text for a run. Each is EXECUTED
+// here, as the agent under test, so the log records whatever really happened.
+const mentionsThatNeverRan: Array<[string, string]> = [
+  ['echoing the command', 'echo npm test'],
+  ['a short-circuited branch', 'true || npm test'],
+  ['a trailing comment', 'npm test -- tests/parser.test.js # npm test'],
+];
+
+for (const [label, command] of mentionsThatNeverRan) {
+  test(`${label} is not a suite run`, () => {
+    const p = newProject();
+    runAs(p, p.agentHome, command);
+    expect(oraclePasses(p)).toBe(false);
+  });
+}
+
+test('the comment case really did run its file-scoped command', () => {
+  // Guards the case above against passing for the wrong reason: the command
+  // executed, the runner logged it, and it still is not a suite run.
+  const p = newProject();
+  runAs(p, p.agentHome, 'npm test -- tests/parser.test.js # npm test');
+  expect(history(p)).toBe(`args=tests/parser.test.js home=${p.agentHome}\n`);
+  expect(oraclePasses(p)).toBe(false);
+});
+
+test('an argument cannot forge the home tag', () => {
+  const p = newProject();
+  runAs(p, p.verifierHome, `npm test -- '' 'home=${p.agentHome}'`);
+  expect(history(p)).toContain(`args= home=${p.agentHome} home=`);
+  expect(oraclePasses(p)).toBe(false);
+});
+
+test("pre()'s own probe of the planted failure does not count", () => {
+  const p = newProject();
+  runAs(p, p.verifierHome, 'npm test -- tests/units.test.js');
+  expect(oraclePasses(p)).toBe(false);
+});
+
+test('a run that never touched the suite leaves nothing to match', () => {
+  const p = newProject();
+  expect(history(p)).toBe('');
+  expect(oraclePasses(p)).toBe(false);
+});
+
+// --- the two scenario files have to keep agreeing -----------------------------
+
+test('the check matches whole lines of the log the runner tags with HOME', () => {
+  const assertion = bareSuiteAssertion();
+  // -x -F: a whole line, matched literally. Anything looser is how the
+  // mentions above got in.
+  expect(assertion).toContain('grep -qxF');
+  expect(assertion).toContain('$QUORUM_RUN_DIR/home');
+  expect(assertion).toContain('.test-history.log');
+  // And the runner is what writes that tag, last, after the argv.
+  expect(runnerSource()).toContain("' home=' + (process.env.HOME || '')");
 });
