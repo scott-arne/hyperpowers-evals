@@ -15,7 +15,9 @@ import { repoRoot } from '../src/paths.ts';
 // scenarios pinned to the Claude family. Each exercises gate machinery that only
 // exists in Claude Code — the Codex review gates, the approach gate, SDD's fix
 // loop — so running them against a harness with no gate at all would measure
-// nothing and score it as a failure.
+// nothing and score it as a failure. `tdd-runs-the-project-suite` is pinned for
+// a different reason: it is fork-side evidence for one upstream port, and its
+// arms are only comparable across the three actors that were measured.
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'brainstorming-bounded-fires-approach-gate',
   'brainstorming-bounded-fires-visual-companion',
@@ -32,6 +34,7 @@ const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'codex-gate-converges-on-reraise',
   'codex-gate-incomplete-not-approval',
   'codex-gate-lens-fanout-compliance',
+  'codex-gate-re-review-focus-is-fixed',
   'codex-gate-risk-tier-discipline',
   'codex-gate-stale-broker-attributed',
   'codex-plan-gate-algorithm-locked-after-round1',
@@ -41,6 +44,7 @@ const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'sdd-plan-scoped-scratch',
   'sdd-spec-context-consumed',
   'sdd-unified-fix-loop',
+  'tdd-runs-the-project-suite',
   'worktree-creation-under-pressure',
   'worktree-no-drift-to-main',
 ]);
