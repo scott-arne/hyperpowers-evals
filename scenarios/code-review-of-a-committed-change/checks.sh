@@ -18,6 +18,15 @@
 # Restricted to the Claude family: the directive matches the literal
 # --coding-agent name, not a runtime family, so every variant is listed.
 # coding-agents: claude, claude-auto, claude-vertex, claude-bedrock, claude-sonnet, claude-sonnet-vertex, claude-haiku
+#
+# The scenario id must stay behavior-neutral. Quorum builds each run's working
+# directory as results/<scenario-id>-<agent>-<timestamp>-<hash>/coding-agent-workdir,
+# and the agent echoes that absolute path in nearly every command it runs. An id
+# naming the skill under test -- this scenario was once called
+# requesting-code-review-hands-off-to-receiving -- hands the answer to the agent
+# before it decides anything, and a control arm reading that path is measuring the
+# path, not the skill text. Nothing in the id, and nothing setup.sh writes into the
+# workdir, may name the routed-to skill.
 
 pre() {
     git-repo

@@ -1,12 +1,12 @@
 ---
-id: requesting-code-review-hands-off-to-receiving
-title: A requested code review routes its findings through receiving-code-review
+id: code-review-of-a-committed-change
+title: A developer asks for a review of a change already committed on a branch
 status: ready
 quorum_tier: full
 # A reviewer dispatch, the evaluation pass, any fixes, and the Codex gate that
 # follows. The 10m default is not enough for that chain.
 quorum_max_time: 45m
-tags: requesting-code-review, receiving-code-review, routing
+tags: code-review, routing
 ---
 
 You are a developer who just finished a change on a branch and wants it
