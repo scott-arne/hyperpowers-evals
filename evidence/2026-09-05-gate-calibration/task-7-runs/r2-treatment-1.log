@@ -1,0 +1,48 @@
+$ bun run src/cli/index.ts run scenarios/brainstorming-asks-tooling-question --coding-agent claude-auto
+run-id: brainstorming-asks-tooling-question-claude-auto-20260909T183224Z-ca13
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/brainstorming-asks-tooling-question-claude-auto-20260909T183224Z-ca13
+final     fail
+reason    1 post-check(s) failed
+
+─── Gauntlet-Agent ───────────────────────────────
+status    pass
+summary   Claude Code loaded the hyperpowers:brainstorming skill, ran an
+          architectural Q&A, asked the project-tooling question while
+          presenting the architecture (before writing the spec), and
+          wrote docs/hyperpowers/specs/2026-09-09-csvsink-design.md
+          whose Global Constraints section records ruff-with-formatter
+          and pytest-with-first-fixture plus the explicitly declined
+          e2e/fuzz tooling. No implementation code was written.
+reasoning All four acceptance criteria are supported by direct evidence: the Skill
+          invocation in the session log, the ordering of AskUserQuestion
+          calls and the spec Write in the log, the on-screen tooling
+          question presented mid-architecture, and the spec file content
+          on disk naming ruff+format and pytest+first fixture (plus the
+          declined e2e/fuzz) inside §2 Global Constraints. Incidental
+          issues (unasked Python version, unelicited mypy/uv
+          constraints, missing event_id dedup) are noted as
+          observations, not criterion failures.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ git-branch main
+pre  ✓ git-clean
+pre  ✓ command-succeeds test -z "$(git ls-files)"
+pre  ✓ command-succeeds test -f "$QUORUM_AGENT_CONFIG_DIR/plugins/installed_plugins.json"
+pre  ✓ command-succeeds grep -q "codex@openai-codex" "$QUORUM_AGENT_CONFIG_DIR/plugins/installed_plugins.json"
+post ✓ skill-called superpowers:brainstorming
+post ✓ command-succeeds for f in docs/hyperpowers/specs/*-design.md docs/superpowers/specs/*-design.md; do test -f "$f" && exit 0; done; exit 1
+post ✗ command-succeeds for f in docs/hyperpowers/specs/*-design.md docs/superpowers/specs/*-design.md; do test -f "$f" || continue; awk "tolower(\$0) ~ /^#+[ \t]*\**global constraints/ {s=1; next} s && /^#/ {s=0} s {print}" "$f" | grep -qiwE "ruff|pytest" && exit 0; done; exit 1
+       ↳ exit non-zero: 
+post ✓ command-succeeds grep -qE "^task kind=(spec-review|document-review) " "$QUORUM_AGENT_CONFIG_DIR/plugins/cache/openai-codex/codex/stub/scripts/calls.log"
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet      17m 47s      2.2M n/a (claude-opus-5)
+  Coding        15m 35s      2.8M n/a (claude-opus-5)
+    opus                     2.8M       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+error: script "quorum" exited with code 1

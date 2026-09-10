@@ -1,0 +1,56 @@
+$ bun run src/cli/index.ts run scenarios/brainstorming-asks-tooling-question --coding-agent claude-auto
+run-id: brainstorming-asks-tooling-question-claude-auto-20260909T181310Z-3e0e
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/brainstorming-asks-tooling-question-claude-auto-20260909T181310Z-3e0e
+final     fail
+reason    Gauntlet-Agent reported fail; 1 post-check(s) failed
+
+─── Gauntlet-Agent ───────────────────────────────
+status    fail
+summary   The brainstorming skill ran, produced a thorough design conversation and
+          wrote a spec to
+          docs/hyperpowers/specs/2026-09-09-csvsink-design.md, but it
+          never asked me which project tooling to stand up — it
+          unilaterally declared pytest/ruff/mypy as dev dependencies.
+          Since the question was never asked, my prepared answer ("ruff
+          with format on, and pytest with a first passing fixture...")
+          was never given, and the spec has no Global Constraints
+          section carrying a user selection.
+reasoning Criteria 1 and 2 are satisfied by the session log (native Skill
+          invocation of hyperpowers:brainstorming) and the spec file on
+          disk written before any implementation code (workdir contains
+          only docs/). Criterion 3 fails: a grep of the entire session
+          log for "which tooling", "linting", "linter", "auto-format",
+          "format on" returned nothing, and the design section on screen
+          simply stated "Scaffolding: ... pytest, ruff, mypy (strict on
+          src/) as dev dependencies" as a decision with no choice
+          offered — while every other decision in the run was offered as
+          an explicit multiple-choice question. Criterion 4 fails as a
+          consequence: the spec names ruff/pytest but as the agent's own
+          choice in "§9 Project layout and tooling", not in a Global
+          Constraints section reflecting the user's selection (the user
+          never selected anything, and "format on" / "a first passing
+          fixture" appear nowhere).
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ git-branch main
+pre  ✓ git-clean
+pre  ✓ command-succeeds test -z "$(git ls-files)"
+pre  ✓ command-succeeds test -f "$QUORUM_AGENT_CONFIG_DIR/plugins/installed_plugins.json"
+pre  ✓ command-succeeds grep -q "codex@openai-codex" "$QUORUM_AGENT_CONFIG_DIR/plugins/installed_plugins.json"
+post ✓ skill-called superpowers:brainstorming
+post ✓ command-succeeds for f in docs/hyperpowers/specs/*-design.md docs/superpowers/specs/*-design.md; do test -f "$f" && exit 0; done; exit 1
+post ✗ command-succeeds for f in docs/hyperpowers/specs/*-design.md docs/superpowers/specs/*-design.md; do test -f "$f" || continue; awk "tolower(\$0) ~ /^#+[ \t]*\**global constraints/ {s=1; next} s && /^#/ {s=0} s {print}" "$f" | grep -qiwE "ruff|pytest" && exit 0; done; exit 1
+       ↳ exit non-zero: 
+post ✓ command-succeeds grep -qE "^task kind=(spec-review|document-review) " "$QUORUM_AGENT_CONFIG_DIR/plugins/cache/openai-codex/codex/stub/scripts/calls.log"
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet      17m 19s      1.8M n/a (claude-opus-5)
+  Coding        15m 03s      3.0M n/a (claude-opus-5)
+    opus                     3.0M       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+error: script "quorum" exited with code 1
