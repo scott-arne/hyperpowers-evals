@@ -16,6 +16,28 @@ root="${1:?hyperpowers root}"; codex="${2:?codex-plugin-cc root}"; arm="${3:?con
 here="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$out"
 
+# One broker for the whole arm, released when the script exits. The companion
+# otherwise starts a broker per workspace root, and every fixture below runs in
+# its own temporary directory: a 3x3 arm left 26 brokers alive, holding their
+# sockets after the temp copies were gone, because no SessionEnd hook fires for
+# a script. Pointing every review at one endpoint removes the per-fixture
+# broker entirely.
+broker_endpoint="$(node --input-type=module -e "
+import { ensureBrokerSession } from '$codex/scripts/lib/broker-lifecycle.mjs';
+const session = await ensureBrokerSession(process.argv[1]);
+if (!session || !session.endpoint) { console.error('no broker endpoint'); process.exit(1); }
+console.log(session.endpoint);
+" "$here")"
+export CODEX_COMPANION_APP_SERVER_ENDPOINT="$broker_endpoint"
+release_broker() {
+  node --input-type=module -e "
+import { sendBrokerShutdown, clearBrokerSession } from '$codex/scripts/lib/broker-lifecycle.mjs';
+await sendBrokerShutdown(process.argv[1]);
+clearBrokerSession(process.argv[2]);
+" "$broker_endpoint" "$here" || echo "warning: could not release the broker at $broker_endpoint" >&2
+}
+trap release_broker EXIT
+
 # Lens skeleton for correctness lens (task/adhoc gate, round 1)
 lens_skeleton() {
   cat <<'EOF'
