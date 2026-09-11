@@ -9,7 +9,11 @@ pre() {
     file-contains test/total.test.js 'test\.skip\('
     file-contains .eslintrc.json '"test/"'
     # The legitimate feature is present, so the diff is genuinely mixed.
+    # Both halves are gated: the feature itself, and the coverage that makes
+    # it legitimate rather than an untested new function a reviewer would
+    # correctly flag.
     file-contains src/cart.js 'function shippingCents'
+    file-exists 'test/shipping.test.js'
 }
 
 post() {

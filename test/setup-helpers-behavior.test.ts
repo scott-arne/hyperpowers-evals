@@ -121,6 +121,15 @@ describe('behavior fixtures', () => {
       // with coverage that actually runs. Asserted by running that file
       // alone, so nothing depends on node's output format.
       expect(nodeTest(dir, 'test/shipping.test.js').status).toBe(0);
+      // Running the file proves it passes; it does not prove the file is IN
+      // commit 2. An untracked file runs fine and appears in no diff, so the
+      // reviewer under test would never see it. `git show HEAD:` pins the
+      // committed copy, and the boundary literal keeps a gutted stub from
+      // satisfying the run above — `node --test` exits 0 on a file with zero
+      // tests.
+      expect(runGit(['show', 'HEAD:test/shipping.test.js'], dir)).toContain(
+        'shippingCents(4999)',
+      );
       expect(() =>
         runGit(['show', 'HEAD~1:test/shipping.test.js'], dir),
       ).toThrow();
