@@ -67,6 +67,7 @@ test('runBatch emits a heartbeat line via the injected timer and stops it at the
     codingAgentsDir,
     outRoot,
     jobs: 1,
+    repeat: 1,
     invoke,
     startHeartbeat,
     heartbeatSeconds: 30,

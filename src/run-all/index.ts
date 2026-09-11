@@ -7,6 +7,7 @@ import { ANTIGRAVITY_RATE_LIMIT_MARKER } from '../agents/antigravity.ts';
 import { parseCodingAgentsDirective } from '../checks/index.ts';
 import type { ChildResult, MatrixEntry } from '../contracts/batch.ts';
 import { runnable } from '../contracts/batch.ts';
+import type { Trial } from '../contracts/verdict.ts';
 import { envSnapshot } from '../env.ts';
 import type { Clock } from '../scheduler/clock.ts';
 import { RealClock } from '../scheduler/clock.ts';
@@ -192,6 +193,9 @@ export interface RunBatchArgs {
   readonly codingAgentsDir: string;
   readonly outRoot: string;
   readonly jobs: number;
+  // Trials per runnable cell (>= 1). Required: the batch header records it, so
+  // unlike `quorum run`'s omitted flag there is no "unrepeated" state to infer.
+  readonly repeat: number;
   readonly agentFilter?: readonly string[];
   readonly scenarioFilter?: readonly string[];
   readonly tier?: 'sentinel' | 'full' | 'adhoc' | null;
@@ -279,6 +283,7 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
     codingAgentsDir,
     outRoot,
     jobs,
+    repeat,
     agentFilter,
     scenarioFilter,
     tier = null,
@@ -294,6 +299,12 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
   } = args;
   if (jobs < 1) {
     throw new Error(`jobs must be >= 1, got ${jobs}`);
+  }
+  // Same fail-fast shape as jobs. Without it a repeat of 0 expands to an empty
+  // schedule and then writes a header that its own schema rejects, so the batch
+  // dies in writeBatchFooter with a zod error instead of at its bad argument.
+  if (repeat < 1) {
+    throw new Error(`repeat must be >= 1, got ${repeat}`);
   }
 
   const entries = buildMatrix({
@@ -320,6 +331,7 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
     batchDir,
     codingAgents: agentsInBatch,
     jobs,
+    repeat,
     startedAt: startedAt.toISOString(),
   });
 
@@ -354,16 +366,39 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
       codingAgent: entry.codingAgent,
       runId: null,
       skipped: entry.skippedReason,
+      // Never expanded: an upfront-skipped cell is one record with no trial.
+      trial: null,
     });
   }
 
-  // The cell's 1-based idx in the scheduler's view is its position among the
-  // RUNNABLE cells. run-all's display labels are the matrix's global 1..total
-  // indices, so map the scheduler idx back to the matrix idx via this array.
-  const runnableEntries = runnableIndexed.map(([, entry]) => entry);
-  const matrixIdxForRunnable = runnableIndexed.map(([idx]) => idx);
+  // Repeat expansion: each runnable cell becomes `repeat` scheduler units,
+  // ordered by trial within the cell. Skipped cells are never expanded — a cell
+  // that did not run has one record and no trial stamp.
+  const runnableTrials: readonly (readonly [number, MatrixEntry, Trial])[] =
+    runnableIndexed.flatMap(([idx, e]) =>
+      Array.from(
+        { length: repeat },
+        (_unused, k): readonly [number, MatrixEntry, Trial] => [
+          idx,
+          e,
+          { index: k + 1, count: repeat },
+        ],
+      ),
+    );
+
+  // The unit's 1-based idx in the scheduler's view is its position among the
+  // expanded RUNNABLE units. run-all's display labels are the matrix's global
+  // 1..total indices, so map the scheduler idx back to the matrix idx via this
+  // array; the trials of one cell all carry that cell's matrix idx.
+  const runnableEntries = runnableTrials.map(([, entry]) => entry);
+  const matrixIdxForRunnable = runnableTrials.map(([idx]) => idx);
+  const trialForRunnable = runnableTrials.map(([, , trial]) => trial);
   const matrixIdxFor = (schedulerIdx: number): number =>
     matrixIdxForRunnable[schedulerIdx - 1] ?? schedulerIdx;
+  // An idx outside the schedule we handed over cannot happen; if it ever did,
+  // leave the record unstamped rather than inventing a trial number for it.
+  const trialFor = (schedulerIdx: number): Trial | null =>
+    trialForRunnable[schedulerIdx - 1] ?? null;
 
   // Track in-flight child pids so a signal can SIGINT them. The registry wraps
   // invoke; its pid set stays honest (added on spawn, dropped on settle).
@@ -410,6 +445,7 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
         codingAgent: event.entry.codingAgent,
         runId: event.run_id,
         skipped: null,
+        trial: trialFor(event.idx),
       });
       return;
     }
@@ -424,6 +460,7 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
           codingAgent: event.entry.codingAgent,
           runId: null,
           skipped: 'rate-limited',
+          trial: trialFor(event.idx),
         });
       } else {
         counts.stopped += 1;
@@ -434,6 +471,7 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
           codingAgent: event.entry.codingAgent,
           runId: null,
           skipped: 'stopped',
+          trial: trialFor(event.idx),
         });
       }
     }

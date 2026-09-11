@@ -39,12 +39,13 @@ test('writeBatchHeader writes batch.json with finished_at null + indent 2', () =
     batchDir,
     codingAgents: ['claude', 'codex'],
     jobs: 2,
+    repeat: 1,
     startedAt: '2026-06-12T01:53:01.000Z',
   });
   const raw = readFileSync(join(batchDir, 'batch.json'), 'utf8');
   // Indent-2, no trailing newline (byte parity with the Python writer).
   expect(raw.endsWith('\n')).toBe(false);
-  expect(raw).toContain('  "schema_version": 1');
+  expect(raw).toContain('  "schema_version": 2');
   const header = BatchHeaderSchema.parse(JSON.parse(raw));
   expect(header.id).toBe(basename(batchDir));
   expect(header.finished_at).toBeNull();
@@ -61,6 +62,7 @@ test('appendResultRecord writes one compact line per record, skipped omitted whe
     codingAgent: 'claude',
     runId: 'alpha-claude-20260612T015301Z-ab12',
     skipped: null,
+    trial: null,
   });
   appendResultRecord({
     batchDir,
@@ -68,6 +70,7 @@ test('appendResultRecord writes one compact line per record, skipped omitted whe
     codingAgent: 'codex',
     runId: null,
     skipped: 'directive',
+    trial: null,
   });
   const lines = readFileSync(join(batchDir, 'results.jsonl'), 'utf8')
     .split('\n')
@@ -94,6 +97,7 @@ test('writeBatchFooter sets finished_at, preserving the rest', () => {
     batchDir,
     codingAgents: ['claude'],
     jobs: 1,
+    repeat: 1,
     startedAt: '2026-06-12T01:53:01.000Z',
   });
   writeBatchFooter({ batchDir, finishedAt: '2026-06-12T02:00:00.000Z' });
@@ -103,4 +107,55 @@ test('writeBatchFooter sets finished_at, preserving the rest', () => {
   expect(header.finished_at).toBe('2026-06-12T02:00:00.000Z');
   expect(header.started_at).toBe('2026-06-12T01:53:01.000Z');
   expect(header.coding_agents).toEqual(['claude']);
+});
+
+test('appendResultRecord serializes a nested trial with the pyCompact separators', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'batch-'));
+  appendResultRecord({
+    batchDir: dir,
+    scenario: 'alpha',
+    codingAgent: 'claude',
+    runId: 'alpha-claude-20260910T000000Z-abcd',
+    skipped: null,
+    trial: { index: 2, count: 3 },
+  });
+  const line = readFileSync(join(dir, 'results.jsonl'), 'utf8').trimEnd();
+  expect(line).toBe(
+    '{"scenario": "alpha", "coding_agent": "claude", ' +
+      '"run_id": "alpha-claude-20260910T000000Z-abcd", ' +
+      '"trial": {"index": 2, "count": 3}}',
+  );
+});
+
+test('appendResultRecord omits trial when it is null', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'batch-'));
+  appendResultRecord({
+    batchDir: dir,
+    scenario: 'alpha',
+    codingAgent: 'claude',
+    runId: null,
+    skipped: 'draft',
+    trial: null,
+  });
+  const line = readFileSync(join(dir, 'results.jsonl'), 'utf8').trimEnd();
+  expect(line).toBe(
+    '{"scenario": "alpha", "coding_agent": "claude", ' +
+      '"run_id": null, "skipped": "draft"}',
+  );
+});
+
+test('writeBatchHeader records schema_version 2 and the repeat count', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'batch-'));
+  writeBatchHeader({
+    batchDir: dir,
+    codingAgents: ['claude'],
+    jobs: 4,
+    repeat: 3,
+    startedAt: '2026-09-10T00:00:00Z',
+  });
+  const header = JSON.parse(
+    readFileSync(join(dir, 'batch.json'), 'utf8'),
+  ) as Record<string, unknown>;
+  expect(header['schema_version']).toBe(2);
+  expect(header['repeat']).toBe(3);
 });

@@ -22,11 +22,20 @@ interface Fixture {
   readonly resultsRoot: string;
 }
 
+interface FixtureOpts {
+  // Set -> a schema-2 header carrying this repeat count. Omitted -> the header
+  // is written exactly as a pre-repeat batch wrote it (no schema_version, no
+  // repeat), which is the legacy shape the renderer must keep accepting.
+  readonly repeat?: number;
+  readonly records?: readonly Record<string, unknown>[];
+  readonly verdicts?: readonly (readonly [string, FinalStatus])[];
+}
+
 // Build a hermetic batch dir (batch.json + results.jsonl) plus a sibling
-// resultsRoot of <run_id>/verdict.json files. The grid is two scenarios ×
-// two agents, with one skipped cell and one missing-verdict cell (the
+// resultsRoot of <run_id>/verdict.json files. The default grid is two scenarios
+// × two agents, with one skipped cell and one missing-verdict cell (the
 // alpha/codex run_id points at no verdict file).
-function makeFixture(): Fixture {
+function makeFixture(opts: FixtureOpts = {}): Fixture {
   const root = mkdtempSync(join(tmpdir(), 'batch-'));
   const batchDir = join(root, 'batch');
   const resultsRoot = join(root, 'results');
@@ -36,6 +45,9 @@ function makeFixture(): Fixture {
   writeFileSync(
     join(batchDir, 'batch.json'),
     JSON.stringify({
+      ...(opts.repeat !== undefined
+        ? { schema_version: 2, repeat: opts.repeat }
+        : {}),
       id: 'b-001',
       started_at: '2026-06-12T00:00:00Z',
       finished_at: '2026-06-12T00:30:00Z',
@@ -43,7 +55,7 @@ function makeFixture(): Fixture {
     }),
   );
 
-  const records = [
+  const records = opts.records ?? [
     { scenario: 'alpha', coding_agent: 'claude', run_id: 'run-alpha-claude' },
     // missing-verdict cell: run_id has no verdict.json on disk.
     { scenario: 'alpha', coding_agent: 'codex', run_id: 'run-missing' },
@@ -77,9 +89,14 @@ function makeFixture(): Fixture {
       }),
     );
   };
-  writeVerdict('run-alpha-claude', 'pass');
-  writeVerdict('run-beta-claude', 'fail');
   // run-missing intentionally has no verdict.json.
+  const verdicts = opts.verdicts ?? [
+    ['run-alpha-claude', 'pass'] as const,
+    ['run-beta-claude', 'fail'] as const,
+  ];
+  for (const [runId, final] of verdicts) {
+    writeVerdict(runId, final);
+  }
 
   return { batchDir, resultsRoot };
 }
@@ -205,4 +222,75 @@ test('batchJson returns the header spread with a results array', () => {
     coding_agent: 'claude',
     run_id: 'run-alpha-claude',
   });
+});
+
+test('renderBatch renders a repeat-1 header exactly like a legacy header', () => {
+  // The repeat-1 output is byte-identical to the pre-repeat output: the vector
+  // path must not leak into the common case. The two fixtures differ only in
+  // the header's schema_version/repeat keys.
+  const legacy = makeFixture();
+  const v2 = makeFixture({ repeat: 1 });
+  const legacyOut = renderBatch({ ...legacy, color: false });
+  const v2Out = renderBatch({ ...v2, color: false });
+  expect(v2Out).toBe(legacyOut);
+  expect(v2Out).toContain('Legend: ✓ pass');
+  expect(v2Out).toContain('✓ pass');
+});
+
+// A repeat >= 2 batch: three trials of one cell, written out of trial order on
+// purpose. results.jsonl is appended by concurrent workers, so the renderer has
+// to sort by trial index rather than trust append order.
+function vectorFixture(): Fixture {
+  return makeFixture({
+    repeat: 3,
+    records: [
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r2',
+        trial: { index: 2, count: 3 },
+      },
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r3',
+        trial: { index: 3, count: 3 },
+      },
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r1',
+        trial: { index: 1, count: 3 },
+      },
+    ],
+    verdicts: [
+      ['r1', 'pass'],
+      ['r2', 'fail'],
+      ['r3', 'indeterminate'],
+    ],
+  });
+}
+
+test('renderBatch renders a repeat-3 cell as a trial vector in trial order', () => {
+  const { batchDir, resultsRoot } = vectorFixture();
+  const out = renderBatch({ batchDir, resultsRoot, color: false });
+  const alphaRow = out.split('\n').find((l) => l.startsWith('| alpha'));
+  expect(alphaRow).toBeDefined();
+  expect(alphaRow).toContain('PFI');
+  // codex produced no record at all -> three "did not run" slots.
+  expect(alphaRow).toContain('---');
+  expect(out).toContain(
+    'Legend: P pass   F fail   I indeterminate   - did not run',
+  );
+  expect(out).not.toContain('Legend: ✓ pass');
+  // The tally line is unchanged in shape and counts every trial.
+  expect(out.trimEnd().split('\n').at(-1)).toBe('1 ✓ · 1 ✗ · 1 ⊘ · 0 —');
+});
+
+test('renderBatch (color:true) paints each trial symbol by its own verdict', () => {
+  const { batchDir, resultsRoot } = vectorFixture();
+  const out = renderBatch({ batchDir, resultsRoot, color: true });
+  // A vector packs several verdicts into one cell, so the color is per symbol.
+  expect(out).toContain('\x1b[38;2;80;250;123mP\x1b[0m');
+  expect(out).toContain('\x1b[38;2;255;85;85mF\x1b[0m');
 });

@@ -172,3 +172,49 @@ test('run-all errors when --coding-agents-dir does not exist', () => {
   expect(proc.status).not.toBe(0);
   expect(proc.stderr).toContain('--coding-agents-dir does not exist');
 });
+
+test('run-all rejects a --repeat below 1', () => {
+  const root = mkdtempSync(join(tmpdir(), 'scn-'));
+  const out = mkdtempSync(join(tmpdir(), 'out-'));
+  const proc = spawnSync(
+    'bun',
+    [
+      CLI,
+      'run-all',
+      '--repeat',
+      '0',
+      '--scenarios-root',
+      root,
+      '--coding-agents-dir',
+      root,
+      '--out-root',
+      out,
+    ],
+    { encoding: 'utf8' },
+  );
+  expect(proc.stderr).toContain('error: --repeat must be an integer >= 1');
+  expect(proc.status).toBe(1);
+});
+
+test('run-all rejects a fractional --repeat', () => {
+  const root = mkdtempSync(join(tmpdir(), 'scn-'));
+  const out = mkdtempSync(join(tmpdir(), 'out-'));
+  const proc = spawnSync(
+    'bun',
+    [
+      CLI,
+      'run-all',
+      '--repeat',
+      '2.5',
+      '--scenarios-root',
+      root,
+      '--coding-agents-dir',
+      root,
+      '--out-root',
+      out,
+    ],
+    { encoding: 'utf8' },
+  );
+  expect(proc.stderr).toContain('error: --repeat must be an integer >= 1');
+  expect(proc.status).toBe(1);
+});

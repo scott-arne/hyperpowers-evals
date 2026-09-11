@@ -172,6 +172,10 @@ export class Orchestrator {
       batchDir,
       codingAgents: agentsInBatch,
       jobs: this.jobs,
+      // The dashboard runs one child per cell; there is no repeat here. The
+      // header still records it, because a schema_version 2 header without a
+      // `repeat` field fails BatchHeaderSchema at read time.
+      repeat: 1,
       startedAt: new Date().toISOString(),
     });
 
@@ -217,6 +221,8 @@ export class Orchestrator {
         codingAgent: event.entry.codingAgent,
         runId: event.run_id,
         skipped: null,
+        // No repeat concept here: one record per cell, unstamped.
+        trial: null,
       });
     } else if (event.kind === 'cell_skipped') {
       appendResultRecord({
@@ -225,6 +231,7 @@ export class Orchestrator {
         codingAgent: event.entry.codingAgent,
         runId: null,
         skipped: event.skipped_reason,
+        trial: null,
       });
     }
     this.onEvent?.(event);
