@@ -91,19 +91,61 @@ export { RunnerError };
 const CAPTURE_RETRY_ATTEMPTS = 3;
 const CAPTURE_RETRY_DELAY_MS = 2000;
 
+// How many nonces to redraw before giving up. The nonce is 16 bits and the
+// stamp only resolves to the second, so every run sharing a scenario, an agent,
+// and a second draws from the same 65536-name space. That is 1-in-65536 per
+// pair but birthday odds across a batch — a few hundred such runs is already
+// better than even — so a redraw is an ordinary event, not an anomaly. The
+// bound exists only so a wedged outRoot fails loudly instead of spinning.
+const RUN_DIR_ALLOC_ATTEMPTS = 32;
+
 // Create and return the per-run output dir
 // <outRoot>/<scenario>-<agent>-<stamp>-<nonce>/.
+//
+// The create is exclusive — mkdirSync without recursive — so an already-taken
+// name raises EEXIST and we redraw. recursive: true would instead succeed
+// silently on the existing directory, handing two concurrent runs the same
+// run dir and letting the second overwrite the first's verdict.json. outRoot
+// itself is still created recursively, separately, since only the leaf name
+// carries the uniqueness claim.
 export function allocateRunDir(
   outRoot: string,
   scenario: string,
   agent: string,
 ): string {
-  const dir = join(
-    outRoot,
-    `${scenario}-${agent}-${nowStampUtc()}-${hexNonce()}`,
+  return allocateRunDirWithNonce(outRoot, scenario, agent, hexNonce);
+}
+
+// The nonce-source seam. Exported for the collision test: hexNonce is random,
+// so a duplicate cannot be forced through the public entry point without
+// waiting on chance, and a probabilistic collision test is a flaky one.
+export function allocateRunDirWithNonce(
+  outRoot: string,
+  scenario: string,
+  agent: string,
+  nextNonce: () => string,
+): string {
+  mkdirSync(outRoot, { recursive: true });
+  // One stamp for every attempt: a redraw is meant to vary the nonce only, so
+  // the retry stays a pure re-roll rather than drifting the name's timestamp.
+  const prefix = `${scenario}-${agent}-${nowStampUtc()}`;
+  for (let attempt = 0; attempt < RUN_DIR_ALLOC_ATTEMPTS; attempt++) {
+    const dir = join(outRoot, `${prefix}-${nextNonce()}`);
+    try {
+      mkdirSync(dir);
+      return dir;
+    } catch (e: unknown) {
+      if (e instanceof Error && 'code' in e && e.code === 'EEXIST') {
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new RunnerError(
+    `could not allocate a run dir under ${outRoot}: ` +
+      `${RUN_DIR_ALLOC_ATTEMPTS} nonces for ${prefix}-* were all taken`,
+    'setup',
   );
-  mkdirSync(dir, { recursive: true });
-  return dir;
 }
 
 export interface GauntletArgvArgs {
