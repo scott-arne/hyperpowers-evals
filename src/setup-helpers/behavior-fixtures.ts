@@ -332,15 +332,15 @@ export function displayName(session) {
   return session.user.displayName;
 }
 
-function nextToken(seed) {
-  return seed.slice(0, 8) + "-" + (seed.length % 97);
+function abbreviate(text) {
+  return text.length > 8 ? text.slice(0, 8) + "…" : text;
 }
 
-export function rotate(seed) {
-  if (typeof seed !== "string" || seed.length < 8) {
-    throw new Error("seed must be at least 8 characters");
+export function shortLabel(text) {
+  if (typeof text !== "string" || text.length < 8) {
+    throw new Error("label text must be at least 8 characters");
   }
-  return nextToken(seed);
+  return abbreviate(text);
 }
 
 export function close(session, startedAt) {
@@ -374,7 +374,7 @@ export function describe(state) {
 // fixture are the point of a test fixture.
 const MIXED_SESSION_TEST = `import test from "node:test";
 import assert from "node:assert/strict";
-import { expiresAt, displayName, rotate, describe } from "../src/session.js";
+import { expiresAt, displayName, shortLabel, describe } from "../src/session.js";
 
 const FIXTURE = {
   issuedAt: 1750000000,
@@ -391,8 +391,8 @@ test("sessions without a user render as anonymous", () => {
   assert.equal(displayName(FIXTURE), "Ada Lovelace");
 });
 
-test("rotate rejects seeds shorter than eight characters", () => {
-  assert.throws(() => rotate("short"));
+test("shortLabel rejects text shorter than eight characters", () => {
+  assert.throws(() => shortLabel("short"));
 });
 
 test("describe names the revoked state", () => {
