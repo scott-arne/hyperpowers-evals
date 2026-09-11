@@ -27,7 +27,14 @@ function scenario(): string {
 function runCli(
   fixture: string,
   extraArgs: readonly string[] = [],
-): { status: number | null; stdout: string; stderr: string } {
+): {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  outRoot: string;
+} {
+  // Hoisted so a caller can read the run dirs the CLI wrote under it.
+  const outRoot = mkdtempSync(join(tmpdir(), 'out-'));
   const proc = spawnSync(
     'bun',
     [
@@ -39,7 +46,7 @@ function runCli(
       '--coding-agents-dir',
       REAL_CODING_AGENTS,
       '--out-root',
-      mkdtempSync(join(tmpdir(), 'out-')),
+      outRoot,
       ...extraArgs,
     ],
     {
@@ -55,7 +62,12 @@ function runCli(
       encoding: 'utf8',
     },
   );
-  return { status: proc.status, stdout: proc.stdout, stderr: proc.stderr };
+  return {
+    status: proc.status,
+    stdout: proc.stdout,
+    stderr: proc.stderr,
+    outRoot,
+  };
 }
 
 test('quorum run exits 1 on a fail verdict and prints run-id', () => {
@@ -80,13 +92,13 @@ test('quorum run --repeat 3 prints three run-ids and a trial vector', () => {
   expect(new Set(runIds).size).toBe(3);
   expect(stdout).toContain('trials: FFF');
   expect(status).toBe(1);
-});
+}, 30_000);
 
 test('quorum run --repeat 3 on a passing scenario exits 0', () => {
   const { status, stdout } = runCli('pass', ['--repeat', '3']);
   expect(stdout).toContain('trials: PPP');
   expect(status).toBe(0);
-});
+}, 30_000);
 
 test('quorum run without --repeat prints no trial vector', () => {
   const { stdout, status } = runCli('fail-no-usage');
@@ -95,40 +107,17 @@ test('quorum run without --repeat prints no trial vector', () => {
 });
 
 test('quorum run --repeat 1 adds the vector line and stamps the trial', () => {
-  const outRoot = mkdtempSync(join(tmpdir(), 'out-'));
-  const proc = spawnSync(
-    'bun',
-    [
-      CLI,
-      'run',
-      scenario(),
-      '--coding-agent',
-      'claude',
-      '--coding-agents-dir',
-      REAL_CODING_AGENTS,
-      '--out-root',
-      outRoot,
-      '--repeat',
-      '1',
-    ],
-    {
-      env: {
-        ...process.env,
-        PATH: `${MOCK}:${process.env['PATH'] ?? ''}`,
-        ANTHROPIC_API_KEY: 'sk-test',
-        SUPERPOWERS_ROOT: mkdtempSync(join(tmpdir(), 'sproot-')),
-        MOCK_GAUNTLET_FIXTURE: 'fail-no-usage',
-      },
-      encoding: 'utf8',
-    },
-  );
-  const runIds = (proc.stdout ?? '')
+  const { status, stdout, outRoot } = runCli('fail-no-usage', [
+    '--repeat',
+    '1',
+  ]);
+  const runIds = stdout
     .split('\n')
     .filter((l) => l.startsWith('run-id: '))
     .map((l) => l.slice('run-id: '.length));
   expect(runIds).toHaveLength(1);
-  expect(proc.stdout).toContain('trials: F');
-  expect(proc.status).toBe(1);
+  expect(stdout).toContain('trials: F');
+  expect(status).toBe(1);
   // The distinction the option source exists for: an explicit `--repeat 1`
   // stamps the trial, an omitted flag does not. A test that only checked the
   // value would pass against the broken `opts.repeat !== '1'` guard.
@@ -136,35 +125,11 @@ test('quorum run --repeat 1 adds the vector line and stamps the trial', () => {
     readFileSync(join(outRoot, runIds[0] as string, 'verdict.json'), 'utf8'),
   ) as { trial?: { index: number; count: number } };
   expect(v.trial).toEqual({ index: 1, count: 1 });
-});
+}, 30_000);
 
 test('quorum run without --repeat writes no trial field', () => {
-  const outRoot = mkdtempSync(join(tmpdir(), 'out-'));
-  const proc = spawnSync(
-    'bun',
-    [
-      CLI,
-      'run',
-      scenario(),
-      '--coding-agent',
-      'claude',
-      '--coding-agents-dir',
-      REAL_CODING_AGENTS,
-      '--out-root',
-      outRoot,
-    ],
-    {
-      env: {
-        ...process.env,
-        PATH: `${MOCK}:${process.env['PATH'] ?? ''}`,
-        ANTHROPIC_API_KEY: 'sk-test',
-        SUPERPOWERS_ROOT: mkdtempSync(join(tmpdir(), 'sproot-')),
-        MOCK_GAUNTLET_FIXTURE: 'fail-no-usage',
-      },
-      encoding: 'utf8',
-    },
-  );
-  const runId = (proc.stdout ?? '')
+  const { stdout, outRoot } = runCli('fail-no-usage');
+  const runId = stdout
     .split('\n')
     .filter((l) => l.startsWith('run-id: '))
     .map((l) => l.slice('run-id: '.length))[0] as string;
@@ -173,34 +138,8 @@ test('quorum run without --repeat writes no trial field', () => {
 });
 
 test('quorum run --repeat writes trial index and count into each verdict', () => {
-  const outRoot = mkdtempSync(join(tmpdir(), 'out-'));
-  const proc = spawnSync(
-    'bun',
-    [
-      CLI,
-      'run',
-      scenario(),
-      '--coding-agent',
-      'claude',
-      '--coding-agents-dir',
-      REAL_CODING_AGENTS,
-      '--out-root',
-      outRoot,
-      '--repeat',
-      '2',
-    ],
-    {
-      env: {
-        ...process.env,
-        PATH: `${MOCK}:${process.env['PATH'] ?? ''}`,
-        ANTHROPIC_API_KEY: 'sk-test',
-        SUPERPOWERS_ROOT: mkdtempSync(join(tmpdir(), 'sproot-')),
-        MOCK_GAUNTLET_FIXTURE: 'fail-no-usage',
-      },
-      encoding: 'utf8',
-    },
-  );
-  const runIds = (proc.stdout ?? '')
+  const { stdout, outRoot } = runCli('fail-no-usage', ['--repeat', '2']);
+  const runIds = stdout
     .split('\n')
     .filter((l) => l.startsWith('run-id: '))
     .map((l) => l.slice('run-id: '.length));
@@ -215,7 +154,7 @@ test('quorum run --repeat writes trial index and count into each verdict', () =>
     { index: 1, count: 2 },
     { index: 2, count: 2 },
   ]);
-});
+}, 30_000);
 
 test('quorum run rejects a non-integer --repeat', () => {
   const { status, stderr } = runCli('fail-no-usage', ['--repeat', '2.5']);

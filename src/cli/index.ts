@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Command } from 'commander';
-import type { FinalStatus, FinalVerdict } from '../contracts/verdict.ts';
+import type { FinalStatus, FinalVerdict, Trial } from '../contracts/verdict.ts';
 import { FinalVerdictSchema } from '../contracts/verdict.ts';
 import { startDashboard } from '../dashboard/index.ts';
 import { runBatch } from '../run-all/index.ts';
@@ -155,7 +155,7 @@ program
     const scenarioId = scenarioName(scn);
     let runDirForStop: string | null = null;
     let startedAt = new Date().toISOString();
-    let trialForStop: { index: number; count: number } | undefined;
+    let trialForStop: Trial | undefined;
     const onSigint = (): void => {
       currentGauntletChild()?.kill('SIGINT');
       if (runDirForStop !== null) {

@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { FinalVerdict } from '../contracts/verdict.ts';
+import type { FinalVerdict, Trial } from '../contracts/verdict.ts';
 
 export interface StoppedIdentity {
   readonly scenario: string;
@@ -9,7 +9,7 @@ export interface StoppedIdentity {
   // Repeat-run provenance for the interrupted trial. The interrupted trial is
   // the one whose position in the sequence matters most — without the stamp it
   // is the single verdict in the group that cannot be placed.
-  readonly trial?: { readonly index: number; readonly count: number };
+  readonly trial?: Trial;
 }
 
 // The verdict written when a run is interrupted by SIGINT (dashboard Stop).
