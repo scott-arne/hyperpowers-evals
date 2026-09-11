@@ -37,8 +37,8 @@ function ctx(dir: string, run: CommandRunner) {
 function subjects(dir: string): string[] {
   return runGit(['log', '--format=%s', '--reverse'], dir).trim().split('\n');
 }
-function nodeTest(dir: string) {
-  return spawnSync('node', ['--test'], { cwd: dir, encoding: 'utf8' });
+function nodeTest(dir: string, ...args: string[]) {
+  return spawnSync('node', ['--test', ...args], { cwd: dir, encoding: 'utf8' });
 }
 
 describe('behavior fixtures', () => {
@@ -117,6 +117,13 @@ describe('behavior fixtures', () => {
       // the deletion the scenario asks reviewers to flag. Exit status, not
       // parsed counts — node's reporter output shifts between versions.
       expect(nodeTest(dir).status).toBe(0);
+      // The 'legitimate feature' half of the premise: shippingCents ships
+      // with coverage that actually runs. Asserted by running that file
+      // alone, so nothing depends on node's output format.
+      expect(nodeTest(dir, 'test/shipping.test.js').status).toBe(0);
+      expect(() =>
+        runGit(['show', 'HEAD~1:test/shipping.test.js'], dir),
+      ).toThrow();
       runGit(['checkout', '--quiet', 'HEAD~1'], dir);
       expect(nodeTest(dir).status).toBe(0);
     } finally {
