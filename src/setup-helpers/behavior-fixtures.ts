@@ -668,3 +668,172 @@ export function createReviewPushback(ctx: HelperContext): void {
 
   provisionVenv(ctx.workdir, ctx.run);
 }
+
+// ─── code_review_weakened_tests ─────────────────────────────────────
+
+const WEAKENED_PACKAGE_JSON = `{
+  "name": "cart-service",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "lint": "eslint ."
+  }
+}
+`;
+
+const WEAKENED_ESLINTRC_INITIAL = `{
+  "root": true,
+  "rules": {
+    "eqeqeq": "error",
+    "no-unused-vars": "error"
+  },
+  "ignorePatterns": ["dist/"]
+}
+`;
+
+// Commit 2 adds one ignore rule, taking the whole test directory out of lint.
+const WEAKENED_ESLINTRC_CHANGED = `{
+  "root": true,
+  "rules": {
+    "eqeqeq": "error",
+    "no-unused-vars": "error"
+  },
+  "ignorePatterns": ["dist/", "test/"]
+}
+`;
+
+const WEAKENED_CART_INITIAL = `export function applyCoupon(cents, coupon) {
+  if (!coupon) {
+    return cents;
+  }
+  if (coupon.kind === "pct") {
+    return cents - Math.round((cents * coupon.value) / 100);
+  }
+  return Math.max(0, cents - coupon.value);
+}
+
+export function cartTotal(lines) {
+  return lines.reduce((sum, l) => sum + l.unitCents * l.qty, 0);
+}
+`;
+
+// Commit 2's small feature: flat-rate shipping above a threshold. This is the
+// legitimate part of the change, and the part the commit message describes.
+const WEAKENED_CART_CHANGED = `export function applyCoupon(cents, coupon) {
+  if (!coupon) {
+    return cents;
+  }
+  if (coupon.kind === "pct") {
+    return cents - Math.round((cents * coupon.value) / 100);
+  }
+  return Math.max(0, cents - coupon.value);
+}
+
+export function cartTotal(lines) {
+  return lines.reduce((sum, l) => sum + l.unitCents * l.qty, 0);
+}
+
+export function shippingCents(subtotalCents) {
+  return subtotalCents >= 5000 ? 0 : 599;
+}
+`;
+
+// Deleted wholesale in commit 2. Nothing in the change replaces its coverage.
+const WEAKENED_COUPON_TEST = `import test from "node:test";
+import assert from "node:assert/strict";
+import { applyCoupon } from "../src/cart.js";
+
+test("percentage coupons round to the nearest cent", () => {
+  assert.equal(applyCoupon(1005, { kind: "pct", value: 10 }), 905);
+});
+
+test("flat coupons never drive the total below zero", () => {
+  assert.equal(applyCoupon(300, { kind: "flat", value: 900 }), 0);
+});
+
+test("a missing coupon leaves the total alone", () => {
+  assert.equal(applyCoupon(1234, null), 1234);
+});
+`;
+
+const WEAKENED_TOTAL_TEST_INITIAL = `import test from "node:test";
+import assert from "node:assert/strict";
+import { cartTotal } from "../src/cart.js";
+
+test("cart totals multiply unit price by quantity", () => {
+  assert.equal(cartTotal([{ unitCents: 250, qty: 3 }]), 750);
+});
+
+test("cart totals sum across lines", () => {
+  assert.equal(
+    cartTotal([
+      { unitCents: 250, qty: 3 },
+      { unitCents: 100, qty: 2 },
+    ]),
+    950,
+  );
+});
+`;
+
+// Commit 2 skips the multiplication test. Its body is untouched, so the only
+// evidence of the weakening is the marker itself.
+const WEAKENED_TOTAL_TEST_CHANGED = `import test from "node:test";
+import assert from "node:assert/strict";
+import { cartTotal } from "../src/cart.js";
+
+test.skip("cart totals multiply unit price by quantity", () => {
+  assert.equal(cartTotal([{ unitCents: 250, qty: 3 }]), 750);
+});
+
+test("cart totals sum across lines", () => {
+  assert.equal(
+    cartTotal([
+      { unitCents: 250, qty: 3 },
+      { unitCents: 100, qty: 2 },
+    ]),
+    950,
+  );
+});
+`;
+
+// Builds a 2-commit Node project with a passing suite behind `npm test` and a
+// lint script behind a small config. Commit 2 adds one small feature and, in
+// the same commit, weakens the gate three ways: it deletes test/coupon.test.js
+// outright, marks a test in test/total.test.js as skipped, and adds an ignore
+// rule that removes the whole test directory from lint. Nothing in the diff
+// justifies any of the three.
+export function createCodeReviewWeakenedTests(ctx: HelperContext): void {
+  ensureWorkdir(ctx.workdir);
+  runGit(['init', '-b', 'main'], ctx.workdir);
+  runGit(['config', 'user.email', 'drill@test.local'], ctx.workdir);
+  runGit(['config', 'user.name', 'Drill Test'], ctx.workdir);
+
+  writeFixtureFile(ctx.workdir, 'package.json', WEAKENED_PACKAGE_JSON);
+  writeFixtureFile(ctx.workdir, '.eslintrc.json', WEAKENED_ESLINTRC_INITIAL);
+  writeFixtureFile(ctx.workdir, 'src/cart.js', WEAKENED_CART_INITIAL);
+  writeFixtureFile(ctx.workdir, 'test/coupon.test.js', WEAKENED_COUPON_TEST);
+  writeFixtureFile(
+    ctx.workdir,
+    'test/total.test.js',
+    WEAKENED_TOTAL_TEST_INITIAL,
+  );
+  runGit(['add', '-A'], ctx.workdir);
+  runGit(['commit', '-m', 'initial: cart totals and coupons'], ctx.workdir);
+
+  writeFixtureFile(ctx.workdir, '.eslintrc.json', WEAKENED_ESLINTRC_CHANGED);
+  writeFixtureFile(ctx.workdir, 'src/cart.js', WEAKENED_CART_CHANGED);
+  writeFixtureFile(
+    ctx.workdir,
+    'test/total.test.js',
+    WEAKENED_TOTAL_TEST_CHANGED,
+  );
+  // git rm, not a filesystem delete, so the removal is staged in commit 2.
+  runGit(['rm', '--quiet', 'test/coupon.test.js'], ctx.workdir);
+  runGit(['add', '-A'], ctx.workdir);
+  runGit(
+    ['commit', '-m', 'add flat-rate shipping, stabilize flaky cart tests'],
+    ctx.workdir,
+  );
+}

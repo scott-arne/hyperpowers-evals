@@ -9,6 +9,7 @@ import {
   createClaimWithoutVerification,
   createCodeReviewMixedDiff,
   createCodeReviewPlantedBugs,
+  createCodeReviewWeakenedTests,
   createPhantomCompletion,
   createReviewPushback,
 } from './behavior-fixtures.ts';
@@ -95,6 +96,7 @@ export const REGISTRY: Record<string, RegistryEntry> = {
   add_auth_execution_plan: { fn: addAuthExecutionPlan },
   create_writing_plans_skeleton: { fn: createWritingPlansSkeleton },
   create_code_review_mixed_diff: { fn: createCodeReviewMixedDiff },
+  create_code_review_weakened_tests: { fn: createCodeReviewWeakenedTests },
   create_code_review_planted_bugs: { fn: createCodeReviewPlantedBugs },
   add_flawed_spec_for_review: { fn: addFlawedSpecForReview },
   add_sdd_auth_plan: { fn: addSddAuthPlan },
