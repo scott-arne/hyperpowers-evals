@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ANTIGRAVITY_RATE_LIMIT_MARKER } from '../src/agents/antigravity.ts';
@@ -357,8 +363,40 @@ test('runBatch rejects a repeat below 1', async () => {
       invoke,
       stream: new StringStream(),
     }),
-  ).rejects.toThrow(/repeat must be >= 1/);
+  ).rejects.toThrow(/repeat must be an integer >= 1/);
 });
+
+// The exported programmatic boundary, which the CLI's own coverage cannot
+// reach: parseIntegerOption rejects a non-integer --repeat before runBatch ever
+// sees it. A direct caller can still pass one, and the old `repeat < 1` guard
+// let every value below through. Array.from then coerces it into a trial count
+// that does not match the header (1.5 -> 1, NaN -> 0, Infinity -> a RangeError
+// mid-expansion), after the batch dir exists and, for a fractional value, after
+// real runs have launched.
+for (const bad of [1.5, 2.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+  test(`runBatch rejects a non-integer repeat (${bad})`, async () => {
+    const { scenariosRoot, codingAgentsDir, outRoot } = fixture(
+      [{ name: 'alpha' }],
+      ['claude'],
+    );
+    const { invoke, calls } = fakeInvoke({});
+    await expect(
+      runBatch({
+        scenariosRoot,
+        codingAgentsDir,
+        outRoot,
+        jobs: 1,
+        repeat: bad,
+        invoke,
+        stream: new StringStream(),
+      }),
+    ).rejects.toThrow(/repeat must be an integer >= 1/);
+    // Rejected before allocateBatchDir, so there is no half-created batch and
+    // no run was launched.
+    expect(existsSync(join(outRoot, 'batches'))).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+}
 
 // The writer -> schema -> renderer seam: a batch actually produced by runBatch
 // at repeat 3 must render as a trial vector. A hand-written fixture cannot catch

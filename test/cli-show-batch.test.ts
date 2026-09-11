@@ -318,3 +318,150 @@ test('renderBatch (color:true) paints each trial symbol by its own verdict', () 
   expect(out).toContain('\x1b[38;2;80;250;123mP\x1b[0m');
   expect(out).toContain('\x1b[38;2;255;85;85mF\x1b[0m');
 });
+
+// The cells of the alpha row, in column order, stripped of column padding. The
+// vector assertions below are exact rather than substring: a slot that shifted
+// left still contains the right letters, so `toContain` cannot see the defect
+// these tests exist for.
+function alphaCells(out: string): string[] {
+  const row = out.split('\n').find((l) => l.startsWith('| alpha'));
+  expect(row).toBeDefined();
+  return (row ?? '')
+    .split('|')
+    .slice(2, -1)
+    .map((c) => c.trim());
+}
+
+// A verdict's slot is its trial NUMBER, not its rank among the records that
+// survived. Trials of one cell are independent scheduler units that can finish
+// out of order, and an interrupted batch leaves a partial results.jsonl, so a
+// cell's gaps are not all at the tail.
+
+test('renderBatch puts a lone trial-2 record in the middle slot', () => {
+  const { batchDir, resultsRoot } = makeFixture({
+    repeat: 3,
+    records: [
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r2',
+        trial: { index: 2, count: 3 },
+      },
+    ],
+    verdicts: [['r2', 'pass']],
+  });
+  const out = renderBatch({ batchDir, resultsRoot, color: false });
+  // Trial 2 passed; trials 1 and 3 never ran. Packing survivors from slot 0
+  // would file trial 2's pass under trial 1.
+  expect(alphaCells(out)[0]).toBe('-P-');
+});
+
+test('renderBatch leaves a missing middle trial as a gap in its own slot', () => {
+  const { batchDir, resultsRoot } = makeFixture({
+    repeat: 3,
+    records: [
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r1',
+        trial: { index: 1, count: 3 },
+      },
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r3',
+        trial: { index: 3, count: 3 },
+      },
+    ],
+    verdicts: [
+      ['r1', 'pass'],
+      ['r3', 'indeterminate'],
+    ],
+  });
+  const out = renderBatch({ batchDir, resultsRoot, color: false });
+  // The gap belongs to trial 2, not to the tail.
+  expect(alphaCells(out)[0]).toBe('P-I');
+});
+
+// Index-addressed slots make two record shapes reachable that rank-packing
+// never had to consider. Both are decided in vectorCell; these pin the choices.
+
+test('renderBatch drops a trial index that addresses no slot (no throw)', () => {
+  const { batchDir, resultsRoot } = makeFixture({
+    repeat: 3,
+    records: [
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r1',
+        trial: { index: 1, count: 3 },
+      },
+      // Past the end of the vector, before its start, and not addressable at
+      // all. The record schema only requires a number, so a foreign or
+      // degraded writer can produce any of the three.
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r-high',
+        trial: { index: 9, count: 3 },
+      },
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r-zero',
+        trial: { index: 0, count: 3 },
+      },
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r-frac',
+        trial: { index: 1.5, count: 3 },
+      },
+    ],
+    verdicts: [
+      ['r1', 'pass'],
+      ['r-high', 'fail'],
+      ['r-zero', 'fail'],
+      ['r-frac', 'fail'],
+    ],
+  });
+  const render = (): string =>
+    renderBatch({ batchDir, resultsRoot, color: false });
+  expect(render).not.toThrow();
+  // Only trial 1 is addressable; the other three are dropped rather than
+  // clamped into a slot they did not produce. The cell stays exactly `repeat`
+  // wide, so an over-long cell cannot push its column out of alignment.
+  expect(alphaCells(render())[0]).toBe('P--');
+  // Dropping is display only: every record still counts in the tally.
+  expect(render().trimEnd().split('\n').at(-1)).toBe('1 ✓ · 3 ✗ · 0 ⊘ · 0 —');
+});
+
+test('renderBatch resolves duplicate trial indices last-wins', () => {
+  const { batchDir, resultsRoot } = makeFixture({
+    repeat: 3,
+    records: [
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r-first',
+        trial: { index: 1, count: 3 },
+      },
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r-second',
+        trial: { index: 1, count: 3 },
+      },
+    ],
+    verdicts: [
+      ['r-first', 'pass'],
+      ['r-second', 'fail'],
+    ],
+  });
+  const render = (): string =>
+    renderBatch({ batchDir, resultsRoot, color: false });
+  expect(render).not.toThrow();
+  // The later record wins, matching cellVerdicts, whose plain .set already lets
+  // a later record overwrite an earlier one for the same cell.
+  expect(alphaCells(render())[0]).toBe('F--');
+});

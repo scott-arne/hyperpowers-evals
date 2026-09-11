@@ -300,11 +300,18 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
   if (jobs < 1) {
     throw new Error(`jobs must be >= 1, got ${jobs}`);
   }
-  // Same fail-fast shape as jobs. Without it a repeat of 0 expands to an empty
-  // schedule and then writes a header that its own schema rejects, so the batch
-  // dies in writeBatchFooter with a zod error instead of at its bad argument.
-  if (repeat < 1) {
-    throw new Error(`repeat must be >= 1, got ${repeat}`);
+  // Same fail-fast shape as jobs, and integral because the CLI's own vocabulary
+  // is "an integer >= 1". `>= 1` alone lets 1.5, NaN, and Infinity through:
+  // Array.from coerces them into a trial count the header does not carry (1.5
+  // -> 1 trial, NaN -> 0, Infinity -> a RangeError mid-expansion), and the
+  // batch then dies in writeBatchFooter on a zod error over the header this
+  // same call wrote — after the batch dir exists and, for a fractional value,
+  // after real runs have launched. Guarded here, ahead of allocateBatchDir, so
+  // a rejected call leaves nothing behind. (The CLI never reaches this: its
+  // parseIntegerOption rejects a non-integer --repeat first. This is the
+  // exported programmatic boundary.)
+  if (!Number.isInteger(repeat) || repeat < 1) {
+    throw new Error(`repeat must be an integer >= 1, got ${repeat}`);
   }
 
   const entries = buildMatrix({

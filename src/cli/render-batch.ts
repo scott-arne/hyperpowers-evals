@@ -251,24 +251,46 @@ export function renderBatch(args: RenderBatchArgs): string {
     ? Math.max(...agents.map((a) => a.length), repeat)
     : Math.max(...agents.map((a) => a.length), '⊘ indet'.length);
 
-  // One vector cell: the cell's trials in trial order, padded to `repeat` with
-  // "did not run". Sorted explicitly rather than by append order — results.jsonl
-  // is written by concurrent workers, so a cell's trials interleave with other
-  // cells'. Each symbol is painted by its own verdict, since one cell can hold
-  // several.
+  // One vector cell: exactly `repeat` slots, ADDRESSED BY TRIAL INDEX rather
+  // than filled in rank order. A slot the cell has no record for keeps its
+  // "did not run" symbol, so a gap lands on the trial that is actually missing.
+  // Packing survivors from slot 0 instead would file a verdict under a trial
+  // number that never produced it, and the gaps a partial batch leaves are not
+  // all at the tail: a cell's trials are independent scheduler units that can
+  // finish out of order, and `quorum show` renders interrupted batches. Index
+  // addressing also removes the need to sort by index first. Each symbol is
+  // painted by its own verdict, since one cell can hold several.
   const vectorCell = (key: string): string => {
-    const verdicts = [...(cellTrials.get(key) ?? [])]
-      .sort((a, b) => a.index - b.index)
-      .map((t) => t.verdict);
-    while (verdicts.length < repeat) {
-      verdicts.push('unknown');
+    const slots: BatchVerdict[] = Array.from(
+      { length: repeat },
+      () => 'unknown',
+    );
+    for (const t of cellTrials.get(key) ?? []) {
+      const slot = t.index - 1;
+      // An index that addresses no slot — past the end, before the start, or
+      // not a whole number — is dropped rather than clamped. The record schema
+      // only narrows `index` to a number, so a foreign or degraded writer can
+      // produce any of the three, and clamping would commit exactly the
+      // misattribution index addressing exists to prevent. Dropping degrades
+      // one slot to "did not run"; the tally, counted at read time, is
+      // unaffected. It also holds the cell to `repeat` symbols, so an
+      // over-long cell cannot push its column out of alignment.
+      if (!Number.isInteger(t.index) || slot < 0 || slot >= repeat) {
+        continue;
+      }
+      // Duplicate indices in one cell (two malformed records both degrade to
+      // index 1 under `r.trial?.index ?? 1`) are last-wins, matching
+      // cellVerdicts, whose plain .set already lets a later record overwrite an
+      // earlier one for the same cell. The two views must not disagree about
+      // which record won.
+      slots[slot] = t.verdict;
     }
-    const painted = verdicts
+    const painted = slots
       .map((v) => paint(TRIAL_SYMBOLS[v], BATCH_GLYPH_COLORS[v], args.color))
       .join('');
     // Pad against the symbol count: an ANSI wrapper has no display width, so
     // padEnd on the painted string would pad by the escape bytes too.
-    const pad = ' '.repeat(Math.max(0, cellW - verdicts.length));
+    const pad = ' '.repeat(Math.max(0, cellW - slots.length));
     return `${painted}${pad}`;
   };
 
