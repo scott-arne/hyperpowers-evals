@@ -24,8 +24,9 @@ export interface TrialSummary {
 
 // Aggregate a completed repeat run. Precedence is fail > indeterminate > pass:
 // one failing trial makes the run a failure, and indeterminate wins only when
-// nothing failed. For a single trial this reproduces exitCodeFor exactly, which
-// is what lets `--repeat 1` stay a drop-in for an unrepeated run.
+// nothing failed. For a single trial this reproduces the exit code an
+// unrepeated run produced, which is what lets `--repeat 1` stay a drop-in for
+// one.
 //
 // The caller guarantees a non-empty array (`--repeat` is validated >= 1). An
 // empty array falls out of the same rule as 0: nothing failed.

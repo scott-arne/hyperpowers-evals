@@ -66,6 +66,7 @@ import type {
   GauntletStatus,
   RunError,
   RunErrorStage,
+  Trial,
 } from '../contracts/verdict.ts';
 import { buildRunEconomics } from '../economics.ts';
 import { envSnapshot, getEnv } from '../env.ts';
@@ -364,7 +365,7 @@ export interface RunScenarioArgs {
   readonly onRunDir?: ((runDir: string) => void) | undefined;
   // Repeat-run provenance, copied verbatim into the written verdict. Absent
   // for a single ungrouped run.
-  readonly trial?: { readonly index: number; readonly count: number };
+  readonly trial?: Trial;
 }
 
 export interface RunScenarioResult {
