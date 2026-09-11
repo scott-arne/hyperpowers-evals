@@ -11,7 +11,6 @@ import { Command } from 'commander';
 import type { FinalStatus, FinalVerdict } from '../contracts/verdict.ts';
 import { FinalVerdictSchema } from '../contracts/verdict.ts';
 import { startDashboard } from '../dashboard/index.ts';
-import { assertNever } from '../invariant.ts';
 import { runBatch } from '../run-all/index.ts';
 import { currentGauntletChild, runScenario } from '../runner/index.ts';
 import { writeStoppedVerdict } from '../runner/stopped.ts';
@@ -32,22 +31,7 @@ import {
   scenarioDirFor,
   scenarioName,
 } from './scenario.ts';
-
-// Process exit code per the verdict's final value. A closed switch over the
-// FinalStatus union (coding standard 5.1) gives a guaranteed number without an
-// index-signature lookup that noUncheckedIndexedAccess would widen.
-function exitCodeFor(final: FinalStatus): number {
-  switch (final) {
-    case 'pass':
-      return 0;
-    case 'fail':
-      return 1;
-    case 'indeterminate':
-      return 2;
-    default:
-      return assertNever(final);
-  }
-}
+import { summarizeTrials } from './trials.ts';
 
 function basename(path: string): string {
   const last = path.split('/').at(-1);
@@ -104,6 +88,7 @@ interface RunOptions {
   readonly codingAgentsDir: string;
   readonly outRoot: string;
   readonly scenariosRoot: string;
+  readonly repeat: string;
 }
 
 interface ShowOptions {
@@ -142,7 +127,8 @@ program
     'root for a bare scenario name',
     'scenarios',
   )
-  .action(async (scenario: string, opts: RunOptions) => {
+  .option('--repeat <n>', 'run the scenario n times sequentially (>=1)', '1')
+  .action(async (scenario: string, opts: RunOptions, cmd: Command) => {
     const scn = resolveScenarioDir(scenario, opts.scenariosRoot);
     if (scn === undefined) {
       process.stderr.write(
@@ -150,15 +136,26 @@ program
       );
       process.exit(2);
     }
+    const repeat = parseIntegerOption(opts.repeat);
+    if (repeat === undefined || repeat < 1) {
+      process.stderr.write('error: --repeat must be an integer >= 1\n');
+      process.exit(1);
+    }
+    // Commander supplies the declared default '1' for BOTH an omitted flag and
+    // an explicit `--repeat 1`, so the value cannot distinguish them and a
+    // `opts.repeat !== '1'` test is always false. The option source can: it
+    // reports 'cli' only for a flag that appeared on the command line.
+    const repeatGiven = cmd.getOptionValueSource('repeat') === 'cli';
     // Graceful SIGINT (dashboard Stop sends SIGINT to this process). The handler
     // must know the run dir + identity before the await resolves, so the run dir
     // is captured via onRunDir and startedAt is stamped here (shared with the
     // happy path). On SIGINT: forward the signal to the gauntlet child, write a
     // stopped (indeterminate) verdict so the cell resolves instead of vanishing
     // under the dead-pid rule, then exit 2.
-    const startedAt = new Date().toISOString();
     const scenarioId = scenarioName(scn);
     let runDirForStop: string | null = null;
+    let startedAt = new Date().toISOString();
+    let trialForStop: { index: number; count: number } | undefined;
     const onSigint = (): void => {
       currentGauntletChild()?.kill('SIGINT');
       if (runDirForStop !== null) {
@@ -166,29 +163,45 @@ program
           scenario: scenarioId,
           codingAgent: opts.codingAgent,
           startedAt,
+          ...(trialForStop !== undefined ? { trial: trialForStop } : {}),
         });
       }
       process.exit(2);
     };
     process.once('SIGINT', onSigint);
-    const { runDir, verdict } = await runScenario({
-      scenarioDir: resolve(scn),
-      codingAgent: opts.codingAgent,
-      codingAgentsDir: resolve(opts.codingAgentsDir),
-      outRoot: resolve(opts.outRoot),
-      startedAt,
-      onRunDir: (dir) => {
-        runDirForStop = dir;
-      },
-    });
-    process.stdout.write(`run-id: ${basename(runDir)}\n`);
-    process.stdout.write(
-      render(verdict, runDir, {
-        color: process.stdout.isTTY ?? false,
-        mode: 'full',
-      }),
-    );
-    process.exit(exitCodeFor(verdict.final));
+
+    const finals: FinalStatus[] = [];
+
+    for (let i = 1; i <= repeat; i++) {
+      startedAt = new Date().toISOString();
+      runDirForStop = null;
+      trialForStop = repeatGiven ? { index: i, count: repeat } : undefined;
+      const { runDir, verdict } = await runScenario({
+        scenarioDir: resolve(scn),
+        codingAgent: opts.codingAgent,
+        codingAgentsDir: resolve(opts.codingAgentsDir),
+        outRoot: resolve(opts.outRoot),
+        startedAt,
+        onRunDir: (dir) => {
+          runDirForStop = dir;
+        },
+        ...(trialForStop !== undefined ? { trial: trialForStop } : {}),
+      });
+      process.stdout.write(`run-id: ${basename(runDir)}\n`);
+      process.stdout.write(
+        render(verdict, runDir, {
+          color: process.stdout.isTTY ?? false,
+          mode: 'full',
+        }),
+      );
+      finals.push(verdict.final);
+    }
+
+    const { vector, exitCode } = summarizeTrials(finals);
+    if (repeatGiven) {
+      process.stdout.write(`trials: ${vector}\n`);
+    }
+    process.exit(exitCode);
   });
 
 program

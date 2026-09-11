@@ -6,6 +6,10 @@ export interface StoppedIdentity {
   readonly scenario: string;
   readonly codingAgent: string;
   readonly startedAt: string;
+  // Repeat-run provenance for the interrupted trial. The interrupted trial is
+  // the one whose position in the sequence matters most — without the stamp it
+  // is the single verdict in the group that cannot be placed.
+  readonly trial?: { readonly index: number; readonly count: number };
 }
 
 // The verdict written when a run is interrupted by SIGINT (dashboard Stop).
@@ -24,6 +28,7 @@ export function buildStoppedVerdict(id: StoppedIdentity): FinalVerdict {
     coding_agent: id.codingAgent,
     started_at: id.startedAt,
     finished_at: new Date().toISOString(),
+    ...(id.trial !== undefined ? { trial: id.trial } : {}),
   };
 }
 
