@@ -291,6 +291,34 @@ test('runBatch expands only runnable cells by repeat', async () => {
   }
 });
 
+// The banner and the heartbeat report the same work to the same operator. The
+// heartbeat's total is runnableEntries.length, which repeat expansion grew; a
+// banner counting unexpanded cells contradicts it by a factor of repeat. Naming
+// --repeat is what lets a transcript be reconstructed from its own output.
+test('the banner counts expanded trials and names --repeat', async () => {
+  const { scenariosRoot, codingAgentsDir, outRoot } = fixture(
+    [{ name: 'alpha' }, { name: 'beta', directive: 'claude' }],
+    ['claude', 'codex'],
+  );
+  const { invoke } = fakeInvoke({});
+  const stream = new StringStream();
+  await runBatch({
+    scenariosRoot,
+    codingAgentsDir,
+    outRoot,
+    jobs: 2,
+    repeat: 3,
+    invoke,
+    stream,
+  });
+
+  const banner = stream.text.split('\n')[0];
+  // 3 runnable cells x 3 trials = 9 scheduler units, which is exactly what the
+  // HeartbeatTracker was handed. The skip is not expanded.
+  expect(banner).toContain('(9 runnable, 1 skipped)');
+  expect(banner).toContain('· --repeat 3');
+});
+
 test('runBatch with repeat 1 writes no trial stamps', async () => {
   const { scenariosRoot, codingAgentsDir, outRoot } = fixture(
     [{ name: 'alpha' }],

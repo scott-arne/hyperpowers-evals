@@ -287,6 +287,30 @@ test('renderBatch renders a repeat-3 cell as a trial vector in trial order', () 
   expect(out.trimEnd().split('\n').at(-1)).toBe('1 ✓ · 1 ✗ · 1 ⊘ · 0 —');
 });
 
+// The shape an interrupted or rate-limited batch leaves behind: fewer records
+// than the header's repeat. This is what the pad in vectorCell exists for.
+test('renderBatch pads a vector cell that has fewer records than repeat', () => {
+  const { batchDir, resultsRoot } = makeFixture({
+    repeat: 3,
+    records: [
+      {
+        scenario: 'alpha',
+        coding_agent: 'claude',
+        run_id: 'r1',
+        trial: { index: 1, count: 3 },
+      },
+    ],
+    verdicts: [['r1', 'pass']],
+  });
+  const out = renderBatch({ batchDir, resultsRoot, color: false });
+  const alphaRow = out.split('\n').find((l) => l.startsWith('| alpha'));
+  expect(alphaRow).toBeDefined();
+  // Trial 1 ran; trials 2 and 3 did not.
+  expect(alphaRow).toContain('P--');
+  // Padding is display only: it must not invent verdicts in the tally.
+  expect(out.trimEnd().split('\n').at(-1)).toBe('1 ✓ · 0 ✗ · 0 ⊘ · 0 —');
+});
+
 test('renderBatch (color:true) paints each trial symbol by its own verdict', () => {
   const { batchDir, resultsRoot } = vectorFixture();
   const out = renderBatch({ batchDir, resultsRoot, color: true });

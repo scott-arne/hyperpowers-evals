@@ -325,6 +325,22 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
   ]);
   const runnableIndexed = indexed.filter(([, e]) => runnable(e));
   const skippedIndexed = indexed.filter(([, e]) => !runnable(e));
+
+  // Repeat expansion: each runnable cell becomes `repeat` scheduler units,
+  // ordered by trial within the cell. Skipped cells are never expanded — a cell
+  // that did not run has one record and no trial stamp.
+  const runnableTrials: readonly (readonly [number, MatrixEntry, Trial])[] =
+    runnableIndexed.flatMap(([idx, e]) =>
+      Array.from(
+        { length: repeat },
+        (_unused, k): readonly [number, MatrixEntry, Trial] => [
+          idx,
+          e,
+          { index: k + 1, count: repeat },
+        ],
+      ),
+    );
+
   const agentsInBatch = [...new Set(entries.map((e) => e.codingAgent))].sort();
 
   writeBatchHeader({
@@ -350,11 +366,13 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
     stream.write(`${s}\n`);
   };
 
-  // Header banner (run_batch console.print).
+  // Header banner (run_batch console.print). The runnable count is the
+  // post-expansion unit total — the same number the HeartbeatTracker is given
+  // below — so the two operator-facing counts of one batch cannot disagree.
   println(
     `batch ${basename(batchDir)} · ${total} pairs ` +
-      `(${runnableIndexed.length} runnable, ${skippedIndexed.length} skipped) ` +
-      `· --jobs ${jobs}`,
+      `(${runnableTrials.length} runnable, ${skippedIndexed.length} skipped) ` +
+      `· --jobs ${jobs} · --repeat ${repeat}`,
   );
 
   // Skips render first, synchronously, with their reason label.
@@ -370,21 +388,6 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
       trial: null,
     });
   }
-
-  // Repeat expansion: each runnable cell becomes `repeat` scheduler units,
-  // ordered by trial within the cell. Skipped cells are never expanded — a cell
-  // that did not run has one record and no trial stamp.
-  const runnableTrials: readonly (readonly [number, MatrixEntry, Trial])[] =
-    runnableIndexed.flatMap(([idx, e]) =>
-      Array.from(
-        { length: repeat },
-        (_unused, k): readonly [number, MatrixEntry, Trial] => [
-          idx,
-          e,
-          { index: k + 1, count: repeat },
-        ],
-      ),
-    );
 
   // The unit's 1-based idx in the scheduler's view is its position among the
   // expanded RUNNABLE units. run-all's display labels are the matrix's global
