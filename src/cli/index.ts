@@ -102,6 +102,7 @@ interface RunAllOptions {
   readonly codingAgents?: string;
   readonly scenarios?: string;
   readonly jobs: string;
+  readonly repeat: string;
   readonly scenariosRoot: string;
   readonly codingAgentsDir: string;
   readonly outRoot: string;
@@ -307,6 +308,7 @@ program
   .option('--coding-agents <csv>', 'CSV agent filter (default: all)')
   .option('--scenarios <csv>', 'CSV scenario filter (default: all)')
   .option('--jobs <n>', 'global slot pool size (>=1)', String(DEFAULT_JOBS))
+  .option('--repeat <n>', 'run each cell n times (>=1)', '1')
   .option('--scenarios-root <dir>', 'scenarios root', 'scenarios')
   .option('--coding-agents-dir <dir>', 'agents dir', 'coding-agents')
   .option('--out-root <dir>', 'results root', 'results')
@@ -325,6 +327,11 @@ program
     const jobs = parseIntegerOption(opts.jobs);
     if (jobs === undefined || jobs < 1) {
       process.stderr.write('error: --jobs must be an integer >= 1\n');
+      process.exit(1);
+    }
+    const repeat = parseIntegerOption(opts.repeat);
+    if (repeat === undefined || repeat < 1) {
+      process.stderr.write('error: --repeat must be an integer >= 1\n');
       process.exit(1);
     }
     const heartbeatSeconds = parseIntegerOption(opts.heartbeatSeconds);
@@ -362,6 +369,7 @@ program
         codingAgentsDir: resolve(opts.codingAgentsDir),
         outRoot: resolve(opts.outRoot),
         jobs,
+        repeat,
         ...(agentFilter !== undefined ? { agentFilter } : {}),
         ...(scenarioFilter !== undefined ? { scenarioFilter } : {}),
         tier: tier ?? null,

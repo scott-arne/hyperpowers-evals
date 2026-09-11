@@ -1,27 +1,36 @@
 import { z } from 'zod';
+import { TrialSchema } from './verdict.ts';
 
 // Batch index contracts. Every JSON read at these boundaries is zod-narrowed;
 // the writers live in src/run-all/batch-index.ts (batch.json indent 2,
 // results.jsonl one compact record per line).
 
 // batch.json — written once at batch start (finished_at null), patched at end.
+// schema_version 2 adds `repeat`: the number of trials each runnable cell was
+// expanded into. 1 means the pre-repeat behavior, one child per cell.
 export const BatchHeaderSchema = z.object({
-  schema_version: z.literal(1),
+  schema_version: z.literal(2),
   id: z.string(),
   started_at: z.string(),
   finished_at: z.string().nullable(),
   coding_agents: z.array(z.string()),
   jobs: z.number(),
+  repeat: z.number().int().min(1),
 });
 export type BatchHeader = z.infer<typeof BatchHeaderSchema>;
 
-// results.jsonl — one record per (scenario, agent) cell. `skipped` is omitted
-// (not null) when the cell actually ran; present with a reason label otherwise.
+// results.jsonl — one record per trial of a (scenario, agent) cell. `skipped`
+// is omitted (not null) when the cell actually ran; `trial` is omitted when the
+// batch ran with repeat 1 or the cell was skipped.
 export const ResultRecordSchema = z.object({
   scenario: z.string(),
   coding_agent: z.string(),
   run_id: z.string().nullable(),
   skipped: z.string().optional(),
+  // Imported from the verdict contract, not restated. The batch record and the
+  // verdict it points at describe the same trial; two literal copies of the
+  // shape is two places for them to drift apart.
+  trial: TrialSchema.optional(),
 });
 export type ResultRecord = z.infer<typeof ResultRecordSchema>;
 

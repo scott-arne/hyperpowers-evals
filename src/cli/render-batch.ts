@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { trialSymbol } from './trials.ts';
 
 // quorum show <batch> — scenario × agent matrix renderer.
 //
@@ -65,6 +66,10 @@ const BatchHeaderSchema = z.object({
   started_at: z.string(),
   finished_at: z.string().nullable().optional(),
   coding_agents: z.array(z.string()),
+  // Optional here, unlike the contracts module's required field: this renderer
+  // deliberately tolerates partial headers (see cli-render-batch-tolerance),
+  // and a header written before schema 2 has no repeat. Absent means 1.
+  repeat: z.number().int().min(1).optional(),
 });
 
 // One results.jsonl record. run_id may be null (no run produced); skipped is a
@@ -76,6 +81,10 @@ const BatchResultSchema = z.object({
   coding_agent: z.string(),
   run_id: z.string().nullable().optional(),
   skipped: z.unknown().optional(),
+  // Declared, not inherited: zod strips keys a schema does not name, so without
+  // this the vector view would never see a trial stamp and every repeat batch
+  // would render in the legacy glyph path.
+  trial: z.object({ index: z.number(), count: z.number() }).optional(),
 });
 
 // verdict.json is opaque here apart from .final; narrow only that field. An
@@ -136,6 +145,26 @@ function cellKey(scenario: string, agent: string): string {
   return `${scenario}\t${agent}`;
 }
 
+// The vector slot for a trial that produced no verdict of its own: a skipped
+// cell, or a trial the batch never got to.
+const TRIAL_DID_NOT_RUN = '-';
+
+// Trial symbols for the repeat-run vector view. Distinct from BATCH_GLYPHS on
+// purpose: the glyph table is a per-cell verdict and its vocabulary is contract,
+// while a vector packs several trials into one cell and needs single characters.
+// The three run outcomes reuse `quorum run`'s own vector letters so the two
+// views cannot drift; "did not run" is not a FinalStatus and stays local.
+const TRIAL_SYMBOLS: Record<BatchVerdict, string> = {
+  pass: trialSymbol('pass'),
+  fail: trialSymbol('fail'),
+  indeterminate: trialSymbol('indeterminate'),
+  skipped: TRIAL_DID_NOT_RUN,
+  unknown: TRIAL_DID_NOT_RUN,
+};
+
+export const TRIAL_LEGEND =
+  'Legend: P pass   F fail   I indeterminate   - did not run';
+
 export interface RenderBatchArgs {
   readonly batchDir: string;
   readonly resultsRoot: string;
@@ -144,6 +173,11 @@ export interface RenderBatchArgs {
 
 // Returns the full multi-line table (banner, blank, header, separator, one row
 // per scenario, blank, Legend, tally) with a trailing newline.
+//
+// Two cell modes, selected by the header's `repeat`: the glyph table for a
+// one-child-per-cell batch (also every pre-schema-2 header, which has no
+// `repeat`), and a per-trial symbol vector for a batch run with --repeat 2 or
+// more.
 export function renderBatch(args: RenderBatchArgs): string {
   const header = BatchHeaderSchema.parse(
     JSON.parse(readFileSync(join(args.batchDir, 'batch.json'), 'utf8')),
@@ -152,14 +186,36 @@ export function renderBatch(args: RenderBatchArgs): string {
 
   const agents = header.coding_agents;
   const scenarios = [...new Set(rows.map((r) => r.scenario))].sort();
+  const repeat = header.repeat ?? 1;
+  const vector = repeat >= 2;
 
   const cellVerdicts = new Map<string, BatchVerdict>();
+  // Per-cell trial list for the vector view, kept alongside the last-write-wins
+  // cellVerdicts the glyph view uses.
+  const cellTrials = new Map<
+    string,
+    { readonly index: number; readonly verdict: BatchVerdict }[]
+  >();
   const counts: Record<BatchVerdict, number> = {
     pass: 0,
     fail: 0,
     indeterminate: 0,
     skipped: 0,
     unknown: 0,
+  };
+
+  // A record with no trial stamp is the batch's only trial of that cell.
+  const recordTrial = (
+    key: string,
+    index: number,
+    verdict: BatchVerdict,
+  ): void => {
+    const trials = cellTrials.get(key);
+    if (trials === undefined) {
+      cellTrials.set(key, [{ index, verdict }]);
+      return;
+    }
+    trials.push({ index, verdict });
   };
 
   for (const r of rows) {
@@ -169,17 +225,43 @@ export function renderBatch(args: RenderBatchArgs): string {
     if (r.skipped) {
       cellVerdicts.set(key, 'skipped');
       counts.skipped += 1;
+      recordTrial(key, r.trial?.index ?? 1, 'skipped');
       continue;
     }
     const verdict = cellVerdict(args.resultsRoot, r.run_id ?? null);
     cellVerdicts.set(key, verdict);
     counts[verdict] += 1;
+    recordTrial(key, r.trial?.index ?? 1, verdict);
   }
 
-  // Column widths grow to fit content.
+  // Column widths grow to fit content. A vector cell is `repeat` characters
+  // wide; a glyph cell is as wide as its longest glyph+label.
   let scenW = Math.max(...scenarios.map((s) => s.length), 0);
   scenW = Math.max(scenW, 'scenario'.length);
-  const cellW = Math.max(...agents.map((a) => a.length), '⊘ indet'.length);
+  const cellW = vector
+    ? Math.max(...agents.map((a) => a.length), repeat)
+    : Math.max(...agents.map((a) => a.length), '⊘ indet'.length);
+
+  // One vector cell: the cell's trials in trial order, padded to `repeat` with
+  // "did not run". Sorted explicitly rather than by append order — results.jsonl
+  // is written by concurrent workers, so a cell's trials interleave with other
+  // cells'. Each symbol is painted by its own verdict, since one cell can hold
+  // several.
+  const vectorCell = (key: string): string => {
+    const verdicts = [...(cellTrials.get(key) ?? [])]
+      .sort((a, b) => a.index - b.index)
+      .map((t) => t.verdict);
+    while (verdicts.length < repeat) {
+      verdicts.push('unknown');
+    }
+    const painted = verdicts
+      .map((v) => paint(TRIAL_SYMBOLS[v], BATCH_GLYPH_COLORS[v], args.color))
+      .join('');
+    // Pad against the symbol count: an ANSI wrapper has no display width, so
+    // padEnd on the painted string would pad by the escape bytes too.
+    const pad = ' '.repeat(Math.max(0, cellW - verdicts.length));
+    return `${painted}${pad}`;
+  };
 
   const lines: string[] = [];
 
@@ -203,7 +285,11 @@ export function renderBatch(args: RenderBatchArgs): string {
 
   for (const s of scenarios) {
     const rowCells = agents.map((a) => {
-      const verdict = cellVerdicts.get(cellKey(s, a)) ?? 'unknown';
+      const key = cellKey(s, a);
+      if (vector) {
+        return vectorCell(key);
+      }
+      const verdict = cellVerdicts.get(key) ?? 'unknown';
       const { glyph, label } = BATCH_GLYPHS[verdict];
       const text = `${glyph} ${label}`.padEnd(cellW);
       return paint(text, BATCH_GLYPH_COLORS[verdict], args.color);
@@ -213,7 +299,9 @@ export function renderBatch(args: RenderBatchArgs): string {
 
   lines.push('');
   lines.push(
-    'Legend: ✓ pass   ✗ fail   ⊘ indeterminate   — skipped (directive)   ? no verdict',
+    vector
+      ? TRIAL_LEGEND
+      : 'Legend: ✓ pass   ✗ fail   ⊘ indeterminate   — skipped (directive)   ? no verdict',
   );
   const tally =
     `${counts.pass} ✓ · ${counts.fail} ✗ · ` +

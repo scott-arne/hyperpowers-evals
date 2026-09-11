@@ -50,18 +50,23 @@ export interface WriteBatchHeaderArgs {
   readonly batchDir: string;
   readonly codingAgents: readonly string[];
   readonly jobs: number;
+  // Trials per runnable cell. Required, not defaulted: a schema-2 header with
+  // no `repeat` fails BatchHeaderSchema at read time, so every writer has to
+  // say what it ran (the dashboard, which has no repeat concept, passes 1).
+  readonly repeat: number;
   readonly startedAt: string;
 }
 
 // Write batch.json at batch start; finished_at is null.
 export function writeBatchHeader(args: WriteBatchHeaderArgs): void {
   const data: BatchHeader = {
-    schema_version: 1,
+    schema_version: 2,
     id: basename(args.batchDir),
     started_at: args.startedAt,
     finished_at: null,
     coding_agents: [...args.codingAgents],
     jobs: args.jobs,
+    repeat: args.repeat,
   };
   // indent-2 with NO trailing newline, per the on-disk format.
   writeFileSync(
@@ -92,16 +97,21 @@ export interface AppendResultRecordArgs {
   readonly codingAgent: string;
   readonly runId: string | null;
   readonly skipped: string | null;
+  // The trial this record is one of, or null for a cell that was never
+  // expanded (an upfront skip). Required so no call site can forget it and
+  // silently write an unstamped record.
+  readonly trial: { readonly index: number; readonly count: number } | null;
 }
 
-// Append one record to results.jsonl. Omits the `skipped` key when null.
-// Serialized with the ", " / ": " separators the on-disk format requires.
+// Append one record to results.jsonl. Omits the `skipped` and `trial` keys when
+// null. Serialized with the ", " / ": " separators the on-disk format requires.
 export function appendResultRecord(args: AppendResultRecordArgs): void {
   const rec: ResultRecord = {
     scenario: args.scenario,
     coding_agent: args.codingAgent,
     run_id: args.runId,
     ...(args.skipped !== null ? { skipped: args.skipped } : {}),
+    ...(args.trial !== null ? { trial: args.trial } : {}),
   };
   appendFileSync(
     join(args.batchDir, 'results.jsonl'),
@@ -109,14 +119,24 @@ export function appendResultRecord(args: AppendResultRecordArgs): void {
   );
 }
 
-// Serialize a flat record (string | null values only) with ", " between members
-// and ": " after keys. JS JSON.stringify omits those spaces, so we emit the
-// members by hand. Key order is the object's insertion order.
+// Serialize a record with ", " between members and ": " after keys. JS
+// JSON.stringify omits those spaces, so we emit the members by hand. Values are
+// strings, null, or a one-level-deep object of numbers (the trial stamp); the
+// nested object gets the same separators so the whole line stays one shape.
+// Key order is the object's insertion order.
 function pyCompactJson(rec: ResultRecord): string {
+  const encode = (value: unknown): string => {
+    if (value !== null && typeof value === 'object') {
+      const inner = Object.entries(value as Record<string, unknown>).map(
+        ([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`,
+      );
+      return `{${inner.join(', ')}}`;
+    }
+    return value === undefined ? 'null' : JSON.stringify(value);
+  };
   const parts: string[] = [];
   for (const [key, value] of Object.entries(rec)) {
-    const encoded = value === undefined ? 'null' : JSON.stringify(value);
-    parts.push(`${JSON.stringify(key)}: ${encoded}`);
+    parts.push(`${JSON.stringify(key)}: ${encode(value)}`);
   }
   return `{${parts.join(', ')}}`;
 }

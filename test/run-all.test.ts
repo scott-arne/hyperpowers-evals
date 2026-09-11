@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ANTIGRAVITY_RATE_LIMIT_MARKER } from '../src/agents/antigravity.ts';
+import { renderBatch, TRIAL_LEGEND } from '../src/cli/render-batch.ts';
 import {
   BatchHeaderSchema,
   ResultRecordSchema,
@@ -128,6 +129,7 @@ test('runBatch writes header+footer, records, and tallies cost', async () => {
     codingAgentsDir,
     outRoot,
     jobs: 1,
+    repeat: 1,
     invoke,
     stream,
   });
@@ -175,6 +177,7 @@ test('unknown agentFilter throws', async () => {
       codingAgentsDir,
       outRoot,
       jobs: 1,
+      repeat: 1,
       agentFilter: ['ghost'],
       invoke,
     }),
@@ -197,6 +200,7 @@ test('rate-limit latch skips subsequent same-agent cells without invoking', asyn
     codingAgentsDir,
     outRoot,
     jobs: 1,
+    repeat: 1,
     invoke,
     stream,
   });
@@ -226,6 +230,7 @@ test('cost cell shows — when a run has no economics', async () => {
     codingAgentsDir,
     outRoot,
     jobs: 1,
+    repeat: 1,
     invoke,
     stream,
   });
@@ -233,4 +238,121 @@ test('cost cell shows — when a run has no economics', async () => {
   // No economics -> cost cell is an em dash, and no cost tally in the summary.
   expect(stream.text).toContain('—');
   expect(stream.text).not.toContain('cost $');
+});
+
+test('runBatch expands only runnable cells by repeat', async () => {
+  const { scenariosRoot, codingAgentsDir, outRoot } = fixture(
+    [{ name: 'alpha' }, { name: 'beta', directive: 'claude' }],
+    ['claude', 'codex'],
+  );
+  const { invoke, calls } = fakeInvoke({});
+  const stream = new StringStream();
+  const batchDir = await runBatch({
+    scenariosRoot,
+    codingAgentsDir,
+    outRoot,
+    jobs: 1,
+    repeat: 3,
+    invoke,
+    stream,
+  });
+
+  // 3 runnable cells x 3 trials = 9 invocations. The directive skip
+  // (beta/codex) is NOT expanded.
+  expect(calls).toHaveLength(9);
+
+  const header = BatchHeaderSchema.parse(
+    JSON.parse(readFileSync(join(batchDir, 'batch.json'), 'utf8')),
+  );
+  expect(header.schema_version).toBe(2);
+  expect(header.repeat).toBe(3);
+
+  const results = readResults(batchDir);
+  // 9 trial records + 1 skip record.
+  expect(results).toHaveLength(10);
+
+  const skips = results.filter((r) => r.skipped !== undefined);
+  expect(skips).toHaveLength(1);
+  expect(skips[0]?.trial).toBeUndefined();
+
+  // Every runnable cell got trials 1..3, each stamped with count 3.
+  for (const cell of ['alpha/claude', 'alpha/codex', 'beta/claude']) {
+    const [scn, agent] = cell.split('/');
+    const cellTrials = results
+      .filter((r) => r.scenario === scn && r.coding_agent === agent)
+      .map((r) => r.trial?.index)
+      .sort((a, b) => (a ?? 0) - (b ?? 0));
+    expect(cellTrials).toEqual([1, 2, 3]);
+    for (const r of results.filter(
+      (x) => x.scenario === scn && x.coding_agent === agent,
+    )) {
+      expect(r.trial?.count).toBe(3);
+    }
+  }
+});
+
+test('runBatch with repeat 1 writes no trial stamps', async () => {
+  const { scenariosRoot, codingAgentsDir, outRoot } = fixture(
+    [{ name: 'alpha' }],
+    ['claude'],
+  );
+  const { invoke, calls } = fakeInvoke({});
+  const stream = new StringStream();
+  const batchDir = await runBatch({
+    scenariosRoot,
+    codingAgentsDir,
+    outRoot,
+    jobs: 1,
+    repeat: 1,
+    invoke,
+    stream,
+  });
+  expect(calls).toHaveLength(1);
+  const results = readResults(batchDir);
+  expect(results).toHaveLength(1);
+  expect(results[0]?.trial).toEqual({ index: 1, count: 1 });
+});
+
+test('runBatch rejects a repeat below 1', async () => {
+  const { scenariosRoot, codingAgentsDir, outRoot } = fixture(
+    [{ name: 'alpha' }],
+    ['claude'],
+  );
+  const { invoke } = fakeInvoke({});
+  await expect(
+    runBatch({
+      scenariosRoot,
+      codingAgentsDir,
+      outRoot,
+      jobs: 1,
+      repeat: 0,
+      invoke,
+      stream: new StringStream(),
+    }),
+  ).rejects.toThrow(/repeat must be >= 1/);
+});
+
+// The writer -> schema -> renderer seam: a batch actually produced by runBatch
+// at repeat 3 must render as a trial vector. A hand-written fixture cannot catch
+// a writer that stamps a shape the renderer's own schema strips.
+test('a repeat-3 batch written by runBatch renders as a trial vector', async () => {
+  const { scenariosRoot, codingAgentsDir, outRoot } = fixture(
+    [{ name: 'alpha' }],
+    ['claude'],
+  );
+  const { invoke } = fakeInvoke({});
+  const batchDir = await runBatch({
+    scenariosRoot,
+    codingAgentsDir,
+    outRoot,
+    jobs: 1,
+    repeat: 3,
+    invoke,
+    stream: new StringStream(),
+  });
+  const out = renderBatch({ batchDir, resultsRoot: outRoot, color: false });
+  const alphaRow = out.split('\n').find((l) => l.startsWith('| alpha'));
+  // Three passing trials in one cell.
+  expect(alphaRow).toContain('PPP');
+  expect(out).toContain(TRIAL_LEGEND);
 });
