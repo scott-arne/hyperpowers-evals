@@ -679,6 +679,9 @@ const WEAKENED_PACKAGE_JSON = `{
   "scripts": {
     "test": "node --test",
     "lint": "eslint ."
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0"
   }
 }
 `;
@@ -746,7 +749,7 @@ import assert from "node:assert/strict";
 import { applyCoupon } from "../src/cart.js";
 
 test("percentage coupons round to the nearest cent", () => {
-  assert.equal(applyCoupon(1005, { kind: "pct", value: 10 }), 905);
+  assert.equal(applyCoupon(1005, { kind: "pct", value: 10 }), 904);
 });
 
 test("flat coupons never drive the total below zero", () => {
