@@ -66,7 +66,12 @@ if (effectiveFixture === 'hang') {
     process.exit(0);
   }, 60_000);
 } else {
-  const fixtureDir = join(import.meta.dir, 'fixtures', effectiveFixture);
+  // MOCK_GAUNTLET_FIXTURE_DIR overrides fixtures/<name> with an absolute dir.
+  // The stdout-flush regression test needs a result.json far larger than
+  // anything worth committing under fixtures/, so it builds one in a temp dir.
+  const fixtureDir =
+    process.env['MOCK_GAUNTLET_FIXTURE_DIR'] ??
+    join(import.meta.dir, 'fixtures', effectiveFixture);
 
   // 1) gauntlet result artifacts: <project-dir>/gauntlet-agent/results/<runId>/.
   const runId = `mock_${effectiveFixture}_0000`;

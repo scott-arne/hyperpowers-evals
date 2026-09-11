@@ -1,6 +1,12 @@
 import { expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -24,9 +30,19 @@ function scenario(): string {
   return scn;
 }
 
+interface CliOptions {
+  readonly env?: Readonly<Record<string, string>>;
+  // Route the CLI's stdout through `cat` instead of straight into spawnSync.
+  // spawnSync drains its end of the pipe eagerly, which keeps the pipe empty
+  // and hides a flush bug; a copying reader lets the pipe fill and pushes the
+  // CLI's later writes into its own userspace buffer.
+  readonly pipe?: boolean;
+}
+
 function runCli(
   fixture: string,
   extraArgs: readonly string[] = [],
+  opts: CliOptions = {},
 ): {
   status: number | null;
   stdout: string;
@@ -35,33 +51,36 @@ function runCli(
 } {
   // Hoisted so a caller can read the run dirs the CLI wrote under it.
   const outRoot = mkdtempSync(join(tmpdir(), 'out-'));
-  const proc = spawnSync(
-    'bun',
-    [
-      CLI,
-      'run',
-      scenario(),
-      '--coding-agent',
-      'claude',
-      '--coding-agents-dir',
-      REAL_CODING_AGENTS,
-      '--out-root',
-      outRoot,
-      ...extraArgs,
-    ],
-    {
-      env: {
-        ...process.env,
-        PATH: `${MOCK}:${process.env['PATH'] ?? ''}`,
-        ANTHROPIC_API_KEY: 'sk-test',
-        // The real claude.yaml lists SUPERPOWERS_ROOT in required_env and the
-        // $SUPERPOWERS_ROOT context substitution reads it.
-        SUPERPOWERS_ROOT: mkdtempSync(join(tmpdir(), 'sproot-')),
-        MOCK_GAUNTLET_FIXTURE: fixture,
-      },
-      encoding: 'utf8',
+  const argv = [
+    CLI,
+    'run',
+    scenario(),
+    '--coding-agent',
+    'claude',
+    '--coding-agents-dir',
+    REAL_CODING_AGENTS,
+    '--out-root',
+    outRoot,
+    ...extraArgs,
+  ];
+  // pipefail keeps the observed status the CLI's own rather than cat's.
+  const command = opts.pipe ? 'bash' : 'bun';
+  const args = opts.pipe
+    ? ['-c', 'set -o pipefail; "$@" | cat', 'quorum', 'bun', ...argv]
+    : argv;
+  const proc = spawnSync(command, args, {
+    env: {
+      ...process.env,
+      PATH: `${MOCK}:${process.env['PATH'] ?? ''}`,
+      ANTHROPIC_API_KEY: 'sk-test',
+      // The real claude.yaml lists SUPERPOWERS_ROOT in required_env and the
+      // $SUPERPOWERS_ROOT context substitution reads it.
+      SUPERPOWERS_ROOT: mkdtempSync(join(tmpdir(), 'sproot-')),
+      MOCK_GAUNTLET_FIXTURE: fixture,
+      ...opts.env,
     },
-  );
+    encoding: 'utf8',
+  });
   return {
     status: proc.status,
     stdout: proc.stdout,
@@ -167,3 +186,53 @@ test('quorum run rejects --repeat 0', () => {
   expect(stderr).toContain('error: --repeat must be an integer >= 1');
   expect(status).toBe(1);
 });
+
+// A fixture whose reasoning is large enough that rendering it overflows the OS
+// pipe buffer. The renderer prints gauntlet.reasoning in full, so this is the
+// cheapest way to make the CLI's stdout exceed what a pipe absorbs in one go.
+function bigFixtureDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'bigfix-'));
+  // Clone the real fail-no-usage fixture so the run still reaches a genuine
+  // fail verdict (it carries the claude-session.jsonl the capture diff needs),
+  // then swap in an outsized reasoning.
+  cpSync(
+    join(import.meta.dir, 'mock-gauntlet', 'fixtures', 'fail-no-usage'),
+    dir,
+    {
+      recursive: true,
+    },
+  );
+  writeFileSync(
+    join(dir, 'result.json'),
+    JSON.stringify({
+      schemaVersion: 5,
+      runId: 'mock_big_0000',
+      status: 'fail',
+      summary: 'no',
+      reasoning: `AC2 unmet ${'x'.repeat(300_000)}`,
+      duration_ms: 500,
+      config: { model: 'claude-opus-4-8' },
+    }),
+  );
+  return dir;
+}
+
+test('the trials line survives a render that overflows a piped stdout', () => {
+  // Regression: the run action used to end in process.exit(exitCode), which
+  // drops whatever stdout still has buffered. Piped into anything that does not
+  // drain instantly — `quorum run | tee`, a CI log collector — the two verdict
+  // renders queued ahead of it meant the trials: line, the feature's only
+  // aggregate output, was exactly what got discarded.
+  const { status, stdout } = runCli('fail-no-usage', ['--repeat', '2'], {
+    env: { MOCK_GAUNTLET_FIXTURE_DIR: bigFixtureDir() },
+    pipe: true,
+  });
+  // Slice the tail: the line is the last thing written, and a whole-buffer
+  // toContain would dump half a megabyte into the failure output.
+  expect(stdout.slice(-200)).toContain('trials: FF');
+  // And nothing ahead of it was dropped either: the whole render arrived, far
+  // past any pipe buffer.
+  expect(stdout.length).toBeGreaterThan(500_000);
+  // Still the aggregate exit code, and it arrived rather than hanging.
+  expect(status).toBe(1);
+}, 30_000);

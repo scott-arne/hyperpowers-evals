@@ -201,7 +201,17 @@ program
     if (repeatGiven) {
       process.stdout.write(`trials: ${vector}\n`);
     }
-    process.exit(exitCode);
+    // Return rather than process.exit: exiting here discards whatever stdout
+    // still has buffered, and on a pipe the renders above are large enough that
+    // the trials: line is exactly what gets dropped. Setting exitCode and
+    // letting the loop drain gives the same status once the writes land.
+    //
+    // The SIGINT listener is the one handle that would otherwise keep the loop
+    // alive forever, so it has to come off on the way out. Nothing else the run
+    // leaves behind is a ref'd handle: the gauntlet child is awaited to
+    // completion before we get here.
+    process.off('SIGINT', onSigint);
+    process.exitCode = exitCode;
   });
 
 program
