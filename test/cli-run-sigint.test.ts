@@ -190,3 +190,89 @@ test('quorum run forwards SIGINT and writes a stopped verdict (exit 2)', async (
     await exited;
   }
 }, 60_000);
+
+test('SIGINT mid-sequence stops the run and stamps the interrupted trial', async () => {
+  const outRoot = mkdtempSync(join(tmpdir(), 'out-sigint-seq-'));
+  const counter = join(mkdtempSync(join(tmpdir(), 'ctr-')), 'n');
+  const child = spawn(
+    'bun',
+    [
+      CLI,
+      'run',
+      scenario(),
+      '--coding-agent',
+      'claude',
+      '--coding-agents-dir',
+      REAL_CODING_AGENTS,
+      '--out-root',
+      outRoot,
+      '--repeat',
+      '3',
+    ],
+    {
+      env: {
+        ...process.env,
+        PATH: `${MOCK}:${process.env['PATH'] ?? ''}`,
+        ANTHROPIC_API_KEY: 'sk-test',
+        SUPERPOWERS_ROOT: mkdtempSync(join(tmpdir(), 'sproot-')),
+        MOCK_GAUNTLET_FIXTURE: 'fail-no-usage',
+        MOCK_GAUNTLET_COUNTER: counter,
+        MOCK_GAUNTLET_HANG_AFTER: '1',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+  let stdout = '';
+  child.stdout.on('data', (d: Buffer) => {
+    stdout += d.toString();
+  });
+  const exited = new Promise<number | null>((resolveExit) => {
+    child.on('exit', (code) => resolveExit(code));
+  });
+
+  try {
+    // Trial 1 runs the real fixture to completion; trial 2 parks and drops the
+    // marker. Polling the marker is the race-free readiness gate.
+    const hangDir = await pollFor(() => hangRunDir(outRoot), 60_000);
+    expect(hangDir).toBeDefined();
+    if (hangDir === undefined) {
+      throw new Error('mock gauntlet never reached hang mode on trial 2');
+    }
+
+    child.kill('SIGINT');
+    expect(await exited).toBe(2);
+
+    // Trial 3 never started: exactly two run dirs exist.
+    const runDirs = readdirSync(outRoot);
+    expect(runDirs).toHaveLength(2);
+
+    // The interrupted trial's verdict is stopped AND placed in the sequence.
+    const stopped = FinalVerdictSchema.parse(
+      JSON.parse(readFileSync(join(hangDir, 'verdict.json'), 'utf8')),
+    );
+    expect(stopped.final).toBe('indeterminate');
+    expect(stopped.error?.stage).toBe('stopped');
+    expect(stopped.trial).toEqual({ index: 2, count: 3 });
+
+    // The completed trial kept its own stamp.
+    const doneDir = runDirs
+      .map((n) => join(outRoot, n))
+      .find((d) => d !== hangDir) as string;
+    const done = FinalVerdictSchema.parse(
+      JSON.parse(readFileSync(join(doneDir, 'verdict.json'), 'utf8')),
+    );
+    expect(done.trial).toEqual({ index: 1, count: 3 });
+
+    // One run-id line (trial 1). Trial 2 never returned, and the handler exits
+    // before any vector is printed.
+    expect(
+      stdout.split('\n').filter((l) => l.startsWith('run-id: ')),
+    ).toHaveLength(1);
+    expect(stdout).not.toContain('trials:');
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+    }
+    await exited;
+  }
+}, 120_000);

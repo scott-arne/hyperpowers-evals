@@ -48,6 +48,15 @@ export const RunErrorSchema = z.object({
 });
 export type RunError = z.infer<typeof RunErrorSchema>;
 
+// Repeat-run provenance. Present only when the verdict came from a
+// `--repeat n` trial; a single ungrouped run omits it entirely. Additive and
+// optional, so `schema` stays at 1.
+export const TrialSchema = z.object({
+  index: z.number().int().min(1),
+  count: z.number().int().min(1),
+});
+export type Trial = z.infer<typeof TrialSchema>;
+
 // economics is structurally validated in contracts/economics.ts; opaque here.
 export const FinalVerdictSchema = z.object({
   schema: z.literal(1),
@@ -63,5 +72,6 @@ export const FinalVerdictSchema = z.object({
   coding_agent: z.string().optional(),
   started_at: z.string().optional(),
   finished_at: z.string().optional(),
+  trial: TrialSchema.optional(),
 });
 export type FinalVerdict = z.infer<typeof FinalVerdictSchema>;

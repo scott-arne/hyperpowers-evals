@@ -362,6 +362,9 @@ export interface RunScenarioArgs {
   // Fired once, right after the run dir is allocated, so a caller can learn the
   // dir before the long await (the SIGINT handler writes a stopped verdict here).
   readonly onRunDir?: ((runDir: string) => void) | undefined;
+  // Repeat-run provenance, copied verbatim into the written verdict. Absent
+  // for a single ungrouped run.
+  readonly trial?: { readonly index: number; readonly count: number };
 }
 
 export interface RunScenarioResult {
@@ -843,6 +846,7 @@ export async function runScenario(
     coding_agent: a.codingAgent,
     started_at: startedAt,
     finished_at: new Date().toISOString(),
+    ...(a.trial !== undefined ? { trial: a.trial } : {}),
   };
   writeFileSync(
     join(runDir, 'verdict.json'),

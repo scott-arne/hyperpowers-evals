@@ -11,7 +11,13 @@
 //           --state-dir gauntlet-agent --silent [--max-time ...] [...]
 // The special `hang` fixture is the exception: it parks (see below) so the
 // graceful-SIGINT receiver test can interrupt the runner mid-flight.
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 const argv = process.argv.slice(2);
@@ -23,6 +29,25 @@ if (projectDir === undefined || fixture === undefined) {
   process.exit(2);
 }
 
+// Repeat-run support: each `quorum run` trial execs this file afresh, so
+// "hang on trial 2" needs state outside the process. MOCK_GAUNTLET_COUNTER
+// names a file the test owns; this increments it and returns the 1-based
+// invocation number. With MOCK_GAUNTLET_HANG_AFTER=k, invocations 1..k use the
+// declared fixture and every later one parks in hang mode.
+let invocation = 0;
+const counterPath = process.env['MOCK_GAUNTLET_COUNTER'];
+if (counterPath !== undefined) {
+  invocation = existsSync(counterPath)
+    ? Number.parseInt(readFileSync(counterPath, 'utf8').trim(), 10) + 1
+    : 1;
+  writeFileSync(counterPath, `${invocation}\n`);
+}
+const hangAfterRaw = process.env['MOCK_GAUNTLET_HANG_AFTER'];
+const effectiveFixture =
+  hangAfterRaw !== undefined && invocation > Number.parseInt(hangAfterRaw, 10)
+    ? 'hang'
+    : fixture;
+
 // `hang` mode: the graceful-SIGINT receiver test (test/cli-run-sigint.test.ts)
 // needs the runner parked mid-invokeGauntlet with a live gauntlet child. Instead
 // of dropping a result and exiting, write a marker (carrying this mock's pid) so
@@ -30,7 +55,7 @@ if (projectDir === undefined || fixture === undefined) {
 // handler that exits non-zero — the runner's onSigint forwards SIGINT here, so
 // catching it proves the forward landed and leaves no orphan — then sleep long
 // enough to be interrupted. No fixture dir is read in this mode.
-if (fixture === 'hang') {
+if (effectiveFixture === 'hang') {
   process.once('SIGINT', () => {
     process.exit(130);
   });
@@ -41,10 +66,10 @@ if (fixture === 'hang') {
     process.exit(0);
   }, 60_000);
 } else {
-  const fixtureDir = join(import.meta.dir, 'fixtures', fixture);
+  const fixtureDir = join(import.meta.dir, 'fixtures', effectiveFixture);
 
   // 1) gauntlet result artifacts: <project-dir>/gauntlet-agent/results/<runId>/.
-  const runId = `mock_${fixture}_0000`;
+  const runId = `mock_${effectiveFixture}_0000`;
   const resultsDir = join(projectDir, 'gauntlet-agent', 'results', runId);
   mkdirSync(resultsDir, { recursive: true });
   cpSync(join(fixtureDir, 'result.json'), join(resultsDir, 'result.json'));
