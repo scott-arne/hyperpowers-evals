@@ -7,6 +7,7 @@
 import { createBaseRepo, recordHead } from './base.ts';
 import {
   createClaimWithoutVerification,
+  createCodeReviewMixedDiff,
   createCodeReviewPlantedBugs,
   createPhantomCompletion,
   createReviewPushback,
@@ -93,6 +94,7 @@ export const REGISTRY: Record<string, RegistryEntry> = {
   },
   add_auth_execution_plan: { fn: addAuthExecutionPlan },
   create_writing_plans_skeleton: { fn: createWritingPlansSkeleton },
+  create_code_review_mixed_diff: { fn: createCodeReviewMixedDiff },
   create_code_review_planted_bugs: { fn: createCodeReviewPlantedBugs },
   add_flawed_spec_for_review: { fn: addFlawedSpecForReview },
   add_sdd_auth_plan: { fn: addSddAuthPlan },

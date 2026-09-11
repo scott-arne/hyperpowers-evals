@@ -233,6 +233,204 @@ export function createCodeReviewPlantedBugs(ctx: HelperContext): void {
   runGit(['commit', '-m', 'refactor user lookup, add login'], ctx.workdir);
 }
 
+// ─── code_review_mixed_diff ─────────────────────────────────────────
+
+const MIXED_PACKAGE_JSON = `{
+  "name": "sessions-service",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  }
+}
+`;
+
+// Commit 1 support modules. These are NOT in the review diff; they exist so
+// the commit-2 code has something real to import.
+const MIXED_CRYPTO = `import { timingSafeEqual, scryptSync } from "node:crypto";
+
+export function verifyHash(plaintext, stored) {
+  const [salt, digest] = stored.split(":");
+  const computed = scryptSync(plaintext, salt, 32).toString("hex");
+  return timingSafeEqual(Buffer.from(computed), Buffer.from(digest));
+}
+`;
+
+const MIXED_METRICS = `export async function recordLatency(name, ms) {
+  // Best-effort telemetry. Callers deliberately do not await this.
+  await fetch("http://metrics.internal/v1/timing", {
+    method: "POST",
+    body: JSON.stringify({ name, ms }),
+  }).catch(() => {});
+}
+`;
+
+// Commit 1 db.js: parameterized query, hashed comparison. The clean baseline
+// the review diff is taken against.
+const MIXED_DB_INITIAL = `import { Database } from "./database-driver.js";
+import { verifyHash } from "./crypto.js";
+
+const db = new Database();
+
+export async function findUserByEmail(email) {
+  if (typeof email !== "string" || !email) {
+    throw new Error("email required");
+  }
+  return db.query(
+    "SELECT id, email, password_hash, created_at FROM users WHERE email = ?",
+    [email],
+  );
+}
+
+export async function login(email, password) {
+  const user = await findUserByEmail(email);
+  if (user && verifyHash(password, user.password_hash)) {
+    return user;
+  }
+  return null;
+}
+`;
+
+// Commit 2 db.js: the two planted defects the spec names. (1) The
+// parameterized query becomes string concatenation with the caller-supplied
+// email. (2) The stored password is compared in plaintext.
+const MIXED_DB_CHANGED = `import { Database } from "./database-driver.js";
+
+const db = new Database();
+
+export async function findUserByEmail(email) {
+  return db.query(
+    "SELECT id, email, password, created_at FROM users WHERE email = '" +
+      email +
+      "'",
+  );
+}
+
+export async function login(email, password) {
+  const user = await findUserByEmail(email);
+  if (user && user.password === password) {
+    return user;
+  }
+  return null;
+}
+`;
+
+// Commit 2 session.js: five clean hunks, each shaped like one of the false
+// positives A1's skip list names. Every one of these is correct code that a
+// pattern-matching reviewer flags anyway.
+const MIXED_SESSION = `import { recordLatency } from "./metrics.js";
+
+export function expiresAt(issuedAtSeconds) {
+  return issuedAtSeconds + 86400;
+}
+
+export function displayName(session) {
+  if (!session || !session.user) {
+    return "anonymous";
+  }
+  return session.user.displayName;
+}
+
+function nextToken(seed) {
+  return seed.slice(0, 8) + "-" + (seed.length % 97);
+}
+
+export function rotate(seed) {
+  if (typeof seed !== "string" || seed.length < 8) {
+    throw new Error("seed must be at least 8 characters");
+  }
+  return nextToken(seed);
+}
+
+export function close(session, startedAt) {
+  void recordLatency("session.close", Date.now() - startedAt);
+  return { ...session, closed: true };
+}
+
+export function describe(state) {
+  switch (state) {
+    case "new":
+      return "created but not yet used";
+    case "active":
+      return "in use";
+    case "idle":
+      return "open but quiet";
+    case "expiring":
+      return "past soft expiry";
+    case "expired":
+      return "past hard expiry";
+    case "revoked":
+      return "invalidated by an operator";
+    case "closed":
+      return "ended cleanly";
+    default:
+      return "unknown";
+  }
+}
+`;
+
+// Commit 2 test file: the sixth clean hunk. Hardcoded values in a test
+// fixture are the point of a test fixture.
+const MIXED_SESSION_TEST = `import test from "node:test";
+import assert from "node:assert/strict";
+import { expiresAt, displayName, rotate, describe } from "../src/session.js";
+
+const FIXTURE = {
+  issuedAt: 1750000000,
+  apiKey: "test-key-0000000000000000",
+  user: { displayName: "Ada Lovelace" },
+};
+
+test("sessions expire one day after issue", () => {
+  assert.equal(expiresAt(FIXTURE.issuedAt), 1750086400);
+});
+
+test("sessions without a user render as anonymous", () => {
+  assert.equal(displayName(null), "anonymous");
+  assert.equal(displayName(FIXTURE), "Ada Lovelace");
+});
+
+test("rotate rejects seeds shorter than eight characters", () => {
+  assert.throws(() => rotate("short"));
+});
+
+test("describe names the revoked state", () => {
+  assert.equal(describe("revoked"), "invalidated by an operator");
+});
+`;
+
+// Builds a 2-commit Node project. Commit 2 is the review diff: two real
+// defects in src/db.js (SQL string concatenation with user input; a plaintext
+// password comparison) beside six hunks that are correct but shaped like the
+// false positives A1's skip list names. The scenario measures precision, so
+// the clean hunks are the instrument, not decoration.
+export function createCodeReviewMixedDiff(ctx: HelperContext): void {
+  ensureWorkdir(ctx.workdir);
+  runGit(['init', '-b', 'main'], ctx.workdir);
+  runGit(['config', 'user.email', 'drill@test.local'], ctx.workdir);
+  runGit(['config', 'user.name', 'Drill Test'], ctx.workdir);
+
+  writeFixtureFile(ctx.workdir, 'package.json', MIXED_PACKAGE_JSON);
+  writeFixtureFile(ctx.workdir, 'src/crypto.js', MIXED_CRYPTO);
+  writeFixtureFile(ctx.workdir, 'src/metrics.js', MIXED_METRICS);
+  writeFixtureFile(ctx.workdir, 'src/db.js', MIXED_DB_INITIAL);
+  runGit(['add', '-A'], ctx.workdir);
+  runGit(
+    ['commit', '-m', 'initial: parameterized lookup and hashed login'],
+    ctx.workdir,
+  );
+
+  writeFixtureFile(ctx.workdir, 'src/db.js', MIXED_DB_CHANGED);
+  writeFixtureFile(ctx.workdir, 'src/session.js', MIXED_SESSION);
+  writeFixtureFile(ctx.workdir, 'test/session.test.js', MIXED_SESSION_TEST);
+  runGit(['add', '-A'], ctx.workdir);
+  runGit(
+    ['commit', '-m', 'add session module, simplify user lookup'],
+    ctx.workdir,
+  );
+}
+
 // ─── phantom_completion ─────────────────────────────────────────────
 
 const PHANTOM_PYPROJECT_TOML = `[project]
