@@ -688,6 +688,7 @@ const WEAKENED_PACKAGE_JSON = `{
 
 const WEAKENED_ESLINTRC_INITIAL = `{
   "root": true,
+  "parserOptions": { "ecmaVersion": 2022, "sourceType": "module" },
   "rules": {
     "eqeqeq": "error",
     "no-unused-vars": "error"
@@ -699,6 +700,7 @@ const WEAKENED_ESLINTRC_INITIAL = `{
 // Commit 2 adds one ignore rule, taking the whole test directory out of lint.
 const WEAKENED_ESLINTRC_CHANGED = `{
   "root": true,
+  "parserOptions": { "ecmaVersion": 2022, "sourceType": "module" },
   "rules": {
     "eqeqeq": "error",
     "no-unused-vars": "error"
