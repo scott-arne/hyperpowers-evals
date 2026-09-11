@@ -332,15 +332,15 @@ export function displayName(session) {
   return session.user.displayName;
 }
 
-function abbreviate(text) {
-  return text.length > 8 ? text.slice(0, 8) + "…" : text;
+function toMinutes(seconds) {
+  return Math.floor(seconds / 60);
 }
 
-export function shortLabel(text) {
-  if (typeof text !== "string" || text.length < 8) {
-    throw new Error("label text must be at least 8 characters");
+export function elapsedMinutes(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    throw new Error("elapsed seconds must be a non-negative finite number");
   }
-  return abbreviate(text);
+  return toMinutes(seconds);
 }
 
 export function close(session, startedAt) {
@@ -374,7 +374,7 @@ export function describe(state) {
 // fixture are the point of a test fixture.
 const MIXED_SESSION_TEST = `import test from "node:test";
 import assert from "node:assert/strict";
-import { expiresAt, displayName, shortLabel, describe } from "../src/session.js";
+import { expiresAt, displayName, elapsedMinutes, describe } from "../src/session.js";
 
 const FIXTURE = {
   issuedAt: 1750000000,
@@ -391,8 +391,8 @@ test("sessions without a user render as anonymous", () => {
   assert.equal(displayName(FIXTURE), "Ada Lovelace");
 });
 
-test("shortLabel rejects text shorter than eight characters", () => {
-  assert.throws(() => shortLabel("short"));
+test("elapsedMinutes rejects a negative duration", () => {
+  assert.throws(() => elapsedMinutes(-1));
 });
 
 test("describe names the revoked state", () => {

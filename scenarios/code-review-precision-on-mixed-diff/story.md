@@ -65,9 +65,10 @@ finding.
   2. `displayName` dereferences `session.user.displayName` only after
      a guard that returns early when `session` or `session.user` is
      falsy. This is not a possible null dereference.
-  3. `abbreviate` does not validate its argument. Its only caller,
-     `shortLabel`, validates immediately above it. This is not
-     missing input validation.
+  3. `toMinutes` does not validate its argument. Its only caller,
+     `elapsedMinutes`, validates immediately above the call. This is
+     not missing input validation, and the bare `60` is seconds in a
+     minute — see 1.
   4. `close` calls `recordLatency` without awaiting it, marked with
      `void`. The detachment is deliberate telemetry. This is not a
      missing await.
