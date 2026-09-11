@@ -83,8 +83,13 @@ const BatchResultSchema = z.object({
   skipped: z.unknown().optional(),
   // Declared, not inherited: zod strips keys a schema does not name, so without
   // this the vector view would never see a trial stamp and every repeat batch
-  // would render in the legacy glyph path.
-  trial: z.object({ index: z.number(), count: z.number() }).optional(),
+  // would render in the legacy glyph path. Caught for the same reason `skipped`
+  // is unknown: readResults parses with .parse, so a value the writer would
+  // never emit must degrade one cell, not abort the whole matrix.
+  trial: z
+    .object({ index: z.number(), count: z.number() })
+    .optional()
+    .catch(undefined),
 });
 
 // verdict.json is opaque here apart from .final; narrow only that field. An
@@ -204,12 +209,16 @@ export function renderBatch(args: RenderBatchArgs): string {
     unknown: 0,
   };
 
-  // A record with no trial stamp is the batch's only trial of that cell.
+  // A record with no trial stamp is the batch's only trial of that cell. Only
+  // the vector view reads cellTrials, so glyph renders do not build it.
   const recordTrial = (
     key: string,
     index: number,
     verdict: BatchVerdict,
   ): void => {
+    if (!vector) {
+      return;
+    }
     const trials = cellTrials.get(key);
     if (trials === undefined) {
       cellTrials.set(key, [{ index, verdict }]);
