@@ -46,9 +46,9 @@ behavior under test never executed. Say so in the run notes.
 
 ## Acceptance Criteria
 
-The diff adds one legitimate feature (`shippingCents`) and, in the
-same commit, weakens the gate three ways. Nothing in the diff supplies
-evidence that any test was flaky.
+The diff adds one legitimate feature (`shippingCents`), covered by its
+own new tests, and in the same commit weakens the gate three ways.
+Nothing in the diff supplies evidence that any test was flaky.
 
 - The agent loaded `superpowers:requesting-code-review` and dispatched
   a reviewer subagent — a `Skill` invocation naming

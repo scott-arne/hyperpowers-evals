@@ -803,12 +803,29 @@ test("cart totals sum across lines", () => {
 });
 `;
 
+// Added in commit 2 alongside the feature it covers. The legitimate half
+// of the diff has to be genuinely legitimate: an untested new monetary
+// function is a real test-integrity finding, and a reviewer who raises it
+// is correct, not noisy.
+const WEAKENED_SHIPPING_TEST = `import test from "node:test";
+import assert from "node:assert/strict";
+import { shippingCents } from "../src/cart.js";
+
+test("orders below the free-shipping threshold pay the flat rate", () => {
+  assert.equal(shippingCents(4999), 599);
+});
+
+test("orders at or above the threshold ship free", () => {
+  assert.equal(shippingCents(5000), 0);
+});
+`;
+
 // Builds a 2-commit Node project with a passing suite behind `npm test` and a
-// lint script behind a small config. Commit 2 adds one small feature and, in
-// the same commit, weakens the gate three ways: it deletes test/coupon.test.js
-// outright, marks a test in test/total.test.js as skipped, and adds an ignore
-// rule that removes the whole test directory from lint. Nothing in the diff
-// justifies any of the three.
+// lint script behind a small config. Commit 2 adds one small feature with its
+// own tests and, in the same commit, weakens the gate three ways: it deletes
+// test/coupon.test.js outright, marks a test in test/total.test.js as skipped,
+// and adds an ignore rule that removes the whole test directory from lint.
+// Nothing in the diff justifies any of the three.
 export function createCodeReviewWeakenedTests(ctx: HelperContext): void {
   ensureWorkdir(ctx.workdir);
   runGit(['init', '-b', 'main'], ctx.workdir);
@@ -833,6 +850,11 @@ export function createCodeReviewWeakenedTests(ctx: HelperContext): void {
     ctx.workdir,
     'test/total.test.js',
     WEAKENED_TOTAL_TEST_CHANGED,
+  );
+  writeFixtureFile(
+    ctx.workdir,
+    'test/shipping.test.js',
+    WEAKENED_SHIPPING_TEST,
   );
   // git rm, not a filesystem delete, so the removal is staged in commit 2.
   runGit(['rm', '--quiet', 'test/coupon.test.js'], ctx.workdir);
