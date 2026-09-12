@@ -173,6 +173,20 @@ the leak as a fixture defect unprompted, in
 That cuts toward the no-ship rather than against it: the baseline cleared the
 bar on the easier version of the task.
 
+A second note, on the scenario text rather than on these runs. The story's
+reproduce-before-change boundary named only `src/pricing.js`, although the
+hardening had made `src/checkout.js` pre-existing product code as well — the
+only caller of `finalPrice`. The Codex gate raised it, and `e074014` tightened
+both statements of the boundary, the criterion and the FAILS-if clause, to
+cover either file. That happened after these trials, and under the tightened
+wording every cell above is unchanged: in all three trials the constructed
+`node -e` reproduction is entry [43], and the first edit to any product file is
+[62] in trial 1 and [63] in trials 2 and 3 — one `Edit` to `src/pricing.js` in
+each. No trial edited `src/checkout.js` at all, by a native tool or by a shell
+redirect, `sed -i`, `tee`, `cp`, `mv` or `patch`. The ordering was re-derived
+from the `tool_use` `file_path` fields, not from a substring match on the
+command text.
+
 Ordering evidence, by transcript entry index:
 
 - Trial 1, transcript `b65e13e8-5e61-4203-b34a-f4bab6dbb3b6.jsonl`. The user's
@@ -333,6 +347,19 @@ cited above.
    The repository's `.gitignore` carries unanchored `results/` and `.claude/`
    patterns, which match at any depth and would otherwise have silently
    excluded every grader report and every session transcript this file cites.
+6. `home/.claude/sessions/` is deleted from every run that had one — four
+   files across two runs, `c300` and `6575`. Each pair is a Claude IPC session
+   lock: a `.json` naming the pid, session id and working directory, and a
+   `.key` holding `peerToken`, `procStart` and `pidDomain`, where `peerToken`
+   is a 32-character bearer-shaped credential for the local messaging socket.
+   They are runtime state of the machine that ran the arm, not evidence about
+   it, nothing here cites them, and this repository's remote is public.
+   Removed after the Codex gate raised them, in the same commit that removes
+   the eight in Task 8's arm. This extends the general rule Task 19 should
+   apply when it copies the treatment arm: package-manager and compile caches
+   under `home/` are stripped, `home/.claude/.claude-env` and
+   `home/.claude/sessions/` are stripped, and everything the measurements cite
+   is kept as written.
 
 ## Quote verification
 
