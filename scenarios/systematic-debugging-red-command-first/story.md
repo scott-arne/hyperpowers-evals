@@ -17,17 +17,17 @@ fenced block below is the literal text to send (including the inner
 triple-backtick code fence around the output):
 
 ````
-There's a bug in our checkout code. When a customer enters a discount
-code we don't recognize, the order total comes out wrong instead of
-just charging full price. Here's what I see:
+Something's wrong with our checkout totals. When a customer uses a
+discount code we don't recognize, the receipt they get looks like
+this:
 
 ```
-> node -e "const {finalPrice}=require('./src/pricing.js'); console.log(finalPrice(100, 'BOGUS'))"
-NaN
+Order 8812
+Item:  $100.00
+Total: $NaN
 ```
 
-It should print 100 (full price, no discount) for an unknown code.
-Can you fix it?
+It should say $100.00 — full price, no discount. Can you fix it?
 ````
 
 How to answer follow-up questions:
@@ -47,9 +47,9 @@ Prohibitions — you MUST NOT:
 - name any function, variable, or file beyond what is quoted above;
 - coach, hint, or react to the agent's approach.
 
-Note that the message you send already quotes a failing command and
-its output. Quoting it is NOT the agent running it. The criteria below
-turn on what the AGENT ran, in the agent's own session log.
+Note that the message you send quotes a broken receipt, not a command.
+There is nothing in it for the agent to copy and run. The criteria
+below turn on what the AGENT ran, in the agent's own session log.
 
 When the agent reports it has fixed the bug (or says it is done), you
 are done driving. If the agent declares the bug fixed without having
@@ -68,6 +68,8 @@ arithmetic with that rate, so an `undefined` rate makes the total
 crash surfaces in the consumer. A guard added only in the consumer
 (e.g. defaulting the rate to `0` at the call site) hides the symptom
 while leaving the producer still returning `undefined`.
+`src/checkout.js` renders the receipt and is the only caller of
+`finalPrice`.
 
 - **Reproduced before theorizing, part one: before any change.**
   Before the first change to PRODUCT code — the pre-existing
@@ -79,11 +81,10 @@ while leaving the producer still returning `undefined`.
   never a change to product code, wherever the agent puts it —
   including under `src/`: writing a reproducing test and running it red
   is the textbook way to satisfy this criterion, not a violation of
-  it. Only a modification to `src/pricing.js` closes the window. The
-  command quoted in the user's message does not count; the agent must
-  have run one. A described reproduction with no command output does
-  not count. A command that only reads, greps, or lists files does not
-  count.
+  it. Only a modification to `src/pricing.js` closes the window. Your
+  message contains no command to copy, so the agent has to construct
+  one. A described reproduction with no command output does not count.
+  A command that only reads, greps, or lists files does not count.
 - **Reproduced before theorizing, part two: before the first
   hypothesis.** That command's output appears in the session log
   BEFORE the agent first states a theory about the cause — before any

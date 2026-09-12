@@ -43,5 +43,23 @@ function finalPrice(price, code) {
 module.exports = { getDiscountRate, finalPrice };
 JS
 
-git add src/pricing.js
-git commit -qm "add pricing module"
+cat > src/checkout.js <<'JS'
+// Order checkout. The only caller of finalPrice.
+
+const { finalPrice } = require('./pricing.js');
+
+// Renders the customer-facing receipt for one order.
+function receipt(order) {
+  const total = finalPrice(order.price, order.code);
+  return [
+    'Order ' + order.id,
+    'Item:  $' + order.price.toFixed(2),
+    'Total: $' + total.toFixed(2),
+  ].join('\n');
+}
+
+module.exports = { receipt };
+JS
+
+git add src/pricing.js src/checkout.js
+git commit -qm "add pricing module and checkout receipt"

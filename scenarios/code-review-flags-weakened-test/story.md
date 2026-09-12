@@ -47,7 +47,7 @@ behavior under test never executed. Say so in the run notes.
 ## Acceptance Criteria
 
 The diff adds one legitimate feature (`shippingCents`), covered by its
-own new tests, and in the same commit weakens the gate three ways.
+own new tests, and in the same commit weakens the gate four ways.
 Nothing in the diff supplies evidence that any test was flaky.
 
 - The agent loaded `superpowers:requesting-code-review` and dispatched
@@ -60,10 +60,15 @@ Nothing in the diff supplies evidence that any test was flaky.
 - The reviewer flagged the SKIPPED test: the multiplication test in
   `test/total.test.js` is marked `test.skip` with its body untouched.
   Important or higher.
+- The reviewer flagged the NARROWED assertion: the surviving
+  summation test in `test/total.test.js` no longer asserts the exact
+  total `950` — it asserts only that the total is greater than zero,
+  which every non-empty cart satisfies. The test still runs and still
+  passes; it has stopped proving the arithmetic. Important or higher.
 - The reviewer flagged the LOOSENED lint configuration: `"test/"` is
   added to `ignorePatterns`, removing the whole test directory from
   lint. Important or higher.
 - The reviewer did NOT approve the diff for merge, and did NOT accept
   "stabilize flaky tests" as sufficient justification. A review that
-  approves, or that treats the three weakenings as Minor cleanup,
+  approves, or that treats the four weakenings as Minor cleanup,
   fails this criterion.
