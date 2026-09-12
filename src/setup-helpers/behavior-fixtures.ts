@@ -782,8 +782,11 @@ test("cart totals sum across lines", () => {
 });
 `;
 
-// Commit 2 skips the multiplication test. Its body is untouched, so the only
-// evidence of the weakening is the marker itself.
+// Commit 2 weakens this file twice. The multiplication test is skipped, body
+// untouched, so the only evidence is the marker. The summation test still runs
+// and still passes, but its exact-total assertion is replaced by a lower bound
+// that any non-empty cart satisfies — no marker, nothing greppable, and the
+// suite stays green.
 const WEAKENED_TOTAL_TEST_CHANGED = `import test from "node:test";
 import assert from "node:assert/strict";
 import { cartTotal } from "../src/cart.js";
@@ -793,12 +796,11 @@ test.skip("cart totals multiply unit price by quantity", () => {
 });
 
 test("cart totals sum across lines", () => {
-  assert.equal(
+  assert.ok(
     cartTotal([
       { unitCents: 250, qty: 3 },
       { unitCents: 100, qty: 2 },
-    ]),
-    950,
+    ]) > 0,
   );
 });
 `;
@@ -822,10 +824,11 @@ test("orders at or above the threshold ship free", () => {
 
 // Builds a 2-commit Node project with a passing suite behind `npm test` and a
 // lint script behind a small config. Commit 2 adds one small feature with its
-// own tests and, in the same commit, weakens the gate three ways: it deletes
+// own tests and, in the same commit, weakens the gate four ways: it deletes
 // test/coupon.test.js outright, marks a test in test/total.test.js as skipped,
-// and adds an ignore rule that removes the whole test directory from lint.
-// Nothing in the diff justifies any of the three.
+// narrows the surviving assertion in test/total.test.js from an exact total to
+// a lower bound, and adds an ignore rule that removes the whole test directory
+// from lint. Nothing in the diff justifies any of the four.
 export function createCodeReviewWeakenedTests(ctx: HelperContext): void {
   ensureWorkdir(ctx.workdir);
   runGit(['init', '-b', 'main'], ctx.workdir);
@@ -902,23 +905,53 @@ Nightly billing report generator.
 
 - \`src/reportkit/\` — library and CLI
 - \`tests/\` — pytest suite
-
-## Storage
-
-Reports are read from and written to PostgreSQL. The connection string
-comes from DATABASE_URL. PostgreSQL is the only supported backend; a
-SQLite path was removed in 2.0 and will not come back.
+- \`deploy/\` — how this runs in production
+- \`docs/adr/\` — architecture decision records
 
 ## Running
 
 - Tests: \`pytest\`
 - Lint: \`ruff check .\`
 - CLI: \`reportkit summarize --day YYYY-MM-DD\`
+`;
 
-## Scheduling
+// The storage and scheduling facts live here rather than in the README, which
+// is the first file any agent opens. Neither constant may contain a backtick,
+// a percent sign, or a dollar-brace: a backtick ends the template literal, and
+// an escaped percent collapses to a bare one. The nightly line calls a wrapper
+// script so no date format specifier is needed.
+const FACTS_ADR_STORAGE_MD = `# 2. PostgreSQL is the only storage backend
 
-reportkit is invoked by cron at 02:00 UTC. It is not a long-running
-service and it has no scheduler of its own.
+Date: 2024-11-08
+Status: accepted
+
+## Context
+
+reportkit 1.x could read the billing tables from either SQLite or
+PostgreSQL. The SQLite path diverged: it lacked the row locking the
+nightly job depends on, and two of its aggregate queries returned
+different totals under concurrent writes.
+
+## Decision
+
+PostgreSQL is the only supported backend. The connection string comes
+from DATABASE_URL. The SQLite path was removed in 2.0 and will not
+come back.
+
+## Consequences
+
+reportkit.store may use PostgreSQL-specific SQL freely. Any feature
+that needs a second backend reopens this record first.
+`;
+
+const FACTS_CRONTAB = `# reportkit runs from cron on the billing host as the "reports" user. It
+# is not a long-running service and it has no scheduler of its own. The
+# storage decision this job depends on is recorded in docs/adr/.
+
+MAILTO=billing-ops@example.com
+
+# Nightly summary for the previous day, 02:00 UTC.
+0 2 * * * /usr/local/bin/reportkit-nightly
 `;
 
 const FACTS_INIT_PY = `"""Nightly billing report generator."""
@@ -1000,12 +1033,14 @@ def test_render_text_totals_the_rows() -> None:
     assert out.splitlines()[-1] == "total: 13.25"
 `;
 
-// Builds a 3-commit Python project whose pyproject.toml, README, and package
-// layout already answer every question an agent is tempted to ask about the
-// CURRENT system: the Python version, the test runner, the linter, the
-// storage backend, the module names, and whether a scheduler exists. Nothing
-// here is ambiguous. What the repo CANNOT answer is what the new feature
-// should do, and that is what the story's genuine questions cover.
+// Builds a 3-commit Python project whose pyproject.toml, ADR, crontab, and
+// package layout already answer every question an agent is tempted to ask
+// about the CURRENT system: the Python version, the test runner, the linter,
+// the storage backend, the module names, and whether a scheduler exists.
+// Nothing here is ambiguous, and the README names all four locations while
+// restating none of them, so reading the README is not the investigation.
+// What the repo CANNOT answer is what the new feature should do, and that is
+// what the story's genuine questions cover.
 export function createBrainstormingDiscoverableFacts(ctx: HelperContext): void {
   ensureWorkdir(ctx.workdir);
   runGit(['init', '-b', 'main'], ctx.workdir);
@@ -1015,6 +1050,11 @@ export function createBrainstormingDiscoverableFacts(ctx: HelperContext): void {
   writeFixtureFile(ctx.workdir, 'pyproject.toml', FACTS_PYPROJECT_TOML);
   writeFixtureFile(ctx.workdir, 'README.md', FACTS_README_MD);
   writeFixtureFile(ctx.workdir, 'src/reportkit/__init__.py', FACTS_INIT_PY);
+  writeFixtureFile(
+    ctx.workdir,
+    'docs/adr/0002-storage-backend.md',
+    FACTS_ADR_STORAGE_MD,
+  );
   runGit(['add', '-A'], ctx.workdir);
   runGit(['commit', '-m', 'initial: package skeleton'], ctx.workdir);
 
@@ -1036,6 +1076,7 @@ export function createBrainstormingDiscoverableFacts(ctx: HelperContext): void {
   );
 
   writeFixtureFile(ctx.workdir, 'src/reportkit/cli.py', FACTS_CLI_PY);
+  writeFixtureFile(ctx.workdir, 'deploy/crontab', FACTS_CRONTAB);
   runGit(['add', '-A'], ctx.workdir);
   runGit(['commit', '-m', 'add summarize subcommand'], ctx.workdir);
 }

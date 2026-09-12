@@ -2,11 +2,14 @@ pre() {
     requires-tool node
     git-repo
     git-branch main
-    # create_base_repo seeds 3 commits; setup.sh adds the pricing module = 4.
+    # create_base_repo seeds 3 commits; setup.sh adds the pricing module and
+    # the checkout receipt in one commit = 4.
     git-count commits eq 4
     file-exists 'src/pricing.js'
     file-contains src/pricing.js 'function getDiscountRate'
     file-contains src/pricing.js 'function finalPrice'
+    file-exists 'src/checkout.js'
+    file-contains src/checkout.js 'function receipt'
     not command-succeeds 'node -e "const {finalPrice}=require(\"./src/pricing.js\"); process.exit(finalPrice(100,\"BOGUS\")===100?0:1)"'
 }
 

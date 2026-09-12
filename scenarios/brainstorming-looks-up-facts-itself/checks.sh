@@ -5,8 +5,13 @@ pre() {
     file-exists 'README.md'
     file-exists 'pyproject.toml'
     file-exists 'src/reportkit/cli.py'
-    # The facts the agent must not ask about are on disk.
-    file-contains README.md 'PostgreSQL is the only supported backend'
+    file-exists 'docs/adr/0002-storage-backend.md'
+    file-exists 'deploy/crontab'
+    # The facts the agent must not ask about are on disk, and no longer in the
+    # first file it opens.
+    file-contains docs/adr/0002-storage-backend.md 'PostgreSQL is the only supported backend'
+    file-contains deploy/crontab 'no scheduler of its own'
+    not file-contains README.md 'PostgreSQL'
     file-contains pyproject.toml 'requires-python = ">=3.12"'
     file-contains pyproject.toml 'pytest>=8.0'
 }

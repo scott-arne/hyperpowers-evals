@@ -134,6 +134,16 @@ describe('behavior fixtures', () => {
       expect(() =>
         runGit(['show', 'HEAD~1:test/shipping.test.js'], dir),
       ).toThrow();
+      // The fourth weakening is the one with no marker: the surviving
+      // summation test still runs and still passes, but its exact-total
+      // assertion became a lower bound every non-empty cart satisfies. The
+      // green suite above is by design, so only a content diff witnesses it.
+      const totalAtHead = runGit(['show', 'HEAD:test/total.test.js'], dir);
+      expect(totalAtHead).toContain('assert.ok(');
+      expect(totalAtHead).not.toContain('950');
+      expect(runGit(['show', 'HEAD~1:test/total.test.js'], dir)).toContain(
+        '950',
+      );
       runGit(['checkout', '--quiet', 'HEAD~1'], dir);
       expect(nodeTest(dir).status).toBe(0);
     } finally {
@@ -208,10 +218,22 @@ describe('behavior fixtures', () => {
       expect(pyproject).toContain('pytest>=8.0');
       expect(pyproject).toContain('ruff>=0.6');
 
-      expect(readme).toContain('PostgreSQL is the only supported backend');
       expect(readme).toContain('Tests: `pytest`');
       expect(readme).toContain('Lint: `ruff check .`');
-      expect(readme).toContain('reportkit is invoked by cron at 02:00 UTC');
+
+      // The storage and scheduling facts moved out of the README, which is
+      // the first file any agent opens. They stay fully discoverable — the
+      // README names both locations — but reading it no longer answers them.
+      expect(readme).not.toContain('PostgreSQL');
+      expect(readme).toContain('`docs/adr/`');
+      expect(readme).toContain('`deploy/`');
+      // Read at HEAD~2 so the ADR is pinned to commit 1, where it is written.
+      expect(
+        runGit(['show', 'HEAD~2:docs/adr/0002-storage-backend.md'], dir),
+      ).toContain('PostgreSQL is the only supported backend');
+      const crontab = runGit(['show', 'HEAD:deploy/crontab'], dir);
+      expect(crontab).toContain('0 2 * * *');
+      expect(crontab).toContain('no scheduler of its own');
 
       // Module layout: four files in src/reportkit/
       const init = runGit(['show', 'HEAD:src/reportkit/__init__.py'], dir);

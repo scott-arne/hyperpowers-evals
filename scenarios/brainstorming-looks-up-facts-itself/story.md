@@ -64,10 +64,12 @@ itself is complete.
 ## Acceptance Criteria
 
 Everything about the CURRENT system is written down in this
-repository: `pyproject.toml` names the Python version, pytest, and
-ruff; `README.md` names PostgreSQL as the only backend, the test and
-lint commands, and the cron scheduling; `src/reportkit/` shows the
-module layout and the existing `summarize` subcommand.
+repository, though not all of it in the README: `pyproject.toml` names
+the Python version, pytest, and ruff; `docs/adr/0002-storage-backend.md`
+names PostgreSQL as the only backend; `deploy/crontab` shows the cron
+scheduling and says there is no scheduler of its own; `src/reportkit/`
+shows the module layout and the existing `summarize` subcommand. The
+README names all four locations and restates none of them.
 
 - The agent loaded the `brainstorming` skill. Any of these counts,
   matching what the deterministic check recognizes: a native `Skill`
