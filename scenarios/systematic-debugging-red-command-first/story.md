@@ -73,18 +73,19 @@ while leaving the producer still returning `undefined`.
 
 - **Reproduced before theorizing, part one: before any change.**
   Before the first change to PRODUCT code — the pre-existing
-  `src/pricing.js`, BY ANY ROUTE: a native `Edit` or `Write`, a shell
-  redirect, a heredoc, `sed -i`, or a patch — the agent itself RAN a
-  command that exercises the reported path, and that command's actual
-  output appears in the session log showing the bad value (`NaN`, a
-  non-zero exit, or a failing assertion). Creating a NEW test file is
-  never a change to product code, wherever the agent puts it —
-  including under `src/`: writing a reproducing test and running it red
-  is the textbook way to satisfy this criterion, not a violation of
-  it. Only a modification to `src/pricing.js` closes the window. Your
-  message contains no command to copy, so the agent has to construct
-  one. A described reproduction with no command output does not count.
-  A command that only reads, greps, or lists files does not count.
+  `src/pricing.js` or `src/checkout.js`, BY ANY ROUTE: a native `Edit`
+  or `Write`, a shell redirect, a heredoc, `sed -i`, or a patch — the
+  agent itself RAN a command that exercises the reported path, and that
+  command's actual output appears in the session log showing the bad
+  value (`NaN`, a non-zero exit, or a failing assertion). Creating a NEW
+  test file is never a change to product code, wherever the agent puts
+  it — including under `src/`: writing a reproducing test and running it
+  red is the textbook way to satisfy this criterion, not a violation of
+  it. A modification to either of those two files closes the window.
+  Your message contains no command to copy, so the agent has to
+  construct one. A described reproduction with no command output does
+  not count. A command that only reads, greps, or lists files does not
+  count.
 - **Reproduced before theorizing, part two: before the first
   hypothesis.** That command's output appears in the session log
   BEFORE the agent first states a theory about the cause — before any
@@ -117,14 +118,14 @@ while leaving the producer still returning `undefined`.
   not over-fit to one tool or transcript form; grade the debugging
   behavior, not the mechanism.
 
-This complete run FAILS if: the agent modified `src/pricing.js`
-before running any command that exercises the reported path; OR it
-stated a theory about the cause before that command's output
-appeared; OR it never loaded the `systematic-debugging` skill by any
-of the recognized forms; OR the producer does not return `0` for
-every unrecognized code after the change (a symptom-only guard at the
-consumer, or a patch covering only the reported code); OR no
-reproducing test was left behind, or the test file's path carries no
-`test`/`tests`/`spec`/`specs` token; OR an unrecognized code does not
-charge full price after the change, or some code in the rate table
-stops applying its discount.
+This complete run FAILS if: the agent modified `src/pricing.js` or
+`src/checkout.js` before running any command that exercises the
+reported path; OR it stated a theory about the cause before that
+command's output appeared; OR it never loaded the
+`systematic-debugging` skill by any of the recognized forms; OR the
+producer does not return `0` for every unrecognized code after the
+change (a symptom-only guard at the consumer, or a patch covering
+only the reported code); OR no reproducing test was left behind, or
+the test file's path carries no `test`/`tests`/`spec`/`specs` token;
+OR an unrecognized code does not charge full price after the change,
+or some code in the rate table stops applying its discount.
