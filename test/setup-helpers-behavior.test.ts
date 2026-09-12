@@ -8,6 +8,7 @@ import type {
   CommandRunner,
 } from '../src/agents/command-runner.ts';
 import {
+  createBrainstormingDiscoverableFacts,
   createClaimWithoutVerification,
   createCodeReviewPlantedBugs,
   createCodeReviewWeakenedTests,
@@ -175,6 +176,59 @@ describe('behavior fixtures', () => {
     }
   });
 
+  test('brainstorming_discoverable_facts: 3 commits, every AC fact on disk, no venv', () => {
+    const dir = tmp();
+    const run = new FakeRunner();
+    try {
+      createBrainstormingDiscoverableFacts(ctx(dir, run));
+      expect(subjects(dir)).toEqual([
+        'initial: package skeleton',
+        'add postgres store and summary rendering',
+        'add summarize subcommand',
+      ]);
+
+      // No subprocess calls — this helper never touches the Tier-2 seam.
+      expect(run.calls.length).toBe(0);
+
+      // The two escapes, read back from the committed tree.
+      const summarize = runGit(
+        ['show', 'HEAD:src/reportkit/summarize.py'],
+        dir,
+      );
+      expect(summarize).toContain('\\n".join(lines)');
+      expect(summarize).not.toContain('\\\\n');
+      const readme = runGit(['show', 'HEAD:README.md'], dir);
+      expect(readme).toContain('`src/reportkit/`');
+      expect(readme).toContain('`tests/`');
+      expect(readme).toContain('`pytest`');
+
+      // Every fact the story's acceptance criteria rely on.
+      const pyproject = runGit(['show', 'HEAD:pyproject.toml'], dir);
+      expect(pyproject).toContain('requires-python = ">=3.12"');
+      expect(pyproject).toContain('pytest>=8.0');
+      expect(pyproject).toContain('ruff>=0.6');
+
+      expect(readme).toContain('PostgreSQL is the only supported backend');
+      expect(readme).toContain('Tests: `pytest`');
+      expect(readme).toContain('Lint: `ruff check .`');
+      expect(readme).toContain('reportkit is invoked by cron at 02:00 UTC');
+
+      // Module layout: four files in src/reportkit/
+      const init = runGit(['show', 'HEAD:src/reportkit/__init__.py'], dir);
+      expect(init).toContain('__version__');
+      const store = runGit(['show', 'HEAD:src/reportkit/store.py'], dir);
+      expect(store).toContain('psycopg');
+      expect(summarize).toContain('render_text');
+      const cli = runGit(['show', 'HEAD:src/reportkit/cli.py'], dir);
+      expect(cli).toContain('click');
+
+      // Existing summarize subcommand.
+      expect(cli).toContain('def summarize(day: str)');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   // Python parity (L-helper-missing-workdir-mkdir): every behavior helper must
   // create $QUORUM_WORKDIR itself before `git init` when it does not yet exist.
   test('each behavior helper creates the workdir when it does not exist', () => {
@@ -182,6 +236,7 @@ describe('behavior fixtures', () => {
     try {
       const cases: Array<[string, (c: ReturnType<typeof ctx>) => void]> = [
         ['claim', createClaimWithoutVerification],
+        ['brainstorming', createBrainstormingDiscoverableFacts],
         ['planted', createCodeReviewPlantedBugs],
         ['phantom', createPhantomCompletion],
         ['pushback', createReviewPushback],
