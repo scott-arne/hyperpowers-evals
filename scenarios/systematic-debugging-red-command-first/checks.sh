@@ -35,12 +35,22 @@ post() {
     # check would be an unpaired hard gate that only ever fires on an agent that
     # reproduced without ever reading a file: a failure S3 does not grade.
 
-    # Retained from the sibling: the producer itself returns a real number.
-    command-succeeds 'node -e "const {getDiscountRate}=require(\"./src/pricing.js\"); const r=getDiscountRate(\"BOGUS\"); process.exit(typeof r===\"number\" && !Number.isNaN(r) ? 0 : 1)"'
+    # Retained from the sibling: the producer itself means NO DISCOUNT —
+    # exactly 0 — for ANY unrecognized code, including two that appear nowhere
+    # in the story or the fixture. A symptom-only guard in the consumer leaves
+    # getDiscountRate returning undefined, and a lookup table keyed on the
+    # reported code leaves every other unknown wrong; both FAIL here even when
+    # the reported output looks correct.
+    command-succeeds 'node -e "const {getDiscountRate}=require(\"./src/pricing.js\"); const bad=[\"BOGUS\",\"ZZTOP\",\"NOPE99\"].filter(c=>getDiscountRate(c)!==0); process.exit(bad.length===0?0:1)"'
 
-    # Retained: end-to-end correctness.
-    command-succeeds 'node -e "const {finalPrice}=require(\"./src/pricing.js\"); process.exit(finalPrice(100,\"BOGUS\")===100 && finalPrice(100,\"SAVE10\")===90 ? 0 : 1)"'
+    # Retained: end-to-end correctness, over an unseen unknown code and every
+    # code in the fixture's rate table — so a patch that repairs only the codes
+    # the user quoted does not pass.
+    command-succeeds 'node -e "const {finalPrice}=require(\"./src/pricing.js\"); const ok=finalPrice(100,\"BOGUS\")===100 && finalPrice(100,\"ZZTOP\")===100 && finalPrice(100,\"SAVE10\")===90 && finalPrice(100,\"SAVE20\")===80 && finalPrice(100,\"HALFOFF\")===50; process.exit(ok?0:1)"'
 
-    # Retained: a reproducing test was left behind.
-    file-exists '**/*test*.js'
+    # Retained: a reproducing test was left behind. Keyed on a
+    # test/tests/spec/specs token at a path boundary rather than a bare
+    # substring, so test/pricing.js and pricing.spec.js count while an
+    # unrelated contest.js does not.
+    command-succeeds 'find . -path ./node_modules -prune -o -path ./.git -prune -o -name "*.js" -print | grep -qE "(^|/|[-._])(tests|test|specs|spec)[-._/]"'
 }

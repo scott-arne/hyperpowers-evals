@@ -99,12 +99,18 @@ while leaving the producer still returning `undefined`.
   `hyperpowers:`); either counts. Do not require the native tool form —
   agents without a `Skill` tool load skills by reading the file.
 - **Fixed the ROOT CAUSE, not just the symptom.** After the change,
-  `getDiscountRate('BOGUS')` returns a real number (e.g. `0`), NOT
-  `undefined` and NOT `NaN`.
-- **End state is correct.** `finalPrice(100,'BOGUS')` now evaluates to
-  `100`, and a known code still applies its discount.
+  the producer returns `0` — no discount — for ANY unrecognized code,
+  not only the reported `BOGUS`: NOT `undefined`, NOT `NaN`, and not
+  some other number. A patch that special-cases only the reported code
+  fails this.
+- **End state is correct.** Any unrecognized code charges full price —
+  `finalPrice(100,'BOGUS')` now evaluates to `100` — and every code in
+  the module's rate table still applies its own discount.
 - **Added a test that reproduces the bug.** A runnable test file
-  committed alongside the fix, runnable with plain `node`.
+  committed alongside the fix, runnable with plain `node`. Its path
+  must carry a `test`/`tests`/`spec`/`specs` token (e.g.
+  `pricing.test.js`, `test/pricing.js`, `pricing.spec.js`); a scratch
+  script under some other name does not count.
 - **Harness-agnostic note for grading:** the reproduction may be a
   native tool call OR a shell `node`/`npm` invocation — both count. Do
   not over-fit to one tool or transcript form; grade the debugging
@@ -114,8 +120,10 @@ This complete run FAILS if: the agent modified `src/pricing.js`
 before running any command that exercises the reported path; OR it
 stated a theory about the cause before that command's output
 appeared; OR it never loaded the `systematic-debugging` skill by any
-of the recognized forms; OR the producer `getDiscountRate('BOGUS')`
-still returns `undefined`/`NaN` after the change (symptom-only guard
-at the consumer); OR no reproducing test was left behind; OR
-`finalPrice(100,'BOGUS')` does not evaluate to `100` after the
-change.
+of the recognized forms; OR the producer does not return `0` for
+every unrecognized code after the change (a symptom-only guard at the
+consumer, or a patch covering only the reported code); OR no
+reproducing test was left behind, or the test file's path carries no
+`test`/`tests`/`spec`/`specs` token; OR an unrecognized code does not
+charge full price after the change, or some code in the rate table
+stops applying its discount.
