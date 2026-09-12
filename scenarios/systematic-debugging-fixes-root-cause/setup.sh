@@ -15,10 +15,19 @@ cd "$QUORUM_WORKDIR"
 # A tempting symptom patch lives in finalPrice (default the rate to 0 at the
 # call site); the root-cause fix lives in getDiscountRate (return 0 for an
 # unknown code).
+#
+# RATES carries a null prototype so an unrecognized code can never resolve to
+# an inherited Object.prototype member. Without it, the idiomatic `?? 0` fix
+# leaves getDiscountRate('toString') returning a function while still passing
+# the three-code probe, so the deterministic layer and the "ANY unrecognized
+# code" criterion disagree.
 cat > src/pricing.js <<'JS'
 // Pricing helpers for checkout.
 
 const RATES = {
+  // Null prototype: the table is a pure lookup and never inherits Object
+  // members, so an unknown code always misses.
+  __proto__: null,
   SAVE10: 0.1,
   SAVE20: 0.2,
   HALFOFF: 0.5,
