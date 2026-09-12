@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What should the exported file contain? → CSV and JSON. Not PDF.[39m
+
+[38;5;231m⏺[39m CSV and JSON it is. That keeps it bounded — two new renderers alongside [38;5;153mrender_text[39m in [38;5;153msummarize.py[39m, plus a [38;5;153m--format[39m
+  option — but it does make the file shape a contract, so the next question is what goes in it.
+
+  [1mThe fork:[0m whether the structured formats carry the [3mraw[0m data ([38;5;153mcents[39m as integers) or the [3mpresentation[0m data (dollar
+  strings, plus the [38;5;153mtotal:[39m line) that [38;5;153mrender_text[39m produces.
+
+  - [1mRaw cents, no total row[0m — CSV [38;5;153maccount_id,cents[39m / JSON [38;5;153m[{"account_id": …, "cents": …}][39m. Lossless, no float rounding,
+    and a consumer can sum or reformat however it likes. Costs: anyone eyeballing the CSV sees [38;5;153m1050[39m, not [38;5;153m10.50[39m.
+  - [1mDollar strings + total[0m — mirrors the text output exactly. Reads nicely in a spreadsheet. Costs: [38;5;153m10.50[39m as a string is
+    lossy-ish to re-parse, and a trailing [38;5;153mtotal[39m row is a classic footgun for anything that aggregates the CSV (it
+    double-counts).
+  - [1mBoth: raw cents rows + total as a separate field (JSON only)[0m — JSON gets [38;5;153m{"day": …, "rows": [...], "total_cents": [39m
+    [38;5;153m…}[39m; CSV stays pure rows. Costs: the two formats stop being isomorphic.
+
+  [1mRecommendation: raw cents, and for JSON wrap it as an object with [38;5;153mtotal_cents[39m.[0m Structured output exists for machines;
+  integers are the honest representation, and JSON's object envelope gives you somewhere to put the total (and the day)
+  without corrupting the row set the way a CSV total row would.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Data shape [39m[49m
+
+[1m[38;5;231mWhat shape should the CSV and JSON output have?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mRaw cents + JSON envelope (Recommended)[39m
+     [38;5;246mCSV: header + account_id,cents rows. JSON: {day, rows:[{account_id,cents}], total_cents}. Lossless; no total row in
+[39m     [38;5;246mCSV.[39m
+  [38;5;246m2.[39m Mirror the text output
+     [38;5;246mDollar-formatted strings in both, including a trailing total row/entry. Matches what summarize prints.[39m
+  [38;5;246m3.[39m Raw cents, no total anywhere
+     [38;5;246mBoth formats are just the rows. Consumers compute their own total.[39m
+  [38;5;246m4.[39m Raw cents + total in both
+     [38;5;246mCSV gets a trailing total row too, so the two formats stay isomorphic.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

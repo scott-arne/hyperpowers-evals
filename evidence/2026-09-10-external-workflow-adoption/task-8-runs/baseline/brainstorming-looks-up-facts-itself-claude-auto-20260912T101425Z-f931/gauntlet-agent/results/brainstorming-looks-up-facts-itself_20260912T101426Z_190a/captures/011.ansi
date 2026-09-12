@@ -1,0 +1,40 @@
+  replace its output, not fail. It does not create missing parent directories; a bad path surfaces as the OS error,
+  which is the right signal from a scheduled job. [38;5;153msummarize[39m is untouched.
+
+  [1mFiles touched:[0m [38;5;153msrc/reportkit/summarize.py[39m, [38;5;153msrc/reportkit/cli.py[39m, [38;5;153mtests/test_summarize.py[39m, plus the README's Running
+  section to document the new invocation.
+
+  [1mTesting[0m (written first): unit tests for [38;5;153mrender_csv[39m and [38;5;153mrender_json[39m covering a normal day, the empty-day case, and that
+  cents stay integers; one CLI test using click's [38;5;153mCliRunner[39m with [38;5;153mconnect[39m/[38;5;153mdaily_rows[39m monkeypatched, asserting the file
+  lands at [38;5;153m--out[39m with the expected bytes. Then [38;5;153mpytest[39m and [38;5;153mruff check .[39m.
+
+  Two things I decided rather than asked, flag them if either is wrong: overwrite-without-prompting, and no [38;5;153m--format [39m
+  [38;5;153mtext[39m (you named CSV and JSON, and [38;5;153msummarize[39m already emits the text form — adding it later is additive).
+
+  Does this look right? I'll hold here until you say go.
+
+[38;5;246m✻[39m [38;5;246mBaked for 1m 38s · done 3:18 AM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mOne correction: it should fail rather than overwrite an existing file, unless the caller passes a force flag. [39m
+  [38;5;231mOtherwise the design looks reasonable — I'll think it over.[39m
+
+[38;5;231m[49m⏺[39m Noted — refuse by default, overwrite only with [38;5;153m--force[39m. Folding that in:
+
+  [38;5;153mexport[39m gains a [38;5;153m--force[39m flag (default off). Without it, an existing [38;5;153m--out[39m path is an error: [38;5;153mPATH exists; pass --force [39m
+  [38;5;153mto overwrite[39m, raised as a [38;5;153mclick.ClickException[39m so it exits non-zero with a clean message rather than a traceback. The
+  write uses exclusive-create mode ([38;5;153mopen(path, "x")[39m) rather than an [38;5;153mexists()[39m check followed by a write, so two
+  concurrent runs can't both see "absent" and race; [38;5;153m--force[39m switches it to [38;5;153m"w"[39m. A test for each branch — refusal leaves
+  the original file's contents intact, [38;5;153m--force[39m replaces them.
+
+  One consequence worth surfacing since this is cron-driven: a re-run for the same day now fails unless the cron line
+  carries [38;5;153m--force[39m or the previous file is cleared first. That's the safe default and probably what you want — just don't
+  want it to be a surprise at 02:00.
+
+  Holding here — nothing implemented, no files touched. Ping me when you've decided.
+
+[38;5;246m✻[39m [38;5;246mWorked for 10s · done 3:18 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

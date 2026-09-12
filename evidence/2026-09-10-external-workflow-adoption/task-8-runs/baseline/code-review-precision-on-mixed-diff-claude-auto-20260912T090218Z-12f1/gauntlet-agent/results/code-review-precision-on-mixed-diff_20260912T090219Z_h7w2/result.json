@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-mixed-diff_20260912T090219Z_h7w2",
+  "scenario": "code-review-precision-on-mixed-diff",
+  "summary": "Claude loaded the requesting-code-review skill, dispatched a reviewer subagent, and produced a thorough review that correctly caught both real bugs (SQL injection, plaintext password comparison) and did not approve the merge. However, the reviewer also raised an Important (blocking) finding, \"#6 src/session.js does not implement session handling\", that faults expiresAt, close and describe — three of the six hunks the story states are correct as written — so the precision criterion fails.",
+  "reasoning": "The workflow itself worked end to end: skill loaded, reviewer subagent dispatched with the template, both real security regressions caught as Critical, and an explicit 'do not merge' verdict. The failure is precision: the reviewer issued an Important-severity blocking finding that condemns expiresAt, close and describe — three of the six hunks the story declares correct — on scope grounds. Criterion 5 therefore fails, so the overall verdict is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Reviewer subagent raised an Important (blocking) finding #6 'src/session.js does not implement session handling', faulting expiresAt ('nothing reads or enforces it'), close ('revoking nothing') and describe ('documents a state machine it doesn't implement') — code that is correct as written. The reviewer itself admits it graded against a requirement not stated by the user."
+    },
+    {
+      "kind": "bug",
+      "description": "Reviewer's finding #5 ('No test coverage for the code that actually changed') and #3 (schema/migration) are extra Important/Critical findings; #3 in particular speculates about a production schema not present in the repo. Arguably reasonable but adds noise."
+    },
+    {
+      "kind": "ux",
+      "description": "The skill actually invoked is named 'hyperpowers:requesting-code-review' while the user (and story) asked for 'superpowers:requesting-code-review'. The agent silently mapped the name; a tester expecting the superpowers namespace could be confused."
+    },
+    {
+      "kind": "ux",
+      "description": "Main agent's final message includes an unsolicited plugin-advertisement block: 'Note [status: not-installed]: codex-plugin-cc is not available ... /plugin marketplace add openai/codex-plugin-cc ...' plus a note that it logged the ungated range to a 'review ledger'. This marketing/bookkeeping noise buries the actual review verdict at the bottom of the output."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Good precision behaviour worth noting: the main agent explicitly added a 'Where I'd discount the reviewer' section rejecting the scope complaint and the two speculative findings (describe rename, toMinutes inlining), which partially compensates for the reviewer's false positives."
+    },
+    {
+      "kind": "bug",
+      "description": "Reviewer's Minor #7 claims displayName can return undefined for user:{} — technically true but the story states this hunk is correct; harmless at Minor severity."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Skill superpowers:requesting-code-review loaded and an Agent subagent dispatched",
+      "verdict": "pass",
+      "evidence": "Session log tool_use entries: {\"name\":\"Skill\",\"inp\":\"{\\\"skill\\\":\\\"hyperpowers:requesting-code-review\\\"}\"} followed by {\"name\":\"Agent\",\"inp\":\"{\\\"subagent_type\\\":\\\"general-purpose\\\",\\\"description\\\":\\\"Review code changes\\\",\\\"prompt\\\":\\\"You are a Senior Code Reviewer...\"} in 7a558e8f-...jsonl; a subagent log file subagents/agent-a5ba33596c7f8dadf.jsonl was created. Note: the skill namespace shown is 'hyperpowers:' not 'superpowers:'."
+    },
+    {
+      "criterion": "SQL injection in findUserByEmail flagged Critical/Important",
+      "verdict": "pass",
+      "evidence": "Subagent review text: '#### Critical (Must Fix)  **1. SQL injection — parameterized query replaced with string concatenation.** src/db.js:6-10 ... the caller-supplied value is now spliced directly into SQL text.'"
+    },
+    {
+      "criterion": "Plaintext password comparison in login flagged Critical/Important",
+      "verdict": "pass",
+      "evidence": "Subagent review: '**2. Password verification downgraded to plaintext comparison.** src/db.js:15 `if (user && user.password === password)` ... The base used verifyHash(password, user.password_hash) ... credentials stored in plaintext' — listed under Critical (Must Fix)."
+    },
+    {
+      "criterion": "Reviewer did NOT approve the diff for merge",
+      "verdict": "pass",
+      "evidence": "Subagent review Assessment: '**Ready to merge?** No'; main agent relayed 'Reviewer came back with a \"No — do not merge\" verdict.'"
+    },
+    {
+      "criterion": "No Critical/Important finding against the six correct hunks",
+      "verdict": "fail",
+      "evidence": "Subagent raised under '#### Important (Should Fix)': '**6. src/session.js does not implement session handling.** ... `expiresAt` (line 3) computes an expiry timestamp but nothing reads or enforces it. `close` (line 25) sets a closed flag on a copy and returns it, revoking nothing. ... `describe` (lines 30-48) enumerates a seven-state lifecycle ... the module documents a state machine it doesn't implement.' That is an Important-severity blocking finding against clean items 1 (expiresAt), 4 (close) and 5 (describe). Other clean items were handled correctly: displayName (#7), apiKey fixture (#8), toMinutes (#10) all Minor."
+    },
+    {
+      "criterion": "Minor/Nice-to-have on those six do not count",
+      "verdict": "pass",
+      "evidence": "Applied: displayName '#7 ... Minor (Nice to Have)', apiKey '#8 Unused fixture field with a credential-shaped value', toMinutes '#10 toMinutes is single-use indirection' were all under '#### Minor (Nice to Have)' and were not counted against criterion 5; only the Important #6 was."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi"
+    ]
+  },
+  "duration_ms": 374637,
+  "usage": {
+    "inputTokens": 54,
+    "outputTokens": 7349,
+    "cacheCreationInputTokens": 34673,
+    "cacheReadInputTokens": 380818,
+    "turns": 27
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

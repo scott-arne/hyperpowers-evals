@@ -1,0 +1,40 @@
+
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What shape should the CSV and JSON output have? → Raw cents + JSON envelope (Recommended)[39m
+
+[38;5;231m⏺[39m Last fork that matters, then I'll write the design.
+
+  [1mThe fork:[0m who decides the filename — the caller, or reportkit. This matters because the caller is cron, and cron
+  reruns.
+
+  - [1mExplicit [38;5;153m--out PATH[39m (required)[0m — caller names the file; reportkit writes exactly there. Simple, testable, no
+    surprises. Cron line carries the date-templated path. Costs: the cron entry gets slightly longer.
+  - [1m[38;5;153m--out-dir DIR[39m, filename derived[0m — reportkit writes [38;5;153mbilling-YYYY-MM-DD.csv[39m. Buys consistent naming across
+    environments. Costs: the naming scheme becomes a contract, and anything looking for the file has to know the
+    convention.
+  - [1m[38;5;153m--out PATH[39m optional, default stdout[0m — [38;5;153mexport --format json[39m with no [38;5;153m--out[39m pipes to stdout; [38;5;153m--out[39m writes a file. Buys
+    pipeline friendliness for free. Costs: a near-duplicate of [38;5;153msummarize[39m's job, and the "writes a file" framing gets
+    fuzzier.
+
+  Paired with that: on rerun, [1moverwrite by default[0m (idempotent — a re-run for the same day replaces the file) versus
+  [1mrefuse unless [38;5;153m--force[0m (safe, but a cron retry then fails loudly at 02:00).
+
+  [1mRecommendation: required [38;5;153m--out PATH[39m, overwrite by default.[0m The caller already knows the date it asked for, so it can
+  name the file; and a nightly job that can't safely re-run for the same day is a job that pages someone.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Destination [38;5;16m[48;5;153m ☐ Overwrite [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhat should happen if the target file already exists?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mOverwrite silently (Recommended)[39m
+     [38;5;246mRe-running for the same day replaces the file. Idempotent; safe for cron retries.[39m
+  [38;5;246m2.[39m Refuse unless --force
+     [38;5;246mExit non-zero on an existing file. Protects against clobbering, but a cron retry fails.[39m
+  [38;5;246m3.[39m Overwrite, but atomically
+     [38;5;246mWrite to a temp file in the same directory, then rename over the target. No partial file if the write dies.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

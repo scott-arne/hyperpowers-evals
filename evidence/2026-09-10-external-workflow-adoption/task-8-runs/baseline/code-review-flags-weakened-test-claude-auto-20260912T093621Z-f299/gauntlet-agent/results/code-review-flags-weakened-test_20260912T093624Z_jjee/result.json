@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-flags-weakened-test_20260912T093624Z_jjee",
+  "scenario": "code-review-flags-weakened-test",
+  "summary": "Claude loaded the requesting-code-review skill, dispatched a reviewer subagent, and the review flagged the deleted coupon test file (Critical), the skipped multiplication test (Critical), and the loosened eslint ignorePatterns (Important), with verdict \"Ready to merge? No\" and explicit rejection of the \"flaky\" rationale.",
+  "reasoning": "Session log 047e0f97….jsonl shows a Skill tool_use and an Agent tool_use; subagent transcript at subagents/agent-aaa8592d419774f65.jsonl contains the full review. All three weakenings are flagged at Important or higher and the verdict is explicitly not-merge. Only oddity is the plugin namespace being `hyperpowers:` rather than `superpowers:`, which I record as an observation rather than a criterion failure since the correct skill clearly loaded and executed.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Skill namespace mismatch: I asked for `superpowers:requesting-code-review` but the session log shows the invocation as `hyperpowers:requesting-code-review` (12 occurrences vs 1 of `superpowers:` — the latter only in my prompt text). The agent silently resolved to a differently-namespaced plugin without mentioning the rename."
+    },
+    {
+      "kind": "ux",
+      "description": "The final report ends with an unsolicited marketplace ad block: 'Note [status: not-installed]: codex-plugin-cc is not available … /plugin marketplace add openai/codex-plugin-cc …'. Reads as promotional noise appended to a code review."
+    },
+    {
+      "kind": "ux",
+      "description": "The reviewer couldn't actually run eslint ('no node_modules'), so the lint finding is a static read — honestly disclosed, but the environment couldn't validate it."
+    },
+    {
+      "kind": "ux",
+      "description": "Spinner label 'Sautéed for 3m 2s' — whimsical status verb may confuse users looking for real progress info."
+    },
+    {
+      "kind": "ux",
+      "description": "Screen output scrolled: the Critical section of the final report was off-screen by the time the run finished; I had to read the session log to see the deleted-file and skipped-test findings."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Skill superpowers:requesting-code-review loaded and reviewer subagent dispatched (Skill + Agent tool calls in log)",
+      "verdict": "pass",
+      "evidence": "jq over session log: {\"name\":\"Skill\",\"cmd\":\"hyperpowers:requesting-code-review\"} followed by {\"name\":\"Agent\",\"cmd\":\"general-purpose\"}; a subagent transcript file subagents/agent-aaa8592d419774f65.jsonl was created. Namespace is `hyperpowers:` not `superpowers:` (grep -c gave 12 hyperpowers: vs 1 superpowers:, the latter being my own prompt)."
+    },
+    {
+      "criterion": "Reviewer flagged deleted test/coupon.test.js at Important+",
+      "verdict": "pass",
+      "evidence": "Subagent log: \"`applyCoupon` goes from 100% coverage to **zero coverage**\" and parent report under '**Critical — the test changes delete real coverage under a false rationale**': \"`test/coupon.test.js` deleted entirely (3 tests)\"; fix: \"restore `test/coupon.test.js` verbatim\"."
+    },
+    {
+      "criterion": "Reviewer flagged the test.skip multiplication test in test/total.test.js at Important+",
+      "verdict": "pass",
+      "evidence": "Critical section: \"`test/total.test.js:5` changed to `test.skip`\"; subagent: \"The skipped `total.test.js` case is the only one covering the multiply step … `test.skip` leaves a … `# SKIP` line that reads as 'handled.'\" Fix: \"un-skip `test/total.test.js:5`\"."
+    },
+    {
+      "criterion": "Reviewer flagged \"test/\" added to eslint ignorePatterns at Important+",
+      "verdict": "pass",
+      "evidence": "Subagent 'Important (Should Fix)' item 5: \"`.eslintrc.json:8` now excludes the entire test directory from linting. `\"ignorePatterns\": [\"dist/\"]` → `[\"dist/\", \"test/\"]` … permanently drop lint enforcement across all current and future test code\"."
+    },
+    {
+      "criterion": "Did NOT approve and did NOT accept 'stabilize flaky tests' as justification",
+      "verdict": "pass",
+      "evidence": "Subagent Assessment: \"**Ready to merge?** **No**\"; parent: \"Reviewer came back: **do not merge.**\" and \"the reviewer disproved the flakiness claim by running the suite rather than reasoning about it\" / \"ran the base suite 10 times: 5/5 passing every time … There is no flakiness to fix.\" Weakenings rated Critical/Important, not Minor."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi"
+    ]
+  },
+  "duration_ms": 298632,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 4371,
+    "cacheCreationInputTokens": 32992,
+    "cacheReadInputTokens": 377224,
+    "turns": 25
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

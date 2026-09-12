@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-mixed-diff_20260912T090835Z_el52",
+  "scenario": "code-review-precision-on-mixed-diff",
+  "summary": "Claude Code loaded the requesting-code-review skill, dispatched a reviewer subagent, and returned a precise review: both real bugs (SQL injection, plaintext password ===) flagged as Critical, verdict \"Ready to merge? No\", and no Critical/Important findings against any of the six clean items.",
+  "reasoning": "The full flow completed as the story describes: single prompt, skill loaded, Agent subagent dispatched with the reviewer template, and a structured review returned. Both planted bugs were caught as Critical, merge was refused, and the six correct hunks drew nothing above Minor. The only non-blocking oddity is the 'hyperpowers:' vs 'superpowers:' plugin namespace, which I recorded as an observation rather than a criterion failure since it is the same skill file and the subagent path was exercised.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Skill namespace mismatch with the user's request: the user asked for 'superpowers:requesting-code-review' and the agent invoked 'hyperpowers:requesting-code-review' without comment. Same skill content, but the rename is silent and could confuse a spec-aware user."
+    },
+    {
+      "kind": "ux",
+      "description": "The main agent waited for the backgrounded subagent using literal `sleep 60` then `sleep 90` bash calls ('Waiting for reviewer subagent · 1m 2s'). Polling via blocking sleeps is wasteful and inflates wall-clock time."
+    },
+    {
+      "kind": "ux",
+      "description": "The review included a self-promotional install blurb: 'codex-plugin-cc is not available ... Install it for an extra gate: /plugin marketplace add openai/codex-plugin-cc ...' — noise in a code review deliverable."
+    },
+    {
+      "kind": "ux",
+      "description": "Reviewer Minor #5 claims displayName returns undefined for {user:{}} and suggests optional chaining; this is arguably out-of-scope speculation about a case the guard was not written for, though correctly ranked Minor."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Reviewer mentions 'I recorded the ungated range in the review ledger' — an internal bookkeeping detail surfaced to the user without explanation of what the ledger is or where it lives."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Skill superpowers:requesting-code-review loaded and Agent subagent dispatched",
+      "verdict": "pass",
+      "evidence": "Session log tool_use entries: {\"name\":\"Skill\",\"inp\":\"{\\\"skill\\\":\\\"hyperpowers:requesting-code-review\\\"}\"} and {\"name\":\"Agent\",\"inp\":\"{\\\"subagent_type\\\":\\\"general-purpose\\\",\\\"description\\\":\\\"Review code changes\\\"...}\"} in b7e31710-...jsonl; subagent log file agent-a18e395ad9a1a49c8.jsonl created. Note: the plugin namespace rendered as 'hyperpowers:' not 'superpowers:' (same skill path .../skills/requesting-code-review/code-reviewer.md)."
+    },
+    {
+      "criterion": "SQL injection in findUserByEmail flagged Critical/Important",
+      "verdict": "pass",
+      "evidence": "Subagent report: \"#### Critical (Must Fix) **1. SQL injection: the parameterized query was replaced with string concatenation — src/db.js:6-10**\" with the concatenated query quoted."
+    },
+    {
+      "criterion": "Plaintext password comparison in login flagged Critical/Important",
+      "verdict": "pass",
+      "evidence": "Subagent report: \"**2. Password verification downgraded to plaintext equality — src/db.js:15** ... if (user && user.password === password) ... Even granting plaintext storage, `===` is not timing-safe\" — listed under Critical (Must Fix)."
+    },
+    {
+      "criterion": "Reviewer did NOT approve the diff for merge",
+      "verdict": "pass",
+      "evidence": "Subagent: \"**Ready to merge?** No\"; main agent screen: \"Recommendation: do not merge as-is.\""
+    },
+    {
+      "criterion": "No Critical/Important finding against the six correct items",
+      "verdict": "pass",
+      "evidence": "Only two Critical (db.js SQL injection, plaintext password) and two Important (#3 removed email validation guard in src/db.js:5 — part of the diff's db.js rewrite, not one of the six; #4 no tests for findUserByEmail/login). expiresAt/86400 and displayName appear only as Minor (#6, #5); test fixture apiKey only as Minor #7; toMinutes drew no finding (grep of the review text shows no 'toMinutes' mention); close()/void and describe() were praised: \"the `void` on `recordLatency` correctly matches the documented fire-and-forget contract\", \"describe() covers the full state vocabulary with an explicit default\"."
+    },
+    {
+      "criterion": "Minor/Nice-to-have on those six do not fail",
+      "verdict": "pass",
+      "evidence": "The three touching clean items (expiresAt magic number/validation, displayName fallback, unused apiKey fixture) were all filed under \"#### Minor (Nice to Have)\" — permitted by this criterion."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi"
+    ]
+  },
+  "duration_ms": 416273,
+  "usage": {
+    "inputTokens": 54,
+    "outputTokens": 5030,
+    "cacheCreationInputTokens": 24786,
+    "cacheReadInputTokens": 369118,
+    "turns": 27
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

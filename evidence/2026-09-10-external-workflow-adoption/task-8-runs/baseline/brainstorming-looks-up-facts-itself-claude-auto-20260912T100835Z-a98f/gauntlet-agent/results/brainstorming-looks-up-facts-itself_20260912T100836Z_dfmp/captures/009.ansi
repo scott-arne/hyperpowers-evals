@@ -1,0 +1,40 @@
+  formatting is a presentation concern that belongs in [38;5;153mrender_text[39m and nowhere else. A [38;5;153mtotal[39m row in a CSV is the
+  classic thing that poisons a spreadsheet import.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What shape should the CSV and JSON carry? → Integer cents (Recommended)[39m
+
+[38;5;231m⏺[39m Locked: integer cents, total as its own field, no total row in the CSV.
+
+  Last question, then I'll write up the design.
+
+  [1mThe fork:[0m how the cron line names the output file and picks the format. This is the part someone reads at 3am during
+  an incident, so explicitness has real value.
+
+  - [1mExplicit [38;5;153m--out PATH[39m + [38;5;153m--format csv|json[0m — [38;5;153mreportkit export --day 2026-09-11 --format csv --out [39m
+    [38;5;153m/var/reports/billing-2026-09-11.csv[39m. Slightly redundant when the extension already says [38;5;153mcsv[39m, but the command states
+    exactly what it does and there's no rule to remember. Adding extension inference later is purely additive.
+  - [1mInfer format from the extension[0m — [38;5;153m--out …/billing.csv[39m is enough, [38;5;153m--format[39m only as an override. Shorter, but you owe
+    an answer for [38;5;153m.txt[39m, no extension, and a [38;5;153m.csv[39m path the caller meant as JSON — and a wrong guess writes a silently
+    mislabeled file.
+  - [1m[38;5;153m--format[39m + [38;5;153m--out-dir[39m, filename derived[0m — reportkit owns the naming ([38;5;153mbilling-2026-09-11.csv[39m), so every night's file
+    is consistent. Costs you control over the path, which matters if a downstream job expects a fixed name.
+
+  On overwrite: I'd plainly overwrite an existing file in all three. Cron re-runs after a failure are normal, and a
+  command that refuses the second run turns a transient blip into manual cleanup.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mHow should the caller specify the destination and format?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mExplicit --out + --format (Recommended)[39m
+     [38;5;246mBoth stated on the command line. No inference rules; the crontab line is self-documenting.[39m
+  [38;5;246m2.[39m Infer format from extension
+     [38;5;246m`--out report.csv` implies CSV; `--format` overrides. Shorter, needs rules for odd extensions.[39m
+  [38;5;246m3.[39m --out-dir, derived filename
+     [38;5;246mreportkit names the file `billing-<day>.<ext>`. Consistent naming, less path control.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 5,
+  "runId": "systematic-debugging-red-command-first_20260912T094523Z_m446",
+  "scenario": "systematic-debugging-red-command-first",
+  "summary": "Claude Code loaded the systematic-debugging skill, reproduced the NaN with its own command before theorizing, and fixed the root cause in getDiscountRate (unknown codes now return 0, finalPrice(100,'BOGUS') === 100, known codes still discount). However, it deliberately wrote its reproducing test to /tmp/pricing-test.js \"out of the tree\" — no test file exists in the repo, and nothing was committed.",
+  "reasoning": "Five of six behavioral criteria are satisfied and verified from the session log and the repo on disk. Criterion 6 clearly fails: there is no test file anywhere in the working tree (find returned nothing) and nothing was committed; the agent stated it intentionally placed the test in /tmp. Any failed criterion forces an overall fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent wrote its reproducing test to /tmp/pricing-test.js and explicitly kept it out of the repository (\"this repo has no test framework or test script, so I kept it out of the tree\"), so no test accompanies the fix."
+    },
+    {
+      "kind": "bug",
+      "description": "Neither the fix nor any test was committed: `git status --short` shows ` M src/pricing.js` uncommitted."
+    },
+    {
+      "kind": "ux",
+      "description": "Fixture note: src/pricing.js shipped with a comment literally reading `BUG: an unrecognized code is not in RATES, so this returns undefined instead of \"no discount\"`, which hands the agent the answer on a plain Read and weakens the test's ability to distinguish real debugging from reading the comment."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's final summary references verification output and a /tmp script the user cannot see or rerun later; nothing reusable was left behind."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Ran a reproducing command showing the bad value before any change to src/pricing.js",
+      "verdict": "pass",
+      "evidence": "Session log eb865604...jsonl, Bash before the Edit: command `node -e \"...console.log('finalPrice(100,BOGUS) =', finalPrice(100,'BOGUS'))...\"` returned `rate(BOGUS) = undefined 100 - 100*undefined = NaN finalPrice(100,BOGUS) = NaN finalPrice(100,SAVE10) = 90`; the only Edit to src/pricing.js appears later in the log."
+    },
+    {
+      "criterion": "Reproduction output precedes the first stated hypothesis",
+      "verdict": "pass",
+      "evidence": "Prior assistant texts in the log are only \"I'm using systematic-debugging to find the root cause before changing anything.\" and \"Phase 1 — reproduce and trace the data flow:\"; the first cause statement \"Root cause found: `getDiscountRate` returns `undefined`...\" appears immediately AFTER the NaN command output."
+    },
+    {
+      "criterion": "Loaded the systematic-debugging skill",
+      "verdict": "pass",
+      "evidence": "Log line 2: TOOL_USE Skill: {\"skill\":\"hyperpowers:systematic-debugging\"} -> \"Launching skill: hyperpowers:systematic-debugging\""
+    },
+    {
+      "criterion": "Fixed root cause: producer returns 0 for ANY unrecognized code",
+      "verdict": "pass",
+      "evidence": "src/pricing.js now: `const rate = RATES[code]; return rate === undefined ? 0 : rate;`  and `node -e ... getDiscountRate('ZZZ')` printed `0` (not just BOGUS)."
+    },
+    {
+      "criterion": "End state correct: unknown code charges full price, known codes still discount",
+      "verdict": "pass",
+      "evidence": "My own run: `node -e \"...\"` printed `100 0 90 80 50` for finalPrice(100,'BOGUS'), getDiscountRate('ZZZ'), SAVE10, SAVE20, HALFOFF."
+    },
+    {
+      "criterion": "Added a runnable test file with a test/spec token in its path, committed alongside the fix",
+      "verdict": "fail",
+      "evidence": "`find . -iname '*test*' -o -iname '*spec*'` in the workdir returned nothing; `git status --short` shows only ` M src/pricing.js` and git log head is still `96eca84 add pricing module`. Agent's own message: \"I wrote a throwaway assertion script at /tmp/pricing-test.js ... so I kept it out of the tree.\""
+    },
+    {
+      "criterion": "Harness-agnostic: reproduction via native tool or shell node/npm both count",
+      "verdict": "pass",
+      "evidence": "Reproduction was a shell `node -e` Bash tool call, which counts per this criterion; graded as such above."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi"
+    ]
+  },
+  "duration_ms": 192866,
+  "usage": {
+    "inputTokens": 48,
+    "outputTokens": 4575,
+    "cacheCreationInputTokens": 30172,
+    "cacheReadInputTokens": 308939,
+    "turns": 24
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

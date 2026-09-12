@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Explored the repo: [38;5;153mreportkit[39m is a small Click CLI ([38;5;153mcli.py[39m) with one [38;5;153msummarize[39m command that renders [38;5;153mdaily_rows[39m through
+  [38;5;153mrender_text[39m and echoes it. [38;5;153msummarize.py[39m holds the only renderer; [38;5;153mstore.py[39m is Postgres-only.
+
+  [1mClassification: bounded.[0m The flow you're changing — fetch rows, render, emit — already exists here, and export is a
+  second emit path on it. So I'll ask a few questions and present a short design in chat rather than write a spec file.
+  Say the word if you'd rather I treat it as architectural.
+
+  First fork, and it's the one that matters most:
+
+  [1mThe fork:[0m whether the exported file is the [3msame bytes[0m [38;5;153msummarize[39m prints, or a [3mdifferent, structured[0m rendering.
+
+  - [1mSame plain text[0m — [38;5;153mexport[39m is just [38;5;153msummarize[39m with a destination. Nothing new in [38;5;153msummarize.py[39m, no format flag, one
+    test. Costs you nothing now; if a consumer later wants CSV/JSON you add a format flag then, and the plain-text
+    output is already the de facto contract you'd have to keep.
+  - [1mStructured (CSV or JSON)[0m — [38;5;153msummarize.py[39m grows a second renderer and [38;5;153mexport[39m takes [38;5;153m--format[39m. Buys machine-readable
+    output for whatever reads the file. Costs a format decision now, and the file format becomes a contract that's
+    awkward to change once something downstream parses it.
+
+  [1mRecommendation: same plain text.[0m Nothing in the repo suggests a machine consumer yet — the summary is described as
+  what "the cron job emails" — and adding [38;5;153m--format[39m later is a purely additive change. Picking a structured format now
+  means guessing at a consumer you don't have.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Format [39m[49m
+
+[1m[38;5;231mWhat should the exported file contain?[0m
+
+  [38;5;246m1.[39m Same plain text (Recommended)
+     [38;5;246mWrite exactly what `summarize` prints. No new renderer, no --format flag. Add formats later if a consumer appears.[39m
+  [38;5;246m2.[39m Structured CSV
+     [38;5;246mNew render_csv in summarize.py; export writes account_id,cents rows for spreadsheet/downstream use.[39m
+  [38;5;246m3.[39m Structured JSON
+     [38;5;246mNew render_json in summarize.py; export writes rows plus total as JSON for programmatic consumers.[39m
+  [38;5;246m4.[39m Text + --format flag now
+     [38;5;246mPlain text default, but build the --format switch and at least one structured renderer up front.[39m
+[38;5;153m❯[39m [38;5;246m5. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m
