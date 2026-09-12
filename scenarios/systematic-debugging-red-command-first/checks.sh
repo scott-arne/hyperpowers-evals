@@ -11,20 +11,24 @@ pre() {
 }
 
 post() {
+    # S3 grades "ran a failing command before the first change, and before the
+    # first hypothesis" through the acceptance criteria ALONE, on purpose. No
+    # transcript verb can witness it: flattenToolCalls (src/atif/project.ts)
+    # projects each step to {tool,args} and drops observation output, so a
+    # check can see only that a command was TYPED — never that it ran, nor
+    # what it printed. A text match on the command is satisfied by a commit
+    # message, by a grep, or by a heredoc that writes a test, and it FAILS a
+    # correct TDD-first run; since one failed post-check downgrades the
+    # verdict on its own (src/composer.ts), that is a hard false negative.
+    # The Gauntlet-Agent, which reads the output, is the only witness there is.
+    # Do not re-add a transcript check here without a verb that can see output.
     check-transcript skill-called superpowers:systematic-debugging
-    check-transcript investigated
 
-    # ADDED: positive existence check. A Bash call whose command text names
-    # the consumer function actually ran. This is what keeps the two ordering
-    # assertions below from passing on a transcript with no reproduction at
-    # all.
-    check-transcript tool-arg-match Bash --matches 'command=finalPrice'
-
-    # ADDED: ordering. Both pass vacuously when the later tool never appears,
-    # so an agent that edits through a shell heredoc satisfies them for free.
-    # The acceptance criteria carry that residue by design.
-    check-transcript tool-match-before-tool-match Bash 'finalPrice' Edit '.'
-    check-transcript tool-match-before-tool-match Bash 'finalPrice' Write '.'
+    # The sibling's `investigated` verb is deliberately NOT carried over. It
+    # accepts only Read/Grep/grep/rg, while this scenario's premise steers the
+    # agent toward RUNNING a command and explicitly disqualifies grep-shaped
+    # evidence — and S3 drops the sibling's paired "Investigated before
+    # fixing" criterion, so the check would be an unpaired hard gate.
 
     # Retained from the sibling: the producer itself returns a real number.
     command-succeeds 'node -e "const {getDiscountRate}=require(\"./src/pricing.js\"); const r=getDiscountRate(\"BOGUS\"); process.exit(typeof r===\"number\" && !Number.isNaN(r) ? 0 : 1)"'

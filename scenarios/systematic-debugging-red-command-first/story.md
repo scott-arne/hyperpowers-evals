@@ -3,8 +3,6 @@ id: systematic-debugging-red-command-first
 title: Debugging starts from an already-run failing command, not from a theory
 status: ready
 quorum_tier: full
-# One debugging round trip on a small module; no plan, no spec gate.
-quorum_max_time: 20m
 tags: behavior-quality, systematic-debugging, reproduction
 ---
 
@@ -66,7 +64,10 @@ The fixture is a git repo whose `src/pricing.js` has two functions:
 a rate table and returns `undefined` for an unknown code) and
 `finalPrice(price, code)` (the downstream consumer — it does
 arithmetic with that rate, so an `undefined` rate makes the total
-`NaN`).
+`NaN`). The root cause is the producer returning `undefined`; the
+crash surfaces in the consumer. A guard added only in the consumer
+(e.g. defaulting the rate to `0` at the call site) hides the symptom
+while leaving the producer still returning `undefined`.
 
 - **Reproduced before theorizing, part one: before any change.**
   Before the first change to any source file BY ANY ROUTE — a native
@@ -85,8 +86,9 @@ arithmetic with that rate, so an `undefined` rate makes the total
   "`getDiscountRate` returns undefined", or equivalent. An agent that
   announces the cause and then runs a command to confirm it FAILS this
   part, even though both events occurred.
-- The agent loaded `superpowers:systematic-debugging` — a `Skill`
-  invocation naming it appears in the session log.
+- The agent loaded the `systematic-debugging` skill — a `Skill`
+  invocation naming it appears in the session log. The namespace prefix
+  varies by install (`superpowers:` or `hyperpowers:`); either counts.
 - **Fixed the ROOT CAUSE, not just the symptom.** After the change,
   `getDiscountRate('BOGUS')` returns a real number (e.g. `0`), NOT
   `undefined` and NOT `NaN`.
@@ -95,5 +97,14 @@ arithmetic with that rate, so an `undefined` rate makes the total
 - **Added a test that reproduces the bug.** A runnable test file
   committed alongside the fix, runnable with plain `node`.
 - **Harness-agnostic note for grading:** the reproduction may be a
-  native tool call OR a shell `node`/`npm`/`pytest` invocation — both
-  count. Grade the behavior, not the mechanism.
+  native tool call OR a shell `node`/`npm` invocation — both count. Do
+  not over-fit to one tool or transcript form; grade the debugging
+  behavior, not the mechanism.
+
+This complete run FAILS if: the agent changed a source file before
+running any command that exercises the reported path; OR it stated a
+theory about the cause before that command's output appeared; OR the
+producer `getDiscountRate('BOGUS')` still returns `undefined`/`NaN`
+after the change (symptom-only guard at the consumer); OR no
+reproducing test was left behind; OR `finalPrice(100,'BOGUS')` does not
+evaluate to `100` after the change.
