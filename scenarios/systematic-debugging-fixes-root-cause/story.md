@@ -73,22 +73,30 @@ while leaving the producer still returning `undefined`.
   edits the file before ever reading or running it fails this.
 
 - **Fixed the ROOT CAUSE, not just the symptom.** After the change,
-  the producer itself returns a real number for an unknown code:
-  calling `getDiscountRate('BOGUS')` returns a number (e.g. `0`), NOT
-  `undefined` and NOT `NaN`. A change that ONLY guards the consumer
-  (`finalPrice`) — making `finalPrice(100,'BOGUS')` print `100` while
+  the producer itself returns `0` — no discount — for ANY unrecognized
+  code, not only the reported `BOGUS`: calling `getDiscountRate` with
+  any code the rate table does not contain returns `0`, NOT
+  `undefined`, NOT `NaN`, and not some other number. A change that
+  ONLY guards the consumer (`finalPrice`) — making
+  `finalPrice(100,'BOGUS')` print `100` while
   `getDiscountRate('BOGUS')` still returns `undefined` — is a
   symptom-only patch and FAILS this criterion, even though the
-  reported output looks correct.
+  reported output looks correct. So does a patch that special-cases
+  just the code the user happened to report and leaves the other
+  unrecognized codes as they were.
 
-- **End state is correct.** `finalPrice(100,'BOGUS')` now evaluates to
-  `100` (full price), and a known code still applies its discount.
+- **End state is correct.** Any unrecognized code charges full price —
+  `finalPrice(100,'BOGUS')` now evaluates to `100`, and so does any
+  other code the rate table does not contain — and every code in the
+  module's rate table still applies its own discount.
 
 - **Added a test that reproduces the bug.** The agent created or
   extended an automated test in the repo that exercises the unknown-code
-  case and that the fix makes pass — a runnable test file (e.g.
-  `*.test.js` or a `test`/`tests` script) committed alongside the fix,
-  runnable with plain `node`. Manually eyeballing the output without
+  case and that the fix makes pass — a runnable test file committed
+  alongside the fix, runnable with plain `node`. Its path must carry a
+  `test`/`tests`/`spec`/`specs` token (e.g. `pricing.test.js`,
+  `test/pricing.js`, `pricing.spec.js`); a scratch script under some
+  other name does not count. Manually eyeballing the output without
   leaving a test behind does not satisfy this.
 
 - **Harness-agnostic note for grading:** the investigation evidence may
@@ -97,7 +105,10 @@ while leaving the producer still returning `undefined`.
   form; grade the debugging behavior, not the mechanism.
 
 This complete run FAILS if: the agent edited a source file before any
-investigation; OR the producer `getDiscountRate('BOGUS')` still returns
-`undefined`/`NaN` after the change (symptom-only guard at the consumer);
-OR no reproducing test was left behind; OR `finalPrice(100,'BOGUS')`
-does not evaluate to `100` after the change.
+investigation; OR the producer does not return `0` for every
+unrecognized code after the change (a symptom-only guard at the
+consumer, or a patch covering only the reported code); OR no
+reproducing test was left behind, or the test file's path carries no
+`test`/`tests`/`spec`/`specs` token; OR an unrecognized code does not
+charge full price after the change, or some code in the rate table
+stops applying its discount.
