@@ -216,9 +216,9 @@ model-behavior risk — Opus not auto-triggering brainstorming — did not
 materialize here; the scenario names the skill in the user message, and the
 agent invoked `hyperpowers:brainstorming` as its first tool call every time.
 
-## Five mechanical changes to the copied run directories
+## Six mechanical changes to the copied run directories
 
-The runs were copied whole from `results/`, then five changes were made so the
+The runs were copied whole from `results/`, then six changes were made so the
 copies could actually be committed. None of them touches a JSON or log
 artifact, and none affects anything cited above.
 
@@ -254,6 +254,15 @@ artifact, and none affects anything cited above.
    `home/.npm/_npx/` manifests stay — they are small and they record the eslint
    invocation the S2 reviewers discuss. `scripts/strip-runs` does not cover
    either cache path, so this has to be done by hand until it does.
+6. `home/.claude/sessions/` is deleted from every run that had one — eight
+   files across four runs. Each pair is a Claude IPC session lock: a `.json`
+   naming the pid, session id and working directory, and a `.key` holding
+   `peerToken`, `procStart` and `pidDomain`, where `peerToken` is a
+   32-character bearer-shaped credential for the local messaging socket. They
+   are runtime state of the machine that ran the arm, not evidence about it,
+   nothing here cites them, and this repository's remote is public. Removed
+   after the Codex gate raised them, in the same commit that removes the four
+   in Task 9's hardened arm; nothing else in this arm changed.
 
 ## Adjudication and routing
 
