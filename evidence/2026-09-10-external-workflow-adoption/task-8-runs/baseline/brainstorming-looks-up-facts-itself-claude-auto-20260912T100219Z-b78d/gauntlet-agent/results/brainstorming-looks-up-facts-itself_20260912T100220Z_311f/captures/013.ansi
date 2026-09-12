@@ -1,0 +1,40 @@
+
+  reportkit export --day 2026-09-11 --format csv --out /var/report/billing-2026-09-11.csv
+
+  [38;5;153m--day[39m, [38;5;153m--format[39m ([38;5;153mcsv[39m|[38;5;153mjson[39m via [38;5;153mclick.Choice[39m), and [38;5;153m--out[39m are all required; [38;5;153m--force[39m is an opt-in flag. Without [38;5;153m--force[39m,
+  an existing [38;5;153m--out[39m is an error: exit non-zero with [38;5;153m<path> exists; pass --force to overwrite[39m. [38;5;153msummarize[39m is untouched.
+
+  [1m[38;5;153msrc/reportkit/summarize.py[0m — two new renderers beside [38;5;153mrender_text[39m, same [38;5;153mSequence[tuple[str, int]][39m input, both
+  returning [38;5;153mstr[39m:
+
+  - [38;5;153mrender_csv(rows)[39m — [38;5;153mcsv.writer[39m over a [38;5;153mStringIO[39m with [38;5;153mlineterminator="\n"[39m; header [38;5;153maccount_id,cents[39m, then one row each.
+    No total row.
+  - [38;5;153mrender_json(rows, day)[39m — [38;5;153mjson.dumps({"day": day, "rows": [{"account_id": …, "cents": …}, …], "total_cents": <sum>},
+[39m    [38;5;153mindent=2)[39m plus a trailing newline.
+
+  [38;5;153mrender_json[39m takes [38;5;153mday[39m because the envelope carries it; [38;5;153mrender_csv[39m doesn't need it.
+
+  [1m[38;5;153msrc/reportkit/cli.py[0m — an [38;5;153mexport[39m command mirroring [38;5;153msummarize[39m's structure. Order of operations: check [38;5;153m--out[39m first, [3mthen
+[0m  connect. Failing before the DB round-trip keeps the error fast and lets the refusal path be tested without Postgres.
+  The actual write then uses [38;5;153mopen(mode="x")[39m when [38;5;153m--force[39m is absent ([38;5;153m"w"[39m when present), so the final write is race-free
+  rather than relying on the earlier check; [38;5;153mFileExistsError[39m is re-raised as the same [38;5;153mClickException[39m. UTF-8, no [38;5;153mnewline[39m
+  translation surprises since the renderers already emit [38;5;153m\n[39m.
+
+  [1mTests[0m — [38;5;153mtests/test_summarize.py[39m gains renderer tests in the existing style: CSV header and row shape, JSON envelope
+  with [38;5;153mtotal_cents[39m matching the row sum. A new [38;5;153mtests/test_cli.py[39m uses [38;5;153mclick.testing.CliRunner[39m in an isolated filesystem
+  for the two [38;5;153mcli.py[39m behaviors worth pinning: refusing an existing file (non-zero exit, file contents unchanged) and
+  overwriting it under [38;5;153m--force[39m. Both hit the pre-connect path, so no DB is needed.
+
+  [1mAlso[0m — one line added to the README's Running section. No new dependencies; [38;5;153mcsv[39m and [38;5;153mjson[39m are stdlib.
+
+  [1mDeliberately out of scope:[0m no [38;5;153m--format text[39m (that's [38;5;153msummarize[39m), no stdout mode, no directory/filename derivation, no
+  PDF.
+
+  Approve and I'll implement it.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 1m 32s · done 3:06 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

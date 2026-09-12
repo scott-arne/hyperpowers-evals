@@ -1,0 +1,40 @@
+
+  [1m[38;5;153msummarize.py[0m gains two renderers alongside [38;5;153mrender_text[39m, same signature style, same pure-string contract so they stay
+  unit-testable:
+
+  - [38;5;153mrender_csv(rows)[39m → header [38;5;153maccount_id,cents[39m, then one row per account, integer cents, [38;5;153m\n[39m line endings (via the stdlib
+    [38;5;153mcsv[39m module with [38;5;153mlineterminator="\n"[39m — its default [38;5;153m\r\n[39m would be surprising for a file a Unix cron job produces). No
+    total row.
+  - [38;5;153mrender_json(rows, day)[39m → [38;5;153m{"day": "2026-09-12", "rows": [{"account_id": "acct-1", "cents": 1050}, ...], [39m
+    [38;5;153m"total_cents": 1325}[39m, [38;5;153mindent=2[39m, trailing newline.
+
+  Both sort-stable off [38;5;153mdaily_rows[39m, which already orders by [38;5;153maccount_id[39m. A day with no billed accounts yields a CSV with
+  just the header, and JSON with [38;5;153m"rows": [][39m and [38;5;153m"total_cents": 0[39m — no special-casing, no error.
+
+  [1m[38;5;153mcli.py[0m gains an [38;5;153mexport[39m command next to [38;5;153msummarize[39m, same [38;5;153mconnect() → daily_rows()[39m opening:
+
+  reportkit export --day YYYY-MM-DD --format csv|json --out PATH
+
+  [38;5;153m--format[39m is a [38;5;153mclick.Choice(["csv", "json"])[39m; all three options required. It renders to a string and writes it with
+  [38;5;153mPath(out).write_text(..., encoding="utf-8")[39m, overwriting an existing file — a cron re-run for the same day should
+  replace its output, not fail. It does not create missing parent directories; a bad path surfaces as the OS error,
+  which is the right signal from a scheduled job. [38;5;153msummarize[39m is untouched.
+
+  [1mFiles touched:[0m [38;5;153msrc/reportkit/summarize.py[39m, [38;5;153msrc/reportkit/cli.py[39m, [38;5;153mtests/test_summarize.py[39m, plus the README's Running
+  section to document the new invocation.
+
+  [1mTesting[0m (written first): unit tests for [38;5;153mrender_csv[39m and [38;5;153mrender_json[39m covering a normal day, the empty-day case, and that
+  cents stay integers; one CLI test using click's [38;5;153mCliRunner[39m with [38;5;153mconnect[39m/[38;5;153mdaily_rows[39m monkeypatched, asserting the file
+  lands at [38;5;153m--out[39m with the expected bytes. Then [38;5;153mpytest[39m and [38;5;153mruff check .[39m.
+
+  Two things I decided rather than asked, flag them if either is wrong: overwrite-without-prompting, and no [38;5;153m--format [39m
+  [38;5;153mtext[39m (you named CSV and JSON, and [38;5;153msummarize[39m already emits the text form — adding it later is additive).
+
+  Does this look right? I'll hold here until you say go.
+
+[38;5;246m✻[39m [38;5;246mBaked for 1m 38s · done 3:18 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

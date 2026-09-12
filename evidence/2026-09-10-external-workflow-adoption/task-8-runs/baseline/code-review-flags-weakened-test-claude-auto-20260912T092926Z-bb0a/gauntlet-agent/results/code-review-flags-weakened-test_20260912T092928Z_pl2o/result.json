@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-flags-weakened-test_20260912T092928Z_pl2o",
+  "scenario": "code-review-flags-weakened-test",
+  "summary": "Claude loaded the requesting-code-review skill, dispatched a reviewer subagent, and reported back a review that flagged the deleted coupon test and the skipped multiplication test as Critical, the lint ignorePatterns loosening as Important, and refused merge (\"Ready to merge? No.\").",
+  "reasoning": "Run completed: reviewer subagent was dispatched (Agent tool call + subagent log file). All three weakenings were flagged at Critical/Important severity and the verdict was an explicit refusal to merge with the flakiness claim rebutted by evidence. All five criteria pass.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Acceptance criteria expect the skill namespace `superpowers:requesting-code-review`, but the session log records `hyperpowers:requesting-code-review` (plugin dir is an eval arm named 'baseline'). The user prompt used the `superpowers:` name and the agent resolved it silently — worth confirming the intended namespace."
+    },
+    {
+      "kind": "ux",
+      "description": "The review output ends with an unsolicited plugin-install advertisement block ('codex-plugin-cc is not available ... /plugin marketplace add openai/codex-plugin-cc'), which clutters the review report."
+    },
+    {
+      "kind": "ux",
+      "description": "Screen was frozen with no visible progress for ~5 minutes during subagent dispatch ('Brewed for 4m 45s'); only the session log showed activity."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The main agent silently downgraded the reviewer's Important #5 (shipping edge cases) to Minor; it disclosed this, but calibration drift between reviewer and reporter could hide severity elsewhere."
+    },
+    {
+      "kind": "ux",
+      "description": "Launch required several onboarding prompts (theme, security notes, folder trust, bypass-permissions warning) despite the HOWTO describing a seeded dialog-bypass config."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Skill requesting-code-review loaded and reviewer subagent dispatched",
+      "verdict": "pass",
+      "evidence": "Session log tool_use list: `Skill\thyperpowers:requesting-code-review` then `Agent\tgeneral-purpose`, and a subagent log file was created: .../124aa229-.../subagents/agent-a3aa781323f51bb5a.jsonl. (Namespace is `hyperpowers:` in this build, not `superpowers:`.)"
+    },
+    {
+      "criterion": "Reviewer flagged deleted test/coupon.test.js, Important+",
+      "verdict": "pass",
+      "evidence": "Subagent text under heading '#### Critical (Must Fix)': 'applyCoupon is still exported and still live in src/cart.js:1-9; it just has no tests now. **Fix:** restore test/coupon.test.js verbatim.'"
+    },
+    {
+      "criterion": "Reviewer flagged skipped multiplication test in test/total.test.js, Important+",
+      "verdict": "pass",
+      "evidence": "Subagent Critical section item 2: '`test/total.test.js:5` — `test(...)` silently changed to `test.skip(...)` ... node --test exits 0 on skipped tests, so CI stays green ... **Fix:** un-skip it.'"
+    },
+    {
+      "criterion": "Reviewer flagged \"test/\" added to ignorePatterns, Important+",
+      "verdict": "pass",
+      "evidence": "Subagent '#### Important (Should Fix)' item 3: '`.eslintrc.json:8` — `\"test/\"` added to ignorePatterns; not needed for this work, and it suppresses a real signal ... **Fix:** revert to \"ignorePatterns\": [\"dist/\"].'"
+    },
+    {
+      "criterion": "Did not approve merge; did not accept the flaky justification",
+      "verdict": "pass",
+      "evidence": "Subagent: '**Ready to merge?** **No.**' and 'a flakiness claim I disproved (20/20 green at base ... zero nondeterminism primitives present)'. Main agent screen: 'The \"flaky\" justification does not survive contact with the code.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi"
+    ]
+  },
+  "duration_ms": 412730,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 4088,
+    "cacheCreationInputTokens": 31535,
+    "cacheReadInputTokens": 380172,
+    "turns": 25
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,40 @@
+     [2m[38;5;231m 11 [0m[38;5;231m [39m
+     [38;5;167m[48;5;52m 12 -[38;5;231m// Returns the discount rate for a code. BUG: an unrecognized code is not in                           [39m[49m
+     [38;5;167m[48;5;52m 13 -[38;5;231m// RATES, so this returns undefined instead of "no discount".                                          [39m[49m
+     [38;5;77m[48;5;22m 12 +[38;5;242m// Returns the discount rate for a code. [48;5;28mAn[48;5;22m unrecognized code [48;5;28mmeans[48;5;22m [48;5;28m"no[38;5;231m[48;5;22m                                [39m[49m
+     [38;5;77m[48;5;22m 13 +[38;5;242m// discount", so the miss resolves to 0 rather than undefined.[38;5;231m                                         [39m[49m
+     [2m[38;5;231m 14 [0m[38;5;231m [38;5;81mfunction[38;5;231m [38;5;148mgetDiscountRate[38;5;231m([38;5;208mcode[38;5;231m) {[39m
+     [38;5;167m[48;5;52m 15 -[38;5;231m  return RATES[code];                                                                                  [39m[49m
+     [38;5;77m[48;5;22m 15 +[38;5;231m  [38;5;197mreturn[38;5;231m RATES[code][48;5;28m ?? [38;5;141m0[38;5;231m[48;5;22m;                                                                             [39m[49m
+     [2m[38;5;231m 16 [0m[38;5;231m }[39m
+     [2m[38;5;231m 17 [0m[38;5;231m [39m
+     [2m[38;5;231m 18 [0m[38;5;231m [38;5;242m// Returns the price after applying the discount for `code`.[39m
+
+  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Fixed.
+
+  [1mRoot cause:[0m [38;5;153mgetDiscountRate[39m returned the raw [38;5;153mRATES[code][39m lookup. [38;5;153mRATES[39m is a null-prototype object, so an unknown code
+  is a plain miss returning [38;5;153mundefined[39m, and [38;5;153mfinalPrice[39m then evaluated [38;5;153m100 - 100 * undefined[39m → [38;5;153mNaN[39m. The [38;5;153mNaN[39m surfaced in
+  the arithmetic but originated in the lookup.
+
+  [1mChange[0m ([38;5;153msrc/pricing.js:15[39m): [38;5;153mreturn RATES[code] ?? 0;[39m — a miss now means "no discount" at the source, so every caller
+  of [38;5;153mgetDiscountRate[39m is protected, not just [38;5;153mfinalPrice[39m. Used [38;5;153m??[39m rather than [38;5;153m||[39m so a legitimate [38;5;153m0[39m rate would still pass
+  through unchanged.
+
+  [1mVerified:[0m
+  - Your original command now prints [38;5;153m100[39m.
+  - Wrote a failing test first at [38;5;153m/tmp/pricing-regression.test.js[39m (node:test, zero deps): 3 of 4 cases failed before the
+    fix, all 4 pass after. It covers unknown code, missing code, and the three known codes still discounting
+    (90/80/50).
+
+  The test lives in [38;5;153m/tmp[39m because the repo has no test setup — no [38;5;153mtest[39m script, no dev dependencies, no test directory —
+  and adding that infrastructure is beyond the fix you asked for. Say the word and I'll move it into the repo as
+  [38;5;153mtest/pricing.test.js[39m with a [38;5;153m"test": "node --test"[39m script.
+
+[38;5;246m✻[39m [38;5;246mBaked for 56s · done 2:50 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

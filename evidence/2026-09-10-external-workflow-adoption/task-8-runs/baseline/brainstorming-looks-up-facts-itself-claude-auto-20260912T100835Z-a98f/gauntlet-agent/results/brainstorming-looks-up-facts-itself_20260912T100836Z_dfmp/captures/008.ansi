@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m CSV and JSON it is — both, no PDF. That's a bigger surface than text-only, so let me name the consequence:
+  [38;5;153msummarize.py[39m grows from one renderer to three, and [38;5;153mexport[39m needs a format selector. Still bounded — the
+  render-rows-then-emit flow is already here to read, and [38;5;153mcsv[39m/[38;5;153mjson[39m are stdlib so there's no new dependency. But the next
+  question is the one that's genuinely hard to walk back.
+
+  [1mThe fork:[0m what the structured files say a row [3mis[0m. [38;5;153mrender_text[39m currently produces [38;5;153macct-1: 10.50[39m plus a trailing [38;5;153mtotal:
+[39m  [38;5;153m13.25[39m line — display strings, with the total mixed in among the data rows. CSV and JSON can copy that or break from
+  it.
+
+  - [1mInteger cents, total as a separate field[0m — CSV is [38;5;153maccount_id,cents[39m with [38;5;153macct-1,1050[39m and [3mno[0m total row; JSON is
+    [38;5;153m{"day": ..., "rows": [{"account_id": ..., "cents": 1050}], "total_cents": 13325}[39m. Buys lossless values and a clean
+    parse: every CSV line is a real account. Costs you a consumer that has to divide by 100 to display dollars.
+  - [1mMirror the text output[0m — CSV is [38;5;153macct-1,10.50[39m with a [38;5;153mtotal,13.25[39m row; JSON carries the same formatted strings. Buys a
+    file that reads identically to the email. Costs precision (floats/strings instead of the integer the database
+    stores) and makes the CSV's last row a fake account that every parser has to special-case.
+
+  Both are a contract the moment a downstream job reads one, so this is the expensive choice, not a formatting
+  preference.
+
+  [1mMy recommendation: integer cents with the total as a separate field.[0m [38;5;153mstore.daily_rows[39m already hands you integer cents;
+  formatting is a presentation concern that belongs in [38;5;153mrender_text[39m and nowhere else. A [38;5;153mtotal[39m row in a CSV is the
+  classic thing that poisons a spreadsheet import.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Data shape [39m[49m
+
+[1m[38;5;231mWhat shape should the CSV and JSON carry?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mInteger cents (Recommended)[39m
+     [38;5;246mCSV `account_id,cents` with no total row; JSON with a `rows` array and a separate `total_cents`. Lossless, clean to
+[39m     [38;5;246mparse.[39m
+  [38;5;246m2.[39m Mirror the text output
+     [38;5;246mFormatted dollar strings, and a trailing total row in the CSV. Matches the emailed summary exactly.[39m
+  [38;5;246m3.[39m Cents plus a total row
+     [38;5;246mInteger cents, but keep a trailing `total` line in the CSV too, for humans opening the file directly.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

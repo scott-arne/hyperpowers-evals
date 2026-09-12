@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m CSV and JSON it is — noted on PDF.
+
+  That makes the output shape a contract, so the next fork is the one that's expensive to change once something reads
+  it: [1mwhere the total goes.[0m [38;5;153mrender_text[39m appends a [38;5;153mtotal: 13.25[39m line, which is fine for an emailed report but ambiguous
+  for a parser — a naive CSV reader sees it as an account literally named [38;5;153mtotal[39m.
+
+  - [1mOmit it[0m — the file is pure rows; every consumer sums for itself. Cheapest contract, impossible to misparse, and
+    adding a total later is additive for JSON but a breaking shape change for CSV.
+  - [1mSeparate field / trailing row[0m — JSON becomes [38;5;153m{"day": ..., "rows": [...], "total_cents": N}[39m; CSV gets a trailing
+    [38;5;153mtotal,<cents>[39m row. Total travels with the data, and JSON's envelope leaves room for later metadata. The CSV trailing
+    row is the part parsers trip on.
+  - [1mMirror the text output[0m — a row whose account column is the string [38;5;153mtotal[39m. Matches the email exactly; worst option for
+    machines, since it's indistinguishable from data.
+
+  Recommendation: [1momit it from CSV, include it in JSON[0m as [38;5;153mtotal_cents[39m alongside [38;5;153mrows[39m. CSV's value is being a clean table
+  you can load into anything; JSON has an envelope to put a total in without polluting the records. If you'd rather the
+  two formats agree with each other, the separate-field option is the consistent one.
+
+  Also assumed unless you say otherwise: both formats carry [1minteger cents[0m, not formatted dollars — the [38;5;153m/100[39m in
+  [38;5;153mrender_text[39m is a display concern, and exporting [38;5;153m"10.50"[39m invites float rounding downstream.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Total shape [39m[49m
+
+[1m[38;5;231mHow should the daily total appear in the exported CSV and JSON?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mOmit in CSV, field in JSON (Recommended)[39m
+     [38;5;246mCSV is pure account rows; JSON is {"day", "rows", "total_cents"}. Cleanest per-format contract.[39m
+  [38;5;246m2.[39m Separate field/row in both
+     [38;5;246mJSON total_cents plus a trailing total row in CSV. Consistent across formats; the CSV row can confuse parsers.[39m
+  [38;5;246m3.[39m Omit from both
+     [38;5;246mBoth files are just account rows; consumers sum. Smallest contract; adding a total to CSV later is breaking.[39m
+  [38;5;246m4.[39m Mirror the text output
+     [38;5;246mA record with account "total" in both formats. Matches the email exactly; ambiguous for machines.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

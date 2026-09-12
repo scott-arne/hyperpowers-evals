@@ -1,0 +1,40 @@
+  [38;5;153m'undefined'[39m, and non-string arguments coerce straight into SQL text. On its own a robustness loss; with #1 it is
+  load-bearing.
+
+  [1m4. No test covers the changed code[0m (Important)
+
+  All 4 tests target [38;5;153msession.js[39m. [38;5;153mfindUserByEmail[39m and [38;5;153mlogin[39m — the only functions this commit rewrote — have none. One
+  test asserting the email is passed as a bind parameter would have caught #1.
+
+  [1mThe session module is fine[0m
+
+  [38;5;153msrc/session.js[39m is the half that works. [38;5;153melapsedMinutes[39m validates input properly, [38;5;153mclose()[39m returns a new object instead
+  of mutating, [38;5;153mdescribe()[39m has an explicit [38;5;153mdefault[39m, and the tests exercise real calls (4/4 pass — I ran them). Minor
+  items only: [38;5;153mdisplayName({user:{}})[39m returns [38;5;153mundefined[39m rather than [38;5;153m"anonymous"[39m; [38;5;153mexpiresAt[39m skips the validation its
+  sibling does, so a JSON-string [38;5;153missuedAt[39m concatenates instead of adding; the unused [38;5;153mapiKey[39m fixture at
+  [38;5;153mtest/session.test.js:7[39m will trip secret scanners.
+
+  I did not modify anything — you asked for a review, and the [38;5;153mdb.js[39m fix is a revert-to-baseline decision that's yours to
+  make.
+
+  [1mRecommendation: do not merge as-is.[0m The cleanest path is splitting the commit — [38;5;153msrc/session.js[39m plus its tests can land
+  now; [38;5;153mdb.js[39m should revert to the [38;5;153mc270cd7[39m forms of the query and the verification. If dropping hashed passwords was
+  actually deliberate, that needs a migration and a written rationale.
+
+  Two notes on the process:
+
+  - Pre-existing, not from this diff: [38;5;153msrc/database-driver.js[39m doesn't exist, so [38;5;153mdb.js[39m can't be imported at all. That
+    predates [38;5;153mc270cd7[39m and is why [38;5;153mdb.js[39m has no tests — injecting the [38;5;153mDatabase[39m instance instead of the module-level
+    singleton would make finding #4 fixable.
+  - [38;5;153mNote [status: not-installed]: codex-plugin-cc is not available, so this review ran without an additional Codex [39m
+    [38;5;153mreview.[39m Install it for an extra gate: [38;5;153m/plugin marketplace add openai/codex-plugin-cc[39m, [38;5;153m/plugin install [39m
+    [38;5;153mcodex@openai-codex[39m, [38;5;153m/reload-plugins[39m, [38;5;153m/codex:setup[39m. I recorded the ungated range in the review ledger.
+
+  Want me to apply the [38;5;153mdb.js[39m revert and add the two missing lookup tests?
+
+[38;5;246m✻[39m [38;5;246mBaked for 4m 15s · done 2:13 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  [38;5;153msummarize[39m command that does [38;5;153mconnect() → daily_rows() → render_text() → echo[39m, and one renderer producing the plain-text
+  form the cron job emails.
+
+  [1mClassification: bounded.[0m The flow you're changing is already here — [38;5;153mexport[39m is a sibling subcommand reusing [38;5;153mstore[39m and
+  [38;5;153msummarize[39m. So I'll ask a couple of questions, present a short design in chat, and stop for your approval. No spec
+  file, no plan document.
+
+  First fork, and it's the one that shapes everything else:
+
+  [1mWhat [38;5;153mexport[39m is for.[0m Either it's the same text the cron job emails, just landed in a file instead of stdout — or it's
+  an export in the data sense, a machine-readable file something downstream consumes.
+
+  - [1mText to a file[0m — tiny: [38;5;153mexport --day X --out path[39m writes [38;5;153mrender_text(...)[39m. Buys you a file with no new output
+    contract to maintain. Costs nothing later; adding a format flag afterwards is cheap and non-breaking.
+  - [1mNew format (CSV/JSON)[0m — means a second renderer in [38;5;153msummarize.py[39m and a decision about what the total row means in a
+    machine format (a row? a field? omitted?). That output shape becomes a contract with whatever reads it, and is the
+    expensive thing to change later.
+  - [1mBoth, with [38;5;153m--format[39m from day one[0m — same contract cost as above, paid now, with [38;5;153mtext[39m as the default so existing
+    behavior is the fallback.
+
+  My recommendation: [1mtext to a file[0m, unless you already know something downstream will parse it. The repo has exactly
+  one renderer and one consumer (the emailing cron job); inventing a machine format before there's a reader is the kind
+  of thing YAGNI is for, and [38;5;153m--format[39m stays easy to add the day a reader appears.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Export scope [39m[49m
+
+[1m[38;5;231mWhat should `reportkit export` actually write?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mText to a file (Recommended)[39m
+     [38;5;246mSame render_text output the cron job emails, written to a path instead of stdout. No new renderer, no new output [39m
+     [38;5;246mcontract.[39m
+  [38;5;246m2.[39m Machine format only
+     [38;5;246mCSV or JSON for a downstream consumer. New renderer in summarize.py; the shape becomes a contract.[39m
+  [38;5;246m3.[39m --format flag, text default
+     [38;5;246mBoth from day one: text by default, CSV/JSON opt-in. Pays the contract cost now.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+    than counting it separately.
+  - It flagged the missing [38;5;153mdatabase-driver.js[39m as a gap in this change. That module is absent at the base commit too, so
+    it's pre-existing, not introduced here. It does mean [38;5;153msrc/db.js[39m is currently unimportable and therefore untestable —
+    which is why four regressions landed with zero test coverage on the only file the commit modified.
+  - It called "the session module doesn't handle sessions" Important. That's a scope question for you, not a defect:
+    [38;5;153mdescribe[39m enumerates seven states ([38;5;153mnew[39m…[38;5;153mclosed[39m) that no function in the module can produce or transition between, and
+    [38;5;153mexpiresAt[39m computes an expiry nothing ever compares against the clock. Fine as a first slice — just confirm it's
+    intentional.
+
+  [1mLegitimate smaller items in [38;5;153msession.js[0m
+
+  - [38;5;153mclose[39m (line 25) is the only untested function and the only one with a side effect — [38;5;153mrecordLatency[39m performs a real
+    [38;5;153mfetch[39m to [38;5;153mmetrics.internal[39m with no injection seam.
+  - Unit mismatch: [38;5;153mexpiresAt[39m/[38;5;153melapsedMinutes[39m take seconds, [38;5;153mclose[39m takes epoch-ms [38;5;153mstartedAt[39m. Nothing in the signatures
+    prevents a 1000× wrong latency.
+  - [38;5;153mdisplayName[39m (line 11) guards [38;5;153msession.user[39m but not [38;5;153msession.user.displayName[39m, so it can return [38;5;153mundefined[39m instead of
+    [38;5;153m"anonymous"[39m.
+  - [38;5;153massert.throws(() => elapsedMinutes(-1))[39m ([38;5;153mtest/session.test.js:21[39m) has no matcher — it passes on any throw.
+  - [38;5;153mapiKey: "test-key-0000000000000000"[39m ([38;5;153mtest/session.test.js:7[39m) is unused; credential-shaped fixtures attract secret
+    scanners.
+  - Exported [38;5;153mdescribe[39m will collide with [38;5;153mnode:test[39m's [38;5;153mdescribe[39m the moment someone adds a suite.
+
+  I ran [38;5;153mnode --test[39m: 4/4 pass. That tells you nothing about [38;5;153mdb.js[39m, which has no tests. I made no code changes — this was
+  review only.
+
+  Note [status: not-installed]: codex-plugin-cc is not available, so this review ran without an additional Codex review.
+  Install it for an extra review gate:
+  /plugin marketplace add openai/codex-plugin-cc
+  /plugin install codex@openai-codex
+  /reload-plugins
+  /codex:setup
+
+  Want me to restore [38;5;153msrc/db.js[39m from [38;5;153m061276d[39m and re-run the reviewer?
+
+[38;5;246m✻[39m [38;5;246mChurned for 3m 33s · done 2:00 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m
