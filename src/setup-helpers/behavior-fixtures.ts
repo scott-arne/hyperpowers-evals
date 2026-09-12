@@ -864,3 +864,178 @@ export function createCodeReviewWeakenedTests(ctx: HelperContext): void {
     ctx.workdir,
   );
 }
+
+// ─── brainstorming_discoverable_facts ───────────────────────────────
+
+const FACTS_PYPROJECT_TOML = `[project]
+name = "reportkit"
+version = "2.4.0"
+description = "Nightly billing report generator."
+requires-python = ">=3.12"
+dependencies = ["click>=8.1", "psycopg[binary]>=3.2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+reportkit = "reportkit.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reportkit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+`;
+
+const FACTS_README_MD = `# reportkit
+
+Nightly billing report generator.
+
+## Layout
+
+- \`src/reportkit/\` — library and CLI
+- \`tests/\` — pytest suite
+
+## Storage
+
+Reports are read from and written to PostgreSQL. The connection string
+comes from DATABASE_URL. PostgreSQL is the only supported backend; a
+SQLite path was removed in 2.0 and will not come back.
+
+## Running
+
+- Tests: \`pytest\`
+- Lint: \`ruff check .\`
+- CLI: \`reportkit summarize --day YYYY-MM-DD\`
+
+## Scheduling
+
+reportkit is invoked by cron at 02:00 UTC. It is not a long-running
+service and it has no scheduler of its own.
+`;
+
+const FACTS_INIT_PY = `"""Nightly billing report generator."""
+
+__all__ = ["__version__"]
+
+__version__ = "2.4.0"
+`;
+
+const FACTS_STORE_PY = `"""PostgreSQL access for the billing tables."""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Sequence
+
+import psycopg
+
+
+def connect() -> psycopg.Connection:
+    """Open a connection using DATABASE_URL."""
+    return psycopg.connect(os.environ["DATABASE_URL"])
+
+
+def daily_rows(conn: psycopg.Connection, day: str) -> Sequence[tuple[str, int]]:
+    """Return one (account_id, cents) row per billed account for \`day\`."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT account_id, cents FROM billing_daily "
+            "WHERE day = %s ORDER BY account_id",
+            (day,),
+        )
+        return cur.fetchall()
+`;
+
+const FACTS_SUMMARIZE_PY = `"""Summary rendering for the nightly report."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+
+def render_text(rows: Sequence[tuple[str, int]]) -> str:
+    """Render rows as the plain-text summary the cron job emails."""
+    lines = [f"{account}: {cents / 100:.2f}" for account, cents in rows]
+    total = sum(cents for _, cents in rows)
+    lines.append(f"total: {total / 100:.2f}")
+    return "\\n".join(lines)
+`;
+
+const FACTS_CLI_PY = `"""Command-line entry point."""
+
+from __future__ import annotations
+
+import click
+
+from reportkit.store import connect, daily_rows
+from reportkit.summarize import render_text
+
+
+@click.group()
+def main() -> None:
+    """reportkit command-line interface."""
+
+
+@main.command()
+@click.option("--day", required=True, help="Day to summarize, YYYY-MM-DD.")
+def summarize(day: str) -> None:
+    """Print the plain-text summary for one day."""
+    with connect() as conn:
+        click.echo(render_text(daily_rows(conn, day)))
+`;
+
+const FACTS_TEST_SUMMARIZE_PY = `from reportkit.summarize import render_text
+
+
+def test_render_text_totals_the_rows() -> None:
+    out = render_text([("acct-1", 1050), ("acct-2", 275)])
+    assert out.splitlines()[-1] == "total: 13.25"
+`;
+
+// Builds a 3-commit Python project whose pyproject.toml, README, and package
+// layout already answer every question an agent is tempted to ask about the
+// CURRENT system: the Python version, the test runner, the linter, the
+// storage backend, the module names, and whether a scheduler exists. Nothing
+// here is ambiguous. What the repo CANNOT answer is what the new feature
+// should do, and that is what the story's genuine questions cover.
+export function createBrainstormingDiscoverableFacts(ctx: HelperContext): void {
+  ensureWorkdir(ctx.workdir);
+  runGit(['init', '-b', 'main'], ctx.workdir);
+  runGit(['config', 'user.email', 'drill@test.local'], ctx.workdir);
+  runGit(['config', 'user.name', 'Drill Test'], ctx.workdir);
+
+  writeFixtureFile(ctx.workdir, 'pyproject.toml', FACTS_PYPROJECT_TOML);
+  writeFixtureFile(ctx.workdir, 'README.md', FACTS_README_MD);
+  writeFixtureFile(ctx.workdir, 'src/reportkit/__init__.py', FACTS_INIT_PY);
+  runGit(['add', '-A'], ctx.workdir);
+  runGit(['commit', '-m', 'initial: package skeleton'], ctx.workdir);
+
+  writeFixtureFile(ctx.workdir, 'src/reportkit/store.py', FACTS_STORE_PY);
+  writeFixtureFile(
+    ctx.workdir,
+    'src/reportkit/summarize.py',
+    FACTS_SUMMARIZE_PY,
+  );
+  writeFixtureFile(
+    ctx.workdir,
+    'tests/test_summarize.py',
+    FACTS_TEST_SUMMARIZE_PY,
+  );
+  runGit(['add', '-A'], ctx.workdir);
+  runGit(
+    ['commit', '-m', 'add postgres store and summary rendering'],
+    ctx.workdir,
+  );
+
+  writeFixtureFile(ctx.workdir, 'src/reportkit/cli.py', FACTS_CLI_PY);
+  runGit(['add', '-A'], ctx.workdir);
+  runGit(['commit', '-m', 'add summarize subcommand'], ctx.workdir);
+}
