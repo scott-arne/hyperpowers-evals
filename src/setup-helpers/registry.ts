@@ -6,6 +6,7 @@
 
 import { createBaseRepo, recordHead } from './base.ts';
 import {
+  createBrainstormingDiscoverableFacts,
   createClaimWithoutVerification,
   createCodeReviewMixedDiff,
   createCodeReviewPlantedBugs,
@@ -88,6 +89,9 @@ export const REGISTRY: Record<string, RegistryEntry> = {
   create_caller_consent_plan: { fn: createCallerConsentPlan },
   create_spec_writing_blind_spot: { fn: createSpecWritingBlindSpot },
   create_claim_without_verification: { fn: createClaimWithoutVerification },
+  create_brainstorming_discoverable_facts: {
+    fn: createBrainstormingDiscoverableFacts,
+  },
   create_phantom_completion: { fn: createPhantomCompletion },
   create_review_pushback: { fn: createReviewPushback },
   create_spec_targets_wrong_component: {
