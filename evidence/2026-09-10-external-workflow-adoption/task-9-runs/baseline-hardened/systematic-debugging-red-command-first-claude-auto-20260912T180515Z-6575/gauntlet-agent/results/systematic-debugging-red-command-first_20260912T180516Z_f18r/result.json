@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 5,
+  "runId": "systematic-debugging-red-command-first_20260912T180516Z_f18r",
+  "scenario": "systematic-debugging-red-command-first",
+  "summary": "Claude loaded systematic-debugging, reproduced the NaN before any theory or edit, and fixed the root cause (RATES[code] ?? 0). But the reproducing test was written to /tmp/pricing-repro.js instead of a test file in the repo, so no test was committed alongside the fix.",
+  "reasoning": "Six of seven criteria pass; the test-file criterion clearly fails since no test/spec file exists in the repo (verified with ls -R and git status). Per the rules, any failed criterion means the overall verdict cannot be pass.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The reproducing test was left outside the repository (/tmp/pricing-repro.js) and not committed with the fix; it also hardcodes an absolute path to the workdir, making it non-portable."
+    },
+    {
+      "kind": "ux",
+      "description": "Agent justified skipping the in-repo test by saying the repo has no test framework/test dir, and offered to 'promote it into the repo' only if asked — placing the burden on the user."
+    },
+    {
+      "kind": "ux",
+      "description": "Multi-line user input in Claude Code required backslash+Enter per line; plain newlines would have submitted early. Not a defect, but worth noting for driving the TUI."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Ran a repro command showing bad value before first product-code change",
+      "verdict": "pass",
+      "evidence": "Session log: Bash `node -e \"...receipt({id:8812,price:100,code:'BOGUS'})...\"` returned \"Order 8812\\nItem:  $100.00\\nTotal: $NaN\\n---\\nrate(BOGUS) = undefined\"; the Edit to src/pricing.js appears later in the same log."
+    },
+    {
+      "criterion": "Repro output precedes first hypothesis",
+      "verdict": "pass",
+      "evidence": "Before the repro the only assistant text was \"I'll use hyperpowers:systematic-debugging to find the root cause before changing anything.\" and \"Phase 1 — reproduce and trace.\"; the causal statement \"pricing.js:15 — origin: RATES[code] misses...\" comes after the NaN output."
+    },
+    {
+      "criterion": "Loaded systematic-debugging skill",
+      "verdict": "pass",
+      "evidence": "Log entry: TOOL:Skill:{\"skill\":\"hyperpowers:systematic-debugging\"} → \"Launching skill: hyperpowers:systematic-debugging\"."
+    },
+    {
+      "criterion": "Root-cause fix: producer returns 0 for any unknown code",
+      "verdict": "pass",
+      "evidence": "src/pricing.js now `return RATES[code] ?? 0;`; my run of getDiscountRate('ZZZ') printed 0."
+    },
+    {
+      "criterion": "End state correct: unknown code full price, known codes still discounted",
+      "verdict": "pass",
+      "evidence": "node -e finalPrice output: `100 90 80 50` for BOGUS/SAVE10/SAVE20/HALFOFF."
+    },
+    {
+      "criterion": "Test file with test/spec token committed alongside fix, runnable with node",
+      "verdict": "fail",
+      "evidence": "`ls -R` in workdir shows only README.md, package.json, src/{checkout,index,pricing,utils}.js; `git status --short` shows only ` M src/pricing.js`. The agent wrote the repro to /tmp/pricing-repro.js and said \"I wrote the failing test as a scratch script at /tmp/pricing-repro.js ... Say the word if you want it promoted into the repo as a real test file.\""
+    },
+    {
+      "criterion": "Harness-agnostic grading (shell node repro counts)",
+      "verdict": "pass",
+      "evidence": "Repro was a shell `node -e` Bash invocation, counted as valid per this criterion."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 248191,
+  "usage": {
+    "inputTokens": 84,
+    "outputTokens": 4663,
+    "cacheCreationInputTokens": 38730,
+    "cacheReadInputTokens": 611999,
+    "turns": 42
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,40 @@
+     [38;5;167m[48;5;52m 12 -[38;5;231m// Returns the discount rate for a code. BUG: an unrecognized code is not in                           [39m[49m
+     [38;5;167m[48;5;52m 13 -[38;5;231m// RATES, so this returns undefined instead of "no discount".                                          [39m[49m
+     [38;5;77m[48;5;22m 12 +[38;5;242m// Returns the discount rate for a code. [48;5;28mAn[48;5;22m unrecognized code [48;5;28mmeans[48;5;22m [48;5;28m"no[38;5;231m[48;5;22m                                [39m[49m
+     [38;5;77m[48;5;22m 13 +[38;5;242m// discount", so the lookup is total: every code maps to a number.[38;5;231m                                     [39m[49m
+     [2m[38;5;231m 14 [0m[38;5;231m [38;5;81mfunction[38;5;231m [38;5;148mgetDiscountRate[38;5;231m([38;5;208mcode[38;5;231m) {[39m
+     [38;5;167m[48;5;52m 15 -[38;5;231m  return RATES[code];                                                                                  [39m[49m
+     [38;5;77m[48;5;22m 15 +[38;5;231m  [38;5;197mreturn[38;5;231m RATES[code][48;5;28m ?? [38;5;141m0[38;5;231m[48;5;22m;                                                                             [39m[49m
+     [2m[38;5;231m 16 [0m[38;5;231m }[39m
+     [2m[38;5;231m 17 [0m[38;5;231m [39m
+     [2m[38;5;231m 18 [0m[38;5;231m [38;5;242m// Returns the price after applying the discount for `code`.[39m
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Fixed.
+
+  [1mRoot cause:[0m [38;5;153mgetDiscountRate[39m ([38;5;153msrc/pricing.js:15[39m) was a [3mpartial[0m lookup — [38;5;153mRATES[code][39m returns [38;5;153mundefined[39m for a code that
+  isn't in the table. [38;5;153mfinalPrice[39m then computed [38;5;153mprice - price * undefined[39m, which is [38;5;153mNaN[39m, and [38;5;153mcheckout.js:11[39m rendered that
+  NaN straight onto the receipt. The [38;5;153m__proto__: null[39m on [38;5;153mRATES[39m guarantees the miss is a clean [38;5;153mundefined[39m rather than an
+  inherited [38;5;153mObject[39m member, so the miss always reaches the arithmetic.
+
+  [1mFix:[0m one line at the origin — [38;5;153mRATES[code] ?? 0[39m, making the lookup total so an unknown code means "no discount." I did
+  not patch [38;5;153mfinalPrice[39m or the receipt formatting; those were downstream symptoms, and guarding there would have left
+  [38;5;153mgetDiscountRate[39m still handing [38;5;153mundefined[39m to any future caller.
+
+  [1mVerified:[0m
+  - Original repro now prints [38;5;153mTotal: $100.00[39m.
+  - Known codes unchanged: [38;5;153mSAVE10[39m → 90, [38;5;153mSAVE20[39m → 80, [38;5;153mHALFOFF[39m → 50.
+  - Edge cases covered: [38;5;153mundefined[39m code → 0, and [38;5;153m'toString'[39m → 0 (the null prototype prevents an inherited-member hit).
+  - [38;5;153mnode src/index.js[39m still runs.
+
+  The repo has no test framework or test directory, so I wrote the failing test as a scratch script at
+  [38;5;153m/tmp/pricing-repro.js[39m rather than inventing a testing convention. It failed before the fix ([38;5;153mundefined !== 0[39m) and
+  passes after. Say the word if you want it promoted into the repo as a real test file.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 1m 10s · done 11:08 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

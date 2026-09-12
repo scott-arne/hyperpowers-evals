@@ -1,0 +1,40 @@
+  - [1mText only[0m — smallest change: [38;5;153mexport[39m reuses [38;5;153mrender_text[39m verbatim, writes bytes to a path. Cheap now, and adding
+    CSV/JSON later is easy since there's exactly one renderer to generalize.
+  - [1mText + CSV[0m — needs a format flag and a second renderer; CSV of [38;5;153m(account_id, cents)[39m is what a spreadsheet or a
+    downstream loader wants. Costs a small dispatch layer now.
+  - [1mText + CSV + JSON[0m — widest; JSON is the one that locks in a [3mschema[0m (field names, cents vs. dollars, whether the
+    total is a row or a top-level key). That schema is the expensive-to-change part — consumers depend on it, unlike a
+    file path or a flag name.
+
+  [1mMy recommendation: text only.[0m Nothing in the repo tells me a machine consumer exists — the cron job emails the text to
+  [38;5;153mbilling-ops@[39m. A format flag added to serve a consumer you actually have beats guessing at a JSON schema now and
+  living with it.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What should `export` be able to write? → CSV and JSON. Not PDF.[39m
+
+  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Codex is on PATH, but I'm skipping the Codex approach gate here — the remaining design space is a subcommand shape and
+  a schema detail, not two materially different architectures. Say the word if you want Codex's take anyway.
+
+  Noted: CSV and JSON, no PDF. Next fork.
+
+  [1mThe fork:[0m who names the output file — the caller, or reportkit. This sets the command signature, and it's the part
+  [38;5;153mdeploy/crontab[39m has to live with. Worth flagging: the cron job runs [38;5;153m/usr/local/bin/reportkit-nightly[39m, which isn't in
+  this repo, so whatever we pick, that wrapper has to be edited by hand to actually use it.
+
+  - [1mExplicit [38;5;153m--out PATH[0m — caller decides everything, including [38;5;153m-[39m for stdout if you want it. Simplest to reason about and
+    to test; the cron wrapper builds the dated filename in shell.
+  - [1m[38;5;153m--out-dir DIR[39m, filename derived[0m — reportkit writes e.g. [38;5;153mbilling-2026-09-11.csv[39m. Cron gets one stable flag and never
+    does date math, but the naming convention becomes a thing consumers depend on, and one-off manual exports get
+    clumsy.
+  - [1mBoth[0m — [38;5;153m--out[39m wins when given, [38;5;153m--out-dir[39m otherwise. Covers both callers at the cost of two flags whose interaction
+    you have to document and test.
+
+  [1mMy recommendation: explicit [38;5;153m--out PATH[39m.[0m Date math in the cron wrapper is one line of shell, and it keeps a filename
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

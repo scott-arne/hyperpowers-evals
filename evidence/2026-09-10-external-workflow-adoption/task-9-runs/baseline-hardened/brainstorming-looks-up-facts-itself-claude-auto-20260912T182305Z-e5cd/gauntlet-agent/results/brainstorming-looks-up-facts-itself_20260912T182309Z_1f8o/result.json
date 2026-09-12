@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-looks-up-facts-itself_20260912T182309Z_1f8o",
+  "scenario": "brainstorming-looks-up-facts-itself",
+  "summary": "Claude loaded the hyperpowers:brainstorming skill, inventoried and read the repo before asking anything, asked only four decision-level questions (format, destination, money representation, total inclusion), then presented a design and stopped for approval without writing code.",
+  "reasoning": "Every acceptance criterion is supported by the session log and screen text: the brainstorming skill was loaded, the repo was read (find + cat of pyproject/README/cli.py/summarize.py/store.py/tests) before the first question, all four questions were genuine decisions, no question required the 'check the repo' reply, and the agent stopped at an approval gate with zero file modifications (git status clean, no Write/Edit tool calls). The only substantive concern is the unasked-and-wrong overwrite default, which is a design-quality observation rather than a criterion failure.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent asserted the overwrite behavior unilaterally ('Overwrites an existing file silently') rather than asking — this was one of the listed genuine decisions (my answer would have been: fail unless --force). It did flag it afterwards as an open item ('the overwrite-silently behavior, which is the one I'd most expect you to push back on'), but the design as presented contradicts what the maintainer wanted and no question was asked."
+    },
+    {
+      "kind": "ux",
+      "description": "In the first AskUserQuestion, 'Plain text' was pre-selected as 'Recommended' even though the user's opening message never mentioned format; choosing 'Type something' required arrowing down past four options — free-text answering is somewhat buried."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's option lists are long and dense (multi-paragraph prose above each question); at 120x40 the earlier reasoning scrolls off so only the tail plus the menu is visible."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code startup required four separate confirmation dialogs (theme, security notes, folder trust, bypass-permissions) before any work could begin."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent loaded the brainstorming skill",
+      "verdict": "pass",
+      "evidence": "Session log tool_use list: `Skill\thyperpowers:brainstorming` (first tool call in 42134cc4-3322-48a4-b3da-896328c3c3fc.jsonl)"
+    },
+    {
+      "criterion": "Zero repo-answerable questions",
+      "verdict": "pass",
+      "evidence": "All 4 AskUserQuestion calls in the log were: 'What should the exported file contain?', 'How should the output destination be specified?', 'How should money be represented in the CSV and JSON output?', 'Should the exported files include the computed total?' — I never had to reply 'You can check the repo for that.' The agent stated repo facts itself (e.g. 'store.daily_rows() hands back (account_id, cents)', 'deploy/crontab invokes /usr/local/bin/reportkit-nightly')."
+    },
+    {
+      "criterion": "Investigated before first question",
+      "verdict": "pass",
+      "evidence": "Log order: Skill, then Bash `find ... -type f -not -path \"*/.git/*\" | head -50`, then Bash `for f in pyproject.toml README.md deploy/crontab docs/adr/0002-storage-backend.md src/reportkit/cli.py ...; do cat \"$f\"; done`, then the first AskUserQuestion."
+    },
+    {
+      "criterion": "Every question was a decision only I can make",
+      "verdict": "pass",
+      "evidence": "The four questions (formats; --out PATH vs --out-dir vs positional; integer cents vs decimal vs float; total in JSON/CSV) are all product/design tradeoffs, each presented with options and a recommendation — none answerable from the repo."
+    },
+    {
+      "criterion": "Presented a design and stopped for approval",
+      "verdict": "pass",
+      "evidence": "Screen: 'Does this look right? I'll wait for your go-ahead before writing anything.' and after my non-approval: 'Sounds good — nothing written, nothing changed. The repo is exactly as you left it.' Log tool counts: 4 AskUserQuestion, 2 Bash, 1 Skill — no Write/Edit; `git status --porcelain` returned empty."
+    },
+    {
+      "criterion": "Harness-agnostic: shell or native tool evidence both count",
+      "verdict": "pass",
+      "evidence": "Investigation evidence here was shell (`find`, `cat` via Bash tool) and was accepted as satisfying criterion 3."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 331114,
+  "usage": {
+    "inputTokens": 84,
+    "outputTokens": 4867,
+    "cacheCreationInputTokens": 28512,
+    "cacheReadInputTokens": 699657,
+    "turns": 42
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

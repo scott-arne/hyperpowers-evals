@@ -1,9 +1,16 @@
 # 2026-09-10 external workflow adoption — eval evidence
 
-Two arms of a before/after comparison over four live scenarios.
+Arms of a before/after comparison over four live scenarios.
 
 - `task-8-runs/baseline/` — hyperpowers at the branch-point commit, before any
   A1-A10 prose exists.
+- `task-9-runs/baseline-hardened/` — the same baseline re-run against the
+  hardened fixture for the three scenarios Task 8 found could not discriminate
+  (`code-review-flags-weakened-test`,
+  `systematic-debugging-red-command-first`,
+  `brainstorming-looks-up-facts-itself`). It supersedes `task-8-runs/baseline/`
+  for exactly those three; Task 8's `code-review-precision-on-mixed-diff`
+  result is unaffected and still stands.
 - `task-19-runs/treatment/` — hyperpowers at the `external-workflow-adoption`
   branch head that ships.
 

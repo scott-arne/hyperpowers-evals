@@ -1,0 +1,40 @@
+  stdout capture.
+
+  [1mClassification: bounded.[0m [38;5;153msummarize[39m already renders and emits a summary; [38;5;153mexport[39m writes the same thing to a file
+  instead. So I'll ask a few questions, present a short design in chat, and stop for your approval — no spec file, no
+  plan document. If the format question turns this into a pluggable-renderer subsystem, I'll say so and upgrade.
+
+  First question, and it's the one that actually shapes the code:
+
+  [1mThe fork:[0m whether [38;5;153mexport[39m is purely a [3mdestination[0m change (same bytes as [38;5;153msummarize[39m, just landing in a file) or also a
+  [3mformat[0m change (a machine-readable rendering that [38;5;153msummarize.py[39m doesn't have yet).
+
+  - [1mPlain text only[0m — reuse [38;5;153mrender_text()[39m as-is, zero new rendering code, one small file-write path. Costs nothing now;
+    if you later want JSON you add it then, and adding a [38;5;153m--format[39m flag to an existing [38;5;153mexport[39m is cheap.
+  - [1mJSON only[0m — implies the consumer is a program, not a person. Needs a new renderer and a decision about
+    cents-vs-dollars in the payload. Ruling out text means the exported file is no longer the thing ops already reads in
+    email.
+  - [1mBoth, via [38;5;153m--format[0m — most flexible, but it's two renderers plus flag plumbing up front, and [38;5;153m--format[39m is the piece
+    that's hard to remove later once someone scripts against it.
+
+  [1mMy recommendation: plain text only.[0m The file's job right now is to be the same artifact the cron mail already carries,
+  just durable on disk. Adding formats is a cheap follow-up; picking a format nobody consumes yet is speculative work,
+  and [38;5;153m--format[39m is the one choice here that's expensive to walk back.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Format [39m[49m
+
+[1m[38;5;231mWhat should the exported file contain?[0m
+
+  [38;5;246m1.[39m Plain text (Recommended)
+     [38;5;246mReuse render_text() exactly — the file matches what the cron email already contains. No new renderer.[39m
+  [38;5;246m2.[39m JSON
+     [38;5;246mNew machine-readable renderer for programmatic consumers. Requires deciding the cents/dollars representation.[39m
+  [38;5;246m3.[39m Both via --format
+     [38;5;246mTwo renderers plus a --format flag on export. Most flexible, most up-front work, hardest to walk back.[39m
+  [38;5;246m4.[39m CSV
+     [38;5;246mNew renderer emitting account,cents rows for spreadsheet or downstream-load use.[39m
+[38;5;153m❯[39m [38;5;246m5. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m
