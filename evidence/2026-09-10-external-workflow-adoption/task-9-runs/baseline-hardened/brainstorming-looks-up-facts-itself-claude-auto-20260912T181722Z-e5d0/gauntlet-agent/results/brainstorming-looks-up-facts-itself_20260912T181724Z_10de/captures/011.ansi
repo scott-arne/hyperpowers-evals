@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Now the one that's genuinely expensive to change, because consumers will depend on it: the JSON payload shape.
+
+  [1mThe fork:[0m whether the export is [3mjust the rows[0m or [3mthe rendered report[0m — i.e. whether the [38;5;153mtotal[39m that [38;5;153mrender_text[39m
+  computes today travels with the data, and whether money crosses the boundary as integer cents or formatted dollars.
+
+  Option A — rows only, cents:
+  [{[36m"account_id"[39m: [31m"acct-1"[39m, [36m"cents"[39m: [32m1050[39m}, {[36m"account_id"[39m: [31m"acct-2"[39m, [36m"cents"[39m: [32m275[39m}]
+  Thinnest. A faithful dump of [38;5;153mdaily_rows[39m. Every consumer re-derives the total, and nothing in the file says which day
+  it covers — a stray file is unidentifiable.
+
+  Option B — envelope with day and total, cents:
+  {[36m"day"[39m: [31m"2026-09-11"[39m, [36m"total_cents"[39m: [32m1325[39m,
+   [36m"accounts"[39m: [{[36m"account_id"[39m: [31m"acct-1"[39m, [36m"cents"[39m: [32m1050[39m}, {[36m"account_id"[39m: [31m"acct-2"[39m, [36m"cents"[39m: [32m275[39m}]}
+  Self-describing and the total agrees with the emailed text by construction, because it comes from the same code path.
+  Costs a few more lines, and it's an object rather than a stream — irrelevant at this size.
+
+  Option C — envelope with formatted dollars: [38;5;153m"total": "13.25"[39m, [38;5;153m"amount": "10.50"[39m. Matches the email exactly, but bakes
+  a presentation decision into a data file, and any consumer doing arithmetic has to parse it back.
+
+  [1mMy recommendation: B, with integer cents.[0m The day field is what makes an exported file self-identifying, the total is
+  already computed so omitting it just invites consumers to disagree with the email, and cents keeps float rounding out
+  of money. Corresponding CSV: header [38;5;153maccount_id,cents[39m, one row per account — no total row, since a [38;5;153mTOTAL[39m pseudo-row is
+  the classic thing that breaks naive loaders. I'd treat that as following from whichever you pick.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ JSON schema [39m[49m
+
+[1m[38;5;231mWhat shape should the JSON export have?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: envelope, cents (Recommended)[39m
+     [38;5;246m{day, total_cents, accounts:[{account_id, cents}]} — self-describing, integer money.[39m
+  [38;5;246m2.[39m A: rows only, cents
+     [38;5;246mBare array of {account_id, cents}. No day, no total.[39m
+  [38;5;246m3.[39m C: envelope, dollar strings
+     [38;5;246mSame envelope but money as "13.25" strings, matching the email text.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

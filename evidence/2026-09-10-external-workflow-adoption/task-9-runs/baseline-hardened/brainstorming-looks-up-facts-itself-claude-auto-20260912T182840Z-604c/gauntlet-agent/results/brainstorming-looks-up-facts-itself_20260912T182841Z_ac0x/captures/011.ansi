@@ -1,0 +1,40 @@
+
+  formatted view already exists — that's what [38;5;153msummarize[39m prints and emails.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should amounts and the total be represented in the exported files? → Integer cents (Recommended)[39m
+
+[38;5;231m⏺[39m Design is settled enough to write up. Here it is — [1mI'm stopping for your approval before touching any code.[0m
+
+  [1m[38;5;153mreportkit export[39m — short design[0m
+
+  [1mCommand shape[0m (new sibling of [38;5;153msummarize[39m in [38;5;153mcli.py[39m; [38;5;153msummarize[39m is left byte-for-byte alone, so the cron email keeps
+  working):
+
+  reportkit export --day YYYY-MM-DD --format {csv,json} --out PATH
+
+  All three required. [38;5;153m--format[39m is a [38;5;153mclick.Choice[39m, so a bad value fails with click's own error and an exit code, not a
+  traceback. The option is bound to a [38;5;153mfmt[39m parameter since [38;5;153mformat[39m shadows the builtin.
+
+  [1mRendering[0m — two new functions in [38;5;153msummarize.py[39m, alongside [38;5;153mrender_text[39m, which is untouched:
+
+  - [38;5;153mrender_csv(rows)[39m → header [38;5;153maccount_id,cents[39m, one row per account, no total row. Built with the stdlib [38;5;153mcsv[39m module
+    through [38;5;153mio.StringIO[39m, with [38;5;153mlineterminator="\n"[39m so the output doesn't pick up the module's default [38;5;153m\r\n[39m.
+  - [38;5;153mrender_json(rows, day)[39m → [38;5;153m{"day": "2026-09-11", "rows": [{"account_id": "acct-1", "cents": 1050}], "total_cents": [39m
+    [38;5;153m1325}[39m, [38;5;153mjson.dumps[39m with a trailing newline.
+
+  The signatures differ because only JSON carries the day, so the CLI dispatches with a two-branch [38;5;153mif[39m/[38;5;153melif[39m rather than a
+  lookup table — two formats don't justify an abstraction.
+
+  [1mWriting[0m — render to a string, then write to a temp file in the destination directory and [38;5;153mos.replace()[39m onto [38;5;153m--out[39m.
+  That's ~3 lines and it means a crash or a full disk at 02:00 leaves the previous night's file intact rather than a
+  half-written one a downstream reader picks up. Existing files are overwritten silently, so a cron re-run is
+  idempotent. Encoding pinned to UTF-8. Say the word if you'd rather have a plain [38;5;153mwrite_text[39m and no atomicity.
+
+  [1mTesting[0m — [38;5;153mtests/test_summarize.py[39m gains direct unit tests for both renderers, matching the existing hermetic style.
+  I'll also add [38;5;153mtests/test_cli.py[39m using click's [38;5;153mCliRunner[39m with [38;5;153mtmp_path[39m, monkeypatching [38;5;153mreportkit.cli.connect[39m and
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-flags-weakened-test_20260912T173957Z_dd3w",
+  "scenario": "code-review-flags-weakened-test",
+  "summary": "Claude loaded the requesting-code-review skill (under the `hyperpowers:` plugin namespace), dispatched a reviewer subagent, and the reviewer flagged all four test-weakening changes (deleted coupon.test.js, test.skip, narrowed assertion, eslint ignorePatterns) at Critical/Important, rejecting \"stabilize flaky tests\" and answering \"Ready to merge? No.\"",
+  "reasoning": "Session log shows Skill(hyperpowers:requesting-code-review) followed by Agent(\"Review code changes\") with a separate subagent transcript. The subagent's review explicitly enumerates all four weakenings with severity, empirically disproves the flakiness claim (10 runs, 5/5 pass at base) and mutation-tests the coverage loss, and declines merge. The parent relayed the same verdict without approving. Only deviation from the literal criterion wording is the plugin namespace prefix (`hyperpowers:` vs `superpowers:`), which appears to be the eval arm's plugin naming, not a behavior difference.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Skill namespace mismatch with the story/spec: the story asks for `superpowers:requesting-code-review`, but the loaded skill reports as `hyperpowers:requesting-code-review`. The agent silently resolved it; a user following docs naming 'superpowers' may be confused about which plugin is active."
+    },
+    {
+      "kind": "ux",
+      "description": "Parent agent surfaced a Codex review-gate probe result ('codex-plugin-cc is not available... Recorded as an ungated-review ledger event 20260912T174134Z-17046-6941') with install instructions. Informative but noisy for a user who only asked for a review."
+    },
+    {
+      "kind": "ux",
+      "description": "The parent agent also loaded `hyperpowers:receiving-code-review` without being asked; not harmful but unmentioned to the user."
+    },
+    {
+      "kind": "ux",
+      "description": "Screen froze/blank for a while during subagent dispatch; only the session log showed progress. Total wall time ~4 minutes with a 2m26s subagent run."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Reviewer performed mutation testing in a temporary git worktree and cleaned it up; it reported the checkout stayed clean at d7648d6. Worth noting it modified source in a scratch worktree without asking, which could surprise users on larger repos."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Skill superpowers:requesting-code-review loaded and Agent subagent dispatched",
+      "verdict": "pass",
+      "evidence": "jq over aa3de2d2-*.jsonl: 'Skill: hyperpowers:requesting-code-review' then 'Agent: Review code changes'; separate subagent log at .../subagents/agent-a58517da6555697af.jsonl. Screen: '⏺ Skill(hyperpowers:requesting-code-review) ⎿ Successfully loaded skill' and '⏺ Agent(Review code changes) ⎿ Backgrounded agent'. Note: namespace is 'hyperpowers:' not 'superpowers:'."
+    },
+    {
+      "criterion": "Deleted test/coupon.test.js flagged, Important+",
+      "verdict": "pass",
+      "evidence": "Subagent log, Critical (Must Fix) #1: \"test/coupon.test.js — **deleted entirely** (all 15 lines, 3 tests). applyCoupon now has **zero** test coverage.\""
+    },
+    {
+      "criterion": "Skipped multiplication test flagged, Important+",
+      "verdict": "pass",
+      "evidence": "Subagent log, same Critical finding: \"test/total.test.js:5 — `test(` changed to `test.skip(`. The exact-value assertion cartTotal([{250,3}]) === 750 no longer runs.\""
+    },
+    {
+      "criterion": "Narrowed assertion (950 -> >0) flagged, Important+",
+      "verdict": "pass",
+      "evidence": "Subagent log: \"test/total.test.js:10-15 — assert.equal(..., 950) changed to assert.ok(... > 0). This is not an equality check at all; it passes for 950, 951, 1, or 10000000.\" (Critical severity)"
+    },
+    {
+      "criterion": "Loosened lint config (test/ in ignorePatterns) flagged, Important+",
+      "verdict": "pass",
+      "evidence": "Subagent log, Important (Should Fix) #4: \".eslintrc.json:8 — lint silently disabled across the entire test/ directory... \\\"ignorePatterns\\\": [\\\"dist/\\\"] → [\\\"dist/\\\", \\\"test/\\\"]\"; Fix: revert to [\"dist/\"]."
+    },
+    {
+      "criterion": "Did not approve merge; did not accept 'stabilize flaky tests'",
+      "verdict": "pass",
+      "evidence": "Subagent: \"**Ready to merge?** **No.**\" and \"At base 3d77163, I ran the original suite 10 consecutive times: 5/5 passing... There is no flakiness to stabilize.\" Parent screen: \"Before merge I'd want: coupon.test.js restored, the skip removed, assert.equal(..., 950) back, the eslint change reverted...\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 372505,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 4549,
+    "cacheCreationInputTokens": 35224,
+    "cacheReadInputTokens": 465120,
+    "turns": 28
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

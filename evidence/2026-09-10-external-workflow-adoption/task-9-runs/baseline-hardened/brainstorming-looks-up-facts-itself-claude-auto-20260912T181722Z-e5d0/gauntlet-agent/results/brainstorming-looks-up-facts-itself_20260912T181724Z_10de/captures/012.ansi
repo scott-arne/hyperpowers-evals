@@ -1,0 +1,40 @@
+  a presentation decision into a data file, and any consumer doing arithmetic has to parse it back.
+
+  [1mMy recommendation: B, with integer cents.[0m The day field is what makes an exported file self-identifying, the total is
+  already computed so omitting it just invites consumers to disagree with the email, and cents keeps float rounding out
+  of money. Corresponding CSV: header [38;5;153maccount_id,cents[39m, one row per account — no total row, since a [38;5;153mTOTAL[39m pseudo-row is
+  the classic thing that breaks naive loaders. I'd treat that as following from whichever you pick.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What shape should the JSON export have? → B: envelope, cents (Recommended)[39m
+
+[38;5;231m⏺[39m Last interface question, then I'll write up the design.
+
+  [1mThe fork:[0m how [38;5;153mexport[39m learns which format to write — you say so, or it reads the extension off [38;5;153m--out[39m.
+
+  - [1mExplicit [38;5;153m--format csv|json[0m — unambiguous and trivially testable; [38;5;153m--out[39m can be anything, including a path with no
+    extension or [38;5;153m-[39m. Costs one more thing to type.
+  - [1mInfer from [38;5;153m--out[39m extension[0m — [38;5;153mreport.csv[39m just works, nothing redundant to type. But [38;5;153m--out report.txt[39m has to either
+    error or guess, and a typo'd extension silently produces the wrong format in an unattended cron job.
+  - [1mInfer, with [38;5;153m--format[39m as an override[0m — ergonomic and escapable, but now two things can specify the format and you
+    need a rule for when they disagree.
+
+  [1mMy recommendation: explicit [38;5;153m--format[39m, required.[0m This runs unattended from cron, where a silent wrong-format write is
+  discovered by whatever consumes the file, hours later. Being required also means no default to change later if a third
+  format ever appears. Inference stays addable as a default-when-omitted.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Format select [39m[49m
+
+[1m[38;5;231mHow should `export` determine the output format?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mRequired --format flag (Recommended)[39m
+     [38;5;246m--format csv|json, always explicit. No guessing in unattended runs.[39m
+  [38;5;246m2.[39m Infer from --out extension
+     [38;5;246mreport.csv writes CSV. Unknown extensions error out.[39m
+  [38;5;246m3.[39m Infer, --format overrides
+     [38;5;246mExtension by default, flag wins when both are given.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

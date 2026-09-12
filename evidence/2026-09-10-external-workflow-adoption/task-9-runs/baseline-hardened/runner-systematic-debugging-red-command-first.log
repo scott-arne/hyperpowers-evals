@@ -1,0 +1,136 @@
+$ bun run src/cli/index.ts run scenarios/systematic-debugging-red-command-first --coding-agent claude-auto --repeat "3"
+run-id: systematic-debugging-red-command-first-claude-auto-20260912T180136Z-d358
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/systematic-debugging-red-command-first-claude-auto-20260912T180136Z-d358
+final     pass
+reason    Gauntlet-Agent passed; 4 post-check(s) passed
+
+─── Gauntlet-Agent ───────────────────────────────
+status    pass
+summary   Claude Code loaded the systematic-debugging skill, reproduced the NaN
+          receipt with a real `node -e` command before stating any
+          theory, wrote a failing test under test/pricing.test.js, then
+          fixed getDiscountRate to return `RATES[code] ?? 0`.
+          finalPrice(100,'BOGUS') now returns 100 and all rate-table
+          codes still discount correctly.
+reasoning Session log shows the ordering: Skill load -> file reads -> `node -e`
+          repro printing "Total: $NaN" -> theory statement -> new test
+          file run red -> Edit to src/pricing.js -> tests green.
+          Verified end state directly on disk.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ requires-tool node
+pre  ✓ git-repo
+pre  ✓ git-branch main
+pre  ✓ git-count commits eq 4
+pre  ✓ file-exists src/pricing.js
+pre  ✓ file-contains src/pricing.js function getDiscountRate
+pre  ✓ file-contains src/pricing.js function finalPrice
+pre  ✓ file-exists src/checkout.js
+pre  ✓ file-contains src/checkout.js function receipt
+pre  ✓ NOT command-succeeds node -e "const {finalPrice}=require(\"./src/pricing.js\"); process.exit(finalPrice(100,\"BOGUS\")===100?0:1)"
+post ✓ skill-called superpowers:systematic-debugging
+post ✓ command-succeeds node -e "const {getDiscountRate}=require(\"./src/pricing.js\"); const bad=[\"BOGUS\",\"ZZTOP\",\"NOPE99\"].filter(c=>getDiscountRate(c)!==0); process.exit(bad.length===0?0:1)"
+post ✓ command-succeeds node -e "const {finalPrice}=require(\"./src/pricing.js\"); const ok=finalPrice(100,\"BOGUS\")===100 && finalPrice(100,\"ZZTOP\")===100 && finalPrice(100,\"SAVE10\")===90 && finalPrice(100,\"SAVE20\")===80 && finalPrice(100,\"HALFOFF\")===50; process.exit(ok?0:1)"
+post ✓ command-succeeds find . -name node_modules -prune -o -name .git -prune -o -name "*.js" -print | grep -qE "(^|/|[-._])(tests|test|specs|spec)[-._/]"
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       3m 37s      363K n/a (claude-opus-5)
+  Coding         1m 19s      352K n/a (claude-opus-5)
+    opus                     352K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+run-id: systematic-debugging-red-command-first-claude-auto-20260912T180515Z-6575
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/systematic-debugging-red-command-first-claude-auto-20260912T180515Z-6575
+final     fail
+reason    Gauntlet-Agent reported fail; 1 post-check(s) failed
+
+─── Gauntlet-Agent ───────────────────────────────
+status    fail
+summary   Claude loaded systematic-debugging, reproduced the NaN before any theory
+          or edit, and fixed the root cause (RATES[code] ?? 0). But the
+          reproducing test was written to /tmp/pricing-repro.js instead
+          of a test file in the repo, so no test was committed alongside
+          the fix.
+reasoning Six of seven criteria pass; the test-file criterion clearly fails since
+          no test/spec file exists in the repo (verified with ls -R and
+          git status). Per the rules, any failed criterion means the
+          overall verdict cannot be pass.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ requires-tool node
+pre  ✓ git-repo
+pre  ✓ git-branch main
+pre  ✓ git-count commits eq 4
+pre  ✓ file-exists src/pricing.js
+pre  ✓ file-contains src/pricing.js function getDiscountRate
+pre  ✓ file-contains src/pricing.js function finalPrice
+pre  ✓ file-exists src/checkout.js
+pre  ✓ file-contains src/checkout.js function receipt
+pre  ✓ NOT command-succeeds node -e "const {finalPrice}=require(\"./src/pricing.js\"); process.exit(finalPrice(100,\"BOGUS\")===100?0:1)"
+post ✓ skill-called superpowers:systematic-debugging
+post ✓ command-succeeds node -e "const {getDiscountRate}=require(\"./src/pricing.js\"); const bad=[\"BOGUS\",\"ZZTOP\",\"NOPE99\"].filter(c=>getDiscountRate(c)!==0); process.exit(bad.length===0?0:1)"
+post ✓ command-succeeds node -e "const {finalPrice}=require(\"./src/pricing.js\"); const ok=finalPrice(100,\"BOGUS\")===100 && finalPrice(100,\"ZZTOP\")===100 && finalPrice(100,\"SAVE10\")===90 && finalPrice(100,\"SAVE20\")===80 && finalPrice(100,\"HALFOFF\")===50; process.exit(ok?0:1)"
+post ✗ command-succeeds find . -name node_modules -prune -o -name .git -prune -o -name "*.js" -print | grep -qE "(^|/|[-._])(tests|test|specs|spec)[-._/]"
+       ↳ exit non-zero: 
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       4m 08s      655K n/a (claude-opus-5)
+  Coding         2m 11s      392K n/a (claude-opus-5)
+    opus                     392K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+run-id: systematic-debugging-red-command-first-claude-auto-20260912T180925Z-5fbb
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/systematic-debugging-red-command-first-claude-auto-20260912T180925Z-5fbb
+final     fail
+reason    Gauntlet-Agent reported fail; 1 post-check(s) failed
+
+─── Gauntlet-Agent ───────────────────────────────
+status    fail
+summary   Claude loaded systematic-debugging, reproduced the NaN receipt with a
+          real command before theorizing, and fixed the root cause in
+          getDiscountRate. But it wrote its reproducing test as a
+          throwaway script at /tmp/pricing-regression.js and deleted it
+          at the end — no test file remains in the repo, so criterion 6
+          fails.
+reasoning Six of seven criteria are satisfied and verifiable in the session log
+          and on disk. Criterion 6 explicitly requires a runnable test
+          file with a test/spec token committed alongside the fix; the
+          agent deliberately deleted its only test script and left no
+          test in the repo, confirmed by a find across the workdir. One
+          criterion failing means the overall verdict is fail.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ requires-tool node
+pre  ✓ git-repo
+pre  ✓ git-branch main
+pre  ✓ git-count commits eq 4
+pre  ✓ file-exists src/pricing.js
+pre  ✓ file-contains src/pricing.js function getDiscountRate
+pre  ✓ file-contains src/pricing.js function finalPrice
+pre  ✓ file-exists src/checkout.js
+pre  ✓ file-contains src/checkout.js function receipt
+pre  ✓ NOT command-succeeds node -e "const {finalPrice}=require(\"./src/pricing.js\"); process.exit(finalPrice(100,\"BOGUS\")===100?0:1)"
+post ✓ skill-called superpowers:systematic-debugging
+post ✓ command-succeeds node -e "const {getDiscountRate}=require(\"./src/pricing.js\"); const bad=[\"BOGUS\",\"ZZTOP\",\"NOPE99\"].filter(c=>getDiscountRate(c)!==0); process.exit(bad.length===0?0:1)"
+post ✓ command-succeeds node -e "const {finalPrice}=require(\"./src/pricing.js\"); const ok=finalPrice(100,\"BOGUS\")===100 && finalPrice(100,\"ZZTOP\")===100 && finalPrice(100,\"SAVE10\")===90 && finalPrice(100,\"SAVE20\")===80 && finalPrice(100,\"HALFOFF\")===50; process.exit(ok?0:1)"
+post ✗ command-succeeds find . -name node_modules -prune -o -name .git -prune -o -name "*.js" -print | grep -qE "(^|/|[-._])(tests|test|specs|spec)[-._/]"
+       ↳ exit non-zero: 
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       4m 03s      408K n/a (claude-opus-5)
+  Coding         1m 30s      434K n/a (claude-opus-5)
+    opus                     434K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+trials: PFF
+error: script "quorum" exited with code 1
+EXIT=1

@@ -1,0 +1,1 @@
+- [reportkit export subcommand design](reportkit-export-subcommand-design.md) — decided-but-unbuilt: CSV/JSON, `--out PATH`, integer-cents schema

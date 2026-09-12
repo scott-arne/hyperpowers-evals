@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 5,
+  "runId": "systematic-debugging-red-command-first_20260912T180926Z_id05",
+  "scenario": "systematic-debugging-red-command-first",
+  "summary": "Claude loaded systematic-debugging, reproduced the NaN receipt with a real command before theorizing, and fixed the root cause in getDiscountRate. But it wrote its reproducing test as a throwaway script at /tmp/pricing-regression.js and deleted it at the end — no test file remains in the repo, so criterion 6 fails.",
+  "reasoning": "Six of seven criteria are satisfied and verifiable in the session log and on disk. Criterion 6 explicitly requires a runnable test file with a test/spec token committed alongside the fix; the agent deliberately deleted its only test script and left no test in the repo, confirmed by a find across the workdir. One criterion failing means the overall verdict is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "No regression test persisted: the agent built a 6-assertion regression script at /tmp/pricing-regression.js, ran it red then green, then deleted it in the same command as `git diff` (`... && rm /tmp/pricing-regression.js`). Nothing testable remains in the repo."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent explicitly justified skipping a committed test ('no test script or test directory, so I added no committed tests... If you'd like a permanent regression test, I can add one under test/ using node's built-in runner — that would be a new pattern for this repo, so I held off'), i.e. it recognized the option and opted out."
+    },
+    {
+      "kind": "ux",
+      "description": "The fix was left uncommitted (git status shows ' M src/pricing.js'), despite prior repo history having commits."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent also verified adjacent unknown-code shapes (undefined code, 'toString') — good coverage that was then thrown away with the temp script."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Ran a reproducing command before any change to src/pricing.js",
+      "verdict": "pass",
+      "evidence": "Session log tool order: Skill, 2 read-only Bash, 4 Reads, then Bash `node -e \"...receipt({id:8812,price:100,code:'BOGUS'})...\"` whose result was 'Order 8812 / Item:  $100.00 / Total: $NaN'; the Edit to src/pricing.js came later (after Write /tmp/pricing-regression.js and `node /tmp/pricing-regression.js; echo \"exit=$?\"` -> exit=1)."
+    },
+    {
+      "criterion": "Repro output precedes first hypothesis",
+      "verdict": "pass",
+      "evidence": "Assistant text before the repro: 'Let me reproduce it before trusting the comment in the source.' The causal statement ('Reproduced. Backward trace... `RATES[code]` returns `undefined` on a lookup miss (**source**)') appears only after the tool_result containing 'Total: $NaN'."
+    },
+    {
+      "criterion": "Loaded systematic-debugging skill",
+      "verdict": "pass",
+      "evidence": "Log: tool_use Skill with input 'hyperpowers:systematic-debugging'; tool_result 'Launching skill: hyperpowers:systematic-debugging' and skill body '# Systematic Debugging'."
+    },
+    {
+      "criterion": "Root-cause fix: producer returns 0 for any unknown code",
+      "verdict": "pass",
+      "evidence": "src/pricing.js now: `const rate = RATES[code]; return rate === undefined ? 0 : rate;`. My own run: getDiscountRate('ZZZ') -> 0."
+    },
+    {
+      "criterion": "End state correct: full price for unknown, table codes still discount",
+      "verdict": "pass",
+      "evidence": "node -e on workdir printed `100 0 90 80 50` for finalPrice(100,'BOGUS'), getDiscountRate('ZZZ'), SAVE10, SAVE20, HALFOFF."
+    },
+    {
+      "criterion": "Added a runnable test file with test/spec token committed alongside the fix",
+      "verdict": "fail",
+      "evidence": "Test was written to /tmp/pricing-regression.js and the final Bash was `git diff && ... && rm /tmp/pricing-regression.js`. `find . -path ./.git -prune -o -iname '*test*' -print -o -iname '*spec*' -print` in the workdir returned nothing; `git status --short` shows only ' M src/pricing.js'. Agent stated: 'I added no committed tests... The temp script is deleted.'"
+    },
+    {
+      "criterion": "Harness-agnostic: repro may be native tool or shell node/npm",
+      "verdict": "pass",
+      "evidence": "Repro was a shell `node -e` Bash call, which counts; graded on behavior not mechanism."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 243516,
+  "usage": {
+    "inputTokens": 54,
+    "outputTokens": 4966,
+    "cacheCreationInputTokens": 25010,
+    "cacheReadInputTokens": 377766,
+    "turns": 27
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

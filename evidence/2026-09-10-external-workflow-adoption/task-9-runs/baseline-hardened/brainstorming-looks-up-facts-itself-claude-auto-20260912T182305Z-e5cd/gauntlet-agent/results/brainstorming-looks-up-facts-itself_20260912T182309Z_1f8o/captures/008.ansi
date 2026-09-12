@@ -1,0 +1,40 @@
+  Still bounded: those are new functions in the module that already owns rendering, not a new subsystem. Noted that
+  plain text isn't on the list for the file; [38;5;153mrender_text()[39m stays as [38;5;153msummarize[39m's job.
+
+  Next fork, and it's coupled to having two formats: [1mhow the destination is named — which also decides whether one run [0m
+  [1mcan emit both formats.[0m
+
+  - [1m[38;5;153m--out PATH[39m (explicit file, one format per run)[0m — [38;5;153mreportkit export --day 2026-09-11 --format csv --out [39m
+    [38;5;153m/var/reports/x.csv[39m. Dead simple, caller controls everything, easy to test. But the nightly job has to invoke [38;5;153mexport[39m
+    twice to get both files, and the cron line carries the naming convention instead of the code.
+  - [1m[38;5;153m--out-dir DIR[39m (derived filenames, can emit both in one run)[0m — writes [38;5;153msummary-2026-09-11.csv[39m / [38;5;153m.json[39m into the
+    directory. One cron invocation produces both; the naming convention lives in the code where it can be tested. Costs
+    you a filename convention that becomes a de-facto interface — downstream scripts will glob it, so it's expensive to
+    change later.
+  - [1mPositional path argument[0m — same shape as [38;5;153m--out[39m, just terser. Same one-format-per-run consequence.
+
+  [1mMy recommendation: [38;5;153m--out PATH[39m.[0m Both files per night is a cron concern, and two crontab lines are cheaper and more
+  visible than a filename convention you can never rename. It also keeps [38;5;153mexport[39m a pure function of its arguments, which
+  is the easy thing to test. If the nightly job turns out to want a single call, adding [38;5;153m--out-dir[39m later is additive and
+  doesn't break [38;5;153m--out[39m.
+
+  Worth flagging now rather than at the end: [38;5;153mdeploy/crontab[39m invokes [38;5;153m/usr/local/bin/reportkit-nightly[39m, a wrapper that
+  isn't in this repo. Whichever option you pick, I can't update the actual nightly invocation from here — I'll note what
+  the wrapper needs to change to.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mHow should the output destination be specified?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153m--out PATH (Recommended)[39m
+     [38;5;246mExplicit file path, one format per invocation. Nightly job calls export twice for both formats.[39m
+  [38;5;246m2.[39m --out-dir DIR
+     [38;5;246mDerived filenames like summary-YYYY-MM-DD.csv/.json. One invocation emits both formats; filename convention becomes
+[39m     [38;5;246man interface.[39m
+  [38;5;246m3.[39m Positional path
+     [38;5;246mreportkit export --day D --format csv /path/out.csv. Same semantics as --out, terser call.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

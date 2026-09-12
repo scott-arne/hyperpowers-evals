@@ -1,0 +1,40 @@
+[38;5;246m  ⎿  [39mAdded [1m3[0m lines, removed [1m3[0m lines
+     [2m[38;5;231m  9 [0m[38;5;231m   [38;5;148mHALFOFF[38;5;231m: [38;5;141m0.5[38;5;231m,[39m
+     [2m[38;5;231m 10 [0m[38;5;231m };[39m
+     [2m[38;5;231m 11 [0m[38;5;231m [39m
+     [38;5;167m[48;5;52m 12 -[38;5;231m// Returns the discount rate for a code. BUG: an unrecognized code is not in                           [39m[49m
+     [38;5;167m[48;5;52m 13 -[38;5;231m// RATES, so this returns undefined instead of "no discount".                                          [39m[49m
+     [38;5;77m[48;5;22m 12 +[38;5;242m// Returns the discount rate for a code. [48;5;28mAn[48;5;22m unrecognized code is not in[48;5;28m RATES,[38;5;231m[48;5;22m                         [39m[49m
+     [38;5;77m[48;5;22m 13 +[38;5;242m// which means no discount rather than an absent rate.[38;5;231m                                                 [39m[49m
+     [2m[38;5;231m 14 [0m[38;5;231m [38;5;81mfunction[38;5;231m [38;5;148mgetDiscountRate[38;5;231m([38;5;208mcode[38;5;231m) {[39m
+     [38;5;167m[48;5;52m 15 -[38;5;231m  return RATES[code];                                                                                  [39m[49m
+     [38;5;77m[48;5;22m 15 +[38;5;231m  [38;5;197mreturn[38;5;231m RATES[code][48;5;28m ?? [38;5;141m0[38;5;231m[48;5;22m;                                                                             [39m[49m
+     [2m[38;5;231m 16 [0m[38;5;231m }[39m
+     [2m[38;5;231m 17 [0m[38;5;231m [39m
+     [2m[38;5;231m 18 [0m[38;5;231m [38;5;242m// Returns the price after applying the discount for `code`.[39m
+
+  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Fixed.
+
+  [1mRoot cause:[0m [38;5;153msrc/pricing.js:15[39m — [38;5;153mgetDiscountRate[39m returned [38;5;153mRATES[code][39m, which is [38;5;153mundefined[39m for any code not in the
+  table. [38;5;153mfinalPrice[39m then computed [38;5;153mprice - price * undefined[39m → [38;5;153mNaN[39m, which [38;5;153mtoFixed(2)[39m rendered as [38;5;153m"NaN"[39m. The [38;5;153mRATES[39m table
+  has a null prototype, so a miss is always a genuine unknown code (even [38;5;153m'toString'[39m misses); the only defect was the
+  absent "no discount" value.
+
+  [1mFix:[0m one change at the source — [38;5;153mreturn RATES[code] ?? 0;[39m. Fixing it in [38;5;153mgetDiscountRate[39m rather than in [38;5;153mfinalPrice[39m means
+  any future caller of the lookup gets a usable number too. Used [38;5;153m??[39m rather than [38;5;153m||[39m so a legitimately zero-valued rate
+  added later would still be honored.
+
+  [1mVerification:[0m Added [38;5;153mtest/pricing.test.js[39m using Node's built-in runner (the repo had no test framework). Tests failed
+  before the fix (3 of 4) and all 4 pass after; the original receipt now prints [38;5;153mTotal: $100.00[39m. Run with [38;5;153mnode --test[39m.
+
+  One note: I didn't add a [38;5;153mtest[39m script to [38;5;153mpackage.json[39m since the repo had no testing setup at all — say the word if you
+  want one wired up.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 1m 4s · done 11:03 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the export destination be specified? → --out PATH (Recommended)[39m
+
+[38;5;231m⏺[39m Last question before I write up the design. This one is the durable part — it's the schema downstream consumers will
+  parse.
+
+  [1mThe fork:[0m how money is represented, and whether the total travels in the file. [38;5;153mstore.py[39m returns integer cents;
+  [38;5;153mrender_text[39m divides by 100 for display. A data file can keep the exact integer or carry the formatted decimal, and a
+  CSV can mirror the emailed report's trailing [38;5;153mtotal:[39m line or stay a clean two-column table.
+
+  - [1mInteger cents, total structural[0m — CSV is [38;5;153maccount_id,cents[39m with a header and no total row; JSON is [38;5;153m{"day", "rows": [39m
+    [38;5;153m[...], "total_cents"}[39m. Exact, no rounding anywhere, and the CSV parses cleanly in every tool. Cost: a spreadsheet
+    user sees [38;5;153m1050[39m, not [38;5;153m10.50[39m, and has to divide.
+  - [1mFormatted decimal strings[0m — [38;5;153m"10.50"[39m everywhere, plus a trailing [38;5;153mtotal[39m row in the CSV so the file reads like the
+    email. Friendliest to a human opening it in Excel. Cost: the total row breaks naive [38;5;153mcsv[39m parsers and pandas (it's not
+    a real record), and you're storing presentation, so re-deriving exact cents means parsing strings back.
+  - [1mBoth columns[0m — [38;5;153maccount_id,cents,amount[39m. Nobody has to convert. Cost: redundant data that can disagree, and a wider
+    schema to keep consistent across two formats.
+
+  [1mMy recommendation: integer cents, total structural.[0m It matches what the database actually holds, it's the
+  representation that can't lose a rounding case, and a total row inside a CSV is a well-known parsing hazard. The
+  formatted view already exists — that's what [38;5;153msummarize[39m prints and emails.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Schema [39m[49m
+
+[1m[38;5;231mHow should amounts and the total be represented in the exported files?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mInteger cents (Recommended)[39m
+     [38;5;246mCSV: account_id,cents with header, no total row. JSON: {day, rows[], total_cents}. Exact; clean to parse.[39m
+  [38;5;246m2.[39m Formatted decimals
+     [38;5;246m"10.50" strings, CSV gets a trailing total row mirroring the emailed text. Human-friendly, parser-hostile.[39m
+  [38;5;246m3.[39m Both columns
+     [38;5;246maccount_id,cents,amount in CSV; both keys in JSON. No conversion needed by anyone, redundant data.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m
