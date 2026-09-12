@@ -70,11 +70,14 @@ crash surfaces in the consumer. A guard added only in the consumer
 while leaving the producer still returning `undefined`.
 
 - **Reproduced before theorizing, part one: before any change.**
-  Before the first change to any source file BY ANY ROUTE — a native
-  `Edit` or `Write`, a shell redirect, a heredoc, `sed -i`, or a patch
-  — the agent itself RAN a command that exercises the reported path,
-  and that command's actual output appears in the session log showing
-  the bad value (`NaN`, a non-zero exit, or a failing assertion). The
+  Before the first change to PRODUCT code — anything under `src/`, BY
+  ANY ROUTE: a native `Edit` or `Write`, a shell redirect, a heredoc,
+  `sed -i`, or a patch — the agent itself RAN a command that exercises
+  the reported path, and that command's actual output appears in the
+  session log showing the bad value (`NaN`, a non-zero exit, or a
+  failing assertion). Creating a NEW test file is not a change to
+  product code: writing a reproducing test and running it red is the
+  textbook way to satisfy this criterion, not a violation of it. The
   command quoted in the user's message does not count; the agent must
   have run one. A described reproduction with no command output does
   not count. A command that only reads, greps, or lists files does not
@@ -101,9 +104,10 @@ while leaving the producer still returning `undefined`.
   not over-fit to one tool or transcript form; grade the debugging
   behavior, not the mechanism.
 
-This complete run FAILS if: the agent changed a source file before
-running any command that exercises the reported path; OR it stated a
-theory about the cause before that command's output appeared; OR the
+This complete run FAILS if: the agent changed product code under
+`src/` before running any command that exercises the reported path; OR
+it stated a theory about the cause before that command's output
+appeared; OR it never loaded the `systematic-debugging` skill; OR the
 producer `getDiscountRate('BOGUS')` still returns `undefined`/`NaN`
 after the change (symptom-only guard at the consumer); OR no
 reproducing test was left behind; OR `finalPrice(100,'BOGUS')` does not
