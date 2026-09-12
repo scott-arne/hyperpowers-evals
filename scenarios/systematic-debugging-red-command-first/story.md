@@ -70,14 +70,16 @@ crash surfaces in the consumer. A guard added only in the consumer
 while leaving the producer still returning `undefined`.
 
 - **Reproduced before theorizing, part one: before any change.**
-  Before the first change to PRODUCT code — anything under `src/`, BY
-  ANY ROUTE: a native `Edit` or `Write`, a shell redirect, a heredoc,
-  `sed -i`, or a patch — the agent itself RAN a command that exercises
-  the reported path, and that command's actual output appears in the
-  session log showing the bad value (`NaN`, a non-zero exit, or a
-  failing assertion). Creating a NEW test file is not a change to
-  product code: writing a reproducing test and running it red is the
-  textbook way to satisfy this criterion, not a violation of it. The
+  Before the first change to PRODUCT code — the pre-existing
+  `src/pricing.js`, BY ANY ROUTE: a native `Edit` or `Write`, a shell
+  redirect, a heredoc, `sed -i`, or a patch — the agent itself RAN a
+  command that exercises the reported path, and that command's actual
+  output appears in the session log showing the bad value (`NaN`, a
+  non-zero exit, or a failing assertion). Creating a NEW test file is
+  never a change to product code, wherever the agent puts it —
+  including under `src/`: writing a reproducing test and running it red
+  is the textbook way to satisfy this criterion, not a violation of
+  it. Only a modification to `src/pricing.js` closes the window. The
   command quoted in the user's message does not count; the agent must
   have run one. A described reproduction with no command output does
   not count. A command that only reads, greps, or lists files does not
@@ -89,9 +91,13 @@ while leaving the producer still returning `undefined`.
   "`getDiscountRate` returns undefined", or equivalent. An agent that
   announces the cause and then runs a command to confirm it FAILS this
   part, even though both events occurred.
-- The agent loaded the `systematic-debugging` skill — a `Skill`
-  invocation naming it appears in the session log. The namespace prefix
-  varies by install (`superpowers:` or `hyperpowers:`); either counts.
+- The agent loaded the `systematic-debugging` skill. Any of these
+  counts, matching what the deterministic check recognizes: a native
+  `Skill` invocation naming it; a shell command that reads
+  `skills/systematic-debugging/SKILL.md`; or a `Read` of that path. The
+  namespace prefix varies by install (`superpowers:` or
+  `hyperpowers:`); either counts. Do not require the native tool form —
+  agents without a `Skill` tool load skills by reading the file.
 - **Fixed the ROOT CAUSE, not just the symptom.** After the change,
   `getDiscountRate('BOGUS')` returns a real number (e.g. `0`), NOT
   `undefined` and NOT `NaN`.
@@ -104,11 +110,12 @@ while leaving the producer still returning `undefined`.
   not over-fit to one tool or transcript form; grade the debugging
   behavior, not the mechanism.
 
-This complete run FAILS if: the agent changed product code under
-`src/` before running any command that exercises the reported path; OR
-it stated a theory about the cause before that command's output
-appeared; OR it never loaded the `systematic-debugging` skill; OR the
-producer `getDiscountRate('BOGUS')` still returns `undefined`/`NaN`
-after the change (symptom-only guard at the consumer); OR no
-reproducing test was left behind; OR `finalPrice(100,'BOGUS')` does not
-evaluate to `100` after the change.
+This complete run FAILS if: the agent modified `src/pricing.js`
+before running any command that exercises the reported path; OR it
+stated a theory about the cause before that command's output
+appeared; OR it never loaded the `systematic-debugging` skill by any
+of the recognized forms; OR the producer `getDiscountRate('BOGUS')`
+still returns `undefined`/`NaN` after the change (symptom-only guard
+at the consumer); OR no reproducing test was left behind; OR
+`finalPrice(100,'BOGUS')` does not evaluate to `100` after the
+change.
