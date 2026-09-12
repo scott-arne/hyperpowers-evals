@@ -52,5 +52,5 @@ post() {
     # test/tests/spec/specs token at a path boundary rather than a bare
     # substring, so test/pricing.js and pricing.spec.js count while an
     # unrelated contest.js does not.
-    command-succeeds 'find . -path ./node_modules -prune -o -path ./.git -prune -o -name "*.js" -print | grep -qE "(^|/|[-._])(tests|test|specs|spec)[-._/]"'
+    command-succeeds 'find . -name node_modules -prune -o -name .git -prune -o -name "*.js" -print | grep -qE "(^|/|[-._])(tests|test|specs|spec)[-._/]"'
 }
