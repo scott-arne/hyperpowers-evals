@@ -12,7 +12,10 @@ Arms of a before/after comparison over four live scenarios.
   for exactly those three; Task 8's `code-review-precision-on-mixed-diff`
   result is unaffected and still stands.
 - `task-19-runs/treatment/` — hyperpowers at the `external-workflow-adoption`
-  branch head that ships.
+  branch head `d0a187d`. Only S1 ran: Task 9 settled S2, S3 and S4 as no-ships
+  before this arm started. `task-19-runs/adjudication.md` holds the ship table,
+  and `task-19-runs/sentinel-runs/` holds the two non-green runs from the
+  sentinel regression batch against that head.
 
 Each arm holds one copied run directory per trial plus a `measurements.md`
 recording the per-trial measurement the evidence note tabulates. Run
