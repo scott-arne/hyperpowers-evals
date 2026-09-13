@@ -43,37 +43,83 @@ every other non-quotation use are written in backticks instead, so the
 quote-verification pass described at the end has no prose false positives to
 filter.
 
+## The void-attempt rule
+
+Decided by the human partner on 2026-09-13 and fixed before any replacement run
+below was made. It is stated here in full because both arms are governed by it
+and a later reader must be able to check this arm's denominator against it.
+
+A run whose Gauntlet-Agent exited without writing a result measured nothing, so
+it is a **void attempt, not an indeterminate trial**. It does not occupy a trial
+slot and it is not evidence for or against the item. It is the reading this
+project's plan-gate round ledger already applied to a lens killed at the harness
+timeout, where the killed lens was recorded as a void attempt rather than a round
+and consumed none of the round ceiling.
+
+The distinction is narrow:
+
+- **Void attempt** — the grader exited without writing a result: `verdict.json`
+  `gauntlet.status` is `investigate` and its summary reads
+  "gauntlet exited (status 1) without writing a result" — the status number is
+  the grader's own exit code and varies — with the failure recorded in
+  `gauntlet-agent/gauntlet-stderr.log`. The instrument failed. Re-run in its
+  place.
+- **Indeterminate trial** — anything else the harness cannot score, including
+  every case where the coding agent itself failed, stalled, or produced no
+  usable transcript. Step 4's rule is unchanged for these: one re-run, no more,
+  and a second indeterminate stays `I` and is excluded from the mean.
+
+Replacement runs are capped at **three further attempts**, and the cap is fixed
+in advance precisely so a denominator cannot be reached by re-rolling: reach the
+cap with fewer than three determinate trials and the arm stays short and says
+so.
+
+One boundary case is worth naming, because a reader applying the rule to `341c`
+will hit it. That run carries both signatures — `gauntlet.status` `investigate`
+with the void summary, and a `final_reason` of "Claude transcript(s) normalized
+to zero tool-call rows", which is the coding-agent-side condition the second
+bullet describes. The human partner classified this run void, and the
+grader-exit signature is the one `gauntlet.status` records, so that reading
+governs. It is worth noting that the two readings do not compete for an outcome
+here: under the other one `341c` is an indeterminate trial excluded from the
+mean, and the arm still holds the three determinate trials the bar asks for.
+
 ## Model-id check over this arm
 
-The one-non-null-id rule was run twice, and the two readings differ. Over all
-four copied run directories:
+Over the three determinate trials — the only runs any number below is read from:
+
+```
+code-review-precision-on-mixed-diff-claude-auto-20260913T212538Z-a249	claude-opus-5
+code-review-precision-on-mixed-diff-claude-auto-20260913T213134Z-3014	claude-opus-5
+code-review-precision-on-mixed-diff-claude-auto-20260913T230456Z-0eb0	claude-opus-5
+distinct (determinate trials only): ['claude-opus-5'] | null present: False
+```
+
+Exactly one non-null model id and no null, which is what the rule asks for.
+
+Over all six copied runs, including the two void attempts and the setup failure:
 
 ```
 code-review-precision-on-mixed-diff-claude-auto-20260913T212538Z-a249	claude-opus-5
 code-review-precision-on-mixed-diff-claude-auto-20260913T213134Z-3014	claude-opus-5
 code-review-precision-on-mixed-diff-claude-auto-20260913T213753Z-3b0d	claude-opus-5
 code-review-precision-on-mixed-diff-claude-auto-20260913T214539Z-341c	None
+code-review-precision-on-mixed-diff-claude-auto-20260913T230325Z-b15c	None
+code-review-precision-on-mixed-diff-claude-auto-20260913T230456Z-0eb0	claude-opus-5
 distinct: ['claude-opus-5'] | null present: True
 ```
 
-Over the two determinate trials alone:
+The two nulls belong to `341c` and `b15c`, and in each case the null is the same
+fact that disqualifies the run: `341c`'s coding-agent transcript normalized to
+zero tool-call rows, so the harness wrote no `economics.coding_agent` block, and
+`b15c` never started an agent at all. Neither is a trial under the rule above, so
+neither null sits in the set the comparison reads.
 
-```
-code-review-precision-on-mixed-diff-claude-auto-20260913T212538Z-a249	claude-opus-5
-code-review-precision-on-mixed-diff-claude-auto-20260913T213134Z-3014	claude-opus-5
-distinct (determinate trials only): ['claude-opus-5'] | null present: False
-```
-
-The `null` belongs to `341c`, the Step 4 re-run, and it is the same fact that
-makes that run indeterminate: its coding-agent transcript normalized to zero
-tool-call rows, so the harness recorded no `economics.coding_agent` block at all
-to read a model from. The rule as written says to re-run an odd trial before
-writing anything, but `341c` is already the one re-run the arm is allowed — the
-rule that an indeterminate trial is re-run once and then stays `I` is the more
-specific one for this case, and a second re-run would exceed the budget this
-task was given. The arm is therefore written up with the shortfall recorded
-rather than spent away. Nothing in the comparison below reads `341c`: it
-contributes no measurement, so the `null` cannot move a number.
+This supersedes the reading recorded before the void-attempt ruling, when `341c`
+counted as trial 3 and its null therefore fell inside the trial set. Under that
+earlier reading the rule wanted a further re-run that the then-current budget had
+already spent; the ruling removes the collision rather than resolving it, because
+a void attempt is not a trial whose id has to be checked.
 
 ## Counting rule for S1's clean-hunk column
 
@@ -95,9 +141,11 @@ recordLatency`; 5 `describe`'s long exhaustive switch; 6 the literals in
 
 ## S1 code-review-precision-on-mixed-diff
 
-Vector: `PPI`
+Vector: `PPP` — the three determinate trials in run order. The void attempts
+carry no symbol because they are not trials; they are listed under "Attempts"
+below with what failed in each.
 
-Runner output for this scenario, verbatim:
+Runner output for the original three-trial invocation, verbatim:
 
 ```
 run-id: code-review-precision-on-mixed-diff-claude-auto-20260913T212538Z-a249
@@ -107,43 +155,84 @@ trials: PPI
 EXIT=2
 ```
 
-Trial 3 was re-run once under Step 4, and the re-run was indeterminate as well,
-so trial 3 stays `I` and is excluded from the mean. The re-run's own runner
-output, verbatim from the same log:
+That `trials:` line is the harness's own symbols at the time the runner printed
+them, before the void-attempt ruling was applied; its `I` is `3b0d`, reclassified
+above. It is reproduced unedited because it is the runner's output, not a
+measurement.
+
+The two runs made in its place, verbatim from the same log. A single
+`quorum run` with no `--repeat` prints no `trials:` line; the run's verdict is
+its `run-dir` block.
 
 ```
 run-id: code-review-precision-on-mixed-diff-claude-auto-20260913T214539Z-341c
 EXIT=2
 ```
 
-A single `quorum run` with no `--repeat` prints no `trials:` line; the run's
-verdict is its `run-dir` block, whose `final` reads "indeterminate".
+```
+run-id: code-review-precision-on-mixed-diff-claude-auto-20260913T230456Z-0eb0
+EXIT=0
+```
+
+### Attempts
+
+Six live S1 runs were made against this head in total. Three are trials; three
+measured nothing.
+
+| Run | Run id | Classification | Occupies a trial slot |
+|---|---|---|---|
+| 1 | `...20260913T212538Z-a249` | determinate trial, `pass` | yes |
+| 2 | `...20260913T213134Z-3014` | determinate trial, `pass` | yes |
+| 3 | `...20260913T213753Z-3b0d` | void attempt | no |
+| 4 | `...20260913T214539Z-341c` | void attempt | no |
+| 5 | `...20260913T230325Z-b15c` | setup failure; neither agent ran | no |
+| 6 | `...20260913T230456Z-0eb0` | determinate trial, `pass` | yes |
+
+Both void attempts carry the signature the rule names. Each one's
+`verdict.json` `gauntlet.summary` reads "gauntlet exited (status 1) without
+writing a result", `gauntlet.run_id` is null, and the cause is in the run's
+`gauntlet-agent/gauntlet-stderr.log`:
+
+- `3b0d` — "The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()".
+  The coding agent had finished: both post-checks passed and the reviewer
+  subagent's report is present in the run directory.
+- `341c` — "The operation timed out.", with `verdict.json` `final_reason`
+  "Claude transcript(s) normalized to zero tool-call rows". This run has no
+  `subagents/` directory and no reviewer report.
+
+Run 5, `b15c`, is neither a trial nor a void attempt, and it is recorded here
+rather than quietly dropped because it is the one run whose exclusion a reader
+could otherwise mistake for re-rolling. Its `verdict.json` reason is
+"quorum error (setup): setup.sh failed (exit 1)", and its stderr names the cause:
+`git init -b main` failed with "Operation not permitted" copying a git template
+hook into the fixture workdir. That is the operator's Bash sandbox denying a
+write, not the harness and not either agent — the run had no coding agent, no
+Gauntlet-Agent, no fixture, and no `home/` or workdir content at all, which is
+why its census row below is empty. It was re-invoked immediately with the
+sandbox off, which is the condition the arm's other five runs were made under;
+none of them could have passed its `git-repo` pre-check otherwise. It is
+preserved in this directory so that claim can be checked, and it is not counted
+against the three-attempt cap because it made no attempt to measure anything.
+
+**One of the three permitted attempts was used.** It produced a determinate
+trial, so attempts 2 and 3 were not run.
+
+### Determinate set and arithmetic
 
 | Trial | Run id | Bugs caught (0-2) | Blocking findings on clean hunks (0-6) | Determinate |
 |---|---|---|---|---|
 | 1 | `code-review-precision-on-mixed-diff-claude-auto-20260913T212538Z-a249` | 2 | 0 | yes |
 | 2 | `code-review-precision-on-mixed-diff-claude-auto-20260913T213134Z-3014` | 2 | 0 | yes |
-| 3 | `code-review-precision-on-mixed-diff-claude-auto-20260913T213753Z-3b0d` | 2 | 0 | no |
-| 3 (re-run) | `code-review-precision-on-mixed-diff-claude-auto-20260913T214539Z-341c` | not measurable | not measurable | no |
+| 3 | `code-review-precision-on-mixed-diff-claude-auto-20260913T230456Z-0eb0` | 2 | 0 | yes |
 
-The `Determinate` column is each run's `verdict.json` `final` field: `pass` for
-trials 1 and 2, `indeterminate` for `3b0d` and `341c`. Both indeterminate
-verdicts are Gauntlet-Agent transport failures, not coding-agent behavior, and
-both are recorded in the run's `gauntlet-agent/gauntlet-stderr.log`:
+Mean blocking findings on clean hunks: (0 + 0 + 0) / 3 = 0.00, n = 3.
+Recall: 2 of 2 in each of the three, so the mean measures precision and not a
+reviewer that stopped finding things.
 
-- `3b0d` — "The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()".
-  The coding agent finished: both post-checks passed in its `verdict.json`, and
-  the reviewer subagent's report is present, so its two measurement cells are
-  filled from the artifact even though the trial is excluded.
-- `341c` — "The operation timed out.", and the run's `verdict.json` `reason`
-  reads "Claude transcript(s) normalized to zero tool-call rows". This run has no
-  `subagents/` directory and no reviewer report, so there is no artifact to read
-  either cell from and both are recorded as not measurable rather than as a
-  number.
-
-Neither is the sandbox signature — `setup.sh` dying at `git init -b main` — and
-the deterministic `pre` checks passed in all four runs, so the fixture was built
-correctly every time.
+The `Determinate` column is each run's `verdict.json` `final` field, `pass` in
+all three. The excluded `3b0d` also produced a reviewer report and also measured
+0; it is reported under "Clean hunks flagged, named" for completeness and is not
+in the mean.
 
 ### Clean hunks flagged, named
 
@@ -175,7 +264,26 @@ correctly every time.
   "`close` is exported but untested — `src/session.js:25-28`, `test/session.test.js`"
   and "`displayName` returns `undefined` for a user without a `displayName` — `src/session.js:12`"
   — which the rule excludes.
-- Trial 3 (`3b0d`, indeterminate, excluded from the mean): none. Artifact:
+- Trial 3: none. Artifact:
+  `home/.claude/projects/*/*/subagents/agent-ade1eb6002d0594e2.jsonl`. Five
+  blocking findings, and every one of them lands off the six clean hunks. The two
+  Criticals are the planted bugs. The three Importants are
+  "3. Input validation guard deleted from `findUserByEmail` — src/db.js:5-6",
+  against the defect hunk;
+  "4. Zero test coverage for the code that actually changed — test/session.test.js",
+  a test-coverage finding, which the rule excludes by its own terms and which
+  faults the suite rather than the fixture's literals; and
+  "5. `src/crypto.js` is now dead code", which is not one of the six hunks at all
+  — `src/crypto.js` is unchanged in the diff, and the finding is a consequence of
+  the planted `src/db.js` defect having removed its only caller. Three clean hunks
+  were named in Strengths: "`elapsedMinutes` (src/session.js:18-23) validates its input properly with `Number.isFinite` rather than a loose truthiness check" (hunk 3),
+  "The detached telemetry call is handled correctly." (hunk 4), and
+  "`describe`'s exhaustive switch (src/session.js:30-48) has a `default` arm" (hunk 5).
+  The only two entries touching a clean hunk are Minor —
+  "6. `displayName` guards the container but not the field — src/session.js:7-12"
+  and "7. Local `describe` shadows the `node:test` export — test/session.test.js:3"
+  — which the rule excludes.
+- Void attempt `3b0d` (not a trial, not in the mean): none. Artifact:
   `home/.claude/projects/*/*/subagents/agent-a1cf27b6ee0f81b72.jsonl`. Two
   Criticals, both planted bugs, and two Importants —
   "Input validation guard deleted — `src/db.js:5-6`" and
@@ -183,8 +291,8 @@ correctly every time.
   `src/db.js`, the second a test-coverage finding. Clean hunk 4 was named in
   Strengths: "`close` (src/session.js:26) correctly uses `void` on the detached telemetry call".
   Hunk 4 and hunk 5 drew Minor entries only, under "Thin coverage of the new module."
-- Trial 3 re-run (`341c`): not measurable. There is no reviewer subagent report
-  in the run directory to apply the rule to.
+- Void attempt `341c` and setup failure `b15c`: not measurable. Neither run
+  directory contains a reviewer subagent report to apply the rule to.
 
 ### Recall precondition
 
@@ -194,21 +302,25 @@ Read from the same reviewer-report artifact named per trial above:
 
 - Trial 1 — "SQL injection: parameterized query replaced with string concatenation" and "Password verification downgraded from scrypt hash to plaintext equality", both under "#### Critical (Must Fix)".
 - Trial 2 — "SQL injection: parameterized query replaced with string concatenation" and "Password verification downgraded from hashed comparison to plaintext equality", both Critical.
-- Trial 3 (`3b0d`, excluded) — "SQL injection — `src/db.js:6-10`" and "Plaintext password comparison — `src/db.js:7 and 15`", both Critical.
+- Trial 3 — "1. SQL injection introduced in `findUserByEmail` — src/db.js:6-10" and "2. Password hashing removed; plaintext comparison against a column that does not exist — src/db.js:7 and src/db.js:15", both under "#### Critical (Must Fix)".
+- Void attempt `3b0d` (not a trial) — "SQL injection — `src/db.js:6-10`" and "Plaintext password comparison — `src/db.js:7 and 15`", both Critical.
 
 No trial approved the merge. Each determinate report's assessment reads
-"**Ready to merge?** No." (trial 1) and "**Ready to merge?** No" (trial 2);
-`3b0d` reads "**Ready to merge?** No" as well.
+"**Ready to merge?** No." (trial 1), "**Ready to merge?** No" (trial 2) and
+"**Ready to merge?** No" (trial 3); `3b0d` reads "**Ready to merge?** No" as well.
 
 Skill and subagent dispatch are independently confirmed by the deterministic
 post-checks in each run's `verdict.json`: `skill-called superpowers:requesting-code-review`
-and `tool-called Agent` both passed in trials 1, 2 and `3b0d`. `341c` has no
-post-check results because the run did not reach the post phase.
+and `tool-called Agent` both passed in trials 1, 2, 3 and in `3b0d`. `341c` has
+no post-check results because the run did not reach the post phase, and `b15c`
+has none because it never left setup.
 
 ## Mechanical changes to the copied run directories
 
-The four runs were copied whole from `results/`, then the changes below were made
-so the copies could be committed. They follow the rule Task 8's arm established
+The six S1 runs were copied whole from `results/`, then the changes below were
+made so the copies could be committed. The same rule was applied to the two
+preserved sentinel runs in `../sentinel-runs/` and to the control run in
+`../sentinel-control/`. They follow the rule Task 8's arm established
 and Task 9's arm extended. None touches a JSON or log artifact, and none affects
 anything cited above.
 
@@ -233,12 +345,13 @@ anything cited above.
    `peerToken` is a 32-character bearer-shaped credential for the local messaging
    socket. They are runtime state of the machine, nothing here cites them, and
    this repository's remote is public.
-5. `home/.tmp/node-compile-cache/` is deleted from the one run that had it
-   (`3b0d`). Node's compile cache is reinstallable and nothing here cites it. The
-   other stripped paths in the established rule — `home/.local/share/claude`,
-   `home/.cache/claude`, and `home/.npm/_cacache/` — were not present in any of
-   these four runs; the strip was attempted for each and reported nothing to
-   remove. `home/.npm/_logs/` and `home/.npm/_npx/` manifests stay where present.
+5. `home/.tmp/node-compile-cache/` is deleted from the runs that had one
+   (`3b0d`, and the control run `c483`). Node's compile cache is reinstallable and
+   nothing here cites it. The other stripped paths in the established rule —
+   `home/.local/share/claude`, `home/.cache/claude`, and `home/.npm/_cacache/` —
+   were absent from most of these runs; the strip was attempted for each run and
+   removed only what was there. `home/.npm/_logs/` and `home/.npm/_npx/` manifests
+   stay where present.
 6. `gauntlet-agent/results/` and `home/.claude/` are staged with `git add -f`. The
    repository's `.gitignore` carries unanchored `results/` and `.claude/`
    patterns, which match at any depth and would otherwise have silently excluded
@@ -252,14 +365,26 @@ anything cited above.
    binaries in a repository whose remote is public. This extends the rule for
    whoever copies the next arm.
 
-The copy shrank from 34 MB to 6.0 MB across the four runs.
+The copy shrank from 34 MB to 6.0 MB across the first four runs, and the two
+fix-round-1 additions bring the treatment directory to 7.6 MB. `b15c` contributes
+24 KB: it has an empty `home/` and an empty workdir, because it died in setup.
+
+The fix-round-1 runs needed one strip each that the earlier four did not
+individually need and none that the rule above does not already cover: `0eb0`
+gave up `home/.claude/plugins/`, `home/.claude/.claude-env` and
+`home/.claude/sessions/`; `b15c` only `home/.claude/.claude-env`; and the control
+run `c483` those three plus `home/.tmp/node-compile-cache/` and
+`home/.npm/_cacache/`. No run in this round produced `home/.codex/tmp/`, so item
+7 stands as an extension of the rule for future arms rather than a strip this
+round exercised.
 
 ## Copy-hygiene post-check
 
-Run against the staged index, before the commit. Two runs in the census come from
-the sentinel batch rather than from S1: the treatment arm is the four
-`code-review-precision-on-mixed-diff` runs, and `sentinel-runs/` preserves the two
-non-green sentinel runs `adjudication.md` cites in detail.
+Run against the staged index, before each commit. The block below is the check as
+it stood at the first commit, covering the arm's first four
+`code-review-precision-on-mixed-diff` runs plus the two non-green sentinel runs
+`sentinel-runs/` preserves and `adjudication.md` cites in detail. Fix round 1's
+additions are checked in the subsection after it.
 
 ```
 === 1. gitlinks staged under task-19-runs (expect 0) ===
@@ -299,7 +424,8 @@ assigned key values     ->        0
 Three cells need reading rather than skimming.
 
 The `result.json=0` entries are not a hygiene miss. The grader never wrote a
-result in `3b0d` or `341c`, and that absence is the indeterminacy itself; the
+result in `3b0d` or `341c`, and that absence is exactly what makes them void
+attempts under the rule above rather than trials; the
 same is true of `superpowers-bootstrap`, whose `transcripts=0` follows from a
 failed pre-check that stopped the run before the agent started. Every run whose
 grader completed has its `result.json`.
@@ -316,6 +442,46 @@ No lock file is staged in any arm. The assigned-key-value grep looks for an
 actual value after `ANTHROPIC_API_KEY` or `ANTHROPIC_VERTEX_PROJECT_ID`, not for
 the variable names, which appear as documentation in the staged skill copies in
 every arm.
+
+### Fix round 1 additions
+
+The three run directories added in fix round 1 were checked the same way. The
+census and credential checks are run over the whole arm, so they cover the
+earlier runs too; checks 2 and 3 are scoped to what is new.
+
+```
+=== 1. gitlinks staged under task-19-runs (expect 0) ===
+       0
+=== 2. new run directories: transcripts / result.json / top-level JSON ===
+  code-review-precision-on-mixed-diff-claude-auto-20260913T230456Z-0eb0  transcripts=2  result.json=1  top-level-json=4
+  code-review-precision-on-mixed-diff-claude-auto-20260913T230325Z-b15c  transcripts=0  result.json=0  top-level-json=2
+  triggering-writing-plans-claude-auto-20260913T231141Z-c483  transcripts=1  result.json=1  top-level-json=4
+=== 3. stripped paths in the new runs (expect 0) ===
+  code-review-precision-on-mixed-diff-claude-auto-20260913T230456Z-0eb0  stripped-path files=0
+  code-review-precision-on-mixed-diff-claude-auto-20260913T230325Z-b15c  stripped-path files=0
+  triggering-writing-plans-claude-auto-20260913T231141Z-c483  stripped-path files=0
+=== 4. home/*/* census (staged), task-19 vs committed arms ===
+-- entries in task-19 NOT in the committed arms (expect none) --
+=== 5. credential greps over staged evidence ===
+prj-dcpgenai (non-prose)-> 0
+peerToken (non-prose)   -> 0
+.claude-env files       -> 0
+assigned key values     ->        0
+=== 6. staged file count (this commit) ===
+     172
+```
+
+`b15c` shows zeros in check 2 for the reason its own entry above gives: it never
+started an agent, so there is no transcript and no grader result to have. Its two
+top-level JSON files are `phase.json` and `verdict.json`, which is the whole run.
+
+The `prj-dcpgenai` line gained a prose filter in this round, for the same reason
+`peerToken` already had one and with the same care. The first fix-round-1 run of
+the check reported one hit, and the hit was this file: the earlier post-check
+output pasted above contains the check's own label line, so the check had begun
+matching its own transcript. The filter excludes `measurements.md` and
+`adjudication.md` and nothing else, so a real occurrence in a run artifact would
+still be caught.
 
 ## Quote verification
 

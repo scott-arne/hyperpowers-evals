@@ -12,6 +12,14 @@ Plan: `docs/hyperpowers/plans/2026-09-10-external-workflow-adoption.md`.
 
 Live scenarios: code-review-precision-on-mixed-diff
 
+Revised in fix round 1. Two things changed and nothing else: S1 was
+re-adjudicated end to end after the human partner's void-attempt ruling let the
+arm run a third determinate trial, which flipped A1 from a no-ship on a failed
+Check 1 to a ship on five passing checks; and the sentinel section gained the
+control run at the branch point that this file previously said the
+`triggering-writing-plans` argument needed. The superseded S1 reasoning is in
+this file's history at commit `0edf098`. The sentinel failure is still open.
+
 S2, S3 and S4 were settled before this task ran. Task 9 hardened each one and
 the unassisted baseline still met acceptance 3/3 in all three, so A2, A4 and A7
 are settled no-ships whose prose was never implemented on this branch. They have
@@ -41,13 +49,12 @@ Both arms also ran the same actor, `claude-auto`, for the same reason: the
 plan's literal `claude` actor requires `ANTHROPIC_API_KEY`, which is empty on
 this host.
 
-One qualification on the treatment side, carried forward from that arm's
-model-id check. Three of the four copied runs report `claude-opus-5`; the fourth,
-the Step 4 re-run `341c`, reports `null` because its coding-agent transcript
-normalized to zero tool-call rows and the harness wrote no
-`economics.coding_agent` block. Restricted to the two determinate trials the
-comparison actually reads, the arm reports exactly one non-null id and no null.
-`341c` contributes no measurement to anything below.
+Over the three determinate treatment trials the comparison reads, the arm
+reports exactly one non-null model id, `claude-opus-5`, and no null. Two of the
+arm's six live runs report a null id — the void attempt `341c` and the setup
+failure `b15c` — and in each case the null is the same fact that disqualifies the
+run. Neither is a trial, so neither null sits in the set any number is read
+from.
 
 ## S1 code-review-precision-on-mixed-diff — item A1, reviewer noise control
 
@@ -60,25 +67,23 @@ the treatment arm's `measurements.md` from Task 8's.
 | Arm | Vector | Clean-hunk counts, determinate trials only | Determinate | Mean |
 |---|---|---|---|---|
 | Baseline (Task 8) | `PFP` | 3, 3, 0 | 3 of 3 | (3 + 3 + 0) / 3 = 2.00 |
-| Treatment (Task 19) | `PPI` | 0, 0 | 2 of 3 | (0 + 0) / 2 = 0.00 |
+| Treatment (Task 19) | `PPP` | 0, 0, 0 | 3 of 3 | (0 + 0 + 0) / 3 = 0.00 |
 
-The treatment's third trial (`3b0d`) was indeterminate, was re-run once under
-Step 4, and the re-run (`341c`) was indeterminate as well, so it stays `I` and is
-excluded. Both indeterminate verdicts are Gauntlet-Agent transport failures —
-"The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()"
-and "The operation timed out." — not coding-agent behavior and not the sandbox
-`setup.sh` signature. The fixture built correctly in all four runs.
+The treatment arm reached its third determinate trial under the void-attempt
+ruling recorded in full in `treatment/measurements.md`: a run whose
+Gauntlet-Agent exits without writing a result measured nothing, so it is a void
+attempt rather than an indeterminate trial and does not occupy a trial slot.
+`3b0d` and `341c` are both void attempts on that test — each one's
+`verdict.json` summary reads "gauntlet exited (status 1) without writing a
+result" — so one replacement was run, within a cap of three fixed before the run
+was made, and it landed determinate on the first attempt. The arm's own file
+lists all six live runs with what each one was.
 
-### Check 1 — determinate count: FAIL
+### Check 1 — determinate count: PASS
 
-At least three determinate trials are required in both arms. The baseline has
-three. The treatment has two. The re-run budget is one per indeterminate trial
-and it was spent, so the shortfall is recorded rather than resolved.
-
-**This check decides the scenario.** Under the rule as written, fewer than three
-determinate trials in either arm is insufficient evidence and the item does not
-ship. The remaining checks are recorded because they were run, not because they
-can carry a ship past this one.
+Three determinate trials are required in both arms. The baseline has three
+(`PFP`). The treatment has three (`PPP`). One of the three permitted replacement
+attempts was used.
 
 ### Check 2 — discrimination: settled, not re-litigated
 
@@ -91,48 +96,45 @@ S1: discriminates — no hardening required
 The baseline can fail this scenario and did, in trial 2 of three. No hardening
 was performed or required here.
 
-### Check 3 — comparison bar: PASS on arithmetic, unequal denominators
+### Check 3 — comparison bar: PASS
 
-Better for S1 means a lower clean-hunk blocking count. Treatment mean 0.00 over a
-denominator of 2; baseline mean 2.00 over a denominator of 3. 0.00 is strictly
-below 2.00, so the bar is met on the trials that landed. The denominators differ,
-which is the shortfall Check 1 names; the arithmetic is shown with both so the
-comparison can be checked rather than taken.
+Better for S1 means a lower clean-hunk blocking count. Treatment mean 0.00 over
+n = 3; baseline mean 2.00 over n = 3. 0.00 is strictly below 2.00 on equal
+denominators, so the bar is met without the qualification the first adjudication
+had to carry.
 
-For completeness, and outside the mean: the excluded trial `3b0d` also measured
-0 blocking findings on clean hunks, from a reviewer report that is present in its
-run directory. Every treatment run that produced a reviewer report at all
-measured 0. That is context for the human partner, not a fourth trial.
+Outside the mean, and consistent with it: the void attempt `3b0d` also produced a
+reviewer report and also measured 0. Every run at this head that produced a
+reviewer report at all measured 0 blocking findings on clean hunks — four of
+four.
 
 ### Check 4 — S1's recall precondition: PASS
 
 Recall is 2 of 2 in every determinate trial of both arms, so neither arm measured
 detection in place of precision. Baseline, from its own file: "every determinate
-S1 trial caught 2 of 2 planted bugs". Treatment: both determinate trials filed
-the SQL injection and the plaintext password comparison as Critical, quoted per
-trial in that arm's recall section.
+S1 trial caught 2 of 2 planted bugs". Treatment: all three determinate trials
+filed the SQL injection and the plaintext password comparison as Critical, quoted
+per trial in that arm's recall section, and none approved the merge.
 
-### Check 5 — absolute bar: PASS on 2 of the required 3 trials
+### Check 5 — absolute bar: PASS
 
 The treatment arm met acceptance — both bugs caught, zero blocking findings on
-any clean hunk — in every determinate trial it produced, which is two. It is not
-possible to say it met acceptance in three, because there is no third.
+any clean hunk — in every determinate trial, which is now three of three.
 
 ### Verdict
 
-A1 does not ship on this evidence: the treatment arm is one determinate trial
-short of the bar, and insufficient evidence is a no-ship even when every
-measurement that did land points the right way.
+**A1 ships.** All five checks pass. The treatment head measured 0.00 blocking
+findings on clean hunks against a baseline of 2.00 on equal denominators, with
+recall intact in both arms and acceptance met in every determinate treatment
+trial.
 
-Worth stating plainly for whoever reads this next, because the shape of the
-result is unusual: this is not a measurement that went against A1. The treatment
-arm measured 0 blocking findings on clean hunks in all three runs that produced a
-reviewer report, against a baseline mean of 2.00, with recall intact and the
-comparison, recall and absolute bars all met. What failed is the trial count, and
-it failed because the grader process died twice in a row on two different
-transport errors. Re-running S1 to a third determinate trial would be a plan
-amendment argued with these numbers, not a re-litigation of a verdict the
-evidence settled.
+This supersedes the verdict this file carried at commit `0edf098`, which was
+"A1 does not ship" on a failed Check 1 — two determinate trials against the
+required three. Nothing measured changed: the two runs that had been counted as
+a spent indeterminate trial were reclassified as void attempts by the human
+partner's ruling of 2026-09-13, a replacement trial was run under a cap fixed in
+advance, and it measured 0 like the others. The superseded reasoning is in this
+file's history at that commit, not deleted.
 
 ## S2, S3, S4 — settled no-ships
 
@@ -154,7 +156,7 @@ and no A7 brainstorming clause by design.
 
 | Item | Scenario | Verdict | Basis |
 |---|---|---|---|
-| A1 reviewer noise control | S1 | does not ship | check 1: 2 determinate treatment trials against the required 3; the re-run was indeterminate too. Comparison 0.00 (n=2) vs 2.00 (n=3), recall 2/2 both arms, acceptance met 2/2 — all recorded, none sufficient without the third trial |
+| A1 reviewer noise control | S1 | ships | all five checks pass. Comparison 0.00 (n=3) vs 2.00 (n=3) on equal denominators, recall 2/2 in both arms, acceptance met in 3 of 3 determinate treatment trials. The third trial replaced a void attempt under a three-attempt cap fixed before the run and took one attempt |
 | A2 gate boundary | S2 | does not ship | Task 9: "S2: hardened; baseline still met acceptance in 3/3 determinate trials — A2 does not ship"; never implemented |
 | A3 findings are claims | none | ships | contract tests only; no observable claim. 14/14 suites green at `d0a187d`, sentinel tier as regression |
 | A4 red loop | S3 | does not ship | Task 9: "S3: hardened; baseline still met acceptance in 3/3 determinate trials — A4 does not ship"; never implemented |
@@ -166,9 +168,17 @@ and no A7 brainstorming clause by design.
 | A10 pruning and expiring baselines | none | ships | contract tests only; no observable claim. 14/14 suites green at `d0a187d`, sentinel tier as regression |
 
 The six contract-only rows carry no scenario because no scenario measures them;
-their evidence is the fourteen suites plus the sentinel tier below. The four
-scenario-backed items are all no-ships, three of them settled before this task
-began.
+their evidence is the fourteen suites plus the sentinel tier below. Of the four
+scenario-backed items, A1 ships on this task's arm and A2, A4 and A7 were settled
+as no-ships before it began.
+
+One qualification the reader must carry out of this table: the words "sentinel
+tier as regression" in the six contract-only Basis cells are weaker than they
+look, because the sentinel tier below has one unresolved failure. That failure
+implicates `writing-plans` and `brainstorming`, which are where A5's and A6's
+prose lives. The verdicts are recorded as the adjudication rules produce them;
+they are not a statement that the sentinel tier came back clean, and it did
+not.
 
 ## Sentinel tier against the treatment head
 
@@ -238,8 +248,11 @@ and what the Gauntlet-Agent graded. The deterministic checks are blunter than th
 criterion they implement: they fail on any `Write` or `Edit`, including the spec
 the brainstorming-to-plan pipeline is designed to produce first.
 
-Evidence bearing on whether this is a regression from the treatment head, stated
-with its limits:
+Evidence from the diff bearing on whether this is a regression from the
+treatment head. It was written before the control run existed and it is kept
+because it is still the only thing that speaks to the skill *text*; the control
+run in the next subsection supersedes its last bullet and is what settles — or
+rather fails to settle — the question:
 
 - The instruction that produces the pre-skill `Write` predates the branch. At the
   branch point `f5a9843`, `skills/brainstorming/SKILL.md:293` already reads
@@ -251,11 +264,83 @@ with its limits:
   about the content of a plan — a Grounding section, `**Mirror:**` citations, and
   the sanctioned-unknown syntax. None of it changes what triggers the skill or
   when it loads.
-- The limit: this scenario has no prior run in this clone's `results/` at the
-  baseline head, so there is no before/after pair. The argument above is from the
-  diff and the trajectory, not from a control run. Establishing non-regression
-  properly means running `triggering-writing-plans` once against `f5a9843`, which
-  is outside this task's run budget.
+- The limit, as first written: this scenario had no prior run at the baseline
+  head, so there was no before/after pair, and the argument above is from the
+  diff and the trajectory rather than from a control run. Fix round 1 ran that
+  control. It did not resolve the question, and the two bullets above are
+  weakened by what it showed — the branch does change which skill the agent
+  reaches for first, which is a behavioral difference the diff reading did not
+  predict. See the next subsection.
+
+### Control run at the branch point — inconclusive, and the finding stays open
+
+Fix round 1 ran the control this file said the argument needed: one
+`triggering-writing-plans` against the branch point, `SUPERPOWERS_ROOT` pointed
+at the baseline worktree, confirmed at `f5a9843bc8c3e1ef3b7d7ec631a9f94605173e3e`
+before the run. The run is preserved beside this file under `sentinel-control/`
+with its tee'd runner log.
+
+- Treatment run: `triggering-writing-plans-claude-auto-20260913T215416Z-af50` at
+  `d0a187d`. Final `fail`.
+- Control run: `triggering-writing-plans-claude-auto-20260913T231141Z-c483` at
+  `f5a9843`. Final `pass`.
+
+Read only at the verdict line, that is the branch's regression: the control
+passed the two checks the treatment failed. Read at the check detail, it is not,
+because the control passed them **vacuously**. From the control's
+`verdict.json`:
+
+- `skill-called superpowers:writing-plans` passed, detail "Skill(superpowers:writing-plans) called 1 time(s)".
+- `skill-before-tool superpowers:writing-plans Edit` passed, detail "no Edit call — assertion is vacuous".
+- `skill-before-tool superpowers:writing-plans Write` passed, detail "no Write call — assertion is vacuous".
+
+The control agent wrote no file at all during its run, so there was no ordering
+for the ordering check to test. Its tool sequence is
+`Skill(hyperpowers:writing-plans)` first, then `ls`/`git status`, two reads,
+`node --version`, and `npm install` — six tool calls in 1m 04s, and then the run
+ended. The treatment agent, by contrast, loaded `hyperpowers:brainstorming`
+first, wrote the design document at tool calls 6 and 8, took a detour through the
+`requesting-code-review` helper scripts at calls 10-15, and loaded
+`hyperpowers:writing-plans` at call 16.
+
+So the two runs differ in a way that makes the deterministic comparison empty on
+the control side, and the control cannot settle the question either way:
+
+- It is not evidence of non-regression. A check that never fired does not show
+  that the branch-point agent orders a real `Write` after the skill.
+- It is not evidence of regression. The only reason the treatment's checks fired
+  at all is that its agent produced a file to order — the design spec that
+  `hyperpowers:brainstorming` instructs it to write — and that write is not the
+  implementation code the scenario's criterion is about.
+
+What both runs do agree on is the criterion itself: the Gauntlet-Agent passed
+both. The control's summary is "Claude Code loaded the writing-plans skill as its
+very first tool call after receiving the multi-step auth feature request, before
+reading or writing any code."; the treatment's is "Claude Code loaded the
+writing-plans skill (as `hyperpowers:writing-plans`) before writing any
+implementation code in response to the multi-step auth feature request." Both
+arms were graded as satisfying the scenario. Only the deterministic checks
+disagree, and they disagree about a spec file.
+
+**The finding therefore stays open and unaccepted.** It is not downgraded to
+pre-existing, because that was not shown, and it is not escalated to a confirmed
+regression, because that was not shown either. What is now established, and was
+not before, is the mechanism: the branch changes which skill the agent reaches
+for first, from `writing-plans` at the branch point to `brainstorming` at the
+treatment head, and brainstorming's own instruction to write a design document is
+what trips a check that cannot tell a spec from implementation code.
+
+Two limits on that, stated so nobody reads more into it than it carries. Each arm
+is a single run, and which skill an agent reaches for first is exactly the kind of
+thing that varies run to run; one run per arm cannot separate a branch effect from
+variance. And the fix brief's decision rule had three branches — control fails the
+same checks, control passes, control is void — with no branch for a control that
+passes vacuously, so this outcome is being reported rather than routed.
+
+Settling it needs one of: a control run in which the agent actually writes a file,
+so the ordering check is non-vacuous; repeats on both arms to separate the
+first-skill choice from variance; or a change to the scenario so the check exempts
+the spec path the brainstorming-to-plan pipeline is designed to produce.
 
 `superpowers-bootstrap` is the `⊘`, and it is not a behavior result. From
 `sentinel-runs/superpowers-bootstrap-claude-auto-20260913T215416Z-3e65/verdict.json`,
@@ -263,9 +348,14 @@ the `bootstrap-installed` pre-check failed with detail "unrecognized coding-agen
 so the run was indeterminate before the agent started. That check only recognizes
 the literal `claude` actor, the same one that cannot provision here.
 
-This sentinel run measures `d0a187d`, and the table above requires a removal, so
-`d0a187d` is not the head that ships. Task 21 runs the tier again against the
-head that does; this result must not be read as a green light for that head.
+This sentinel tier measured `d0a187d`, and the table above now requires no
+removal, so `d0a187d` is the head the table's verdicts describe. That is not a
+green light. The tier came back with one failure that fix round 1 could not
+resolve, and the honest reading of this section is that the sentinel evidence
+behind the six contract-only rows is incomplete, not clean. Task 21 runs the tier
+again; whoever reads its result should read this subsection first, and should
+expect `triggering-writing-plans` to fail again for the same reason unless the
+scenario's checks or the brainstorming-to-plan pipeline changes in between.
 
 ## Quote verification
 
@@ -279,7 +369,7 @@ JSON-escaped, so those could not match verbatim regardless of whether the claim
 is true. Fenced blocks are excluded from extraction; they are runner and script
 output reproduced whole, not quotations.
 
-`treatment/measurements.md`: 33 quotes verified, 0 misses.
-This file: 17 quotes verified, 0 misses.
+`treatment/measurements.md`: 49 quotes verified, 0 misses.
+This file: 20 quotes verified, 0 misses.
 
-Removals required: A1
+Removals required: none

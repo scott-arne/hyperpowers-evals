@@ -16,9 +16,15 @@ Arms of a before/after comparison over four live scenarios.
   before this arm started. `task-19-runs/adjudication.md` holds the ship table,
   and `task-19-runs/sentinel-runs/` holds the two non-green runs from the
   sentinel regression batch against that head.
+- `task-19-runs/sentinel-control/` — one `triggering-writing-plans` run at the
+  branch point `f5a9843`, the control for the sentinel failure that batch found.
+  It is a control for one sentinel scenario, not a fifth arm.
 
 Each arm holds one copied run directory per trial plus a `measurements.md`
-recording the per-trial measurement the evidence note tabulates. Run
+recording the per-trial measurement the evidence note tabulates. The treatment
+arm also holds the runs that produced no trial — two void attempts and one
+setup failure — because its denominator is only checkable with them visible;
+`task-19-runs/treatment/measurements.md` states the rule that classifies each. Run
 directories are copies; the harness `results/` tree they came from is
 gitignored and not preserved. Nothing in this directory is edited after the
 evidence note cites it.
