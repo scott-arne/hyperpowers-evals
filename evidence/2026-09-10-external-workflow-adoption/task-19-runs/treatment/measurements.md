@@ -6,7 +6,13 @@ staged from
 `/Users/johnss51/Development/agents/hyperpowers/.worktrees/external-workflow-adoption`.
 The arm points `SUPERPOWERS_ROOT` at the feature worktree itself, not at a copy.
 Coding agent: `claude-auto`, model `claude-opus-5`.
-Harness: hyperpowers-evals at commit `d8d8df6ae775e36acf9b453fb3a35eba9568f1cf`.
+Harness: hyperpowers-evals at `d8d8df6ae775e36acf9b453fb3a35eba9568f1cf` for
+the first four trials. `b15c` and `0eb0` started at 23:03:25Z and 23:04:56Z,
+after `0edf098` was committed at 22:37:17Z, so those two ran at `0edf098`. The
+difference is immaterial: `git diff --name-only d8d8df6 0edf098` lists 487
+paths and 0 of them outside `evidence/` — `0edf098` is this arm's own evidence
+commit — so no source, scenario or test file differs, and every run executed
+the same harness code.
 Fixture: unhardened for S1. Task 9 hardened S2, S3 and S4 only, so this arm runs
 Task 8's `code-review-precision-on-mixed-diff` unchanged and the clean-hunk range
 stays 0-6. The harness commit clears Task 9's fixture floor:
@@ -214,8 +220,17 @@ none of them could have passed its `git-repo` pre-check otherwise. It is
 preserved in this directory so that claim can be checked, and it is not counted
 against the three-attempt cap because it made no attempt to measure anything.
 
-**One of the three permitted attempts was used.** It produced a determinate
-trial, so attempts 2 and 3 were not run.
+**Two `quorum run` invocations were made after the void attempts, and one of
+them counts against the cap.** Round 1 fixed the rule before these runs: each
+attempt is one `bun run quorum run` of this scenario with `--coding-agent
+claude-auto` and no `--repeat`. The runner log holds two such invocations,
+`b15c` and `0eb0`, so excluding `b15c` is a narrowing of the rule as literally
+written rather than an application of it. The narrowing is adopted for the
+reason given just above — a run that started no coding agent, no
+Gauntlet-Agent and no fixture attempted no measurement, and what measures
+nothing cannot be a re-roll. Nothing rests on which reading is taken: counted
+strictly the arm used two of its three attempts, counted as recorded it used
+one, and either way it reached three determinate trials inside the cap.
 
 ### Determinate set and arithmetic
 
