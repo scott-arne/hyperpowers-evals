@@ -94,8 +94,9 @@ live runs with what each one was.
 ### Check 1 — determinate count: PASS
 
 Three determinate trials are required in both arms. The baseline has three
-(`PFP`). The treatment has three (`PPP`). One of the three permitted replacement
-attempts was used.
+(`PFP`). The treatment has three (`PPP`). One of the three permitted
+replacement attempts was counted — the two invocations above, less the setup
+failure that started no agent.
 
 ### Check 2 — discrimination: settled, not re-litigated
 
