@@ -212,8 +212,9 @@ not the sentence "the tier came back clean", which it did not.
 ### What the fourteen suites are
 
 Five Basis cells above rest partly on the fourteen contract suites at `d0a187d`,
-and the sixth contract-only row, A9, on the four hook suites among them. Unlike the live runs, those suites are
-deterministic and re-runnable at a named head, so the command set belongs in the
+and the sixth contract-only row, A9, on the four hook suites among them. Unlike
+the live runs, those suites are deterministic and re-runnable at a named head,
+so the command set belongs in the
 record rather than in a scratch report a later reader cannot open. From the
 hyperpowers worktree at `d0a187d64e62587131f9c9ff4f59988d257b6b26`, each is run
 as `bash <path>`:
