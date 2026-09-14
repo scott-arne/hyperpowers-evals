@@ -428,8 +428,10 @@ so `d0a187d` is the head the table's verdicts describe. The tier's one failure i
 resolved in the harness and in the scenario rather than accepted, and the re-run
 that closes it is at the same head. What stays unmeasured at this head is the `⊘`
 and the three scenarios that never ran, all four for the same actor-name
-limitation. Task 21 runs the tier again; whoever reads its result should read
-this subsection first, and should expect `triggering-writing-plans` to pass,
+limitation. Because the table requires no removal, Task 20 is skipped and Task
+21 with it: there is no second tier run, and this file is the final record
+rather than a predecessor to one. Anyone who re-runs the tier later should read
+this subsection first and should expect `triggering-writing-plans` to pass,
 because the harness and scenario changes that make it pass are committed in this
 repository alongside this file.
 
