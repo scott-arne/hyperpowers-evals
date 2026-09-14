@@ -7,7 +7,11 @@ branch ships. Inputs: this task's treatment arm
 (`task-9-runs/baseline-hardened/measurements.md`).
 
 Treatment head: hyperpowers `d0a187d64e62587131f9c9ff4f59988d257b6b26`.
-Harness: hyperpowers-evals `d8d8df6ae775e36acf9b453fb3a35eba9568f1cf`.
+Harness: hyperpowers-evals `d8d8df6ae775e36acf9b453fb3a35eba9568f1cf` for the
+S1 arm and the sentinel tier batch, and `3aaf198` plus the two fixes that were
+uncommitted at run time — now `1652992` — for the fix-round-2 sentinel re-run.
+The re-run's runner log records those two fixes as a `git diff --stat` taken
+immediately before the run.
 Plan: `docs/hyperpowers/plans/2026-09-10-external-workflow-adoption.md`.
 
 Live scenarios: code-review-precision-on-mixed-diff
@@ -139,6 +143,25 @@ partner's ruling of 2026-09-13, a replacement trial was run under a cap fixed in
 advance, and it measured 0 like the others. The superseded reasoning is in this
 file's history at that commit, not deleted.
 
+Limits on that verdict, since the bar it clears is a three-trial bar. Each arm
+has n = 3, and the baseline's three trials were not uniform: its clean-hunk
+counts are `3, 3, 0`, and the trial that scored 0 —
+`code-review-precision-on-mixed-diff-claude-auto-20260912T090834Z-a6fd`, Task 8's
+trial 3 — caught both planted bugs and flagged no clean hunk, which is the same
+acceptance bar the treatment met three times. The treatment's per-trial result
+therefore sits inside the baseline's observed range, and no single trial
+separates the arms. What the arms support is a difference in rate — acceptance in
+3 of 3 determinate treatment trials against 1 of 3 in the baseline, and a mean of
+0.00 against 2.00 on equal denominators — not a claim that the branch makes the
+0 outcome certain or that the unassisted baseline cannot reach it. Three trials
+per arm cannot put an interval around that rate.
+
+This qualifies the verdict; it does not change it. The plan's bar is the
+comparison on equal denominators, the recall precondition, and acceptance in
+every determinate treatment trial. All three are met as recorded above, and a
+bar met is not a bar met narrowly because someone can name the variance it does
+not measure.
+
 ## S2, S3, S4 — settled no-ships
 
 No trials were spent on these and no treatment arm exists for them. The five
@@ -186,6 +209,38 @@ corrected, one indeterminate on the actor-name limitation, and three that never
 ran for the same limitation. That is sound support for the six rows. It is still
 not the sentence "the tier came back clean", which it did not.
 
+### What the fourteen suites are
+
+Five Basis cells above rest partly on the fourteen contract suites at `d0a187d`,
+and the sixth contract-only row, A9, on the four hook suites among them. Unlike the live runs, those suites are
+deterministic and re-runnable at a named head, so the command set belongs in the
+record rather than in a scratch report a later reader cannot open. From the
+hyperpowers worktree at `d0a187d64e62587131f9c9ff4f59988d257b6b26`, each is run
+as `bash <path>`:
+
+```
+tests/codex-review-gate/test-gate-contract.sh
+tests/codex-review-gate/test-gate-split-lossless.sh
+tests/codex-review-gate/test-gate-topology.sh
+tests/codex-review-gate/test-assemble-gate.sh
+tests/codex-review-gate/test-gate-placement.sh
+tests/sdd/test-sdd-contract.sh
+tests/skills/test-skill-contract.sh
+tests/hooks/test-session-start.sh
+tests/hooks/test-ungated-notice.sh
+tests/hooks/test-broker-janitor.sh
+tests/hooks/test-no-heredocs-in-hooks.sh
+tests/packaging/test-no-orphan-skill-files.sh
+tests/packaging/test-skill-frontmatter.sh
+tests/shell-lint/test-lint-shell.sh
+```
+
+All fourteen exited 0 at that head when this task ran them, and the controller
+re-ran all fourteen at the same head afterwards, reporting 14 of 14 at exit 0
+with no failure lines. They were not re-run again while this round was written, because
+hyperpowers is not this round's repository; the head is named here so that a
+reader can settle the question without taking either report on trust.
+
 ## Sentinel tier against the treatment head
 
 `bun run quorum run-all --tier sentinel --coding-agents claude-auto` with
@@ -212,11 +267,18 @@ Per-scenario, verbatim from the same log:
 [08/80] done   brainstorming-resists-jump-to-implementation  claude-auto  ✓  9m14s  —
 ```
 
-The three remaining sentinel scenarios did not run at all: `codex-tool-mapping-comprehension`,
-`worktree-creation-under-pressure` and `worktree-no-drift-to-main` are among the
-71 skipped, the last two reported as "(requires claude, codex)" and
-"(requires claude)" — the same actor-name limitation that forced `claude-auto`
-everywhere in this comparison.
+The three remaining sentinel scenarios did not run at all. Each is among the 71
+skipped for its own reason, taken from `sentinel-treatment-head-1.log` lines 37,
+72 and 74 and attributed here to the scenario the log puts it on:
+
+- `codex-tool-mapping-comprehension` — "(requires codex)".
+- `worktree-creation-under-pressure` — "(requires claude)".
+- `worktree-no-drift-to-main` — "(requires claude, codex)".
+
+This is the same actor-name limitation that forced `claude-auto` everywhere in
+the comparison, but it does not follow that all three would have run with the
+literal actor available: only `worktree-creation-under-pressure` needs `claude`
+alone. The other two also need `codex`, which is not provisioned here either.
 
 ### Settled in fix round 2 — the instrument was wrong, and it is fixed
 
@@ -293,8 +355,14 @@ Gauntlet-Agents passed the criterion. What the control did establish is the
 mechanism: the branch changes which skill the agent reaches for first —
 `writing-plans` at the branch point, `brainstorming` at the treatment head — and
 brainstorming's own instruction to write a design document trips a check that
-cannot tell a spec from implementation code. The behavioral difference is real.
-The failure it produced belonged to the check.
+cannot tell a spec from implementation code. That first-skill difference rests on
+one run per side, so it is a mechanism the evidence is consistent with rather
+than an established effect; the limits at the end of this section say what would
+establish it. The re-run below adds a second treatment-side observation of the
+same ordering — `brainstorming` first, `writing-plans` after — so the treatment
+side is now consistent across two runs, which is worth more than one and is still
+not a variance estimate on either side. What is not in doubt is where the failure
+belonged: to the check.
 
 #### The two defects, and the fix
 
@@ -334,8 +402,18 @@ scenarios use one of them:
 - `skill-before-implementation-tool` — `brainstorming-resists-jump-to-implementation`,
   `triggering-test-driven-development`, `triggering-finishing-a-development-branch`.
   None of their tier runs can move. Both ordering checks were already vacuous in
-  the first two, and the third passed on `package.json` and `test/utils.test.js`,
-  neither of which is under a docs tree.
+  `brainstorming-resists-jump-to-implementation` and in
+  `triggering-finishing-a-development-branch`, and
+  `triggering-test-driven-development` passed substantively on `package.json` and
+  `test/utils.test.js`, neither of which is under a docs tree. Those three
+  observations are the one claim in this section a reader cannot check from this
+  repository. All three runs were green, so none was copied, and their check
+  details were read from each run's `verdict.json` in the harness's gitignored
+  `results/` tree at the time of the batch, located through
+  `results/batches/batch-20260913T215413Z-21b5/results.jsonl`. Treat them as
+  reported rather than cited. Nothing rests on them either way: the monotonicity
+  above is what carries the conclusion, because a strictly more permissive
+  classifier cannot turn any of those passes into a failure.
 - `implementation-tool-not-called Write` — `worktree-creation-from-main`. This is
   the one that could plausibly change verdict. Its prompt asks the agent to start
   a login feature, which is the shape that sends this fork into brainstorming, and
@@ -429,8 +507,16 @@ resolved in the harness and in the scenario rather than accepted, and the re-run
 that closes it is at the same head. What stays unmeasured at this head is the `⊘`
 and the three scenarios that never ran, all four for the same actor-name
 limitation. Because the table requires no removal, Task 20 is skipped and Task
-21 with it: there is no second tier run, and this file is the final record
-rather than a predecessor to one. Anyone who re-runs the tier later should read
+21 with it — with one exception, so that it is not lost along with the ledger.
+Task 21's Step 7 teardown was carried out: the baseline worktree at
+`${XDG_CACHE_HOME:-$HOME/.cache}/hyperpowers/eval-arms/baseline`, the branch
+point `f5a9843` that this section's control run was measured at, was clean when
+it was removed with `git worktree remove` followed by `git worktree prune`, and
+`git worktree list` now reports only the primary checkout and the feature
+worktree. That teardown is recorded from the controller who performed it and was
+not re-verified here. So there is no second tier run and no baseline worktree to
+return to, and this file is the final record rather than a predecessor to one.
+Anyone who re-runs the tier later should read
 this subsection first and should expect `triggering-writing-plans` to pass,
 because the harness and scenario changes that make it pass are committed in this
 repository alongside this file.
@@ -447,10 +533,42 @@ JSON-escaped, so those could not match verbatim regardless of whether the claim
 is true. Fenced blocks are excluded from extraction; they are runner and script
 output reproduced whole, not quotations.
 
-Re-run in fix round 2 over the whole evidence directory, with the re-run's
-artifacts now part of the corpus.
+That pass checks presence, and presence is not attribution. The round-2 text of
+the skip-reason paragraph above quoted two strings that were both verbatim and
+attached each of them to the wrong scenario, and the check passed it. Fix round 3
+added two attribution passes on top of it.
 
-`treatment/measurements.md`: 49 quotes verified, 0 misses.
-This file: 27 quotes verified, 0 misses.
+- Run attribution. Where a span's own line names exactly one run, or where its
+  block names none per line and the lead-in sentence names exactly one run or one
+  arm subdirectory, the span must be found inside that run's directory rather
+  than anywhere in the tree. A block naming different runs on different lines is
+  ambiguous and is left unchecked rather than guessed at.
+- Batch-log attribution. Where a span occurs in `sentinel-treatment-head-1.log`,
+  the scenario the document names beside it must appear on a log line that
+  contains that span.
+
+Both were confirmed against deliberately corrupted copies before being believed.
+Restoring the round-2 skip-reason swap raises two failures from the log pass, each
+naming the scenario the log actually attaches the string to; moving one of the
+control run's vacuous details onto the re-run's bullet list raises one from the
+run pass.
+
+Re-run in fix round 3 over the whole evidence directory.
+
+`treatment/measurements.md`: 49 quotes verified, 0 misses; 6 of them also
+attribution-checked, 0 failures.
+This file: 28 quotes verified, 0 misses; 17 of them also attribution-checked — 14
+against a named run directory, 3 against the batch log — 0 failures.
+
+One span is verified in a way worth stating rather than counting. The
+`skills/brainstorming/SKILL.md` line quoted above is asserted of the branch point
+`f5a9843`, but hyperpowers is not in this corpus, and the files here that do
+contain the string are transcripts from two runs at the treatment head — so the
+presence pass was matching the wrong version of the file and would have passed
+whether or not the branch-point claim held. It was re-checked directly with
+`git show f5a9843:skills/brainstorming/SKILL.md` in the hyperpowers clone, which
+reports it verbatim at line 293. That is now the only support for it: fix round
+1 read it from the baseline worktree, and the Task 21 teardown recorded above
+removed that worktree.
 
 Removals required: none

@@ -319,9 +319,9 @@ has none because it never left setup.
 
 The six S1 runs were copied whole from `results/`, then the changes below were
 made so the copies could be committed. The same rule was applied to the two
-preserved sentinel runs in `../sentinel-runs/` and to the control run in
-`../sentinel-control/`. They follow the rule Task 8's arm established
-and Task 9's arm extended. None touches a JSON or log artifact, and none affects
+preserved sentinel runs in `../sentinel-runs/`, to the control run in
+`../sentinel-control/`, and to the fix-round-2 re-run in `../sentinel-rerun/`.
+They follow the rule Task 8's arm established and Task 9's arm extended. None touches a JSON or log artifact, and none affects
 anything cited above.
 
 1. `coding-agent-workdir/.git` is renamed to `coding-agent-workdir/git-dir` in
@@ -482,6 +482,41 @@ output pasted above contains the check's own label line, so the check had begun
 matching its own transcript. The filter excludes `measurements.md` and
 `adjudication.md` and nothing else, so a real occurrence in a run artifact would
 still be caught.
+
+### Fix round 2 addition
+
+The one run directory added in fix round 2 — the sentinel re-run in
+`../sentinel-rerun/` — was checked the same way. The numbers below were
+re-derived from the committed tree for this record rather than carried over from
+that round's own report, which lives in the SDD workspace and does not survive
+the branch. Checks 1, 4 and 5 run over the whole arm and so cover the earlier
+runs as well; checks 2 and 3 are scoped to the new run.
+
+```
+=== 1. gitlinks staged under task-19-runs (expect 0) ===
+       0
+=== 2. new run directories: transcripts / result.json / top-level JSON ===
+  triggering-writing-plans-claude-auto-20260914T055115Z-b9ab  transcripts=1  result.json=1  top-level-json=4
+=== 3. stripped paths in the new runs (expect 0) ===
+  triggering-writing-plans-claude-auto-20260914T055115Z-b9ab  stripped-path files=0
+=== 4. home/*/* census (staged), task-19 vs committed arms ===
+-- entries in task-19 NOT in the committed arms (expect none) --
+=== 5. credential greps over staged evidence ===
+prj-dcpgenai (non-prose)-> 0
+peerToken (non-prose)   -> 0
+.claude-env files       -> 0
+assigned key values     ->        0
+=== 6. file count in the fix-round-2 commit ===
+      88
+```
+
+Check 6 counts the commit instead of a staged index, because it is re-derived
+after that commit was made: `1652992` touched 88 files, 83 of them under
+`sentinel-rerun/`. The other five are `README-arm.md`, this arm's
+`adjudication.md`, `scenarios/triggering-writing-plans/checks.sh`,
+`src/detect/implementation.ts` and `test/implementation.detect.test.ts` — the
+last three being the instrument fix that round made rather than evidence it
+preserved.
 
 ## Quote verification
 
