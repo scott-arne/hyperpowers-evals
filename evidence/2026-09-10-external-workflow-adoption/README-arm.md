@@ -19,6 +19,10 @@ Arms of a before/after comparison over four live scenarios.
 - `task-19-runs/sentinel-control/` — one `triggering-writing-plans` run at the
   branch point `f5a9843`, the control for the sentinel failure that batch found.
   It is a control for one sentinel scenario, not a fifth arm.
+- `task-19-runs/sentinel-rerun/` — one `triggering-writing-plans` run at the
+  treatment head `d0a187d` after the harness exclusion and the scenario's check
+  verb were both fixed. It is what settles that sentinel failure, and like the
+  control it is one scenario, not an arm.
 
 Each arm holds one copied run directory per trial plus a `measurements.md`
 recording the per-trial measurement the evidence note tabulates. The treatment
