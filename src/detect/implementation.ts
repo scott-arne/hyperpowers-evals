@@ -70,8 +70,18 @@ export function implementationRelpath(call: ToolCallView): string {
   return workdirRelpath(toolPath(call));
 }
 
+/**
+ * Paths that never count as implementation code.
+ *
+ * Both spec namespaces appear because the hyperpowers fork renamed the skills
+ * namespace: a session running upstream writes its design documents under
+ * docs/superpowers/ and one running the fork writes them under
+ * docs/hyperpowers/. Either way the tree is spec output that the
+ * brainstorming-to-plan pipeline is supposed to produce, not implementation
+ * code, so an ordering check must not fire on it.
+ */
 const EXCLUDED_RE =
-  /(^|\/)\.git(\/|$)|(^|\/)node_modules(\/|$)|^docs\/superpowers\/|^\.gitignore$|^\.antigravitycli(\/|$)/;
+  /(^|\/)\.git(\/|$)|(^|\/)node_modules(\/|$)|^docs\/superpowers\/|^docs\/hyperpowers\/|^\.gitignore$|^\.antigravitycli(\/|$)/;
 
 /** True when a workdir-relative path names a real implementation file. */
 export function isImplementationRel(rel: string): boolean {

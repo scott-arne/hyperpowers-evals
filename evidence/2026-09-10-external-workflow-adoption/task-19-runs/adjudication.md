@@ -12,13 +12,16 @@ Plan: `docs/hyperpowers/plans/2026-09-10-external-workflow-adoption.md`.
 
 Live scenarios: code-review-precision-on-mixed-diff
 
-Revised in fix round 1. Two things changed and nothing else: S1 was
-re-adjudicated end to end after the human partner's void-attempt ruling let the
-arm run a third determinate trial, which flipped A1 from a no-ship on a failed
-Check 1 to a ship on five passing checks; and the sentinel section gained the
-control run at the branch point that this file previously said the
-`triggering-writing-plans` argument needed. The superseded S1 reasoning is in
-this file's history at commit `0edf098`. The sentinel failure is still open.
+Revised in fix round 1 and again in fix round 2. Round 1 re-adjudicated S1 end
+to end after the human partner's void-attempt ruling let the arm run a third
+determinate trial, which flipped A1 from a no-ship on a failed Check 1 to a ship
+on five passing checks, and it added the control run at the branch point that
+this file previously said the `triggering-writing-plans` argument needed. Round 2
+settled that sentinel finding on the human partner's decision to fix the
+instrument: a fork gap in the harness and a mismatched check verb in the scenario
+were both corrected and the scenario was re-run green at the same head. The
+superseded S1 reasoning is in this file's history at commit `0edf098`; the
+superseded "the finding stays open" reasoning is at `3aaf198`.
 
 S2, S3 and S4 were settled before this task ran. Task 9 hardened each one and
 the unassisted baseline still met acceptance 3/3 in all three, so A2, A4 and A7
@@ -173,12 +176,15 @@ scenario-backed items, A1 ships on this task's arm and A2, A4 and A7 were settle
 as no-ships before it began.
 
 One qualification the reader must carry out of this table: the words "sentinel
-tier as regression" in the six contract-only Basis cells are weaker than they
-look, because the sentinel tier below has one unresolved failure. That failure
-implicates `writing-plans` and `brainstorming`, which are where A5's and A6's
-prose lives. The verdicts are recorded as the adjudication rules produce them;
-they are not a statement that the sentinel tier came back clean, and it did
-not.
+tier as regression" in the six contract-only Basis cells describe a tier run that
+came back with one failure, not a clean sweep. The failure was
+`triggering-writing-plans`, and it is now settled — the instrument was wrong
+rather than the branch, both halves of it were fixed, and the scenario was re-run
+green at the same head. What those Basis cells actually rest on is seven sentinel
+scenarios green on the first pass, an eighth green on a re-run after its check was
+corrected, one indeterminate on the actor-name limitation, and three that never
+ran for the same limitation. That is sound support for the six rows. It is still
+not the sentence "the tier came back clean", which it did not.
 
 ## Sentinel tier against the treatment head
 
@@ -212,12 +218,20 @@ The three remaining sentinel scenarios did not run at all: `codex-tool-mapping-c
 "(requires claude)" — the same actor-name limitation that forced `claude-auto`
 everywhere in this comparison.
 
-### Open blocking finding — `triggering-writing-plans` failed
+### Settled in fix round 2 — the instrument was wrong, and it is fixed
 
-Named here rather than footnoted, and **not accepted**. Under Step 7 this needs
-either a fix or the human partner's explicit acceptance with their reasoning
-recorded in this file, and neither has happened. No acceptance is recorded below
-because none was given.
+**The human partner's decision, 2026-09-13: fix the instrument.** That decision
+is recorded here so a later reader sees a decision rather than a judgement call
+made inside this file. Fix round 1 left the finding open and unaccepted and named
+what would settle it; the decision came back to fix the apparatus; fix round 2
+carried it out.
+
+In one line: the tier failed `triggering-writing-plans`, the failure was two
+defects in the measuring apparatus rather than a behavior change on the branch,
+both were fixed, and the scenario was re-run at the same treatment head and
+passed with the failing configuration reproduced.
+
+#### What failed
 
 The two non-green sentinel runs are preserved beside this file under
 `sentinel-runs/`, cleaned by the same hygiene rule as the treatment arm, so the
@@ -225,7 +239,7 @@ citations below resolve from the repository rather than from the gitignored
 `results/` tree. The seven green runs are cited only by the batch log line above
 and are not copied.
 
-What failed, from `sentinel-runs/triggering-writing-plans-claude-auto-20260913T215416Z-af50/verdict.json`:
+From `sentinel-runs/triggering-writing-plans-claude-auto-20260913T215416Z-af50/verdict.json`:
 the Gauntlet-Agent passed, and two deterministic post-checks failed.
 
 - Gauntlet status "pass", with the summary "Claude Code loaded the writing-plans skill (as `hyperpowers:writing-plans`) before writing any implementation code in response to the multi-step auth feature request." and the reasoning "the agent brainstormed, wrote a spec, then invoked the writing-plans skill before any implementation files existed on disk".
@@ -240,107 +254,168 @@ target one file, and it is not implementation code:
 - Tool call 6, `Write`, `coding-agent-workdir/docs/hyperpowers/specs/2026-09-13-auth-poc-design.md`.
 - Tool call 8, `Edit`, the same design document, adding one line to a method list.
 
-So the agent loaded `hyperpowers:brainstorming` first (tool call 1), wrote the
-design document brainstorming tells it to write, and then loaded
+The agent loaded `hyperpowers:brainstorming` first (tool call 1), wrote the design
+document brainstorming tells it to write, and then loaded
 `hyperpowers:writing-plans` (tool call 16). No implementation file was written
 before the skill fired, which is what the scenario's acceptance criterion asks
-and what the Gauntlet-Agent graded. The deterministic checks are blunter than the
-criterion they implement: they fail on any `Write` or `Edit`, including the spec
-the brainstorming-to-plan pipeline is designed to produce first.
+and what the Gauntlet-Agent graded.
 
-Evidence from the diff bearing on whether this is a regression from the
-treatment head. It was written before the control run existed and it is kept
-because it is still the only thing that speaks to the skill *text*; the control
-run in the next subsection supersedes its last bullet and is what settles — or
-rather fails to settle — the question:
+#### Why it was not a regression from the branch
 
-- The instruction that produces the pre-skill `Write` predates the branch. At the
-  branch point `f5a9843`, `skills/brainstorming/SKILL.md:293` already reads
-  "Write the validated design (spec) to `docs/hyperpowers/specs/YYYY-MM-DD-<topic>-design.md`".
-  The treatment's diff to that file is four added lines, all about how to phrase
-  an unconfirmed premise inside the spec; it does not change whether or when a
-  spec is written.
-- The treatment's diff to `skills/writing-plans/SKILL.md` is 35 added lines, all
-  about the content of a plan — a Grounding section, `**Mirror:**` citations, and
-  the sanctioned-unknown syntax. None of it changes what triggers the skill or
-  when it loads.
-- The limit, as first written: this scenario had no prior run at the baseline
-  head, so there was no before/after pair, and the argument above is from the
-  diff and the trajectory rather than from a control run. Fix round 1 ran that
-  control. It did not resolve the question, and the two bullets above are
-  weakened by what it showed — the branch does change which skill the agent
-  reaches for first, which is a behavioral difference the diff reading did not
-  predict. See the next subsection.
+The instruction that produces the pre-skill `Write` predates the branch. At the
+branch point `f5a9843`, `skills/brainstorming/SKILL.md:293` already reads
+"Write the validated design (spec) to `docs/hyperpowers/specs/YYYY-MM-DD-<topic>-design.md`".
+The treatment's diff to that file is four added lines, all about how to phrase an
+unconfirmed premise inside the spec; it does not change whether or when a spec is
+written. The treatment's diff to `skills/writing-plans/SKILL.md` is 35 added
+lines, all about the content of a plan — a Grounding section, `**Mirror:**`
+citations, and the sanctioned-unknown syntax — and none of it changes what
+triggers the skill or when it loads.
 
-### Control run at the branch point — inconclusive, and the finding stays open
-
-Fix round 1 ran the control this file said the argument needed: one
-`triggering-writing-plans` against the branch point, `SUPERPOWERS_ROOT` pointed
-at the baseline worktree, confirmed at `f5a9843bc8c3e1ef3b7d7ec631a9f94605173e3e`
-before the run. The run is preserved beside this file under `sentinel-control/`
-with its tee'd runner log.
-
-- Treatment run: `triggering-writing-plans-claude-auto-20260913T215416Z-af50` at
-  `d0a187d`. Final `fail`.
-- Control run: `triggering-writing-plans-claude-auto-20260913T231141Z-c483` at
-  `f5a9843`. Final `pass`.
-
-Read only at the verdict line, that is the branch's regression: the control
-passed the two checks the treatment failed. Read at the check detail, it is not,
-because the control passed them **vacuously**. From the control's
-`verdict.json`:
+That reading is from the diff, so fix round 1 ran the control the argument
+needed: one `triggering-writing-plans` at the branch point, `SUPERPOWERS_ROOT`
+pointed at the baseline worktree, confirmed at
+`f5a9843bc8c3e1ef3b7d7ec631a9f94605173e3e` before the run and preserved under
+`sentinel-control/` with its tee'd runner log. It came back final `pass`, and it
+settled nothing, because it passed vacuously. From that run's `verdict.json`:
 
 - `skill-called superpowers:writing-plans` passed, detail "Skill(superpowers:writing-plans) called 1 time(s)".
 - `skill-before-tool superpowers:writing-plans Edit` passed, detail "no Edit call — assertion is vacuous".
 - `skill-before-tool superpowers:writing-plans Write` passed, detail "no Write call — assertion is vacuous".
 
-The control agent wrote no file at all during its run, so there was no ordering
-for the ordering check to test. Its tool sequence is
+The control agent wrote no file at all: six tool calls in 1m 04s —
 `Skill(hyperpowers:writing-plans)` first, then `ls`/`git status`, two reads,
-`node --version`, and `npm install` — six tool calls in 1m 04s, and then the run
-ended. The treatment agent, by contrast, loaded `hyperpowers:brainstorming`
-first, wrote the design document at tool calls 6 and 8, took a detour through the
-`requesting-code-review` helper scripts at calls 10-15, and loaded
-`hyperpowers:writing-plans` at call 16.
+`node --version`, `npm install` — and the run ended. A check that never fired is
+not evidence that the branch-point agent orders a real write after the skill, so
+the control could not show non-regression; and the only writes on the treatment
+side were the design spec, so it could not show regression either. Both arms'
+Gauntlet-Agents passed the criterion. What the control did establish is the
+mechanism: the branch changes which skill the agent reaches for first —
+`writing-plans` at the branch point, `brainstorming` at the treatment head — and
+brainstorming's own instruction to write a design document trips a check that
+cannot tell a spec from implementation code. The behavioral difference is real.
+The failure it produced belonged to the check.
 
-So the two runs differ in a way that makes the deterministic comparison empty on
-the control side, and the control cannot settle the question either way:
+#### The two defects, and the fix
 
-- It is not evidence of non-regression. A check that never fired does not show
-  that the branch-point agent orders a real `Write` after the skill.
-- It is not evidence of regression. The only reason the treatment's checks fired
-  at all is that its agent produced a file to order — the design spec that
-  `hyperpowers:brainstorming` instructs it to write — and that write is not the
-  implementation code the scenario's criterion is about.
+Fix round 2 found two independent causes, both in the apparatus, and fixed both
+in this repository.
 
-What both runs do agree on is the criterion itself: the Gauntlet-Agent passed
-both. The control's summary is "Claude Code loaded the writing-plans skill as its
-very first tool call after receiving the multi-step auth feature request, before
-reading or writing any code."; the treatment's is "Claude Code loaded the
-writing-plans skill (as `hyperpowers:writing-plans`) before writing any
-implementation code in response to the multi-step auth feature request." Both
-arms were graded as satisfying the scenario. Only the deterministic checks
-disagree, and they disagree about a spec file.
+- **A fork gap in the harness.** `src/detect/implementation.ts` excluded
+  `^docs/superpowers/` from `EXCLUDED_RE` and not `^docs/hyperpowers/`. The fork
+  made `src/detect/skill.ts` namespace-agnostic and stopped there, so under
+  hyperpowers the spec that the brainstorming-to-plan pipeline is designed to
+  write counted as implementation code. Fixed test-first: a twin of the existing
+  superpowers-exclusion case was added to `test/implementation.detect.test.ts`
+  and watched fail — `isImplementationPath` returned true for
+  `docs/hyperpowers/specs/x.md` — before the fork's path was added to the
+  alternation.
+- **The scenario reached for the blunter of two verbs the harness already has.**
+  `scenarios/triggering-writing-plans/checks.sh` asserted with
+  `skill-before-tool`, which fires on any `Write` or `Edit`, while the scenario's
+  own acceptance criterion is about implementation code and its three green
+  sentinel siblings — `brainstorming-resists-jump-to-implementation`,
+  `triggering-test-driven-development` and
+  `triggering-finishing-a-development-branch` — all use
+  `skill-before-implementation-tool` for this exact pattern. Both verbs take the
+  same two arguments, so the change is those two lines and nothing else.
 
-**The finding therefore stays open and unaccepted.** It is not downgraded to
-pre-existing, because that was not shown, and it is not escalated to a confirmed
-regression, because that was not shown either. What is now established, and was
-not before, is the mechanism: the branch changes which skill the agent reaches
-for first, from `writing-plans` at the branch point to `brainstorming` at the
-treatment head, and brainstorming's own instruction to write a design document is
-what trips a check that cannot tell a spec from implementation code.
+This is not a check weakened until a failure went away. It is one scenario
+brought into line with its own written criterion and with its three green
+siblings, plus a rename the fork left half-finished.
 
-Two limits on that, stated so nobody reads more into it than it carries. Each arm
-is a single run, and which skill an agent reaches for first is exactly the kind of
-thing that varies run to run; one run per arm cannot separate a branch effect from
-variance. And the fix brief's decision rule had three branches — control fails the
-same checks, control passes, control is void — with no branch for a control that
-passes vacuously, so this outcome is being reported rather than routed.
+Widening the exclusion is a change to shared machinery, so its reach is recorded
+here rather than left for someone to discover. Three verbs consult
+`isImplementationPath`, and all three become strictly more permissive: the change
+can turn a failing check into a passing one, or turn a substantive pass into a
+vacuous one, and it cannot turn a passing check into a failure. Five other
+scenarios use one of them:
 
-Settling it needs one of: a control run in which the agent actually writes a file,
-so the ordering check is non-vacuous; repeats on both arms to separate the
-first-skill choice from variance; or a change to the scenario so the check exempts
-the spec path the brainstorming-to-plan pipeline is designed to produce.
+- `skill-before-implementation-tool` — `brainstorming-resists-jump-to-implementation`,
+  `triggering-test-driven-development`, `triggering-finishing-a-development-branch`.
+  None of their tier runs can move. Both ordering checks were already vacuous in
+  the first two, and the third passed on `package.json` and `test/utils.test.js`,
+  neither of which is under a docs tree.
+- `implementation-tool-not-called Write` — `worktree-creation-from-main`. This is
+  the one that could plausibly change verdict. Its prompt asks the agent to start
+  a login feature, which is the shape that sends this fork into brainstorming, and
+  a design document written under `docs/hyperpowers/` currently fails the check.
+  After the change it would not. The scenario is outside the sentinel tier and was
+  not re-run in this round.
+- `skill-before-mutation` — `code-review-of-a-committed-change`. Its agent mutates
+  source files during fix-up, so a spec write is unlikely to be the first mutation,
+  and the verb is monotone toward passing in any case. Not re-run.
+
+#### The re-run
+
+One run at the same treatment head `d0a187d64e62587131f9c9ff4f59988d257b6b26`,
+same `claude-auto` actor, preserved under `sentinel-rerun/` with its tee'd runner
+log: `triggering-writing-plans-claude-auto-20260914T055115Z-b9ab`. Final `pass`,
+all three post-checks true. From its `verdict.json`:
+
+- Gauntlet status "pass", summary "Claude Code, given the multi-step auth feature request, loaded hyperpowers:brainstorming, inspected the repo, wrote a design spec (docs only), then loaded the writing-plans skill — all before any implementation code was written."
+- `skill-called superpowers:writing-plans` passed, detail "Skill(superpowers:writing-plans) called 1 time(s)".
+- `skill-before-implementation-tool superpowers:writing-plans Edit` passed, detail "no implementation Edit call — assertion is vacuous".
+- `skill-before-implementation-tool superpowers:writing-plans Write` passed, detail "no implementation Write call — assertion is vacuous".
+
+The re-run matters because it reproduced the configuration that failed instead of
+avoiding it. Its tool-call sequence, by index, read from the coding agent's
+session transcript under that run's `home/.claude/projects/`:
+
+1. `Skill` — `hyperpowers:brainstorming`
+2. `Bash` — `ls -la && git log --oneline -5 && git status --short`
+3. `Read` — `app.js`
+4. `Read` — `package.json`
+5. `Write` — `docs/hyperpowers/specs/2026-09-13-auth-poc-design.md`
+6. `Write` — `.gitignore`
+7. `Skill` — `hyperpowers:writing-plans`
+
+A `Write` to the design spec at call 5, ordered before the `writing-plans` load
+at call 7, is precisely the shape that failed in `af50`. Under the old verb that
+call is a failing `Write` before the skill whatever its path; under the old regex
+it is a failing implementation `Write` even with the new verb. Both halves of the
+fix are load-bearing for this run. The agent behaved the same way it did before.
+Only the reading of it changed.
+
+#### Two kinds of vacuous, and they are not interchangeable
+
+The control and the re-run both report their ordering checks as vacuous, and the
+resemblance is misleading.
+
+- The control's vacuity is empty. Nothing was written, so nothing was classified,
+  and no part of the path under question was exercised.
+- The re-run's vacuity is a result. Two files were written and both were
+  classified as non-implementation: the design spec by the `docs/hyperpowers/`
+  exclusion added in this round, and `.gitignore` by an exclusion that was
+  already there. The classifier ran, on the exact input it used to misread, and
+  got it right.
+
+Only the second is evidence. Collapsing the two into one "passed vacuously" line
+throws the result away.
+
+#### What this settles, and what it does not
+
+Settled: the tier failure was an instrument defect; it is fixed in the harness and
+in the scenario; and the scenario passes at the treatment head with the failing
+configuration reproduced. `triggering-writing-plans` is no longer an open
+blocking finding under Step 7, and no acceptance of a known-bad result was
+needed to close it.
+
+Two limits survive, and this round repairs neither.
+
+- **Still n=1 per arm.** A verb swap and a path exclusion change how a run is
+  read; they do not add runs. One treatment run, one branch-point control and one
+  re-run cannot separate a branch effect from ordinary variance — and the
+  first-skill choice this section names as the mechanism is exactly the kind of
+  thing that varies run to run. It rests on a single observation per side.
+- **This scenario's ordering checks will be vacuous in nearly every run.** The
+  story ends the operator's turn as soon as the agent loads a skill or starts
+  planning, so an agent seldom reaches implementation code inside the run window;
+  two of the three green siblings are vacuous for the same reason. The scenario's
+  positive signal is `skill-called` plus the Gauntlet-Agent's judgement. The
+  ordering checks are a guard against the bad case — an agent that writes code
+  first — not a measurement of the good one. Three green checks on this scenario
+  are not three independent confirmations, and should not be read as such.
 
 `superpowers-bootstrap` is the `⊘`, and it is not a behavior result. From
 `sentinel-runs/superpowers-bootstrap-claude-auto-20260913T215416Z-3e65/verdict.json`,
@@ -348,14 +423,15 @@ the `bootstrap-installed` pre-check failed with detail "unrecognized coding-agen
 so the run was indeterminate before the agent started. That check only recognizes
 the literal `claude` actor, the same one that cannot provision here.
 
-This sentinel tier measured `d0a187d`, and the table above now requires no
-removal, so `d0a187d` is the head the table's verdicts describe. That is not a
-green light. The tier came back with one failure that fix round 1 could not
-resolve, and the honest reading of this section is that the sentinel evidence
-behind the six contract-only rows is incomplete, not clean. Task 21 runs the tier
-again; whoever reads its result should read this subsection first, and should
-expect `triggering-writing-plans` to fail again for the same reason unless the
-scenario's checks or the brainstorming-to-plan pipeline changes in between.
+This sentinel tier measured `d0a187d`, and the table above requires no removal,
+so `d0a187d` is the head the table's verdicts describe. The tier's one failure is
+resolved in the harness and in the scenario rather than accepted, and the re-run
+that closes it is at the same head. What stays unmeasured at this head is the `⊘`
+and the three scenarios that never ran, all four for the same actor-name
+limitation. Task 21 runs the tier again; whoever reads its result should read
+this subsection first, and should expect `triggering-writing-plans` to pass,
+because the harness and scenario changes that make it pass are committed in this
+repository alongside this file.
 
 ## Quote verification
 
@@ -369,7 +445,10 @@ JSON-escaped, so those could not match verbatim regardless of whether the claim
 is true. Fenced blocks are excluded from extraction; they are runner and script
 output reproduced whole, not quotations.
 
+Re-run in fix round 2 over the whole evidence directory, with the re-run's
+artifacts now part of the corpus.
+
 `treatment/measurements.md`: 49 quotes verified, 0 misses.
-This file: 20 quotes verified, 0 misses.
+This file: 27 quotes verified, 0 misses.
 
 Removals required: none

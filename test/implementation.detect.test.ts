@@ -34,6 +34,13 @@ test('Write coding-agent-workdir/docs/superpowers/ → false (excluded)', () => 
   expect(isImplementationPath(c)).toBe(false);
 });
 
+test('Write coding-agent-workdir/docs/hyperpowers/ → false (excluded)', () => {
+  const c = call('Write', {
+    file_path: '/run/coding-agent-workdir/docs/hyperpowers/specs/x.md',
+  });
+  expect(isImplementationPath(c)).toBe(false);
+});
+
 test('Write coding-agent-workdir/.git/config → false (excluded)', () => {
   const c = call('Write', {
     file_path: '/run/coding-agent-workdir/.git/config',
