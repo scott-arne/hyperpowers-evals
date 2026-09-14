@@ -8,8 +8,11 @@ branch ships. Inputs: this task's treatment arm
 
 Treatment head: hyperpowers `d0a187d64e62587131f9c9ff4f59988d257b6b26`.
 Harness: hyperpowers-evals `d8d8df6ae775e36acf9b453fb3a35eba9568f1cf` for the
-S1 arm and the sentinel tier batch, and `3aaf198` plus the two fixes that were
-uncommitted at run time — now `1652992` — for the fix-round-2 sentinel re-run.
+first four S1 trials and the sentinel tier batch, `0edf098` for S1 runs `b15c`
+and `0eb0`, which started after that commit (the range `d8d8df6..0edf098` lists
+no path outside `evidence/`, so both revisions hold identical harness code),
+and `3aaf198` plus the two fixes that were uncommitted at run time — now
+`1652992` — for the fix-round-2 sentinel re-run.
 The re-run's runner log records those two fixes as a `git diff --stat` taken
 immediately before the run.
 Plan: `docs/hyperpowers/plans/2026-09-10-external-workflow-adoption.md`.
@@ -82,9 +85,11 @@ Gauntlet-Agent exits without writing a result measured nothing, so it is a void
 attempt rather than an indeterminate trial and does not occupy a trial slot.
 `3b0d` and `341c` are both void attempts on that test — each one's
 `verdict.json` summary reads "gauntlet exited (status 1) without writing a
-result" — so one replacement was run, within a cap of three fixed before the run
-was made, and it landed determinate on the first attempt. The arm's own file
-lists all six live runs with what each one was.
+result" — so a replacement was run, within a cap of three fixed before the run
+was made, and it landed determinate. Reaching it took two `quorum run`
+invocations, the first of which (`b15c`) failed in setup before any agent
+started and is not counted against the cap. The arm's own file lists all six
+live runs with what each one was.
 
 ### Check 1 — determinate count: PASS
 
@@ -182,7 +187,7 @@ and no A7 brainstorming clause by design.
 
 | Item | Scenario | Verdict | Basis |
 |---|---|---|---|
-| A1 reviewer noise control | S1 | ships | all five checks pass. Comparison 0.00 (n=3) vs 2.00 (n=3) on equal denominators, recall 2/2 in both arms, acceptance met in 3 of 3 determinate treatment trials. The third trial replaced a void attempt under a three-attempt cap fixed before the run and took one attempt |
+| A1 reviewer noise control | S1 | ships | all five checks pass. Comparison 0.00 (n=3) vs 2.00 (n=3) on equal denominators, recall 2/2 in both arms, acceptance met in 3 of 3 determinate treatment trials. The third trial replaced a void attempt under a three-attempt cap fixed before the run; the runner log holds two replacement invocations, and `b15c` — a setup failure that started no agent — is excluded from the count, so the cap held whether it is counted or not |
 | A2 gate boundary | S2 | does not ship | Task 9: "S2: hardened; baseline still met acceptance in 3/3 determinate trials — A2 does not ship"; never implemented |
 | A3 findings are claims | none | ships | contract tests only; no observable claim. 14/14 suites green at `d0a187d`, sentinel tier as regression |
 | A4 red loop | S3 | does not ship | Task 9: "S3: hardened; baseline still met acceptance in 3/3 determinate trials — A4 does not ship"; never implemented |
@@ -482,11 +487,14 @@ needed to close it.
 
 Two limits survive, and this round repairs neither.
 
-- **Still n=1 per arm.** A verb swap and a path exclusion change how a run is
-  read; they do not add runs. One treatment run, one branch-point control and one
-  re-run cannot separate a branch effect from ordinary variance — and the
-  first-skill choice this section names as the mechanism is exactly the kind of
-  thing that varies run to run. It rests on a single observation per side.
+- **Two treatment-side observations, one control-side.** A verb swap and a
+  path exclusion change how a run is read; they do not add runs. The treatment
+  head has the original run and the fix-round-2 re-run; the branch point has
+  the one control. Two runs on one side and one on the other cannot separate a
+  branch effect from ordinary variance — and the first-skill choice this
+  section names as the mechanism is exactly the kind of thing that varies run
+  to run. Neither side has a variance estimate, and a second observation
+  agreeing with the first is not one.
 - **This scenario's ordering checks will be vacuous in nearly every run.** The
   story ends the operator's turn as soon as the agent loads a skill or starts
   planning, so an agent seldom reaches implementation code inside the run window;
