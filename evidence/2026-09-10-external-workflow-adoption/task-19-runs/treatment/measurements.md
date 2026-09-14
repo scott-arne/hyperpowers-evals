@@ -321,8 +321,8 @@ The six S1 runs were copied whole from `results/`, then the changes below were
 made so the copies could be committed. The same rule was applied to the two
 preserved sentinel runs in `../sentinel-runs/`, to the control run in
 `../sentinel-control/`, and to the fix-round-2 re-run in `../sentinel-rerun/`.
-They follow the rule Task 8's arm established and Task 9's arm extended. None touches a JSON or log artifact, and none affects
-anything cited above.
+They follow the rule Task 8's arm established and Task 9's arm extended. None
+touches a JSON or log artifact, and none affects anything cited above.
 
 1. `coding-agent-workdir/.git` is renamed to `coding-agent-workdir/git-dir` in
    every run. Left as `.git`, each fixture repo is an embedded git repository:
