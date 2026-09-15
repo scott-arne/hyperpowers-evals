@@ -6,6 +6,6 @@ pre() {
 
 post() {
     check-transcript skill-called superpowers:executing-plans
-    check-transcript skill-before-tool superpowers:executing-plans Edit
-    check-transcript skill-before-tool superpowers:executing-plans Write
+    check-transcript skill-before-implementation-tool superpowers:executing-plans Edit
+    check-transcript skill-before-implementation-tool superpowers:executing-plans Write
 }
