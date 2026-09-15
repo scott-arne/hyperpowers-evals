@@ -1030,8 +1030,18 @@ async function runInnerBody(
 
   // 5. Coding-agent gating: honor the `# coding-agents:` directive before any
   //    side effect, so a direct `quorum run` against an excluded agent skips.
+  //    A directive names a harness, not an actor: claude-auto, claude-vertex and
+  //    claude-bedrock all declare runtime_family claude, so `# coding-agents:
+  //    claude` has to reach them. This is the rule buildMatrix applies, repeated
+  //    here so run-all and a direct `quorum run` agree; an agent that declares no
+  //    family has family == name and so still needs the exact name.
   const allowed = parseCodingAgentsDirective(checksSh);
-  if (allowed && !allowed.includes(a.codingAgent)) {
+  const agentFamily = cfg.runtime_family ?? cfg.name;
+  if (
+    allowed &&
+    !allowed.includes(a.codingAgent) &&
+    !allowed.includes(agentFamily)
+  ) {
     return writeIndeterminate({
       finalReason: `requires coding-agents: ${allowed.join(', ')}`,
     });
