@@ -36,8 +36,11 @@ export function allocateBatchDir(args: AllocateBatchDirArgs): string {
     try {
       mkdirSync(candidate, { recursive: false });
       return candidate;
-    } catch {
-      // EEXIST nonce collision; try again with a fresh stamp+nonce.
+    } catch (e) {
+      // Only a nonce collision is retryable. A bare catch also swallows an
+      // unwritable root or a full disk, spends all 100 attempts on it, and
+      // then reports the wrong cause.
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
     }
   }
   throw new Error(

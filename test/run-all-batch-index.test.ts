@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import {
@@ -30,6 +36,29 @@ test('allocateBatchDir creates results/batches/<batch-...>', () => {
   expect(existsSync(batchDir)).toBe(true);
   expect(basename(batchDir)).toMatch(/^batch-\d{8}T\d{6}Z-[0-9a-f]{4}$/);
   expect(batchDir.startsWith(join(outRoot, 'batches'))).toBe(true);
+});
+
+test('allocateBatchDir rethrows a non-EEXIST failure instead of retrying', () => {
+  const outRoot = tmpOutRoot();
+  // Pre-create batches/ so the recursive mkdir of the root succeeds, then take
+  // away write permission: every candidate mkdir now fails with EACCES, which
+  // is not a nonce collision and must surface immediately.
+  const batchesRoot = join(outRoot, 'batches');
+  mkdirSync(batchesRoot);
+  chmodSync(batchesRoot, 0o555);
+  try {
+    let thrown: unknown;
+    try {
+      allocateBatchDir({ outRoot });
+    } catch (e) {
+      thrown = e;
+    }
+    expect((thrown as NodeJS.ErrnoException | undefined)?.code).toBe('EACCES');
+    // Not the after-100-attempts message: the loop gave up on the first error.
+    expect((thrown as Error).message).not.toContain('100 attempts');
+  } finally {
+    chmodSync(batchesRoot, 0o755);
+  }
 });
 
 test('writeBatchHeader writes batch.json with finished_at null + indent 2', () => {
