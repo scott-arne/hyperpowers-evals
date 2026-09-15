@@ -85,12 +85,17 @@ export interface WriteBatchFooterArgs {
 
 // Patch batch.json with finished_at when the batch completes. Re-reads +
 // zod-narrows the existing header rather than trusting prior bytes.
+//
+// passthrough, because this is a read-modify-write of a file another version of
+// the writer may own: a strict parse would drop (or, for a stricter schema,
+// reject) any key a newer schema_version added, and the footer would silently
+// truncate the header it was only meant to stamp.
 export function writeBatchFooter(args: WriteBatchFooterArgs): void {
   const path = join(args.batchDir, 'batch.json');
-  const header = BatchHeaderSchema.parse(
+  const header = BatchHeaderSchema.passthrough().parse(
     JSON.parse(readFileSync(path, 'utf8')) as unknown,
   );
-  const data: BatchHeader = { ...header, finished_at: args.finishedAt };
+  const data = { ...header, finished_at: args.finishedAt };
   writeFileSync(path, JSON.stringify(data, null, 2));
 }
 

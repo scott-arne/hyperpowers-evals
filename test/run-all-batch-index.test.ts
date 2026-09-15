@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -136,6 +137,32 @@ test('writeBatchFooter sets finished_at, preserving the rest', () => {
   expect(header.finished_at).toBe('2026-06-12T02:00:00.000Z');
   expect(header.started_at).toBe('2026-06-12T01:53:01.000Z');
   expect(header.coding_agents).toEqual(['claude']);
+});
+
+test('writeBatchFooter keeps a header key its own schema does not know', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'batch-'));
+  writeBatchHeader({
+    batchDir: dir,
+    codingAgents: ['claude'],
+    jobs: 1,
+    repeat: 1,
+    startedAt: '2026-06-12T01:53:01.000Z',
+  });
+  // Stand in for a key a newer writer added: the footer re-reads and rewrites
+  // the whole file, so a strict parse here would silently drop it.
+  const path = join(dir, 'batch.json');
+  const raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+  raw['lens'] = 'security';
+  writeFileSync(path, JSON.stringify(raw, null, 2));
+
+  writeBatchFooter({ batchDir: dir, finishedAt: '2026-06-12T02:00:00.000Z' });
+
+  const after = JSON.parse(readFileSync(path, 'utf8')) as Record<
+    string,
+    unknown
+  >;
+  expect(after['lens']).toBe('security');
+  expect(after['finished_at']).toBe('2026-06-12T02:00:00.000Z');
 });
 
 test('appendResultRecord serializes a nested trial with the pyCompact separators', () => {
