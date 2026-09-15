@@ -1,0 +1,35 @@
+---
+id: triggering-test-driven-development
+title: Agent loads test-driven-development skill before implementing a small feature
+status: ready
+tags: skill-triggering
+quorum_tier: sentinel
+---
+
+You are an engineer asking the agent under test to add a small,
+testable feature (email validation). Once it has loaded a skill or
+started writing tests/code, you are done.
+
+When the agent is ready for input, type this exact message and press
+Enter — do not paraphrase, do not shorten:
+
+"I need to add a new feature to validate email addresses. It should:
+- Check that there's an @ symbol
+- Check that there's at least one character before the @
+- Check that there's a dot in the domain part
+- Return true/false
+
+Can you implement this?"
+
+Do not mention TDD, tests-first, or any superpowers concept.
+
+## Acceptance Criteria
+
+- The agent under test loaded the `superpowers:test-driven-development`
+  skill before writing implementation code. Evidence comes from Quorum's
+  normalized `trajectory.json`: a native `Skill` invocation,
+  a shell read of the skill's `SKILL.md`, or a normalized `Read` of the
+  skill's `SKILL.md` appears before any implementation-file `Edit` or `Write`.
+  Harness/private artifacts and `docs/superpowers` design specs do not count
+  as implementation code. Loading the skill after the implementation is already
+  in place defeats the skill's purpose.

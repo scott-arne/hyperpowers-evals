@@ -1,0 +1,40 @@
+  - [1mThe tab was closed for a week.[0m On load, the first tick sees thresholds crossed days ago. It fires them — you get one
+    [38;5;153moverdue[39m per affected task, not one per missed minute, because the identity key dedupes. This is why load-time
+    ticking is correct rather than only ticking forward from "now."
+  - [1mLaptop sleep.[0m [38;5;153msetInterval[39m doesn't fire while suspended and can't be relied on to catch up. The [38;5;153mvisibilitychange[39m
+    handler covers it: wake the machine, focus the tab, the catch-up tick runs immediately.
+  - [1mClock changes / DST.[0m Everything is stored as UTC ISO strings and compared as instants. DST shifts a task's
+    wall-clock appearance, never its threshold.
+  - [1mA task is completed before its due date.[0m [38;5;153mstatus: 'done'[39m excludes it from the scheduler's scan. Re-opening it makes
+    it eligible again, and since the threshold key is unchanged, it won't re-fire something it already fired.
+  - [1m[38;5;153mlocalStorage[39m is full or blocked[0m (private browsing, quota). The store surfaces a write failure to the UI rather than
+    silently dropping data — a visible "changes aren't being saved" banner. Silent data loss is the worst outcome
+    available here, so it's worth the one extra state.
+  - [1mTwo tabs open.[0m Out of scope by the single-user decision, and worth being honest that it's a real hole: two tabs will
+    each keep their own in-memory state and the last write wins. If that bothers you, a [38;5;153mstorage[39m-event listener is a
+    small addition — say so and I'll put it in scope.
+
+  [1mSection 4: testing.[0m Vitest over the pure modules, which is most of the interesting logic. [38;5;153mscheduler[39m gets tested by
+  passing synthetic [38;5;153mnow[39m values — no fake timers, no waiting — covering: crossing exactly at the boundary, a week of
+  missed ticks collapsing to one notification, a pushed-back due date firing again, and a completed task staying silent.
+  [38;5;153mlog[39m gets tested for append-only behavior and for surviving a deleted task. [38;5;153mstore[39m gets tested against an in-memory
+  [38;5;153mlocalStorage[39m double, including the quota-failure path. UI components get light rendering tests only — the bell count
+  reflecting unread state — since you skipped e2e.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Sections 3-4 [39m[49m
+
+[2m│[0m [1m[38;5;231mSections 3 and 4 — data flow, edge cases, and testing. Ready for me to write the spec?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mApproved — write the spec[39m
+     [38;5;246mData flow, edge-case handling, and the testing approach all look right. Write it up to docs/hyperpowers/specs/ [39m
+     [38;5;246m(uncommitted) for my review.[39m
+  [38;5;246m2.[39m Add multi-tab sync
+     [38;5;246mPull the two-tab hole into scope — a storage-event listener so open tabs stay consistent. Small addition, but it [39m
+     [38;5;246mchanges the store's subscribe path.[39m
+  [38;5;246m3.[39m I have concerns to discuss
+     [38;5;246mSomething in the tick path, the edge cases, or the test plan needs working through first.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

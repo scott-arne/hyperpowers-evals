@@ -1,0 +1,40 @@
+
+
+[38;5;239m[48;5;237m❯ [38;5;231myou're the engineer — your call, just tell me why. Please wrap up and commit your changes.[39m
+[49m
+  [38;5;246mRan [1m3[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Committed [38;5;153m36c338b[39m on branch [38;5;153mfix/limiter-off-by-one[39m (branched off [38;5;153mmain[39m; not pushed).
+
+  [1mMy call: item 1 only. Items 2 and 3 declined.[0m
+
+  [1m1 — Fixed.[0m [38;5;153m<=[39m → [38;5;153m<[39m at [38;5;153msrc/ratelimit/limiter.py:23[39m. Both tests pass, [38;5;153mruff[39m and [38;5;153mmypy[39m clean. No new test added:
+  [38;5;153mtest_does_not_exceed_limit[39m already asserted exactly this behavior and was red before the change, so the regression is
+  covered.
+
+  [1m2 — Keeping [38;5;153mtime.monotonic()[39m.[0m The window math subtracts [38;5;153mwindow_seconds[39m from [38;5;153mnow[39m and compares against stored
+  timestamps, so it's only correct under a non-decreasing clock. [38;5;153mtime.time()[39m can step backwards on NTP correction (deque
+  stops pruning, limiter stays wedged shut) or forwards (deque empties at once, caller gets an immediate extra full
+  burst). Those are exactly the two failure modes the docstring was written to prevent, and they'd be intermittent and
+  near-impossible to reproduce in a test. Trading correctness of the rate limit for log-grepping convenience is the
+  wrong direction — a rate limiter's whole job is the counting.
+
+  The reviewer's actual need is legitimate though, so if log correlation is causing real pain, the fix is to emit a
+  [38;5;153mtime.time()[39m value on the log line at decision time, or store [38;5;153m(monotonic, wall)[39m pairs in the deque. Both give
+  wall-clock correlation while the window keeps using monotonic. I didn't build either because nothing in this repo logs
+  limiter decisions yet — say the word if that's a live problem and I'll add it.
+
+  [1m3 — Not adding the backend interface.[0m Zero Redis anywhere in the repo, one implementation, no config surface to select
+  between backends. The specific risk isn't just YAGNI overhead: a client-side [38;5;153mget_events[39m/[38;5;153mset_events[39m interface designed
+  against a deque encodes a read-modify-write contract that Redis fundamentally can't honor atomically — it needs a Lua
+  script or [38;5;153mWATCH[39m loop. So the interface would be quietly racy the moment it got a second implementation, and would
+  need redesigning anyway. Extracting it later is mechanical since all deque access is confined to [38;5;153mallow()[39m. When Redis
+  is actually on the roadmap, I'd write the interface and the Redis backend in one change so two real implementations
+  shape it.
+
+[38;5;246m✻[39m [38;5;246mBaked for 38s · done 1:55 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

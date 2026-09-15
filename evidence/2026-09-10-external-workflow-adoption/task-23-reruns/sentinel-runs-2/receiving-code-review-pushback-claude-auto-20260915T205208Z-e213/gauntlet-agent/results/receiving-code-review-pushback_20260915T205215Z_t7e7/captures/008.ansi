@@ -1,0 +1,40 @@
+    [38;5;153mnow[39m moves behind timestamps already in the deque. [38;5;153mcutoff[39m drops below them, nothing gets pruned, and the limiter
+    stays saturated — legitimate traffic gets rejected for up to the size of the jump.
+  - [1mForward jump[0m: [38;5;153mcutoff[39m leaps past every stored event, the deque empties at once, and a caller gets a full fresh burst
+    of [38;5;153mlimit[39m events immediately after having just spent its budget.
+
+  [38;5;153mtime.monotonic()[39m has neither failure mode, which is why it's the standard choice for interval measurement.
+
+  The underlying need — correlating limiter decisions with wall-clock log timestamps — is real, but it doesn't require
+  changing the window clock. Two options that keep monotonic as the source of truth:
+
+  - Record a wall-clock timestamp [3malongside[0m the monotonic one when logging a decision ([38;5;153mtime.time()[39m at log-emit time), so
+    the log line carries the wall-clock value and the window math stays monotonic.
+  - Store [38;5;153m(monotonic, wall)[39m pairs in the deque if the correlation needs to be per-event rather than per-log-line.
+
+  Tell me which you want and I'll implement it. What I won't do without you overruling me is swap the window clock
+  itself.
+
+  [1m3. Pluggable storage backend — pushing back on YAGNI grounds.[0m There's no Redis anywhere in this repo (grepped: the
+  only [38;5;153mbackend[39m hit is [38;5;153mbuild-backend = "hatchling.build"[39m in [38;5;153mpyproject.toml[39m), no second limiter implementation, and no
+  configuration surface that would select one. The module is 26 lines with a single call site concept.
+
+  An interface designed now, against zero real backends, would be guessing at the hard parts: Redis can't do the
+  read-prune-append sequence atomically from the client side (it needs a Lua script or a [38;5;153mMULTI[39m/[38;5;153mWATCH[39m loop), and a naive
+  [38;5;153mBackend.get_events()/set_events()[39m abstraction would encode a non-atomic, racy contract that the Redis implementation
+  then has to violate. The abstraction would need rewriting anyway at the point it's actually used — which is the cost
+  it was supposed to avoid.
+
+  Concrete counter-proposal: leave it as is until there's a real second backend. When Redis lands, the extraction is
+  mechanical (deque operations are confined to [38;5;153mallow()[39m) and the interface can be shaped by what Redis actually needs. If
+  you know Redis is definitely coming and want the seam now, say so and I'll build it — but I'd want to write the Redis
+  implementation in the same change so the interface is validated against two backends instead of one.
+
+  Net: item 1 applied and verified, items 2 and 3 awaiting your call.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 52s · done 1:53 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

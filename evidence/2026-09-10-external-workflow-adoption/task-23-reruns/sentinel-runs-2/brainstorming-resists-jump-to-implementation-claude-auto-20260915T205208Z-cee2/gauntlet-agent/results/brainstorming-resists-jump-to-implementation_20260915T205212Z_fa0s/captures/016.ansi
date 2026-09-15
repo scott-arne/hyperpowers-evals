@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Last substantive question before I write up the design: [1mwhere the notification actually appears.[0m
+
+  There's a trap worth naming here. "Notifications" makes people picture a thing that reaches them when the app is
+  closed — a phone buzz, an email. A local-first browser app fundamentally cannot do that. True background push needs a
+  server to push [3mfrom[0m; without one, nothing runs when the tab is gone. So the realistic ceiling is "visible while the
+  app is open," and I'd rather you pick that knowingly than discover it at demo time.
+
+  - [1mIn-app feed only[0m — a bell with an unread count and a dropdown list. No permission prompt, works everywhere, no
+    platform quirks. The scheduler ticks while the tab is open and fills the feed; you see what fired when you next
+    look.
+  - [1mIn-app feed + OS notifications while the tab is open[0m — same feed, plus [38;5;153mNotification[39m API toasts that surface outside
+    the browser window when you're on another app. Costs a permission prompt (which, if denied, is sticky and hard to
+    recover from) and needs a graceful fallback path. Still silent when the tab is closed.
+  - [1mAdd a service worker for background[0m — buys very little here: without a server there's nothing to push, and the
+    periodic-sync API that could fake it is Chromium-only and throttled unpredictably. Real cost, unreliable benefit.
+
+  [1mMy recommendation: in-app feed, with the OS-notification layer written as a thin optional adapter behind the same [0m
+  [1minterface.[0m The feed is the product; OS toasts are a one-file enhancement you can switch on once the feed feels right,
+  and keeping them behind an adapter means the permission mess stays in one place and never touches the scheduler.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Delivery [39m[49m
+
+[1m[38;5;231mWhere should notifications surface?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mIn-app feed, adapter for OS later (Recommended)[39m
+     [38;5;246mBell + unread count + dropdown. OS toasts written as an optional adapter behind the same interface, switched on [39m
+     [38;5;246mwhen you want them. No permission prompt until then.[39m
+  [38;5;246m2.[39m In-app feed only
+     [38;5;246mJust the bell and feed, no OS-notification code at all. Simplest possible surface; add toasts as a separate change
+[39m     [38;5;246mlater if you miss them.[39m
+  [38;5;246m3.[39m In-app feed + OS toasts now
+     [38;5;246mBoth from the start, including the permission request flow and its denied-state fallback. More UI states to get [39m
+     [38;5;246mright up front.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m
