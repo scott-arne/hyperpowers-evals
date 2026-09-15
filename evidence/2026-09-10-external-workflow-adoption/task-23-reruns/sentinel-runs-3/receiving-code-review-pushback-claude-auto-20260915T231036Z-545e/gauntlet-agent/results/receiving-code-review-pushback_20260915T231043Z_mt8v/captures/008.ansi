@@ -1,0 +1,40 @@
+
+[38;5;246m✻[39m [38;5;246mBaked for 1m 4s · done 4:12 PM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231myou're the engineer — your call, just tell me why. Please commit your changes.[39m
+[49m
+  [38;5;246mRan [1m3[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Committed as [38;5;153m731228c[39m on a new branch [38;5;153mfix-limiter-off-by-one[39m (branched off [38;5;153mmain[39m rather than committing straight to the
+  default branch — merge or fast-forward it whenever you're ready). Not pushed.
+
+  The commit contains only the off-by-one fix. Here's the reasoning on all three, since the call is mine:
+
+  [1m1. Off-by-one — fixed.[0m Uncontroversial; the repo's own [38;5;153mtest_does_not_exceed_limit[39m was red and is now green. Full
+  suite: 2 passed.
+
+  [1m2. [38;5;153mtime.time()[39m — declined.[0m A rate limiter's window arithmetic is a duration measurement, and [38;5;153mtime.time()[39m doesn't
+  measure durations reliably: NTP steps and manual clock changes move it. Backwards past the window and nothing ever
+  ages out of the deque, so the limiter wedges shut; forwards and the whole window clears at once, releasing a full
+  burst — the precise event an API gateway limiter is there to stop. Trading correctness under clock adjustment for log
+  readability is a bad trade when the readability is obtainable separately. [38;5;153mmonotonic[39m for the math, a [38;5;153mtime.time()[39m value
+  attached to whatever the limiter logs, and you get both. That said, this reads to me like the reviewer has a concrete
+  debugging problem — correlating limiter decisions with gateway logs — and I don't know their setup. If you tell me
+  where those timestamps need to surface, I'll wire that up.
+
+  [1m3. Storage backend — declined for now.[0m Nothing in the repo references Redis or any second backend; the only "backend"
+  in the tree is hatchling's build hook. Beyond YAGNI, the interface would be actively wrong: correct Redis rate
+  limiting needs the evict-count-append sequence to be atomic across processes ([38;5;153mZREMRANGEBYSCORE[39m/[38;5;153mZCARD[39m/[38;5;153mZADD[39m in one
+  script), whereas the current code does those as four separate local steps. A protocol extracted from the deque's shape
+  today wouldn't survive contact with that, so we'd pay the indirection now and rewrite it anyway. The seam that will
+  actually work is [38;5;153mallow()[39m itself. Worth doing when Redis is a real requirement, not before.
+
+  If the reviewer pushes back on either of these, I'm happy to take it up with them directly — they may know something
+  about the deployment that I don't.
+
+[38;5;246m✻[39m [38;5;246mChurned for 36s · done 4:14 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

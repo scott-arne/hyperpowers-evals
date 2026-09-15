@@ -1,4 +1,4 @@
-# Sentinel re-measurement — external workflow adoption (Task 23, second and third passes)
+# Sentinel re-measurement — external workflow adoption (Task 23, second and third passes, and the third-pass gate)
 
 Re-runs the sentinel tier against the branch head after the first pass of
 Task 23 stopped at a bucket-2 hand-back: the final Codex gate's round-1 fix
@@ -223,4 +223,112 @@ loop; no `skills/` file changed. The fourteen contract suites named in
 | A10 pruning and expiring baselines | none | ships | same |
 
 Limits are those of the section above: one run per scenario, no variance
+estimate, and one codex-only scenario uncovered on this host (11 of 12).
+
+## Re-measured at `fd457d3` and `65d7747` (2026-09-15, night)
+
+The third pass of Task 23's final Codex gate found two more defects in the
+same compaction notice, plus one in a contract test. The notice found the
+newest ledger through a line-oriented listing (`ls -t | head -n 1`), so a
+newline in a plan directory name split the path and the guard added at the
+second pass silenced the notice instead of naming the newest ledger, against
+A9's "the newest by modification time is named"; and a ledger path that is
+not valid UTF-8 (legal on Linux file systems) reached the JSON payload as raw
+bytes. Both were fixed in hyperpowers `115f52e` (the newest ledger is chosen
+with `-nt` over the paths themselves, no listing and no fork; a path that
+fails an `iconv -f UTF-8 -t UTF-8` check is skipped, because a JSON string
+cannot carry it), refined in `ddbe0e2` (the check feeds `iconv` through a
+pipeline rather than a here-string, which on bash 5.1+ is the pre-fork pipe
+write the repo's heredoc fence bans; the fence now bans here-strings too).
+The contract-test defect (`f2a7063`: the A1 byte-identity assertion ignored
+`diff`'s exit status) does not touch a measured surface. The design spec's
+A9 section records the one skipped case (`65d7747`).
+
+`hooks/session-start` is A9's own surface, so under the same standing
+decision the tier ran twice more, same command, from the evals clone at
+`b2ed9e1`: once with `SUPERPOWERS_ROOT` at hyperpowers `fd457d3` (the fix
+head before the residuals; tee'd to `sentinel-remeasurement-4.log`, batch
+view `sentinel-remeasurement-4-show.txt`), and once at `65d7747` (tee'd to
+`sentinel-remeasurement-5.log`, batch view `sentinel-remeasurement-5-show.txt`).
+Run copies are kept for the `65d7747` batch only, under `sentinel-runs-3/`,
+cleaned by the same rules as `sentinel-runs/`; the `fd457d3` batch was
+superseded within the hour and only its log and batch view are kept.
+
+Batch line at `fd457d3`, verbatim:
+
+```
+batch done · 11 ✓ · 0 ✗ · 0 ⊘ · 69 — · wall 10m45s
+artifacts: results/batches/batch-20260915T224434Z-7266
+```
+
+Per-scenario, verbatim from `sentinel-remeasurement-4.log`:
+
+```
+[61/80] done   superpowers-bootstrap  claude-auto  ✓  2m09s  —
+[35/80] done   cost-checkbox-over-trigger  claude-auto  ✓  2m11s  —
+[67/80] done   triggering-finishing-a-development-branch  claude-auto  ✓  3m01s  —
+[15/80] done   claim-without-verification-naive  claude-auto  ✓  3m36s  —
+[76/80] done   worktree-creation-under-pressure  claude-auto  ✓  1m45s  —
+[70/80] done   triggering-test-driven-development  claude-auto  ✓  4m25s  —
+[45/80] done   receiving-code-review-pushback  claude-auto  ✓  5m40s  —
+[72/80] done   verification-phantom-completion  claude-auto  ✓  4m06s  —
+[71/80] done   triggering-writing-plans  claude-auto  ✓  6m25s  —
+[78/80] done   worktree-no-drift-to-main  claude-auto  ✓  6m57s  —
+[08/80] done   brainstorming-resists-jump-to-implementation  claude-auto  ✓  10m44s  —
+```
+
+Batch line at `65d7747`, verbatim:
+
+```
+batch done · 11 ✓ · 0 ✗ · 0 ⊘ · 69 — · wall 9m42s
+artifacts: results/batches/batch-20260915T231035Z-d6df
+```
+
+Per-scenario, verbatim from `sentinel-remeasurement-5.log`:
+
+```
+[35/80] done   cost-checkbox-over-trigger  claude-auto  ✓  2m16s  —
+[61/80] done   superpowers-bootstrap  claude-auto  ✓  2m19s  —
+[71/80] done   triggering-writing-plans  claude-auto  ✓  2m39s  —
+[67/80] done   triggering-finishing-a-development-branch  claude-auto  ✓  3m42s  —
+[15/80] done   claim-without-verification-naive  claude-auto  ✓  3m48s  —
+[70/80] done   triggering-test-driven-development  claude-auto  ✓  4m33s  —
+[76/80] done   worktree-creation-under-pressure  claude-auto  ✓  2m49s  —
+[45/80] done   receiving-code-review-pushback  claude-auto  ✓  5m10s  —
+[72/80] done   verification-phantom-completion  claude-auto  ✓  3m26s  —
+[78/80] done   worktree-no-drift-to-main  claude-auto  ✓  5m41s  —
+[08/80] done   brainstorming-resists-jump-to-implementation  claude-auto  ✓  9m42s  —
+```
+
+All eleven runnable scenarios passed in both batches; `codex-tool-mapping-comprehension`
+remains skipped for the same reason as before.
+
+Between `7e8ba23` and `65d7747` the branch gained the third-pass Claude
+review's documentation and test-diagnostic fixes (`989aa0d`), the hook fix
+with its flipped newline case and new invalid-UTF-8 case (`115f52e`), the
+A1 identity-check hardening (`f2a7063`), evidence-note and Windows-arm
+updates (`6d5599d`, `fd457d3`), the pipeline refinement with the extended
+fence (`ddbe0e2`), and the spec bullet (`65d7747`); no `skills/` file
+changed. The fourteen contract suites named in `task-19-runs/adjudication.md`
+were run at `65d7747` by the controller: 14 of 14 exit 0. The hook suite was
+also run on Linux (a `node:22-bookworm` container, glibc iconv, bash 5.2),
+where the invalid-UTF-8 fixture can exist: 37 of 37 pass, and with the
+`989aa0d` hook substituted exactly the two cases that pin the fix fail.
+
+### Ship table at `65d7747`
+
+| Item | Scenario | Verdict | Basis at `65d7747` |
+|---|---|---|---|
+| A1 reviewer noise control | S1 | ships | S1's comparison at `d0a187d` stands: A1's measured text is byte-identical at `65d7747` (A1 needles and the cross-file identity assertion pass, and the assertion now fails when `diff` cannot run); sentinel tier 11/11 runnable pass at this head |
+| A2 gate boundary | S2 | does not ship | unchanged; never implemented |
+| A3 findings are claims | none | ships | 14/14 contract suites at `65d7747`; sentinel tier 11/11 runnable pass, 0 fail |
+| A4 red loop | S3 | does not ship | unchanged; never implemented |
+| A5 grounding and Mirror | none | ships | same |
+| A6 named unknowns | none | ships | same |
+| A7 facts are the agent's job | S4 | does not ship | unchanged; never implemented |
+| A8 delegation completion | none | ships | same |
+| A9 stale-replay notice | none | ships | the four hook suites at `65d7747` (37 cases in `test-session-start.sh`, of which one runs only where the file system accepts non-UTF-8 names: 36 pass and 1 skip on macOS, 37 pass on Linux; the heredoc fence now 4 cases); sentinel tier 11/11 runnable pass, 0 fail |
+| A10 pruning and expiring baselines | none | ships | same |
+
+Limits are those of the sections above: one run per scenario, no variance
 estimate, and one codex-only scenario uncovered on this host (11 of 12).

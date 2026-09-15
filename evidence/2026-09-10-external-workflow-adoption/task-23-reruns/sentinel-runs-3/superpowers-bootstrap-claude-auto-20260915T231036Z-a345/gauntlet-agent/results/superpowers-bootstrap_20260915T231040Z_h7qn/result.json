@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 5,
+  "runId": "superpowers-bootstrap_20260915T231040Z_h7qn",
+  "scenario": "superpowers-bootstrap",
+  "summary": "Claude Code launched via the provided launcher, and the naive prompt \"Let's make a react todo list\" caused it to immediately load the brainstorming skill (as `hyperpowers:brainstorming` — the plugin is a fork named \"hyperpowers\") and begin an interactive brainstorming Q&A, with no Write/Edit tool calls at all.",
+  "reasoning": "The behavioral proof required by criterion 2 is present in the authoritative session log: a Skill tool call loading brainstorming as the very first tool use, before any Write/Edit (none occurred), and the on-screen brainstorming dialogue confirms it. The plugin was staged via --plugin-dir into the per-run isolated HOME. The only wrinkle is that the plugin/skill namespace is 'hyperpowers' rather than 'superpowers', which I treat as a rename of the same plugin, and the onboarding dialogs that the HOWTO claimed would be bypassed.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "HOWTO states the isolated config is seeded 'with dialog-bypass state' and that 'The project-trust block provision() writes into .claude.json suppresses the trust prompt.' In practice four onboarding dialogs appeared and had to be dismissed manually: theme picker, security notes (Enter to continue), 'Accessing workspace: ... Yes, I trust this folder', and the Bypass Permissions warning. Notably home/.claude/.claude.json did not appear in the .claude listing (only backups, history.jsonl, plugins, projects, session-env, settings.json, shell-snapshots)."
+    },
+    {
+      "kind": "bug",
+      "description": "Naming mismatch vs. the story: the acceptance criteria name `superpowers:brainstorming`, but the staged plugin identifies as `hyperpowers` (plugin.json name: hyperpowers, v6.14.0) and the skill loaded was `hyperpowers:brainstorming`. Functionally equivalent, but the story/fixture naming is out of sync."
+    },
+    {
+      "kind": "ux",
+      "description": "Both safety dialogs default the selection to the destructive/abort option ('No, exit'), requiring an explicit Down before Enter — fine for humans, but easy to accidentally kill the session."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Superpowers plugin staged into the isolated config for this run",
+      "verdict": "pass",
+      "evidence": "Launcher line: `claude --dangerously-skip-permissions --plugin-dir \"/Users/johnss51/Development/agents/hyperpowers/.worktrees/external-workflow-adoption\"`; that dir's .claude-plugin/plugin.json says {\"name\": \"hyperpowers\", \"description\": \"Core skills library for Claude Code...\"} with skills/brainstorming present; isolated config shows home/.claude/plugins/data/hyperpowers-inline. Plugin is staged, though named 'hyperpowers' rather than 'superpowers'."
+    },
+    {
+      "criterion": "Brainstorming skill loaded before any Write/Edit",
+      "verdict": "pass",
+      "evidence": "Session log jq over /home/.claude/projects/...-coding-agent-workdir/953660fc-*.jsonl: first tool_use is {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:brainstorming\"}}, followed only by Bash reads (`ls -la && git log`, `cat README.md package.json`, `cat src/index.js src/utils.js`). grep for '\"name\":\"Write\"|\"name\":\"Edit\"' returned 0 matches (only 1 Skill). Screen shows brainstorming Q&A: 'Where should the todo data live?' with localStorage/in-memory/backend options."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi"
+    ]
+  },
+  "duration_ms": 134753,
+  "usage": {
+    "inputTokens": 52,
+    "outputTokens": 4412,
+    "cacheCreationInputTokens": 30635,
+    "cacheReadInputTokens": 321209,
+    "turns": 26
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
