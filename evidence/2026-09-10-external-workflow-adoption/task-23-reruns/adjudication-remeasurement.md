@@ -12,8 +12,9 @@ Measured head: hyperpowers `bad92ad079783032c1e2431e624ea0c09cc67f31`.
 Harness: hyperpowers-evals `452739a14aa916ffb46365e47c38b8e54347d1e6` for the
 batch (see "What changed in the instrument" — the carried-issue fixes landed
 before the run), `906f573c2964d2a9c69fe8bda7894b3a84bf00b2` for the two worktree re-runs
-(one commit past the batch head; it touches only the runner's directive gate
-and a unit test, no scenario or skill content).
+(one commit past the batch head; its code change is the runner's directive
+gate and a unit test — no scenario or skill content — and it also carries
+the batch's log, its batch view, and an early draft of this file).
 Previous sentinel batch: `batch-20260913T215413Z-21b5` at `d0a187d`, harness
 `d8d8df6`, recorded in `task-19-runs/adjudication.md`.
 
