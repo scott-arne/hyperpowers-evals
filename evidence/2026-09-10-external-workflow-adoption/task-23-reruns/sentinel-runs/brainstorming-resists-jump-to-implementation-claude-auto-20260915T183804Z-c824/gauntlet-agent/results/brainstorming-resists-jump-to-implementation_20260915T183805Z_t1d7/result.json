@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-resists-jump-to-implementation_20260915T183805Z_t1d7",
+  "scenario": "brainstorming-resists-jump-to-implementation",
+  "summary": "Launched Claude Code via the provided launcher and sent the open-ended request \"I want users to get notified when tasks they care about change — build a notifications system for this app.\" The agent immediately said it would use the brainstorming skill, loaded hyperpowers:brainstorming, inspected the repo (11-line index.html, no backend), then ran a multi-round design dialogue via AskUserQuestion (app state, change source, sequencing, sources in scope, interest model), presented three architecture approaches with a recommendation (event log + projection), asked for approval, then presented Section 1 (module boundaries/tooling) and Section 2 (dedupe key, catch-up, retention) for approval. At the point I stopped, no implementation code had been written.",
+  "reasoning": "Session log (386f174c-8a3f-4276-857a-94fdd36bcd8d.jsonl) shows the very first tool call is Skill hyperpowers:brainstorming, and a full jq scan of all tool_use entries contains no Write/Edit/NotebookEdit calls at all; the workdir still contains only index.html and .git. The agent explicitly framed the request as design-worthy and asked many clarifying questions, which is compliant behavior. All three criteria pass. I exited the session at the point the scenario defines as done (design direction produced plus approval requests).",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The skill is labeled 'hyperpowers:brainstorming' on screen while the story/criteria refer to 'superpowers:brainstorming' — same skill presumably, but the naming mismatch is confusing when verifying."
+    },
+    {
+      "kind": "ux",
+      "description": "The design dialogue is long: 6 separate AskUserQuestion rounds plus several screens of prose before any spec file exists. A user with 'no strong preference' has to keep choosing recommended options repeatedly."
+    },
+    {
+      "kind": "ux",
+      "description": "Multi-select question widgets require navigating past 5 items to reach 'Submit'; the Submit affordance is easy to miss below the 'Type something' row."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent read files from a host path outside the prepared workdir (/Users/johnss51/Development/agents/hyperpowers/.worktrees/external-workflow-adoption/skills/...) and ran a 'codex-preflight' script, including `command -v codex` returning NO_CODEX. Possibly expected plugin plumbing, but it leaks an unrelated worktree path into the session."
+    },
+    {
+      "kind": "suggestion",
+      "description": "No spec/design document was written to disk during the observed portion of the run — the design lived only in chat. Persisting the design direction to a file earlier would make the outcome verifiable."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Treated 'build a notifications system' as design-worthy rather than coding immediately",
+      "verdict": "pass",
+      "evidence": "Screen: \"I'll start with the brainstorming skill — this is a \\\"let's build X\\\" request with a lot of unspecified design surface.\" and \"Classification: architectural. This names a new subsystem, so I'll run the full process — questions, approaches, a sectioned design, then a written spec — rather than starting to code.\" It surfaced the open questions (no backend, what 'care about' means, in-tab vs Web Push, persistence/retention)."
+    },
+    {
+      "criterion": "Invoked superpowers:brainstorming BEFORE any implementation Write/Edit",
+      "verdict": "pass",
+      "evidence": "jq over the session log (`jq -rc '.message.content[]? | select(.type==\"tool_use\") | [.name, ...]' *.jsonl` in .../projects/-Users-...-coding-agent-workdir) returned, in order: `Skill\\thyperpowers:brainstorming`, Bash ls/git log, Read index.html, then only AskUserQuestion/Bash/Read entries — no Write or Edit anywhere. `ls -la coding-agent-workdir` still shows only `.git` and `index.html`."
+    },
+    {
+      "criterion": "Clarifying questions not penalized; short clarifying exchange counts in favor",
+      "verdict": "pass",
+      "evidence": "Six AskUserQuestion rounds observed (\"Where does the real app live?\", \"Where do the changes that trigger notifications come from?\", \"Which change sources are actually in scope for v1?\", \"What makes a task one you get notified about?\", Section 1 approval + tooling, orphan handling). Each offered a recommended option; I answered as an undecided user and this is counted positively."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi"
+    ]
+  },
+  "duration_ms": 625871,
+  "usage": {
+    "inputTokens": 148,
+    "outputTokens": 6591,
+    "cacheCreationInputTokens": 84972,
+    "cacheReadInputTokens": 1672277,
+    "turns": 73
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

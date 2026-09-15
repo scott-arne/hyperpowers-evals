@@ -1,0 +1,40 @@
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mstore/index.js[39m      │ Async persistence interface                                 │ model           │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mstore/local.js[39m      │ localStorage implementation                                 │ store interface │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mui/*.js[39m             │ Task list, inbox, toasts, badge                             │ model, store    │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mapp.js[39m              │ Wiring, tick loop, event plumbing                           │ everything      │
+  └─────────────────────┴─────────────────────────────────────────────────────────────┴─────────────────┘
+
+  The line that matters: [1m[38;5;153mmodel/[39m and [38;5;153mengine/[39m import no DOM and no storage.[0m [38;5;153mevaluate()[39m is a pure function of (tasks,
+  already-seen keys, current time) → new events. That makes every hard behavior — catch-up after a long absence, DST
+  boundaries, a due date edited after firing — a unit test with a fake clock rather than a thing you verify by waiting.
+
+  [38;5;153mengine/clock.js[39m exists solely so tests can control time. It's three lines, and without it the test suite would have to
+  sleep.
+
+  [1mStorage seam:[0m v1 uses localStorage behind an async interface. It's synchronous underneath, but the interface is async
+  so swapping to IndexedDB later is a one-module change that ripples nowhere. localStorage's ~5MB cap is a real
+  constraint for an append-only log, so the design includes a retention policy (Section 2) rather than pretending the
+  log is free.
+
+  Alongside the architecture, the tooling question — this is cheapest to answer now, before any code exists, and
+  whatever you pick lands in the spec's constraints so every later task inherits it:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Section 1 [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mSection 1 (architecture + module boundaries) — does this look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mApproved, continue[39m
+     [38;5;246mVanilla ES modules, no build step, pure engine core with injectable clock, localStorage behind an async seam.[39m
+  [38;5;246m2.[39m Approved, but no framework-free
+     [38;5;246mYou'd rather use a framework (React/Svelte/etc.) and accept the build step.[39m
+  [38;5;246m3.[39m Revise boundaries
+     [38;5;246mSomething about the module split or the storage seam needs rework before continuing.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

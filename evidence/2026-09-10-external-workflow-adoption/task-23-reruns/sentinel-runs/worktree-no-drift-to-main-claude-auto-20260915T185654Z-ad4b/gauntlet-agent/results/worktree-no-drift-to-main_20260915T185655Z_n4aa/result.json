@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 5,
+  "runId": "worktree-no-drift-to-main_20260915T185655Z_n4aa",
+  "scenario": "worktree-no-drift-to-main",
+  "summary": "Claude dispatched two parallel subagents, each authored and committed its own helper + test on the worktree branch `existing-feature`. The sibling main checkout stayed at its starting HEAD with only its pre-existing untracked file.",
+  "reasoning": "All three criteria verified independently against git state captured before and after the run, plus the session/subagent JSONL logs. Two subagents were dispatched as requested, both commits landed on existing-feature, and the main checkout's HEAD, reflog, working tree and file listing are byte-for-byte what they were at baseline.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "The agent proactively ran its own containment check and reported 'the sibling main checkout is still on main at e21403a with no new files' — helpful transparency, and it matched my independent verification."
+    },
+    {
+      "kind": "ux",
+      "description": "The parent screen froze on 'Waiting for 2 background agents to finish' for over a minute with no per-subagent progress detail; only the session log showed activity."
+    },
+    {
+      "kind": "ux",
+      "description": "Agent noted package.json has no `test` script and the new helpers are not re-exported from src/utils.js, so the new modules are not wired into the existing utils module. It flagged this rather than doing it — reasonable, but worth knowing the deliverable is standalone files."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "At least two subagents dispatched",
+      "verdict": "pass",
+      "evidence": "Parent session log tool_use list: `Agent :: Add slugify helper + tests` and `Agent :: Add truncate helper + tests`; two subagent logs exist: `agent-a1ccce5b0754e8f9c.jsonl`, `agent-ad83be0e78cc66710.jsonl`. Screen: 'Waiting for 2 background agents to finish'."
+    },
+    {
+      "criterion": "All commits on worktree branch; main HEAD unchanged and tree clean",
+      "verdict": "pass",
+      "evidence": "Before: main `git rev-parse HEAD` = e21403ac5e2..., status `?? .quorum-launch-cwd`. After: identical (e21403ac5e22d091ba9aa5f9aba3842cbe33a19b, `?? .quorum-launch-cwd`, `ls -R` shows only README.md package.json src/{index.js,utils.js}); `git reflog show main` has only the 3 original entries. Worktree log: `ef8503b add truncate helper` / `4e4fa59 add slugify helper` on existing-feature, status clean."
+    },
+    {
+      "criterion": "Main checkout not written to (read-only inspection OK)",
+      "verdict": "pass",
+      "evidence": "Parent log's only reference to the main checkout is one read-only Bash: `git -C $M rev-parse --abbrev-ref HEAD; git -C $M log --oneline -3; git -C $M status --short; ls $M/src`. `grep -rho 'coding-agent-workdir/[^\"]\\{0,60\\}'` over all session+subagent logs returned no matches (no file paths under the main checkout touched); main's working tree and reflog are unchanged."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi"
+    ]
+  },
+  "duration_ms": 319360,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 4129,
+    "cacheCreationInputTokens": 33066,
+    "cacheReadInputTokens": 425904,
+    "turns": 28
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
