@@ -45,9 +45,11 @@ const CHECK_TRANSCRIPT = resolve(
 function argv(line: string): string[] {
   const out: string[] = [];
   const re = /'([^']*)'|(\S+)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(line.trim())) !== null) {
+  const text = line.trim();
+  let m: RegExpExecArray | null = re.exec(text);
+  while (m !== null) {
     out.push((m[1] ?? m[2]) as string);
+    m = re.exec(text);
   }
   return out;
 }
@@ -161,7 +163,10 @@ test('reading and reproducing before the hand-off is accepted', () => {
       ...OPENING,
       { tool: 'Bash', args: { command: 'node src/index.js > /dev/null 2>&1' } },
       { tool: 'Bash', args: { command: "grep -n 'indexOf' src/config.js" } },
-      { tool: 'Read', args: { file_path: '/run/coding-agent-workdir/app.conf' } },
+      {
+        tool: 'Read',
+        args: { file_path: '/run/coding-agent-workdir/app.conf' },
+      },
       HANDOFF,
     ]),
   ).toBe(false);
