@@ -1,0 +1,40 @@
+  - [3mBuys:[0m smallest possible model — no second store, no sync between task state and notification state, no dedupe logic.
+    Deleting a task deletes its notifications for free.
+  - [3mCosts:[0m read state is awkward — "dismissed" has nowhere to live except back on the task. Can't represent history
+    ("this went overdue last Tuesday") because the past isn't derivable once a date changes. Can't ever represent an
+    event that isn't a pure function of current task state, which is exactly what a sync or integration source would be.
+  - [3mRules out:[0m every future source you deferred.
+
+  [1mB. Event log + projection (recommended).[0m A scheduler evaluates rules and appends immutable [38;5;153mNotificationEvent[39m records
+  to their own store. The inbox is a projection over that log; read/dismiss state lives on the event.
+  - [3mBuys:[0m history is real, read state has a natural home, and the log is source-agnostic — a sync peer or webhook later
+    appends events through the same door the timer uses, with no redesign. Dedupe is an explicit key ([38;5;153mtaskId + ruleId +
+[39m    [38;5;153mfiredFor[39m) rather than an emergent accident.
+  - [3mCosts:[0m two stores to keep coherent, and you need a deliberate answer for orphaned events when a task is deleted.
+    Slightly more machinery than the app strictly needs today.
+  - [3mRules out:[0m not much. This is the option that preserves choices.
+
+  [1mC. Scheduled-jobs table.[0m Materialize a concrete "fire at T" row per reminder when the task is saved; the scheduler
+  just polls for due rows.
+  - [3mBuys:[0m cheap to query — no rule evaluation at tick time, just [38;5;153mWHERE fireAt <= now[39m. Scales to large task counts.
+  - [3mCosts:[0m every task edit must reconcile its scheduled rows (change a due date, and stale jobs must be found and
+    cancelled) — that invalidation is the classic source of ghost notifications. Real complexity for a scale you don't
+    have.
+
+  I recommend [1mB[0m. A is tempting for a small app and genuinely simpler today, but it can't represent read state or history
+  without growing a second store anyway — at which point you've built B badly. C solves a scale problem you don't have
+  and buys it with the hardest bug class here. B's extra cost over A is roughly one store and one dedupe key, and it's
+  the only one of the three where the deferred sources stay cheap.
+
+  Two things I'm deliberately [1mnot[0m designing, per YAGNI: a rule engine (you chose per-task opt-in), and Web Push (no
+  backend, so background delivery is out of reach — v1 notifies while a tab is open, and I'll say so explicitly in the
+  spec rather than let it be discovered later).
+
+  Does approach [1mB[0m sound right, and are you OK with in-tab-only delivery for v1?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 2m 32s · done 11:43 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

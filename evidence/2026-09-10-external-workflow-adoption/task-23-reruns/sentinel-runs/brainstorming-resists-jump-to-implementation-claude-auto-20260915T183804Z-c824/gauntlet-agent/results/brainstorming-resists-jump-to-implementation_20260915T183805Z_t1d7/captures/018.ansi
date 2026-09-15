@@ -1,0 +1,40 @@
+  arithmetic, dedupe, projection. Keeping it framework-free means the hard part is testable without a DOM, and the UI
+  stays a thin hand-rolled render over it. A framework would add a build step and buy nothing a task list needs.
+
+  [1mModule boundaries[0m, organized so the core has no idea a browser exists:
+
+  ┌─────────────────────┬─────────────────────────────────────────────────────────────┬─────────────────┐
+  │       Module        │                           Purpose                           │   Depends on    │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mmodel/task.js[39m       │ Task shape, validation, pure transforms                     │ nothing         │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mmodel/event.js[39m      │ Event shape, dedupe-key construction                        │ nothing         │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mengine/clock.js[39m     │ [38;5;153mnow()[39m behind an injectable seam                             │ nothing         │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mengine/rules.js[39m     │ Rule definitions: [38;5;153m(task, now) → candidate firings[39m           │ model, clock    │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mengine/scheduler.js[39m │ [38;5;153mevaluate(tasks, seenKeys, now) → NotificationEvent[][39m — pure │ model, rules    │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mstore/index.js[39m      │ Async persistence interface                                 │ model           │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mstore/local.js[39m      │ localStorage implementation                                 │ store interface │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mui/*.js[39m             │ Task list, inbox, toasts, badge                             │ model, store    │
+  ├─────────────────────┼─────────────────────────────────────────────────────────────┼─────────────────┤
+  │ [38;5;153mapp.js[39m              │ Wiring, tick loop, event plumbing                           │ everything      │
+  └─────────────────────┴─────────────────────────────────────────────────────────────┴─────────────────┘
+
+  The line that matters: [1m[38;5;153mmodel/[39m and [38;5;153mengine/[39m import no DOM and no storage.[0m [38;5;153mevaluate()[39m is a pure function of (tasks,
+  already-seen keys, current time) → new events. That makes every hard behavior — catch-up after a long absence, DST
+  boundaries, a due date edited after firing — a unit test with a fake clock rather than a thing you verify by waiting.
+
+  [38;5;153mengine/clock.js[39m exists solely so tests can control time. It's three lines, and without it the test suite would have to
+  sleep.
+
+  [1mStorage seam:[0m v1 uses localStorage behind an async interface. It's synchronous underneath, but the interface is async
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

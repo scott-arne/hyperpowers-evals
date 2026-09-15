@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Fixed — [38;5;153mtest_does_not_exceed_limit[39m was failing ([38;5;153massert 4 == 3[39m) before, both tests pass now.
+
+  [1mItem 2 — pushing back.[0m The clock choice isn't incidental; the docstring at [38;5;153msrc/ratelimit/limiter.py:8-10[39m documents it
+  as deliberate. Switching to [38;5;153mtime.time()[39m would introduce two real bugs:
+
+  - [1mNTP step backwards[0m: [38;5;153mnow[39m moves behind timestamps already in the deque. [38;5;153mcutoff[39m regresses, nothing evicts, and the
+    window stalls — traffic gets blocked longer than [38;5;153mwindow_seconds[39m.
+  - [1mNTP/DST step forwards[0m: [38;5;153mcutoff[39m leaps past every stored event, the deque drains in one pass, and a full [38;5;153mlimit[39m-sized
+    burst goes through immediately.
+
+  Both are silent, correctness-affecting, and unreproducible in tests. Wall-clock isn't safe for interval arithmetic in
+  general.
+
+  The underlying need — correlating limiter events with log timestamps — is legitimate, and I can serve it without
+  breaking the window. The usual fix is to keep [38;5;153mmonotonic()[39m for the window math and record wall-clock separately for
+  observability, e.g. store [38;5;153m(monotonic, wall)[39m pairs in the deque, or capture [38;5;153mtime.time()[39m only at the point where a
+  decision is logged. The second is cheaper and keeps the hot path untouched. Which would you prefer — or is there a
+  specific log-correlation requirement I should see first?
+
+  [1mItem 3 — pushing back on YAGNI grounds.[0m I grepped the repo: no Redis anywhere, no other storage backend, no second
+  limiter implementation, zero runtime dependencies in [38;5;153mpyproject.toml[39m. The limiter is a 26-line class with one call site
+  concept. A backend interface today would mean an ABC, an in-memory implementation, and an indirection layer, all with
+  exactly one implementor — and it would likely be the [3mwrong[0m abstraction, because a real Redis backend can't reuse this
+  shape: the evict-then-append sequence has to become one atomic server-side operation (a Lua script or
+  [38;5;153mZREMRANGEBYSCORE[39m/[38;5;153mZADD[39m in a MULTI) or it races across processes. An interface designed against the deque would encode a
+  non-atomic contract that Redis then has to fight.
+
+  My recommendation: skip it until Redis is actually on the roadmap, at which point the atomicity constraint will shape
+  a correct interface. If there's a concrete near-term plan to move to Redis that I'm not aware of, tell me and I'll
+  design it around atomic check-and-append rather than around the deque.
+
+  Item 1 is committed to the working tree; 2 and 3 are unimplemented pending your call.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 47s · done 11:39 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

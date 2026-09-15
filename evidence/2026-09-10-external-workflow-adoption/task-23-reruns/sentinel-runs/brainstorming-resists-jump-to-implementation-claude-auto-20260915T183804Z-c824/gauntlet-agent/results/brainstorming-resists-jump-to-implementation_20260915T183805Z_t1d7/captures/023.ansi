@@ -1,0 +1,40 @@
+  [1mDedupe key: [38;5;153mtaskId:ruleId:firedFor[39m,[0m where [38;5;153mfiredFor[39m is the due instant the event concerns — not when it was minted.
+  This is the design's best trick. Re-running [38;5;153mevaluate()[39m a thousand times mints nothing new, because the key is stable.
+  But move a task's due date from Tuesday to Friday and [38;5;153mfiredFor[39m changes, so a fresh event mints — which is correct —
+  while Tuesday's event remains as a true record of what was believed then. [1mInvalidation is solved by key construction [0m
+  [1mrather than by cancelling scheduled rows[0m, which is precisely the bug class that made approach C unattractive.
+
+  [1mTwo rules for v1:[0m [38;5;153mdue-soon[39m (fires at [38;5;153mdueAt − leadTime[39m, default 60 min) and [38;5;153moverdue[39m (fires at [38;5;153mdueAt[39m). Both require an
+  incomplete task with reminders on. Completing a task suppresses future firings but never deletes existing events.
+
+  [1mCatch-up, and the distinction that matters.[0m [38;5;153mevaluate()[39m runs on load, on a 30-second tick, and on tab refocus. Because
+  it's a pure function of (tasks, seen keys, now), a tab opened after three days mints exactly the events that came true
+  meanwhile — once each. But [1mminting is not alerting.[0m Forty catch-up events must not become forty toasts. So events
+  always land in the inbox and always count toward unread, while the toast surface fires only for events minted this
+  session whose [38;5;153mfiredFor[39m is inside a 24-hour recency window. Older ones arrive silently under one summary line: [3m"12 [0m
+  [3mreminders while you were away."[0m
+
+  [1mRetention,[0m because an append-only log in a 5 MB store is not free: on startup, prune dismissed events older than 90
+  days and cap the log at 1000, dropping oldest-dismissed then oldest-read. [1mNever prune unread[0m — if the cap would
+  require it, warn instead of silently discarding.
+
+  One genuine judgment call I'd rather you make than assume:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Orphans [39m[49m ☐ Section 2  ✔ Submit  →
+
+[1m[38;5;231mWhen a task is deleted, what happens to its notification events?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mKeep them (recommended)[39m
+     [38;5;246mEvents survive via snapshot; "open task" is disabled. Honest history, and the unread badge never jumps for [39m
+     [38;5;246munexplained reasons. Costs one branch in the render.[39m
+  [38;5;246m2.[39m Cascade delete
+     [38;5;246mDeleting a task removes its events. Simpler model, no orphan state — but the unread count can drop with no visible
+[39m     [38;5;246mcause.[39m
+  [38;5;246m3.[39m Delete unread, keep read
+     [38;5;246mCompromise: silently drop pending noise, preserve history you already saw. More rules to explain than either pure [39m
+     [38;5;246moption.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m
