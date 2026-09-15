@@ -48,6 +48,7 @@ function makeScenarioDir(opts: {
 async function runGuard(args: {
   scenarioDir: string;
   codingAgent?: string;
+  codingAgentsDir?: string;
   noPath?: boolean;
 }): Promise<Awaited<ReturnType<typeof runScenario>>> {
   const outRoot = freshOutRoot();
@@ -59,7 +60,7 @@ async function runGuard(args: {
     return await runScenario({
       scenarioDir: args.scenarioDir,
       codingAgent: args.codingAgent ?? 'claude',
-      codingAgentsDir: REAL_CODING_AGENTS,
+      codingAgentsDir: args.codingAgentsDir ?? REAL_CODING_AGENTS,
       outRoot,
     });
   } finally {
@@ -106,6 +107,78 @@ test('A-coding-agents-directive: included agent passes the gate (reaches preflig
   });
   const { verdict } = await runGuard({ scenarioDir, codingAgent: 'claude' });
   expect(verdict.final_reason).not.toBe('requires coding-agents: claude');
+});
+
+// A throwaway coding-agents dir for the family-matching gate. Synthetic rather
+// than the real dir because the assertion needs three specific shapes side by
+// side (a declared family that matches, one that does not, and no family key at
+// all) and because the claude-family entry must name a binary that is certainly
+// absent from PATH: the gate has to be the only thing under test, so the run
+// must stop at the very next guard instead of provisioning a real agent.
+function makeFamilyAgentsDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'agents-'));
+  const common = (name: string, sub: string, normalizer: string) =>
+    `name: ${name}\n` +
+    `binary: quorum-no-such-binary\n` +
+    `home_config_subdir: "${sub}"\n` +
+    `session_log_dir: "\${QUORUM_AGENT_HOME}/${sub}"\n` +
+    'session_log_glob: "**/*.jsonl"\n' +
+    `normalizer: ${normalizer}\n`;
+  writeFileSync(
+    join(dir, 'claude-auto.yaml'),
+    `${common('claude-auto', '.claude', 'claude')}runtime_family: claude\nmodel: opus\n`,
+  );
+  writeFileSync(
+    join(dir, 'codex.yaml'),
+    `${common('codex', '.codex', 'codex')}runtime_family: codex\n`,
+  );
+  // No runtime_family key at all; loadAgentConfig defaults it to the name.
+  writeFileSync(
+    join(dir, 'gemini.yaml'),
+    common('gemini', '.gemini', 'gemini'),
+  );
+  return dir;
+}
+
+test('A-coding-agents-directive: the directive matches an agent by runtime family', async () => {
+  const codingAgentsDir = makeFamilyAgentsDir();
+  const scenarioDir = makeScenarioDir({
+    checksContent: '# coding-agents: claude\npre() { :; }\npost() { :; }\n',
+  });
+  const directiveReason = 'requires coding-agents: claude';
+
+  // claude-auto declares runtime_family claude: the same harness the directive
+  // names, so the gate must let it through. It then stops at the very next
+  // guard (the claude binary preflight) because its binary is not on PATH —
+  // which is the positive evidence that the gate did not fire.
+  const passed = await runGuard({
+    scenarioDir,
+    codingAgent: 'claude-auto',
+    codingAgentsDir,
+  });
+  expect(passed.verdict.final_reason).not.toBe(directiveReason);
+  expect(passed.verdict.final_reason).toContain('not on PATH');
+
+  // A declared family that is not the one named is still excluded...
+  const wrongFamily = await runGuard({
+    scenarioDir,
+    codingAgent: 'codex',
+    codingAgentsDir,
+  });
+  expect(wrongFamily.verdict.final).toBe('indeterminate');
+  expect(wrongFamily.verdict.final_reason).toBe(directiveReason);
+  expect(wrongFamily.verdict.gauntlet).toBe(null);
+
+  // ...and so is an agent that declares no family, which still needs its name
+  // to appear in the directive verbatim.
+  const noFamily = await runGuard({
+    scenarioDir,
+    codingAgent: 'gemini',
+    codingAgentsDir,
+  });
+  expect(noFamily.verdict.final).toBe('indeterminate');
+  expect(noFamily.verdict.final_reason).toBe(directiveReason);
+  expect(noFamily.verdict.gauntlet).toBe(null);
 });
 
 test('A-story-md-missing: missing story.md -> clean runner error, not raw ENOENT', async () => {
