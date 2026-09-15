@@ -16,9 +16,9 @@
 
 import type { ToolCallView } from '../atif/project.ts';
 import {
-  WORKDIR_SEPARATOR,
   isImplementationPath,
   isImplementationRel,
+  WORKDIR_SEPARATOR,
   workdirRelpath,
 } from './implementation.ts';
 
@@ -144,7 +144,10 @@ function segments(command: string): Segment[] {
     const start = cuts[i] as number;
     const end = cuts[i + 1] as number;
     if (end > start) {
-      out.push({ raw: raw.slice(start, end), masked: masked.slice(start, end) });
+      out.push({
+        raw: raw.slice(start, end),
+        masked: masked.slice(start, end),
+      });
     }
   }
   return out;
@@ -245,7 +248,10 @@ function splitRedirections(seg: Segment): Redirected {
     if (seg.masked[end] === '&') {
       // `2>&1` and `>&2` duplicate a descriptor; they write no file.
       end++;
-      while (end < seg.masked.length && /[0-9-]/.test(seg.masked[end] as string)) {
+      while (
+        end < seg.masked.length &&
+        /[0-9-]/.test(seg.masked[end] as string)
+      ) {
         end++;
       }
     } else {
@@ -270,7 +276,8 @@ function splitRedirections(seg: Segment): Redirected {
 }
 
 /** In-place flags for the stream editors. `-i.bak` and `-pi` both count. */
-const INPLACE_RE = /^-{1,2}(?:[a-zA-Z]*i[a-zA-Z]*(?:\.\S*)?|in-place(?:=\S*)?)$/;
+const INPLACE_RE =
+  /^-{1,2}(?:[a-zA-Z]*i[a-zA-Z]*(?:\.\S*)?|in-place(?:=\S*)?)$/;
 
 /** Write functions recognized inside an interpreter one-liner. */
 const INTERPRETER_WRITE_RE =
@@ -360,7 +367,11 @@ function segmentMutates(seg: Segment, outside: boolean): boolean {
   if (i >= words.length) return false;
 
   const argv = words.slice(i);
-  const name = (unquote(argv[0] as string).split('/').pop() ?? '').trim();
+  const name = (
+    unquote(argv[0] as string)
+      .split('/')
+      .pop() ?? ''
+  ).trim();
   const rest = argv.slice(1);
   const operands = rest.filter((w) => !w.startsWith('-'));
 
@@ -371,7 +382,7 @@ function segmentMutates(seg: Segment, outside: boolean): boolean {
     case 'gawk':
     case 'awk': {
       const targets = streamEditorTargets(rest);
-      return targets !== null && targets.some(names);
+      return targets?.some(names) ?? false;
     }
     case 'tee':
       return operands.some(names);
@@ -379,8 +390,7 @@ function segmentMutates(seg: Segment, outside: boolean): boolean {
     case 'mv':
     case 'install':
       return (
-        operands.length >= 2 &&
-        names(operands[operands.length - 1] as string)
+        operands.length >= 2 && names(operands[operands.length - 1] as string)
       );
     case 'rm':
     case 'truncate':
@@ -409,7 +419,9 @@ function segmentMutates(seg: Segment, outside: boolean): boolean {
   // inside the working copy. Both halves are required: the write alone may
   // target scratch, and the path alone may only be read.
   if (INTERPRETER_WRITE_RE.test(command.raw)) {
-    const literals = (command.raw.match(/['"]([^'"\n]+)['"]/g) ?? []).map(unquote);
+    const literals = (command.raw.match(/['"]([^'"\n]+)['"]/g) ?? []).map(
+      unquote,
+    );
     return literals.some(names);
   }
 

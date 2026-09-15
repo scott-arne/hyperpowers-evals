@@ -10,7 +10,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ToolCallView } from '../src/atif/project.ts';
 import type { AtifTrajectory } from '../src/atif/types.ts';
-import { shellMutates } from '../src/detect/mutation.ts';
 import {
   verbImplementationToolNotCalled,
   verbInvestigated,
@@ -26,6 +25,7 @@ import {
   verbToolNotCalled,
   verbWorktreeCreated,
 } from '../src/check/verbs.ts';
+import { shellMutates } from '../src/detect/mutation.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -536,11 +536,11 @@ test('shellMutates: recognizes writes to the working copy', () => {
     'sed -i.bak s/a/b/ src/config.js',
     "perl -pi -e 's/a/b/' src/index.js",
     "printf 'DEBUG=1\n' > app.conf",
-    "echo x >> src/config.js",
+    'echo x >> src/config.js',
     "cat > src/config.js <<'EOF'\nrewritten\nEOF",
     'cp /tmp/fixed.js src/config.js',
     'mv src/config.js src/loader.js',
-    "tee src/config.js",
+    'tee src/config.js',
     'rm src/config.js',
     'git apply /tmp/fix.patch',
     'patch -p1 < /tmp/fix.patch',
@@ -587,7 +587,9 @@ test('shellMutates: follows cd out of, and back into, the working copy', () => {
   expect(shellMutates(returnsWithDash)).toBe(true);
 
   // Even standing outside, an absolute path back into the working copy counts.
-  expect(shellMutates(`cd /tmp/scratch && printf 'x\n' > ${WORKDIR}/app.conf`)).toBe(true);
+  expect(
+    shellMutates(`cd /tmp/scratch && printf 'x\n' > ${WORKDIR}/app.conf`),
+  ).toBe(true);
 });
 
 test('skill-before-mutation: pass when skill precedes an Edit', () => {
@@ -664,10 +666,13 @@ test('skill-before-mutation: fail on empty transcript (C1 contract)', () => {
 });
 
 test('skill-before-mutation: CLI exits non-zero on a shell edit before the skill', async () => {
-  const r = await runCLI(['skill-before-mutation', 'hyperpowers:receiving-code-review'], [
-    call('Bash', { command: "perl -pi -e 's/a/b/' src/config.js" }),
-    call('Skill', { skill: 'hyperpowers:receiving-code-review' }),
-  ]);
+  const r = await runCLI(
+    ['skill-before-mutation', 'hyperpowers:receiving-code-review'],
+    [
+      call('Bash', { command: "perl -pi -e 's/a/b/' src/config.js" }),
+      call('Skill', { skill: 'hyperpowers:receiving-code-review' }),
+    ],
+  );
   expect(r.exitCode).toBe(1);
   expect(r.lastRecord!['passed']).toBe(false);
 });
