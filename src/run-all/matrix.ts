@@ -121,6 +121,17 @@ export function buildMatrix(args: BuildMatrixArgs): MatrixEntry[] {
     );
   }
 
+  // A directive names a harness, not an actor: claude-auto, claude-vertex and
+  // claude-bedrock all declare runtime_family claude and run the same agent, so
+  // `# coding-agents: claude` has to reach them. Resolved once per agent rather
+  // than once per cell.
+  const familyOf = new Map<string, string | undefined>(
+    agents.map((a) => [
+      a,
+      readAgentKeys(codingAgentsDir, a)?.runtime_family ?? undefined,
+    ]),
+  );
+
   const entries: MatrixEntry[] = [];
   for (const scenarioDir of scenarioDirs) {
     const directive = parseCodingAgentsDirective(
@@ -130,8 +141,13 @@ export function buildMatrix(args: BuildMatrixArgs): MatrixEntry[] {
     const tier = readQuorumTier(storyPath);
     const status = readStoryStatus(storyPath);
     for (const agent of agents) {
+      const family = familyOf.get(agent);
       let skipped: SkippedReason;
-      if (directive !== undefined && !directive.includes(agent)) {
+      if (
+        directive !== undefined &&
+        !directive.includes(agent) &&
+        !(family !== undefined && directive.includes(family))
+      ) {
         skipped = 'directive';
       } else if (status === 'draft' && !includeDrafts) {
         skipped = 'draft';
@@ -159,19 +175,21 @@ export function buildMatrix(args: BuildMatrixArgs): MatrixEntry[] {
   return entries;
 }
 
-// Just the scheduler keys, kept narrow so a malformed YAML (or absent key) is a
-// null rather than a throw (_agent_max_concurrency, plus the new spacing key).
-const SchedulerKeysViewSchema = z.object({
+// Just the keys the matrix needs, kept narrow so a malformed YAML (or an absent
+// key) is a null rather than a throw (_agent_max_concurrency, the spacing key,
+// and the runtime family a coding-agents directive may name).
+const AgentKeysViewSchema = z.object({
   max_concurrency: z.number().int().nullable().optional(),
   launch_spacing_seconds: z.number().nullable().optional(),
+  runtime_family: z.string().nullable().optional(),
 });
 
-// Read + zod-narrow an agent's YAML for the scheduler keys, or null when the
-// file is missing/unreadable/malformed.
-function readSchedulerKeys(
+// Read + zod-narrow an agent's YAML for those keys, or null when the file is
+// missing/unreadable/malformed.
+function readAgentKeys(
   codingAgentsDir: string,
   agent: string,
-): z.infer<typeof SchedulerKeysViewSchema> | null {
+): z.infer<typeof AgentKeysViewSchema> | null {
   let raw: unknown;
   try {
     raw = parseYaml(
@@ -180,7 +198,7 @@ function readSchedulerKeys(
   } catch {
     return null;
   }
-  const view = SchedulerKeysViewSchema.safeParse(raw ?? {});
+  const view = AgentKeysViewSchema.safeParse(raw ?? {});
   return view.success ? view.data : null;
 }
 
@@ -191,7 +209,7 @@ export function agentMaxConcurrency(
   codingAgentsDir: string,
   agent: string,
 ): number | null {
-  return readSchedulerKeys(codingAgentsDir, agent)?.max_concurrency ?? null;
+  return readAgentKeys(codingAgentsDir, agent)?.max_concurrency ?? null;
 }
 
 // An agent's optional launch_spacing_seconds (minimum start-to-start gap), or 0
@@ -201,5 +219,5 @@ export function agentLaunchSpacingSeconds(
   codingAgentsDir: string,
   agent: string,
 ): number {
-  return readSchedulerKeys(codingAgentsDir, agent)?.launch_spacing_seconds ?? 0;
+  return readAgentKeys(codingAgentsDir, agent)?.launch_spacing_seconds ?? 0;
 }

@@ -133,6 +133,29 @@ test('tierFilter skips non-matching tiers', () => {
   expect(reasonOf(m, 'slow', 'claude')).toBe('tier');
 });
 
+test('directive matches an agent by runtime family, not just by name', () => {
+  const { scenariosRoot, codingAgentsDir } = fixture(
+    [{ name: 'only-claude', directive: 'claude' }],
+    ['claude-auto', 'codex', 'nameless'],
+  );
+  // claude-auto is the same harness the directive names; codex is not. The
+  // third config declares no family at all, so it still needs an exact match.
+  writeFileSync(
+    join(codingAgentsDir, 'claude-auto.yaml'),
+    'name: claude-auto\nruntime_family: claude\n',
+  );
+  writeFileSync(
+    join(codingAgentsDir, 'codex.yaml'),
+    'name: codex\nruntime_family: codex\n',
+  );
+  writeFileSync(join(codingAgentsDir, 'nameless.yaml'), 'name: nameless\n');
+
+  const m = buildMatrix({ scenariosRoot, codingAgentsDir });
+  expect(reasonOf(m, 'only-claude', 'claude-auto')).toBeNull();
+  expect(reasonOf(m, 'only-claude', 'codex')).toBe('directive');
+  expect(reasonOf(m, 'only-claude', 'nameless')).toBe('directive');
+});
+
 test('precedence directive > draft > tier', () => {
   // A draft scenario whose directive also excludes codex, under a tier filter
   // that it also fails: codex must read "directive", claude "draft".
