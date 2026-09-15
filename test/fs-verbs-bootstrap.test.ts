@@ -416,7 +416,17 @@ test('bootstrap-installed routes to the per-harness delegate (gemini)', () => {
 });
 
 test('bootstrap-installed passes for claude variants (no dedicated check)', () => {
-  for (const agent of ['claude', 'claude-haiku', 'claude-sonnet']) {
+  // Every claude-family actor in coding-agents/, including the provider-routed
+  // ones a host without a direct ANTHROPIC_API_KEY has to use.
+  for (const agent of [
+    'claude',
+    'claude-auto',
+    'claude-bedrock',
+    'claude-haiku',
+    'claude-sonnet',
+    'claude-sonnet-vertex',
+    'claude-vertex',
+  ]) {
     const out = verbBootstrapInstalled(
       [],
       ctxFor(configDir(), { QUORUM_CODING_AGENT: agent }),

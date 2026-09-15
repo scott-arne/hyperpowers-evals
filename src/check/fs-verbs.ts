@@ -761,10 +761,18 @@ const BOOTSTRAP_DELEGATES: Record<string, BootstrapVerb> = {
   opencode: verbOpencodePluginInstalled,
 };
 
+// Must list every claude-family actor in coding-agents/, not just the ones a
+// host with a direct API key can start: an omitted name falls through to the
+// unrecognized-agent fail below, which makes the scenario indeterminate before
+// its agent ever runs.
 const BOOTSTRAP_NO_CHECK = new Set([
   'claude',
+  'claude-auto',
+  'claude-bedrock',
   'claude-haiku',
   'claude-sonnet',
+  'claude-sonnet-vertex',
+  'claude-vertex',
   'pi',
 ]);
 
