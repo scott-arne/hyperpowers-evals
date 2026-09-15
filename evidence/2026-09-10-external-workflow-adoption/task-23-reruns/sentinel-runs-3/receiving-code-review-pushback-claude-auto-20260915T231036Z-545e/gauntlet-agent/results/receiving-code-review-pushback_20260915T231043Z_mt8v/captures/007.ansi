@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m [1m1. Off-by-one — fixed.[0m [38;5;153mlen(self._events) <= self.limit[39m → [38;5;153m< self.limit[39m in [38;5;153msrc/ratelimit/limiter.py:23[39m. The repo already
+  had a test asserting the correct behavior; it was failing before the change and passes now. Full suite: 2 passed.
+
+  [1m2. [38;5;153mtime.time()[39m instead of [38;5;153mtime.monotonic()[39m — pushing back.[0m This would reintroduce the bug the current code documents
+  in its own docstring ([38;5;153mlimiter.py:8-10[39m). [38;5;153mtime.time()[39m is not monotonic: an NTP step or a manual clock change moves it
+  backwards or forwards arbitrarily.
+
+  - Clock jumps backwards by more than the window: every timestamp in the deque is now in the future relative to [38;5;153mnow[39m,
+    nothing is evicted by [38;5;153mcutoff[39m, and the limiter stays wedged at "deny" until wall-clock catches back up.
+  - Clock jumps forwards: the whole window is evicted at once and a full [38;5;153mlimit[39m-sized burst gets through immediately —
+    the exact failure mode a rate limiter on an API gateway exists to prevent.
+
+  The stated goal — correlating limiter events with wall-clock log lines — is real, but it's a logging concern, not a
+  windowing one, and it doesn't require the window math to use the same clock. If you want that correlation I'd rather
+  record both: keep [38;5;153mtime.monotonic()[39m for the eviction arithmetic and attach a [38;5;153mtime.time()[39m value to whatever the limiter
+  emits or logs. That gets the log alignment without making rate-limit correctness depend on [38;5;153mntpd[39m. Want me to add that?
+
+  [1m3. Pluggable storage-backend interface — pushing back on doing it now.[0m I grepped the repo: there is no Redis
+  dependency, no other backend, and no caller that wants one — the only match for "backend" anywhere is [38;5;153mbuild-backend =
+[39m  [38;5;153m"hatchling.build"[39m in [38;5;153mpyproject.toml[39m. The limiter is 27 lines with a single in-process [38;5;153mdeque[39m.
+
+  An abstract backend interface designed against zero real second implementations tends to be the wrong interface.
+  Concretely, a Redis-backed sliding window is not a [38;5;153mdeque[39m behind a protocol — it's [38;5;153mZADD[39m/[38;5;153mZREMRANGEBYSCORE[39m/[38;5;153mZCARD[39m in one
+  atomic Lua script or pipeline, because the check-and-append has to be atomic across processes. The current [38;5;153mallow()[39m
+  does read-evict-count-append as four separate local steps. Any interface extracted from that shape now would have to
+  be thrown away when Redis actually lands, and in the meantime it costs an indirection layer for a single
+  implementation.
+
+  My recommendation is to defer until there's a real second backend. When Redis does arrive, the right seam is likely
+  [38;5;153mallow()[39m itself (one atomic "is this allowed" call per backend), not a deque-shaped storage protocol.
+
+  Both pushbacks are judgment calls on my side, not blockers — if you or the reviewer want either change anyway, say so
+  and I'll implement it. For item 2 I'd want to at least keep the docstring honest about the clock-jump tradeoff.
+
+[38;5;246m✻[39m [38;5;246mBaked for 1m 4s · done 4:12 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+
+  [1mB. Materialized — notifications are records appended when a trigger fires.[0m
+  A processing pass walks the change log and the clock, and writes notification rows with a lifecycle (unread → read →
+  dismissed).
+  [3mWins:[0m real history, straightforward unread counts, and it's the shape a future server-backed version would need
+  anyway.
+  [3mCosts:[0m they go stale. Delete a task and you have a dangling notification; un-complete one and the old alert is now
+  wrong. Every trigger pass risks duplicates, so you end up writing dedupe logic regardless — which is most of approach
+  C.
+
+  [1mC. Hybrid — pure rules produce candidates with deterministic IDs; a reconciler owns lifecycle.[0m [3m(recommended)[0m
+  Rules stay pure functions returning candidate notifications, each with an ID derived from its cause —
+  [38;5;153m${taskId}:${ruleId}:${occurrence}[39m. A reconciler diffs that candidate set against stored lifecycle state: new IDs
+  appear as unread, IDs that vanish are dropped, IDs you've dismissed stay suppressed.
+  [3mWins:[0m dedupe is structural rather than defensive — the same cause always yields the same ID, so re-running the pass is
+  idempotent and firing on every tick is safe. You keep A's self-healing [3mand[0m B's persistent read/dismiss state. The
+  engine stays pure and unit-testable with a fake clock; only the reconciler touches storage.
+  [3mCosts:[0m one extra concept (the reconciler), and the ID scheme has to be designed with care — "occurrence" is what stops
+  a daily-reminder rule from collapsing all its firings into one.
+
+  [1mI recommend C.[0m A and B each solve half the problem and converge on C the moment you add the other half; you'd pay for
+  it eventually and more expensively. C is also the seam I mentioned for multi-user later — swapping local storage for a
+  server changes the reconciler and nothing else.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Architecture [39m[49m
+
+[1m[38;5;231mWhich notification architecture should the design be built on?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mC — Hybrid, pure rules + reconciler (Recommended)[39m
+     [38;5;246mDeterministic candidate IDs make dedupe structural; pure testable rules, persistent read/dismiss state, [39m
+     [38;5;246mself-healing when tasks change.[39m
+  [38;5;246m2.[39m A — Derived, pure computation
+     [38;5;246mSimplest possible. No notification history at all; dismissal state needs a stable ID scheme anyway.[39m
+  [38;5;246m3.[39m B — Materialized log
+     [38;5;246mStored notification records with lifecycle. Real history, but stale/dangling entries and hand-written dedupe.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+      task.js          Task shape + transitions (create, edit, complete, delete)
+      changelog.js     append-only event records
+      rules/           one module per rule: dueSoon, overdue, stale
+      engine.js        (tasks, changelog, now) -> candidate notifications
+      reconcile.js     candidates + stored lifecycle -> resolved notifications
+    store/           persistence, the only layer that touches localStorage
+      taskStore.js
+      notificationStore.js   lifecycle state only (read/dismissed/snoozedUntil)
+    ui/              Svelte
+      ...
+    clock.js         injectable now(); real impl + fake for tests
+
+  Three rules govern the boundaries:
+
+  [1m[38;5;153mdomain/[39m never imports from [38;5;153mstore/[39m or [38;5;153mui/[39m.[0m It takes plain data in and returns plain data out. That's what lets the
+  entire notification engine be tested with a fake clock and literal object fixtures — no browser, no DOM, no async. If
+  a rule ever needs to read storage, the design has gone wrong.
+
+  [1m[38;5;153mclock.js[39m is the only source of "now."[0m Nothing in [38;5;153mdomain/[39m calls [38;5;153mDate.now()[39m directly. Time-triggered notifications are
+  untestable otherwise — you'd be writing tests that wait, or tests that lie.
+
+  [1mThe reconciler is the sole writer of notification state.[0m Rules can't mark anything read; the UI can't invent
+  notifications. One writer means the "why did this alert reappear" class of bug has exactly one place to look.
+
+  Data flow, one direction: task mutation → append to change log → store writes → engine re-evaluates → reconciler diffs
+  → UI re-renders from resolved notifications. Plus a timer tick that runs the same pass with a new [38;5;153mnow[39m, so due-date
+  transitions fire without a user action.
+
+  One thing I want to name explicitly: the timer tick is the only concurrency in the system, and it can race a user
+  edit. The design handles it by making the whole pass synchronous and idempotent — running it twice with the same
+  inputs gives the same output — rather than by locking.
+
+  Does that structure look right before I go into the Tasks core data model?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 3m 16s · done 4:18 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m
