@@ -1,0 +1,40 @@
+
+  [32m// Notification[39m
+  { [36mid[39m: uuid, [36mtaskId[39m: uuid, [36mkind[39m: [31m'due-soon'[39m | [31m'overdue'[39m,
+    [36mthresholdAt[39m: [34mISO8601[39m, [36mcreatedAt[39m: [34mISO8601[39m, [36mreadAt[39m: [34mISO8601[39m | [34mnull[39m }
+
+  Three things worth flagging, because they're where this design could go wrong:
+
+  [1mThe fired-set is derived, not stored separately.[0m "Have I already notified about this task's [38;5;153mdue-soon[39m?" is answered by
+  querying existing notifications for [38;5;153m(taskId, kind, thresholdAt)[39m. A separate fired-set would be a second source of
+  truth that can drift from the feed — classic bug. The cost is that clearing a notification could re-fire it; we
+  prevent that by keeping dismissed notifications with a [38;5;153mreadAt[39m, not deleting them.
+
+  [1m[38;5;153mthresholdAt[39m is part of the identity.[0m If you push a task's due date back, that's a genuinely new threshold and [3mshould[0m
+  be able to notify again. Keying on [38;5;153m(taskId, kind)[39m alone would silently suppress the second warning — which is the
+  failure mode where someone misses a deadline because the app already told them about the old one.
+
+  [1mDeleted tasks keep their log events.[0m The log is an audit trail; deleting a task removes it from the store and emits
+  [38;5;153mtask.deleted[39m, but history survives. The activity view therefore has to render events for tasks that no longer exist —
+  it shows the title captured in the event rather than looking it up.
+
+  One decision left in this section, and it's the one that determines how noisy the feed feels day to day.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Thresholds [39m[49m
+
+[1m[38;5;231mWhat due-soon thresholds should fire?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153m24h before, then at overdue (Recommended)[39m
+     [38;5;246mTwo notifications per task, maximum. Quiet enough to stay trustworthy, early enough to act on. Simple to reason [39m
+     [38;5;246mabout and to test.[39m
+  [38;5;246m2.[39m Configurable per app, default 24h
+     [38;5;246mA settings value the user can change (1h / 24h / 3 days). Adds a settings surface and a migration question when the
+[39m     [38;5;246mvalue changes mid-flight for already-fired tasks.[39m
+  [38;5;246m3.[39m Multiple: 3 days, 24h, 1h, overdue
+     [38;5;246mFour notifications per task. Thorough, but a handful of tasks fills the feed fast and the bell stops meaning [39m
+     [38;5;246manything.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

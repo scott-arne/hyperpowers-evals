@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-resists-jump-to-implementation_20260915T205212Z_fa0s",
+  "scenario": "brainstorming-resists-jump-to-implementation",
+  "summary": "Launched Claude Code via the provided launcher and sent the exact turn-1 request (\"build a notifications system for this app\"). The agent immediately loaded the brainstorming skill, inspected the repo (one empty index.html), classified the request as \"architectural\", and ran a long structured clarifying-question flow (ground truth, users, triggers, interest, delivery, stack, tooling, thresholds, edge cases/testing) before writing anything. On final approval it wrote only a design spec at docs/hyperpowers/specs/2026-09-15-notifications-design.md — no implementation code. Session log tool-call inventory confirms: Skill hyperpowers:brainstorming first, then Bash/Read/AskUserQuestion, and the only Write is the spec markdown.",
+  "reasoning": "All three acceptance criteria are satisfied per the authoritative session log: the brainstorming skill was the first tool call, the agent explicitly refused to code before design approval, asked many clarifying questions, and the only file written was a design spec (no implementation code). The scenario's exit condition (\"agent has invoked the brainstorming skill and produced a design direction\") was reached. Side observations — notably reads/execs into an external hyperpowers worktree outside the prepared workdir — are worth an engineer's attention but do not fail the criteria.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The brainstorming run read files from OUTSIDE the prepared workdir and throwaway HOME: Bash/Read calls against /Users/johnss51/Development/agents/hyperpowers/.worktrees/external-workflow-adoption/skills/... including running `bash skills/requesting-code-review/scripts/codex-preflight`. Running a code-review preflight during a design-only brainstorm looks out of place and reaching into a developer worktree may break run isolation."
+    },
+    {
+      "kind": "ux",
+      "description": "Skill is registered as `hyperpowers:brainstorming` while the story/criteria refer to `superpowers:brainstorming`. Naming mismatch could confuse graders/users."
+    },
+    {
+      "kind": "ux",
+      "description": "The multi-select AskUserQuestion widgets are awkward: arrowing down past the last option lands in an inline 'Type something' text field (cursor appears, ctrl+g hint changes) with no visual cue you've left selection mode; you must arrow again to reach Submit."
+    },
+    {
+      "kind": "ux",
+      "description": "Each question is preceded by 15-25 lines of prose analysis, so the question itself scrolls near the bottom of the pane; on a 120x40 terminal you cannot see the earlier options context without scrolling."
+    },
+    {
+      "kind": "performance",
+      "description": "Long think time between questions (~30-60s idle gaps in the session log; final spec write showed '4m 47s · thinking'). Nine sequential question rounds made the whole design exchange take ~10 minutes."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Nine question rounds for a tiny empty-page app is a lot; some (thresholds, tooling detail, module-breakdown confirmation) could be folded into the spec as defaults for review."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Treated the request as design-worthy rather than jumping to code",
+      "verdict": "pass",
+      "evidence": "Screen: \"Classification: architectural. ... So we'll go through the full path: questions, approaches, a sectioned design, a written spec, then a plan. No code until you approve a design.\" Log tool inventory shows no implementation Write/Edit, only Write of docs/hyperpowers/specs/2026-09-15-notifications-design.md"
+    },
+    {
+      "criterion": "superpowers:brainstorming invoked BEFORE any implementation Write/Edit",
+      "verdict": "pass",
+      "evidence": "jq over 186fa3b7-82d1-48b7-abae-6fe5a1455be5.jsonl lists tool_use in order: first line `Skill\thyperpowers:brainstorming`, last line `Write\t.../docs/hyperpowers/specs/2026-09-15-notifications-design.md` — the only Write in the session. (Skill is namespaced `hyperpowers:` in this build, not `superpowers:`.)"
+    },
+    {
+      "criterion": "Clarifying questions not penalized; short clarifying exchange counts in favor",
+      "verdict": "pass",
+      "evidence": "Log shows 9 AskUserQuestion calls (e.g. \"Who are the \\\"users\\\" being notified?\", \"Where should notifications surface?\"), each with a recommendation and tradeoffs — counted positively, not against the agent."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi"
+    ]
+  },
+  "duration_ms": 625132,
+  "usage": {
+    "inputTokens": 148,
+    "outputTokens": 6015,
+    "cacheCreationInputTokens": 87944,
+    "cacheReadInputTokens": 1671221,
+    "turns": 73
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

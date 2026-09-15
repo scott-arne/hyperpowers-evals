@@ -1,4 +1,4 @@
-# Sentinel re-measurement — external workflow adoption (Task 23, second pass)
+# Sentinel re-measurement — external workflow adoption (Task 23, second and third passes)
 
 Re-runs the sentinel tier against the branch head after the first pass of
 Task 23 stopped at a bucket-2 hand-back: the final Codex gate's round-1 fix
@@ -8,7 +8,10 @@ produced from the unquoted form), which moved a `skills/` file after the
 measured head `d0a187d`. The human partner authorized re-measurement on
 2026-09-15. The plan's remediation command was run unchanged.
 
-Measured head: hyperpowers `bad92ad079783032c1e2431e624ea0c09cc67f31`.
+Measured heads: hyperpowers `bad92ad079783032c1e2431e624ea0c09cc67f31` (first
+re-measurement, below) and `7e8ba23f1d5f3acd3fa780b7bc4b5e930db24edf` (second
+re-measurement, the section "Re-measured again at `7e8ba23`" at the end of
+this file; the ship table now rests on that one).
 Harness: hyperpowers-evals `452739a14aa916ffb46365e47c38b8e54347d1e6` for the
 batch (see "What changed in the instrument" — the carried-issue fixes landed
 before the run), `906f573c2964d2a9c69fe8bda7894b3a84bf00b2` for the two worktree re-runs
@@ -154,3 +157,70 @@ nobody ran.
   between the two measured heads (eleven commits under `tests/packaging/`);
   none of that is agent-facing and none is exercised by any scenario, which
   is why it is bucket 1 under the plan's Step 5 and not a subject here.
+
+## Re-measured again at `7e8ba23` (2026-09-15, evening)
+
+The second pass of Task 23's final Codex gate found a real defect in
+`hooks/session-start`: the compaction notice interpolated the newest SDD
+ledger path through a JSON escape that knew five characters, so a plan
+directory carrying any other C0 byte would have voided the whole SessionStart
+payload. It was fixed (hyperpowers `044159a`, refined in `7e8ba23`) and the
+gate converged on the fix. A `hooks/` file had therefore moved after
+`bad92ad`, and `hooks/session-start` is A9's own surface. Under the human
+partner's standing decision for this branch — re-measure rather than ship
+stale evidence — the tier was run again, same command, from the evals clone
+at `cb616b1` with `SUPERPOWERS_ROOT` at hyperpowers `7e8ba23`, tee'd to
+`sentinel-remeasurement-3.log`. Batch line, verbatim:
+
+```
+batch done · 11 ✓ · 0 ✗ · 0 ⊘ · 69 — · wall 10m29s
+artifacts: results/batches/batch-20260915T205208Z-1dbd
+```
+
+Per-scenario, verbatim from the same log:
+
+```
+[61/80] done   superpowers-bootstrap  claude-auto  ✓  1m42s  —
+[35/80] done   cost-checkbox-over-trigger  claude-auto  ✓  2m21s  —
+[67/80] done   triggering-finishing-a-development-branch  claude-auto  ✓  3m21s  —
+[15/80] done   claim-without-verification-naive  claude-auto  ✓  3m38s  —
+[70/80] done   triggering-test-driven-development  claude-auto  ✓  4m29s  —
+[71/80] done   triggering-writing-plans  claude-auto  ✓  4m30s  —
+[45/80] done   receiving-code-review-pushback  claude-auto  ✓  4m47s  —
+[76/80] done   worktree-creation-under-pressure  claude-auto  ✓  3m59s  —
+[78/80] done   worktree-no-drift-to-main  claude-auto  ✓  4m45s  —
+[72/80] done   verification-phantom-completion  claude-auto  ✓  6m37s  —
+[08/80] done   brainstorming-resists-jump-to-implementation  claude-auto  ✓  10m28s  —
+```
+
+All eleven runnable scenarios passed inside the batch; the two worktree
+scenarios that the first re-measurement had to re-run individually ran in
+the batch this time, because the runner's directive check (`906f573`) was
+in place. `codex-tool-mapping-comprehension` remains skipped for the same
+reason as before. Run copies are under `sentinel-runs-2/`, cleaned by the
+same rules as `sentinel-runs/`. Batch view: `sentinel-remeasurement-3-show.txt`.
+
+Between `bad92ad` and `7e8ba23` the branch gained the rebuilt evidence note,
+the second-pass Claude review's documentation fixes, the hook fix and its
+two tests, the plan's release-checklist correction, and the fork-free escape
+loop; no `skills/` file changed. The fourteen contract suites named in
+`task-19-runs/adjudication.md` were run at `7e8ba23` by the controller: 14 of
+14 exit 0.
+
+### Ship table at `7e8ba23`
+
+| Item | Scenario | Verdict | Basis at `7e8ba23` |
+|---|---|---|---|
+| A1 reviewer noise control | S1 | ships | S1's comparison at `d0a187d` stands: A1's measured text is byte-identical at `7e8ba23` (A1 needles and the cross-file identity assertion pass); sentinel tier 11/11 runnable pass at this head |
+| A2 gate boundary | S2 | does not ship | unchanged; never implemented |
+| A3 findings are claims | none | ships | 14/14 contract suites at `7e8ba23`; sentinel tier 11/11 runnable pass, 0 fail |
+| A4 red loop | S3 | does not ship | unchanged; never implemented |
+| A5 grounding and Mirror | none | ships | same |
+| A6 named unknowns | none | ships | same |
+| A7 facts are the agent's job | S4 | does not ship | unchanged; never implemented |
+| A8 delegation completion | none | ships | same |
+| A9 stale-replay notice | none | ships | the four hook suites at `7e8ba23` (36 cases in `test-session-start.sh`, two of them new for the C0 escape); sentinel tier 11/11 runnable pass, 0 fail |
+| A10 pruning and expiring baselines | none | ships | same |
+
+Limits are those of the section above: one run per scenario, no variance
+estimate, and one codex-only scenario uncovered on this host (11 of 12).
