@@ -143,3 +143,30 @@ test('path with two coding-agent-workdir segments → relpath is after last one'
   });
   expect(implementationRelpath(c)).toBe('src/x.ts');
 });
+
+// --- dot segments are normalized before the exclusion test ---
+
+test('Write ./docs/hyperpowers/specs/x.md → false (excluded after normalization)', () => {
+  const c = call('Write', { file_path: './docs/hyperpowers/specs/x.md' });
+  expect(isImplementationPath(c)).toBe(false);
+});
+
+test('Write docs/hyperpowers/../../src/auth.ts → true (climbs out of the spec tree)', () => {
+  const c = call('Write', { file_path: 'docs/hyperpowers/../../src/auth.ts' });
+  expect(isImplementationPath(c)).toBe(true);
+});
+
+test('Write ../outside.ts → true (escapes the workdir, never excluded)', () => {
+  const c = call('Write', { file_path: '../outside.ts' });
+  expect(isImplementationPath(c)).toBe(true);
+});
+
+test('Write src/a.ts → true (unchanged by normalization)', () => {
+  const c = call('Write', { file_path: 'src/a.ts' });
+  expect(isImplementationPath(c)).toBe(true);
+});
+
+test('Write docs/hyperpowers/x.md → false (unchanged by normalization)', () => {
+  const c = call('Write', { file_path: 'docs/hyperpowers/x.md' });
+  expect(isImplementationPath(c)).toBe(false);
+});
