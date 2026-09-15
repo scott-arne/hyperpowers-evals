@@ -1,3 +1,4 @@
+import { posix } from 'node:path';
 import type { ToolCallView } from '../atif/project.ts';
 
 /**
@@ -83,9 +84,20 @@ export function implementationRelpath(call: ToolCallView): string {
 const EXCLUDED_RE =
   /(^|\/)\.git(\/|$)|(^|\/)node_modules(\/|$)|^docs\/superpowers\/|^docs\/hyperpowers\/|^\.gitignore$|^\.antigravitycli(\/|$)/;
 
-/** True when a workdir-relative path names a real implementation file. */
+/**
+ * True when a workdir-relative path names a real implementation file.
+ *
+ * The path is normalized first because `EXCLUDED_RE` is anchored: without it
+ * `./docs/hyperpowers/specs/x.md` would slip past the spec exclusion and
+ * `docs/hyperpowers/../../src/auth.ts` would be caught by it. A normalized
+ * path that climbs out of the workdir matches no excluded tree, so it counts
+ * as implementation.
+ */
 export function isImplementationRel(rel: string): boolean {
-  return rel !== '' && !EXCLUDED_RE.test(rel);
+  if (rel === '') return false;
+  const normalized = posix.normalize(rel);
+  if (normalized === '..' || normalized.startsWith('../')) return true;
+  return !EXCLUDED_RE.test(normalized);
 }
 
 /**
