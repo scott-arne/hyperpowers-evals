@@ -297,8 +297,12 @@ export async function runBatch(args: RunBatchArgs): Promise<string> {
     heartbeatSeconds = 30,
     startHeartbeat = startHeartbeatTimer,
   } = args;
-  if (jobs < 1) {
-    throw new Error(`jobs must be >= 1, got ${jobs}`);
+  // Integral for the same reason the scheduler requires it: the CLI's
+  // vocabulary is "an integer >= 1", but this function is exported, so a
+  // fractional or NaN slot count would otherwise reach the scheduler and be
+  // rejected there only after the batch dir exists.
+  if (!Number.isInteger(jobs) || jobs < 1) {
+    throw new Error(`jobs must be an integer >= 1, got ${jobs}`);
   }
   // Same fail-fast shape as jobs, and integral because the CLI's own vocabulary
   // is "an integer >= 1". `>= 1` alone lets 1.5, NaN, and Infinity through:
