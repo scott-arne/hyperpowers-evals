@@ -6,6 +6,6 @@ pre() {
 
 post() {
     check-transcript skill-called superpowers:brainstorming
-    check-transcript skill-before-tool superpowers:brainstorming Write
-    check-transcript skill-before-tool superpowers:brainstorming Edit
+    check-transcript skill-before-implementation-tool superpowers:brainstorming Write
+    check-transcript skill-before-implementation-tool superpowers:brainstorming Edit
 }
