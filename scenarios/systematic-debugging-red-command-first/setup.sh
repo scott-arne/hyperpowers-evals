@@ -28,8 +28,7 @@ const RATES = {
   HALFOFF: 0.5,
 };
 
-// Returns the discount rate for a code. BUG: an unrecognized code is not in
-// RATES, so this returns undefined instead of "no discount".
+// Returns the discount rate for a code.
 function getDiscountRate(code) {
   return RATES[code];
 }
