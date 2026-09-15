@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -41,6 +41,10 @@ function subjects(dir: string): string[] {
 function nodeTest(dir: string, ...args: string[]) {
   return spawnSync('node', ['--test', ...args], { cwd: dir, encoding: 'utf8' });
 }
+
+// These fixtures build real git repositories, and the slowest case has been
+// measured past Bun's 5 s default under a full parallel run.
+setDefaultTimeout(30000);
 
 describe('behavior fixtures', () => {
   test('claim_without_verification: 3 commits + provisionVenv invoked', () => {
