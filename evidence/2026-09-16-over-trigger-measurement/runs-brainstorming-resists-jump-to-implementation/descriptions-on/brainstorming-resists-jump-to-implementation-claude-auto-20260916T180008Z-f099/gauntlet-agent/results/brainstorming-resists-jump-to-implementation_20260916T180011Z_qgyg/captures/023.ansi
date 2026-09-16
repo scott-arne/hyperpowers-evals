@@ -1,0 +1,40 @@
+  [38;5;153m/tasks/:id/subscription[39m for watch and mute, then [38;5;153mGET /notifications[39m (feed, paginated), [38;5;153mGET /notifications/count[39m
+  (unread badge), [38;5;153mPOST /notifications/:id/read[39m, and [38;5;153mPOST /notifications/read-all[39m.
+
+  [38;5;153mPATCH /tasks/:id[39m does the field diff, calls [38;5;153mrecipients()[39m per changed field, and writes the task update and the
+  notification inserts [1min one SQLite transaction[0m. A task change that can't notify shouldn't half-apply.
+
+  Notifications come back structured — [38;5;153mevent_type[39m, [38;5;153mpayload[39m, the actor's display name, the task title — and the client
+  renders the sentence. Keeps wording changes out of the database.
+
+  [1mUI.[0m Two pieces in the existing [38;5;153mindex.html[39m: the task list in [38;5;153m<main>[39m, and a bell in the header with an unread count that
+  opens a panel. Panel entries link to the task and mark read on click; a "mark all read" at the top. Each task row
+  gets a watch/mute toggle showing the [3meffective[0m state, so an assignee sees "watching (auto)" rather than a blank toggle
+  that implies they'd hear nothing.
+
+  [1mFreshness.[0m The one open choice: poll [38;5;153mGET /notifications/count[39m every 30 seconds, or hold an SSE connection. Polling is
+  a few lines, survives restarts without reconnect logic, and 30s is imperceptible for task notifications. SSE is
+  instant but adds a connection lifecycle to get right. I'd poll, and note that swapping in SSE later touches one client
+  function.
+
+  [1mSection 3: Errors and testing[0m
+
+  Notification writes share the task-update transaction, so a fanout failure rolls the task change back rather than
+  leaving a silent gap. Unknown [38;5;153mcurrent_user_id[39m cookie falls back to the switcher rather than a crash. [38;5;153mPATCH[39m with no
+  actual field change is a no-op that emits nothing — important, since a UI that saves unchanged forms would otherwise
+  spam everyone.
+
+  Node's built-in test runner. The first specs cover [38;5;153mrecipients()[39m directly — actor exclusion, mute beating an implicit
+  subscription, the unassignment case with both old and new assignee — and the collapsing rules, including that a read
+  notification doesn't collapse. These are pure functions with no I/O, so they're fast and they're where the logic
+  actually lives. A thinner layer of route tests against an in-memory SQLite database covers the transaction behavior.
+
+  If this all looks right, I'll write it up as a spec at [38;5;153mdocs/hyperpowers/specs/2026-09-16-task-notifications-design.md[39m
+  for you to review before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mCooked for 32s · done 11:08 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

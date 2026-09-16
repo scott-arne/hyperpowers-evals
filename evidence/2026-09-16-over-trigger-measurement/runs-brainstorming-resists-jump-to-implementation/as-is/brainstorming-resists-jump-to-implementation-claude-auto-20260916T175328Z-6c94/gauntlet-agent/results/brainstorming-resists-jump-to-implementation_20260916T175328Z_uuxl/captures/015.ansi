@@ -1,0 +1,40 @@
+  simplicity; email batching has to track what was already sent per user; and the inbox query gets steadily more
+  expensive.
+
+  [1m3. No event log — write notifications directly.[0m Service functions create [38;5;153mNotification[39m rows inline. Fewest tables,
+  least indirection.
+  [3mBuys:[0m the least code by a clear margin, and the easiest thing to debug.
+  [3mCosts:[0m no activity feed and no replay — if a notification bug ships, the information to regenerate correct
+  notifications is gone. Notification text gets baked in at write time, so adding a channel or changing wording can't be
+  applied retroactively.
+
+  [1mMy recommendation is 1.[0m Fan-out on write is the boring, well-worn choice, and the write amplification it's criticized
+  for is irrelevant at 5–50 users. More importantly, it's the only one where the event log stays authoritative [3mand[0m
+  per-item read state is cheap — and read state is exactly where 2 and 3 quietly accumulate the complexity they claimed
+  to avoid. The activity feed falling out for free is a real bonus for a shared task tool: "who changed this and when"
+  is usually the next thing someone asks.
+
+  Worth flagging: 1 and 2 are not hard to switch between later, since both keep the event log. Approach 3 is the one-way
+  door — it discards the information the other two are built on.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should I build the design around?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mEvent log, fan-out on write (Recommended)[39m
+     [38;5;246mExplicit service layer emits Event rows; worker creates per-user Notification rows. Cheap read/unread and email [39m
+     [38;5;246mdedup, free activity feed, clean path to more channels. One extra moving part.[39m
+  [38;5;246m2.[39m Event log, fan-out on read
+     [38;5;246mEvents plus last_read_at, inbox computed by query. No fan-out worker and no row multiplication, but per-item read [39m
+     [38;5;246mstate and email dedup add back most of the saved complexity.[39m
+  [38;5;246m3.[39m Direct notifications, no event log
+     [38;5;246mSmallest possible design. No activity feed and no ability to regenerate notifications after a bug — the one [39m
+     [38;5;246mgenuinely irreversible choice here.[39m
+  [38;5;246m4.[39m Walk me through the tradeoffs more
+     [38;5;246mYou want to dig into a specific dimension — query cost, testability, the service-layer discipline, or what happens
+[39m     [38;5;246mwhen someone edits via Django admin — before committing.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

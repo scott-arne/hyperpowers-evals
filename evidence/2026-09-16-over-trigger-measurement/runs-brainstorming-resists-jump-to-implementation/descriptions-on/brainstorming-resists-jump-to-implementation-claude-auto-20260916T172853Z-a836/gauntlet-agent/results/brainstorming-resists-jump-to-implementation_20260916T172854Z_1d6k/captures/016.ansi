@@ -1,0 +1,40 @@
+  roughly [38;5;153m{ id, title, done, dueDate }[39m.
+
+  One architectural fork left, and it's the one that decides whether "notifications" is a [3mthing we store[0m or [3ma way of [0m
+  [3mlooking at tasks[0m.
+
+  [1mThe fork:[0m overdue and due-soon are computable from tasks + the current clock. So we can either derive them on every
+  render, or materialize them as notification records.
+
+  - [1mDerived view[0m — no notification storage at all. A function takes your tasks and [38;5;153mnow[39m, returns what needs attention.
+    Self-healing: push a due date out and the notification vanishes; complete the task and it's gone. Almost no code,
+    nothing to keep in sync, nothing to migrate. The cost: no dismissal — if something is overdue and you're
+    deliberately ignoring it, it nags every render.
+  - [1mStored records[0m — real notification objects with read/dismissed state. Gets you dismissal and a history. The cost is
+    all the machinery around it: deduping so one overdue task doesn't spawn a record per page load, invalidating records
+    when the task changes underneath them, and reconciling on load. This is where most of the bugs in this feature
+    would live.
+  - [1mDerived + snooze[0m — derived view plus one [38;5;153msnoozedUntil[39m field on the task. Dismissal without a notification entity or
+    any sync problem.
+
+  Storage is the expensive-to-reverse choice; the other two are a few hours' work and interchangeable. My recommendation
+  is derived + snooze: you get the one thing pure derivation lacks for the cost of a single timestamp field.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Storage [39m[49m
+
+[1m[38;5;231mShould notifications be derived from task state, or stored as their own records?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDerived + snooze (Recommended)[39m
+     [38;5;246mComputed from tasks + now on each render, plus a per-task snoozedUntil so you can dismiss something for a day. No [39m
+     [38;5;246mnotification entity, no sync bugs, dismissal still works.[39m
+  [38;5;246m2.[39m Purely derived
+     [38;5;246mSimplest possible: a function over tasks and the clock. No dismissal at all — an overdue task nags until you [39m
+     [38;5;246mcomplete it or move the date. Fewest moving parts.[39m
+  [38;5;246m3.[39m Stored notification records
+     [38;5;246mReal objects with read/unread and a history you can scroll. Needs dedup, invalidation, and reconciliation — [39m
+     [38;5;246mmeaningfully more code and the main source of bugs here.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

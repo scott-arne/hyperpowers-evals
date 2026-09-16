@@ -1,0 +1,40 @@
+
+  [1mC. Hybrid — event log + per-user read state[0m
+  The log from B, plus a small [38;5;153mnotification_state[39m table holding a per-user read cursor and a set of explicitly dismissed
+  event IDs.
+  - Wins: B's write model and re-derivable history, with A's per-item dismiss.
+  - Costs: two concepts instead of one, and the dismissed-set needs pruning eventually.
+
+  I considered and am [1mdiscarding a client-only version[0m (everything in [38;5;153mlocalStorage[39m, no server): it can't satisfy "team"
+  — two people would never see each other's changes.
+
+  [1mTransport is a separate, smaller axis.[0m Polling ([38;5;153mGET /api/notifications?since=[39m, every ~15s) versus server-sent events.
+  I'd start with polling and leave SSE as a drop-in swap later: for a bell badge, 15-second latency is imperceptible,
+  and polling costs roughly zero complexity while SSE brings connection lifecycle, reconnect, and proxy buffering with
+  it. The API shape is identical either way, so this is genuinely deferrable.
+
+  [1mMy recommendation: C, the hybrid.[0m B is the architecture I'd want, and its one real weakness is exactly the thing your
+  users will touch most — clicking an item in a bell dropdown and expecting it to stop nagging them. The read-state
+  table is maybe thirty lines and buys that back without giving up re-derivable history. If you'd rather cut scope, B
+  alone with mark-all-read is a defensible v1 and C is a clean addition later; A is the one I'd steer away from, because
+  we've [3malready[0m committed to changing the subscription rule (mute/watch in pass two), which is precisely the change A
+  makes expensive.
+
+  Two things I need from you before I write the design up:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Architecture [39m[49m ☐ Stack  ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mWhich notification architecture?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mC — hybrid (Recommended)[39m
+     [38;5;246mEvent log as source of truth, plus a small per-user read/dismiss table. Re-derivable history with per-item dismiss.
+[39m  [38;5;246m2.[39m B — event log only
+     [38;5;246mPure derived notifications with a read cursor. Smallest v1; mark-all-read only, per-item dismiss added later.[39m
+  [38;5;246m3.[39m A — materialized rows
+     [38;5;246mFan out a notification row per subscriber on write. Simplest to reason about, but costly to change subscription [39m
+     [38;5;246mrules later.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

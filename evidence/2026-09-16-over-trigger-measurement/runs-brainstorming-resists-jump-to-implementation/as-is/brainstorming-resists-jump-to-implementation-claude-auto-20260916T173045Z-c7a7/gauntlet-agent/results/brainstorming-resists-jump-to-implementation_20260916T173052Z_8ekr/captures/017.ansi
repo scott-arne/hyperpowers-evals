@@ -1,0 +1,40 @@
+  [1mB. Direct DOM manipulation.[0m Each action surgically patches the affected node. Efficient and preserves focus for free.
+  Cost: state now lives in two places — the DOM and storage — and they drift. Nearly every "the UI says one thing but
+  the data says another" bug comes from this shape. I'd avoid it.
+
+  [1mC. Event-sourced change log.[0m Store a log of change events; derive current state by folding it. Tempting here
+  specifically [3mbecause[0m you asked for notifications — "what changed" becomes a first-class record rather than something
+  you reconstruct, and phase 2 would largely be a read over that log. Cost: meaningfully more complexity, unbounded
+  storage growth, and a compaction problem you'd eventually have to solve. For a single-user local task list, that's a
+  lot of machinery bought on speculation about a phase that may never happen.
+
+  [1mMy recommendation: A, with one concession to C.[0m Use single-source-of-truth state, but route [3mevery[0m mutation through a
+  single [38;5;153mapplyChange(type, task)[39m chokepoint. That function is where persistence happens, and it's the one place a future
+  version would emit change events from. You get C's main benefit — a single well-defined place where "something
+  changed" is known — without the log, the growth, or the compaction. If phase 2 turns out to be real, that chokepoint
+  is where it plugs in.
+
+  [1mHow reminders fire[0m
+
+  [1mPer-task [38;5;153msetTimeout[39m.[0m Schedule a timer for each due date. Precise, but you must cancel and reschedule on every edit and
+  delete, and timers don't survive the tab sleeping, the laptop suspending, or a clock change. Lots of bookkeeping,
+  fragile at the edges.
+
+  [1mOne periodic tick.[0m A single interval (every 30s or so) scans for tasks that have become due since the last check and
+  fires for those. No per-task bookkeeping, survives sleep and wake naturally because it compares timestamps rather than
+  trusting elapsed timers, and edits and deletes need no special handling at all.
+
+  [1mMy recommendation: the periodic tick[0m, with each task carrying a [38;5;153mnotifiedAt[39m field so a reminder fires once and doesn't
+  re-fire on every subsequent scan. It's less precise — a reminder can land up to 30 seconds late — which for a task due
+  date is irrelevant.
+
+  Does this framing look right before I write the design out in sections? In particular I want to check the [38;5;153mapplyChange[39m
+  chokepoint with you — it's the one piece of forward-planning in an otherwise strictly-YAGNI design, and if you'd
+  rather I cut it and keep phase 1 completely minimal, that's a defensible call too.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 2m 35s · done 10:36 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

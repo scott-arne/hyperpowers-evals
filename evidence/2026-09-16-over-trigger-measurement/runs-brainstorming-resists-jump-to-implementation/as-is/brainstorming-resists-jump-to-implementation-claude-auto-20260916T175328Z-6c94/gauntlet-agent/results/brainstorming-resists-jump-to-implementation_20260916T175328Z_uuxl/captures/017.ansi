@@ -1,0 +1,40 @@
+
+  [1mOne refinement to approach 1.[0m I'd run fan-out [3minline[0m, inside that same transaction, not in the worker. Creating 20
+  [38;5;153mNotification[39m rows is a single bulk insert — microseconds — and doing it transactionally means an event can never exist
+  without its notifications, which removes an entire class of "notification never arrived" bug. In-app notifications
+  become instant, and the only thing left needing async is email. That deletes a moving part from what I proposed
+  earlier; flagging it because it's a change to the approach you approved.
+
+  [1mEmail.[0m One management command, [38;5;153msend_notification_emails[39m, run every 5 minutes by cron or a systemd timer — no Celery,
+  no Redis. It finds each user with notifications where [38;5;153memailed_at IS NULL[39m, skips any already read in-app (if you've
+  seen it, you don't need the email), groups the rest into one message per user, sends, and stamps [38;5;153memailed_at[39m. Digest
+  users are handled by the same command with a once-daily window.
+
+  [1mIn-app.[0m A bell in the header polls an unread-count endpoint every 60 seconds; the inbox page lists notifications
+  grouped by task with mark-read and mark-all-read. No websockets — for 50 users, polling a count is a trivially cached
+  query and SSE/websockets would be the most complex thing in the codebase for no felt benefit.
+
+  [1mTemplates.[0m Notification text renders from [38;5;153m(verb, payload)[39m at display time, not at write time — so wording fixes apply
+  retroactively and each channel can format differently.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 2 [39m[49m
+
+[2m│[0m [1m[38;5;231mDoes Section 2 look right? The notable change is inline fan-out instead of a worker.[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, inline fan-out (Recommended)[39m
+     [38;5;246mFan-out in the same transaction as the change; only email is async, via a cron'd management command. Fewer moving [39m
+     [38;5;246mparts, instant in-app notifications, no orphaned events.[39m
+  [38;5;246m2.[39m Keep fan-out in a worker
+     [38;5;246mAsync fan-out as originally proposed. Keeps request latency flat no matter how many subscribers, but adds a moving
+[39m     [38;5;246mpart and a window where an event exists with no notifications yet.[39m
+  [38;5;246m3.[39m Reconsider polling vs real-time
+     [38;5;246mYou'd rather have websockets or SSE for genuinely live updates. More infrastructure and a harder deployment, but no
+[39m     [38;5;246mup-to-60-second delay on the bell.[39m
+  [38;5;246m4.[39m Change something else here
+     [38;5;246mSomething about the service layer, the admin decision, the email command, or render-at-display-time isn't right. [39m
+     [38;5;246mTell me what and I'll revise.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

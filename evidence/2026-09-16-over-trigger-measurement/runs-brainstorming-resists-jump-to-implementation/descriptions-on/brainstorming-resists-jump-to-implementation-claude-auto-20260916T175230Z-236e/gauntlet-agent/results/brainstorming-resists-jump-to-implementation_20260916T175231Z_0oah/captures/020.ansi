@@ -1,0 +1,40 @@
+  [38;5;153mactor, at, before, after}[39m. Task state is a snapshot kept alongside. The bell computes your notifications by scanning
+  events since your [38;5;153mlastReadAt[39m watermark, filtered by your subscriptions. [3mWins when[0m notification rules are still in
+  flux: change what counts as notification-worthy and the whole history re-derives correctly, including retroactively.
+  Costs derivation logic and eventual log pruning. Ports to a server essentially unchanged.
+
+  [1mB. Materialized notification records.[0m On mutation, a hook writes one notification row per subscribed user. The bell
+  just reads rows. [3mWins on[0m read simplicity — this is what most production trackers actually do at scale. Costs
+  duplicated state, and rule changes only affect future events; you can't retroactively fix a bad filter.
+
+  [1mC. Diff-on-write watermark.[0m No log — just [38;5;153mupdatedAt[39m per task and a per-user [38;5;153mlastSeen[39m. [3mI'm discarding this one[0m: it
+  can't distinguish a status change from a title edit, and you explicitly asked for status-specific triggers. It fails
+  the requirement outright.
+
+  [1mMy recommendation is A[0m, with B available later as a pure cache. The reason is specific to where you are: you picked
+  "status + due date" as triggers on instinct, and flagged the others as tunable. A is the option where tuning that
+  filter later is a config change instead of a migration. Local data volume is trivially small — a few hundred events —
+  so deriving on read costs nothing measurable, and if it ever does, materializing rows becomes a cache in front of the
+  same source of truth rather than a rewrite.
+
+  It also directly serves the "while you were away" catch-up you chose: that view [3mis[0m a query over the log, so it falls
+  out for free rather than being a separate feature.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich change-detection approach should the design commit to?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA — event log, derive on read (Recommended)[39m
+     [38;5;246mImmutable event log as source of truth; notifications and the catch-up view are queries over it. Retroactively [39m
+     [38;5;246mre-derivable when you tune the trigger filter. Materialize as a cache later if ever needed.[39m
+  [38;5;246m2.[39m B — materialized notification rows
+     [38;5;246mWrite a notification record per subscriber on each mutation. Simplest read path. Trigger-rule changes apply only [39m
+     [38;5;246mgoing forward, and state is duplicated.[39m
+  [38;5;246m3.[39m A now, materialize immediately
+     [38;5;246mBuild the event log and also write materialized rows from day one. Belt and braces, more moving parts to keep [39m
+     [38;5;246mconsistent than the data volume justifies.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

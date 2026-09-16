@@ -1,0 +1,40 @@
+
+  - [38;5;153mdb/[39m — connection, migrations, no business logic.
+  - [38;5;153mdomain/tasks.ts[39m — the single write path. Every mutation is a function here ([38;5;153mcreateTask[39m, [38;5;153mupdateTask[39m, [38;5;153massignTask[39m, …)
+    that takes an actor and a change, and writes the task row plus its [38;5;153mtask_events[39m rows in one transaction. [1mThis is the
+[0m    [1mchokepoint the outbox decision depends on[0m; handlers never write to [38;5;153mtasks[39m directly.
+  - [38;5;153mdomain/auth.ts[39m — magic-link issuance, token verification, session creation.
+  - [38;5;153mroutes/[39m — HTTP only: parse, authorize, call a domain function, render or serialize.
+  - [38;5;153mviews/[39m — HTML templates.
+  - [38;5;153mmail/[39m — a [38;5;153mMailer[39m interface with a console implementation for dev and one real transport. Sub-project 3 reuses this
+    rather than inventing its own sender.
+
+  [1mData flow for a change:[0m request → route (authenticate, validate) → domain function → transaction { update [38;5;153mtasks[39m;
+  insert [38;5;153mtask_events[39m } → commit → re-render. Notifications will later consume [38;5;153mtask_events[39m, and nothing above that line
+  has to change.
+
+  [1mDeliberately excluded (YAGNI):[0m no job queue, no websockets, no real-time push, no notification code of any kind in
+  this sub-project. The due-date field is stored and displayed; the [3mscheduler[0m that acts on it belongs to sub-project 3.
+
+  [1mTooling.[0m Nothing is configured yet, and this is the cheapest moment it will ever be to set it up — before there's code
+  to retrofit.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Section 1 [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhich tooling should I set up from the start? (Cheapest now, before any code exists.)[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mLint + format (Recommended)[39m
+  [38;5;246mESLint + Prettier, or Biome for both in one tool. Enforced in CI from the first commit.[39m
+  [38;5;246m2.[39m [ ] Unit tests (Recommended)
+  [38;5;246mTest runner, directory layout, and a first passing fixture. The outbox discipline needs tests to enforce it.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+  [38;5;246mBrowser-level tests over the real page and a real database. Higher setup cost; catches the auth and form flows unit [39m
+  [38;5;246mtests miss.[39m
+  [38;5;246m4.[39m [ ] Fuzz / property testing
+  [38;5;246mProperty-based tests (fast-check) over the domain functions. Useful for state-transition rules; skippable in v1.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

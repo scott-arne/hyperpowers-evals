@@ -1,0 +1,40 @@
+
+  - [1mEverything including creation and deletion[0m — adds "new task in your view" and tombstone semantics. Creation events
+    need a different fan-out, since nobody is subscribed to a task that doesn't exist yet; it becomes a project- or
+    team-level subscription, which we don't have.
+
+  I recommend field changes only for now. Each one maps to a mutation that already has to exist, so the event log costs
+  almost nothing extra, and it's enough to prove the whole pipeline end to end: mutation → event → fan-out to
+  subscribers → unread badge → mark read. Comments are the obvious next sub-project and I'd rather design them on top of
+  a notifications system that already works than invent both at once. Creation/deletion I'd cut until there's a project
+  or team concept to hang them on.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which task changes should generate a notification? → Field changes only (Recommended)[39m
+
+[38;5;231m⏺[39m I have enough to design now. There's a real architectural fork in here (fan-out-on-write vs. compute-on-read), so per
+  the skill I should get an independent second opinion from the Codex approach gate before I propose approaches. Let me
+  check whether it's available.
+
+  [38;5;246mRead [1m2[0m[38;5;246m files, listed [1m1[0m[38;5;246m directory, ran [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Note [status: not-installed]: codex-plugin-cc is not available, so this brainstorm will run without independent Codex
+  approaches. Install it for an extra gate:
+    /plugin marketplace add openai/codex-plugin-cc
+    /plugin install codex@openai-codex
+    /reload-plugins
+    /codex:setup
+
+  Proceeding with my own approaches. The real architectural choice is [1mwhen the per-user notification comes into [0m
+  [1mexistence[0m — at write time or at read time. Everything else (schema details, polling interval, badge UI) follows from
+  it.
+
+  [1mA. Event log + fan-out on write.[0m A mutation writes one [38;5;153mtask_events[39m row (actor, task, field, old→new) and, in the same
+  transaction, one [38;5;153mnotifications[39m row per subscriber except the actor. Reads are [38;5;153mWHERE user_id = ? AND read_at IS NULL[39m.
+  Unread count is a [38;5;153mCOUNT[39m. Per-notification read state is a column, so "mark this one read" and "mark all read" are both
+  trivial. Cost: write amplification — a task with 20 watchers writes 20 rows per edit — and someone who subscribes
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

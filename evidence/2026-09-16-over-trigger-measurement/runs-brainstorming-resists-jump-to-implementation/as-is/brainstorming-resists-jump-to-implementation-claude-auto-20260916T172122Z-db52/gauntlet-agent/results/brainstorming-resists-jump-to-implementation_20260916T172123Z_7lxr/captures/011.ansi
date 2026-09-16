@@ -1,0 +1,40 @@
+  │ Method │      Path       │                       Behavior                        │
+  ├────────┼─────────────────┼───────────────────────────────────────────────────────┤
+  │ [38;5;153mGET[39m    │ [38;5;153m/api/tasks[39m      │ list; optional [38;5;153m?status=[39m and [38;5;153m?assignee_id=[39m filters     │
+  ├────────┼─────────────────┼───────────────────────────────────────────────────────┤
+  │ [38;5;153mPOST[39m   │ [38;5;153m/api/tasks[39m      │ create; creator is the current user                   │
+  ├────────┼─────────────────┼───────────────────────────────────────────────────────┤
+  │ [38;5;153mGET[39m    │ [38;5;153m/api/tasks/{id}[39m │ single task                                           │
+  ├────────┼─────────────────┼───────────────────────────────────────────────────────┤
+  │ [38;5;153mPATCH[39m  │ [38;5;153m/api/tasks/{id}[39m │ partial update — title, description, status, assignee │
+  ├────────┼─────────────────┼───────────────────────────────────────────────────────┤
+  │ [38;5;153mDELETE[39m │ [38;5;153m/api/tasks/{id}[39m │ delete                                                │
+  └────────┴─────────────────┴───────────────────────────────────────────────────────┘
+
+  [38;5;153mPATCH[39m rather than [38;5;153mPUT[39m deliberately: piece #3 wants to know [3mwhich fields[0m changed, and a partial-update payload carries
+  that information natively. A whole-object [38;5;153mPUT[39m throws it away and forces a diff against the old row.
+
+  [1mThe choke point.[0m Every mutating route funnels into one [38;5;153mapply_task_change(db, task, changes, actor)[39m in [38;5;153mroutes/tasks.py[39m.
+  It validates, writes the fields, bumps [38;5;153mupdated_at[39m, and returns the set of fields that actually changed. Nothing else
+  in the codebase writes to a task row. That single function is where piece #3 adds one line to emit an event — no
+  archaeology required, no refactor of five call sites.
+
+  [1mAuthorization[0m is intentionally flat for now: any logged-in user can read and modify any task. That's the right model
+  for a small trusted team, it's what "shared tasks" implies, and it's much easier to tighten later than to loosen.
+  Flagging it explicitly so it's a decision rather than an oversight.
+
+  [1mFrontend.[0m [38;5;153mapp.js[39m fetches [38;5;153m/api/tasks[39m, renders a list, and handles create/edit/delete through the same API.
+  Server-rendered login page, then a single task view. No framework — with this much UI, a framework is more setup than
+  payoff.
+
+  [1mData flow, end to end:[0m browser → [38;5;153mfetch[39m with session cookie → FastAPI dependency resolves current user (401 if absent)
+  → route handler → [38;5;153mapply_task_change[39m → SQLAlchemy session commit → JSON response → JS re-renders the list.
+
+  Does this section look right?
+
+[38;5;246m✻[39m [38;5;246mCogitated for 14s · done 10:28 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

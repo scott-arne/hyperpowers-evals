@@ -1,0 +1,40 @@
+  to reverse, and it's the seam notifications will attach to.
+
+  [1mThe fork:[0m when someone changes a task, what do we [3mrecord[0m about that change?
+
+  - [1m(A) Current state only[0m — the task row is updated in place; nothing remembers what it was before. Simplest thing that
+    works for a task app. But when notifications arrive, there's no record of "what changed" to build a notification
+    from, so you'd be retrofitting change capture into every write path — touching all the mutation code a second time.
+    Cheap now, pays interest later.
+  - [1m(B) Event log beside the task row[0m — every mutation updates the task [3mand[0m appends an immutable [38;5;153mTaskEvent[39m ([38;5;153mtask_id[39m,
+    [38;5;153mactor[39m, [38;5;153mtype[39m, [38;5;153mfrom[39m, [38;5;153mto[39m, [38;5;153mat[39m). Reads stay trivial (just query the task row); the event log is a pure addition.
+    Notifications then become a [3mreader[0m of that log rather than a rewrite of the write path. Also gives you an activity
+    feed and an audit trail for free.
+  - [1m(C) Full event sourcing[0m — no mutable task row at all; state is folded from events. Conceptually cleanest, genuinely
+    wrong for this. Every read either folds a history or maintains a projection you now have to keep correct. That's
+    real complexity for a single-workspace team task list.
+
+  [1mMy recommendation: (B).[0m It's the one choice in sub-project one that's made specifically because we know sub-project
+  two is coming — it costs maybe a day now and converts notifications from "rewrite the write path" into "add a reader."
+  I want to flag that honestly rather than smuggle it in: this is me spending a little of sub-project one's budget on
+  sub-project two's behalf. If you'd rather keep sub-project one minimal and accept the retrofit, (A) is a legitimate
+  call and I'll design it that way.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Change model [39m[49m
+
+[1m[38;5;231mWhat gets recorded when a task changes?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mEvent log beside task row (Recommended)[39m
+     [38;5;246mMutations update the task and append an immutable TaskEvent. Reads stay trivial; notifications become a reader, not
+[39m     [38;5;246ma rewrite. Free audit trail.[39m
+  [38;5;246m2.[39m Current state only
+     [38;5;246mUpdate in place, remember nothing. Minimal now; notifications later mean revisiting every mutation path to add [39m
+     [38;5;246mchange capture.[39m
+  [38;5;246m3.[39m Full event sourcing
+     [38;5;246mState folded from events, no mutable row. Cleanest in theory; real complexity for a single-workspace task list. I'd
+[39m     [38;5;246margue against.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

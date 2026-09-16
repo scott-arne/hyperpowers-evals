@@ -1,0 +1,40 @@
+  appends an immutable event: [38;5;153m{id, ts, actor, taskId, type, before, after}[39m. The feed is a query over that log. Read
+  state is the watermark plus a small dismissed-ids set.
+
+  [3mWins when[0m you want both triggers and the multi-user door left open. The event log is precisely the piece we identified
+  as expensive to retrofit, and it's the same query a server would eventually run, so going multi-user is additive
+  rather than a rewrite. It's also the most testable: you can replay a log and assert the exact feed. Complexity:
+  moderate — the real cost is discipline (no writing to tasks outside the chokepoint) plus eventual compaction.
+
+  [1mC. Materialized notification records.[0m A dispatcher evaluates rules at mutation time and inserts rows into a
+  [38;5;153mnotifications[39m store.
+
+  [3mWins when[0m the read path needs to be dead simple and per-item read state is central — it's what a conventional
+  server-side system looks like. [3mBut[0m it creates a second source of truth that drifts: deleted tasks orphan rows, and
+  changing a rule doesn't retroactively fix the feed. And it doesn't actually save you the sweep — see below.
+  Complexity: moderate.
+
+  [1mThe thing that decides it[0m
+
+  Your two triggers have [1mfundamentally different shapes[0m, and any design that ignores this breaks:
+
+  - [3mStarred task changed[0m is [1mpush[0m: something happens, an event is recorded.
+  - [3mDue date arrived[0m is [1mpull[0m: nothing happens. No code runs at 9:00am. The "event" is the clock moving while the app was
+    closed.
+
+  So a due-date notification can only ever be [1mcomputed on load[0m by comparing due dates against the interval since your
+  last visit. That's the catch-up sweep you already picked, and it's unavoidable. Which means approach C doesn't
+  eliminate the sweep — it makes you build the sweep [3mand[0m the dispatcher, and reconcile them. That's the argument that
+  pushes me off C.
+
+  [1mMy recommendation: B.[0m One log for recorded changes, one sweep for time-derived triggers, one feed query that merges
+  them. It's the only option that serves both triggers without two competing mechanisms, and the log is the piece that's
+  painful to add later.
+
+[38;5;174m✢[39m [38;5;216mPe[38;5;174mrambulating… [38;5;246m(2m 41s · ↓[39m [38;5;246m8.9k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

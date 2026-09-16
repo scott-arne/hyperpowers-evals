@@ -1,0 +1,40 @@
+  5. [38;5;153mdueDate[39m within today..today+2 → [1m[38;5;153mdue-soon[0m
+
+  Sorted overdue-first, oldest first. The due-soon window is a module constant, not a preference — no settings UI until
+  you want one.
+
+  Dates compare [1mdate-only in local time[0m, derived from the injected [38;5;153mnow[39m. Comparing a date-only string against a UTC
+  timestamp is the classic off-by-one in this feature; keeping both sides date-only in one timezone avoids it outright.
+
+  [1m4. Delivery surface[0m
+
+  A panel rendered above the task list inside [38;5;153m<main>[39m:
+
+  - Summary line: [3m"2 overdue · 1 due soon"[0m
+  - One row per notification: task title, how late/soon, and a [1mSnooze 1 day[0m button
+  - Renders nothing at all when the list is empty — no empty-state chrome
+  - Recomputed on every state change [1mand[0m on a 60-second timer, so a task crossing its deadline surfaces without a reload
+
+  [1mExplicitly out of scope:[0m the browser Notification API / OS toasts. It costs a permission prompt, only works while the
+  tab is open, and adds nothing over a panel you're already looking at. Easy to add later if you want it.
+
+  [1m5. Error handling[0m
+
+  ┌────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────┐
+  │              Failure               │                                  Behavior                                  │
+  ├────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤
+  │ localStorage unavailable (private  │ Fall back to in-memory; show a persistent "changes won't be saved" banner  │
+  │ mode, quota)                       │ rather than failing silently                                               │
+  ├────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤
+  │ Corrupt JSON                       │ Copy the bad value to [38;5;153mtasks-app/v1-corrupt[39m, start fresh. Never crash on    │
+  │                                    │ boot                                                                       │
+  ├────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤
+  │ Unknown schema version             │ Same backup-and-reset path — don't guess at foreign data                   │
+  ├────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤
+  │ Malformed [38;5;153mdueDate[39m                  │                                                                            │
+  └────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

@@ -1,0 +1,40 @@
+
+  [1mSection 1: Data model[0m
+
+  Four tables in SQLite.
+
+  [1m[38;5;153musers[0m — [38;5;153mid[39m, [38;5;153mdisplay_name[39m. That's the whole stub. A dev-only user switcher sets a [38;5;153mcurrent_user_id[39m cookie; every route
+  reads it through one [38;5;153mgetCurrentUser(req)[39m helper, which is the single place real auth later replaces.
+
+  [1m[38;5;153mtasks[0m — [38;5;153mid[39m, [38;5;153mtitle[39m, [38;5;153mdescription[39m, [38;5;153mstatus[39m ([38;5;153mopen[39m / [38;5;153min_progress[39m / [38;5;153mdone[39m), [38;5;153massignee_id[39m (nullable), [38;5;153mdue_date[39m (nullable),
+  [38;5;153mcreator_id[39m, [38;5;153mcreated_at[39m, [38;5;153mupdated_at[39m.
+
+  [1m[38;5;153msubscriptions[0m — [38;5;153muser_id[39m, [38;5;153mtask_id[39m, [38;5;153mstate[39m ([38;5;153mwatch[39m / [38;5;153mmute[39m), [38;5;153mcreated_at[39m. Only [3moverrides[0m live here. Implicit subscribers are
+  derived, never written, so assigning a task doesn't scatter rows — and a mute is a real row saying "despite being the
+  assignee, don't tell me."
+
+  [1m[38;5;153mnotifications[0m — [38;5;153mid[39m, [38;5;153muser_id[39m, [38;5;153mtask_id[39m, [38;5;153mactor_id[39m, [38;5;153mevent_type[39m ([38;5;153massigned[39m / [38;5;153munassigned[39m / [38;5;153mstatus_changed[39m /
+  [38;5;153mdue_date_changed[39m), [38;5;153mpayload[39m (JSON: the from/to values), [38;5;153mcreated_at[39m, [38;5;153mread_at[39m (nullable). Indexed on [38;5;153m(user_id, read_at, [39m
+  [38;5;153mcreated_at)[39m for the bell count and feed.
+
+  [1mRecipient resolution[0m, the one pure function everything else depends on:
+
+  recipients(task, event) = ((creator ∪ assignee ∪ watchers) − muters) − actor
+
+  Two wrinkles worth naming now, because they're the parts that get silently wrong:
+
+  - [1mUnassignment.[0m The person losing the task is notified [3mand then[0m stops being an implicit subscriber. So resolution
+    takes the assignee both before and after the change, not just after.
+  - [1mCollapsing.[0m If an unread notification with the same [38;5;153m(user_id, task_id, event_type)[39m exists within a 5-minute window,
+    we update it rather than insert: bump [38;5;153mcreated_at[39m, keep the original [38;5;153mfrom[39m, overwrite [38;5;153mto[39m. So open → in_progress → done
+    inside a minute reads as one "open → done," not two entries. Already-read notifications never collapse — a new
+    change after you've looked is genuinely new.
+
+  Does the model look right before I go on to the API and UI?
+
+[38;5;246m✻[39m [38;5;246mChurned for 2m 45s · done 11:07 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

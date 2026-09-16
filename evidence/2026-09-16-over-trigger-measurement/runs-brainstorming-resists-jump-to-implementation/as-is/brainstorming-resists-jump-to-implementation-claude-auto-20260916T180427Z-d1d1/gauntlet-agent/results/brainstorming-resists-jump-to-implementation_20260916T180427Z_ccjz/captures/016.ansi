@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should a due/overdue reminder reach you? → In-app badge + panel (Recommended)[39m
+
+[38;5;231m⏺[39m In-app only — so no [38;5;153mNotification[39m API, no permission handling, no service worker. The system is now genuinely small,
+  which makes the last structural question the one about state.
+
+  [1mThe fork:[0m whether a reminder is a [3mthing we store[0m or just [3ma view over your tasks[0m.
+
+  - [1mPurely derived[0m — the panel is a live filter: "tasks with a due date in the next N hours, or already past." Nothing
+    new is persisted; there are no notification records to get stale, no cleanup when you complete a task or move a due
+    date, no possibility of the badge disagreeing with the list. The cost: there's nothing to dismiss. An overdue task
+    nags until you complete it or reschedule it.
+  - [1mSnooze as a field on the task[0m — still derived, but each task carries a [38;5;153mremindAfter[39m timestamp. "Snooze 1 hour" writes
+    one field and the task drops out of the filter until then. Adds one field and one action, keeps the
+    no-stale-records property.
+  - [1mReal notification records[0m — each reminder becomes a stored object with seen/dismissed/snoozed state. Full
+    flexibility, but now there are two sources of truth to keep in sync, and every task mutation needs to reconcile its
+    notifications. This is where the bugs live in systems this size.
+
+  Reversibility: derived → snooze-field is a trivial addition later. Derived → stored records is a rewrite of the
+  notification layer, so it's the one worth deciding deliberately.
+
+  [1mMy recommendation:[0m the snooze field. It's one extra property on the task for the only dismissal behavior that actually
+  matters, and it keeps tasks as the single source of truth.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Reminder state [39m[49m
+
+[1m[38;5;231mShould reminders be dismissible, and if so how?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mSnooze field on task (Recommended)[39m
+     [38;5;246mDerived list, plus a remindAfter timestamp per task. Snoozing hides it temporarily. One source of truth.[39m
+  [38;5;246m2.[39m Purely derived, no dismiss
+     [38;5;246mPanel is a pure filter over tasks. Simplest possible; overdue tasks nag until completed or rescheduled.[39m
+  [38;5;246m3.[39m Stored notification records
+     [38;5;246mEach reminder is a persisted object with seen/dismissed state. Most flexible, most sync bugs.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

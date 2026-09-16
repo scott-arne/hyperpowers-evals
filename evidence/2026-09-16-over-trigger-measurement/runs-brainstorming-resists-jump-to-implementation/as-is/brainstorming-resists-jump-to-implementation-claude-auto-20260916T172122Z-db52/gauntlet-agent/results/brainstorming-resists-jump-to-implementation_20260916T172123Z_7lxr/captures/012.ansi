@@ -1,0 +1,40 @@
+  Expired sessions are checked on every request via the [38;5;153mcurrent_user[39m dependency, and cleaned up lazily when encountered
+  rather than by a background job. A cron for row cleanup is machinery this app doesn't need yet.
+
+  [1mTesting.[0m pytest with FastAPI's [38;5;153mTestClient[39m, each test against a fresh in-memory SQLite database via a fixture that
+  overrides the DB dependency. Hermetic, fast, no shared state between tests — this is a large part of why we chose
+  self-contained auth over OAuth.
+
+  Coverage I'd write:
+
+  - [1mAuth[0m — register, duplicate email, login success, login with wrong password, [38;5;153m/me[39m while logged out, logout
+    invalidating the session, expired session rejected
+  - [1mTasks[0m — create, list, filter by status and assignee, patch each mutable field, patch a nonexistent task, delete, and
+    every endpoint rejected when unauthenticated
+  - [1m[38;5;153mapply_task_change[0m — unit tests asserting it returns exactly the set of fields that changed, including the no-op case
+    where a field is patched to its current value
+
+  That last one looks fussy for piece #1, and on its own merits it is. I'm including it because it's the contract piece
+  #3 depends on: if "changed fields" is wrong, notifications fire for edits that didn't happen, or stay silent for ones
+  that did. Pinning it with tests now is much cheaper than debugging spurious notifications later.
+
+  [1mNot included:[0m end-to-end browser tests, load testing, migrations tooling. Alembic earns its place at the Postgres
+  move, not before — until then [38;5;153mcreate_all[39m against a dev database is enough.
+
+  ---
+
+  That's the full design for piece #1. To restate the shape of the whole effort so the end state is clear:
+
+  - [1m#1 Tasks core[0m ← this design
+  - [1m#2 Identity + subscription[0m — what "cares about" means: assignee, creator, explicit watcher, or some union of those
+  - [1m#3 Notifications[0m — change events off the choke point, delivery, read/unread, and the UI
+
+  If this section looks right, I'll write the spec to [38;5;153mdocs/hyperpowers/specs/2026-09-16-tasks-core-design.md[39m
+  (uncommitted), self-review it, and hand it to you to read before we go anywhere near an implementation plan.
+
+[38;5;246m✻[39m [38;5;246mCooked for 16s · done 10:29 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m
