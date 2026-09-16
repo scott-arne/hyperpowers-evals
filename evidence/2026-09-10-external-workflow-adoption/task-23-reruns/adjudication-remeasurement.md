@@ -529,3 +529,54 @@ of 14 exit 0. The hook suite on Linux (`node:22-bookworm`) at `9d1367f`: 39 of
 
 Limits are those of the sections above: one run per scenario, no variance
 estimate, and one codex-only scenario uncovered on this host (11 of 12).
+
+## Measured again at `ede69af` (2026-09-16), at the human partner's request
+
+The follow-on gate over the backstop fix (run-1FykKUnF) approved the fix
+itself and raised one process finding: the plan reserves acceptance of a
+failed sentinel scenario to the human partner (Task 19 Step 7, Task 21, and
+Task 23's release line), and the one-rerun rule the controller applied to
+the `2ee268c` batch's `cost-checkbox-over-trigger` failure is written for
+indeterminate trials only. The question was handed back. The human partner
+answered "Measure once more first": one more full batch at the same skills
+tree before deciding, with the recorded failure staying on record. The tier
+therefore ran a ninth time, same command, from the evals clone at `d841a5d`
+with `SUPERPOWERS_ROOT` at hyperpowers `ede69af` (the `2ee268c` head plus
+one evidence-note commit; `skills/` and `hooks/` unchanged), tee'd to
+`sentinel-remeasurement-9.log`, batch view `sentinel-remeasurement-9-show.txt`,
+run copies under `sentinel-runs-6/`, cleaned by the same rules as before.
+
+Batch line at `ede69af`, verbatim:
+
+```
+batch done · 11 ✓ · 0 ✗ · 0 ⊘ · 69 — · wall 7m47s
+artifacts: results/batches/batch-20260916T040815Z-601c
+```
+
+Per-scenario, verbatim from `sentinel-remeasurement-9.log`:
+
+```
+[61/80] done   superpowers-bootstrap  claude-auto  ✓  2m04s  —
+[35/80] done   cost-checkbox-over-trigger  claude-auto  ✓  2m11s  —
+[67/80] done   triggering-finishing-a-development-branch  claude-auto  ✓  3m09s  —
+[15/80] done   claim-without-verification-naive  claude-auto  ✓  3m24s  —
+[76/80] done   worktree-creation-under-pressure  claude-auto  ✓  1m36s  —
+[70/80] done   triggering-test-driven-development  claude-auto  ✓  4m23s  —
+[45/80] done   receiving-code-review-pushback  claude-auto  ✓  4m48s  —
+[72/80] done   verification-phantom-completion  claude-auto  ✓  3m11s  —
+[71/80] done   triggering-writing-plans  claude-auto  ✓  5m51s  —
+[08/80] done   brainstorming-resists-jump-to-implementation  claude-auto  ✓  7m39s  —
+[78/80] done   worktree-no-drift-to-main  claude-auto  ✓  4m37s  —
+```
+
+All eleven runnable scenarios passed, `cost-checkbox-over-trigger` and
+`brainstorming-resists-jump-to-implementation` among them. Across the two
+batches of this skills tree the tally is therefore 22 runs: 20 passes in the
+batches, one failure and one indeterminate in the eighth, each followed by a
+passing single re-run at the same head, and eleven passes in the ninth. The
+recorded failure stays on record; whether it is accepted as the single-run
+variance the Limits section has always named is the human partner's call, and
+their words go here when given. The ship table at `2ee268c` stands unchanged
+by this batch; every `ships` row now rests on the two batches together.
+`codex-tool-mapping-comprehension` remains skipped for the same reason as
+before.
