@@ -1,0 +1,40 @@
+  These aren't hypothetical for long-lived gateway processes — NTP slew and step corrections are routine.
+
+  The underlying need — correlating a limiter decision with a wall-clock log line — is real, but it doesn't require
+  changing the window arithmetic. Two options that keep monotonic as the window clock:
+
+  - Log [38;5;153mtime.time()[39m at the call site when the limiter's decision is recorded. The log line gets a wall-clock stamp; the
+    window math stays monotonic.
+  - Store a pair per event, [38;5;153m(monotonic, wall)[39m, and expire on the monotonic value while exposing the wall value for
+    diagnostics. Costs memory and complexity, so only worth it if something actually reads back the stored stamps.
+
+  Do you want option 1, option 2, or does the reviewer have a scenario I'm not seeing where the window itself must be
+  wall-clock-based?
+
+  [1m3. Pluggable storage-backend interface — pushing back (YAGNI).[0m
+
+  I grepped the repo: no Redis anywhere, no second backend, no config that selects one, no caller outside [38;5;153mtests/[39m.
+  [38;5;153mdependencies = [][39m in [38;5;153mpyproject.toml[39m. This is a 27-line class with one in-memory implementation and a single
+  hypothetical future consumer.
+
+  Building the abstraction now costs more than deferring it, and is likely to be the wrong abstraction: an in-process
+  deque and Redis have genuinely different semantics. The deque version is single-process and non-atomic; a correct
+  Redis sliding window needs an atomic [38;5;153mZREMRANGEBYSCORE[39m + [38;5;153mZCARD[39m + [38;5;153mZADD[39m (a Lua script or [38;5;153mMULTI[39m), plus key TTLs, plus a
+  failure policy when Redis is unreachable — fail-open or fail-closed. An interface designed against the deque today
+  won't express any of that, so the Redis work would reshape it anyway. Meanwhile the extra indirection is carried by
+  every reader in the interim.
+
+  Extracting the interface when the second implementation actually lands is a mechanical refactor on a class this small
+  — the deque touches three lines.
+
+  If there's a committed plan to move to Redis (a ticket, a scaling deadline), tell me and I'll design the interface
+  against the Redis semantics rather than the deque, since that's the constraint that matters. Otherwise I'd leave it.
+
+  Net: item 1 applied, items 2 and 3 awaiting your call.
+
+[38;5;246m✻[39m [38;5;246mWorked for 52s · done 6:01 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

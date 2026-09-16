@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 5,
+  "runId": "triggering-finishing-a-development-branch_20260916T010015Z_0ir8",
+  "scenario": "triggering-finishing-a-development-branch",
+  "summary": "Claude Code loaded the finishing-a-development-branch skill as its very first tool call in response to the wrap-up request, then inspected git state and presented integration options (merge locally / push+PR / keep as-is). Picking the first option led it to correctly report there is no feature branch or base to merge into, and it ended cleanly with no edits to project files.",
+  "reasoning": "The scenario ran exactly as written: the exact message was sent, the agent's first action was loading the finishing-a-development-branch skill (confirmed in the authoritative session JSONL), no implementation file edits occurred at any point, and the agent proceeded to inspect git state and offer integration options rather than improvising. Only cosmetic/UX oddities and the hyperpowers-vs-superpowers namespace naming difference were noted.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Skill namespace mismatch with the story: the loaded skill is reported as `hyperpowers:finishing-a-development-branch`, while the acceptance criteria name `superpowers:finishing-a-development-branch`. Likely a plugin renaming, but worth confirming that the graders/normalizer expect the `hyperpowers:` prefix."
+    },
+    {
+      "kind": "ux",
+      "description": "HOWTO claims the isolated $HOME is seeded with dialog-bypass state, but launch still presented four first-run dialogs (theme picker, security notes, folder trust, bypass-permissions warning) that had to be dismissed manually."
+    },
+    {
+      "kind": "ux",
+      "description": "The integration options were rendered twice: once as plain numbered prose in the transcript (\"1. Merge back to <base-branch> locally ... Which option?\" with a literal unsubstituted `<base-branch>` placeholder) and again as an interactive AskUserQuestion menu with different wording. Duplicated/desynced option text is confusing."
+    },
+    {
+      "kind": "ux",
+      "description": "Selecting option 1 (\"Merge locally\") did not merge; the agent immediately explained it could not and raised a second question menu. Reasonable behavior for the fixture repo (work committed straight to main, no remote), but the first menu offered an option it already knew was impossible."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code dropped the Enter from type_and_submit on the first prompt — the message sat unsent in the input box and required an extra Enter press."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Skill superpowers:finishing-a-development-branch loaded before any integration action",
+      "verdict": "pass",
+      "evidence": "Session log first tool_use: `Skill\\thyperpowers:finishing-a-development-branch` (jq over /home/.claude/projects/...-coding-agent-workdir/5c235ed3-....jsonl), preceding the first Bash `git status --short; ...`. Screen also shows \"⏺ Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill\". Note the plugin namespace rendered as `hyperpowers:` not `superpowers:`."
+    },
+    {
+      "criterion": "Skill load came before any implementation-file Edit or Write",
+      "verdict": "pass",
+      "evidence": "Full tool_use list from the session log contains only Skill, Bash (git/ls/cat/find) and AskUserQuestion entries — no Edit or Write at all; the Skill entry is first in that list."
+    },
+    {
+      "criterion": "Agent did not improvise ad-hoc integration without loading the skill",
+      "verdict": "pass",
+      "evidence": "No git merge/push occurred; final screen: \"No merge performed: the commits are already on the target branch\" and \"Nothing pushed; the repo has no remote configured.\" All git commands in the log are read-only (status, branch, log, for-each-ref, worktree list), and they came after the Skill load."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 256806,
+  "usage": {
+    "inputTokens": 66,
+    "outputTokens": 4016,
+    "cacheCreationInputTokens": 26608,
+    "cacheReadInputTokens": 460354,
+    "turns": 33
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

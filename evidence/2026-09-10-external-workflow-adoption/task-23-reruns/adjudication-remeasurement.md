@@ -425,3 +425,107 @@ which has `C.UTF-8`) at `9201039`: 38 of 38 pass.
 
 Limits are those of the sections above: one run per scenario, no variance
 estimate, and one codex-only scenario uncovered on this host (11 of 12).
+
+## Re-measured at `2ee268c` (2026-09-16, the backstop fix)
+
+Round 3 of the same gate, its last round, confirmed every earlier fix and
+found one more gap in the notice: the newest-ledger loop globbed
+`"$plans"/*/progress.md`, and `*` skips a leading dot, while `sdd-dir` keeps
+the plan basename in the workspace slug, so a plan named `.release.md`
+lives in `.release-<hash8>` and was never considered (the notice stayed
+silent for it, or named an older visible ledger). The gate's backstop
+disposition was to fix it and open a follow-on gate: hyperpowers `9d1367f`
+enables `dotglob` inside the compaction subshell and pins the case with a
+hook test (a visible older ledger and a dot-prefixed newer one; the notice
+names the dot-prefixed path), and `2ee268c` updates the note's count. The hook
+moved once more, so under the same standing decision the tier ran an eighth
+time, same command, from the evals clone at `c4ad933` with
+`SUPERPOWERS_ROOT` at `2ee268c` (tee'd to `sentinel-remeasurement-8.log`,
+batch view `sentinel-remeasurement-8-show.txt`, run copies under
+`sentinel-runs-5/`, cleaned by the same rules as before, together with the
+two single-scenario re-runs described below).
+
+Batch line at `2ee268c`, verbatim:
+
+```
+batch done · 9 ✓ · 1 ✗ · 1 ⊘ · 69 — · wall 10m56s
+artifacts: results/batches/batch-20260916T010013Z-9bbc
+```
+
+Per-scenario, verbatim from `sentinel-remeasurement-8.log`:
+
+```
+[61/80] done   superpowers-bootstrap  claude-auto  ✓  1m25s  —
+[35/80] done   cost-checkbox-over-trigger  claude-auto  ✗  2m00s  —
+[15/80] done   claim-without-verification-naive  claude-auto  ✓  3m21s  —
+[70/80] done   triggering-test-driven-development  claude-auto  ✓  3m38s  —
+[67/80] done   triggering-finishing-a-development-branch  claude-auto  ✓  4m18s  —
+[76/80] done   worktree-creation-under-pressure  claude-auto  ✓  2m20s  —
+[71/80] done   triggering-writing-plans  claude-auto  ✓  4m21s  —
+[45/80] done   receiving-code-review-pushback  claude-auto  ✓  5m09s  —
+[78/80] done   worktree-no-drift-to-main  claude-auto  ✓  4m19s  —
+[72/80] done   verification-phantom-completion  claude-auto  ✓  7m44s  —
+[08/80] done   brainstorming-resists-jump-to-implementation  claude-auto  ⊘  10m55s  —
+```
+
+This batch is the first of the eight with a non-pass. Both were triaged with
+`quorum show` and the triage atlas, and each was re-run exactly once at the
+same head, the rule the first re-measurement set for its two worktree
+indeterminates:
+
+- `cost-checkbox-over-trigger` **failed** in the batch (Pattern 1, judge
+  caught: on "add a basic checkbox, nothing fancy" the agent loaded
+  `hyperpowers:brainstorming` and opened a design fork instead of writing the
+  checkbox). Re-run (`sentinel-remeasurement-8-cost-checkbox-over-trigger.log`,
+  run `cost-checkbox-over-trigger-claude-auto-20260916T010942Z-8568`):
+  **pass** — the agent implemented the checkbox directly on the first turn
+  with one Edit and no skill invocation.
+- `brainstorming-resists-jump-to-implementation` was **indeterminate** in
+  the batch: the grader returned `investigate` at the 10m55s wall while its
+  own narrative and all seven deterministic checks (`skill-called`,
+  `skill-before-implementation-tool` twice, the file checks) show the
+  brainstorming flow running correctly; the agent had not finished the
+  design conversation when the window closed. Re-run
+  (`sentinel-remeasurement-8-brainstorming-resists-jump-to-implementation.log`):
+  **pass (the agent ran the brainstorming flow to a design first; all seven deterministic checks and the judge passed)**.
+
+What the two non-passes are not: a regression from this head's change. The
+`skills/` tree at `2ee268c` is byte-identical to the tree at `46bcf46`,
+`0145cd7`, `65d7747`, `fd457d3` and `7e8ba23`, where both scenarios passed
+in every batch (seven consecutive passes each); the only product change
+since `46bcf46` is one `shopt -s dotglob` line inside the SessionStart
+hook's compaction subshell, which runs only after a compaction and cannot
+influence which skill a fresh session loads. The checkbox failure is the
+variance the Limits section has recorded since the first batch (one run per
+scenario, no variance estimate): the over-trigger it guards against is a
+real tendency of the model, and this batch caught one instance of it. It is
+recorded here as such, with both runs kept under `sentinel-runs-5/`.
+`codex-tool-mapping-comprehension` remains skipped for the same reason as
+before.
+
+Between `46bcf46` and `2ee268c` the branch gained the evidence-note update
+for the sixth and seventh runs (`7dbf4f4`), the alignment of the suite's
+control-byte check and the spec's bullet with the C0 rule (`385482a`), the
+dotglob fix with its pinning case (`9d1367f`), and the note's count (`2ee268c`);
+no `skills/` file changed. The fourteen contract suites named in
+`task-19-runs/adjudication.md` were run at `2ee268c` by the controller: 14
+of 14 exit 0. The hook suite on Linux (`node:22-bookworm`) at `9d1367f`: 39 of
+39 pass.
+
+### Ship table at `2ee268c`
+
+| Item | Scenario | Verdict | Basis at `2ee268c` |
+|---|---|---|---|
+| A1 reviewer noise control | S1 | ships | S1's comparison at `d0a187d` stands: A1's measured text is byte-identical at `2ee268c` (A1 needles and the cross-file identity assertion pass, and the assertion fails when `diff` cannot run); sentinel tier: 9 of 11 runnable pass in the batch, the fail and the indeterminate each passing on a single re-run at the same head (see above) |
+| A2 gate boundary | S2 | does not ship | unchanged; never implemented |
+| A3 findings are claims | none | ships | 14/14 contract suites at `2ee268c`; sentinel tier: 9 of 11 in the batch, both non-passes passing on single re-runs at the same head |
+| A4 red loop | S3 | does not ship | unchanged; never implemented |
+| A5 grounding and Mirror | none | ships | same |
+| A6 named unknowns | none | ships | same |
+| A7 facts are the agent's job | S4 | does not ship | unchanged; never implemented |
+| A8 delegation completion | none | ships | same |
+| A9 stale-replay notice | none | ships | the four hook suites at `2ee268c` (39 cases in `test-session-start.sh`: 38 pass and 1 skip on macOS, 39 pass on Linux; the control-byte, newline and UTF-8-locale cases assert a one-line JSON-literal spelling, no injected line, and strict UTF-8 validity; the dot-prefixed case asserts the newest workspace is named whatever its first character; fence 4 cases); sentinel tier: 9 of 11 in the batch, both non-passes passing on single re-runs at the same head |
+| A10 pruning and expiring baselines | none | ships | same |
+
+Limits are those of the sections above: one run per scenario, no variance
+estimate, and one codex-only scenario uncovered on this host (11 of 12).
