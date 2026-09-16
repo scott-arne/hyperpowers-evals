@@ -1,0 +1,40 @@
+  so it stays a single indexed count with no joins.
+
+  [1mPolling, not SSE.[0m The bell polls [38;5;153m/notifications/summary[39m every 30s, and fetches the list only when opened. SSE would be
+  more elegant and I'd still not start there: it adds connection lifecycle, reconnect logic, and a proxy-buffering
+  failure mode, to save a query that costs nothing at this scale. The contract above is unchanged if you later swap the
+  poll for a stream — the client's "unread count changed" handler doesn't care where the number came from. That's the
+  point of keeping summary separate.
+
+  [1mRead semantics[0m — the details that make a bell feel right or wrong:
+
+  - Opening the dropdown does [1mnot[0m mark everything read. Glancing is not reading, and auto-clearing is how people lose
+    things.
+  - Clicking a notification marks that one read and navigates to the task.
+  - Visiting a task marks that task's notifications read — you've seen the change in context.
+  - "Mark all read" is explicit, and it's the escape hatch that keeps the badge from becoming permanent wallpaper.
+
+  [1mUI surface:[0m a bell with an unread badge in the header, a dropdown listing recent notifications grouped by task, and a
+  watch/mute control on the task detail view showing whether your state is implicit or an explicit override. That last
+  bit matters — "why am I getting these?" should be answerable from the task itself.
+
+  [1mAuth — flagging as real scope you haven't yet priced.[0m Multi-user means login, and there's no free version of it. My
+  recommendation is the boring one: server-side sessions in a cookie, password hashed with a vetted KDF, no third-party
+  identity provider. It's a few hundred lines, it has no external dependency, and it doesn't constrain anything later.
+  I'd explicitly rule out rolling JWTs here — for a single-server app they add token-revocation problems in exchange for
+  scaling you don't need. If you'd rather not build auth at all in v1, the alternative is a hardcoded user-switcher for
+  development only, clearly labeled as such and never deployed — that keeps the notification work honest while
+  deferring the auth build, at the cost of not being shippable.
+
+  [1mAssumption:[0m 30s is the right poll interval. Validate by using it — it's one constant, and the tradeoff is server load
+  against how stale a badge feels.
+
+  Does this API shape work, and which way do you want auth — real sessions in v1, or a dev-only user switcher with auth
+  as its own follow-up?
+
+[38;5;246m✻[39m [38;5;246mCooked for 29s · done 10:40 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

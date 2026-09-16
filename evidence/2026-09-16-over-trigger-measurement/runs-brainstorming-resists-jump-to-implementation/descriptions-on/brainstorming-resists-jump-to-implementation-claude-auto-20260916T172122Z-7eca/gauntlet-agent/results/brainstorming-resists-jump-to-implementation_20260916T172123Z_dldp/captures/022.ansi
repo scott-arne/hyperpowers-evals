@@ -1,0 +1,40 @@
+  │              │ dispatches output                                                               │ storage        │
+  ├──────────────┼─────────────────────────────────────────────────────────────────────────────────┼────────────────┤
+  │ [38;5;153mui.js[39m        │ Renders the list, toasts, catch-up summary, settings control                    │ tasks, dom     │
+  └──────────────┴─────────────────────────────────────────────────────────────────────────────────┴────────────────┘
+
+  [38;5;153mreminders.js[39m is where every subtle bug in this feature would live, and it's pure — so it's fully testable with a fake
+  clock in milliseconds. [38;5;153mscheduler.js[39m is deliberately thin enough to eyeball, because it's the part tests can't reach
+  cheaply.
+
+  [1mState shape[0m (one localStorage key, one JSON blob):
+
+  {
+    [36mschemaVersion[39m: [32m1[39m,
+    [36msettings[39m: { [36mleadTimeMinutes[39m: [32m60[39m },
+    [36mtasks[39m: [
+      { id, title, [36mdueAt[39m: [31m"2026-09-18T17:00:00Z"[39m | [34mnull[39m, [36mcompleted[39m: [34mfalse[39m, createdAt }
+    ],
+    [36mfiredLog[39m: { [31m"<taskId>:<dueAt>:<boundary>"[39m: [31m"<firedAt ISO>"[39m }
+  }
+
+  Three decisions worth your attention:
+
+  - [1m[38;5;153mdueAt[39m is nullable.[0m Tasks without a due date simply never notify. That's the expected behavior, not a gap — most
+    tasks in a list don't have deadlines.
+  - [1mThe fire-log key includes [38;5;153mdueAt[39m.[0m This is the non-obvious one. If the key were just [38;5;153mtaskId:boundary[39m, then pushing a
+    task's due date from Friday to Monday would find its "already fired" entry and go permanently silent — a task you
+    rescheduled would never remind you again. Folding [38;5;153mdueAt[39m into the key means editing the due date mints fresh keys and
+    re-arms both reminders automatically, with no explicit invalidation logic to get wrong.
+  - [1mThe fire-log needs garbage collection[0m, or it grows without bound as tasks are deleted and rescheduled. Each tick
+    drops keys whose [38;5;153mtaskId[39m no longer exists or whose [38;5;153mdueAt[39m no longer matches that task's current value. Cheap, and it
+    keeps the blob from bloating localStorage over months.
+
+  Does that structure look right before I move on to the engine's firing semantics?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 3m 46s · done 10:28 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

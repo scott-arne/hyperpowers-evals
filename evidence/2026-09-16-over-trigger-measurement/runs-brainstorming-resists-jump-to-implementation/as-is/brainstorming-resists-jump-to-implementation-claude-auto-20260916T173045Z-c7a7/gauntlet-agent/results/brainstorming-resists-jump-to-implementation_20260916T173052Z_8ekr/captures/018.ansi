@@ -1,0 +1,40 @@
+  ├──────────────┼──────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+  │ [38;5;153mstorage.js[39m   │ The seam. Persist and retrieve. Knows nothing about UI or rules.             │ nothing           │
+  ├──────────────┼──────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+  │ [38;5;153mtasks.js[39m     │ Domain state + the [38;5;153mapplyChange[39m chokepoint. Validation, timestamps,           │ [38;5;153mstorage.js[39m        │
+  │              │ subscriber notification.                                                     │                   │
+  ├──────────────┼──────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+  │ [38;5;153mrender.js[39m    │ Takes a task array, produces DOM into [38;5;153m<main>[39m. No mutation, no storage.       │ nothing           │
+  ├──────────────┼──────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+  │ [38;5;153mreminders.js[39m │ The tick. Finds due-and-unnotified tasks, fires, marks them.                 │ [38;5;153mtasks.js[39m,         │
+  │              │                                                                              │ [38;5;153mnotify.js[39m         │
+  ├──────────────┼──────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+  │ [38;5;153mnotify.js[39m    │ Browser Notification API, with an in-app banner fallback.                    │ nothing           │
+  ├──────────────┼──────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+  │ [38;5;153mmain.js[39m      │ Wiring and bootstrap. The only file that knows all the others exist.         │ all               │
+  └──────────────┴──────────────────────────────────────────────────────────────────────────────┴───────────────────┘
+
+  [1mData flow[0m is a single loop, and every mutation takes the same path:
+
+  user event → applyChange(type, payload)
+                 ├─ validate
+                 ├─ stamp updatedAt
+                 ├─ persist via storage.put / storage.remove
+                 ├─ update in-memory array
+                 └─ emit "changed"
+                      ├─→ render.js re-renders <main> from state
+                      └─→ (phase 2: change notifications hook here)
+
+  [38;5;153mreminders.js[39m also calls [38;5;153mapplyChange[39m when it sets [38;5;153mnotifiedAt[39m, so even the reminder system's own writes go through the
+  one chokepoint — no back door. That's what makes the chokepoint a real invariant rather than a convention, and it's
+  why phase 2 has exactly one place to plug into.
+
+  Does this hold up? The piece most worth arguing about is the async storage interface, since it's the one bit of
+  visible overhead you'll pay for in every call site of phase 1 to buy an option in a phase that might not happen.
+
+[38;5;246m✻[39m [38;5;246mSautéed for 33s · done 10:37 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

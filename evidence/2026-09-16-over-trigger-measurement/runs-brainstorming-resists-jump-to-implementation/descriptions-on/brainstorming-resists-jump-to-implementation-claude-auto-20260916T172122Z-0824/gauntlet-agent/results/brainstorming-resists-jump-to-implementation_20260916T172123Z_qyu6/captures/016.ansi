@@ -1,0 +1,40 @@
+  transaction, one [38;5;153mnotifications[39m row per subscriber except the actor. Reads are [38;5;153mWHERE user_id = ? AND read_at IS NULL[39m.
+  Unread count is a [38;5;153mCOUNT[39m. Per-notification read state is a column, so "mark this one read" and "mark all read" are both
+  trivial. Cost: write amplification — a task with 20 watchers writes 20 rows per edit — and someone who subscribes
+  later sees no history. Complexity: moderate.
+
+  [1mB. Event log + compute on read.[0m Only [38;5;153mtask_events[39m, plus a [38;5;153mlast_read_event_id[39m watermark on each subscription. Your
+  unread list is a join: events on tasks you watch, newer than your watermark. No write amplification, one fewer table,
+  and new subscribers get history for free. Cost: you get a watermark, not per-item read state — marking one
+  notification read while leaving an older one unread is not expressible, and that's the interaction a bell menu is
+  built around. The read query also grows with event volume. Complexity: moderate.
+
+  [1mC. No event log; mutations insert notifications directly.[0m Fewest concepts, fewest tables. Cost: no activity history,
+  and every mutation re-implements fan-out, so the rule "don't notify the actor" has to be remembered in five places
+  instead of one. Adding a per-task activity feed later needs a backfill you can't do, because the history was never
+  recorded. Complexity: trivial.
+
+  [1mI recommend A.[0m The write amplification that argues for B is a scale problem you do not have — at demo scale it's a
+  handful of rows per edit, and if it ever mattered the fix is batching, not a redesign. What you do have is a UI whose
+  whole interaction model is per-item read state, which B structurally cannot give you. C is cheaper today and pays for
+  it twice: no history, and fan-out logic smeared across every mutation. A keeps the event log as one append-only source
+  of truth, which also means the future comments sub-project just adds an event type rather than a parallel pipeline.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich notification architecture should I design around?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Fan-out on write (Recommended)[39m
+     [38;5;246mtask_events + one notifications row per subscriber, written in the same transaction. Per-item read state, cheap [39m
+     [38;5;246mreads, write amplification at scale.[39m
+  [38;5;246m2.[39m B: Compute on read
+     [38;5;246mJust task_events + a per-subscription read watermark. No write amplification, free history, but no per-item read [39m
+     [38;5;246mstate.[39m
+  [38;5;246m3.[39m C: Direct insert, no event log
+     [38;5;246mMutations write notifications rows directly. Simplest today; no activity history and fan-out logic duplicated per [39m
+     [38;5;246mmutation.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

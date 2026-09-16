@@ -1,0 +1,40 @@
+  no backend. But we already know from the decomposition that cycle 2 is multi-user, and that's a stated requirement,
+  not speculation. [38;5;153mlocalStorage[39m can't be shared, so choosing it means the entire persistence layer gets thrown away and
+  rewritten in two cycles, and any tasks you entered in the meantime don't come with you.
+
+  - [1mServer plus database from the start.[0m Cycle 1 is slower — there's a backend, an API, and a schema before you can add
+    your first task. But cycles 2 and 3 become additive: sharing adds tables, the event log adds a table, and nothing
+    gets rewritten. Expensive to change later; this is the decision the other three cycles rest on.
+  - [1mStatic page with [38;5;153mlocalStorage[39m.[0m You have a working task list fastest, and the [3mdesign[0m thinking (what a task is, what
+    states it has) carries over even though the storage code doesn't. Cheap to change later in the sense that it's a
+    small amount of code to discard — but the data goes with it, and the UI will have been written against a synchronous
+    local API that an HTTP backend doesn't match.
+  - [1mStatic UI now, storage behind an interface.[0m Middle path: [38;5;153mlocalStorage[39m today, but every read and write goes through
+    one module you swap for an HTTP client in cycle 2. Keeps cycle 1 fast and contains the rework to one file — the same
+    chokepoint idea as the event log, applied to persistence.
+
+  My recommendation is the third. The first is the technically cleanest and I'd argue for it if this were a product with
+  users waiting, but for "me plus a few collaborators" it front-loads a lot of infrastructure before you've confirmed
+  you even like the task model. The third gets you something usable quickly while making cycle 2 a contained swap rather
+  than a rewrite — and it pairs naturally with the single-write-path constraint we already agreed on, since both amount
+  to "mutations go through one door."
+
+  The one thing I'd avoid is the second without the interface. That's the version where cycle 2 hurts.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Storage [39m[49m
+
+[1m[38;5;231mHow should cycle 1 handle storage?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage behind an interface (Recommended)[39m
+     [38;5;246mStatic page, works immediately, but all reads/writes go through one storage module that gets swapped for an HTTP [39m
+     [38;5;246mclient in cycle 2. Contains the rework to one file.[39m
+  [38;5;246m2.[39m Server + database now
+     [38;5;246mBuild the backend in cycle 1. Slower to a working app, but cycles 2–4 become purely additive with no persistence [39m
+     [38;5;246mrewrite and no data loss.[39m
+  [38;5;246m3.[39m Plain localStorage, deal with it later
+     [38;5;246mFastest possible cycle 1, no abstraction. Accepts that cycle 2 rewrites the storage and UI data-access code.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

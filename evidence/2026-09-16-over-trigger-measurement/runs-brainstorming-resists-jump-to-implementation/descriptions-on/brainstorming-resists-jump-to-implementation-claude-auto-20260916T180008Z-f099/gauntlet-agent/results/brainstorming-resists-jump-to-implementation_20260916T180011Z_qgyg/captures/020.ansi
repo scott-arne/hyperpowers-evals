@@ -1,0 +1,40 @@
+  [1mB. Append-only event log, derive feed on read[0m — task changes append to [38;5;153mtask_events[39m; each user's feed is a query
+  joining events against their subscriptions and a [38;5;153mlast_read_at[39m cursor. You get task history for free, and watch/mute
+  apply retroactively. Cost: per-notification read/dismiss state needs its own receipts table, and feed queries get
+  heavier as events accumulate. Complexity: moderate.
+
+  [1mC. Event log plus materialized fanout[0m — B as the source of truth, A as a cache. Most robust and the only one that
+  survives changing the fanout rules after the fact. Complexity: high, and it's two systems to keep consistent.
+
+  [1mRecommendation: A.[0m In-app-only with modest scale means the read-path performance argument for B never bites, and B's
+  headline win — retroactive history — is a feature you didn't ask for. A's real weakness is that fanout rules are baked
+  into stored rows; the mitigation is keeping subscriber resolution in one pure function ([38;5;153mresolveRecipients(task, [39m
+  [38;5;153mevent)[39m) so it's independently testable and swappable. C is what you'd migrate to if an activity feed ever becomes a
+  product requirement, and A doesn't block that.
+
+  [1mStack and tooling[0m
+
+  The repo has no tooling at all, so this is free to decide now and annoying later. I'd propose Node with Fastify and
+  SQLite (single file, zero setup, real SQL), a plain-JS frontend with [38;5;153mfetch[39m against a JSON API — matching the existing
+  hand-written HTML rather than importing a framework for two screens — and ESLint plus Prettier from the first commit.
+
+  Separately, the testing question. This one is worth your input rather than my assumption:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Approach [38;5;16m[48;5;153m ☒ Testing [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhat test infrastructure should be set up from the start?[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Unit tests (Recommended)
+  [38;5;246mNode's built-in test runner, with recipient resolution and collapsing logic as the first specs. Cheapest now, and [39m
+  [38;5;246mthese are the rules most likely to break silently.[39m
+  [38;5;246m2.[39m [ ] End-to-end tests
+  [38;5;246mPlaywright driving a real browser through assign-then-see-the-bell. Catches real integration breaks; slower to write [39m
+  [38;5;246mand run.[39m
+  [38;5;246m3.[39m [ ] Neither for now
+  [38;5;246mSkip test infrastructure and add it if the project outlives the prototype.[39m
+[38;5;153m❯[39m [38;5;246m4. [39m[ ] [7mT[0;2mype something[0m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

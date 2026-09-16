@@ -1,0 +1,40 @@
+  [1mDelivery[0m is that last endpoint polled every 15 seconds by a few lines of client JS that update the badge. The count
+  only — never the list — so the payload stays a single integer and the pages stay server-rendered. No WebSockets, no
+  SSE: one process, demo scale, and polling costs no server state. If it ever feels laggy, SSE is the upgrade and it
+  doesn't disturb the schema.
+
+  [1mLogin[0m is a dropdown of existing users that sets a session cookie. That is a demo shortcut, not auth, and I'll say so
+  in the spec in those words so nobody later mistakes it for a security model.
+
+  [1mSection 3 — Errors, testing, tooling[0m
+
+  Fan-out lives in the mutation's transaction, so a fan-out failure rolls the task change back too. At this scale that's
+  the right trade: a change that silently notified nobody is worse than a change that failed loudly. The unique
+  [38;5;153m(user_id, event_id)[39m constraint plus [38;5;153mINSERT OR IGNORE[39m makes fan-out idempotent, so a retry can't double-notify. [38;5;153mPRAGMA
+[39m  [38;5;153mforeign_keys = ON[39m gets set explicitly — SQLite defaults it off, and it's the single easiest thing to forget here.
+  Validation rejects unknown status values, unparseable dates, and empty titles with a 400 and a re-rendered form. Task
+  deletion is out of scope, which follows from cutting deletion events.
+
+  Testing is [38;5;153mnode:test[39m against an in-memory SQLite, with the behavioral cases that actually encode the design: the actor
+  is never notified of their own change; a muted user stays silent even after being reassigned the task;
+  unwatch-then-reassign does not resurrect the subscription; one save touching two fields yields the right event set;
+  unread count matches the row count. Those are the assertions I'd want failing loudly if someone refactors the fan-out.
+
+  Tooling from the start, per the spec's Global Constraints: eslint + prettier, [38;5;153mnode:test[39m, and exactly one runtime
+  dependency — [38;5;153mbetter-sqlite3[39m, for its synchronous API, which makes the single-transaction guarantee above readable
+  instead of a promise chain. No browser or e2e tests; that's a deliberate cut I'd revisit only if the UI grows past a
+  few pages.
+
+  Scope reminder before I write this up: this spec covers the [1mtasks core plus subscriptions[0m — the notifications
+  subsystem you originally asked for gets its own spec next, built on the event log this one establishes. Comments are a
+  third.
+
+  If sections 2 and 3 look right, I'll write the design doc to [38;5;153mdocs/hyperpowers/specs/2026-09-16-tasks-core-design.md[39m
+  (uncommitted), self-review it, and bring it back for you to read before anything moves toward a plan.
+
+[38;5;246m✻[39m [38;5;246mChurned for 44s · done 10:27 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

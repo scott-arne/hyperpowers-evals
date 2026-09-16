@@ -1,0 +1,40 @@
+  - [1m[38;5;153mComment[0m — [38;5;153mtask[39m FK, [38;5;153mauthor[39m FK, body, [38;5;153mcreated_at[39m. Needed in spec 1 because commenting is one of the three involvement
+    triggers.
+  - [1m[38;5;153mEvent[0m — [38;5;153mtask[39m FK, [38;5;153mactor[39m FK, [38;5;153mverb[39m, [38;5;153mpayload[39m (JSON: before/after), [38;5;153mcreated_at[39m. Verbs: [38;5;153mcreated[39m, [38;5;153mtitle_changed[39m,
+    [38;5;153mdescription_changed[39m, [38;5;153mstatus_changed[39m, [38;5;153massigned[39m, [38;5;153munassigned[39m, [38;5;153mdue_date_changed[39m, [38;5;153mcommented[39m. Append-only, never updated
+    or deleted.
+
+  [1mModels in spec 2:[0m
+
+  - [1m[38;5;153mSubscription[0m — [38;5;153muser[39m + [38;5;153mtask[39m (unique together), [38;5;153mstate[39m ∈ [38;5;153mwatching[39m | [38;5;153mmuted[39m, [38;5;153mreason[39m ∈ [38;5;153mcreator[39m | [38;5;153massignee[39m | [38;5;153mcommenter[39m |
+    [38;5;153mmanual[39m. Muting writes a real row rather than deleting one, so that later involvement doesn't silently re-subscribe
+    someone who opted out. That's the detail most implementations get wrong.
+  - [1m[38;5;153mNotification[0m — [38;5;153muser[39m FK, [38;5;153mevent[39m FK (unique together), [38;5;153mread_at[39m nullable, [38;5;153memailed_at[39m nullable, [38;5;153mcreated_at[39m.
+  - [1m[38;5;153mNotificationPreference[0m — [38;5;153muser[39m one-to-one, [38;5;153memail_mode[39m ∈ [38;5;153mbatched[39m | [38;5;153mdigest[39m | [38;5;153moff[39m. One row per user, created on signup.
+
+  [1mTwo rules baked into the model rather than the UI:[0m the fan-out never creates a [38;5;153mNotification[39m where [38;5;153mevent.actor == user[39m
+  (no self-notification), and [38;5;153mNotification[39m is unique on (user, event) so a retried worker can't double-send.
+
+  [1mOne open question I'm not going to answer for you.[0m There's no grouping concept here — no lists, projects, or tags. For
+  5–50 people sharing one flat task pile, that may get unpleasant fast. I left it out because you didn't ask for it and
+  the care-model we chose is per-task rather than per-list, so notifications don't need it. But it's cheaper to add now
+  than later.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 1 [39m[49m
+
+[2m│[0m [1m[38;5;231mDoes Section 1 look right — and should task grouping (lists/projects) be in scope?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, no grouping (Recommended)[39m
+     [38;5;246mShip a flat task list first and add grouping when the pain is real. Keeps spec 1 small and doesn't complicate [39m
+     [38;5;246mpermissions. Adding a nullable list FK later is a cheap migration.[39m
+  [38;5;246m2.[39m Looks right, add lists
+     [38;5;246mInclude a simple List/Project model in spec 1 — tasks belong to one list. More to build, but avoids a migration and
+[39m     [38;5;246ma UI rework once the flat pile gets unwieldy.[39m
+  [38;5;246m3.[39m Change something in the model
+     [38;5;246mSomething about the models, verbs, the mute-as-a-row decision, or the spec 1 / spec 2 split isn't right. Tell me [39m
+     [38;5;246mwhat and I'll revise before moving on.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

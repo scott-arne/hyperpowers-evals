@@ -1,0 +1,40 @@
+  notification rows are a denormalized copy, and a subscriber who joins later sees nothing retroactively. Complexity:
+  low.
+
+  [1mB. Append-only event log, derive feed on read[0m — task changes append to [38;5;153mtask_events[39m; each user's feed is a query
+  joining events against their subscriptions and a [38;5;153mlast_read_at[39m cursor. You get task history for free, and watch/mute
+  apply retroactively. Cost: per-notification read/dismiss state needs its own receipts table, and feed queries get
+  heavier as events accumulate. Complexity: moderate.
+
+  [1mC. Event log plus materialized fanout[0m — B as the source of truth, A as a cache. Most robust and the only one that
+  survives changing the fanout rules after the fact. Complexity: high, and it's two systems to keep consistent.
+
+  [1mRecommendation: A.[0m In-app-only with modest scale means the read-path performance argument for B never bites, and B's
+  headline win — retroactive history — is a feature you didn't ask for. A's real weakness is that fanout rules are baked
+  into stored rows; the mitigation is keeping subscriber resolution in one pure function ([38;5;153mresolveRecipients(task, [39m
+  [38;5;153mevent)[39m) so it's independently testable and swappable. C is what you'd migrate to if an activity feed ever becomes a
+  product requirement, and A doesn't block that.
+
+  [1mStack and tooling[0m
+
+  The repo has no tooling at all, so this is free to decide now and annoying later. I'd propose Node with Fastify and
+  SQLite (single file, zero setup, real SQL), a plain-JS frontend with [38;5;153mfetch[39m against a JSON API — matching the existing
+  hand-written HTML rather than importing a framework for two screens — and ESLint plus Prettier from the first commit.
+
+  Separately, the testing question. This one is worth your input rather than my assumption:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Approach [39m[49m ☐ Testing  ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mDoes the fanout-on-write approach (A) plus the Fastify/SQLite/vanilla-JS stack look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, A with that stack[39m
+     [38;5;246mFanout on write, recipient resolution isolated as a pure function. Fastify + SQLite + plain-JS frontend.[39m
+  [38;5;246m2.[39m A, but different stack
+     [38;5;246mFanout on write is right, but tell me what you'd rather build it on.[39m
+  [38;5;246m3.[39m Prefer B (event log)
+     [38;5;246mTake the append-only event log and derive feeds on read, for the free task history.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

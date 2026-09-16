@@ -1,0 +1,40 @@
+  - [38;5;153msubscriptions[39m — id, task_id, user_id, state ([38;5;153mwatching[39m | [38;5;153mmuted[39m), source ([38;5;153mcreator[39m | [38;5;153massignee[39m | [38;5;153mcommenter[39m | [38;5;153mexplicit[39m),
+    created_at. Unique on (task_id, user_id).
+  - [38;5;153mnotifications[39m — id, user_id, event_id, coalesce_key, read_at (nullable), created_at
+
+  [1mFan-out[0m, triggered after the mutation transaction commits:
+
+  1. Load the event's [38;5;153mtask_id[39m, resolve subscribers from [38;5;153msubscriptions[39m where [38;5;153mstate = 'watching'[39m.
+  2. Drop the actor. You are never notified of your own action.
+  3. Drop events whose [38;5;153mkind[39m isn't in the v1 notifiable set (status, assignment, due date, comment).
+  4. For each remaining recipient, upsert a notification on [38;5;153mcoalesce_key = (user_id, task_id, kind)[39m — if an [3munread[0m one
+     exists within the coalescing window, bump its timestamp and point it at the newer event instead of inserting.
+     That's the "three typo fixes, one bell" rule.
+
+  Implicit subscriptions are created as real rows at the moment the relationship forms — creating a task, being
+  assigned, commenting. A [38;5;153mmuted[39m row always wins, so muting survives later re-assignment rather than being silently
+  undone by it.
+
+  [1mThree things I want to name as deliberate:[0m
+
+  - [1mNotification references an event; it does not copy it.[0m The bell renders from the joined event payload. One source of
+    truth, and adding an email adapter later means a new reader of the same rows, not a parallel write path.
+  - [1mRead state lives on the notification, not the task.[0m Per-user, which is the only thing that can be correct in a
+    multi-user app.
+  - [1mFan-out is on write, not on read.[0m Computing "what's new for me" at read time means re-deriving audience from
+    historical relationships that have since changed, and that gets unreproducible fast. The cost is a row per recipient
+    per event, which at this scale is nothing.
+
+  [1mAssumption:[0m the coalescing window is a fixed duration rather than "until read" — validate by using it; if the bell
+  still feels noisy, "collapse all unread for the same task+kind" is a one-line change to the upsert condition.
+
+  Does the event-sourced spine look right to you, and specifically: are you comfortable with mutations being forced
+  through a single event-emitting path? That's the constraint everything else depends on, and it's the one that'd be
+  annoying to walk back.
+
+[38;5;246m✻[39m [38;5;246mBaked for 3m 4s · done 10:38 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

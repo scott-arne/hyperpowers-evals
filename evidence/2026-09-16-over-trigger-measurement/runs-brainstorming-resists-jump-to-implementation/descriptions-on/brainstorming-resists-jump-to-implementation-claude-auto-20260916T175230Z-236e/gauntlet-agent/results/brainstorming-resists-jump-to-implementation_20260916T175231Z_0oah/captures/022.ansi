@@ -1,0 +1,40 @@
+    [36mat[39m: [36mstring[39m;
+    [36mevent[39m: [34mTaskEvent[39m;
+  }
+
+  [34mtype[39m [34mTaskEvent[39m =
+    | { [36mtype[39m: [31m'task.created'[39m }
+    | { [36mtype[39m: [31m'task.status_changed'[39m; [36mfrom[39m: [34mStatus[39m; [36mto[39m: [34mStatus[39m }
+    | { [36mtype[39m: [31m'task.due_changed'[39m;    [36mfrom[39m: [36mstring[39m | [34mnull[39m; [36mto[39m: [36mstring[39m | [34mnull[39m }
+    | { [36mtype[39m: [31m'task.assigned'[39m;       [36mfrom[39m: [34mUserId[39m | [34mnull[39m; [36mto[39m: [34mUserId[39m | [34mnull[39m }
+    | { [36mtype[39m: [31m'task.edited'[39m;         [36mfields[39m: ([31m'title'[39m | [31m'description'[39m)[] }
+    | { [36mtype[39m: [31m'task.due_reached'[39m;    [36mthreshold[39m: [31m'due_soon'[39m | [31m'overdue'[39m }
+    | { [36mtype[39m: [31m'task.deleted'[39m };
+
+  [34minterface[39m [34mSubscription[39m {
+    [36mtaskId[39m: [34mTaskId[39m;
+    [36muserId[39m: [34mUserId[39m;
+    [36mstate[39m: [31m'watching'[39m | [31m'muted'[39m | [31m'auto'[39m;   [32m// auto = infer from involvement[39m
+    [36mupdatedAt[39m: [36mstring[39m;
+  }
+
+  Three deliberate choices worth challenging:
+
+  - [1m[38;5;153massigneeId[39m exists now but goes unused.[0m It's the cheapest possible hedge for the multi-user phase — adding a field to
+    a stored model later means migrating every record.
+  - [1m[38;5;153mstate: 'auto'[39m rather than a row per involvement.[0m Involvement is recomputed from the log (you created, were assigned,
+    or edited it), so [38;5;153mauto[39m means "no explicit opinion, ask the log." Rows get written only when you actually watch or
+    mute. This is what keeps "both, with implicit defaults" from requiring a subscription row for every task you ever
+    touch.
+  - [1m[38;5;153mtask.due_reached[39m is a real logged event[0m, not a computed-at-render condition. A scanner appends it once when a
+    threshold is crossed, guarded against duplicates. That buys uniform derivation — every notification comes from the
+    log, so dedupe is structural rather than a separate "already alerted?" flag.
+
+  Does this structure look right before I go on to the notification pipeline, error handling, and testing?
+
+[38;5;246m✻[39m [38;5;246mWorked for 4m 6s · done 11:01 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

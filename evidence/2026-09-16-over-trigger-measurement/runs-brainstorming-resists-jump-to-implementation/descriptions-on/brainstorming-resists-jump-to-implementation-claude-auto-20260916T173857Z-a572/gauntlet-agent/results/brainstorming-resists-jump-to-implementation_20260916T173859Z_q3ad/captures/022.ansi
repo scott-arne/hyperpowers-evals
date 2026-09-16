@@ -1,0 +1,40 @@
+  all.
+
+  src/
+    model/task.js            Task shape + validation. Pure, no deps.
+    store/storage.js         localStorage read/write, schemaVersion, migration hook.
+    store/taskStore.js       In-memory state + mutations; emits change events.
+    notifications/
+      schedule.js            PURE core: (tasks, settings, now) -> due reminder events
+      engine.js              Timer loop + fired-state bookkeeping; calls schedule.js
+      delivery/index.js      Fan-out to channels behind one deliver(event) interface
+      delivery/inPage.js     Toast + notification list
+      delivery/osNotify.js   Notification API wrapper, permission, capability detection
+    ui/taskForm.js  ui/taskList.js  ui/settings.js
+    main.js                  Wiring only
+
+  The boundaries that matter:
+
+  - [1m[38;5;153mschedule.js[39m knows nothing about time passing.[0m It's handed a [38;5;153mnow[39m and returns which reminders are due. No timers, no
+    storage, no DOM. Every interesting behavior — lead time, suppression, already-fired — is testable by calling one
+    function with different numbers.
+  - [1m[38;5;153mengine.js[39m is the only thing that owns a timer[0m and the only thing that writes fired-state.
+  - [1m[38;5;153mdelivery/*[39m share one interface[0m, [38;5;153mdeliver(event)[39m. [38;5;153mosNotify[39m failing (no permission, unsupported browser) is invisible
+    to the engine — it's a channel that declines. That's what keeps the OS layer a genuine enhancement rather than a
+    second code path.
+  - [1mThe UI never talks to the notification engine.[0m It talks to [38;5;153mtaskStore[39m; the engine observes the store.
+
+  One deliberate choice worth flagging: [1ma single recurring tick (~15s) that recomputes from the clock, not one [0m
+  [1m[38;5;153msetTimeout[39m per reminder.[0m Per-task timers drift, die on laptop sleep, and get throttled in background tabs — you'd wake
+  from sleep and silently get nothing. Recomputing against [38;5;153mDate.now()[39m is self-healing: whatever was missed is simply
+  found on the next tick. It also recomputes on [38;5;153mvisibilitychange[39m, so returning to the tab catches up immediately instead
+  of up to 15s later.
+
+  Does this structure look right before I go on to the data model and firing semantics?
+
+[38;5;246m✻[39m [38;5;246mCooked for 2m 12s · done 10:47 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

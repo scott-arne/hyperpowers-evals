@@ -1,0 +1,40 @@
+  A [38;5;153mstore[39m module owns the task array and a list of subscribers. Every mutation goes through [38;5;153mstore.update()[39m, which writes
+  to [38;5;153mlocalStorage[39m, emits a change event, and notifies subscribers. The renderer is one subscriber: it rebuilds [38;5;153m<main>[39m
+  from current state. Notifications later become a [3msecond subscriber[0m — no change to any existing module.
+  [3mTrade-off:[0m rebuilding the whole list on every keystroke-free mutation is wasteful in principle. At tens-to-hundreds of
+  tasks it's imperceptible, and it eliminates the entire class of "UI drifted out of sync with state" bugs.
+
+  [1mB. Direct DOM manipulation, events as an afterthought[0m
+  Each handler updates both the DOM node and [38;5;153mlocalStorage[39m directly. Fastest to write for the first three features.
+  [3mTrade-off:[0m two sources of truth. Every new feature has to remember to update both, and the change-event chokepoint has
+  no natural home — you end up emitting events from scattered handlers, which is exactly the retrofit problem we agreed
+  to avoid. I'd rule this out.
+
+  [1mC. Store-with-subscribers, targeted DOM updates[0m
+  Same store as A, but the renderer patches only affected nodes instead of rebuilding.
+  [3mTrade-off:[0m strictly better performance, meaningfully more code — you hand-maintain the mapping from task id to DOM
+  node, including add/remove/reorder. It's A plus a manual optimization. Worth doing [3mif[0m a list ever gets slow, not
+  before.
+
+  [1mRecommendation: A.[0m It's barely more code than B, it gives the change-event chokepoint a single obvious home, and C is
+  a later optimization of A rather than a different design — so choosing A doesn't foreclose C.
+
+  Before I present the full design in sections: since this is effectively a new project with no tooling configured, this
+  is the cheapest moment to decide what to set up.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Architecture [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mWhich rendering architecture?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: store + full re-render (Recommended)[39m
+     [38;5;246mSingle source of truth, change-event chokepoint has one home, notifications slot in as a second subscriber. [39m
+     [38;5;246mRebuilds the list on each change.[39m
+  [38;5;246m2.[39m C: store + targeted updates
+     [38;5;246mSame store, patches individual nodes. Better performance, noticeably more code to maintain id-to-node mapping.[39m
+  [38;5;246m3.[39m B: direct DOM manipulation
+     [38;5;246mFastest first draft, but two sources of truth and no natural home for change events. I'd advise against it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

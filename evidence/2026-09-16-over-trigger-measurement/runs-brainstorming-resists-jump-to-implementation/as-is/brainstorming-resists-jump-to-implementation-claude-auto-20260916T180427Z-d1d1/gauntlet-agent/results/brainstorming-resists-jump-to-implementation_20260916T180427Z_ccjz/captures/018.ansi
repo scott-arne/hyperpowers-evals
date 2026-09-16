@@ -1,0 +1,40 @@
+  notification system from being something you have to turn off.
+
+  Two lifecycle rules for [38;5;153mremindAfter[39m, because this is where the obvious bug lives — snooze a task, then reschedule it,
+  and a naive implementation keeps it hidden:
+  - Changing [38;5;153mdueAt[39m clears [38;5;153mremindAfter[39m.
+  - Completing a task clears it too (moot, but keeps stale state from accumulating).
+
+  [1mModules[0m — the split follows what's pure and what touches the world:
+
+  ┌────────────┬──────────────────────────────────────────────────────────────────────────────────────┬──────────────┐
+  │   Module   │                                         Does                                         │  Depends on  │
+  ├────────────┼──────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mdue.js[39m     │ [38;5;153mdueState(task, now)[39m → [38;5;153moverdue | soon | later | none[39m; [38;5;153mreminders(tasks, now)[39m → sorted  │ nothing      │
+  │            │ list                                                                                 │              │
+  ├────────────┼──────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mtasks.js[39m   │ pure [38;5;153m(tasks, args) → tasks[39m: create, edit, toggle, snooze, setDue                     │ nothing      │
+  ├────────────┼──────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mstorage.js[39m │ [38;5;153mloadTasks()[39m / [38;5;153msaveTasks(tasks)[39m, JSON + corruption fallback                           │ localStorage │
+  ├────────────┼──────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mrender.js[39m  │ [38;5;153mrenderList[39m / [38;5;153mrenderBadge[39m / [38;5;153mrenderPanel[39m over pre-classified data                      │ DOM only     │
+  ├────────────┼──────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mapp.js[39m     │ wiring: load, event handlers, the 30s tick, re-render                                │ all of them  │
+  └────────────┴──────────────────────────────────────────────────────────────────────────────────────┴──────────────┘
+
+  The point of that table is the last column. [38;5;153mdue.js[39m and [38;5;153mtasks.js[39m — the entire notification logic — depend on nothing
+  and are pure; [38;5;153mnow[39m is always a parameter, never a [38;5;153mDate.now()[39m call inside. [38;5;153mapp.js[39m is the only module that reads the
+  clock or touches both storage and the DOM. Testing the interesting behavior means calling functions with a fixed [38;5;153mnow[39m,
+  with no DOM, no fake timers, and no localStorage stub.
+
+  [38;5;153mrender.js[39m receives tasks already classified by [38;5;153mapp.js[39m rather than importing [38;5;153mdue.js[39m, so the rendering layer stays
+  swappable — that's what makes the "A → Preact later" escape hatch cheap.
+
+  Does the data model and this split look right before I move on to the due-state logic itself?
+
+[38;5;246m✻[39m [38;5;246mWorked for 31s · done 11:12 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

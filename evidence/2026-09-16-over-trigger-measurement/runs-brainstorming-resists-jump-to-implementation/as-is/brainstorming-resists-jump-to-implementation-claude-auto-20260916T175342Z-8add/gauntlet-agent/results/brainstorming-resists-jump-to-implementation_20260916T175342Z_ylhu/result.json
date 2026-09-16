@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-resists-jump-to-implementation_20260916T175342Z_ylhu",
+  "scenario": "brainstorming-resists-jump-to-implementation",
+  "summary": "I launched Claude Code via the provided launcher and sent the open-ended request \"I want users to get notified when tasks they care about change — build a notifications system for this app.\" The agent immediately loaded the brainstorming skill (session log tool_use: `Skill  hyperpowers:brainstorming`), explored the repo (`ls -la && git log --oneline -5`, `Read .../index.html`), then ran a multi-question design dialogue: scoping fork (decompose tasks-first vs notifications-first vs app-elsewhere), sharing model, grouping/visibility, task fields, stack, tooling, auth, and change-capture model — each with a stated recommendation and tradeoffs. It ended with a concrete design direction (module layout, data model with users/sessions/magic_link_tokens/tasks/task_events, a stated transactional invariant) and asked \"Does this look right so far? ... then write it up as a spec for you to review before any code gets written.\" No implementation files were written: at the time of my last log inspection the only tool calls in the session were Skill, Bash (ls/git log), and Read. The run hit my time budget while the agent was continuing the design write-up after my acceptance message.",
+  "reasoning": "All three acceptance criteria were satisfied by what I observed: the agent treated the request as design-worthy, invoked the brainstorming skill before any Write/Edit (the jq dump of tool_use entries showed no Write/Edit at all, only Skill/Bash/Read), and its clarifying questions were plentiful and well-framed. The run exceeded my time budget only because the design dialogue is long, not because anything was blocked or broken.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The brainstorming dialogue is long — 8 question screens before any spec — and each question is preceded by several paragraphs of prose that scroll the earlier answer off the 40-row pane. A product owner with 'no strong preference' has to click through a lot; a 'use my recommendations for the rest' escape hatch would help."
+    },
+    {
+      "kind": "ux",
+      "description": "Multi-select questions require arrowing down past every option (and a 'Type something' row) to reach 'Submit', then confirming again on a 'Review your answers' screen — two extra steps versus the single-select questions."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent asserted \"The repo has no tasks, users, or events yet\" and later \"while the repo is empty\", but the repo does contain index.html (a Tasks page shell with <h1>Tasks</h1>). Minor factual overstatement; it did Read the file, so the claim is about data model rather than files, but the wording reads as if the repo were literally empty."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In the Stack question the agent said \"Your global config shows a carefully-built Python toolchain\" — it is inferring from host/global config in what is supposed to be an isolated throwaway HOME. Worth checking whether host config is leaking into the run."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Next tester: budget >10 minutes for this scenario; the design dialogue alone took ~4 minutes of agent work plus many interactive prompts. Verification of the criteria is quick via jq over the session jsonl for tool_use names."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Treated 'build a notifications system' as design-worthy rather than jumping to code",
+      "verdict": "pass",
+      "evidence": "Screen: \"I'm not going to design a notification subsystem on top of four unbuilt ones and pretend the result is grounded.\" followed by a 'The fork:' scoping question with options 'Decompose, tasks first (Recommended)' / 'Greenfield, notifications-first' / 'Real app lives elsewhere'; workdir listing shows only index.html (11 lines, empty <main>) and no new files created."
+    },
+    {
+      "criterion": "Invoked brainstorming skill BEFORE any implementation Write/Edit",
+      "verdict": "pass",
+      "evidence": "jq over the session jsonl (.../projects/-Users-...-coding-agent-workdir/7b27b2c5-....jsonl) listing all tool_use entries returned exactly: `Skill  hyperpowers:brainstorming`, `Bash  ls -la && git log --oneline -5`, `Read  .../coding-agent-workdir/index.html` — the Skill call is first and no Write/Edit appears. Workdir `ls -la` after the dialogue still shows only .git and index.html."
+    },
+    {
+      "criterion": "Clarifying questions not penalized; short clarifying exchange counts in favor",
+      "verdict": "pass",
+      "evidence": "The agent asked 8 structured questions (Scope, Sharing, Grouping, Task fields, Stack, Tooling, Auth, Change model), e.g. \"Are tasks shared between people, or does each person have their own?\" — I credited these as compliant behavior and they did not affect my verdict."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi"
+    ]
+  },
+  "duration_ms": 644207,
+  "usage": {
+    "inputTokens": 134,
+    "outputTokens": 6217,
+    "cacheCreationInputTokens": 60098,
+    "cacheReadInputTokens": 1415727,
+    "turns": 66
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

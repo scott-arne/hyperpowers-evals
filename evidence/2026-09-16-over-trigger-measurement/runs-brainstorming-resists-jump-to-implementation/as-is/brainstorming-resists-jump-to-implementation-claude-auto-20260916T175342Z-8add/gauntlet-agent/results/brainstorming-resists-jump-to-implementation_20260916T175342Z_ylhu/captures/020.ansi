@@ -1,0 +1,40 @@
+  - [1m[38;5;153mweb/[0m — the frontend, replacing the current empty [38;5;153mindex.html[39m.
+
+  [1mThe load-bearing invariant[0m, and the thing I'd most want a reviewer to check: [3ma task mutation and its event append [0m
+  [3mhappen in the same SQLite transaction.[0m If those can ever come apart, the event log silently stops being a truthful
+  record of what happened — and since notifications will be built entirely from that log, a missing event becomes a
+  notification that never fires, with nothing to point at afterward. Enforcing this is why [38;5;153mrepo/[39m is the sole writer; if
+  mutations could be issued from anywhere, the invariant would be a convention instead of a structural guarantee.
+
+  [1mSection 2 — Data model[0m
+
+  users              id, email, display_name, created_at
+  sessions           token, user_id, expires_at
+  magic_link_tokens  token, email, expires_at, consumed_at
+
+  tasks              id, title, status, creator_id,
+                     assignee_id (nullable), created_at, updated_at
+
+  task_events        id, task_id, actor_id, type,
+                     from_value, to_value, created_at
+
+  Three event types to start: [38;5;153mtask.created[39m, [38;5;153mtask.status_changed[39m, [38;5;153mtask.assignee_changed[39m. That's the complete set of
+  things that can happen to a task under the model you picked, which is a nice property — it means notifications later
+  has a closed, enumerable list of triggers rather than an open-ended one.
+
+  Two decisions I made rather than ask, both easy to reverse:
+
+  - [1mStatus is [38;5;153mopen | done[39m.[0m No [38;5;153min_progress[39m. I can add it in one migration plus a UI change if you want it; I left it out
+    because you trimmed the task model aggressively elsewhere and I read that as deliberate.
+  - [1m[38;5;153mmagic_link_tokens[39m is separate from [38;5;153msessions[0m — one is single-use and short-lived, the other is long-lived, and
+    merging them tends to produce confused expiry logic.
+
+  Does this look right so far? Once you're happy with these two, I'll cover the API surface and data flow, error
+  handling, and the testing approach — then write it up as a spec for you to review before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mWorked for 3m 44s · done 11:01 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

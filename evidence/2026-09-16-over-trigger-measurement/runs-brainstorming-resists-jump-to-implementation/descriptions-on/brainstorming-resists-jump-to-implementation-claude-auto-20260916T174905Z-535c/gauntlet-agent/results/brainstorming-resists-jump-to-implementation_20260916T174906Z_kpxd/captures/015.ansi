@@ -1,0 +1,40 @@
+  [1mA. Plain CRUD, add events later.[0m [38;5;153mUPDATE tasks SET ...[39m in place; no history. Simplest possible task layer, and nothing
+  is wasted if notifications never ship. But when they do, you retrofit change capture into every write path — or resort
+  to database triggers or before/after diffing — and you'll have lost every change that happened before the retrofit.
+  [3mComplexity: trivial.[0m
+
+  [1mB. Transactional outbox.[0m Every mutation writes the task row [3mand[0m an append-only [38;5;153mtask_events[39m row ([38;5;153mtask_id[39m, [38;5;153mactor_id[39m,
+  [38;5;153mtype[39m, [38;5;153mfield[39m, [38;5;153mold[39m, [38;5;153mnew[39m, [38;5;153moccurred_at[39m) in one transaction. Sub-project 3 becomes a reader of that table rather than a
+  rewrite of this one. Costs one extra table and the discipline of a single write path (a thin service layer instead of
+  ad-hoc queries in handlers). Gives you an activity feed almost for free, and events can never disagree with state,
+  because they commit together. [3mComplexity: moderate.[0m
+
+  [1mC. Event sourcing.[0m The event log is the source of truth; task rows become a projection rebuilt from it. Perfect audit
+  fidelity and time-travel. Costs projection code, replay handling, and a much harder mental model for what is
+  fundamentally a to-do list. [3mComplexity: high.[0m
+
+  [1mI recommend B.[0m It's the only one that makes notifications an additive change rather than a rewrite, and the marginal
+  cost over A is roughly one table plus keeping writes in one place — which a codebase this size should do regardless. C
+  buys fidelity you have no stated need for.
+
+  The cost of B that I want to be honest about: it constrains how you write. Every task mutation must go through the
+  service layer, and "just run a quick UPDATE in the handler" becomes a bug that silently drops notifications. That's a
+  real discipline tax, enforced by tests rather than by the compiler.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Change model [39m[49m
+
+[2m│[0m [1m[38;5;231mHow should task changes be recorded, given notifications will consume them later?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: Transactional outbox (Recommended)[39m
+     [38;5;246mMutations write task row + task_events row in one transaction. Notifications become a reader, not a rewrite. One [39m
+     [38;5;246mextra table; writes must go through a service layer.[39m
+  [38;5;246m2.[39m A: Plain CRUD, events later
+     [38;5;246mSimplest task layer. Retrofitting change capture later touches every write path and loses all prior history.[39m
+  [38;5;246m3.[39m C: Event sourcing
+     [38;5;246mEvent log is source of truth; task state is a projection. Full audit and replay, at a large complexity cost for a [39m
+     [38;5;246mto-do app.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Both forks resolved. Here's the design, in three sections — I'll pause after each.
+
+  ---
+
+  [1mSection 1 — Architecture and data model[0m
+
+  [1mFour modules, no build step, plain ES modules loaded from [38;5;153mindex.html[39m:[0m
+
+  - [1m[38;5;153mstorage.js[0m — the seam. [38;5;153mload(): Task[][39m and [38;5;153msave(tasks: Task[])[39m, wrapping localStorage under one key with a schema
+    version field. Nothing else in the app touches localStorage directly. If a server ever happens, this file is what
+    changes.
+  - [1m[38;5;153mtasks.js[0m — pure operations on a task array: add, edit, toggle done, delete. No DOM, no storage. Every mutation
+    stamps [38;5;153mupdatedAt[39m.
+  - [1m[38;5;153mattention.js[0m — the reminder engine. One exported function: [38;5;153mgetAttention(tasks, now) → { overdue, dueSoon, stale }[39m.
+    Pure — takes the clock as an argument rather than calling [38;5;153mDate.now()[39m internally.
+  - [1m[38;5;153mapp.js[0m — wiring and rendering. The only module that knows about the DOM.
+
+  [1mThe Task record:[0m
+
+  { id, title, notes, done, dueDate, createdAt, updatedAt }
+
+  [38;5;153mdueDate[39m is nullable (a task without a deadline is normal, not an error) and stored as a plain [38;5;153mYYYY-MM-DD[39m date string,
+  not a timestamp — "due Tuesday" means the day, not a moment, and storing it as an instant creates timezone bugs where
+  a task flips to overdue at 7pm because the browser is in a different zone than when it was entered.
+  [38;5;153mcreatedAt[39m/[38;5;153mupdatedAt[39m are real ISO timestamps since staleness genuinely is about elapsed time.
+
+  [1mThe design point I care most about:[0m [38;5;153mattention.js[39m being a pure function of [38;5;153m(tasks, now)[39m is what makes this feature
+  testable at all. Reminder logic is all edge cases — midnight boundaries, a task due today, a task edited exactly N
+  days ago — and testing that through a UI against the real system clock is miserable and flaky. Passing [38;5;153mnow[39m in means
+  every one of those cases is a plain unit test with no clock manipulation, no fake timers, no waiting.
+
+  Does the module split and the task record look right?
+
+[38;5;246m✻[39m [38;5;246mCogitated for 2m 17s · done 10:46 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

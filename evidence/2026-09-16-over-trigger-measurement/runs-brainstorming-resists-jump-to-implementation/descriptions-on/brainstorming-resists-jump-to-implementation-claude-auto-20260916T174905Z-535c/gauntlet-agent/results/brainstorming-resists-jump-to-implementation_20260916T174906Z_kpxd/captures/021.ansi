@@ -1,0 +1,40 @@
+    old_value     text null
+    new_value     text null
+    occurred_at   timestamptz not null
+    index on (task_id, id), index on (id)       -- the second is sub-project 3's cursor
+
+  [1mThree notes on the choices:[0m
+
+  - [1m[38;5;153mstatus[39m as an enum[0m — [38;5;153m'todo' | 'in_progress' | 'done'[39m. Three states is enough to be useful and makes "moved to done" a
+    clean event. More states are a migration, not a redesign.
+  - [1mOne row per changed field, not per request.[0m Editing title and status together writes two [38;5;153mtask_events[39m rows. This
+    costs a little storage but means sub-project 3 can say "status changed to done" without diffing JSON blobs, and lets
+    users subscribe per field later.
+  - [1m[38;5;153mactor_id[39m is recorded[0m specifically so notifications can suppress self-notification — you don't want an email about
+    your own edit. Capturing it now is free; adding it later means the early events can't be filtered.
+
+  [1mThe one open decision in this section: task visibility.[0m The schema above has no scoping column, which means every task
+  is visible and assignable to every user — a single shared workspace. That's fine for a small team and it's the
+  simplest thing that satisfies your request. The alternative is adding a [38;5;153mprojects[39m (or [38;5;153mworkspaces[39m) table with
+  membership, which makes "tasks they care about" partly a [3mmembership[0m question and adds an authorization check to every
+  query. Adding scoping later is a real migration plus an audit of every read path, so it's worth deciding now rather
+  than assuming.
+
+  I'd recommend the flat single workspace for v1: your request is about [3mchange[0m notifications, not access control, and a
+  [38;5;153mprojects[39m table would expand sub-project 2 considerably.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 2 [39m[49m
+
+[2m│[0m [1m[38;5;231mSection 2 (data model) — and specifically, should tasks be scoped to projects/workspaces?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFlat workspace, model approved (Recommended)[39m
+     [38;5;246mAll tasks visible to all users, no scoping column. Simplest; matches a change-notification goal. Move to section 3.
+[39m  [38;5;246m2.[39m Add projects + membership
+     [38;5;246mTasks belong to a project; users join projects. Adds authorization to every read path and expands sub-project 2.[39m
+  [38;5;246m3.[39m Revise the model
+     [38;5;246mSomething in the schema needs changing — I'll tell you what.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

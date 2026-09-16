@@ -1,0 +1,40 @@
+  predicate for "should fire" is:
+
+  !task.done && task.dueAt !== [34mnull[39m && task.dueAt <= now && task.notifiedAt === [34mnull[39m
+
+  Startup and visibility ticks are what make this robust to the tab sleeping or the laptop suspending — the check
+  compares timestamps rather than trusting that an interval kept running, so a machine that was asleep for six hours
+  catches up correctly the moment it wakes.
+
+  [1mRe-arming on edit.[0m If you push a due date into the future, [38;5;153mapplyChange[39m resets [38;5;153mnotifiedAt[39m to [38;5;153mnull[39m. Otherwise a
+  rescheduled task would stay permanently silent — a bug that would be genuinely baffling to diagnose later, so the rule
+  belongs in the chokepoint where it can't be forgotten.
+
+  [1mCompleting suppresses.[0m Handled free by the [38;5;153m!done[39m clause. Finish a task before it's due and nothing fires.
+
+  [1mThe overdue-backlog problem, which I want your call on.[0m Open the app after a week away with twelve overdue tasks and
+  the naive implementation fires twelve browser notifications at once. That's not a reminder system, that's an attack.
+  Options:
+
+  - [1mCollapse above a threshold[0m — fire individually up to 3, otherwise one summary: [3m"12 tasks are overdue."[0m All twelve
+    still get marked notified. My preference: it degrades gracefully and the summary is more useful than twelve separate
+    popups anyway.
+  - [1mSuppress stale ones[0m — don't fire for anything more than a day overdue, just show it in the UI. Quieter, but it
+    silently drops things you might have wanted to see.
+  - [1mFire everything[0m — simplest, honest, occasionally terrible.
+
+  [1mNotification permission, which is a UX trap worth avoiding.[0m Requesting [38;5;153mNotification.permission[39m on page load is the
+  pattern every site uses and every user hates, and Chrome and Firefox now actively penalize it — ask at a bad moment
+  and you can get permanently blocked with no recourse. Instead: never prompt on load; prompt the first time you set a
+  due date on a task, which is the moment the request actually makes sense. If permission is denied or unavailable, fall
+  back to an in-app banner and never ask again. The app stays fully functional with notifications denied — browser
+  notifications are an enhancement, not the mechanism.
+
+  The threshold question is the one I need from you; my recommendation is collapse-above-3.
+
+[38;5;246m✻[39m [38;5;246mWorked for 23s · done 10:38 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

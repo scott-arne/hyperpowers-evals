@@ -1,0 +1,40 @@
+  [1mB. Per-task [38;5;153msetTimeout[39m.[0m On create/edit, schedule timers for each boundary. Millisecond-precise, no polling. But timers
+  die on reload (reschedule everything on load), browsers throttle them hard in background tabs, laptop sleep silently
+  eats them, and [38;5;153msetTimeout[39m clamps around 24.8 days — a due date next month never fires. Worst of all, catch-up needs an
+  entirely separate code path, so you maintain two implementations of one behavior and they will drift.
+
+  [1mC. Pure derived state.[0m No scheduler. Each render computes what's due-soon and overdue from task data plus the current
+  time. Elegant, nothing persisted. But it can't express "notify once" — a toast is an [3medge[0m, derived state is a [3mlevel[0m,
+  so you'd get a permanent banner instead of a notification. And dismissal has to persist anyway, which smuggles the
+  fire-log back in.
+
+  [1mRecommendation: A, with C for one specific job.[0m The fire-log is the load-bearing idea — it's what makes "fire exactly
+  once" survive reloads and what collapses catch-up into normal operation. But C is genuinely right for the [3moverdue [0m
+  [3mbadge in the list[0m, which is a level ("this task is late") rather than an edge ("this task just became late"). So:
+  derived state renders badges, the fire-log drives toasts. Two concepts because there are honestly two behaviors, not
+  two mechanisms for one.
+
+  B I'd discard outright — the background-tab throttling alone disqualifies it for a reminder system.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Engine [39m[49m
+
+[1m[38;5;231mWhich detection architecture should the reminder engine use?[0m
+
+[38;5;153m❯[38;5;246m 1.[1m[38;5;153m A: Tick + fire-log [0m          [38;5;246m┌────────────────────────────────────────────┐[39m
+    [1m[38;5;153m(Recommended)[0m                 [38;5;246m│ [39mevery 30s:[38;5;246m                                 │[39m
+ [38;5;246m 2.[39m B: Per-task setTimeout       [38;5;246m│ [39m  for task in tasks:[38;5;246m                       │[39m
+ [38;5;246m 3.[39m C: Pure derived state        [38;5;246m│ [39m    for b in boundariesCrossed(task, now):[38;5;246m │[39m
+                                  [38;5;246m│ [39m      if b not in firedLog:[38;5;246m                │[39m
+                                  [38;5;246m│ [39m        fire(b); firedLog.add(b)[38;5;246m           │[39m
+                                  [38;5;246m│                                            │[39m
+                                  [38;5;246m│ [39mReload -> first tick catches everything[38;5;246m    │[39m
+                                  [38;5;246m│ [39mmissed. No special-case code.[38;5;246m              │[39m
+                                  [38;5;246m└────────────────────────────────────────────┘[39m
+
+                                  [38;5;153mNotes:[39m [3m[38;5;246mpress n to add notes[0m
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel[39m

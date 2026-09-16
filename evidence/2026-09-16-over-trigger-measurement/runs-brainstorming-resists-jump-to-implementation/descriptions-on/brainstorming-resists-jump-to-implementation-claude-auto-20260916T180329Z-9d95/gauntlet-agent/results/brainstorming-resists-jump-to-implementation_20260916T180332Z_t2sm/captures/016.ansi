@@ -1,0 +1,40 @@
+  [3mWins when[0m the read path needs to be dead simple and per-item read state is central — it's what a conventional
+  server-side system looks like. [3mBut[0m it creates a second source of truth that drifts: deleted tasks orphan rows, and
+  changing a rule doesn't retroactively fix the feed. And it doesn't actually save you the sweep — see below.
+  Complexity: moderate.
+
+  [1mThe thing that decides it[0m
+
+  Your two triggers have [1mfundamentally different shapes[0m, and any design that ignores this breaks:
+
+  - [3mStarred task changed[0m is [1mpush[0m: something happens, an event is recorded.
+  - [3mDue date arrived[0m is [1mpull[0m: nothing happens. No code runs at 9:00am. The "event" is the clock moving while the app was
+    closed.
+
+  So a due-date notification can only ever be [1mcomputed on load[0m by comparing due dates against the interval since your
+  last visit. That's the catch-up sweep you already picked, and it's unavoidable. Which means approach C doesn't
+  eliminate the sweep — it makes you build the sweep [3mand[0m the dispatcher, and reconcile them. That's the argument that
+  pushes me off C.
+
+  [1mMy recommendation: B.[0m One log for recorded changes, one sweep for time-derived triggers, one feed query that merges
+  them. It's the only option that serves both triggers without two competing mechanisms, and the log is the piece that's
+  painful to add later.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich architecture should the design be built on?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: Event log + derived feed (Recommended)[39m
+     [38;5;246mAll mutations through one chokepoint appending immutable events; feed is a query over the log merged with a [39m
+     [38;5;246mtime-based due-date sweep. Serves both triggers, testable by replay, additive path to multi-user.[39m
+  [38;5;246m2.[39m A: Derived-on-read only
+     [38;5;246mNo stored notifications at all; feed computed from task state plus a watermark. Smallest possible system, but drops
+[39m     [38;5;246mthe 'starred task changed' trigger entirely and allows only a single global read watermark.[39m
+  [38;5;246m3.[39m C: Materialized notification rows
+     [38;5;246mA dispatcher writes notification records at mutation time. Simple reads and natural per-item state, but a second [39m
+     [38;5;246msource of truth that drifts, and you still need the due-date sweep alongside it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

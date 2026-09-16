@@ -1,0 +1,40 @@
+  - Log-derived: [38;5;153mevt:<event.id>[39m — stable because events are immutable.
+  - Sweep-derived: [38;5;153mdue:<taskId>:<dueAt>[39m — deterministic from the task plus its due timestamp.
+
+  That second key has a property I want to point out, because it's a behavior decision hiding in an ID format: [1mif you [0m
+  [1mreschedule a task, the key changes, so it notifies again.[0m I think that's right — you moved the deadline, the new
+  deadline deserves its own alert — but it means dismissing a due notification and then pushing the date out will
+  resurface it. Say the word if you'd rather a dismissal stick across reschedules.
+
+  [1mRead state,[0m kept bounded rather than growing forever:
+
+  [34mReadState[39m = { lastSeenAt, [36mdismissed[39m: [key] }
+
+  Everything at or before [38;5;153mlastSeenAt[39m is read. Anything after is unread unless explicitly dismissed. Because of that,
+  [38;5;153mdismissed[39m can be pruned of any key older than the watermark — it stays small instead of accumulating one entry per
+  notification ever seen.
+
+  [1mThe two sources, concretely:[0m
+
+  [3mPush (recorded).[0m [38;5;153mapplyTaskChange()[39m appends an event. The feed query pulls events where the task is starred and — per
+  the wrinkle I flagged — [38;5;153mactor[39m is not you. Today that yields nothing, which is the honest outcome; the moment a second
+  actor exists it lights up with no code change.
+
+  [3mPull (swept).[0m On load, for each task that is not done and has [38;5;153mdueAt <= now + leadTime[39m, synthesize a [38;5;153mdue[39m notification.
+  Nothing is accumulated: the sweep reads live task state, so it's naturally idempotent. Close the app for a month and
+  reopen it and you get one notification per overdue task, not thirty. Delete a task and its due notification simply
+  stops being produced — no orphan rows, which is the other thing that sank approach C.
+
+  [38;5;153mleadTime[39m is a single setting, default 0 (fire at the due moment).
+
+  [1mLog growth.[0m Events older than [38;5;153mlastSeenAt[39m [3mand[0m older than a retention window (90 days) can never surface again, so
+  [38;5;153mcompact()[39m prunes them. Retention is a constant, not a setting.
+
+  Does the data model look right — particularly the reschedule-resurfaces-a-dismissal call?
+
+[38;5;246m✻[39m [38;5;246mChurned for 3m 46s · done 11:12 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  Four ES modules, each independently understandable and testable:
+
+  ┌────────────┬──────────────────────────────────────────────────────────────────────────────┬─────────────────────┐
+  │   Module   │                                Responsibility                                │     Depends on      │
+  ├────────────┼──────────────────────────────────────────────────────────────────────────────┼─────────────────────┤
+  │ [38;5;153mstorage.js[39m │ Serialize/deserialize the task array to a [38;5;153mlocalStorage[39m key. Handles absent   │ the injected        │
+  │            │ and corrupt data.                                                            │ storage object      │
+  ├────────────┼──────────────────────────────────────────────────────────────────────────────┼─────────────────────┤
+  │ [38;5;153mtasks.js[39m   │ Pure functions over a task array: [38;5;153maddTask[39m, [38;5;153mtoggleDone[39m, [38;5;153meditTask[39m, [38;5;153mdeleteTask[39m, │ nothing             │
+  │            │  [38;5;153msetDueDate[39m. No I/O, no DOM.                                                 │                     │
+  ├────────────┼──────────────────────────────────────────────────────────────────────────────┼─────────────────────┤
+  │ [38;5;153mstore.js[39m   │ Owns current state. Applies a [38;5;153mtasks.js[39m operation, persists via [38;5;153mstorage.js[39m,   │ [38;5;153mstorage.js[39m,         │
+  │            │ computes the change event, notifies subscribers.                             │ [38;5;153mtasks.js[39m            │
+  ├────────────┼──────────────────────────────────────────────────────────────────────────────┼─────────────────────┤
+  │ [38;5;153mrender.js[39m  │ Given state, rebuild [38;5;153m<main>[39m. Wires DOM events to [38;5;153mstore[39m calls.                │ [38;5;153mstore.js[39m            │
+  └────────────┴──────────────────────────────────────────────────────────────────────────────┴─────────────────────┘
+
+  Data flow is a single loop, one direction:
+
+  user action → store.apply(op, args)
+                  ├─ newState = op(state, args)     (pure)
+                  ├─ storage.save(newState)
+                  ├─ changes = diff(state, newState)
+                  └─ notify(subscribers, newState, changes)
+                           └─ render.js rebuilds <main>
+
+  The [1mchange-event chokepoint[0m is the [38;5;153mdiff[39m line. It emits [38;5;153m{taskId, field, oldValue, newValue, timestamp}[39m per changed
+  field. Nothing consumes it yet except a subscriber that logs to console — deliberately, so the shape gets exercised.
+  When notifications become their own spec, they register as a second subscriber and no existing module changes.
+
+  [38;5;153mtasks.js[39m being pure is what makes the unit tests worth having: they're plain function calls, no DOM, no fakes.
+
+  Does this look right so far?
+
+[38;5;246m✻[39m [38;5;246mWorked for 3m 6s · done 10:29 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

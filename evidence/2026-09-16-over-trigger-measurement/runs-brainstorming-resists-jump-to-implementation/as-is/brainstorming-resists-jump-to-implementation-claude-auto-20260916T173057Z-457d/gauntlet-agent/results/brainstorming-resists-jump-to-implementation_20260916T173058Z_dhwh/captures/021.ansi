@@ -1,0 +1,40 @@
+  I'd spec stage one next and keep stage two's needs as explicit constraints on it, so we don't build a write path that
+  can't emit events.
+
+  [1mTables.[0m
+
+  users            id, name
+  tasks            id, title, description, status,
+                   creator_id, assignee_id, created_at, updated_at
+  comments         id, task_id, author_id, body, created_at
+  task_events      id, task_id, actor_id, type, payload, created_at
+  task_participants  task_id, user_id, reason        -- (stage 1)
+  notification_state user_id, read_cursor_event_id   -- (stage 2)
+  dismissed_events   user_id, event_id               -- (stage 2)
+
+  [38;5;153mtask_events.type[39m is one of [38;5;153mcreated[39m, [38;5;153mstatus_changed[39m, [38;5;153massigned[39m, [38;5;153mcommented[39m. Field edits deliberately emit nothing.
+
+  [1mThe one non-obvious choice: [38;5;153mtask_participants[39m is materialized, not derived.[0m That may look like the fan-out-on-write
+  approach I just talked you out of, so let me draw the line I'm relying on. Involvement is a [1mfact[0m — "Dana commented on
+  task 7" is true forever and never needs recomputing. Notification-worthiness is a [1mrule[0m — "people involved in a task
+  should hear about status changes, unless muted" — and rules change. Approach A froze the rule; this freezes only the
+  facts, and keeps every rule in the read query where it stays changeable. Maintaining the participants row at write
+  time also turns the bell query into one indexed join instead of a scan across comments.
+
+  [1mThe bell query[0m, roughly: events on tasks I participate in, newer than my read cursor, not authored by me, not
+  individually dismissed — newest first, capped. Collapsing happens here too: consecutive events sharing task + actor +
+  type inside a short window render as one entry.
+
+  [1mOne assumption I need to name rather than smuggle in:[0m [3mAssumption: authentication is out of scope; stage one identifies
+[0m  [3musers by a simple session-selected identity (a picker, not a login), validated by confirming with you before [0m
+  [3mstage-one implementation.[0m Real auth is its own subsystem and would swallow this project. The schema above doesn't
+  block adding it later — [38;5;153musers.id[39m is the only thing notifications touch.
+
+  Does this section look right? In particular I want pushback on the participants-as-facts call and on deferring auth.
+
+[38;5;246m✻[39m [38;5;246mCooked for 3m 18s · done 10:38 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+
+  GET  /api/notifications?limit=50   -> { items[], unread_count, cursor }
+  POST /api/notifications/read       { up_to_event_id }   -> advance cursor
+  POST /api/notifications/:id/dismiss
+
+  [1mUI.[0m A bell in the header with an unread count; clicking opens a dropdown of entries — actor, verb, task title,
+  relative time — each linking to its task, plus "mark all read." Polling every 15s, [1mpaused while the tab is hidden and
+[0m  [1mrefetched immediately on focus[0m. That last detail is worth the few lines: without it the badge is confidently wrong
+  every time someone comes back from lunch.
+
+  [1mFailure modes I'm designing for:[0m
+  - [3mBackground poll fails[0m — retry with backoff, keep the last known state, show no error toast. A failed background
+    request is not something to interrupt someone over. After several consecutive failures the badge goes muted to
+    signal staleness rather than lying.
+  - [3mUnknown event type[0m — stage three will add types stage two has never seen. The dropdown renders an unrecognized type
+    as a generic line instead of throwing; a bell that crashes on a new event type is a bad way to find out.
+  - [3mEvent referencing a deleted task[0m — the query joins [38;5;153mtasks[39m and drops orphans.
+  - [3m[38;5;153mdismissed_events[39m growth[0m — prune rows older than the user's read cursor; once the cursor passes them they're
+    redundant.
+
+  [1mTesting[0m (unit only, per your choice). The derivation query is the highest-value target by a wide margin, so it gets
+  table-driven tests against an in-memory SQLite: self-authored events excluded, non-participants excluded, cursor
+  boundary conditions, dismissed exclusion, the collapsing window's edges, ordering and limit. The service layer gets
+  tests that each mutation emits exactly one correct event and upserts participants, and that a rolled-back transaction
+  leaves no orphan event.
+
+  [1mThe honest gap:[0m skipping E2E leaves the polling and visibility behavior — badge accuracy across tab focus, dropdown
+  rendering, mark-all-read round-tripping — with no automated coverage. That's a real hole in exactly the part users
+  touch, and it'll need manual checking each time we change it. I think it's an acceptable trade for now given the app's
+  size, and I'd revisit when stage three adds SSE, since connection lifecycle bugs are miserable to catch by hand.
+  Flagging it so the choice stays visible rather than becoming an accident.
+
+  If this looks right, I'll write it up as a spec.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 36s · done 10:39 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  [1mMultiple tabs.[0m Both tabs tick, both write, you get duplicate toasts and last-write-wins clobbering. Mitigation:
+  re-read state from localStorage at the top of every tick instead of trusting memory. Cheap, makes clobbering safe,
+  mostly dedupes. It leaves a small race window, and I'd flag that as a known limitation rather than build a lock — you
+  have one user.
+
+  [1mClock moved backward.[0m Fired keys stay in the log, so nothing re-fires. No handling needed; the log gives us this free.
+
+  [1mCorrupt storage.[0m If [38;5;153mJSON.parse[39m fails, do [3mnot[0m silently reset — that's someone's task list. Fall back to empty in-memory
+  state, show a visible error, and preserve the bad blob under a backup key.
+
+  [1mSection 3: UI surfaces & testing[0m
+
+  Surfaces: task list with derived overdue badges; add/edit form (title + optional due date); a dismissible toast stack;
+  the catch-up banner; and one settings control for lead time.
+
+  Testing, given you picked unit tests + lint:
+
+  - [1m[38;5;153mreminders.js[39m — exhaustive, fake clock.[0m Boundary crossing, fire-once across repeated ticks, rescheduling re-arms,
+    suppressed lead on already-late tasks, GC, completed tasks skipped, backward clock. This is where the bugs would be,
+    and it's all pure.
+  - [1m[38;5;153mtasks.js[39m / [38;5;153mstorage.js[0m — CRUD transforms, corruption fallback.
+  - [1mNot covered:[0m DOM rendering and the [38;5;153msetInterval[39m shell. Verified by hand. Saying so now so the spec doesn't imply more
+    coverage than exists.
+
+  Explicitly out of scope, each left extensible: OS-level notifications, multi-user, cross-device, recurrence, per-task
+  lead-time override.
+
+  One honest note on scope: you asked for a notifications system, and this spec necessarily includes building the task
+  list itself — CRUD, persistence, rendering — because there's nothing here to notify about. Most of the work is the
+  substrate, not the notifications.
+
+  Shall I write this up as the spec at [38;5;153mdocs/hyperpowers/specs/2026-09-16-task-reminders-design.md[39m? Nothing gets
+  implemented until you've read it and approved.
+
+[38;5;246m✻[39m [38;5;246mCooked for 44s · done 10:30 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m
