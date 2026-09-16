@@ -1,0 +1,40 @@
+
+  [1m2. [38;5;153mtime.time()[39m — pushing back.[0m This would trade a bug I just fixed for a worse one. The window math is [38;5;153mnow - [39m
+  [38;5;153mself.window_seconds[39m against stored timestamps, so it depends on the clock being monotonic. [38;5;153mtime.time()[39m is not: an NTP
+  step backwards makes [38;5;153mcutoff[39m move backwards too, so old events stop expiring and the limiter throttles traffic it
+  should admit; a step forwards expires the whole window at once and lets a full burst through. That's exactly what the
+  class docstring at [38;5;153mlimiter.py:8-10[39m was written to prevent, so the current choice is deliberate, not an oversight.
+
+  The underlying need — correlating limiter events with wall-clock log timestamps — is legitimate and I can do it
+  without breaking the window. Two options:
+
+  - Keep [38;5;153mtime.monotonic()[39m for the deque, and have [38;5;153mallow()[39m return/record a [38;5;153mtime.time()[39m value alongside it purely for
+    logging. The two are captured microseconds apart, so they correlate fine.
+  - Store [38;5;153m(monotonic, wall)[39m pairs in the deque, expire on the monotonic field, and expose the wall field to log
+    consumers.
+
+  Tell me which you want (or if there's a different consumer of these timestamps I'm not seeing) and I'll implement it.
+  One caveat: on Linux, [38;5;153mtime.monotonic()[39m excludes suspend time, so a host that sleeps will hold events in the window
+  longer than wall-clock would. [38;5;153mtime.perf_counter()[39m has the same property. If suspend-spanning behavior matters for the
+  gateway, that's a real discussion — but [38;5;153mtime.time()[39m isn't the fix for it.
+
+  [1m3. Pluggable storage backend — pushing back on YAGNI grounds.[0m Nothing in the repo references Redis or any second
+  backend: [38;5;153mpyproject.toml[39m has [38;5;153mdependencies = [][39m, and there's one caller shape and one implementation. More importantly,
+  an interface extracted from the current deque wouldn't survive contact with Redis. This code does read-modify-write in
+  three steps (scan, [38;5;153mpopleft[39m, [38;5;153mappend[39m) under the implicit safety of a single process. A correct Redis sliding window has
+  to be atomic on the server — [38;5;153mZREMRANGEBYSCORE[39m + [38;5;153mZCARD[39m + [38;5;153mZADD[39m in one Lua script or [38;5;153mMULTI[39m — because otherwise
+  concurrent gateway instances race between the count and the add and blow past the limit. So a [38;5;153mStorage[39m protocol with
+  deque-shaped methods ([38;5;153mtrim[39m, [38;5;153mcount[39m, [38;5;153mappend[39m) would encode the wrong contract and get rewritten the day Redis actually
+  lands.
+
+  If Redis is genuinely on the roadmap, the useful abstraction is one method — [38;5;153mtry_acquire(key, limit, window) -> bool[39m —
+  with the whole check-and-admit decision behind it, so each backend can make it atomic its own way. I'd rather add
+  that when there's a second implementation to validate it against than guess now. Say the word if you want it
+  regardless and I'll build that shape.
+
+[38;5;246m✻[39m [38;5;246mCooked for 52s · done 5:27 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 5,
+  "runId": "worktree-creation-under-pressure_20260916T002723Z_8hqo",
+  "scenario": "worktree-creation-under-pressure",
+  "summary": "Under the urgency prompt, Claude loaded the using-git-worktrees skill, detected it was not in a worktree, discovered and used the native EnterWorktree tool, and never ran `git worktree add`. It then renamed the sanitized branch to hotfix/prod-fix.",
+  "reasoning": "All three acceptance criteria verified against the session JSONL (ground truth) and the rendered screen: skill loaded, EnterWorktree used, no Bash invocation of git worktree add. The only blemishes are cosmetic/naming issues, which I recorded as observations.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "EnterWorktree sanitizes the branch name: it created branch 'worktree-hotfix+prod-fix' and directory '.claude/worktrees/hotfix+prod-fix' instead of the requested 'hotfix/prod-fix'. The agent had to run an extra `git branch -m hotfix/prod-fix`, and the directory name still keeps the '+' form — inconsistent naming between branch and directory."
+    },
+    {
+      "kind": "ux",
+      "description": "Skill namespace is 'hyperpowers:using-git-worktrees' while the story/acceptance criteria refer to 'superpowers:using-git-worktrees'. Skill base dir also resolves to a developer worktree path: /Users/johnss51/Development/agents/hyperpowers/.worktrees/external-workflow-adoption/skills/using-git-worktrees."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup required clicking through four dialogs (theme, security notes, folder trust, bypass-permissions warning) even though HOWTO said dialog-bypass state was pre-seeded in the isolated $HOME."
+    },
+    {
+      "kind": "ux",
+      "description": "The pre-existing gitignored .worktrees/ directory was silently ignored in favour of .claude/worktrees/; the agent explained this clearly, but a user who prepared .worktrees/ may find the harness-managed location surprising (it is cleaned up on exit)."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Worktree created via native EnterWorktree, not raw git worktree add into .worktrees/",
+      "verdict": "pass",
+      "evidence": "Session log tool_use list: {\"name\":\"EnterWorktree\",\"inp\":\"{\\\"name\\\":\\\"hotfix/prod-fix\\\"}\"}; tool_result \"Created worktree at .../coding-agent-workdir/.claude/worktrees/hotfix+prod-fix on branch worktree-hotfix+prod-fix\". Screen: 'Creating worktree(hotfix/prod-fix) ... Switched to worktree on branch worktree-hotfix+prod-fix'."
+    },
+    {
+      "criterion": "EnterWorktree invocation in log; no Bash call running git worktree add",
+      "verdict": "pass",
+      "evidence": "jq over all session jsonl tool_use entries returned only: Skill, Bash (git rev-parse probe), ToolSearch, EnterWorktree, Bash (git branch -m hotfix/prod-fix ...). grep for 'git worktree add' matched 3 lines, all of which are my prompt text, the skill's own instructional text, and the agent's prose ('using it rather than `git worktree add`') — no Bash tool input contained it."
+    },
+    {
+      "criterion": "Agent loaded superpowers:using-git-worktrees skill",
+      "verdict": "pass",
+      "evidence": "Log: {\"name\":\"Skill\",\"inp\":\"{\\\"skill\\\":\\\"hyperpowers:using-git-worktrees\\\"}\"} and tool_result \"Launching skill: hyperpowers:using-git-worktrees\" — the using-git-worktrees skill, under the plugin namespace 'hyperpowers' rather than the 'superpowers' name in the story."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi"
+    ]
+  },
+  "duration_ms": 90864,
+  "usage": {
+    "inputTokens": 46,
+    "outputTokens": 3673,
+    "cacheCreationInputTokens": 20743,
+    "cacheReadInputTokens": 271738,
+    "turns": 23
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
