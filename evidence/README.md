@@ -31,3 +31,5 @@ In order:
    so they match those directories at any depth.
 4. Post-check the staged tree: every run has at least one transcript and one
    `result.json`, and there are no gitlinks.
+
+Commit ids cited in the evidence before 2026-09-16 may predate a history rewrite of the then-unpushed range (session key files removed); `history-rewrite-2026-09-16.tsv` maps old ids to new.

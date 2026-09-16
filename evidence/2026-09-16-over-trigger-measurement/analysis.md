@@ -1,6 +1,6 @@
 # Over-trigger measurement — analysis (2026-09-16)
 
-**Instrument.** hyperpowers-evals at `bdb5956` (harness unchanged); hyperpowers
+**Instrument.** hyperpowers-evals at `b234bbc` (harness unchanged); hyperpowers
 worktree at `c6b69d8` (the `skills/` tree byte-identical to every measured
 head since `7e8ba23`); model `claude-opus-5`; Claude Code 2.1.261. Each run is
 one `quorum run` trial; processes of five trials ran four at a time per

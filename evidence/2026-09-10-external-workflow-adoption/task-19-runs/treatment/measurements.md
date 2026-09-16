@@ -6,17 +6,17 @@ staged from
 `/Users/johnss51/Development/agents/hyperpowers/.worktrees/external-workflow-adoption`.
 The arm points `SUPERPOWERS_ROOT` at the feature worktree itself, not at a copy.
 Coding agent: `claude-auto`, model `claude-opus-5`.
-Harness: hyperpowers-evals at `d8d8df6ae775e36acf9b453fb3a35eba9568f1cf` for
+Harness: hyperpowers-evals at `57f74a29730e1182f85eb164315cb6df10192d73` for
 the first four trials. `b15c` and `0eb0` started at 23:03:25Z and 23:04:56Z,
-after `0edf098` was committed at 22:37:17Z, so those two ran at `0edf098`. The
-difference is immaterial: `git diff --name-only d8d8df6 0edf098` lists 487
-paths and 0 of them outside `evidence/` — `0edf098` is this arm's own evidence
+after `f3677b2` was committed at 22:37:17Z, so those two ran at `f3677b2`. The
+difference is immaterial: `git diff --name-only 57f74a2 f3677b2` lists 487
+paths and 0 of them outside `evidence/` — `f3677b2` is this arm's own evidence
 commit — so no source, scenario or test file differs, and every run executed
 the same harness code.
 Fixture: unhardened for S1. Task 9 hardened S2, S3 and S4 only, so this arm runs
 Task 8's `code-review-precision-on-mixed-diff` unchanged and the clean-hunk range
 stays 0-6. The harness commit clears Task 9's fixture floor:
-`git merge-base --is-ancestor e074014 HEAD` printed `fixture ok` before the first
+`git merge-base --is-ancestor a57d717 HEAD` printed `fixture ok` before the first
 trial, recorded at the top of `runner-code-review-precision-on-mixed-diff.log`.
 Plan: `docs/hyperpowers/plans/2026-09-10-external-workflow-adoption.md`.
 
@@ -526,7 +526,7 @@ assigned key values     ->        0
 ```
 
 Check 6 counts the commit instead of a staged index, because it is re-derived
-after that commit was made: `1652992` touched 88 files, 83 of them under
+after that commit was made: `66d9d47` touched 88 files, 83 of them under
 `sentinel-rerun/`. The other five are `README-arm.md`, this arm's
 `adjudication.md`, `scenarios/triggering-writing-plans/checks.sh`,
 `src/detect/implementation.ts` and `test/implementation.detect.test.ts` — the
