@@ -1,0 +1,40 @@
+  flushes the deque and lets a full [38;5;153mlimit[39m-sized burst through at once. On a gateway process that runs for weeks, those
+  aren't edge cases.
+
+  The reviewer's actual need — a limiter decision you can line up against a log line — doesn't require the window clock
+  to change. Whatever logs the decision should stamp it with [38;5;153mtime.time()[39m at the call site. Nothing in this repo calls
+  [38;5;153mallow()[39m yet outside tests, so there's no code to change for that today; it's a constraint on the caller, not on the
+  limiter. I'm not storing a [38;5;153m(monotonic, wall)[39m pair either — nothing reads the stored timestamps back, so that's memory
+  and complexity for a diagnostic nobody has asked for yet.
+
+  [1mItem 3 — no backend interface.[0m The trigger for extracting an interface is the second implementation, not the
+  anticipation of one. Right now there's one implementation, no Redis dependency, and no caller. Designing against the
+  deque would also produce the wrong shape: a correct Redis sliding window needs atomicity ([38;5;153mZREMRANGEBYSCORE[39m/[38;5;153mZCARD[39m/[38;5;153mZADD[39m
+  in one Lua script), key TTLs, and a fail-open-or-closed policy when Redis is unreachable. An interface derived from a
+  three-line deque expresses none of that, so the Redis work would rewrite it anyway — we'd pay for the abstraction
+  twice and carry the indirection in between. The deque touches three lines; extracting it later is mechanical.
+
+  The thing that would change my mind on item 3 is a committed Redis migration, because then I'd design the interface
+  against Redis's semantics and adapt the deque to fit, which is the opposite of what the review asked for. If that
+  lands, reopen it.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 21s · done 6:02 PM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mSounds good. Please commit your changes.[39m
+[49m
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Committed as [38;5;153mcd55bbe[39m on a new branch [38;5;153mfix-limiter-off-by-one[39m (branched off [38;5;153mmain[39m rather than committing to it directly).
+  Working tree is clean.
+
+  The commit contains only the one-line strict-comparison fix in [38;5;153msrc/ratelimit/limiter.py[39m — nothing for items 2 and 3,
+  since I declined both. No push, as you didn't ask for one.
+
+  If you'd rather this sit directly on [38;5;153mmain[39m, [38;5;153mgit checkout main && git merge fix-limiter-off-by-one[39m fast-forwards it.
+
+[38;5;246m✻[39m [38;5;246mCooked for 20s · done 6:04 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

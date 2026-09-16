@@ -1,0 +1,40 @@
+  inside an HTTP request or bolting a queue on afterward. Complexity: trivial.
+
+  [1mB. Task event table, then fan-out.[0m Every mutation writes a [38;5;153mtask_event[39m row ([38;5;153mtask_id[39m, [38;5;153mactor_id[39m, [38;5;153mkind[39m, [38;5;153mpayload[39m,
+  [38;5;153mcreated_at[39m) in the same transaction as the edit. A separate step reads events and writes per-user notification rows.
+  This is the event seam we agreed spec 1 should leave: email and push become additional consumers of the same stream
+  rather than edits to the notification code, and you get a task activity history for free, which a task app wants
+  anyway. The cost is one extra table and a fan-out step to own. Complexity: moderate.
+
+  [1mC. Derive the inbox at read time.[0m Store no notification rows at all. The inbox is a query joining [38;5;153mtask_event[39m against
+  your subscriptions, filtered by a per-user [38;5;153mlast_read_at[39m watermark. Nothing to fan out, nothing to keep consistent, and
+  the unread count is a [38;5;153mCOUNT(*)[39m. The cost lands on per-notification state: marking one item read, or dismissing a
+  single notification while keeping later ones unread, doesn't fit a watermark, and retrofitting that means adopting B
+  anyway. Complexity: trivial now, moderate later.
+
+  [1mI recommend B, with A's operational simplicity kept.[0m Write the event row in the transaction, then run the fan-out
+  in-process immediately after commit — no queue, no worker process, no broker. That gets B's data model, which is the
+  part that's expensive to change, while the infrastructure stays as boring as A's. When email shows up, the fan-out
+  moves behind a real worker and nothing above it changes.
+
+  C tempts me for how little it is, but "mark this one read" is table stakes for an inbox, and that's exactly the thing
+  a watermark can't express.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: events + fan-out (Recommended)[39m
+     [38;5;246mtask_event table written in-transaction, fan-out to notification rows in-process after commit. Event seam for [39m
+     [38;5;246memail/push later, activity history for free, no queue infrastructure today.[39m
+  [38;5;246m2.[39m A: inline fan-out
+     [38;5;246mNotification rows written directly in the update transaction. Fewest moving parts; no event stream, so email/push [39m
+     [38;5;246mlater means reworking the notification path.[39m
+  [38;5;246m3.[39m C: derived inbox
+     [38;5;246mNo notification rows; inbox is a query over events plus a last-read watermark. Smallest storage, but [39m
+     [38;5;246mper-notification read/dismiss state doesn't fit.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

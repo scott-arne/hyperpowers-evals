@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Then here's what I'd suggest: [1mdecompose into three sub-projects and brainstorm the first one properly.[0m Notifications
+  is the last piece, not the first.
+
+  [1mThe pieces[0m
+
+  1. [1mTasks core[0m — the task model, where it's stored, and the UI to create/edit/complete. Nothing above this can be
+     designed without it, because "a task changed" needs a task with fields that can change.
+  2. [1mChange events + subscriptions[0m — an append-only record of [3mwhat changed, on which task, by whom, when[0m, plus how a
+     user expresses "I care about this one" (explicit follow, or implied by being the assignee/creator/commenter). These
+     two ship together because a subscription is meaningless without an event stream to filter, and vice versa.
+  3. [1mNotification delivery[0m — turning matched events into something a person sees: an in-app inbox with read/unread, and
+     possibly email/push. This is the part you actually asked for, and it's almost entirely downstream plumbing once 1
+     and 2 exist.
+
+  [1mWhy this order:[0m 3 is cheap and obvious once 2 exists; 2 is impossible without 1. The one thing I'd carry backward is
+  the event seam — when we design the task model in sub-project 1, we design mutations so they're [3mrecordable[0m (every
+  change goes through one write path) rather than scattering direct field assignments we'd have to retrofit later.
+  That's a design constraint on sub-project 1, not extra code.
+
+  Each piece gets its own spec → plan → implementation cycle. We'd brainstorm [1mTasks core[0m now and keep the notifications
+  requirement in view as the thing it has to support.
+
+  Before I ask about the task model, one question decides the shape of all three:
+
+  [1mThe fork:[0m does state live in the browser, or on a server? This is the least reversible decision in the whole project —
+  it determines whether there are accounts, whether "notify" can ever mean anything while the tab is closed, and
+  whether sub-projects 2 and 3 are a filter over local data or a real backend service.
+
+  - [1mServer-backed, multi-user[0m — accounts, shared tasks, durable event log, notifications that arrive when you're not
+    looking. Largest build; needs a backend stack, a database, and auth before a single notification fires.
+  - [1mBrowser-local, single-user[0m — [38;5;153mlocalStorage[39m, no accounts, no backend. "Notifications" degrades to in-app reminders and
+    a what-changed-since-last-visit digest. Buildable in days. Retrofitting multi-user later means rewriting the
+    storage layer.
+  -
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m
