@@ -12,14 +12,14 @@ Measured heads: hyperpowers `bad92ad079783032c1e2431e624ea0c09cc67f31` (first
 re-measurement, below) and `7e8ba23f1d5f3acd3fa780b7bc4b5e930db24edf` (second
 re-measurement, the section "Re-measured again at `7e8ba23`" at the end of
 this file; the ship table now rests on that one).
-Harness: hyperpowers-evals `452739a14aa916ffb46365e47c38b8e54347d1e6` for the
+Harness: hyperpowers-evals `d752ad4ccdd85bf31093c3fab1f31786e901f03a` for the
 batch (see "What changed in the instrument" — the carried-issue fixes landed
-before the run), `906f573c2964d2a9c69fe8bda7894b3a84bf00b2` for the two worktree re-runs
+before the run), `af092668812e93bbd971ac83e5078833dbbe40b0` for the two worktree re-runs
 (one commit past the batch head; its code change is the runner's directive
 gate and a unit test — no scenario or skill content — and it also carries
 the batch's log, its batch view, and an early draft of this file).
 Previous sentinel batch: `batch-20260913T215413Z-21b5` at `d0a187d`, harness
-`d8d8df6`, recorded in `task-19-runs/adjudication.md`.
+`57f74a2`, recorded in `task-19-runs/adjudication.md`.
 
 ## Batch
 
@@ -79,7 +79,7 @@ matches a `# coding-agents:` directive against an agent's `runtime_family`,
 which is why the two worktree scenarios entered the batch; the two instant
 indeterminates are the runner's own exact-name directive check, which the
 matrix fix did not reach — a void by the instrument (no agent started, no
-behavior to discard), fixed as `906f573` and re-run below. Also in
+behavior to discard), fixed as `af09266` and re-run below. Also in
 that range: the implementation-path detector normalizes dot segments (no
 recorded verdict depended on one), `strip-runs` covers host configuration
 and caches, and the repository's lint is green.
@@ -87,7 +87,7 @@ and caches, and the repository's lint is green.
 ## Re-runs of the two worktree scenarios
 
 Each run individually with the plan's actor, from the evals clone at
-`906f573`, `SUPERPOWERS_ROOT` at the same hyperpowers head `bad92ad`; heads
+`af09266`, `SUPERPOWERS_ROOT` at the same hyperpowers head `bad92ad`; heads
 and UTC start times are printed at the top of each tee'd log.
 
 `sentinel-remeasurement-2-worktree-creation-under-pressure.log`
@@ -150,8 +150,8 @@ nobody ran.
   `triggering-writing-plans` history at `d0a187d` shows an instrument can.
 - `codex-tool-mapping-comprehension` needs the `codex` actor, which the plan's
   command does not name; it remains uncovered at this head.
-- The nine batch scenarios ran under harness `452739a` and the two re-runs
-  under `906f573`; the one commit between them changes no check verb,
+- The nine batch scenarios ran under harness `d752ad4` and the two re-runs
+  under `af09266`; the one commit between them changes no check verb,
   fixture, or skill content.
 - The frontmatter validator that gates skill packaging changed extensively
   between the two measured heads (eleven commits under `tests/packaging/`);
@@ -169,7 +169,7 @@ gate converged on the fix. A `hooks/` file had therefore moved after
 `bad92ad`, and `hooks/session-start` is A9's own surface. Under the human
 partner's standing decision for this branch — re-measure rather than ship
 stale evidence — the tier was run again, same command, from the evals clone
-at `cb616b1` with `SUPERPOWERS_ROOT` at hyperpowers `7e8ba23`, tee'd to
+at `787b15c` with `SUPERPOWERS_ROOT` at hyperpowers `7e8ba23`, tee'd to
 `sentinel-remeasurement-3.log`. Batch line, verbatim:
 
 ```
@@ -195,7 +195,7 @@ Per-scenario, verbatim from the same log:
 
 All eleven runnable scenarios passed inside the batch; the two worktree
 scenarios that the first re-measurement had to re-run individually ran in
-the batch this time, because the runner's directive check (`906f573`) was
+the batch this time, because the runner's directive check (`af09266`) was
 in place. `codex-tool-mapping-comprehension` remains skipped for the same
 reason as before. Run copies are under `sentinel-runs-2/`, cleaned by the
 same rules as `sentinel-runs/`. Batch view: `sentinel-remeasurement-3-show.txt`.
@@ -246,7 +246,7 @@ A9 section records the one skipped case (`65d7747`).
 
 `hooks/session-start` is A9's own surface, so under the same standing
 decision the tier ran twice more, same command, from the evals clone at
-`b2ed9e1`: once with `SUPERPOWERS_ROOT` at hyperpowers `fd457d3` (the fix
+`e7084ef`: once with `SUPERPOWERS_ROOT` at hyperpowers `fd457d3` (the fix
 head before the residuals; tee'd to `sentinel-remeasurement-4.log`, batch
 view `sentinel-remeasurement-4-show.txt`), and once at `65d7747` (tee'd to
 `sentinel-remeasurement-5.log`, batch view `sentinel-remeasurement-5-show.txt`).
@@ -366,7 +366,7 @@ recorded decision: they are not line separators for a newline-delimited
 context and `JSON.stringify` leaves them too.
 
 `hooks/session-start` moved again, so under the same standing decision the
-tier ran a seventh time, same command, from the evals clone at `b343150`
+tier ran a seventh time, same command, from the evals clone at `79d7db5`
 with `SUPERPOWERS_ROOT` at hyperpowers `46bcf46` (tee'd to
 `sentinel-remeasurement-7.log`, batch view `sentinel-remeasurement-7-show.txt`,
 run copies under `sentinel-runs-4/`, cleaned by the same rules as before).
@@ -439,7 +439,7 @@ enables `dotglob` inside the compaction subshell and pins the case with a
 hook test (a visible older ledger and a dot-prefixed newer one; the notice
 names the dot-prefixed path), and `2ee268c` updates the note's count. The hook
 moved once more, so under the same standing decision the tier ran an eighth
-time, same command, from the evals clone at `c4ad933` with
+time, same command, from the evals clone at `b4218e4` with
 `SUPERPOWERS_ROOT` at `2ee268c` (tee'd to `sentinel-remeasurement-8.log`,
 batch view `sentinel-remeasurement-8-show.txt`, run copies under
 `sentinel-runs-5/`, cleaned by the same rules as before, together with the
@@ -540,7 +540,7 @@ the `2ee268c` batch's `cost-checkbox-over-trigger` failure is written for
 indeterminate trials only. The question was handed back. The human partner
 answered "Measure once more first": one more full batch at the same skills
 tree before deciding, with the recorded failure staying on record. The tier
-therefore ran a ninth time, same command, from the evals clone at `d841a5d`
+therefore ran a ninth time, same command, from the evals clone at `0f087a4`
 with `SUPERPOWERS_ROOT` at hyperpowers `ede69af` (the `2ee268c` head plus
 one evidence-note commit; `skills/` and `hooks/` unchanged), tee'd to
 `sentinel-remeasurement-9.log`, batch view `sentinel-remeasurement-9-show.txt`,

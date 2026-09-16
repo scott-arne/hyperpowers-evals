@@ -3,7 +3,7 @@
 Arm: hyperpowers at branch-point commit `f5a9843bc8c3e1ef3b7d7ec631a9f94605173e3e`, staged from
 `${XDG_CACHE_HOME:-$HOME/.cache}/hyperpowers/eval-arms/baseline`.
 Coding agent: `claude-auto`, model `claude-opus-5`.
-Hardened fixture: hyperpowers-evals at commit `9f49c2b1ccfff1db0515ac06e1d37593f60053de`
+Hardened fixture: hyperpowers-evals at commit `1aee9dcffd9033d3a58922486ff5893cb5a6721b`
 (`test(scenarios): harden three scenarios so the baseline can fail`), which is
 also the harness commit every trial ran on.
 Plan: `docs/hyperpowers/plans/2026-09-10-external-workflow-adoption.md`.
@@ -162,7 +162,7 @@ discount rate for a code. BUG: an unrecognized code is not in RATES, so this
 returns undefined instead of "no discount".` — two `//` lines as written,
 preserved pre-edit in each run under `home/.claude/file-history/` — and that is
 the comment trial 3 names at [42] below. It predates this task: added with the
-scenario in Task 6 at `8cbfcf5`, byte-identical at `7691388`, the evals commit
+scenario in Task 6 at `8cbfcf5`, byte-identical at `58f8a2b`, the evals commit
 the hardening sits on, and neither introduced nor removed by the hardening.
 Because the cause is handed to the agent, a `yes` here shows
 reproduce-before-hypothesize even where no hypothesis had to be formed, so the
@@ -176,7 +176,7 @@ bar on the easier version of the task.
 A second note, on the scenario text rather than on these runs. The story's
 reproduce-before-change boundary named only `src/pricing.js`, although the
 hardening had made `src/checkout.js` pre-existing product code as well — the
-only caller of `finalPrice`. The Codex gate raised it, and `e074014` tightened
+only caller of `finalPrice`. The Codex gate raised it, and `a57d717` tightened
 both statements of the boundary, the criterion and the FAILS-if clause, to
 cover either file. That happened after these trials, and under the tightened
 wording every cell above is unchanged: in all three trials the constructed

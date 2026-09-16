@@ -7,12 +7,12 @@ branch ships. Inputs: this task's treatment arm
 (`task-9-runs/baseline-hardened/measurements.md`).
 
 Treatment head: hyperpowers `d0a187d64e62587131f9c9ff4f59988d257b6b26`.
-Harness: hyperpowers-evals `d8d8df6ae775e36acf9b453fb3a35eba9568f1cf` for the
-first four S1 trials and the sentinel tier batch, `0edf098` for S1 runs `b15c`
-and `0eb0`, which started after that commit (the range `d8d8df6..0edf098` lists
+Harness: hyperpowers-evals `57f74a29730e1182f85eb164315cb6df10192d73` for the
+first four S1 trials and the sentinel tier batch, `f3677b2` for S1 runs `b15c`
+and `0eb0`, which started after that commit (the range `57f74a2..f3677b2` lists
 no path outside `evidence/`, so both revisions hold identical harness code),
-and `3aaf198` plus the two fixes that were uncommitted at run time — now
-`1652992` — for the fix-round-2 sentinel re-run.
+and `bee1237` plus the two fixes that were uncommitted at run time — now
+`66d9d47` — for the fix-round-2 sentinel re-run.
 The re-run's runner log records those two fixes as a `git diff --stat` taken
 immediately before the run.
 Plan: `docs/hyperpowers/plans/2026-09-10-external-workflow-adoption.md`.
@@ -27,8 +27,8 @@ this file previously said the `triggering-writing-plans` argument needed. Round 
 settled that sentinel finding on the human partner's decision to fix the
 instrument: a fork gap in the harness and a mismatched check verb in the scenario
 were both corrected and the scenario was re-run green at the same head. The
-superseded S1 reasoning is in this file's history at commit `0edf098`; the
-superseded "the finding stays open" reasoning is at `3aaf198`.
+superseded S1 reasoning is in this file's history at commit `f3677b2`; the
+superseded "the finding stays open" reasoning is at `bee1237`.
 
 S2, S3 and S4 were settled before this task ran. Task 9 hardened each one and
 the unassisted baseline still met acceptance 3/3 in all three, so A2, A4 and A7
@@ -141,7 +141,7 @@ findings on clean hunks against a baseline of 2.00 on equal denominators, with
 recall intact in both arms and acceptance met in every determinate treatment
 trial.
 
-This supersedes the verdict this file carried at commit `0edf098`, which was
+This supersedes the verdict this file carried at commit `f3677b2`, which was
 "A1 does not ship" on a failed Check 1 — two determinate trials against the
 required three. Nothing measured changed: the two runs that had been counted as
 a spent indeterminate trial were reclassified as void attempts by the human
