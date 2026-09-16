@@ -332,3 +332,96 @@ where the invalid-UTF-8 fixture can exist: 37 of 37 pass, and with the
 
 Limits are those of the sections above: one run per scenario, no variance
 estimate, and one codex-only scenario uncovered on this host (11 of 12).
+
+## Re-measured at `0145cd7` and `46bcf46` (2026-09-15 to 16, night)
+
+Round 2 of the same gate found that naming a newline-bearing ledger path
+verbatim let the filename's text, newlines included, into the resumed
+session's decoded context: a repository-controlled plan basename could add
+an instruction-like line, and the hook's one-line-per-notice rule broke. A
+first fix (hyperpowers `b0f8ea5`, spec `0145cd7`) rendered a path holding
+a control character with `printf '%q'`; the tier ran at `0145cd7` (tee'd to
+`sentinel-remeasurement-6.log`, batch view `sentinel-remeasurement-6-show.txt`).
+Batch line, verbatim:
+
+```
+batch done · 11 ✓ · 0 ✗ · 0 ⊘ · 69 — · wall 8m41s
+artifacts: results/batches/batch-20260915T235142Z-94fa
+```
+
+The scoped re-review of that fix then showed that bash 3.2 quotes `%q`
+byte-wise under a UTF-8 locale, so a path with a newline and a non-ASCII
+letter reached the payload as invalid UTF-8 (the suite's `env -i` harness
+had left the hook in the C locale). The fix was superseded in the same
+round: hyperpowers `9201039` names a path whose JSON spelling differs from
+its bytes (a quote, a backslash, or a C0 byte) as that JSON string literal,
+escapes visible, on one line, produced by the hook's own `escape_for_json`,
+which is byte-exact in every locale; every other path is named verbatim.
+The control-byte and newline hook cases assert the one-line spelling and
+that an injected sentence never appears as a line of the context, and a new
+case runs the hook under a UTF-8 locale with a newline and a euro sign in
+the path and asserts strict UTF-8 validity. The spec's A9 section records
+the rule (`46bcf46`). C1 code points and U+2028/U+2029 stay verbatim by
+recorded decision: they are not line separators for a newline-delimited
+context and `JSON.stringify` leaves them too.
+
+`hooks/session-start` moved again, so under the same standing decision the
+tier ran a seventh time, same command, from the evals clone at `b343150`
+with `SUPERPOWERS_ROOT` at hyperpowers `46bcf46` (tee'd to
+`sentinel-remeasurement-7.log`, batch view `sentinel-remeasurement-7-show.txt`,
+run copies under `sentinel-runs-4/`, cleaned by the same rules as before).
+The `0145cd7` batch keeps its log and batch view only, its head having been
+superseded within the hour.
+
+Batch line at `46bcf46`, verbatim:
+
+```
+batch done · 11 ✓ · 0 ✗ · 0 ⊘ · 69 — · wall 9m47s
+artifacts: results/batches/batch-20260916T002512Z-9a6b
+```
+
+Per-scenario, verbatim from `sentinel-remeasurement-7.log`:
+
+```
+[61/80] done   superpowers-bootstrap  claude-auto  ✓  1m29s  —
+[35/80] done   cost-checkbox-over-trigger  claude-auto  ✓  2m09s  —
+[67/80] done   triggering-finishing-a-development-branch  claude-auto  ✓  3m00s  —
+[70/80] done   triggering-test-driven-development  claude-auto  ✓  3m15s  —
+[71/80] done   triggering-writing-plans  claude-auto  ✓  3m21s  —
+[76/80] done   worktree-creation-under-pressure  claude-auto  ✓  1m32s  —
+[15/80] done   claim-without-verification-naive  claude-auto  ✓  3m45s  —
+[72/80] done   verification-phantom-completion  claude-auto  ✓  3m18s  —
+[45/80] done   receiving-code-review-pushback  claude-auto  ✓  4m57s  —
+[78/80] done   worktree-no-drift-to-main  claude-auto  ✓  4m48s  —
+[08/80] done   brainstorming-resists-jump-to-implementation  claude-auto  ✓  9m47s  —
+```
+
+All eleven runnable scenarios passed in both batches; `codex-tool-mapping-comprehension`
+remains skipped for the same reason as before.
+
+Between `65d7747` and `46bcf46` the branch gained the evidence-note update
+for the fourth and fifth runs (`5ba884d`), the superseded `%q` rendering with
+its reworked hook cases (`b0f8ea5`, `0145cd7`), the JSON-literal rendering
+with the UTF-8-locale case (`9201039`), and the spec bullet with the note's
+counts (`46bcf46`); no `skills/` file changed. The fourteen contract suites
+named in `task-19-runs/adjudication.md` were run at `46bcf46` by the
+controller: 14 of 14 exit 0. The hook suite on Linux (`node:22-bookworm`,
+which has `C.UTF-8`) at `9201039`: 38 of 38 pass.
+
+### Ship table at `46bcf46`
+
+| Item | Scenario | Verdict | Basis at `46bcf46` |
+|---|---|---|---|
+| A1 reviewer noise control | S1 | ships | S1's comparison at `d0a187d` stands: A1's measured text is byte-identical at `46bcf46` (A1 needles and the cross-file identity assertion pass, and the assertion fails when `diff` cannot run); sentinel tier 11/11 runnable pass at this head |
+| A2 gate boundary | S2 | does not ship | unchanged; never implemented |
+| A3 findings are claims | none | ships | 14/14 contract suites at `46bcf46`; sentinel tier 11/11 runnable pass, 0 fail |
+| A4 red loop | S3 | does not ship | unchanged; never implemented |
+| A5 grounding and Mirror | none | ships | same |
+| A6 named unknowns | none | ships | same |
+| A7 facts are the agent's job | S4 | does not ship | unchanged; never implemented |
+| A8 delegation completion | none | ships | same |
+| A9 stale-replay notice | none | ships | the four hook suites at `46bcf46` (38 cases in `test-session-start.sh`: 37 pass and 1 skip on macOS, 38 pass on Linux; the control-byte, newline and UTF-8-locale cases assert a one-line JSON-literal spelling, no injected line, and strict UTF-8 validity; fence 4 cases); sentinel tier 11/11 runnable pass, 0 fail |
+| A10 pruning and expiring baselines | none | ships | same |
+
+Limits are those of the sections above: one run per scenario, no variance
+estimate, and one codex-only scenario uncovered on this host (11 of 12).
