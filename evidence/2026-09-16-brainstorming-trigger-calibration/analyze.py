@@ -20,6 +20,7 @@ import math
 import os
 import re
 import sys
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 
 EV = "/Users/johnss51/Development/agents/hyperpowers/evals"
@@ -30,6 +31,8 @@ ROOTS = {
 }
 RUN_DIR_RE = re.compile(r"run-dir\s+(\S+)")
 LOG_RE = re.compile(r"(control|treatment)-(.+)-([pr]\d+)\.log")
+PROC_RE = re.compile(r"p\d{1,2}")
+CODING_AGENT = "claude-auto"
 HEADER_RE = re.compile(
     r"^arm=(\S+) scenario=(\S+) repeat=(\d+) proc=(\S+)$", re.MULTILINE
 )
@@ -78,12 +81,12 @@ def read_manifest() -> dict:
             elif cells[0] == "model" and len(cells) == 2:
                 manifest["model"] = cells[1]
             elif cells[0] in ("control", "treatment") and len(cells) == 4:
-                arm, scenario, repeat, proc = (
-                    cells[0],
-                    cells[1],
-                    int(cells[2]),
-                    cells[3],
-                )
+                arm, scenario, proc = cells[0], cells[1], cells[3]
+                repeat = int(cells[2]) if cells[2].isdigit() else 0
+                if not 1 <= repeat <= 99:
+                    raise DesignError(f"manifest.tsv: repeat must be 1..99 in {line!r}")
+                if not PROC_RE.fullmatch(proc):
+                    raise DesignError(f"manifest.tsv: proc must be p<n> in {line!r}")
                 if (arm, scenario, proc) in manifest["rows"]:
                     raise DesignError(
                         f"manifest.tsv: duplicate row {arm} {scenario} {proc}"
@@ -180,15 +183,17 @@ def token_total(run_dir: str) -> int | None:
     return int(sum(v for v in usage.values() if isinstance(v, (int, float))))
 
 
-def read_logs(manifest: dict) -> list[tuple[str, str, str, bool]]:
-    """Return (arm, scenario, run dir, is_rerun) for every run of every valid log."""
+def read_logs(manifest: dict) -> list[tuple[str, str, str, bool, int, str]]:
+    """Return (arm, scenario, run dir, is_rerun, repeat, log name) for every run of every valid log."""
 
-    rows: list[tuple[str, str, str, bool]] = []
+    rows: list[tuple[str, str, str, bool, int, str]] = []
     seen_rows: set[tuple[str, str, str]] = set()
     for log in sorted(glob.glob(os.path.join(E, "logs", "*.log"))):
-        match = LOG_RE.match(os.path.basename(log))
+        match = LOG_RE.fullmatch(os.path.basename(log))
         if not match:
-            continue
+            raise DesignError(
+                f"{log}: not a launch log name (<arm>-<scenario>-<p|r><n>.log)"
+            )
         arm, scenario, proc = match.group(1), match.group(2), match.group(3)
         with open(log, encoding="utf-8", errors="replace") as handle:
             text = handle.read()
@@ -208,9 +213,10 @@ def read_logs(manifest: dict) -> list[tuple[str, str, str, bool]]:
         harness = HARNESS_RE.search(text)
         if not harness or harness.group(1) != manifest["commits"]["harness"]:
             raise DesignError(f"{log}: harness pin missing or not the manifest's")
-        if "\nDONE " not in text:
+        last_line = text.rstrip("\n").rsplit("\n", 1)[-1]
+        if last_line != f"DONE {arm} {scenario} {proc}":
             raise DesignError(
-                f"{log}: the launch did not finish cleanly (no DONE line)"
+                f"{log}: the last line is {last_line!r}, not this log's DONE line"
             )
         is_rerun = proc.startswith("r")
         if is_rerun:
@@ -229,7 +235,9 @@ def read_logs(manifest: dict) -> list[tuple[str, str, str, bool]]:
         if len(found) != repeat:
             raise DesignError(f"{log}: {len(found)} runs recorded, repeat was {repeat}")
         for run_dir in found:
-            rows.append((arm, scenario, run_dir, is_rerun))
+            rows.append(
+                (arm, scenario, run_dir, is_rerun, repeat, os.path.basename(log))
+            )
     missing = set(manifest["rows"]) - seen_rows
     if missing:
         raise DesignError(f"manifest rows without a log: {sorted(missing)}")
@@ -258,7 +266,9 @@ def build_runs(manifest: dict) -> list[Run]:
     replaced = read_reruns()
     runs: list[Run] = []
     seen: set[str] = set()
-    for arm, scenario, run_dir, is_rerun in read_logs(manifest):
+    indexes: dict[str, list[int]] = {}
+    repeats: dict[str, int] = {}
+    for arm, scenario, run_dir, is_rerun, repeat, log_name in read_logs(manifest):
         if not os.path.isabs(run_dir):
             run_dir = os.path.join(EV, run_dir)
         name = os.path.basename(run_dir)
@@ -274,9 +284,28 @@ def build_runs(manifest: dict) -> list[Run]:
         verdict_path = os.path.join(run_dir, "verdict.json")
         if not os.path.exists(verdict_path):
             raise DesignError(f"{name}: no verdict.json")
-        final = str(load_json(verdict_path).get("final"))
+        verdict = load_json(verdict_path)
+        final = str(verdict.get("final"))
         if final not in ("pass", "fail", "indeterminate"):
             raise DesignError(f"{name}: unexpected final verdict {final!r}")
+        if verdict.get("scenario") != scenario:
+            raise DesignError(
+                f"{name}: verdict.json names scenario {verdict.get('scenario')!r}, "
+                f"the log {log_name} names {scenario!r}"
+            )
+        if verdict.get("coding_agent") != CODING_AGENT:
+            raise DesignError(
+                f"{name}: coding agent {verdict.get('coding_agent')!r}, "
+                f"the design says {CODING_AGENT!r}"
+            )
+        trial = verdict.get("trial") or {}
+        index = trial.get("index")
+        if trial.get("count") != repeat or not isinstance(index, int):
+            raise DesignError(
+                f"{name}: trial identity {trial!r} does not fit a log with repeat {repeat}"
+            )
+        indexes.setdefault(log_name, []).append(index)
+        repeats[log_name] = repeat
         transcripts = glob.glob(
             os.path.join(run_dir, "home/.claude/projects/*/*.jsonl")
         )
@@ -300,6 +329,11 @@ def build_runs(manifest: dict) -> list[Run]:
                 replaced.get(name),
             )
         )
+    for log_name, found in indexes.items():
+        if sorted(found) != list(range(1, repeats[log_name] + 1)):
+            raise DesignError(
+                f"{log_name}: trial indexes {sorted(found)} are not 1..{repeats[log_name]}"
+            )
     for replacement in replaced:
         if replacement not in seen:
             raise DesignError(
@@ -319,6 +353,11 @@ def collapse(runs: list[Run]) -> list[Run]:
         original = by_name.get(run.replaces)
         if original is None:
             raise DesignError(f"reruns.tsv names an unknown original {run.replaces}")
+        if original.replaces:
+            raise DesignError(
+                f"{run.run} replaces {run.replaces}, itself a replacement; "
+                "the rule is one rerun"
+            )
         if original.final != "indeterminate":
             raise DesignError(f"{run.replaces} was replaced but was not indeterminate")
         if (original.arm, original.scenario) != (run.arm, run.scenario):
@@ -381,11 +420,17 @@ def check_design(manifest: dict, trials: list[Run]) -> None:
         raise DesignError(f"models differ from the design: {sorted(models)}")
 
 
-def _write_fixture(root: str, final_by_run: dict[str, str], reruns: str | None) -> None:
+def _write_fixture(
+    root: str,
+    final_by_run: dict[str, str],
+    reruns: str | None,
+    mutate: Callable[[str], None] | None = None,
+) -> None:
     """A minimal evidence tree: both arms, one log per proc, one run per verdict.
 
     ``final_by_run`` describes the control arm; names starting with ``rerun-``
-    go into a rerun log. The treatment arm always has one passing trial.
+    each get their own rerun log (r1, r2, ...). The treatment arm always has
+    one passing trial. ``mutate`` runs last and breaks the tree on purpose.
     """
 
     os.makedirs(os.path.join(root, "logs"), exist_ok=True)
@@ -434,23 +479,39 @@ def _write_fixture(root: str, final_by_run: dict[str, str], reruns: str | None) 
     )
     runs = [("control", name, final) for name, final in final_by_run.items()]
     runs.append(("treatment", "run-t", "pass"))
-    logs: dict[tuple[str, str], list[str]] = {}
+    logs: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    rerun_count = 0
     for arm, name, final in runs:
-        run_dir = os.path.join(root, "results", name)
-        os.makedirs(os.path.join(run_dir, "home/.claude/projects/p"), exist_ok=True)
-        with open(
-            os.path.join(run_dir, "verdict.json"), "w", encoding="utf-8"
-        ) as handle:
-            json.dump({"final": final}, handle)
-        with open(
-            os.path.join(run_dir, "home/.claude/projects/p/t.jsonl"),
-            "w",
-            encoding="utf-8",
-        ) as handle:
-            handle.write(transcript + "\n")
-        proc = "r1" if name.startswith("rerun-") else "p1"
-        logs.setdefault((arm, proc), []).append(f"run-dir   {run_dir}")
-    for (arm, proc), lines in logs.items():
+        if name.startswith("rerun-"):
+            rerun_count += 1
+            proc = f"r{rerun_count}"
+        else:
+            proc = "p1"
+        logs.setdefault((arm, proc), []).append((name, final))
+    for (arm, proc), members in logs.items():
+        lines = []
+        for index, (name, final) in enumerate(members, start=1):
+            run_dir = os.path.join(root, "results", name)
+            os.makedirs(os.path.join(run_dir, "home/.claude/projects/p"), exist_ok=True)
+            with open(
+                os.path.join(run_dir, "verdict.json"), "w", encoding="utf-8"
+            ) as handle:
+                json.dump(
+                    {
+                        "final": final,
+                        "scenario": "scenario-x",
+                        "coding_agent": CODING_AGENT,
+                        "trial": {"index": index, "count": len(members)},
+                    },
+                    handle,
+                )
+            with open(
+                os.path.join(run_dir, "home/.claude/projects/p/t.jsonl"),
+                "w",
+                encoding="utf-8",
+            ) as handle:
+                handle.write(transcript + "\n")
+            lines.append(f"run-dir   {run_dir}")
         with open(
             os.path.join(root, "logs", f"{arm}-scenario-x-{proc}.log"),
             "w",
@@ -467,6 +528,8 @@ def _write_fixture(root: str, final_by_run: dict[str, str], reruns: str | None) 
     if reruns is not None:
         with open(os.path.join(root, "reruns.tsv"), "w", encoding="utf-8") as handle:
             handle.write(reruns)
+    if mutate is not None:
+        mutate(root)
 
 
 def self_test() -> int:
@@ -476,16 +539,55 @@ def self_test() -> int:
 
     global E, ROOTS
     saved = (E, ROOTS)
-    cases: list[tuple[str, dict[str, str], str | None, bool]] = [
+
+    def done_then_failed(root: str) -> None:
+        path = os.path.join(root, "logs", "control-scenario-x-p1.log")
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write("EXIT=9\nFAILED 9 control scenario-x p1\n")
+
+    def stray_log(root: str) -> None:
+        path = os.path.join(root, "logs", "control-scenario-x-p1.log.backup.log")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("stale copy\n")
+
+    def wrong_scenario(root: str) -> None:
+        path = os.path.join(root, "results", "run-a", "verdict.json")
+        verdict = load_json(path)
+        verdict["scenario"] = "scenario-y"
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(verdict, handle)
+
+    def zero_repeat(root: str) -> None:
+        path = os.path.join(root, "manifest.tsv")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(
+                text.replace("control\tscenario-x\t2\tp1", "control\tscenario-x\t0\tp1")
+            )
+
+    def duplicate_index(root: str) -> None:
+        path = os.path.join(root, "results", "run-a", "verdict.json")
+        verdict = load_json(path)
+        verdict["trial"] = {"index": 2, "count": 2}
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(verdict, handle)
+
+    two_passes = {"run-a": "pass", "run-b": "pass"}
+    cases: list[
+        tuple[str, dict[str, str], str | None, Callable[[str], None] | None, bool]
+    ] = [
         (
             "a clean cohort with one replaced indeterminate",
             {"run-a": "pass", "run-b": "indeterminate", "rerun-b": "fail"},
             "run-b\trerun-b\n",
+            None,
             True,
         ),
         (
             "an indeterminate trial never re-run",
             {"run-a": "pass", "run-b": "indeterminate"},
+            None,
             None,
             False,
         ),
@@ -493,21 +595,58 @@ def self_test() -> int:
             "a replacement whose original was not indeterminate",
             {"run-a": "pass", "rerun-a": "pass"},
             "run-a\trerun-a\n",
+            None,
             False,
         ),
         (
             "a rerun not listed in reruns.tsv",
             {"run-a": "indeterminate", "rerun-a": "pass"},
             None,
+            None,
+            False,
+        ),
+        (
+            "a replacement that is itself replaced",
+            {
+                "run-a": "pass",
+                "run-b": "indeterminate",
+                "rerun-b": "indeterminate",
+                "rerun-c": "pass",
+            },
+            "run-b\trerun-b\nrerun-b\trerun-c\n",
+            None,
+            False,
+        ),
+        (
+            "a log whose last line is FAILED after an earlier DONE",
+            two_passes,
+            None,
+            done_then_failed,
+            False,
+        ),
+        ("a stray log beside the manifest logs", two_passes, None, stray_log, False),
+        (
+            "a run whose verdict names another scenario",
+            two_passes,
+            None,
+            wrong_scenario,
+            False,
+        ),
+        ("a manifest row with repeat 0", two_passes, None, zero_repeat, False),
+        (
+            "two runs of one log with the same trial index",
+            two_passes,
+            None,
+            duplicate_index,
             False,
         ),
     ]
     failures = 0
-    for title, verdicts, reruns, should_pass in cases:
+    for title, verdicts, reruns, mutate, should_pass in cases:
         with tempfile.TemporaryDirectory() as tmp:
             E = tmp
             ROOTS = {"control": tmp, "treatment": tmp}
-            _write_fixture(tmp, verdicts, reruns)
+            _write_fixture(tmp, verdicts, reruns, mutate)
             detail = ""
             try:
                 manifest = read_manifest()
