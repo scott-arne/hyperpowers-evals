@@ -1,0 +1,40 @@
+
+  ---
+
+  [1mThree approaches[0m
+
+  The real architectural question is [1mwhether a notification is a stored thing or a computed thing[0m. Everything else
+  follows from that.
+
+  [1mA. Derived / stateless projection.[0m No notification records at all. The notification list is a pure function of [38;5;153m(tasks,
+[39m  [38;5;153mnow)[39m — filter for due and overdue, render. Only persisted extra state is a per-task dismissal marker.
+  [3mWins when[0m you want the fewest moving parts. No dedup logic, no drift, deleting a task can't orphan a notification.
+  [3mCosts:[0m no history, and — the real problem — a pure projection has no memory, so it can't tell "this is newly overdue"
+  from "this has been overdue for three days." OS toasts would re-fire on every reload.
+  [3mComplexity: trivial.[0m
+
+  [1mB. Materialized store / event log.[0m A scheduler ticks, detects transitions ([38;5;153mupcoming → due → overdue[39m), and appends
+  persisted records: [38;5;153m{id, taskId, kind, createdAt, readAt}[39m. The UI renders that list.
+  [3mWins when[0m you want real history and an obvious extension point — the watched-task producer you deferred drops straight
+  in as a second writer.
+  [3mCosts:[0m idempotency is the entire design problem. Every tick, every reload, every clock jump must not re-raise what's
+  already raised, so you need a stable identity and a watermark anyway. Plus orphan handling: delete a task and its
+  notifications outlive it.
+  [3mComplexity: moderate.[0m
+
+  [1mC. Derived list + persisted delivery ledger.[0m The visible list is computed from [38;5;153m(tasks, now)[39m as in A. Alongside it, a
+  small persisted ledger of keys — [38;5;153m(taskId, kind)[39m → [38;5;153m{deliveredAt, readAt}[39m — whose only jobs are suppressing duplicate OS
+  toasts and tracking read state.
+  [3mWins when[0m you want A's freedom from drift plus B's correct once-only delivery. Deleting or completing a task removes
+  its notification for free, because the list was never stored. Unread counts and toast-once both come from the ledger.
+  The ledger is a keyed set, not a parallel record list, so there's much less to keep in sync.
+  [3mCosts:[0m no history for deleted or completed tasks — once a task is gone, its notification is gone. Two concepts instead
+  of one.
+  [3mComplexity: moderate, but less than B.[0m
+
+  [1mMy recommendation: C.[0m B's history is the only thing C gives up, and in a single-user local app the history of "your
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

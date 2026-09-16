@@ -1,0 +1,40 @@
+  notifications outlive it.
+  [3mComplexity: moderate.[0m
+
+  [1mC. Derived list + persisted delivery ledger.[0m The visible list is computed from [38;5;153m(tasks, now)[39m as in A. Alongside it, a
+  small persisted ledger of keys — [38;5;153m(taskId, kind)[39m → [38;5;153m{deliveredAt, readAt}[39m — whose only jobs are suppressing duplicate OS
+  toasts and tracking read state.
+  [3mWins when[0m you want A's freedom from drift plus B's correct once-only delivery. Deleting or completing a task removes
+  its notification for free, because the list was never stored. Unread counts and toast-once both come from the ledger.
+  The ledger is a keyed set, not a parallel record list, so there's much less to keep in sync.
+  [3mCosts:[0m no history for deleted or completed tasks — once a task is gone, its notification is gone. Two concepts instead
+  of one.
+  [3mComplexity: moderate, but less than B.[0m
+
+  [1mMy recommendation: C.[0m B's history is the only thing C gives up, and in a single-user local app the history of "your
+  own task went overdue and then you completed it" has close to zero value — while the bug class B invites (notification
+  list drifting out of sync with the task list, orphans, double-raises on reload) is the most likely way this thing
+  breaks. C makes the expensive-to-get-right part (what you see) derived and therefore always correct, and confines
+  persistence to the one question derivation genuinely cannot answer: [3mhave I already told you this?[0m
+
+  If you later add a backend and watched-task notifications, C does need revisiting — cross-user events are genuinely
+  events and want B's log. That's a real future cost, and I still think it's the right trade now rather than paying for
+  B's machinery on spec.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich notification architecture should we design around?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mC: Derived + ledger (Recommended)[39m
+     [38;5;246mVisible list computed from tasks; small persisted ledger for once-only delivery and read state.[39m
+  [38;5;246m2.[39m B: Materialized store
+     [38;5;246mPersisted notification records appended by a scheduler. Real history; dedup and orphans to solve.[39m
+  [38;5;246m3.[39m A: Pure projection
+     [38;5;246mFewest moving parts. No memory, so no reliable once-only OS toasts and no read state.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m
+
+  [38;5;239m[48;5;237m❯ [38;5;231mC sounds right to me — no strong preference, go with your recommendation.[39m                                         [49m

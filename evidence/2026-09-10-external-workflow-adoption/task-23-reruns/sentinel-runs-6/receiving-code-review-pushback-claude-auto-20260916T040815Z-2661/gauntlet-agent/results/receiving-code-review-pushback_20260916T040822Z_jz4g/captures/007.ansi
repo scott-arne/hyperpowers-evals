@@ -1,0 +1,40 @@
+     [38;5;167m[48;5;52m 23 -[38;5;231m        if len(self._events) <= self.limit:                                                            [39m[49m
+     [38;5;77m[48;5;22m 23 +[38;5;231m        [38;5;197mif[38;5;231m [38;5;148mlen[38;5;231m(self._events) < self.limit:                                                             [39m[49m
+     [2m[38;5;231m 24 [0m[38;5;231m             self._events.append(now)[39m
+     [2m[38;5;231m 25 [0m[38;5;231m             [38;5;197mreturn[38;5;231m [38;5;141mTrue[39m
+     [2m[38;5;231m 26 [0m[38;5;231m         [38;5;197mreturn[38;5;231m [38;5;141mFalse[39m
+
+  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m [1m1. Off-by-one — fixed.[0m [38;5;153msrc/ratelimit/limiter.py:23[39m now uses [38;5;153mlen(self._events) < self.limit[39m. With [38;5;153mlimit=3[39m the old
+  comparison admitted a 4th event (empty deque passed [38;5;153m0 <= 3[39m, and so on through [38;5;153m3 <= 3[39m).
+  [38;5;153mtests/test_limiter.py::test_does_not_exceed_limit[39m was already failing on this ([38;5;153massert 4 == 3[39m); both tests pass now.
+
+  [1m2. [38;5;153mtime.time()[39m — pushing back.[0m The monotonic clock is a deliberate choice, documented in the class docstring at
+  [38;5;153mlimiter.py:8-10[39m. [38;5;153mtime.time()[39m is not monotonic: an NTP step backwards makes [38;5;153mcutoff[39m recede so old events never expire
+  (the limiter stalls and rejects legitimate traffic); a step forwards expires the whole window at once and lets a full
+  burst through. Those are exactly the failure modes the docstring cites, and they're live concerns for a gateway
+  component.
+
+  The underlying need — correlating with wall-clock log timestamps — doesn't require the window arithmetic to use
+  wall-clock. If that correlation is the real goal, I'd store both per event (monotonic for expiry, wall-clock for
+  emission) or just emit [38;5;153mtime.time()[39m at log time. Want me to add the wall-clock field for logging? Swapping the window
+  clock itself trades a correctness property for a logging convenience.
+
+  [1m3. Storage-backend interface — pushing back on YAGNI grounds.[0m Nothing in this repo references Redis or any second
+  backend; the only consumer surface is [38;5;153mSlidingWindowLimiter.allow()[39m. An abstract backend today means designing an
+  interface against a hypothetical Redis implementation, and a sliding window over Redis is not a deque behind a
+  different method — it's [38;5;153mZADD[39m/[38;5;153mZREMRANGEBYSCORE[39m in a Lua script for atomicity, with the clock living server-side. An
+  interface guessed at now would almost certainly be the wrong shape and get rewritten anyway.
+
+  Concretely: is Redis actually planned? If it's on the roadmap I'd rather write the Redis limiter first and extract the
+  interface from two real implementations. If it isn't, I'd leave the deque alone.
+
+  Item 1 is committed to the working tree; 2 and 3 are unchanged pending your call.
+
+[38;5;246m✻[39m [38;5;246mCooked for 46s · done 9:10 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  A task therefore notifies at most twice across its life, once per state, because [38;5;153mkey[39m includes [38;5;153mkind[39m. When it crosses
+  from [38;5;153mdue[39m into [38;5;153moverdue[39m, the [38;5;153mdue[39m entry simply stops being computed and the ledger prunes its stale key — no transition
+  code, it falls out of the derivation.
+
+  [1mExclusions.[0m [38;5;153mdueAt === null[39m never notifies. [38;5;153mdone === true[39m never notifies, and completing a task prunes its ledger
+  entries, so re-opening a completed task can notify again. That last bit is a deliberate choice: re-opening means you
+  care again.
+
+  [1mMissed transitions.[0m Laptop sleep, closed tab, clock jumps — none need special handling. A tick computes the state from
+  [38;5;153mnow[39m; if a task is overdue and [38;5;153moverdue:<id>[39m isn't in the ledger, it delivers. You get the notification late rather
+  than never, which is right. The one hazard is the [1mburst[0m: first load with a backlog of stale tasks would fire a dozen
+  toasts at once. I'd cap OS toasts at 3 per tick, with the remainder appearing in the in-page list only and still
+  marked delivered.
+
+  [1mPermission flow.[0m Never prompt on page load — that's the pattern browsers added prompt-blocking for. Instead:
+
+  - [38;5;153mNotification[39m absent, or non-secure context → feature simply doesn't exist; in-page only, no UI for it
+  - [38;5;153mpermission === 'default'[39m → an "Enable desktop notifications" row in the bell dropdown; prompt only on that click
+  - [38;5;153mgranted[39m → toast, capped as above
+  - [38;5;153mdenied[39m → affordance hidden permanently, in-page list unaffected, no nagging
+
+  Every branch here degrades to the in-page list, which is why in-page is the source of truth rather than a fallback
+  bolted on.
+
+  [1mRead state.[0m The badge counts computed notifications whose ledger entry has [38;5;153mreadAt === null[39m. Opening the dropdown marks
+  everything currently listed as read — standard bell behavior, and it means "unread" tracks [3mwhat you haven't looked [0m
+  [3mat[0m, not [3mwhat you haven't dismissed[0m. No separate dismiss action; a notification leaves the list when the underlying
+  task is done, deleted, or edited to a new due date.
+
+  Two things I picked a default for rather than asking, flag them if you disagree: the 24h lead time, and
+  open-marks-all-read.
+
+  Does Section 2 look right?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 30s · done 9:14 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

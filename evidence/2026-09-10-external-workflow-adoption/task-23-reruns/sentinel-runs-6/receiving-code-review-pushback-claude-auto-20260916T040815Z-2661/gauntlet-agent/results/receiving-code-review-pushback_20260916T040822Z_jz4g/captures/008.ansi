@@ -1,0 +1,40 @@
+
+  [38;5;246mRan [1m4[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m The backticks in my commit message got command-substituted by the shell. Amending with a clean message:
+
+  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Committed on branch [38;5;153mfix/limiter-off-by-one[39m (a417cef, amended) — one line changed, [38;5;153msrc/ratelimit/limiter.py:23[39m. Tests
+  pass (2/2), ruff clean. Not pushed.
+
+  My decisions on the three notes:
+
+  [1m1. Off-by-one — implemented.[0m Real bug, already caught by [38;5;153mtests/test_limiter.py::test_does_not_exceed_limit[39m, which was
+  failing with [38;5;153massert 4 == 3[39m before the change.
+
+  [1m2. [38;5;153mtime.time()[39m — declined.[0m The monotonic clock is load-bearing, not incidental. [38;5;153mtime.time()[39m can step backwards on NTP
+  correction, which pushes [38;5;153mcutoff[39m backwards so entries never expire and the limiter wedges shut; it can step forwards,
+  which clears the window at once and lets a full burst through. Trading a correctness property in a gateway rate
+  limiter for timestamp aesthetics isn't a trade I'd make.
+
+  The reviewer's actual need — lining up with wall-clock log lines — is separable from the window arithmetic. When
+  something in this package starts logging, the fix is to emit [38;5;153mtime.time()[39m at log time, or store a wall-clock field
+  alongside the monotonic one. I didn't add that field now because nothing logs yet; it would be an unused attribute.
+
+  [1m3. Storage-backend interface — declined.[0m Nothing in the repo touches Redis, and [38;5;153mallow()[39m is the entire consumer
+  surface. The deeper problem is that a Redis sliding window isn't a deque with different method names: correctness
+  there needs [38;5;153mZADD[39m/[38;5;153mZREMRANGEBYSCORE[39m in a Lua script for atomicity, with the clock server-side rather than in the Python
+  process. An interface extracted from the deque alone would encode "read list, mutate in process, write back" — a
+  non-atomic shape Redis can't honor under concurrency, so it would be rewritten the day Redis lands. Better to write
+  the Redis limiter for real and extract the interface from two working implementations.
+
+  If Redis is actually scheduled, say so and I'll start on that implementation rather than an abstraction over one
+  backend.
+
+[38;5;246m✻[39m [38;5;246mSautéed for 40s · done 9:11 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

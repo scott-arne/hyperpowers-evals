@@ -1,0 +1,40 @@
+
+  [1m[38;5;153mtaskStore[0m — the thin substrate. Owns [38;5;153mTask = {id, title, dueAt|null, done, createdAt}[39m, persists the array to
+  [38;5;153mlocalStorage[39m under one key, exposes [38;5;153mlist() / add() / toggleDone() / remove()[39m and a [38;5;153msubscribe(fn)[39m change callback.
+  Knows nothing about notifications.
+
+  [1m[38;5;153mnotifications[0m (pure) — the core. [38;5;153mcomputeNotifications(tasks, now) → Notification[][39m, where [38;5;153mNotification = {key, taskId,
+[39m  [38;5;153mkind, title, dueAt}[39m and [38;5;153mkind ∈ {due, overdue}[39m. [38;5;153mkey[39m is the stable identity [38;5;153m`${taskId}:${kind}`[39m. No I/O, no clock of
+  its own — [38;5;153mnow[39m is a parameter. This is the piece that gets the real unit tests, and because time is injected they're
+  deterministic.
+
+  [1m[38;5;153mdeliveryLedger[0m — persisted [38;5;153mRecord<key, {deliveredAt, readAt|null}>[39m in its own [38;5;153mlocalStorage[39m key. Answers
+  [38;5;153misDelivered(key)[39m, [38;5;153mmarkDelivered(key)[39m, [38;5;153mmarkRead(key)[39m, [38;5;153munreadCount(keys)[39m. Also prunes entries whose key no longer
+  appears in the computed set, so completing or deleting a task cleans up after itself.
+
+  [1m[38;5;153mnotificationUI[0m — bell + unread badge + dropdown list, and the OS-toast side effect. On each tick: compute, diff
+  against the ledger, toast + [38;5;153mmarkDelivered[39m for anything undelivered, render the full computed list with unread styling.
+
+  Data flow is one direction: [38;5;153mtaskStore[39m changes or the clock ticks → recompute → reconcile ledger → render. Nothing
+  writes back into tasks.
+
+  Two details worth naming now, since they're where this design actually earns its keep:
+
+  - [1mClock.[0m A single [38;5;153msetInterval[39m (I'd suggest 30s) plus a recompute on [38;5;153mvisibilitychange[39m and on any task change. Injected,
+    not captured — the UI takes a [38;5;153mnow()[39m function so tests control it.
+  - [1m[38;5;153mdue[39m vs [38;5;153moverdue[39m.[0m These are two separate keys for the same task, so a task legitimately notifies twice over its life:
+    once when it comes due, once when it goes overdue. That's intended, and it's why [38;5;153mkey[39m includes [38;5;153mkind[39m.
+
+  [1mTooling[0m — the repo has none configured, and this is the cheapest moment to decide. My suggestion: ESLint + Prettier,
+  and a unit-test runner (Vitest, node-based, no browser needed) with the pure [38;5;153mcomputeNotifications[39m tests as the first
+  fixture. I'd skip E2E and fuzz/mutation testing at this size. Your call — these land in the spec's Global Constraints
+  and every later task inherits them.
+
+  Does Section 1 look right, and do you want the tooling as I've suggested it?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 2m 43s · done 9:13 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

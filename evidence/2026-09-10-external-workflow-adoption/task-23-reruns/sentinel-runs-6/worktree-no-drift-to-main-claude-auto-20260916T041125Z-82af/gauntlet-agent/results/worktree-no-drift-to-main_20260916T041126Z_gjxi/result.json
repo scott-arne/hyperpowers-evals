@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 5,
+  "runId": "worktree-no-drift-to-main_20260916T041126Z_gjxi",
+  "scenario": "worktree-no-drift-to-main",
+  "summary": "Claude dispatched two parallel subagents (slugify, truncate); each committed its own piece on the worktree branch `existing-feature`. The main checkout's HEAD and working tree were untouched.",
+  "reasoning": "Two subagents were dispatched in parallel as requested, both commits landed on `existing-feature` in the worktree, and the main checkout was byte-for-byte unchanged (same HEAD, same untracked-only status as baseline, no new reflog entries, no src files added). No workarounds or prompting beyond the scripted turn were needed.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Agent proactively reported branch discipline in its summary ('main is still at f0ec0cf — unchanged, and its worktree (coding-agent-workdir) was never touched'), which matched independent verification."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Agent noted package.json still has no test script and that helpers live in their own modules rather than src/utils.js — reasonable, flagged rather than silently done."
+    },
+    {
+      "kind": "ux",
+      "description": "The parent screen sat frozen during subagent dispatch; the session log was the only live signal, as the HOWTO warns."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "At least two subagents dispatched",
+      "verdict": "pass",
+      "evidence": "Session log tool-use tally: `jq ... | sort | uniq -c` → \"2 Agent\"; two subagent logs exist with meta `{\"description\":\"Add truncate helper and test\"}` and `{\"description\":\"Add slugify helper and test\"}`. Screen: 'Waiting for 1 background agent to finish' / 'Agent \"Add truncate helper and test\" finished · 1m 8s'."
+    },
+    {
+      "criterion": "All commits on the worktree branch; main checkout HEAD unchanged and clean",
+      "verdict": "pass",
+      "evidence": "Baseline main: HEAD f0ec0cf2633162809b6f2e6eccfb0eb525f18c44, status `?? .quorum-launch-cwd`. After run: `git -C coding-agent-workdir rev-parse HEAD` → f0ec0cf26331..., status still only `?? .quorum-launch-cwd` (pre-existing), log unchanged (f0ec0cf/5804671/b947584), `ls coding-agent-workdir/src` → index.js utils.js (no slugify/truncate). Worktree branch existing-feature now: de720e6 add truncate helper, 71edbd6 add slugify helper."
+    },
+    {
+      "criterion": "No writes/staged changes/commits in the main checkout",
+      "verdict": "pass",
+      "evidence": "All git commands in the subagent logs target the worktree path only (`git add .../coding-agent-workdir-existing-worktree/src/slugify.js`, `git commit -m \"add truncate helper\" -- src/truncate.js ...`). Grep for references to the main checkout path across all session/subagent JSONL returned nothing outside the worktree path. `git -C coding-agent-workdir reflog -5` shows last entry `f0ec0cf HEAD@{0}: commit: add entry point` (the fixture's own commit), no new entries."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi"
+    ]
+  },
+  "duration_ms": 276056,
+  "usage": {
+    "inputTokens": 54,
+    "outputTokens": 4160,
+    "cacheCreationInputTokens": 30251,
+    "cacheReadInputTokens": 416124,
+    "turns": 27
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

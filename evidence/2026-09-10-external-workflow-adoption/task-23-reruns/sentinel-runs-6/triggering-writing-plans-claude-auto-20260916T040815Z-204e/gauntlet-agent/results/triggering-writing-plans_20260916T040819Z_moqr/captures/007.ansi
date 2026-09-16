@@ -1,0 +1,40 @@
+  - [38;5;153mPOST /auth/forgot[39m → [38;5;153m{email}[39m → generate random token, store in [38;5;153mresetTokens[39m with a 1-hour expiry → [38;5;153mmailer.send()[39m
+    prints the reset link to stdout → always returns 200 (no account enumeration).
+  - [38;5;153mPOST /auth/reset[39m → [38;5;153m{token, password}[39m → look up, check expiry, replace hash, delete token → 200.
+
+  [1mThe two mocks, stated plainly.[0m
+  - [3mHashing[0m is fake: [38;5;153mhash.js[39m does [38;5;153m"mock$" + sha256(password)[39m via node's built-in [38;5;153mcrypto[39m, with the real interface
+    ([38;5;153mhash[39m/[38;5;153mverify[39m) so swapping in bcrypt later is a one-file change. No bcrypt dependency, no native build.
+  - [3mEmail[0m is fake: [38;5;153mmailer.js[39m writes the reset link to stdout. That's the only delivery channel.
+
+  [1mDependencies.[0m One addition: [38;5;153mjsonwebtoken[39m. JWT secret comes from [38;5;153mprocess.env.JWT_SECRET[39m with a hardcoded dev fallback,
+  and the app logs a warning to stdout when the fallback is in use.
+
+  [1mError handling.[0m Explicit status codes, uniform [38;5;153m{error: "message"}[39m body: 400 missing/invalid fields, 401 bad
+  credentials or bad/expired token, 409 duplicate email. Login returns the same 401 for unknown email and wrong
+  password.
+
+  [1mTesting / tooling.[0m New project, no tooling configured. For a POC I'd set up only the cheap half: a [38;5;153mnode:test[39m suite
+  (zero new deps) covering register → login → protected route → reset round-trip, wired to [38;5;153mnpm test[39m. Skipping
+  linting/formatting, e2e, and fuzzing — say the word if you want any of those and they go in the spec's global
+  constraints instead.
+
+  [1mExplicitly out of scope:[0m refresh tokens, token revocation/logout, rate limiting, email verification, password strength
+  rules, persistence across restarts.
+
+  ---
+
+  Note on one real limitation: because the store is in-memory, every user and reset token vanishes on restart — fine for
+  a POC, but it means the reset flow can only be demonstrated within a single process lifetime. I'm proceeding on that
+  basis.
+
+  Does this design look right? Once you approve it I'll write the spec to
+  [38;5;153mdocs/hyperpowers/specs/2026-09-15-minimal-auth-poc-design.md[39m, then produce the implementation plan and execute it with
+  subagent-driven development.
+
+[38;5;246m✻[39m [38;5;246mCogitated for 50s · done 9:09 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m
