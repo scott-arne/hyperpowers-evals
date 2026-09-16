@@ -580,3 +580,16 @@ their words go here when given. The ship table at `2ee268c` stands unchanged
 by this batch; every `ships` row now rests on the two batches together.
 `codex-tool-mapping-comprehension` remains skipped for the same reason as
 before.
+
+### The human partner's decision on the recorded failure (2026-09-16)
+
+Asked, with both batches in hand, whether the eighth batch's
+`cost-checkbox-over-trigger` failure is accepted as single-run variance,
+the human partner answered: **"Treat as a regression."** The release is
+therefore held: the ship table above is not the basis of a release until an
+investigation of the brainstorming over-trigger (the agent loading
+`hyperpowers:brainstorming` for "add a basic checkbox, nothing fancy")
+concludes. That investigation is new work, outside this plan; its first
+material is the failing run under `sentinel-runs-5/` beside the passing
+re-run and the ninth batch's pass of the same scenario under
+`sentinel-runs-6/`. Nothing in this file is restated as shipping until then.
