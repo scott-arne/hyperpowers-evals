@@ -26,14 +26,14 @@ that repository). Fail-closed analysis by `analyze.py` in this directory;
   brainstorming's line renders its description, one listing hash) and
   `default` (the variable unset; the brainstorming line is the bare name
   `- hyperpowers:brainstorming` in all 35 default runs, one listing hash).
-- Launch: `launch-all.sh manifest.tsv 8`, 2026-09-17T09:24:56Z to 12:15:32Z
+- Launch: `launch-all.sh manifest.tsv 8`, 2026-09-17T09:24:56Z to 12:04:34Z
   (48 processes, 184 sessions, 8 at a time). The campaign runner's closing line
   read `launchers non-zero: 1; manifest rows without a DONE log: 0`: the one
   non-zero was `wait` reporting an already-reaped child ("pid 45803 is not a
   child of this shell") for `control cost-session-timeout-boundary p1`, whose
   log holds its five runs, `EXIT=1`, and its DONE line; the analyzer's coverage
   checks, not the runner's exit, are the authority. One control run
-  (`triggering-executing-plans`, criterion 4) followed, 12:11Z to 12:15Z.
+  (`triggering-executing-plans`, criterion 4) followed, 12:09:11Z to 12:15:32Z.
 - 185 sessions in all; 0 indeterminate, 0 void; no rerun, no top-up.
 
 ## Table and criteria (analysis-table.txt, verbatim)
