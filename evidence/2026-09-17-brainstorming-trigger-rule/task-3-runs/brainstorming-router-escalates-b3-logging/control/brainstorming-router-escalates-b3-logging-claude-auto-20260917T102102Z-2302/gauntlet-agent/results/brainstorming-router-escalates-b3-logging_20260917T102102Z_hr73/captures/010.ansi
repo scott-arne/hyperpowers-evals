@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What's the default for a field that isn't explicitly classified? → Deny by default (Recommended)[39m
+
+[38;5;231m⏺[39m One more before I present a design. This one sets the record shape, which is the part that's expensive to revisit.
+
+  [1mThe fork:[0m how much can you tell, from the log store, that two records came from the same person?
+
+  - [1mEphemeral session ID.[0m A random UUID minted per page load (and per process start in [38;5;153msrc/[39m), held in memory only. Lets
+    you reconstruct "what did this session do before it broke," which is most of what you want during an incident. Can't
+    tell you a user hits the same bug every Tuesday.
+  - [1mPersistent anonymous device ID.[0m Same, but stored in [38;5;153mlocalStorage[39m so it survives reloads. You get recurring-failure
+    patterns per user. It's also, unambiguously, a persistent tracking identifier — that pulls in consent, a documented
+    retention period, and a reset path.
+  - [1mNo correlation ID at all.[0m Simplest. With more than one user hitting the endpoint, interleaved records can't be
+    untangled into sequences, which removes most of the diagnostic value you're paying the remote sink for.
+
+  Asymmetry again: adding persistence later is an additive field change. Removing a persistent ID after the fact means
+  purging what you've already stored and explaining why you collected it.
+
+  [1mMy recommendation: ephemeral session ID.[0m It buys the sequence reconstruction that makes production debugging work, and
+  it doesn't make you a data controller for a tracking identifier.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Correlation [39m[49m
+
+[1m[38;5;231mHow should records be correlated?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mEphemeral session ID (Recommended)[39m
+     [38;5;246mIn-memory UUID per page load / per process start. Reconstructs a session's sequence; no persistent identifier, no [39m
+     [38;5;246mconsent surface.[39m
+  [38;5;246m2.[39m Persistent device ID
+     [38;5;246mUUID in localStorage, survives reloads. Reveals recurring per-user failures; creates a tracking identifier with [39m
+     [38;5;246mconsent and retention obligations.[39m
+  [38;5;246m3.[39m No correlation ID
+     [38;5;246mRecords stand alone. Simplest, but concurrent users' records can't be untangled into sequences.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

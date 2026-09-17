@@ -1,0 +1,40 @@
+  [3mTrade-off:[0m smallest surface and trivially unit-testable, but the inline-error UI you asked for gets re-solved by every
+  new form — which is most of the per-form work, so the reuse win is thin.
+
+  [1mB. Rules library + a generic form controller.[0m Approach A's pure core, plus [38;5;153mattachValidation(formEl, schema, onValid)[39m
+  that binds to a [38;5;153m<form>[39m, reads values via [38;5;153mform.elements[39m, renders and clears per-field error messages, and calls
+  [38;5;153monValid(values)[39m only when clean. Adding a form becomes: write a schema, call the function.
+  [3mTrade-off:[0m one more layer, and it imposes two conventions — inputs need [38;5;153mname[39m attributes (today's only have [38;5;153mid[39m), and
+  error nodes need an agreed location. In exchange, error UI is written once and every form is consistent. The
+  rules/evaluation core stays DOM-free and testable; only the thin controller needs a DOM.
+
+  [1mC. Native Constraint Validation API.[0m Put rules in the markup ([38;5;153mrequired[39m, [38;5;153mtype="email"[39m, [38;5;153mminlength[39m), add [38;5;153mnovalidate[39m to
+  suppress browser bubbles, and share a ~30-line module that reads [38;5;153minput.validity[39m and renders [38;5;153mvalidationMessage[39m inline.
+  [3mTrade-off:[0m by far the least code and the browser does the work — but rules are limited to what HTML expresses, custom
+  message wording needs a side-channel ([38;5;153mdata-*[39m attributes or a map), validity details vary across browsers, and the
+  rules can't be unit-tested without a DOM. Range/length semantics also differ between input types in ways that bite
+  later.
+
+  [1mI recommend B.[0m It's the only option that delivers your inline-per-field requirement once instead of per form, and it's
+  a superset of A — if the controller ever proves too opinionated for some form, that form can drop to the pure
+  [38;5;153mvalidate()[39m layer underneath without rewriting rules. C is tempting for the size, but you chose custom rule scope and
+  custom messages, which is exactly where the native API starts costing more than it saves.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design build on?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: rules + controller (Recommended)[39m
+     [38;5;246mPure rule/schema core plus attachValidation() that owns DOM reading and inline error rendering. Error UI written [39m
+     [38;5;246monce; forms need name attributes.[39m
+  [38;5;246m2.[39m A: pure rules only
+     [38;5;246mShared rules and validate(); each form wires its own submit handler and error rendering. Smallest surface, most [39m
+     [38;5;246mper-form repetition.[39m
+  [38;5;246m3.[39m C: native constraint validation
+     [38;5;246mRules in HTML attributes, thin module renders browser validity messages. Least code, least control over rules and [39m
+     [38;5;246mwording.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

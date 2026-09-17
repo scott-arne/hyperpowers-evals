@@ -1,0 +1,40 @@
+  This replaces [38;5;153mapp.js:6[39m's [38;5;153mconsole.log("Logging in:", username)[39m and [38;5;153mapp.js:25[39m's full-result log rather than porting
+  them.
+
+  [1mSection 4 — Remote sink and self-protection[0m
+
+  Buffer in memory; flush when any of: 20 records queued, 5 seconds elapsed, an [38;5;153merror[39m-level record arrives (flush
+  immediately — the crash is the thing you need), or the page/process is going away.
+
+  Transport is [38;5;153mnavigator.sendBeacon[39m for the unload flush specifically, because [38;5;153mfetch[39m isn't reliably delivered during
+  teardown, and [38;5;153mfetch(..., { keepalive: true })[39m otherwise. Payload is [38;5;153m{ sessionId, env, records: [...] }[39m.
+
+  The failure behavior matters more than the happy path, because a logger that degrades the app it's debugging is worse
+  than no logger:
+
+  - [1mNever throws into caller code.[0m Every sink call is wrapped; a sink failure can't break a login.
+  - [1mNo retry storm.[0m A failed batch is dropped, not requeued. A [38;5;153mdropped[39m counter rides along in the next successful
+    envelope so you know the record stream has holes.
+  - [1mBounded buffer[0m at 200 records, dropping oldest. A long-lived tab with a dead endpoint can't grow memory without
+    limit.
+  - [1mCircuit breaker.[0m After 3 consecutive failures, stop trying for 60s. Otherwise a down endpoint means every user's
+    browser POSTs at it every 5 seconds indefinitely — you'd be self-inflicting load during exactly the incident you're
+    trying to debug.
+
+  Config: the remote sink is only wired if an endpoint URL is configured. Unset means console-only, so local development
+  needs no setup and can't accidentally ship records anywhere.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Redact/sink [39m[49m ☐ Username  ✔ Submit  →
+
+[1m[38;5;231mDo Sections 3 and 4 look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, continue[39m
+     [38;5;246mCentral field registry, scrubber-as-alarm, and the remote sink's failure behavior are all good. Move on to testing
+[39m     [38;5;246mand tooling.[39m
+  [38;5;246m2.[39m Let's revise this first
+     [38;5;246mSomething in the redaction model or the remote sink behavior needs changing before the last section.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  that's still real — no email infrastructure needed, no OAuth provider dependency. Users are seeded by an admin command
+  rather than self-signup.
+
+  [1mLayering inside the process[0m, one module each: [38;5;153mtasks[39m (CRUD), [38;5;153mevents[39m (append-only log writer), [38;5;153mnotifications[39m (fan-out
+  rules and inbox reads), [38;5;153mstream[39m (SSE connection registry), [38;5;153mweb[39m (routes and templates). The dependency arrows only point
+  one way — [38;5;153mtasks[39m never imports [38;5;153mnotifications[39m; it writes an event, and [38;5;153mnotifications[39m reads events. That's what keeps
+  the notification layer independently testable.
+
+  [1mOne constraint worth stating loudly:[0m SSE fan-out lives in process memory — a registry mapping user ID to that user's
+  open connections. This works because there is exactly one process. [1mIf you ever run multiple workers, live delivery [0m
+  [1msilently breaks for users connected to a different worker than the one handling the write.[0m The fix is a shared bus
+  (Redis pub/sub) and it's not hard, but it's not free either. I'd deploy single-worker and write this constraint into
+  the spec so it isn't rediscovered as a bug. Notifications themselves are never lost regardless — they're in the
+  database; only the [3mlive push[0m depends on this.
+
+  [1mTooling.[0m This is the cheapest moment to set tooling up, since no code exists yet.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhich tooling should be set up from the start? (Goes into the spec's Global Constraints, so every later task inherits
+[0;2m│[0m [1m[38;5;231mit.)[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Lint + autoformat
+  [38;5;246mruff check + ruff format, configured strictly, enforced from commit one. Cheapest possible to add now, genuinely [39m
+  [38;5;246mannoying to retrofit across a grown codebase. Strongly recommended.[39m
+  [38;5;246m2.[39m [38;5;114m[✔][39m Unit test infrastructure
+  [38;5;246mpytest, a test layout, an in-memory SQLite fixture, and a first passing test. The fan-out rules are pure logic and are
+[39m  [38;5;246mexactly the thing worth unit testing. Strongly recommended.[39m
+  [38;5;246m3.[39m [38;5;114m[✔][39m Type checking
+  [38;5;246mmypy in strict-ish mode. Catches a real class of bug around nullable task fields and event payload shapes. Recommended
+[39m  [38;5;246mgiven your setup already has it.[39m
+  [38;5;246m4.[39m [ ] End-to-end tests
+  [38;5;246mPlaywright driving a real browser against a running server. The only way to actually test that SSE delivers a live [39m
+  [38;5;246mnotification. Real value here, but the heaviest option.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+[38;5;153m❯[39m    [1m[38;5;153mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

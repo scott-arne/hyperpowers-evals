@@ -1,0 +1,40 @@
+
+  Two constraints I found that will shape it: [38;5;153mapp.js[39m is a plain browser script with no module system or bundler
+  ([38;5;153mindex.html:13[39m loads it via [38;5;153m<script src>[39m), while [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m use CommonJS and aren't loaded by the
+  page at all. So "shared across the app" has to bridge two worlds that currently don't talk. There's also no test
+  runner or dependencies in [38;5;153mpackage.json[39m.
+
+  First question — it determines the rest of the design:
+
+  The fork is what the identifier actually [3mis[0m. A value that survives logout and identifies a browser is a fundamentally
+  different thing from one the server issues after it verifies a password, and they lead to different storage, different
+  lifetimes, and different privacy obligations.
+
+  - [1mAnonymous visitor ID[0m — created client-side on first visit, persists indefinitely, identical before and after login.
+    Buys funnel analytics across the whole app, works today with no backend. Costs: it identifies a browser, not a
+    person; clearing storage resets it; in the EU/UK, persistent identifiers for analytics generally need consent.
+  - [1mPer-session ID[0m — regenerated each visit, dies with the tab or browser. Buys clean single-visit tracing with the
+    lightest privacy footprint. Costs: you can't correlate a user's visits over time, which is usually the thing people
+    want from "track who logged in."
+  - [1mAuthenticated user ID[0m — issued by the server when it verifies credentials, stored after login. Actually answers "who
+    logged in." Costs: [38;5;153mlogin()[39m is a stub that never calls [38;5;153mAPI_ENDPOINT[39m, so this needs a real auth response contract
+    first, and it's absent until someone logs in — other forms on public pages would have nothing.
+  - [1mBoth layers[0m — an anonymous ID always present, upgraded/linked to the real user ID once authenticated. This is what
+    mature analytics does. Costs the most: two identifiers, a linking step, and reconciliation rules.
+
+  Hard to change later: the choice between anonymous and authenticated, because it determines whether pre-login forms
+  can use the value at all. Cheap to change: storage mechanism and key names.
+
+  I'd recommend the [1manonymous visitor ID[0m — it's the only one that works across every form today without inventing a
+  backend contract, and it leaves room to link a real user ID later if you go that way.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What should this identifier actually represent? → Anonymous visitor ID (Recommended)[39m
+
+[38;5;174m✳[39m [38;5;174mCatapulting… [38;5;246m(1m 30s · ↓[39m [38;5;246m5.7k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+                                                                                                      [38;5;246m● high · /effort[39m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

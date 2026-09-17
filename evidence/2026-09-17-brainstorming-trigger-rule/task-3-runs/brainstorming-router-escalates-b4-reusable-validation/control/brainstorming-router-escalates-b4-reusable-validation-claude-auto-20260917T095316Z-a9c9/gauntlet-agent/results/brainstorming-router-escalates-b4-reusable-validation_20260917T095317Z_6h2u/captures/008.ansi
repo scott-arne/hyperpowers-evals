@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Got it — general-purpose, no named consumers yet. I'll design for extensibility but resist building rules nobody has
+  asked for.
+
+  Next fork, and it's the one that decides how much reuse you actually get.
+
+  Right now [38;5;153mvalidateForm[39m does one thing: check a plain object of values. But the [3mrepeated[0m work in a form isn't the [38;5;153mif[39m
+  statement — it's everything around it: reading values out of the DOM, running the rules, and putting error messages on
+  screen. How much of that the shared layer owns determines whether form #2 is ten lines or sixty.
+
+  - [1mRules only[0m — a pure [38;5;153mvalidate(values, schema)[39m returning errors. Trivial to test, zero DOM coupling, works in Node.
+    Cost: every new form still hand-writes its own [38;5;153mgetElementById[39m reads and its own error display, so the copy-paste
+    you're trying to kill mostly survives.
+  - [1mRules + DOM binding[0m — the above, plus an [38;5;153mattach(formEl, schema, onValid)[39m that reads fields by [38;5;153mname[39m, runs validation
+    on submit, and renders messages next to each input. A new form becomes a schema plus one call. Cost: the layer now
+    owns markup conventions and error-element structure; changing that later touches every form.
+  - [1mRules + binding + live feedback[0m — adds blur/input revalidation and dirty-field tracking. Better UX, but it's real
+    state management, and it's speculative when no second form exists yet.
+
+  Cheap to change later: adding rule types, adding live feedback on top of a binding layer. Expensive to change later:
+  the schema format itself and the error-markup convention, since every form encodes them.
+
+  My recommendation is the middle option, with the two halves kept as separate modules so the pure validator stays
+  usable and testable on its own.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Layer scope [39m[49m
+
+[1m[38;5;231mHow much should the shared validation layer own?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mRules + DOM binding (Recommended)[39m
+     [38;5;246mPure validator module plus a thin binder that wires a <form> to a schema and renders errors. New form = schema + [39m
+     [38;5;246mone call. Two separate modules.[39m
+  [38;5;246m2.[39m Rules only
+     [38;5;246mJust a pure validate(values, schema). Each form keeps its own DOM reading and error display.[39m
+  [38;5;246m3.[39m Rules + binding + live feedback
+     [38;5;246mAdds revalidation on blur/input and dirty-field tracking. Best UX, most speculative state handling.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Now the question I flagged at the start. The first thing you're instrumenting is a login form, and its data is about
+  to start leaving users' browsers.
+
+  [1mThe fork:[0m what's the default for a field the redactor has never seen — does it get logged, or dropped?
+
+  - [1mDeny by default (allowlist).[0m A log call passes a context object, and only keys explicitly declared safe survive into
+    the record. A mistake costs you a missing field in a debugging session. Friction: every new field you want
+    visibility on needs declaring.
+  - [1mAllow by default (denylist).[0m Records pass through a scrubber that replaces known-sensitive key names ([38;5;153mpassword[39m,
+    [38;5;153mtoken[39m, [38;5;153mauthorization[39m, …) with [38;5;153m[REDACTED][39m. Low friction, familiar. A mistake costs you a credential in your log store
+    — the scrubber only knows the names someone thought to add.
+  - [1mMessages only, no structured payloads.[0m Nothing can leak because nothing structured is carried. Also strips out most
+    of what makes logs useful for debugging.
+
+  The asymmetry here is what decides it for me. Tightening later (denylist → allowlist) means auditing every call site
+  you've written by then; loosening later is a one-line default change. And a credential that already reached the log
+  store can't be un-shipped — you're into rotation and incident response, not a code fix.
+
+  [1mMy recommendation: deny by default, with a name-based scrubber as a second layer[0m on the way into the sink. Belt and
+  braces, and the expensive direction is the one you get for free. This also means [38;5;153mapp.js:6[39m's [38;5;153mconsole.log("Logging in:",
+[39m  [38;5;153musername)[39m gets replaced rather than ported over.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mWhat's the default for a field that isn't explicitly classified?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDeny by default (Recommended)[39m
+     [38;5;246mOnly explicitly-allowlisted keys reach a record, plus a name-based scrubber as a backstop. Mistakes cost a missing
+[39m     [38;5;246mfield, never a leaked credential.[39m
+  [38;5;246m2.[39m Allow by default (denylist)
+     [38;5;246mEverything is logged except keys matching a known-sensitive name list. Lower friction; leaks anything nobody [39m
+     [38;5;246mthought to add to the list.[39m
+  [38;5;246m3.[39m Messages only, no payloads
+     [38;5;246mLog strings only, never structured context. Nothing can leak, but debugging value drops sharply.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

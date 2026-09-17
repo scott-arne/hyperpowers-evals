@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m This repo has no test runner, linter, or dependencies — [38;5;153mpackage.json[39m is just metadata. Setting tooling up is cheapest
+  now, before the module exists, and it decides whether the spec can require tests for the storage layer.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What tooling should we stand up alongside this? → Unit tests (Recommended)[39m
+
+  [38;5;246mRead [1m1[0m[38;5;246m file, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Three ways to shape the module. The fork is the stored layout and whether the module notifies consumers of changes —
+  that decides the on-disk format (hard to change once users have data) and the call-site API (easy to change).
+
+  - [1mA. Single JSON blob + declared defaults.[0m One key, [38;5;153mwebapp:prefs[39m, holding [38;5;153m{theme, rememberedUsername}[39m. The module owns
+    a defaults table; reads merge stored values over defaults; unknown keys are dropped; unparseable JSON falls back to
+    defaults rather than throwing. Buys: one place to reset, one place to version if the shape ever changes, and
+    consumers that can't crash on bad data. Costs: a write to one preference rewrites the whole blob — irrelevant at
+    this size.
+  - [1mB. One key per preference.[0m [38;5;153mwebapp:theme[39m, [38;5;153mwebapp:rememberedUsername[39m. Buys: dead simple, no parsing. Costs: "reset
+    all" and any future shape migration have to know every key that ever existed, and keys leak across the codebase.
+    Rules out cheap versioning.
+  - [1mC. A + change subscriptions.[0m Same store, plus [38;5;153msubscribe(fn)[39m so the UI re-renders on change. Buys: reactivity. Costs:
+    machinery for two settings on a page with no dynamic re-render — YAGNI today, and trivially added to A later.
+
+  [1mI recommend A.[0m It's the only one of the three whose stored format you won't regret, and the subscription layer in C is
+  additive if it's ever needed.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Shape [39m[49m
+
+[1m[38;5;231mWhich module shape should the spec describe?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: JSON blob + defaults (Recommended)[39m
+     [38;5;246mOne localStorage key, a defaults table, corrupt data falls back safely.[39m
+  [38;5;246m2.[39m B: One key per preference
+     [38;5;246mSimplest possible; no parsing, but no cheap reset or versioning.[39m
+  [38;5;246m3.[39m C: A plus subscriptions
+     [38;5;246mAdds a subscribe/notify layer for reactive UI updates.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

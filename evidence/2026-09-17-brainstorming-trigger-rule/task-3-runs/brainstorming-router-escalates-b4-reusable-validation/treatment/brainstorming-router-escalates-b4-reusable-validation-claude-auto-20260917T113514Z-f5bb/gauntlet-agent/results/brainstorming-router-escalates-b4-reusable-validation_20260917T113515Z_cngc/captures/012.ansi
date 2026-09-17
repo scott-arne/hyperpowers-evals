@@ -1,0 +1,40 @@
+
+  [1mMy recommendation: the declarative field schema.[0m It's maybe 40 lines, it's the only one where adding form #2 means
+  writing data instead of logic, and it doesn't lock the markup. The per-form function is cheaper today but it's what
+  you already have — factoring that out isn't reuse.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which API shape should forms use to declare their validation rules? → Declarative field schema (Recommended)[39m
+
+[38;5;231m⏺[39m [1mThe fork:[0m how the browser gets the validation code, given there's no build step today. This decides file layout and
+  whether the new code is unit-testable at all — [38;5;153mapp.js[39m is currently a plain global script, while [38;5;153msrc/[39m uses CommonJS
+  that the browser can't load.
+
+  - [1mES modules[0m ([38;5;153m<script type="module">[39m, [38;5;153mexport[39m/[38;5;153mimport[39m) — buys real imports with no bundler, and the module is directly
+    testable by Node. Costs: needs to be served over HTTP ([38;5;153mfile://[39m won't load modules), and it's a second module style
+    alongside [38;5;153msrc/[39m's CommonJS unless you convert that too.
+  - [1mGlobal script[0m ([38;5;153mvalidation.js[39m before [38;5;153mapp.js[39m, hangs a [38;5;153mValidation[39m object off [38;5;153mwindow[39m) — buys "open index.html and it
+    works", zero setup. Costs: no import graph, awkward to unit test, and it's the pattern you'd migrate off later.
+  - [1mES modules everywhere[0m — same as the first, plus converting [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m off CommonJS so the repo
+    has one style. Costs touching files unrelated to this task.
+
+  [1mMy recommendation: ES modules, scoped to the web code only.[0m Testability is the main thing you're buying with a
+  reusable layer, and [38;5;153mfile://[39m is a weak constraint if you're fine with [38;5;153mnpx serve[39m. I'd leave [38;5;153msrc/[39m alone — converting it
+  is unrelated refactoring.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module format [39m[49m
+
+[1m[38;5;231mHow should the validation module be loaded by the page?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules, web code only (Recommended)[39m
+     [38;5;246mapp.js becomes type="module" and imports the validator. Needs a local HTTP server; src/ stays CommonJS.[39m
+  [38;5;246m2.[39m Global script tag
+     [38;5;246mPlain <script> exposing a global. Works from file:// with zero setup, but harder to test and a likely future [39m
+     [38;5;246mmigration.[39m
+  [38;5;246m3.[39m ES modules everywhere
+     [38;5;246mAlso convert src/index.js and src/utils.js to ESM so the repo has one module style. Touches unrelated files.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

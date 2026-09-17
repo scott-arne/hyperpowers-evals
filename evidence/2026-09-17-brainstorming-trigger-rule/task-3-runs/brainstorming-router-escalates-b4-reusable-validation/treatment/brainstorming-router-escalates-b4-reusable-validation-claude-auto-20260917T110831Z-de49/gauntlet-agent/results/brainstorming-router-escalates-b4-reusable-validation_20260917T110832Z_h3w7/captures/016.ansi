@@ -1,0 +1,40 @@
+    [34mconst[39m result = [33mvalidate[39m([33mreadValues[39m(form), loginSchema);
+    [34mif[39m (!result.valid) [34mreturn[39m [33mshowErrors[39m(form, result.errors);
+    [33mclearErrors[39m(form);
+    [33mlogin[39m(...);
+  });
+
+  The contract details that matter, because they're the things that silently differ between forms if left unstated:
+
+  - [1m[38;5;153mvalidate[39m returns [38;5;153m{ valid, errors }[39m,[0m where [38;5;153merrors[39m maps a field name to a [1msingle[0m message string. Rules for a field run
+    in order and stop at the first failure — an empty field should say "Username is required", not that plus "must be
+    at least 3 characters". This is a change from my earlier sketch, which had an array per field; one message per field
+    is both better UX and less for the display layer to decide.
+  - [1mOnly [38;5;153mrequired[39m cares about emptiness.[0m Every other rule passes on an empty value. That's what makes an optional email
+    field work: [38;5;153m[email()][39m accepts blank, [38;5;153m[required(), email()][39m doesn't. Without this rule, optional fields are
+    impossible to express.
+  - [1m[38;5;153mrequired[39m treats whitespace-only as empty[0m (it trims for the check only; it never mutates the value). Length rules
+    measure the raw string.
+  - [1mRules are factories[0m returning [38;5;153m(value) => message | null[39m, and each takes an optional custom message: [38;5;153mminLength(8, [39m
+    [38;5;153m"Password is too short")[39m. That's the extension point — a one-off rule is just a function with that shape, no change
+    to the module.
+  - [1mMissing and extra fields:[0m a schema field absent from the form validates as [38;5;153m""[39m; a form field absent from the schema
+    is ignored, not an error. So partially-validated forms work.
+  - [1m[38;5;153mmin[39m/[38;5;153mmax[0m coerce with [38;5;153mNumber()[39m and report a "must be a number" message on [38;5;153mNaN[39m, rather than silently passing.
+  - [1m[38;5;153memail[0m uses a pragmatic [38;5;153msomething@something.tld[39m check, not an RFC 5322 regex. Stating the limit up front: it will
+    accept addresses that don't deliver. Real verification is a send, not a regex.
+  - [1mErrors clear[0m when the user edits a field (an [38;5;153minput[39m listener the display helper installs), so stale messages don't
+    linger while they're fixing them.
+
+  Validation runs on submit only — not on blur, not per keystroke. That matches the current behavior and keeps the scope
+  where you pointed it.
+
+  Does that contract look right? Particularly the one-message-per-field call and "only [38;5;153mrequired[39m cares about emptiness" —
+  those are the two I'd most expect you to want different.
+
+[38;5;246m✻[39m [38;5;246mCooked for 1m 5s · done 4:16 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

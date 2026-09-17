@@ -1,0 +1,40 @@
+  So the two halves of this repo don't talk to each other, and there's no real session concept yet — [38;5;153mlogin()[39m doesn't
+  establish one.
+
+  [1mThe first fork: where preferences actually live.[0m
+
+  This determines the data model, the API surface, and what "across sessions" can even mean, and it's expensive to
+  change later — the read/write interface the rest of the UI codes against differs between the options.
+
+  - [1mBrowser localStorage[0m — preferences persist on one device, survive tab close and reload, no backend needed. Costs
+    nothing to build and works today since the login is a stub. Rules out: same settings on a second device, and
+    anything server-rendered.
+  - [1mServer-backed via the API[0m — preferences follow the user everywhere and survive clearing browser data. But [38;5;153mlogin()[39m is
+    a stub with no real auth, no session token, and no server in this repo, so this pulls a backend (or at least a mock
+    one) into scope alongside the preferences work.
+  - [1mlocalStorage now, behind a storage interface[0m — same cheap build, but reads/writes go through a small
+    [38;5;153mPreferencesStore[39m seam so a server-backed implementation can be dropped in later without touching call sites.
+    Slightly more structure up front.
+
+  My recommendation is the third: this app has a login form, so per-user server-side settings are a plausible future,
+  but building a backend now means building auth first. The seam costs maybe a dozen extra lines and keeps that door
+  open.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Storage [39m[49m
+
+[1m[38;5;231mWhere should preferences be stored?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage behind a seam (Recommended)[39m
+     [38;5;246mStore in browser localStorage, but route all access through a small PreferencesStore interface so a server-backed [39m
+     [38;5;246mimplementation can replace it later without changing call sites.[39m
+  [38;5;246m2.[39m Plain localStorage
+     [38;5;246mRead and write localStorage directly from the UI code. Simplest possible; migrating to a server later means [39m
+     [38;5;246mtouching every call site.[39m
+  [38;5;246m3.[39m Server-backed via API
+     [38;5;246mPersist per-user on the server. Requires real auth and a backend first — login() is currently a stub, so that work
+[39m     [38;5;246mcomes into scope.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

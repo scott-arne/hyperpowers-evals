@@ -1,0 +1,40 @@
+  - [38;5;153mSession.clear()[39m — removes it (needed for logout, and for tests to reset state)
+
+  [38;5;153mgetUserId()[39m is deliberately not a separate function; [38;5;153mgetUser()?.userId[39m covers it and keeps the surface at three. If
+  future forms only ever want the id, that's a one-line addition then.
+
+  [1mStored shape.[0m This is the part that's expensive to change later, because whatever we write today may already be
+  sitting in a user's [38;5;153msessionStorage[39m when a future version reads it. Two candidates:
+
+  - [1mA bare string[0m under key [38;5;153muserId[39m — [38;5;153msessionStorage.setItem("userId", userId)[39m. Simplest possible read. But once a real
+    server-issued id arrives, the username is no longer recoverable from storage, so any form that wants to greet the
+    user by name has to re-derive it from somewhere. Widening a bare string to an object later is a breaking read for
+    anything already written.
+  - [1mA JSON record[0m under key [38;5;153msession.user[39m — [38;5;153m{"userId": "...", "username": "..."}[39m. Today both fields hold the same value,
+    which looks redundant; the point is that they're the two things that [3mdiverge[0m the moment [38;5;153mAPI_ENDPOINT[39m becomes a real
+    call and returns a server id. Consumers key off [38;5;153muserId[39m and display [38;5;153musername[39m, and neither has to change at the swap.
+    Costs a [38;5;153mJSON.parse[39m and a [38;5;153mtry/catch[39m for malformed data.
+
+  I'm deliberately [1mnot[0m including a [38;5;153mloggedInAt[39m timestamp or a schema version field — neither is needed by anything you've
+  described, and both are easy to add later.
+
+  [1mI recommend the JSON record.[0m The whole reason this became architectural is that other forms will read this, and the
+  record is what lets the id and the display name part ways later without a migration.
+
+  Does this section look right?
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 1 [39m[49m
+
+[1m[38;5;231mSection 1 — architecture and stored shape: approve as described?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mApprove: JSON record (Recommended)[39m
+     [38;5;246msession.js with setUser/getUser/clear; stores {userId, username} as JSON under key session.user.[39m
+  [38;5;246m2.[39m Approve, but bare string
+     [38;5;246mSame session.js surface, but store just the id string under key userId. Simpler now, harder to widen later.[39m
+  [38;5;246m3.[39m Revise this section
+     [38;5;246mSomething about the module surface or the stored shape needs changing — tell me what.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

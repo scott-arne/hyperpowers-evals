@@ -1,0 +1,40 @@
+  forms will need display code regardless — but keeping it a separate layer over a pure core means the validation rules
+  stay testable without a browser, which matters more here given there's no test setup yet.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the shared validation surface handle error reporting and display? → Pure core + display helper[39m
+
+[38;5;231m⏺[39m Third question — the delivery format, which is the one real structural constraint in this repo. [38;5;153mapp.js[39m is a plain
+  [38;5;153m<script src>[39m global; [38;5;153msrc/[39m uses CommonJS [38;5;153mrequire[39m. There's no bundler, so a shared module has to pick how it's loaded.
+
+  [1mThe fork:[0m how the validation module gets into the browser page and into a test runner.
+
+  - [1mDual export shim[0m ([38;5;153mmodule.exports[39m if present, else attach to [38;5;153mwindow[39m) — buys: [38;5;153mindex.html[39m keeps working when opened
+    straight from disk, and Node can [38;5;153mrequire()[39m the module for tests. Costs: four lines of boilerplate at the bottom of
+    the file, a slightly dated idiom. Easy to drop later.
+  - [1mES modules[0m ([38;5;153mexport[39m + [38;5;153m<script type="module">[39m) — buys: the modern, clean idiom, no shim. Costs: the page stops working
+    over [38;5;153mfile://[39m (module loading is blocked there), so you'd need [38;5;153mnpx serve[39m or similar to view it, and [38;5;153msrc/[39m's CommonJS
+    files can't [38;5;153mrequire()[39m it without converting them too. Reversing this means touching the HTML and the test setup.
+  - [1mBrowser global only[0m ([38;5;153mwindow.Validation = …[39m) — buys: simplest, matches [38;5;153mapp.js[39m exactly today. Costs: not loadable in
+    Node, so the validator can't be unit-tested without a DOM shim — which undercuts the point of keeping the core pure.
+
+  [1mMy recommendation: the dual export shim.[0m It's the only option that keeps the demo page openable as-is [3mand[0m lets the
+  pure core be tested in plain Node — and the shim is trivially deletable if you later add a bundler.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module format [39m[49m
+
+[1m[38;5;231mHow should the shared validation module be loaded by the page and by tests?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDual export shim[39m
+     [38;5;246mmodule.exports when available, else window global. Page still opens from disk; Node can require it for tests. [39m
+     [38;5;246m(Recommended)[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246mexport/import with <script type="module">. Cleanest idiom, but the page then needs a local HTTP server and src/ [39m
+     [38;5;246mstays CommonJS.[39m
+  [38;5;246m3.[39m Browser global only
+     [38;5;246mwindow.Validation = {...}. Simplest and matches app.js, but the core can't be unit-tested in Node.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+
+  Also, [38;5;153mlogin[39m currently fakes its result. Server-issued identity means it has to become async and actually call
+  [38;5;153mAPI_ENDPOINT[39m — or call a stub that has the [3mshape[0m of the real response. I'd keep the stub, behind a single seam.
+
+  [1mThe fork between the three approaches is one thing: who writes the ID into storage.[0m Everything else is identical —
+  same [38;5;153midentity.js[39m, same sessionStorage, same [38;5;153mgetUserId()[39m for future forms.
+
+  - [1mA — [38;5;153mlogin[39m stores it itself.[0m [38;5;153mlogin[39m resolves the ID and calls [38;5;153msetUserId()[39m before returning. Callers can't forget to
+    store it; there's exactly one place identity gets established. Costs: [38;5;153mlogin[39m gains a side effect, so testing it needs
+    a storage stub. Cheap to change later.
+  - [1mB — [38;5;153mlogin[39m returns it, the caller stores it.[0m [38;5;153mlogin[39m stays pure and trivially testable; the submit handler does
+    [38;5;153msetUserId(result.userId)[39m. Costs: the storing step is a rule every future login path must remember, and a forgotten
+    call fails silently — you'd be logged in with no ID.
+  - [1mC — a [38;5;153msession.js[39m facade owns the whole flow.[0m Consumers call [38;5;153msession.logIn()[39m / [38;5;153msession.getUserId()[39m / [38;5;153msession.logOut()
+[39m    and never see [38;5;153mlogin[39m at all. Best consumer story for the forms you haven't written. Costs: the most structure, and
+    it demotes [38;5;153mlogin[39m to an internal transport detail in a 28-line app.
+
+  Rules-out-later: none of these lock you in badly — A and B are a few lines apart, and C is the natural refactor target
+  from either once you have several consumers.
+
+  [1mMy recommendation is A.[0m Establishing the session [3mis[0m what login is for, so the side effect is honest rather than
+  hidden, and it removes the silent-failure mode in B. C is right later, when there are actually several forms to serve
+  — building it now is structure bought ahead of need.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Who writes the server-issued ID into sessionStorage? → A: login stores it (Recommended)[39m
+     [38;5;246m· This repo has no linter, formatter, or test runner. Which should I set up as part of this work? → Unit tests [39m
+     [38;5;246m(Recommended)[39m
+
+[38;5;231m⏺[39m Codex contributed nothing, so this design is mine. Here it is in sections — scaled to a change this size. Push back on
+  any individual section; I'll wait for your go-ahead before writing anything.
+
+  [1m1. Architecture[0m
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

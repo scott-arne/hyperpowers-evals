@@ -1,0 +1,40 @@
+  approaches → design → spec, and no code until you approve.
+
+  What's here today: a static browser page ([38;5;153mindex.html[39m + [38;5;153mapp.js[39m) with a login form whose [38;5;153mlogin()[39m is a stub, and a
+  separate, unrelated Node script ([38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m) that prints a greeting. No build tooling, no tests, no
+  framework, no backend.
+
+  [1mThe fork:[0m where preferences live decides everything downstream — whether this needs a backend at all, what the
+  read/write interface looks like, whether settings follow a person or a device, and whether any of it survives a
+  cleared browser.
+
+  - [1mBrowser [38;5;153mlocalStorage[0m — zero new infrastructure, works with the static page as-is, synchronous API. Costs: per-device
+    and per-browser, gone when site data is cleared, ~5MB cap, and nothing sensitive can go in it (readable by any
+    script on the origin). Cheap to change later if the shape is kept behind a small module.
+  - [1mServer-backed per account[0m — settings follow the user to any device and survive a cleared browser. Costs: requires a
+    real backend and real auth, and [38;5;153mlogin()[39m is currently a stub returning [38;5;153m{success: true}[39m for any input — so this pulls
+    a genuine auth story into scope. Expensive to add later only in that it needs the same backend either way; the
+    client interface can stay identical.
+  - [1mJSON file on disk[0m — fits the Node side ([38;5;153msrc/[39m), not the browser page. Only right if "sessions" means CLI runs, not
+    page loads.
+
+  [1mMy recommendation: [38;5;153mlocalStorage[39m behind a small preferences module[0m — one narrow interface ([38;5;153mget[39m/[38;5;153mset[39m/[38;5;153mgetAll[39m/defaults)
+  that the rest of the app talks to. It matches what the repo actually is right now, and because the storage backend
+  sits behind that interface, swapping in a server later is a change to one file rather than to every call site. I'd
+  explicitly rule out putting anything sensitive in it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Storage [39m[49m
+
+[1m[38;5;231mWhere should preferences persist?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage + module (Recommended)[39m
+     [38;5;246mBrowser localStorage behind a narrow preferences module. Device-local, no backend, swappable later.[39m
+  [38;5;246m2.[39m Server-backed per account
+     [38;5;246mPreferences follow the user across devices. Requires a real backend and real auth (login() is currently a stub).[39m
+  [38;5;246m3.[39m JSON file on disk (Node)
+     [38;5;246mPersist for the src/ Node script rather than the browser page. Only if 'sessions' means CLI runs.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

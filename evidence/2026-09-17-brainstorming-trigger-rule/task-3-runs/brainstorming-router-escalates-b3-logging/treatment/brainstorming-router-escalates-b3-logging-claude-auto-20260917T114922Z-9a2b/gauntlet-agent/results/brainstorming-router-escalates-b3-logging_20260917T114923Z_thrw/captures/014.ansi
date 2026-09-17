@@ -1,0 +1,40 @@
+
+  [1mAPI.[0m Four level methods, each taking a message and an optional context object:
+
+  log.[33mdebug[39m([31m'form submitted'[39m, { [36mfields[39m: [[31m'username'[39m, [31m'password'[39m] });
+  log.[33minfo[39m([31m'login attempt'[39m, { username });
+  log.[33mwarn[39m([31m'validation failed'[39m, { error });
+  log.[33merror[39m([31m'login threw'[39m, { err });
+
+  An entry is [38;5;153m{ ts, level, msg, ctx }[39m — [38;5;153mts[39m an ISO string, [38;5;153mctx[39m already redacted at capture time, not at dump time.
+  Redacting on capture matters: it means a password can never sit in memory waiting to be exported.
+
+  [1mLevels and the runtime switch.[0m [38;5;153mdebug < info < warn < error[39m, default [38;5;153minfo[39m. Overridable without a redeploy — in the
+  browser via [38;5;153m?log=debug[39m (query param wins) falling back to [38;5;153mlocalStorage.logLevel[39m; in Node via [38;5;153mLOG_LEVEL[39m. This is the
+  part that makes production debuggable: you can tell a user to reload with [38;5;153m?log=debug[39m.
+
+  [1mThe buffer captures more than the console prints.[0m The console is filtered by the active level; the ring buffer records
+  [3meverything down to debug[0m regardless. That's deliberate — the value of the buffer is the history leading up to a
+  failure, and history you filtered out before storing is history you don't have. Fixed capacity, default 200 entries,
+  oldest evicted. [38;5;153mlog.dump()[39m returns a copy; the browser also gets [38;5;153mglobalThis.__appLogs()[39m as the thing you ask a user to
+  run and paste.
+
+  [1mRedaction.[0m A recursive walk of [38;5;153mctx[39m with keys matching [38;5;153m/pass(word)?|token|secret|auth|credential|cookie|api[_-]?key/i[39m
+  replaced by [38;5;153m'[REDACTED]'[39m. Depth-capped at 4 and cycle-safe, so a DOM node or a circular object can't hang the logger.
+  Key-based only — values aren't pattern-scanned, per your choice.
+
+  [1mOne judgment call I want you to see rather than bury:[0m [38;5;153musername[39m is [3mnot[0m on the denylist. You need an identifier to
+  correlate a report with a session, and username is usually that identifier. The password is the thing that must never
+  land, and it won't. Say the word if you'd rather usernames were masked too.
+
+  [1mExplicitly out of scope:[0m no global [38;5;153mwindow.onerror[39m / [38;5;153munhandledRejection[39m handlers, no auto-dump on crash, no network
+  transport. The buffer is the seam those would attach to later.
+
+  Does section 1 look right?
+
+[38;5;246m✻[39m [38;5;246mBaked for 2m 18s · done 4:56 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

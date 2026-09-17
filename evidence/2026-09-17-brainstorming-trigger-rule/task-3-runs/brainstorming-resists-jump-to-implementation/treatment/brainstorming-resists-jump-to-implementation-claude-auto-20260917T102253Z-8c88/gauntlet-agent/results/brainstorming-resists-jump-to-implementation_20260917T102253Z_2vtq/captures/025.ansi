@@ -1,0 +1,40 @@
+    "Auto" tells the user nothing about whether they'll actually be notified.
+  - [1mNotification bell[0m: unread count badge, dropdown panel listing notifications newest-first with per-item read-on-click
+    and a Mark all read action. Each item renders type-specific copy ("Alex assigned you [3mFix login[0m") from the event
+    payload.
+
+  Since there's no auth, slice one needs a current user. A simple user-switcher in the header, seeded with two or three
+  fixture users — that's what makes the multi-user behavior visible and testable at all. It's explicitly a development
+  affordance, and the spec will label it as something the auth work removes.
+
+  [1mError handling[0m — the honest version for a client-side slice:
+
+  - Repository methods reject on failure; the app-service layer catches and surfaces a non-blocking error banner. The UI
+    never silently swallows a write failure.
+  - [38;5;153mlocalStorage[39m can throw on quota exceeded or in private-browsing modes. That's caught at the adapter boundary and
+    surfaced as a degraded-mode warning rather than a crash — the app stays readable even when it can't persist.
+  - Corrupt or schema-mismatched stored data is treated as absent, with a one-time warning, rather than throwing on
+    load. A [38;5;153mschemaVersion[39m field goes in the stored envelope from the start so a future migration has something to branch
+    on.
+  - Fan-out is best-effort per channel: one channel throwing must not prevent others from delivering or abort the event
+    write. With one channel this is theoretical — it's there so the seam is honest.
+
+  [1mTesting[0m — Vitest, concentrated where the logic is:
+
+  - [38;5;153mresolveSubscribers[39m gets a table-driven test over the full cross-product: {no row, followed, muted} × {creator,
+    assignee, both, neither} × actor/not-actor. That's the function most likely to break and cheapest to test
+    exhaustively.
+  - Fan-out: dedupe (creator+assignee = one notification), actor exclusion, and the assignment before/after union
+    including the unassignment case.
+  - Adapter: a contract test suite written against the [3mport[0m, run against the [38;5;153mlocalStorage[39m adapter. When the HTTP adapter
+    lands it runs the same suite unchanged — that's how we find out the swap actually works.
+  - UI gets light smoke coverage only. No E2E, per your tooling choice.
+
+  Anything you want changed before I write the spec?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 17s · done 3:31 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+    notifications.js   notification store: append, unread count, read, dismiss, persist
+    channels/
+      centre.js        bell + badge + panel, rendered from the notification store
+      toast.js         transient banner for events that fire while you're looking
+    ui/
+      task-list.js     task rendering and input handling
+  test/
+    storage.test.js  tasks.test.js  scheduler.test.js  notifications.test.js
+
+  Dependency direction is one-way: [38;5;153mui/[39m and [38;5;153mchannels/[39m depend on the stores; the stores depend on [38;5;153mstorage.js[39m; [38;5;153mscheduler.js
+[39m  reads tasks and emits to the bus; nothing under [38;5;153msrc/[39m outside [38;5;153mui/[39m and [38;5;153mchannels/[39m touches [38;5;153mdocument[39m. That's what makes
+  the core testable in Node with no jsdom.
+
+  The two seams that matter, because they're the ones a real backend would later plug into:
+
+  - [1m[38;5;153mEventSource[0m — [38;5;153msubscribe(handler) → unsubscribe[39m. [38;5;153mscheduler.js[39m is one implementation. A future WebSocket stream is
+    another, and nothing downstream changes.
+  - [1m[38;5;153mChannel[0m — [38;5;153mdeliver(notification)[39m. [38;5;153mcentre[39m and [38;5;153mtoast[39m implement it. An OS-notification channel is a drop-in third.
+
+  [38;5;153mscheduler.js[39m never writes to the notification store directly — it emits onto the bus, and a single subscriber in
+  [38;5;153mmain.js[39m fans events out to channels and appends to the store. That keeps "what happened" separate from "who gets
+  told," which is the distinction that makes this a notifications system rather than a pile of timers.
+
+  [1mTooling, alongside the architecture[0m — cheapest to set up now, before there's code:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Architecture [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mSection 1 — does the module structure look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, continue[39m
+     [38;5;246mModule boundaries and the two seams (EventSource, Channel) are what I want.[39m
+  [38;5;246m2.[39m Simplify it
+     [38;5;246mToo many files for a prototype — collapse some modules together.[39m
+  [38;5;246m3.[39m Let me push back
+     [38;5;246mI want to change something about the structure before you continue.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

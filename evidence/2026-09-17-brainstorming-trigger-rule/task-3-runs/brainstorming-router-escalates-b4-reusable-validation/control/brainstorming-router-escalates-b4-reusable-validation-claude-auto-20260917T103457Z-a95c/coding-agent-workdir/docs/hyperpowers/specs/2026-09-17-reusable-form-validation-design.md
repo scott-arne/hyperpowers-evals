@@ -1,0 +1,244 @@
+# Reusable Form Validation — Design
+
+Date: 2026-09-17
+Status: approved (design), not yet implemented
+Branch: `feature/webapp-enhancement`
+
+## Problem
+
+`app.js` validates the login form inline. `validateForm(formData)` is hardcoded
+to the `username` and `password` keys, returns a single error string for the
+whole form, and is called from a hand-written `submit` listener that reads each
+input by `id`. Nothing about it can be used by a second form, and the failure
+path only reaches `console.error` — the user sees nothing.
+
+Several more forms are planned. Their specific rules are not yet known, so the
+design is judged primarily on how cheaply an unanticipated rule can be added.
+
+## Goals
+
+- One validation core shared by every form.
+- Adding a new rule requires no change to the core.
+- A new form is a rule spec plus one call.
+- Errors are visible to the user, per field.
+- Forms that need custom error UI can use the core without the DOM layer.
+
+## Non-goals
+
+- Asynchronous or server-side validation (e.g. "username already taken").
+  No planned form needs it. Adding it later means a parallel `validateAsync`;
+  it does not invalidate this design.
+- Migrating `src/index.js` / `src/utils.js` off CommonJS. They are unrelated to
+  the webapp and are not loaded by `index.html`.
+- Styling. The design emits a `field-error` class and sets ARIA attributes; no
+  CSS ships, because the project has none.
+
+## Architecture
+
+Two layers. The core is pure and has no DOM references; the binding layer is a
+separate module that depends on the core, never the reverse.
+
+```
+index.html ──<script type="module">──> app.js
+                                         │
+                                         v
+                              src/validation/index.mjs  (barrel)
+                                         │
+                  ┌──────────────────────┼──────────────────────┐
+                  v                      v                      v
+          bind-form.mjs              rules.mjs            validate.mjs
+             (DOM)                    (pure)             (pure, no DOM)
+                  │                                             ^
+                  └─────────────────────────────────────────────┘
+                              bind-form calls validate
+```
+
+| File | Responsibility | Depends on |
+|---|---|---|
+| `src/validation/validate.mjs` | `validate(values, spec)` — pure | nothing |
+| `src/validation/rules.mjs` | built-in rule factories — pure | nothing |
+| `src/validation/bind-form.mjs` | submit wiring + error rendering | `validate.mjs`, DOM |
+| `src/validation/index.mjs` | barrel re-export | the three above |
+
+### Module format
+
+ES modules with the `.mjs` extension.
+
+`package.json` has no `"type"` field, so Node resolves `.js` as CommonJS, which
+`src/index.js` and `src/utils.js` rely on. Setting `"type": "module"` would
+break both. `.mjs` gives native ESM in Node without touching them; browsers
+ignore the extension and honor `type="module"` on the script tag.
+
+Consequence: `index.html` will no longer work when opened over `file://`,
+because CORS blocks module scripts there. Serving the directory (for example
+`python3 -m http.server`) is required. This is inherent to ES modules, and was
+accepted when the module format was chosen.
+
+## The core
+
+### Rule contract
+
+```js
+(value, allValues) => string | null
+```
+
+A rule returns an error message when it fails and a falsy value when it passes.
+Receiving `allValues` is what makes cross-field rules (`matches`) ordinary
+rather than a special case. A rule is a plain function, so a project-specific
+rule needs no registration and no core change — this is the extension point the
+whole design is chosen for.
+
+### Spec shape
+
+```js
+const loginSpec = {
+  username: [required("Username is required")],
+  password: [required(), minLength(8)],
+};
+```
+
+A spec maps a field name to an ordered array of rules.
+
+### `validate(values, spec)`
+
+```js
+{ valid: boolean, errors: { [field]: string } }
+```
+
+- Rules for a field run in order; **the first failing rule wins** and no further
+  rules run for that field. One message per field is what a form displays, and
+  reporting "is required" together with "must be at least 8 characters" for the
+  same empty input is noise.
+- `errors` contains only fields that failed. `valid` is `errors` being empty.
+- Keys present in `values` but absent from `spec` are ignored.
+- Keys present in `spec` but absent from `values` are validated as `undefined`,
+  so `required()` reports them.
+
+### Built-in rules
+
+`required`, `minLength`, `maxLength`, `pattern`, `email`, `matches`.
+
+Each takes an optional custom message as its final argument and falls back to a
+sensible default. `matches(otherField, message?)` compares against
+`allValues[otherField]`.
+
+`email` uses a deliberately permissive check (a non-empty local part, an `@`, a
+dot-bearing domain). Strict RFC 5322 matching rejects valid addresses and is
+not worth the regex; real verification is sending mail.
+
+**Presence is `required`'s job alone.** The format rules — `minLength`,
+`maxLength`, `pattern`, `email` — pass on an empty value. Only `required`
+reports a missing one. Without this, an *optional* field could never carry a
+format rule: `[email()]` on a blank optional input would reject an empty form.
+This matches HTML5 constraint validation, where `pattern` does not fire on an
+empty non-required control. Login is unaffected: `password` is
+`[required(), minLength(8)]`, and `required` fails first on a blank value.
+
+`required` treats whitespace-only input as empty; the format rules measure the
+raw value.
+
+## The binding layer
+
+```js
+bindForm(formElement, spec, onValid)
+```
+
+On `submit`:
+
+1. `event.preventDefault()`.
+2. Read values via `new FormData(formElement)`.
+3. `validate(values, spec)`.
+4. If invalid: render each message, set `aria-invalid="true"` on the failing
+   fields, focus the first failing field, and do not call `onValid`.
+5. If valid: clear all messages and `aria-invalid`, then call
+   `onValid(values, event)`.
+
+A field's error clears on its `input` event. Without that, a corrected field
+keeps displaying a stale message until the next submit, which reads as a bug.
+
+### Markup contract
+
+Two requirements, kept minimal because every future form inherits them:
+
+1. **Each validated input carries a `name` matching its spec key.** `FormData`
+   only collects named controls. Today's inputs have `id` but no `name`, so
+   `index.html` gains `name="username"` and `name="password"`.
+2. **Error placement is optional.** If the form contains an element matching
+   `[data-error-for="<field>"]`, the message is written there. Otherwise
+   `bindForm` creates `<span class="field-error" data-error-for="<field>">` and
+   inserts it immediately after the input. A new form therefore needs no error
+   markup, while a form with layout constraints can place its own.
+
+Created error elements are given an `id` and linked from the input via
+`aria-describedby`.
+
+### Failure mode
+
+If `spec` names a field with no matching control in the form, `bindForm` throws
+an `Error` naming that field, at bind time. A typo'd spec key would otherwise
+produce a field that appears validated and silently is not — the worst
+available outcome, and the one most likely to reach production.
+
+## Changes to existing files
+
+- `app.js` — delete `validateForm`; delete the hand-written submit listener and
+  its two `getElementById` reads; add `loginSpec` and a single `bindForm` call
+  whose `onValid` calls the existing `login()`. `login()` and `API_ENDPOINT`
+  are unchanged.
+- `index.html` — add `name` attributes to both inputs; add `type="module"` to
+  the script tag.
+- `package.json` — add a `test` script and a `jsdom` devDependency.
+
+No other existing file is modified.
+
+## Testing
+
+Runner: Node's built-in `node:test` with `node:assert`. `npm test` runs
+`node --test`. No lint or formatter configuration is added — this was an
+explicit decision, not an oversight.
+
+**Core** (`test/validate.test.mjs`, `test/rules.test.mjs`) — no DOM:
+
+- each built-in rule, passing and failing
+- first-failing-rule-wins for a field with several rules
+- `matches` reading a sibling field's value
+- a spec key absent from `values` reported by `required`
+- a `values` key absent from the spec ignored
+- custom messages overriding defaults
+- the exact result shape on a clean pass
+
+**Binding layer** (`test/bind-form.test.mjs`) — under `jsdom`, a devDependency:
+
+- messages rendered into an existing `[data-error-for]` element
+- an error element created and inserted after the input when none exists
+- `aria-invalid` and `aria-describedby` set, and cleared on a passing submit
+- focus landing on the first failing field
+- `onValid` not called on failure; called with parsed values on success
+- an error clearing on the field's `input` event
+- `bindForm` throwing when the spec names an absent field
+
+jsdom is test-only; the shipped runtime keeps zero dependencies.
+
+## Alternatives considered
+
+- **Declarative spec + named rule registry** (`{ username: { required: true } }`
+  resolved against `registerRule`). Buys serializable specs. Costs global
+  mutable registry state, indirection between spec and behavior, an awkward
+  path for custom messages, and an escape hatch for cross-field rules that
+  breaks its own data-only premise. Nothing here needs serializable specs.
+- **Chainable schema builder** (`v.string().required().email()`). Best
+  ergonomics, most machinery, and reimplements an existing library. If this is
+  ever wanted, adding Zod beats writing it.
+- **Rules declared in HTML `data-` attributes.** Least JS per form, but rules
+  become runtime-parsed strings, cross-field and conditional rules get awkward,
+  and with the rule set still unknown it is the hardest choice to reverse.
+
+Both rejected alternatives could be built later as a thin layer that emits rule
+functions, so choosing the function-based core forecloses neither.
+
+## Codex approach gate
+
+Preflight returned `ok`, but the installed companion is a stub build
+(`codexVersion: 0.0.0-stub`) and the one-shot consultation returned an empty
+payload. Treated as an incomplete call per the gate's degrade path: this design
+carries no independent Codex approaches.

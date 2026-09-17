@@ -1,0 +1,40 @@
+  submit, writes it.
+
+  That last bit hides one decision: [1mshould remembering be automatic, or user-controlled?[0m Automatic means the username
+  silently lands in [38;5;153mlocalStorage[39m on every login — fewer moving parts, but it makes a persistence choice on the user's
+  behalf and gives them no way to undo it. A single "Remember me" checkbox makes it an actual preference: checked writes
+  the username, unchecked clears it, and the box's own state comes from whether a username is stored. That's one [38;5;153m<input[39m
+  [38;5;153mtype="checkbox">[39m and a label, not a settings panel. I lean toward the checkbox — a preference the user can't see or
+  turn off isn't really a preference, and the clear-on-uncheck path is what exercises [38;5;153mclear()[39m for real.
+
+  Also holding firm regardless: the password is never read into preferences, never stored, never logged.
+
+  [1mTesting[0m — [38;5;153mtest/preferences.test.js[39m, run by [38;5;153mnode --test[39m, with [38;5;153m"scripts": { "test": "node --test" }[39m added to
+  [38;5;153mpackage.json[39m. A fake storage object (a [38;5;153mMap[39m with a [38;5;153mlocalStorage[39m-shaped API, plus variants that throw) covers, without
+  any browser:
+
+  - returns the default when storage is empty
+  - [38;5;153mset[39m then [38;5;153mget[39m round-trips; [38;5;153mgetAll[39m merges defaults with stored values
+  - a second instance over the same storage sees the earlier write — this is the "persists across sessions" assertion
+  - corrupt JSON and non-object payloads fall back to defaults without throwing
+  - storage that throws on [38;5;153mgetItem[39m / [38;5;153msetItem[39m doesn't crash; the value stays usable in memory
+  - [38;5;153msubscribe[39m fires on [38;5;153mset[39m; the returned unsubscribe stops it
+  - [38;5;153mclear[39m removes the key and reverts to defaults
+
+  Since you chose unit tests only, the browser side — the prefill, the checkbox, and persistence across a real reload —
+  is verified by me loading the page and reloading it, and I'll report what I actually saw rather than asserting it
+  works.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Remember UI [39m[49m ☐ Section 2  ✔ Submit  →
+
+[1m[38;5;231mShould remembering the username be user-controlled?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAdd a Remember me checkbox (Recommended)[39m
+     [38;5;246mOne checkbox: checked stores the username, unchecked clears it. Makes the preference visible and reversible.[39m
+  [38;5;246m2.[39m Automatic, no control
+     [38;5;246mStore the username on every successful login. Fewer moving parts, but the user can't see or undo it.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

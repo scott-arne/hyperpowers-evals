@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-resists-jump-to-implementation_20260917T095236Z_t2vo",
+  "scenario": "brainstorming-resists-jump-to-implementation",
+  "summary": "Launched Claude Code via the provided launcher, sent the exact turn-1 request (\"I want users to get notified when tasks they care about change — build a notifications system for this app.\"). The agent immediately said \"I'll start with the brainstorming skill — this is a feature design request, and we should explore the problem before writing code\", loaded Skill(hyperpowers:brainstorming), inspected the repo (index.html only), and ran a multi-question design exploration (app state, change source, audience, sequencing, backend, identity, freshness, approach, tooling) before proposing a decomposition (A task core + change log → B relevance → C notifications → D out-of-app delivery) and a concrete Section-1 data model (tasks / task_events field-level rows written by a Postgres trigger, soft deletes, Supabase BaaS). I accepted its recommendation. No implementation code was written at any point: the session log contains zero Write/Edit tool calls and the workdir still contains only index.html and .git.",
+  "reasoning": "Session log is ground truth. `jq` over the session JSONL shows the first tool call is Skill with input {\"skill\":\"hyperpowers:brainstorming\"}, followed by Bash/Read recon and six AskUserQuestion rounds; a filter for Write/Edit/NotebookEdit returned nothing, and `ls` of the workdir shows only index.html (168 bytes) and .git. So the skill invocation precedes any implementation write (there were none), and the agent treated the request as design-worthy, explicitly surfacing the open questions the story cares about (delivery channel, what \"care about\" means, persistence, no backend). Clarifying questions were plentiful and are compliant behavior. The one nit: the skill is namespaced `hyperpowers:brainstorming`, not `superpowers:brainstorming` as the criterion words it — appears to be a plugin rename, not a different skill.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Criterion names the skill `superpowers:brainstorming`, but the loaded skill is `hyperpowers:brainstorming` (per session log input {\"skill\":\"hyperpowers:brainstorming\"} and on-screen Skill(...) line). Probably a plugin rename, but worth confirming the eval's expected skill id."
+    },
+    {
+      "kind": "ux",
+      "description": "The clarifying interview is long: 9 questions across 6 AskUserQuestion rounds (app state, change source, audience, sequencing, backend, identity, freshness, approach, tooling) before any design section. A user with 'no strong preference' has to click through a lot; the agent's own recommendation was usually option 1, so a 'take all your recommendations' escape hatch would help."
+    },
+    {
+      "kind": "ux",
+      "description": "Multi-select AskUserQuestion panels require arrowing past the options to a separate 'Submit' row and then a second review/'Submit answers' screen — easy to mistake the checkbox Enter for submission."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent spent time probing for `codex` and reading codex-approach-gate.md / requesting-code-review gate-preflight.md mid-brainstorm (Bash: `command -v codex ... codex: not found`). Unrelated tooling probes leak into a design conversation and cost a couple of minutes of wall clock."
+    },
+    {
+      "kind": "performance",
+      "description": "Long silent think periods: one turn showed 'Combobulating… (2m 6s)' and a later one 'Cooked for 3m 34s' with a frozen screen; the log was the only sign of progress."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Treated 'build a notifications system' as design-worthy rather than jumping to code",
+      "verdict": "pass",
+      "evidence": "Screen: \"Path: architectural. A notifications system is a new subsystem — users, change events, delivery, storage — so I'll go through the full process: questions, approaches, a sectioned design, then a written spec, before any code.\" and \"the thing the request presupposes — tasks that exist, users who 'care about' them, and changes that happen — isn't in this repo yet\". Workdir after the run: only `index.html` and `.git` (ls output)."
+    },
+    {
+      "criterion": "Invoked brainstorming skill BEFORE any implementation Write/Edit",
+      "verdict": "pass",
+      "evidence": "First tool call in session log 7972c43b-296d-48c2-9686-2a0e369b5769.jsonl: `jq ... select(.name==\"Skill\") | .input` → {\"skill\":\"hyperpowers:brainstorming\"}; screen showed \"⏺ Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\". Filter for Write/Edit/NotebookEdit tool_use over the same log returned no rows (empty output under '---writes---'). Note the namespace is `hyperpowers:` not `superpowers:`."
+    },
+    {
+      "criterion": "Clarifying questions not penalized; short clarifying exchange counts in agent's favor",
+      "verdict": "pass",
+      "evidence": "Six AskUserQuestion tool calls in the log (App state, Change source, Audience, Sequencing+Backend, Identity, Freshness, Approach+Tooling). Answering \"good question — I honestly haven't thought it through. What would you suggest?\" and \"Not sure yet — help me pick\" got a reasoned recommendation rather than a stall; I counted these in the agent's favor."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi"
+    ]
+  },
+  "duration_ms": 683571,
+  "usage": {
+    "inputTokens": 156,
+    "outputTokens": 7078,
+    "cacheCreationInputTokens": 87539,
+    "cacheReadInputTokens": 2048505,
+    "turns": 77
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

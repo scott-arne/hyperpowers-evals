@@ -1,0 +1,40 @@
+  stubbed API call) and a tiny Node CommonJS module ([38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m, a [38;5;153mgreet[39m demo). No settings UI, no
+  storage layer, no tests, no dependencies.
+
+  [1mPath: architectural.[0m Preferences storage is a new subsystem this repo has no existing flow for, so I'll work through
+  questions → approaches → a design → a spec at [38;5;153mdocs/hyperpowers/specs/[39m, rather than going straight to code. Say the
+  word if you'd rather I just do the smallest possible thing inline.
+
+  First fork, and it's the one that determines everything else: [1mwhere the preferences live.[0m
+
+  - [1mBrowser-local ([38;5;153mlocalStorage[39m) in the webapp[0m — buys you persistence with zero infrastructure and works with the static
+    page as it exists today. Costs: settings are per-browser/per-device, and anyone on that machine can read and edit
+    them. Moving to server-backed later means writing the API and a migration, but the module's read/write interface can
+    stay the same, so that switch is moderately cheap if I design for it.
+  - [1mServer-backed, keyed by user[0m — buys cross-device persistence and true per-account settings. Costs: there is no
+    server here. [38;5;153mAPI_ENDPOINT[39m is a stub and [38;5;153mlogin()[39m returns a fake success, so this means building or mocking a backend
+    and deciding auth first. Not cheap to reverse into, and it's a much bigger piece of work.
+  - [1mNode-side config file on disk[0m — persistence for the [38;5;153msrc/[39m entry point, not the webapp. Only makes sense if "sessions"
+    means CLI runs, not browser visits.
+
+  I recommend browser-local [38;5;153mlocalStorage[39m, behind a small preferences module with a narrow interface ([38;5;153mget[39m / [38;5;153mset[39m /
+  [38;5;153msubscribe[39m), so the storage backend is swappable later without touching callers. It matches the one real app surface
+  that exists and doesn't require inventing a backend.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Storage [39m[49m
+
+[1m[38;5;231mWhere should user preferences be stored?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser localStorage (Recommended)[39m
+     [38;5;246mPersist in the webapp via localStorage, behind a swappable preferences module. No backend needed; per-device, not [39m
+     [38;5;246mper-account.[39m
+  [38;5;246m2.[39m Server-backed per user
+     [38;5;246mPersist per logged-in user via an API. Cross-device, but requires building/mocking the backend and real auth first.
+[39m  [38;5;246m3.[39m Node config file
+     [38;5;246mPersist settings to a file on disk for the src/ Node entry point. Only if 'sessions' means CLI runs, not browser [39m
+     [38;5;246mvisits.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

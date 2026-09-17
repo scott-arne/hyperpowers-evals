@@ -1,0 +1,40 @@
+  [38;5;153mprojectForRemote[39m enforces three things:
+
+  1. [1mKey allowlist[0m — one declared constant, [38;5;153mREMOTE_CTX_ALLOWLIST[39m, holding names like [38;5;153mevent[39m, [38;5;153mreason[39m, [38;5;153msuccess[39m, [38;5;153mhttpStatus[39m,
+     [38;5;153mdurationMs[39m. Anything else is dropped silently.
+  2. [1mPrimitive-only values[0m — an allowlisted key whose value is an object or array is dropped, not serialized. Otherwise
+     a secret rides to the endpoint nested inside an approved key.
+  3. [1mLength caps[0m — [38;5;153mmsg[39m and each string value truncated (256 chars), so a stray blob can't become an exfiltration
+     channel.
+
+  [38;5;153merr.stack[39m ships, because an error without a stack is nearly useless for production debugging. The residual risk is
+  someone writing [38;5;153mthrow new Error(password)[39m; I'm accepting that and applying the denylist scrub to [38;5;153merr.message[39m as a
+  backstop rather than dropping stacks.
+
+  The [1mconsole path[0m gets [38;5;153mscrubForConsole[39m, a recursive denylist on keys matching
+  [38;5;153m/pass|pwd|token|secret|auth|cookie|session[_-]?key/i[39m, replacing values with [38;5;153m"[redacted]"[39m. It's a backstop, not the
+  boundary — it fails open by design, which is exactly why it isn't what guards the remote path.
+
+  [1mTransport.[0m [38;5;153mconfigureRemote({ endpoint, minLevel: 'warn', flushIntervalMs: 5000, maxBatch: 20 })[39m in the browser
+  adapter, [1moff unless an endpoint is passed[0m — you don't have one yet, so nothing ships until you opt in. Records at or
+  above [38;5;153mminLevel[39m queue in memory and flush as a JSON array on the interval, when the batch fills, and immediately on
+  [38;5;153mfatal[39m. On [38;5;153mpagehide[39m/[38;5;153mvisibilitychange[39m it flushes via [38;5;153mnavigator.sendBeacon[39m, which survives the page unloading; otherwise
+  [38;5;153mfetch(..., { keepalive: true })[39m. The queue is capped at 100 records, dropping oldest, so a dead endpoint can't grow
+  memory without bound. A recursion guard makes transport failures log to console only — a logger that logs its own
+  network errors into its own network queue is an infinite loop.
+
+  The whole transport lives behind a single [38;5;153msetTransport(fn)[39m seam, so pointing this at Sentry later means writing one
+  function, not touching call sites.
+
+  [1mNode gets stdout only[0m — one JSON object per line, no remote sink. Whatever runs the process already collects stdout;
+  duplicating the browser's delivery machinery server-side is work with no buyer.
+
+  Does the redaction boundary and transport look right? Next section is error capture, the actual call-site changes, and
+  a tooling question.
+
+[38;5;246m✻[39m [38;5;246mCooked for 16s · done 3:46 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

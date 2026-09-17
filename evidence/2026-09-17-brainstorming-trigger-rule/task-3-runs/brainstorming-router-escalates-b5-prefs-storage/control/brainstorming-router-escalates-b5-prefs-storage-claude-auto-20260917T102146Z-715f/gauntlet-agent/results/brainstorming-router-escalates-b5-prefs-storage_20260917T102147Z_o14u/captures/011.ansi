@@ -1,0 +1,40 @@
+  [1mMy recommendation: localStorage behind an async interface.[0m The async signature is the one decision here that's
+  genuinely painful to retrofit — it changes every call site — while the adapter seam itself is maybe twenty lines.
+  Given the login flow is explicitly a stub, I read account-scoped preferences as a real eventual direction rather than
+  a hypothetical, and paying the small cost now is cheaper than the later sweep. If you're confident this stays a
+  device-local app, plain synchronous localStorage is the honest simpler answer.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should preferences live, and what should the read interface look like? → localStorage, async API [39m
+     [38;5;246m(Recommended)[39m
+
+[38;5;231m⏺[39m Next: whether the store needs to know [3mwho[0m the preferences belong to.
+
+  [1mThe fork:[0m one preference set per browser, or one per username on that browser? This shows up in the key schema and in
+  the API — a per-user store needs to be told the current identity, which makes it depend on the login flow.
+
+  - [1mSingle set per browser[0m — simplest keys ([38;5;153mpref:<name>[39m), no dependency on auth. Costs: on a shared machine, the second
+    person to log in inherits the first person's settings, and logging out either strips them or leaks them.
+  - [1mNamespaced per username[0m — keys become [38;5;153mpref:<user>:<name>[39m; the store takes the active user (or a [38;5;153mnull[39m/anonymous
+    namespace before login). Costs: a bit more API surface, and you need a rule for what happens to preferences set
+    before login. Buys you a clean mapping onto account-scoped storage later, since the server version is inherently
+    per-user.
+
+  [1mMy recommendation: namespaced per username, with an anonymous namespace before login.[0m Since we picked the adapter seam
+  specifically to keep a server backend open, and server preferences are per-account by nature, a device-local store
+  with no identity would mismatch that on the day you swap adapters. The cost today is one extra parameter.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ User scoping [39m[49m
+
+[1m[38;5;231mShould preferences be scoped per logged-in user, or one set per browser?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mPer-username namespace (Recommended)[39m
+     [38;5;246mKeys namespaced by active user, with an anonymous namespace before login. Matches how an account-scoped backend [39m
+     [38;5;246mwould work later.[39m
+  [38;5;246m2.[39m One set per browser
+     [38;5;246mSimplest keys, no dependency on the login flow. Users sharing a browser share settings.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

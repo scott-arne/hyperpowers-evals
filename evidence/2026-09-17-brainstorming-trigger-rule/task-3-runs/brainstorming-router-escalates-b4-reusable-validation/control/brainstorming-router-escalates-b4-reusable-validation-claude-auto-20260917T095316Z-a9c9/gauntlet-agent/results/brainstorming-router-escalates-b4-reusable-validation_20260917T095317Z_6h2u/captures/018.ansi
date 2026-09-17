@@ -1,0 +1,40 @@
+  [1mOne wrinkle I have to solve for testing.[0m Node decides CommonJS-vs-ESM from [38;5;153mpackage.json[39m. Your root has no [38;5;153m"type"[39m
+  field, so [38;5;153m.js[39m is CommonJS there — which is what [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m rely on with their [38;5;153mrequire[39m. If I add
+  [38;5;153m"type": "module"[39m at the root to make the new modules testable, I break those two files.
+
+  The fix is a two-line [38;5;153msrc/validation/package.json[39m containing [38;5;153m{"type": "module"}[39m. Node honours the nearest
+  [38;5;153mpackage.json[39m, so the validation folder is ESM while the root stays CommonJS, browsers ignore it entirely, and [1mno [0m
+  [1munrelated file is touched[0m. The alternative — rooting the whole project as ESM and renaming those two files to [38;5;153m.cjs[39m —
+  is arguably tidier long-term but drags unrelated files into this change, so I'm not proposing it.
+
+  [1mTest plan[0m — [38;5;153mnode --test[39m, built into Node, no dependency:
+
+  - [38;5;153mrules.test.js[39m — each factory: pass, fail, custom vs. default message, whitespace-only input against [38;5;153mrequired[39m,
+    [38;5;153mmatches[39m reading [38;5;153mallValues[39m.
+  - [38;5;153mvalidate.test.js[39m — clean object; multiple failing fields; first-failure-wins per field; unknown field in values
+    ignored; schema field missing from values treated as empty; empty schema.
+  - [38;5;153mbind-form.test.js[39m — only if we have a DOM (see below).
+
+  The pure modules get real coverage with zero setup. [38;5;153mbind-form[39m is the gap: testing it needs a DOM, and Node has none.
+
+  [1mTooling.[0m The repo has no linter, formatter, test script, or CI — and this is the cheapest moment it will ever be to
+  add them. Below is what I'd set up; tell me which you want.
+
+  My recommendation is the first two: [38;5;153mnode --test[39m wired to [38;5;153mnpm test[39m, plus jsdom as a [1mdev[0mdependency so [38;5;153mbindForm[39m is
+  actually tested. jsdom costs nothing at runtime — the shipped page stays zero-dependency — and without it the DOM
+  layer, which is the half most likely to break, has no automated coverage at all. A formatter I'd take or leave at this
+  size; end-to-end infrastructure I think is overkill for one form and I'd skip it.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which tooling should I set up as part of this change? → node --test + npm test, Add jsdom (devDependency)[39m
+
+[38;5;231m⏺[39m Tooling settled: [38;5;153mnode --test[39m + [38;5;153mnpm test[39m, and jsdom as a devDependency. All three sections approved — writing the spec
+  now.
+
+[38;5;174m✢[39m [38;5;174mEbbing… [38;5;246m(1m 21s · ↓[39m [38;5;246m5.1k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

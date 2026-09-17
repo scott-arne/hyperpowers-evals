@@ -1,0 +1,40 @@
+  over: the outcome you named — tracking who logged in — needs a tracking destination this repo doesn't have, and there
+  is no source for a [38;5;153muserId[39m at the call site. The form collects a username and a password; nothing in the current flow
+  knows a user ID before authentication happens. So this isn't a signature edit with an obvious body; it's a question
+  about where identity comes from. Tell me if you'd rather I treat it as a small change and skip the spec — that's your
+  call to make.
+
+  First question, and it's the one that decides everything downstream.
+
+  [1mThe fork:[0m is [38;5;153muserId[39m an [3minput[0m to login or an [3moutput[0m of it? That determines whether the signature changes at all.
+
+  - [1mServer returns it[0m — [38;5;153mlogin[39m keeps its two parameters; the user ID arrives in the response ([38;5;153m{ success, userId, user }[39m)
+    and flows into tracking from there. Buys correctness: the authoritative ID is a result of authenticating, so nothing
+    has to guess it beforehand. Costs: doesn't literally match "add a parameter." Cheap to change later.
+  - [1mCaller supplies a pre-auth ID[0m — signature becomes [38;5;153mlogin(username, password, userId)[39m, where the ID is a device or
+    session identifier generated in the browser before login. Buys the ability to correlate failed logins and pre-login
+    activity with a user. Costs: needs somewhere to generate and persist that ID across page loads — that's the new
+    structure. Rules out treating the ID as trustworthy identity, since the client makes it up.
+  - [1m[38;5;153muserId[39m is the username[0m — a third parameter that duplicates what's already there, or a rename. Buys almost nothing;
+    costs almost nothing. Cheap to undo.
+
+  [1mMy recommendation: server returns it.[0m Login's whole job is turning credentials into an identity, so the ID is what
+  comes out, not what goes in. If what you actually want is to correlate failed attempts (where no user ID exists yet),
+  the second option is the right one and I'd build the ID generator properly rather than bolting it on.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID source [39m[49m
+
+[1m[38;5;231mWhere does the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer returns it (Recommended)[39m
+     [38;5;246mlogin keeps (username, password); the API response carries the userId. Authoritative identity, no client guessing.[39m
+  [38;5;246m2.[39m Caller supplies pre-auth ID
+     [38;5;246mlogin(username, password, userId) where userId is a browser-generated device/session ID. Needs a generator and [39m
+     [38;5;246mpersistence layer.[39m
+  [38;5;246m3.[39m It's the username
+     [38;5;246muserId is just an alias for the username already being passed. Cosmetic signature change.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

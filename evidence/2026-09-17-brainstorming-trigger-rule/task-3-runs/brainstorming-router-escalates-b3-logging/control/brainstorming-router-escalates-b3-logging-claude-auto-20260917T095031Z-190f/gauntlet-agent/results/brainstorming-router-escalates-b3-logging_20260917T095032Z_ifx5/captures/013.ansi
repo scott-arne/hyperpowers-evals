@@ -1,0 +1,40 @@
+  │ [38;5;153mconsole.error("Validation error:", …)[39m │ [38;5;153mlog.warn("validation_failed", { reason: validation.error })[39m — a fixed   │
+  │  ([38;5;153m:26[39m)                                │ string, not user input                                                  │
+  └───────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────┘
+
+  Plus two additions: the submit handler gets a [38;5;153mtry/catch[39m that routes throws to [38;5;153mlog.error(err, { op: "submit" })[39m, and
+  [38;5;153mlogger.js[39m installs global [38;5;153merror[39m / [38;5;153munhandledrejection[39m handlers so failures outside the handler aren't invisible. When
+  the real [38;5;153mfetch[39m to [38;5;153mAPI_ENDPOINT[39m replaces the stub, Sentry's network breadcrumbs record method, URL, and status — never
+  request bodies — so the eventual login POST won't carry credentials into the vendor.
+
+  One open question for this section.
+
+  The fork is [1mwhether the vendor learns which account hit the error.[0m With user context set, a production report reads
+  "login failed for [38;5;153malice@corp[39m" and you can check that one account; without it, you get "a login failed somewhere" and
+  have to reproduce blind. The cost is that usernames — likely email addresses — become personal data held by Sentry,
+  subject to whatever retention and deletion obligations you have. This is cheap to turn on later and expensive to turn
+  off later, since data already sent has to be purged rather than just stopped.
+
+  I recommend the pseudonymous middle option: hash the username client-side and send the digest. Two reports from the
+  same account visibly match, which is most of the diagnostic value, but the vendor never holds an identifier you'd have
+  to purge.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ User context [39m[49m
+
+[1m[38;5;231mShould Sentry receive an account identifier for correlation?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHashed username (Recommended)[39m
+     [38;5;246mSend a client-side hash digest. Repeat failures from one account correlate; the vendor never holds a real [39m
+     [38;5;246midentifier.[39m
+  [38;5;246m2.[39m Raw username
+     [38;5;246mMaximum debuggability — you can look up the exact account. Makes usernames personal data held by Sentry, with [39m
+     [38;5;246mretention and deletion obligations.[39m
+  [38;5;246m3.[39m No user context at all
+     [38;5;246mNothing identifying leaves the browser. Reports cannot be tied to an account or to each other.[39m
+  [38;5;246m4.[39m Random per-session ID
+     [38;5;246mCorrelates events within one session only. No cross-session pattern, no account linkage.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+  [1mSection 1 — Architecture and modules[0m
+
+  The organizing idea: [1mnotifications are derived, never stored.[0m A notification is not a record the app creates and files
+  away; it's a pure function of (tasks, the current time, what you've already dismissed). That kills a whole class of
+  bugs — a notification log can drift out of sync with the tasks it describes, and reconciling the two is exactly the
+  kind of work that makes notification systems miserable.
+
+  index.html
+    src/clock.js          now() + tick subscription       (injectable; tests never sleep)
+    src/storage.js        localStorage load/save          (the persistence seam)
+    src/tasks.js          task record + CRUD, pure
+    src/notifications.js  computeNotifications(tasks, now, acks) -> Notification[]
+    src/ui/task-list.js   renders tasks, watch toggle
+    src/ui/bell.js        renders bell + badge + panel
+    src/app.js            wiring: state, recompute triggers, render
+
+  [38;5;153mnotifications.js[39m is the deliverable and it has no DOM and no clock of its own — time arrives as an argument. That's
+  what makes the whole engine testable without a browser, and it's why the OS-notification layer can be added later as
+  another consumer of the same output.
+
+  [38;5;153mstorage.js[39m exists as a seam rather than scattered [38;5;153mlocalStorage[39m calls, so the "add a backend later" door you left open
+  stays cheap to walk through.
+
+  [1mTooling[0m — nothing is configured in this repo yet, and it's cheapest to decide now. My recommendation is the first two:
+
+  - [1mESLint + Prettier[0m — standard, catches real mistakes in untyped JS.
+  - [1mVitest[0m — the engine is pure functions; unit tests are the natural fit and give TDD something to bite on.
+  - [1mPlaywright (e2e)[0m — proves the bell actually updates in a browser. Worth it only if you want that guarantee; it's
+    real setup cost for a small app.
+  - [1mFuzz/mutation testing[0m — I'd skip it. The engine's input space is small enough to cover with explicit cases.
+
+  Does this structure look right, and which tooling do you want?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 2m 1s · done 3:38 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

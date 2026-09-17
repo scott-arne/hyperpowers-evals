@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m [1mSection 3 of 4 — Scheduler semantics[0m
+
+  This is the part with actual difficulty, so it gets the most words.
+
+  [1mOne interval, not one timer per task.[0m [38;5;153mscheduler.js[39m runs a single 30-second tick that sweeps all tasks and emits
+  [38;5;153mtask.due[39m for any incomplete task where [38;5;153mnow >= dueAt[39m. The obvious alternative — a [38;5;153msetTimeout[39m per task, armed for
+  exactly its due moment — is worse in three concrete ways: [38;5;153msetTimeout[39m silently misfires immediately past ~24.8 days
+  (int32 overflow), every task edit means cancel-and-rearm bookkeeping, and timers don't survive the tab being
+  suspended. The sweep is O(tasks) over a list that will never exceed a few hundred in a prototype. The cost is being up
+  to 30s late, which for due dates is invisible.
+
+  [1mThe sweep is the only mechanism.[0m It runs on startup, on every tick, on any task mutation (so adding a task that's
+  already overdue fires right away), and on [38;5;153mvisibilitychange[39m when the tab regains focus. Because appending is an upsert
+  on the derived key, all four can race freely and the result is identical. There is no catch-up path, no missed-fire
+  recovery, and no replay logic — closing the laptop for a week and reopening it goes through exactly the same code as a
+  normal tick, and everything that came due lands at once.
+
+  [1mThe clock is injected.[0m [38;5;153mcreateScheduler({ tasks, bus, now })[39m defaults [38;5;153mnow[39m to [38;5;153mDate.now[39m, and tests pass a fake.
+  Comparisons are epoch-millisecond, so DST shifts and manual clock changes need no handling.
+
+  [1mOne storm case, handled in the channel, not the scheduler.[0m Reopening after a long absence can fire twenty events at
+  once. All twenty are real and all twenty belong in the centre. But twenty stacked toasts is a broken UI, so [38;5;153mtoast.js[39m
+  collapses any burst above three into one "20 tasks are now due" banner. That's a presentation rule, which is why it
+  lives in the channel — [38;5;153mscheduler.js[39m stays a pure "what is due" function.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scheduler [39m[49m
+
+[1m[38;5;231mSection 3 — scheduler semantics look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, continue[39m
+     [38;5;246mSingle 30s sweep, injected clock, no catch-up path, burst collapsing in the toast channel.[39m
+  [38;5;246m2.[39m Tighten the tick
+     [38;5;246m30s lateness is too loose — use a shorter interval or a hybrid timer for near-term tasks.[39m
+  [38;5;246m3.[39m Let me push back
+     [38;5;246mSomething about the firing model or the storm handling needs changing.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

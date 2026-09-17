@@ -1,0 +1,40 @@
+  This is the section I flagged earlier; it's the one with consequences past the lines we touch.
+
+  - [38;5;153msessionStorage[39m is origin-scoped and readable by [1many[0m script on the origin. The ID is not a secret, but it is an
+    identifier — an XSS on this page can read it. Acceptable for a non-secret tracking ID; not acceptable if this ever
+    holds a session token. I'd note that constraint in a comment so nobody upgrades this into a token store.
+  - [38;5;153msessionStorage[39m is [1mper-tab[0m. Two tabs means two independent IDs until each logs in. Correct, but surprising if you
+    later reason about it as one-ID-per-user.
+  - [38;5;153mclearUserId()[39m will have no caller — there's no logout in this app. It's the documented clearing contract for when
+    one exists. Say the word and I'll drop it until then.
+  - The password is never logged today and won't be.
+
+  [1m4. Error handling[0m
+
+  [38;5;153msessionStorage[39m throws in some privacy modes rather than returning null. All three functions wrap access in [38;5;153mtry[39m/[38;5;153mcatch[39m:
+  [38;5;153mgetUserId[39m degrades to [38;5;153mnull[39m, [38;5;153msetUserId[39m becomes a no-op after one [38;5;153mconsole.warn[39m. Login must keep working when storage is
+  unavailable — tracking is the thing that degrades, never authentication. A failed login stores nothing.
+
+  [1m5. Testing and tooling[0m
+
+  This project has no tooling at all: [38;5;153mpackage.json[39m has no [38;5;153mscripts[39m and no [38;5;153mdevDependencies[39m, and there are no tests. The
+  identity module has genuinely testable logic — null handling, the storage-throws path, clear-after-set — and it's
+  cheapest to set this up now, before the code exists.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Design [38;5;16m[48;5;153m ☐ Tooling [39m[49m ☐ Logging  ✔ Submit  →
+
+[1m[38;5;231mWhat tooling should we set up alongside this? (cheapest before the code exists)[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mUnit tests[39m
+  [38;5;246mA runner (node:test, zero-dependency) plus a first passing test for identity.js. Recommended — the storage-failure [39m
+  [38;5;246mpaths are exactly what regresses silently.[39m
+  [38;5;246m2.[39m [ ] Lint + format
+  [38;5;246mESLint + Prettier with the stack's standard config, wired into package.json scripts.[39m
+  [38;5;246m3.[39m [ ] Neither for now
+  [38;5;246mShip the change with no test or lint infrastructure; keep the diff to the three files.[39m
+  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+     [1mNext[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

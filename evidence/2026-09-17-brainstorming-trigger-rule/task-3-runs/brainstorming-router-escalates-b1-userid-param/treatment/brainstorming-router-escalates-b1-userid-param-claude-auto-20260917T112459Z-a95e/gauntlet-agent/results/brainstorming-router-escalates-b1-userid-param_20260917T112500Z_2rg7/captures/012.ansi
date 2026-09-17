@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Next question: the origin of the value. This one decides whether [38;5;153mlogin()[39m is receiving an identity or minting one, and
+  they lead to different designs.
+
+  - [1mCaller passes an id it already has[0m — [38;5;153mlogin(username, password, userId)[39m with the submit handler supplying it. This is
+    literally what you asked for, but the handler has nothing to supply: [38;5;153mindex.html[39m collects only username and
+    password, and there's no client state holding an id. We'd have to invent a source, which is the gap that turned this
+    from bounded into architectural in the first place.
+  - [1m[38;5;153mlogin()[39m derives it from the credentials[0m — the id is the username (or a normalized form of it). Honest about the
+    current stub, requires no new input, and "who logged in" is answered exactly. Costs: it's not really a separate id,
+    so if a server later returns a real user id, the stored value's meaning changes.
+  - [1m[38;5;153mlogin()[39m mints a client-side id per login[0m — e.g. [38;5;153mcrypto.randomUUID()[39m, stored alongside the username. Good for "track"
+    in the analytics sense: you can correlate activity within a session. Costs: it identifies a session, not a person,
+    so it can't be matched to a server-side user record.
+  - [1mThe stub returns it, standing in for a server response[0m — [38;5;153mlogin()[39m keeps the parameter as an override, but the id it
+    stores is the one the (future) API hands back. This is where a real app ends up, since the server is what knows the
+    user's id.
+
+  The parameter you asked for survives in all four; what differs is what fills it when nobody passes one.
+
+  My recommendation is the fourth shaped as the second: keep [38;5;153muserId[39m an optional parameter, have the stub produce the
+  username as the id today, and route it through a single module so that when [38;5;153mAPI_ENDPOINT[39m becomes a real call, swapping
+  to a server-issued id is a one-line change in one file. That gets you the parameter, gets "who logged in" persisted,
+  and doesn't bake a guess about ids into every call site.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Id origin [39m[49m
+
+[1m[38;5;231mWhat fills userId when the caller doesn't pass one?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mStub returns username as id (Recommended)[39m
+     [38;5;246mOptional param; login() falls back to the username today, with one swap point for a real server-issued id later.[39m
+  [38;5;246m2.[39m Mint a client-side UUID
+     [38;5;246mlogin() generates crypto.randomUUID() per login. Good for session-level tracking, but can't be matched to a server
+[39m     [38;5;246muser record.[39m
+  [38;5;246m3.[39m Required param, caller must supply
+     [38;5;246mNo fallback. Forces every call site to have a real id — which means deciding now where the handler gets one.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  [1mOS notifications (opt-in).[0m A toggle in that region's header, and clicking it is the [3monly[0m thing that ever calls
+  [38;5;153mNotification.requestPermission()[39m. The adapter surfaces four states and the UI handles each: [38;5;153munsupported[39m (hide the
+  toggle), [38;5;153mdefault[39m (show "Enable desktop reminders"), [38;5;153mgranted[39m (show on/off), [38;5;153mdenied[39m (one line saying the browser blocked
+  it, in-page reminders continue, and never prompt again — we can't).
+
+  Firing is driven by diffing reminder keys between ticks: a key that's newly present fires once. Already-notified keys
+  live in an in-memory [38;5;153mSet[39m, deliberately not persisted — a reload can re-announce a still-overdue task, which is better
+  than a reload silently swallowing it forever.
+
+  [1mFailure handling[0m — these are the ones that actually bite:
+  - [3m[38;5;153mlocalStorage[39m unavailable or over quota[0m (private browsing, disabled storage): the store falls back to in-memory and
+    the app shows one line saying tasks won't persist. Reminders keep working for the session.
+  - [3mCorrupt JSON in a storage key:[0m treat as empty so the app still boots, but [1mcopy the unreadable value aside before [0m
+    [1mwriting over it[0m rather than destroying it. Cheap insurance against a parse bug eating someone's task list.
+  - [3mUnknown future [38;5;153mversion[39m:[0m refuse to overwrite; run read-only with a warning. Otherwise an old tab clobbers a newer
+    schema.
+  - [3m[38;5;153mNotification[39m constructor throws:[0m swallow it, drop the OS layer for the session, in-page continues. The OS layer can
+    never take the app down.
+  - [3mLaptop sleep / clock skew:[0m every tick recomputes from scratch against [38;5;153mnow[39m, so a resumed machine shows correct state
+    on the next tick instead of replaying missed timers.
+
+  [1mTesting[0m — [38;5;153mnode --test[39m, written test-first. Unit coverage on the logic modules: [38;5;153mreminders.js[39m (boundaries at exactly
+  [38;5;153mdueAt[39m and one ms either side, done and null-[38;5;153mdueAt[39m exclusion, overdue superseding soon, dismissal matching, a [38;5;153mdueAt[39m
+  edit re-arming, sort order), [38;5;153mdismissals.js[39m (pruning deleted tasks and stale due dates), [38;5;153mscheduler.js[39m (fake clock plus
+  injected interval: recompute on start, on tick, on task change, and [38;5;153mstop()[39m cleaning up), [38;5;153mstore.js[39m (fake storage
+  object: corrupt JSON, quota throw, version guard).
+
+  [38;5;153mui.js[39m, [38;5;153minpage.js[39m, and [38;5;153mos-notify.js[39m get no unit tests — they're DOM and permission wrappers, and you declined
+  Playwright, so I'll verify them by loading the page manually and report what I checked. I'd rather say that plainly
+  than claim coverage the suite doesn't have.
+
+  Does this look right? If so I'll write the spec to [38;5;153mdocs/hyperpowers/specs/2026-09-17-task-notifications-design.md[39m for
+  you to review before any code.
+
+[38;5;246m✻[39m [38;5;246mChurned for 30s · done 3:49 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

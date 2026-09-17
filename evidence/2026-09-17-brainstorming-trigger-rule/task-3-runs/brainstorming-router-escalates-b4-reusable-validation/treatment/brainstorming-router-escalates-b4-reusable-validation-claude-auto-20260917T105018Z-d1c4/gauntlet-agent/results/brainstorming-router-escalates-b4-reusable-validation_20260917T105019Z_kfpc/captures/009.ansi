@@ -1,0 +1,40 @@
+  still copies the wiring loop and the error-display code — you've made the rules reusable but not the plumbing. [3mRules [0m
+  [3mout:[0m nothing; it's the foundation of B.
+
+  [1mB. Layered — pure core + thin DOM binder.[0m Same [38;5;153mvalidate()[39m core as A, plus [38;5;153mbindValidation(formEl, schema, onValid)[39m on
+  top: it collects values from the form's inputs, calls [38;5;153mvalidate[39m, renders per-field messages, and invokes
+  [38;5;153monValid(values)[39m only when clean. A new form becomes a schema plus a submit handler.
+  [3mBuys:[0m form #2 is genuinely cheap; the core stays pure so the valuable tests need no DOM. [3mCosts:[0m more surface, and the
+  binder layer needs [38;5;153mname[39m attributes added to the inputs (they only have [38;5;153mid[39m today) plus somewhere to render errors — a
+  small [38;5;153mindex.html[39m change. The binder itself is tested against a hand-rolled fake form object, not a real DOM, so its
+  coverage is thinner than the core's. [3mRules out:[0m nothing, but it's the piece you'd have to redo if you later adopt a
+  framework.
+
+  [1mC. HTML-declarative rules.[0m Rules live in markup — [38;5;153mdata-rules="required minLength:8"[39m — and the module scans the form;
+  no JS schema at all.
+  [3mBuys:[0m rules sit next to the field they govern; adding a field is a one-line HTML edit. [3mCosts:[0m rules become strings
+  that need parsing, [38;5;153mpattern[39m regexes are miserable to escape inside an attribute, and nothing is checkable until a DOM
+  exists — which fights the "prove it in tests" scope you picked. [3mRules out:[0m clean unit testing of the rule set.
+
+  [1mI recommend B.[0m You asked for reuse [3macross multiple forms[0m, and A only delivers half of that — the second form would
+  still copy plumbing. B's core is exactly A, so the pure-data tests you care about are identical either way; the binder
+  is the part that makes form #2 actually cheap. C is the wrong shape for a repo where the second form only exists in
+  tests.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB. Layered core + binder (Recommended)[39m
+     [38;5;246mPure validate() core plus a thin bindValidation() DOM layer. Form #2 is a schema plus a handler. Needs name [39m
+     [38;5;246mattributes and an error slot in index.html.[39m
+  [38;5;246m2.[39m A. Pure schema validator only
+     [38;5;246mJust validate(values, schema). Smallest change, zero DOM. Each form keeps writing its own wiring and error display.
+[39m  [38;5;246m3.[39m C. HTML-declarative rules
+     [38;5;246mRules as data-rules attributes on inputs. Rules sit next to fields, but become parsed strings and need a DOM to [39m
+     [38;5;246mtest.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

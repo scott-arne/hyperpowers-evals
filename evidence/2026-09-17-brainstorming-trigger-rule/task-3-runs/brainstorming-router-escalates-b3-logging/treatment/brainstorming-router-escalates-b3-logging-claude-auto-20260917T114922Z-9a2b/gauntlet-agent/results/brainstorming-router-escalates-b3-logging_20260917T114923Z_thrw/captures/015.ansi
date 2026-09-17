@@ -1,0 +1,40 @@
+  ├─────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ [38;5;153mconsole.log("Logging in:", username)[39m    │ [38;5;153mlog.info('login attempt', { username })[39m                    │
+  ├─────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ [38;5;153mconsole.log("Login result:", result)[39m    │ [38;5;153mlog.info('login result', { result })[39m                       │
+  ├─────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ [38;5;153mconsole.error("Validation error:", ...)[39m │ [38;5;153mlog.warn('validation failed', { error: validation.error })[39m │
+  └─────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+
+  Validation failure drops from [38;5;153merror[39m to [38;5;153mwarn[39m — a user leaving a field blank is expected behavior, and if it's logged at
+  [38;5;153merror[39m the real errors stop standing out. I'd also add one [38;5;153mdebug[39m at the top of the submit handler, since a buffer that
+  starts recording at the failure is less useful than one that recorded the approach to it.
+
+  [1mNode ([38;5;153msrc/index.js[39m).[0m [38;5;153mconst log = require('../logger')[39m, and [38;5;153mconsole.log(greet('world'))[39m stays as-is — that's program
+  [3moutput[0m, not a log line, and routing it through the logger would corrupt stdout for anything parsing it. Instead [38;5;153mmain()
+[39m  gets a [38;5;153mlog.debug('main start')[39m. [38;5;153msrc/utils.js[39m is untouched; it has no logging and nothing to add.
+
+  [1mTesting ([38;5;153mtest/logger.test.js[39m, [38;5;153mnode --test[39m).[0m [38;5;153mpackage.json[39m gains [38;5;153m"scripts": { "test": "node --test" }[39m. Coverage targets
+  the logic that carries risk:
+
+  - redaction masks [38;5;153mpassword[39m, [38;5;153mtoken[39m, nested occurrences, and mixed-case keys — and leaves [38;5;153musername[39m intact
+  - redaction survives a circular object and stops at the depth cap
+  - the buffer evicts oldest past capacity and [38;5;153mdump()[39m returns a copy, not the live array
+  - the buffer captures [38;5;153mdebug[39m entries while the console filter is at [38;5;153minfo[39m — the core claim of the design
+  - level filtering: [38;5;153mLOG_LEVEL=warn[39m suppresses [38;5;153minfo[39m at the console
+
+  Browser-only paths (query param, [38;5;153mlocalStorage[39m) are covered by factoring level resolution into a pure function that
+  takes a search string and a storage-like object, so it's testable under Node without a DOM.
+
+  [1mFiles:[0m new [38;5;153mlogger.js[39m, new [38;5;153mtest/logger.test.js[39m; edits to [38;5;153mindex.html[39m, [38;5;153mapp.js[39m, [38;5;153msrc/index.js[39m, [38;5;153mpackage.json[39m. [38;5;153msrc/utils.js[39m
+  and [38;5;153mREADME.md[39m untouched.
+
+  Does section 2 look right? If so, I'll write this up as a spec at [38;5;153mdocs/hyperpowers/specs/2026-09-17-logging-design.md[39m
+  (uncommitted), run a review pass over it, and hand it to you to read before any implementation plan gets written.
+
+[38;5;246m✻[39m [38;5;246mSautéed for 16s · done 4:57 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

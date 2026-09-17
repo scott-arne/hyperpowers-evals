@@ -1,0 +1,40 @@
+
+  This is the decision that matters. Everything else is consequence.
+
+  [1mA. Purely derived.[0m Notifications aren't stored at all. There's one function: [38;5;153mgetNotifications(tasks, now)[39m → the list.
+  "Overdue" is just [38;5;153mdueDate < now && !done[39m. The bell re-computes on load and on a timer.
+
+  [3mBuys:[0m no storage, no sync bugs, no stale records. Self-healing — push a due date out and the notification correctly
+  disappears, with no cleanup code. [3mCosts:[0m no unread state, no dismissal. The bell can only show "3 things are wrong
+  right now," and it says that forever until you fix them. No history.
+
+  [1mB. Stored event log.[0m A detector watches for threshold crossings and appends a durable notification record: [38;5;153m{id, [39m
+  [38;5;153mtaskId, type, createdAt, readAt}[39m. Classic inbox semantics.
+
+  [3mBuys:[0m real read/unread, dismissal, history, and it's the shape a multi-user backend eventually wants. [3mCosts:[0m [1mit has a
+[0m  [1mhole that I think disqualifies it on its own.[0m The detector only runs while the app is open. Close the tab on Friday,
+  open it Monday with three tasks having gone overdue over the weekend — nothing appended those events, because nothing
+  was running. You'd get zero notifications for the exact case you most wanted them. Fixing that means reconciling
+  against derived state on load — at which point you've written approach A anyway, [3mplus[0m a log, [3mplus[0m the code to keep
+  them agreeing. Two sources of truth that can disagree is the bug factory here.
+
+  [1mC. Derived set + stored dismissals.[0m Derive the live notification set from [38;5;153mtasks + now[39m, exactly as in A. Persist only a
+  small set of dismissal keys: [38;5;153m${taskId}:${trigger}:${dueDateISO}[39m.
+
+  [3mBuys:[0m A's self-healing correctness, plus the dismissal and unread behavior that makes a bell usable. The weekend case
+  works, because the set is computed fresh on load and doesn't care what was running. And the composite key does
+  something subtle and right: if you dismiss "due soon" and then [3mpush the due date out[0m, the key changes, so you get
+  notified again for the new deadline — which is what you'd want, and which a plain [38;5;153mnotificationId[39m would get wrong.
+  [3mCosts:[0m dismissals need pruning when tasks are deleted (small), and there's genuinely no history — you can't ask "what
+  was overdue last Tuesday."
+
+  [1mMy recommendation: C.[0m It's barely more code than A and avoids B's correctness hole entirely. It also migrates cleanly
+  to the multi-user world you said you want to keep open: when a server exists, server-pushed events arrive as [3mstored[0m
+  notifications and get merged into the same derived list at render time. The UI and the bell don't change at all — you
+  add a source, not a rewrite. That's the property worth paying for, and C is the only one of the three that has it.
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

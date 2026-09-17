@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should browser logs actually go in production? → Buffer + manual export (Recommended)[39m
+
+[38;5;231m⏺[39m Buffered with manual export — good, that keeps the data on the user's machine until they choose to hand it over.
+
+  That choice makes redaction the load-bearing safety decision, since an exported buffer is a file someone might paste
+  into a ticket or email. Concretely: today [38;5;153mapp.js[39m logs [38;5;153musername[39m on every attempt, and [38;5;153mpassword[39m is sitting right next to
+  it in the same scope.
+
+  A key-based denylist (redact anything named [38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mauth[39m, [38;5;153mcookie[39m, plus a scan for obvious
+  secret-shaped values) is the pragmatic standard and catches every realistic case in a codebase this size, but it's
+  leaky by construction — a field named [38;5;153mpw[39m or a password nested inside an object under a benign key gets through. An
+  allowlist inverts that: nothing is logged unless the field is explicitly registered as safe, so it fails closed, but
+  every new log call site needs a field declared, and in practice that friction pushes people toward logging
+  interpolated strings instead, which defeats structured logging entirely. Strings-only sidesteps the whole mechanism
+  but moves the entire burden to each call site, which is the status quo that got [38;5;153musername[39m logged in the first place.
+
+  This one is cheap to tighten later and expensive to loosen, so erring strict costs little.
+
+  My recommendation is the denylist, plus a hard structural rule that the logger never accepts a password value at all —
+  the login call site passes a redacted payload, not the raw form data.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mHow strict should redaction be?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mKey denylist + never-log-password (Recommended)[39m
+     [38;5;246mRedact known-sensitive key names and secret-shaped values; login call site never hands the logger a raw password. [39m
+     [38;5;246mPragmatic, covers realistic cases, leaky at the edges.[39m
+  [38;5;246m2.[39m Allowlist only
+     [38;5;246mNothing is logged unless the field is explicitly registered safe. Fails closed, strongest guarantee, adds friction
+[39m     [38;5;246mto every new log call.[39m
+  [38;5;246m3.[39m No redaction layer
+     [38;5;246mLogger takes strings; call sites are responsible for not logging secrets. Simplest code, but that's the current [39m
+     [38;5;246msituation that already leaks username.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

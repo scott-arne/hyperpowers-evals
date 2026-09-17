@@ -1,0 +1,40 @@
+
+  What's here today: a browser page ([38;5;153mindex.html[39m + [38;5;153mapp.js[39m) with a stubbed login form, and a separate Node entry point
+  ([38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m) that just prints a greeting. Those are two unrelated surfaces, and they don't share
+  code.
+
+  [1mThe fork:[0m which surface the preferences belong to decides what "a session" even means and where the bytes land — and
+  that choice is expensive to undo, because it fixes the storage API, the serialization format, and whether there's an
+  async boundary in front of every read.
+
+  - [1mBrowser webapp[0m — preferences live in [38;5;153mlocalStorage[39m, keyed per-origin. A "session" is a browser tab; persistence
+    survives reload and close. Synchronous reads, no I/O errors to speak of, but the data is per-device and per-browser,
+    and a user on a second machine starts fresh.
+  - [1mNode CLI[0m — preferences live in a JSON file on disk (e.g. [38;5;153m~/.config/<app>/preferences.json[39m). A "session" is a process
+    run. Real filesystem errors to handle (missing file, bad JSON, partial write), and reads become async or explicitly
+    sync.
+  - [1mBoth, shared core[0m — one [38;5;153mPreferences[39m module with a pluggable storage backend; the browser and Node each supply an
+    adapter. Buys reuse and one schema, costs an extra indirection layer and forces the async-friendliest API on both
+    callers. This is the only option that is [3mcheap to adopt later[0m if you start with one surface and keep the store's
+    interface narrow — so picking one surface now doesn't lock you out of it.
+
+  My recommendation is the [1mbrowser webapp[0m. It's the only surface here with an actual user sitting in front of it, the
+  login form is the natural anchor for a "remember me" / theme-style preference, and [38;5;153mlocalStorage[39m keeps the first
+  version free of I/O error handling. If the Node side is the real target, that changes the design substantially, so I'd
+  rather ask than guess.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Surface [39m[49m
+
+[1m[38;5;231mWhich surface should the preferences storage serve?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser webapp (Recommended)[39m
+     [38;5;246mPreferences for index.html + app.js, persisted in localStorage. Per-device, synchronous, no I/O error handling.[39m
+  [38;5;246m2.[39m Node CLI (src/)
+     [38;5;246mPreferences for src/index.js, persisted as a JSON file on disk. Needs real filesystem error handling.[39m
+  [38;5;246m3.[39m Both, shared core
+     [38;5;246mOne Preferences module with pluggable browser/Node storage adapters. More reuse, more indirection.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

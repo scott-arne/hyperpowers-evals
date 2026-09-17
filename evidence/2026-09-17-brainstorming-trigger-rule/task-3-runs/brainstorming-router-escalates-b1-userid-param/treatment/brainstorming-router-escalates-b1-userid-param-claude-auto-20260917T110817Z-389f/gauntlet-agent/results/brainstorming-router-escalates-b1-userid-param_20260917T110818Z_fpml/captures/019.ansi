@@ -1,0 +1,40 @@
+    falls back to a module-level variable, so the app degrades to in-memory identity instead of crashing at load.
+
+  [1m5. Testing and tooling[0m
+
+  Node's built-in runner — [38;5;153mnode --test[39m, zero dependencies added, which keeps [38;5;153mpackage.json[39m dependency-free as it is
+  today.
+
+  [38;5;153midentity.js[39m reads [38;5;153mglobalThis.sessionStorage[39m lazily rather than capturing it at import, so tests can install a fake
+  storage object. Tests cover: set/get round trip, [38;5;153mgetUserId()[39m with nothing stored returns [38;5;153mnull[39m, [38;5;153mclearUserId[39m removes,
+  [38;5;153msetUserId[39m rejects empty and non-string input, the in-memory fallback when storage throws, and [38;5;153mlogin[39m storing the ID on
+  success but not on failure.
+
+  [1mTwo consequences you should okay explicitly[0m
+
+  [1mES modules force a repo-wide module decision.[0m [38;5;153midentity.js[39m can't use [38;5;153mexport[39m in a [38;5;153m.js[39m file unless [38;5;153mpackage.json[39m declares
+  [38;5;153m"type": "module"[39m — and that flag would break [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m, which are CommonJS. So this change has to
+  convert those two files to [38;5;153mimport[39m/[38;5;153mexport[39m as well. It's about three lines and they're unrelated to login; I'm flagging
+  it because it's outside what you asked for. The alternative is renaming them to [38;5;153m.cjs[39m, which I like less.
+
+  [1mYou'll need to serve the page over HTTP.[0m Module scripts don't load from [38;5;153mfile://[39m. [38;5;153mpython3 -m http.server[39m in the repo
+  root is enough.
+
+  [1mSecurity, stated once:[0m [38;5;153msessionStorage[39m is readable by any script on the origin, so this ID is an identifier, not a
+  credential — don't put a session token here under this design. And the server must never accept a client-sent [38;5;153muserId[39m
+  as proof of who someone is; it's a correlation value, and real authorization stays server-side.
+
+  [1mNot in scope:[0m there's no logout control in the UI, so [38;5;153mclearUserId()[39m ships unused by design, ready for when one exists.
+  Tab close clears the ID on its own.
+
+  ---
+
+  Does this look right? If yes, I'll write it up as a spec at [38;5;153mdocs/hyperpowers/specs/2026-09-17-user-identity-design.md[39m
+  (uncommitted), run it through the Codex spec gate, and hand it to you for review before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mCooked for 4m 52s · done 4:18 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

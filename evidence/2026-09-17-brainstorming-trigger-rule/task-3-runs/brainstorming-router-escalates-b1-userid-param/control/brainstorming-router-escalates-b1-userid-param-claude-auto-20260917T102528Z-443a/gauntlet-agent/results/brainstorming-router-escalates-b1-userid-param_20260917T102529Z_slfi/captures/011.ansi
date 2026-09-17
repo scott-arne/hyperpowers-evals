@@ -1,0 +1,40 @@
+[38;5;246m  ⎿  · Does this work include recording login events, or just making the current user available? → Just the session [39m
+     [38;5;246mlayer (Recommended)[39m
+
+[38;5;231m⏺[39m One more structural question, then I'll bring you approaches.
+
+  The codebase has two incompatible module worlds: [38;5;153mapp.js[39m is a plain browser script loaded via [38;5;153m<script src="app.js">[39m
+  with everything as globals, while [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m use CommonJS [38;5;153mrequire[39m/[38;5;153mmodule.exports[39m and [38;5;153mpackage.json[39m
+  declares [38;5;153m"main": "src/index.js"[39m. A session module that "other forms will need later" has to live in one of them, and
+  browsers can't [38;5;153mrequire[39m.
+
+  - [1mES modules for the new code[0m — add [38;5;153mtype="module"[39m to the script tag, write [38;5;153msrc/session.js[39m with [38;5;153mexport[39m, import it from
+    [38;5;153mapp.js[39m. Modern, works natively in browsers, no build step. Costs: [38;5;153mapp.js[39m becomes a module (deferred execution, no
+    more implicit globals), and it sits alongside the existing CommonJS files rather than converting them.
+  - [1mBrowser global[0m — [38;5;153msrc/session.js[39m attaches a [38;5;153mSession[39m object to [38;5;153mwindow[39m, loaded by a second [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m.
+    Zero disruption to anything that exists. Costs: it's a global, load order matters, and it's not importable from the
+    Node side or by tests.
+  - [1mConvert the whole project to ESM[0m — [38;5;153m"type": "module"[39m in [38;5;153mpackage.json[39m, rewrite [38;5;153mutils.js[39m and [38;5;153mindex.js[39m. One consistent
+    world. Costs: touches files unrelated to your request.
+
+  I recommend ES modules for the new code only: it's the direction the [38;5;153msrc/[39m tree would go anyway, it makes the session
+  module unit-testable, and it leaves [38;5;153mutils.js[39m/[38;5;153mindex.js[39m alone — converting them isn't part of what you asked for.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module system [39m[49m
+
+[2m│[0m [1m[38;5;231mapp.js is a browser global script and src/ uses CommonJS. How should the new session module be wired in?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mESM for new code (Recommended)[39m
+     [38;5;246msrc/session.js uses export; app.js becomes <script type="module">. Native, no build step, testable. Leaves the [39m
+     [38;5;246mexisting CommonJS files untouched.[39m
+  [38;5;246m2.[39m Browser global
+     [38;5;246msession.js attaches Session to window, loaded via a second script tag. Zero disruption, but load-order dependent [39m
+     [38;5;246mand not importable or easily testable.[39m
+  [38;5;246m3.[39m Convert whole project to ESM
+     [38;5;246mSet "type": "module" and rewrite utils.js and index.js too. One consistent world, but touches files unrelated to [39m
+     [38;5;246mthis request.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

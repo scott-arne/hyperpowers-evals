@@ -1,0 +1,40 @@
+  and reconstructing it after the fact is impossible.
+
+  [38;5;153mGET /api/events[39m exists now, before any consumer does. It makes the log testable in this cycle and means the
+  notification service starts against an interface that's already proven rather than one invented for it.
+
+  [1mSection 4 — Auth (scope flag)[0m
+
+  Multi-user forces identity, so some auth is unavoidable. My recommendation is the smallest real thing: email +
+  password with argon2id hashing, a [38;5;153msessions[39m table, and an httpOnly signed cookie. Explicitly [1mout[0m: password reset, email
+  verification, OAuth, roles, permissions. Every task is readable and editable by any logged-in user.
+
+  Flagging it because it's the one part of this cycle that isn't really about tasks — it's a prerequisite you're paying
+  for. If you'd rather, I can stub identity behind a dev-only header and keep the seam clean, which cuts real work but
+  leaves the app genuinely insecure and not deployable.
+
+  [1mSection 5 — Errors, testing, tooling[0m
+
+  Store-layer failures throw typed domain errors; [38;5;153mapi/[39m maps them (validation → 400 with the offending field, missing →
+  404, no session → 401). Any throw inside a mutation rolls the transaction back, so a task write landing without its
+  event is not a state the database can reach.
+
+  Tooling, set up before the first feature since it's cheapest now:
+  - [1mBun[0m as runtime, test runner, and SQLite driver — no build step, no separate test framework
+  - [1mTypeScript strict mode[0m
+  - [1mBiome[0m for lint + format, on by default
+  - [1mUnit tests[0m for [38;5;153mdomain/[39m and [38;5;153mstore/[39m against in-memory SQLite; [1mintegration tests[0m for [38;5;153mapi/[39m against a live server
+    instance
+  - Skipping browser e2e and fuzzing at this size
+
+  ---
+
+  Two things to answer, then I'll write the spec:
+
+[38;5;174m✻[39m [38;5;174mBunning… [38;5;246m(44s · ↓[39m [38;5;246m2.1k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

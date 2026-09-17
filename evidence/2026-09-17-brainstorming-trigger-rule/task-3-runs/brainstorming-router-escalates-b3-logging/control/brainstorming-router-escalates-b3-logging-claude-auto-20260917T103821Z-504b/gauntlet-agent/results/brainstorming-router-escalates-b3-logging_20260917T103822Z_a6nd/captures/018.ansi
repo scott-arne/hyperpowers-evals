@@ -1,0 +1,40 @@
+  - [38;5;153mconsole.log("Logging in:", username)[39m → [38;5;153mlogger.info('login attempt', { event: 'login_attempt', username })[39m. The
+    username shows in the console for local debugging and is [1mdropped[0m on the way to the endpoint, because [38;5;153musername[39m isn't
+    allowlisted. This is the mechanism working as intended, not an oversight.
+  - [38;5;153mconsole.log("Login result:", result)[39m → [38;5;153mlogger.info('login completed', { event: 'login_complete', success: [39m
+    [38;5;153mresult.success, username: result.user })[39m — [38;5;153msuccess[39m ships, [38;5;153musername[39m doesn't.
+  - [38;5;153mconsole.error("Validation error:", ...)[39m → [38;5;153mlogger.warn('form validation failed', { event: 'validation_failed', [39m
+    [38;5;153mreason: validation.error })[39m. It's a [38;5;153mwarn[39m, not an [38;5;153merror[39m — a user leaving a field blank is expected behavior, and if
+    invalid input pages your error channel you'll stop reading it.
+  - The submit handler body gets a [38;5;153mtry/catch[39m logging at [38;5;153merror[39m, so a throw inside it becomes a record instead of a silent
+    dead form.
+  - [38;5;153mlogin()[39m keeps receiving the password and still never puts it in a log call. No change beyond the line above — the
+    point is that the allowlist means this is now enforced structurally, not just by care.
+
+  [1mOne thing I'm deliberately not changing:[0m [38;5;153mconsole.log(greet('world'))[39m in [38;5;153msrc/index.js[39m is the program's [3moutput[0m, not a
+  log line. Routing it through the logger would turn [38;5;153mHello, world![39m into a JSON record and break what the program prints.
+  It stays a [38;5;153mconsole.log[39m; I'll add a [38;5;153mlogger.debug('greeting emitted', ...)[39m alongside it instead. Conflating output with
+  logging is a common way this kind of change breaks a CLI.
+
+  [1mTesting.[0m [38;5;153mcore.js[39m is pure, so its tests need no DOM, no network, and no process — which is what makes the allowlist
+  genuinely verifiable. The tests that matter: an unlisted key is dropped; an allowlisted key holding an object is
+  dropped; long strings truncate; the denylist scrub catches nested [38;5;153mpassword[39m; level filtering respects each runtime's
+  config precedence. I'd also assert that a record containing a password in an unlisted field produces remote output
+  with no trace of it — a direct test of the security property rather than of the code shape.
+
+  That brings up tooling, since [38;5;153mpackage.json[39m currently has no dependencies, no scripts, and no test runner. This is the
+  cheapest moment to set any of it up, before code exists.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which tooling should we set up as part of this work? → Unit tests (node:test)[39m
+
+[38;5;231m⏺[39m Unit tests only — that keeps the dependency count at zero and still guards the boundary that matters. Writing the spec
+  now.
+
+[38;5;174m✻[39m [38;5;174mAccomplishing… [38;5;246m(1m 13s · ↓[39m [38;5;246m4.6k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

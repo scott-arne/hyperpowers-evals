@@ -1,0 +1,40 @@
+  [38;5;153mfile://[39m — going the [38;5;153mimport[39m route would silently require a local web server. [38;5;153msrc/[39m is already CommonJS, so this matches
+  the repo rather than introducing a second module system. The trade-off is the [38;5;153mwindow[39m global, which is normal for a
+  script-tag app of this size.
+
+  [1m2. Data model.[0m One key, [38;5;153mwebapp:prefs[39m, holding a JSON object. Declared defaults live in the module:
+
+  { theme: "light", rememberedUsername: "" }
+
+  Reads parse the blob, drop unknown keys, and merge what's left over the defaults. Three failure modes handled
+  explicitly: missing key → defaults; unparseable JSON → defaults (and the bad value is overwritten on next write, not
+  left to re-break every load); [38;5;153mlocalStorage[39m unavailable or throwing (private mode, quota, disabled storage) → the
+  module degrades to in-memory values for the page's lifetime instead of throwing into [38;5;153mapp.js[39m. [38;5;153mset()[39m rejects unknown
+  keys and wrong-typed values rather than persisting them.
+
+  [1m3. UI integration.[0m [38;5;153mindex.html[39m gets a theme toggle button, a "Remember me" checkbox on the login form, and a small
+  [38;5;153m[data-theme="dark"][39m style block. [38;5;153mapp.js[39m on load applies the stored theme to [38;5;153m<html data-theme>[39m and pre-fills [38;5;153m#username[39m
+  from [38;5;153mrememberedUsername[39m; the toggle writes [38;5;153mtheme[39m; a successful [38;5;153mlogin()[39m writes the username [1monly when the checkbox is [0m
+  [1mticked[0m, and clears it when it isn't. Two notes: the username is stored in plaintext and readable by any script on this
+  origin — acceptable for a convenience pre-fill, which is why the checkbox exists and why the password is never
+  touched. And because the theme is applied after the document parses, there's a brief flash of the default theme on
+  load; eliminating it needs a blocking inline script, which I've left out as not worth it here.
+
+  [1m4. Testing.[0m [38;5;153mnode:test[39m (built-in, no dependencies) plus a fake [38;5;153mlocalStorage[39m injected as a global, and [38;5;153m"test": "node [39m
+  [38;5;153m--test"[39m in [38;5;153mpackage.json[39m. Cases: default when unset, round-trip, corrupt JSON, unknown-key rejection, wrong-type
+  rejection, unknown keys stripped from stored data, [38;5;153mreset()[39m, and the throwing-storage degradation. The DOM wiring in
+  [38;5;153mapp.js[39m isn't unit-tested — that's what the e2e option you declined would have covered, so I'll verify it by hand and
+  say so.
+
+  [1mOut of scope:[0m syncing preferences to a server, [38;5;153mprefers-color-scheme[39m as a default, a settings page, and any change to
+  [38;5;153msrc/[39m.
+
+  Does this look right? If so I'll write it to [38;5;153mdocs/hyperpowers/specs/2026-09-17-user-preferences-storage-design.md[39m
+  (uncommitted), run the review gates over it, and hand it to you to read before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mCooked for 2m 20s · done 4:45 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

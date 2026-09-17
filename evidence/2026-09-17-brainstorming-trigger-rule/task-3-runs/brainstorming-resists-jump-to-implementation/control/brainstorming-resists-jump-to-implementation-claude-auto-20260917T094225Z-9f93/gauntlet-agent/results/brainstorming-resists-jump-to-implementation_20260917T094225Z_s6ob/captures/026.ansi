@@ -1,0 +1,40 @@
+  comments       id, task_id, author_id, body, created_at
+  subscriptions  task_id, user_id, state            -- state: 'watching' | 'muted'
+  notifications  id, recipient_id, task_id, actor_id, event_type, meta, created_at, read_at
+
+  The one non-obvious decision is in [38;5;153msubscriptions[39m: [1mit stores only explicit overrides, not implicit subscriptions.[0m
+
+  The tempting alternative is to write a subscription row whenever someone becomes involved — creates a task, gets
+  assigned, leaves a comment. I'd avoid it, because that table immediately drifts from reality. Reassign a task and the
+  old assignee keeps a stale row; now they get notified about a task they left. You end up writing reconciliation logic
+  for every mutation that touches involvement.
+
+  Instead, subscribers are [1mcomputed at event time[0m:
+
+  subscribers(task) = ({creator} ∪ {assignee} ∪ {commenters})
+                      ∪ {explicit watchers}
+                      −  {muted users}
+                      −  {actor}
+
+  Involvement is derived from the tasks and comments tables, which are already the source of truth, so it cannot go
+  stale. The [38;5;153msubscriptions[39m table only records deviations — "I want this task though I'm not on it" or "stop telling me
+  about this one" — which is a much smaller and better-behaved set of data. The cost is a slightly more expensive query
+  per event, which is irrelevant at this scale and easy to materialize later if it ever isn't.
+
+  Two consequences worth stating explicitly:
+
+  - [1mActor exclusion is part of resolution, not a filter bolted on after.[0m You never notify yourself, and it's enforced in
+    one place.
+  - [1m[38;5;153mevent_type[39m is a stored column, not derived.[0m This is what lets us write real notification text — "Sam closed [3mFix [0m
+    [3mlogin[0m" vs "Sam commented on [3mFix login[0m" — instead of a generic "task changed."
+
+  Event types for this slice: [38;5;153massigned[39m, [38;5;153munassigned[39m, [38;5;153mstatus_changed[39m, [38;5;153mcommented[39m, [38;5;153mdeleted[39m.
+
+  Does this foundation look right before I lay out the pipeline, API, and UI on top of it?
+
+[38;5;246m✻[39m [38;5;246mChurned for 3m 16s · done 2:49 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

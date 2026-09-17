@@ -1,0 +1,40 @@
+  is a small change to an existing flow — I'll present a short design in chat rather than write a spec.
+
+  One thing I need from you before I can write it: there's no [38;5;153muserId[39m anywhere in this app. The form collects only
+  [38;5;153musername[39m and [38;5;153mpassword[39m ([38;5;153mindex.html[39m fields [38;5;153m#username[39m/[38;5;153m#password[39m), and [38;5;153mlogin()[39m already logs and returns the username as
+  the identity. So a [38;5;153muserId[39m parameter needs a source, and the options differ in what else has to change:
+
+  - [1mCaller-supplied from a new form field[0m — add a [38;5;153muserId[39m input to [38;5;153mindex.html[39m, read it in the submit handler, pass it
+    through. Buys an explicit, user-provided id; costs a UI change and asks the user to type an id, which is unusual on
+    a login form.
+  - [1mCaller-supplied from client state[0m — the handler derives the id from something already on the client (a
+    stored/session/analytics id) and passes it. No UI change, but there's no such state in the repo today, so we'd be
+    inventing where it comes from.
+  - [1mOptional parameter, default derived inside [38;5;153mlogin()[0m — signature becomes [38;5;153mlogin(username, password, userId = username)[39m.
+    Nothing else must change, existing call keeps working, and callers that have a real id can pass one. Cheap to
+    change later.
+
+  The third is cheap to reverse; the first is the most expensive to undo because it touches the HTML and the user-facing
+  form.
+
+  My recommendation is the third — optional parameter with the username as the default — unless you have an actual id
+  source in mind, in which case the second is right and I need to know where it comes from.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ userId source [39m[49m ☐ Tracking  ✔ Submit  →
+
+[1m[38;5;231mWhere should the userId value come from?[0m
+
+  [38;5;246m1.[39m Optional, defaults to username (Recommended)
+     [38;5;246mlogin(username, password, userId = username). No UI or call-site changes required; callers with a real id can pass
+[39m     [38;5;246mone. Easiest to change later.[39m
+  [38;5;246m2.[39m From client state
+     [38;5;246mHandler reads an existing stored/session/analytics id and passes it. No UI change, but you'll need to tell me where
+[39m     [38;5;246mthat id lives.[39m
+  [38;5;246m3.[39m New form field
+     [38;5;246mAdd a userId input to index.html, read it in the submit handler, pass it to login(). Explicit, but changes the [39m
+     [38;5;246mlogin UI.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

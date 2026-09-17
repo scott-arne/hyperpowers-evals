@@ -1,0 +1,40 @@
+
+  [1mB. Pure core + runtime adapters.[0m [38;5;153msrc/logger/core.js[39m holds only pure functions — build a record, decide if a level
+  passes, scrub for console, project the allowlist for remote — with no I/O and no runtime detection. [38;5;153msrc/logger/node.js
+[39m  and [38;5;153msrc/logger/browser.js[39m are thin: pick a sink, install global handlers, read level config. Each file carries the
+  same small dual-mode tail, so the browser loads core then adapter as two ordered script tags and Node just requires
+  the adapter. Trade-off: three files instead of one, and the browser depends on script order. [3mComplexity: moderate.[0m
+
+  [1mC. ES modules everywhere.[0m Same layering as B, but convert the project to ESM — [38;5;153m"type": "module"[39m in [38;5;153mpackage.json[39m,
+  rewrite [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m off [38;5;153mrequire[39m, and change [38;5;153mindex.html[39m to [38;5;153m<script type="module">[39m. Real imports, no
+  globals, no interop tail, and it's the natural base if you later add a bundler or a test runner. Trade-off: it
+  rewrites existing files that have nothing to do with logging, and [38;5;153mtype="module"[39m is fetched under CORS rules, so
+  opening [38;5;153mindex.html[39m via [38;5;153mfile://[39m stops working — you'd need to serve the page. That's a change to how the app is run,
+  not just how it's built. [3mComplexity: moderate, plus a workflow change.[0m
+
+  My recommendation is [1mB[0m. The allowlist redaction boundary is the one piece of this design where a mistake is a
+  disclosure rather than a bug, and isolating it as a pure function makes it exhaustively testable with no DOM, no
+  network, and no process — which is exactly what you want guarding that boundary. B also leaves [38;5;153mfile://[39m working and
+  doesn't touch [38;5;153mutils.js[39m or the existing entry point. A is tempting for a repo this small, but it puts the
+  security-critical logic in the same file as the transport, which is where I'd least like it. C's ESM cleanliness is
+  real, but it buys module hygiene at the cost of rewriting unrelated files and changing how you open the page — worth
+  doing when you adopt a bundler, not as a side effect of adding logging.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Structure [39m[49m
+
+[1m[38;5;231mWhich structure should the logging subsystem use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mPure core + adapters (Recommended)[39m
+     [38;5;246msrc/logger/{core,node,browser}.js. Redaction and record-building are pure and independently testable; adapters [39m
+     [38;5;246mhandle sinks and global handlers. Keeps file:// working.[39m
+  [38;5;246m2.[39m Single dual-mode file
+     [38;5;246mOne src/logger.js with a UMD-style tail. Fewest moving parts, but security-critical redaction shares a file with [39m
+     [38;5;246mthe transport.[39m
+  [38;5;246m3.[39m ES modules everywhere
+     [38;5;246mConvert the project to ESM, same layering as the core+adapters option. Cleanest imports; rewrites unrelated files [39m
+     [38;5;246mand breaks opening index.html via file://.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

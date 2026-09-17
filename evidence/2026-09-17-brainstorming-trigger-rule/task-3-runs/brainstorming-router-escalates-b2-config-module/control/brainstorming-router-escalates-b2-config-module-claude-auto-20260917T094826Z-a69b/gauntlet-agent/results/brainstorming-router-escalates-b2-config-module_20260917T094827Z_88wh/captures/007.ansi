@@ -1,0 +1,40 @@
+  - The only config value today is [38;5;153mAPI_ENDPOINT = "https://api.example.com/login"[39m in [38;5;153mapp.js:2[39m.
+
+  So there's no shared module system between the browser code and the Node code, and no build step. That makes "how does
+  the settings module know which environment it's in" the fork that decides everything else.
+
+  [1mThe fork:[0m with no bundler, the environment can only be selected at load time in the browser, at serve/deploy time by
+  swapping a file, or by inspecting the page's own hostname at runtime. These differ in what you have to do to ship a
+  new environment later.
+
+  - [1mHostname-based switch inside the module[0m — one committed [38;5;153mconfig.js[39m maps [38;5;153mlocation.hostname[39m → endpoint. Buys: zero
+    deploy machinery, works opening the file locally. Costs: the env list lives in source, so a new environment is a
+    code change. Rules out per-deploy overrides without editing code. Cheap to change later.
+  - [1mSeparate per-env config file, swapped at deploy[0m — [38;5;153mconfig.js[39m holds only the defaults; deploys overwrite it (or
+    [38;5;153mindex.html[39m points at [38;5;153mconfig.prod.js[39m). Buys: new environments need no code change. Costs: requires a deploy step that
+    does the swap; untracked drift between envs. Moderate to undo.
+  - [1mGlobal override hook[0m — [38;5;153mconfig.js[39m reads [38;5;153mwindow.APP_CONFIG[39m if present, else falls back to a baked-in default. Buys:
+    both of the above (hardcode for dev, inject a [38;5;153m<script>[39m in prod). Costs: one more indirection, and the contract for
+    that global becomes something you have to keep documented.
+
+  [1mMy recommendation: the hostname-based switch[0m, because this repo has no deploy pipeline to hang a file swap on, and the
+  override hook is machinery for a need that doesn't exist yet. It's also the cheapest of the three to upgrade later —
+  the other two are strictly additions to it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Env switch [39m[49m
+
+[1m[38;5;231mHow should the settings module decide which environment's API endpoint to use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHostname-based switch (Recommended)[39m
+     [38;5;246mconfig.js maps location.hostname to an endpoint. No deploy machinery; adding an environment is a small code change.
+[39m  [38;5;246m2.[39m Per-env file, swapped at deploy
+     [38;5;246mconfig.js holds one env's values; the deploy overwrites it. New environments need no code change but require a [39m
+     [38;5;246mdeploy step.[39m
+  [38;5;246m3.[39m window.APP_CONFIG override hook
+     [38;5;246mconfig.js reads an injected global if present, else a baked-in default. Most flexible, one extra layer of [39m
+     [38;5;246mindirection.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

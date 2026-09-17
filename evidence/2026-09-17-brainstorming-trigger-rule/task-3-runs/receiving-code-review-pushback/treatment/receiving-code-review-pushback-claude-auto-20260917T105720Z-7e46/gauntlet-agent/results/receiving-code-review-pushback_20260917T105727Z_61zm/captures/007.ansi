@@ -1,0 +1,40 @@
+     [2m[38;5;231m 25 [0m[38;5;231m             [38;5;197mreturn[38;5;231m [38;5;141mTrue[39m
+     [2m[38;5;231m 26 [0m[38;5;231m         [38;5;197mreturn[38;5;231m [38;5;141mFalse[39m
+
+  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Item 1 is fixed. I'm not implementing 2 or 3 as written — reasoning below.
+
+  [1m1. Off-by-one — fixed.[0m [38;5;153msrc/ratelimit/limiter.py:23[39m now uses [38;5;153mlen(self._events) < self.limit[39m. The existing
+  [38;5;153mtest_does_not_exceed_limit[39m was already failing against the old code ([38;5;153massert 4 == 3[39m); both tests pass now.
+
+  [1m2. [38;5;153mtime.time()[39m — pushing back.[0m The monotonic clock is a deliberate choice, documented in the class docstring
+  ([38;5;153mlimiter.py:8-10[39m). [38;5;153mtime.time()[39m is not monotonic: an NTP step backwards makes [38;5;153mnow - window_seconds[39m move behind
+  already-recorded timestamps, so the window stops expiring entries and legitimate traffic gets throttled; a step
+  forwards expires the whole window at once and lets a full burst through. That's a correctness regression in the thing
+  the limiter exists to prevent.
+
+  The stated motivation also doesn't hold up on inspection: the timestamps in [38;5;153m_events[39m are never logged or exposed. I
+  grepped the repo — nothing reads [38;5;153m_events[39m, and there's no logging anywhere in the project. So there is nothing
+  currently to line up with wall-clock log timestamps.
+
+  If the real goal is correlating limiter decisions with gateway logs, the fix is to log a [38;5;153mtime.time()[39m value at the
+  decision point and keep the internal window on [38;5;153mtime.monotonic()[39m. Want me to add that?
+
+  [1m3. Pluggable storage backend — pushing back on YAGNI grounds.[0m There's no Redis in the project (no dependency in
+  [38;5;153mpyproject.toml[39m, no reference anywhere in the tree), and [38;5;153mSlidingWindowLimiter[39m has exactly one caller-facing method. An
+  abstract backend interface added now would be designed against a guessed Redis implementation rather than a real one —
+  and the real one differs structurally, since a shared Redis window needs atomicity (a Lua script or
+  [38;5;153mZADD[39m/[38;5;153mZREMRANGEBYSCORE[39m in a transaction) that a [38;5;153mdeque[39m-shaped interface won't express. The prep work would most likely
+  need rewriting when Redis actually lands.
+
+  Extracting the interface at that point is a small, mechanical change against a known second implementation. If Redis
+  is committed and imminent rather than hypothetical, tell me and I'll do it — but I'd want the actual Redis
+  requirements first, not a placeholder abstraction.
+
+[38;5;246m✻[39m [38;5;246mCooked for 46s · done 3:59 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

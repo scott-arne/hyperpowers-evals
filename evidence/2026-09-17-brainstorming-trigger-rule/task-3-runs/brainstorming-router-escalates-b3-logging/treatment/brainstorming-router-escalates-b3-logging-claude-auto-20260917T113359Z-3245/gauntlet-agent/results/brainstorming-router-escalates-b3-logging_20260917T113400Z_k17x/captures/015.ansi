@@ -1,0 +1,40 @@
+  - [38;5;153mmeta[39m may contain circular references or values that don't serialize. The redactor tracks visited objects and marks a
+    repeat as [38;5;153m[circular][39m rather than recursing forever.
+  - A transport set on [38;5;153mlog.transport[39m is called inside [38;5;153mtry/catch[39m; a throwing transport is disabled after its first
+    failure and reported once at [38;5;153mwarn[39m. A broken log shipper should degrade to local logging, not take down the login
+    form.
+
+  The general rule: every path in the logger either produces a record or produces nothing, and never propagates.
+
+  [1mTesting.[0m This is where the no-build-step constraint bites, so let me be straight about it. The valuable logic — level
+  resolution, deny-list redaction, circular handling, ring-buffer wraparound — is pure and very worth testing. But
+  [38;5;153mlogger.js[39m is a browser global script, so Node can't [38;5;153mrequire[39m it.
+
+  The way out that doesn't cost anything: [38;5;153mnode:test[39m (built into Node, no install) loads [38;5;153mlogger.js[39m with [38;5;153mreadFileSync[39m and
+  evaluates it in a [38;5;153mnode:vm[39m context holding fake [38;5;153mwindow[39m, [38;5;153mlocalStorage[39m, and [38;5;153mconsole[39m objects. Assertions run against the
+  fake console and the returned buffer. Zero dependencies, no build step, and it tests the real file rather than a copy.
+  The DOM wiring in [38;5;153mapp.js[39m stays unit-untested — that part I'd verify by opening the page.
+
+  Since this repo has no tooling configured at all, that's a choice for you rather than an assumption for me:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhich tooling should I set up alongside the logger? (Cheapest to add now, before there's code to retrofit.)[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Unit tests via node:test + vm (Recommended)
+  [38;5;246mBuilt-in Node test runner, zero dependencies. Covers level resolution, redaction, circular refs, buffer wraparound. [39m
+  [38;5;246mAdds a test script to package.json.[39m
+  [38;5;246m2.[39m [ ] Linting + formatting
+  [38;5;246mThe stack standard is eslint + prettier, which would be this repo's first devDependencies. Says no to the current [39m
+  [38;5;246mzero-dependency state.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+  [38;5;246mDrive the real page in a headless browser (Playwright). Would catch the DOM wiring that unit tests miss, but it is a [39m
+  [38;5;246mheavy dependency for one login form.[39m
+  [38;5;246m4.[39m [ ] None, verify manually
+  [38;5;246mNo test infrastructure. I open the page, exercise the form, and report what I saw.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+[38;5;153m❯[39m    [1m[38;5;153mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  Structured logs that only reach the user's own devtools console won't help you debug a production issue you didn't
+  witness, so this choice decides whether the subsystem is "better console output" or "log delivery."
+
+  - [1mConsole-only, structured[0m — a [38;5;153mlogger[39m module with levels, timestamps, and context fields; browser writes to [38;5;153mconsole.*[39m,
+    Node writes JSON to stdout. Buys you consistency and log discipline cheaply, with zero dependencies and nothing to
+    operate. Costs you: browser-side production issues remain invisible unless a user copies their console. Cheap to
+    change later — adding a remote sink on top of a logger interface is additive.
+  - [1mConsole + pluggable remote sink[0m — same logger interface, plus a transport seam. Browser batches warn/error (and
+    optionally everything) to an HTTP endpoint; Node keeps stdout. Buys you actual production visibility. Costs: you
+    need an endpoint to receive them, plus batching, failure handling, and a decision about PII. Hardest part to change
+    later is the wire format.
+  - [1mThird-party service[0m (Sentry, LogRocket, Datadog RUM) — buys you mature error capture, stack traces, and session
+    replay for near-zero build effort. Costs a dependency, a vendor, and sending user data off-site. Rules out little,
+    but it's the one that most constrains the design to the vendor's model.
+
+  My recommendation: [1mconsole + pluggable remote sink[0m, built so the sink is optional and defaults to off. It's the only
+  option that actually meets "debug production issues" for the browser, and designing the transport as a seam means you
+  can point it at your own endpoint now and swap in Sentry later without touching call sites.
+
+  One thing I'll flag regardless of your answer: [38;5;153mlogin()[39m currently logs the username on every attempt and receives a
+  password in the same call. Any logging design here needs an explicit rule about redaction before we ship logs anywhere
+  off the user's machine.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Log sink [39m[49m
+
+[1m[38;5;231mWhere should logs end up in production?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mConsole + remote sink (Recommended)[39m
+     [38;5;246mShared logger interface; browser can ship warn/error to an HTTP endpoint, Node writes JSON to stdout. Sink [39m
+     [38;5;246moptional, off by default, swappable later.[39m
+  [38;5;246m2.[39m Console-only, structured
+     [38;5;246mLevels, timestamps, context fields, consistent shape. No delivery mechanism — browser production issues stay [39m
+     [38;5;246minvisible unless reported by hand.[39m
+  [38;5;246m3.[39m Third-party service
+     [38;5;246mSentry / LogRocket / Datadog RUM. Fast, mature, but adds a vendor dependency and sends user data off-site.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

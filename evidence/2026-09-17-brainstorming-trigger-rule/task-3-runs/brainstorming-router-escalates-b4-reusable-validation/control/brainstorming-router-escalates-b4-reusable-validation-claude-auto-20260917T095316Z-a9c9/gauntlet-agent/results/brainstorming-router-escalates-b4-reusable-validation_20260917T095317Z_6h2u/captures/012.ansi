@@ -1,0 +1,40 @@
+    → harvest { name: value } from formEl.elements
+    → validate(values, schema) → { valid, errors }
+    → clear all previous error state for this form
+    → if errors: render each message, set aria state, focus the first invalid control
+    → if valid: onValid(values)
+
+  Focusing the first invalid control is deliberate: it's the one behaviour that keeps a long form usable, and it belongs
+  in the shared layer rather than in each caller.
+
+  [1mMigrating the login form.[0m [38;5;153mapp.js[39m becomes:
+
+  [34mimport[39m { required, minLength } [34mfrom[39m [31m"./src/validation/rules.js"[39m;
+  [34mimport[39m { bindForm } [34mfrom[39m [31m"./src/validation/bind-form.js"[39m;
+
+  [34mconst[39m loginSchema = {
+    [36musername[39m: [[33mrequired[39m([31m"Username is required"[39m)],
+    [36mpassword[39m: [[33mrequired[39m([31m"Password is required"[39m), [33mminLength[39m([32m8[39m)],
+  };
+
+  [33mbindForm[39m(document.[33mgetElementById[39m([31m"login-form"[39m), loginSchema, [33m([39m{ username, password }) => {
+    console.[33mlog[39m([31m"Login result:"[39m, [33mlogin[39m(username, password));
+  });
+
+  [38;5;153mvalidateForm[39m is deleted; [38;5;153mlogin[39m and [38;5;153mAPI_ENDPOINT[39m stay exactly as they are. [38;5;153mindex.html[39m gets [38;5;153mtype="module"[39m on the script
+  tag.
+
+  Two consequences I want to name rather than bury. First, [38;5;153mtype="module"[39m means the page [1mmust be served over http://[0m —
+  opening [38;5;153mindex.html[39m by double-clicking it will now fail on CORS. That's inherent to the ES-modules choice you made, and
+  I'll add a one-line [38;5;153mnpx serve[39m-style note to the README. Second, I added [38;5;153mminLength(8)[39m to the password above, which is
+  a behaviour change: today any non-empty password passes. It's a sensible default and it exercises a second rule type,
+  but say the word and I'll keep it at [38;5;153mrequired()[39m only so this change stays purely structural.
+
+  Does the markup convention and the login migration look right?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 16s · done 3:00 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

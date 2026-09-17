@@ -1,0 +1,40 @@
+  Public API:
+
+  [34mconst[39m prefs = [33mcreatePreferences[39m();   [32m// selects the best available adapter[39m
+  prefs.[33msetUser[39m(username);             [32m// null or omitted = anonymous namespace[39m
+  [34mawait[39m prefs.[33mget[39m(name, fallback);     [32m// fallback returned when unset[39m
+  [34mawait[39m prefs.[33mset[39m(name, value);
+  [34mawait[39m prefs.[33mremove[39m(name);
+  [34mawait[39m prefs.[33mall[39m();                   [32m// the whole namespace as a plain object[39m
+  prefs.[33misPersistent[39m();                [32m// false once degraded to memory[39m
+
+  [38;5;153misPersistent()[39m stays synchronous on purpose — it's a property of the environment, not a stored value, and making a UI
+  [38;5;153mawait[39m it to decide whether to show a warning would be noise.
+
+  Storage key is [38;5;153mprefs:anon[39m or [38;5;153mprefs:user:<encodeURIComponent(username)>[39m — the encoding matters because usernames can
+  contain colons and would otherwise collide across namespaces. The document is [38;5;153m{ v: 1, values: { … } }[39m; the version
+  lives in the document rather than the key so a future migration can read old data and upgrade it in place instead of
+  abandoning it. Values are whatever survives [38;5;153mJSON.stringify[39m — [38;5;153mset()[39m rejects [38;5;153mundefined[39m and functions rather than
+  silently writing [38;5;153mnull[39m.
+
+  Two things I want to put in front of you rather than bury:
+
+  [1mAnonymous and logged-in preferences stay separate.[0m I'm not proposing an automatic merge on login — auto-merging means
+  deciding whose value wins on conflict, and there's no evidence yet for either answer. If you later want it, [38;5;153mall()[39m plus
+  [38;5;153mset()[39m makes it a handful of lines in the caller, with the merge policy visible where someone can argue with it.
+
+  [1mA consequence of per-user namespacing worth naming now:[0m this app has no session persistence — [38;5;153mlogin()[39m is a stub that
+  returns an object and nothing survives a reload. So after a refresh the user is anonymous again and sees the anonymous
+  namespace until they log in again, at which point their own preferences reappear. That's coherent, but it means
+  "persists across sessions" holds per [3mlogged-in[0m session, not across reloads, until a real session or remember-me
+  exists. I'd record that as a known limitation rather than try to fix it here, since fixing it properly means auth work
+  well outside this request.
+
+  Does that structure and API look right?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 34s · done 3:28 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

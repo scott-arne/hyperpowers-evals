@@ -1,0 +1,40 @@
+  nothing today and makes versioning harder later. C's validation is worth adding [3minside[0m A the day a preference has a
+  type that can break a caller; paying for it now is speculative. A also doesn't foreclose the others: the
+  [38;5;153mget[39m/[38;5;153mset[39m/[38;5;153msubscribe[39m interface is identical in all three, so the storage layout can change behind it later.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which storage approach should the design use? → A: Versioned JSON blob (Recommended)[39m
+
+[38;5;231m⏺[39m Now the design. Two sections — the module itself, then how the app and tests consume it.
+
+  [1mSection 1: The preferences module[0m
+
+  [1mFile:[0m [38;5;153mpreferences.js[39m at the repo root, alongside [38;5;153mapp.js[39m. ([38;5;153msrc/[39m is the unrelated CommonJS demo code; this feature never
+  touches it.)
+
+  [1mStorage key:[0m [38;5;153mwebapp.prefs.v1[39m — a single JSON object. The [38;5;153mv1[39m is the migration seam: a future shape change writes [38;5;153mv2[39m and
+  reads [38;5;153mv1[39m once to convert.
+
+  [1mInterface:[0m
+
+  [33mcreatePreferences[39m({ storage })   [32m// factory; storage defaults to localStorage[39m
+    .[33mget[39m(key)                      [32m// stored value, else the default, else undefined[39m
+    .[33mgetAll[39m()                      [32m// defaults merged with stored values[39m
+    .[33mset[39m(key, value)               [32m// persist, notify subscribers[39m
+    .[33mclear[39m()                       [32m// remove the key entirely, back to defaults[39m
+    .[33msubscribe[39m(listener)           [32m// returns an unsubscribe function[39m
+
+  Plus a default instance bound to real [38;5;153mlocalStorage[39m, which is what [38;5;153mapp.js[39m imports. The factory exists so tests can
+  inject a fake storage object — that's what makes this testable under [38;5;153mnode --test[39m with no jsdom and no dependencies.
+
+  [1mDefaults:[0m a frozen [38;5;153mDEFAULTS[39m object owned by the module. [38;5;153mget[39m falls back to it, so callers never branch on [38;5;153mundefined[39m or
+  duplicate a default. Starts as [38;5;153m{ rememberedUsername: "" }[39m.
+
+  [1mError handling[0m — the part that matters most, since every one of these is a real browser condition:
+
+  - [38;5;153mlocalStorage[39m missing or throwing on access (Safari private mode, cookies disabled, sandboxed iframe): caught at
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

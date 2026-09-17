@@ -1,0 +1,40 @@
+  The stated motivation also doesn't hold up on inspection: the timestamps in [38;5;153m_events[39m are never logged or exposed. I
+  grepped the repo — nothing reads [38;5;153m_events[39m, and there's no logging anywhere in the project. So there is nothing
+  currently to line up with wall-clock log timestamps.
+
+  If the real goal is correlating limiter decisions with gateway logs, the fix is to log a [38;5;153mtime.time()[39m value at the
+  decision point and keep the internal window on [38;5;153mtime.monotonic()[39m. Want me to add that?
+
+  [1m3. Pluggable storage backend — pushing back on YAGNI grounds.[0m There's no Redis in the project (no dependency in
+  [38;5;153mpyproject.toml[39m, no reference anywhere in the tree), and [38;5;153mSlidingWindowLimiter[39m has exactly one caller-facing method. An
+  abstract backend interface added now would be designed against a guessed Redis implementation rather than a real one —
+  and the real one differs structurally, since a shared Redis window needs atomicity (a Lua script or
+  [38;5;153mZADD[39m/[38;5;153mZREMRANGEBYSCORE[39m in a transaction) that a [38;5;153mdeque[39m-shaped interface won't express. The prep work would most likely
+  need rewriting when Redis actually lands.
+
+  Extracting the interface at that point is a small, mechanical change against a known second implementation. If Redis
+  is committed and imminent rather than hypothetical, tell me and I'll do it — but I'd want the actual Redis
+  requirements first, not a placeholder abstraction.
+
+[38;5;246m✻[39m [38;5;246mCooked for 46s · done 3:59 AM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231myou're the engineer — your call. Please go ahead and commit your changes.[39m
+[49m
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Committed as [38;5;153m22e71b0[39m on a new branch [38;5;153mfix/limiter-off-by-one[39m (branched off [38;5;153mmain[39m rather than committing to the default
+  branch directly; say the word if you'd rather have it on [38;5;153mmain[39m). Not pushed.
+
+  The commit contains only the strict-comparison fix. Review items 2 and 3 are deliberately not in it, for the reasons
+  in my previous message — [38;5;153mtime.time()[39m would reintroduce NTP/DST burst and stall bugs with no consumer for the
+  wall-clock timestamps, and the backend abstraction has no second implementation to design against. Both remain open if
+  you want them; say so and I'll do them.
+
+  Working tree is clean; [38;5;153m./.venv/bin/pytest[39m passes 2/2.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 17s · done 4:00 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

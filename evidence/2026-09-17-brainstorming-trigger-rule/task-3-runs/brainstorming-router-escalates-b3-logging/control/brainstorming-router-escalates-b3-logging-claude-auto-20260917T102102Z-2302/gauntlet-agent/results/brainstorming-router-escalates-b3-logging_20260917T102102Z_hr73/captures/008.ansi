@@ -1,0 +1,40 @@
+  incident? "Debug production issues" for a browser app is the hard case — a user's [38;5;153mconsole.log[39m output is invisible to
+  you unless something ships it off their machine.
+
+  - [1mConsole only (structured).[0m Zero dependencies, no network, no privacy surface. But for the webapp it doesn't actually
+    answer your question — you'd still be asking users to paste their console. Genuinely useful for [38;5;153msrc/[39m if that runs
+    on a box whose stdout you collect.
+  - [1mConsole + pluggable remote sink.[0m Same structured core, plus a sink that buffers records and batch-POSTs them to an
+    endpoint you configure (flushing on [38;5;153mpagehide[39m so you don't lose the crash that matters). This is the one that
+    actually lets you debug production. Costs: you need an endpoint to receive them, and retry/buffering/PII handling
+    become real design surface.
+  - [1mThird-party SDK (Sentry or similar).[0m Best out-of-the-box: stack traces, release tagging, grouping, a UI. Costs a
+    dependency and a vendor in a repo that currently has zero of both, and gives you less control over what leaves the
+    browser.
+
+  What's expensive to change later is the [1mrecord shape[0m and the [1msink interface[0m — everything calls those, and changing the
+  record shape invalidates whatever you've already collected. What's cheap is [3mwhich[0m sinks are switched on. So if the
+  sink interface is right, adding a vendor later is a small change, and starting console-only and adding remote later is
+  also small.
+
+  [1mMy recommendation: console + pluggable remote sink.[0m It's the only option that solves the stated problem, it keeps the
+  repo dependency-free, and putting a vendor SDK behind the same sink interface later stays a one-file change.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mWhere should log records end up?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mConsole + remote sink (Recommended)[39m
+     [38;5;246mStructured core with a sink interface. Console sink always on; batching remote sink enabled in production. No [39m
+     [38;5;246mdependencies. Actually lets you see browser-side failures.[39m
+  [38;5;246m2.[39m Console only, structured
+     [38;5;246mStructured records to console/stdout, no network. Simplest and cheapest, but browser logs stay on the user's [39m
+     [38;5;246mmachine.[39m
+  [38;5;246m3.[39m Third-party SDK (Sentry etc.)
+     [38;5;246mAdopt an error-tracking vendor. Best tooling out of the box; adds the repo's first dependency and sends data to a [39m
+     [38;5;246mthird party.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  /reload-plugins
+  /codex:setup
+
+  Proceeding with my own approaches.
+
+  ---
+
+  [1mApproaches: where change events come from[0m
+
+  This is the fork that decides whether notifications are cheap or a rewrite later.
+
+  [1mA. Event log written inside the task transaction[0m [3m(recommended)[0m
+  Every task mutation writes a row to an [38;5;153mevents[39m table in the same SQLite transaction as the task row itself. The events
+  table is append-only: [38;5;153mid, task_id, actor_id, kind, payload_json, created_at[39m. Notifications in sub-project #4 become a
+  read over this table plus a per-user cursor.
+  [3mTrade-off:[0m a small amount of discipline in sub-project #1 — every write path goes through one function. Buys exact
+  consistency (no task change can exist without its event), a natural audit log, and makes #3 almost free.
+
+  [1mB. Derive changes by diffing snapshots[0m
+  Store task versions or compare old/new on write, computing "what changed" at read time.
+  [3mTrade-off:[0m no upfront discipline, but reconstructing [3mwho[0m changed [3mwhat[0m and [3mwhen[0m gets expensive and lossy. Deletes are
+  especially awkward. I don't recommend it.
+
+  [1mC. Defer entirely — add events in sub-project #3[0m
+  Build plain task CRUD now, retrofit the event log later.
+  [3mTrade-off:[0m fastest to a working task list. But retrofitting means revisiting every write path anyway, and any task
+  history from before the retrofit is permanently missing. The saved effort is borrowed, not avoided.
+
+  I recommend [1mA[0m. The discipline it asks for in #1 is one module and a rule; C pays the same cost later plus a data gap.
+
+  Does that hold, or do you want to push back on any of it? If it holds, I'll present the full design for sub-project #1
+  in sections — data model, API surface, auth/session handling, the write-path module, and testing — and get your
+  sign-off on each before writing anything to [38;5;153mdocs/hyperpowers/specs/[39m.
+
+[38;5;246m✻[39m [38;5;246mCooked for 2m 32s · done 3:31 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

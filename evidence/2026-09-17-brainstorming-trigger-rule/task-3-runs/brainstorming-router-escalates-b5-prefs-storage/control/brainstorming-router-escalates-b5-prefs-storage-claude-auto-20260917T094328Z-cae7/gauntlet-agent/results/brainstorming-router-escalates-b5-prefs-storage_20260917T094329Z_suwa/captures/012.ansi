@@ -1,0 +1,40 @@
+
+  [1mThe password is never stored[0m — not in [38;5;153mlocalStorage[39m, not in the blob, not retained past the submit handler. This isn't
+  just a convention to follow: [38;5;153mDEFAULTS[39m has no password key, and both [38;5;153mget[39m and [38;5;153mset[39m throw on keys absent from [38;5;153mDEFAULTS[39m, so
+  the store [3mstructurally cannot[0m hold one. A future contributor can't quietly add it with a [38;5;153mset[39m call. Worth stating
+  plainly, though: [38;5;153mlocalStorage[39m is readable by any script on the origin, so persisting even a username is a small
+  disclosure on a shared machine. That's the normal tradeoff for "remember me," but it should be a deliberate one rather
+  than a side effect.
+
+  [1mFailure modes[0m, all of which degrade to a working app:
+
+  - [1mStorage unavailable[0m — in private mode or with site data blocked, merely [3mtouching[0m [38;5;153mwindow.localStorage[39m can throw. The
+    factory probes it in a [38;5;153mtry[39m/[38;5;153mcatch[39m at construction and falls back to a [38;5;153mMap[39m-backed in-memory store. The app works
+    identically; preferences just don't survive reload. This falls out of the injectable-storage design for free.
+  - [1mMalformed JSON, or a blob that isn't the right shape[0m — caught, treated as "nothing stored," defaults used. The bad
+    value is left in place rather than eagerly wiped; the next [38;5;153mset[39m overwrites it, and not destroying data we failed to
+    parse is the safer default.
+  - [1mUnknown schema version[0m — a [38;5;153mv[39m higher than the current one means a newer build wrote it, so it's treated as unreadable
+    and defaults apply. We don't guess at a future format. Only [38;5;153mv: 1[39m exists today, so there's no migration code — the
+    design reserves the seam and deliberately leaves it empty.
+  - [1mType mismatch per key[0m — a stored value whose type disagrees with its default is rejected individually and that one
+    key falls back to its default. The rest of the blob still loads.
+  - [1mQuota exceeded on write[0m — caught; the in-memory value still updates so the session stays self-consistent, and [38;5;153mset[39m
+    returns [38;5;153mfalse[39m with a console warning. Callers may ignore the return; the app never throws at the user over a
+    preference.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 2 [39m[49m
+
+[2m│[0m [1m[38;5;231mDoes section 2 look right — the remember-username preference, the no-password rule, and the failure handling?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, continue[39m
+     [38;5;246mWire remember-username + lastUsername, degrade gracefully on every storage failure, never store a password.[39m
+  [38;5;246m2.[39m Use a theme toggle instead
+     [38;5;246mWire a light/dark theme preference as the demo preference instead of remember-username. Needs a little CSS.[39m
+  [38;5;246m3.[39m Keep the stored username on opt-out
+     [38;5;246mSame design, but unchecking the box only clears the flag and leaves lastUsername in storage.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

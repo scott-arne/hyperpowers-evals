@@ -1,0 +1,40 @@
+  Which brings up the second thing that matters, and it's the part with no existing structure.
+
+  [1mThe fork:[0m what "track" means concretely — where a login record goes. Right now the only output in the entire repo is
+  [38;5;153mconsole.log[39m, so anything beyond that is new.
+
+  One constraint worth naming first: [38;5;153mapp.js[39m is a plain browser script loaded via [38;5;153m<script src="app.js">[39m with no bundler
+  and no module system, while [38;5;153msrc/[39m uses CommonJS for Node. They don't currently share code, and there's no path by which
+  they could without adding tooling. So a "tracking module" in the browser means a second [38;5;153m<script>[39m tag and a global,
+  not a [38;5;153mrequire[39m.
+
+  - [1mKeep it at [38;5;153mconsole.log[0m — extend the existing log line to include the userId. Buys honesty: the codebase is a stub
+    that says so in a comment, and this keeps the same fidelity. Costs: "track" doesn't really mean anything yet. Rules
+    out nothing; trivially replaced later.
+  - [1mA small tracking module with one seam[0m — [38;5;153mtracking.js[39m, loaded before [38;5;153mapp.js[39m, exposing something like [38;5;153mtrackLoginEvent({
+[39m    [38;5;153muserId, success, timestamp })[39m that logs today and has a single obvious place to plug in a real sink. Buys a named
+    boundary, so later work changes one function instead of hunting call sites. Costs: a new file, a new script tag, and
+    a global. This is the new structure the request implies.
+  - [1mPOST to a telemetry endpoint[0m — a second endpoint constant alongside [38;5;153mAPI_ENDPOINT[39m, fired after login resolves. Buys
+    actual tracking. Costs: commits to a wire format and an endpoint that doesn't exist, and raises failure handling
+    (what if the tracking call fails but login succeeded?). Hardest to change later.
+
+  [1mMy recommendation: the tracking module with one seam.[0m It's the smallest thing that makes "track who logged in" a real
+  capability rather than a comment, and because everything behind the seam is stubbed, it doesn't commit you to a vendor
+  or a wire format while the rest of the app is still a stub.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Track dest [39m[49m
+
+[1m[38;5;231mWhere should login events actually go?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mTracking module w/ seam (Recommended)[39m
+     [38;5;246mNew tracking.js exposing trackLoginEvent(); logs today, one clear place to add a real sink later.[39m
+  [38;5;246m2.[39m Just console.log
+     [38;5;246mExtend the existing log line with the userId. No new files, matches the stub fidelity of the repo.[39m
+  [38;5;246m3.[39m POST to telemetry endpoint
+     [38;5;246mFire a real request after login resolves. Commits to an endpoint and wire format that don't exist yet.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

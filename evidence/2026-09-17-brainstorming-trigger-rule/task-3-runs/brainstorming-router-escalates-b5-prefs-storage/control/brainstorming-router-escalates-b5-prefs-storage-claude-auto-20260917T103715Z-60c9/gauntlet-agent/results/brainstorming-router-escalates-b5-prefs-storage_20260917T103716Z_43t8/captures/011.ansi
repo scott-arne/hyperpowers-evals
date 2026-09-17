@@ -1,0 +1,40 @@
+  [1mThe preference itself.[0m [38;5;153mrememberUsername[39m needs a way to be turned on, so [38;5;153mindex.html[39m gets a "Remember me" checkbox in
+  the login form. On page load the store is read; if [38;5;153mrememberUsername[39m is set, [38;5;153m#username[39m is prefilled and the checkbox is
+  checked. On successful submit, the store saves the checkbox state and the username — or clears the username when
+  unchecked. [1mThe password is never stored[0m, and there will be a test asserting the serialized blob contains no password
+  field.
+
+  [1mError handling.[0m Every storage access is wrapped. Reading [38;5;153mlocalStorage[39m can [3mthrow[0m outright (private browsing, disabled
+  cookies, sandboxed iframe), not merely return null — so the store catches, falls back to an in-memory backend for the
+  session, and the app keeps working with defaults. Corrupt JSON returns defaults rather than throwing; the bad value is
+  left alone and overwritten on the next save. A quota-exceeded write logs a warning and resolves; a failed preference
+  save must never break login.
+
+  [1mTesting.[0m Node's built-in runner, invoked via a new [38;5;153m"test": "node --test"[39m script. Cases: empty storage yields defaults;
+  save/load round-trips; partial save merges without dropping other keys; corrupt JSON yields defaults; a backend that
+  throws on read yields defaults without crashing; a backend that throws on write doesn't propagate; [38;5;153mclear()[39m restores
+  defaults; unknown stored keys ignored; no password in the blob.
+
+  [1mFiles touched.[0m New: [38;5;153mpreferences.mjs[39m, [38;5;153mtest/preferences.test.mjs[39m. Modified: [38;5;153mapp.js[39m (import, prefill, save), [38;5;153mindex.html[39m
+  ([38;5;153mtype="module"[39m, checkbox), [38;5;153mpackage.json[39m (test script). [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are untouched.
+
+  [1mOne wrinkle worth your attention.[0m I'm using the [38;5;153m.mjs[39m extension rather than adding [38;5;153m"type": "module"[39m to [38;5;153mpackage.json[39m,
+  because that field would break the existing CommonJS [38;5;153mrequire()[39m in [38;5;153msrc/utils.js[39m and [38;5;153msrc/index.js[39m — unrelated code I
+  shouldn't be breaking. [38;5;153m.mjs[39m is slightly unusual-looking; the alternative is converting those two files to [38;5;153m.cjs[39m, which
+  I'd rather not do uninvited.
+
+  [1mNot unit-tested:[0m the [38;5;153mapp.js[39m wiring itself (prefill, submit handler) touches the DOM at import time, so verifying it
+  needs a browser or a DOM library. I'll verify that part by loading the page manually and will say plainly what I
+  checked — I'm not proposing to add jsdom for it unless you want that.
+
+  ---
+
+  Does this look right? Once you confirm, I'll write it up as a spec at
+  [38;5;153mdocs/hyperpowers/specs/2026-09-17-user-preferences-storage-design.md[39m for your review before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mWorked for 2m 20s · done 3:42 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

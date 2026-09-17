@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the settings module decide which environment's API endpoint is active? → Runtime selection [39m
+     [38;5;246m(Recommended)[39m
+
+[38;5;231m⏺[39m Recorded: runtime selection.
+
+  Next fork, and it's forced by the repo having no bundler: [1mhow [38;5;153mapp.js[39m gets hold of the settings module.[0m
+
+  - [1mSecond script tag + global[0m — [38;5;153msettings.js[39m loads before [38;5;153mapp.js[39m in [38;5;153mindex.html[39m and exposes [38;5;153mwindow.AppSettings[39m. Buys you:
+    matches the repo's current zero-tooling style exactly, still opens straight from [38;5;153mfile://[39m, works in any browser.
+    Costs: one more global on [38;5;153mwindow[39m, and load order in [38;5;153mindex.html[39m becomes load-bearing. Trivial to reverse.
+  - [1mES modules[0m — [38;5;153m<script type="module" src="app.js">[39m with [38;5;153mimport { settings } from './settings.js'[39m. Buys you: real
+    imports, no globals, explicit dependencies. Costs: ES modules are blocked by CORS over [38;5;153mfile://[39m, so opening
+    [38;5;153mindex.html[39m by double-clicking stops working — you'd need a local server to run it at all. Module scripts also defer,
+    which is fine here but changes when your [38;5;153maddEventListener[39m runs. Reversible, but it changes how anyone runs the
+    page.
+  - [1mDual export (global + CommonJS)[0m — same file usable by the browser and by [38;5;153msrc/[39m's [38;5;153mrequire[39m. Buys you: one settings
+    source for both halves of the repo. Costs: a conditional-export wrapper, for a Node entry point that currently has
+    nothing to do with the API.
+
+  [1mMy recommendation: second script tag + global.[0m It's the only option that doesn't change how you run the app, and the
+  repo has no dependencies or build step to suggest you want the ES-module path yet. The dual export is speculative —
+  [38;5;153msrc/index.js[39m just prints a greeting.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module format [39m[49m
+
+[1m[38;5;231mHow should app.js consume the new settings module?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mScript tag + global (Recommended)[39m
+     [38;5;246msettings.js loads first in index.html, exposes window.AppSettings. Keeps file:// working, zero tooling.[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246mimport/export with <script type="module">. Cleaner, but requires a local server; file:// stops working.[39m
+  [38;5;246m3.[39m Dual export (browser + CommonJS)
+     [38;5;246mOne settings file usable by both app.js and src/. Extra wrapper for a Node side that doesn't use the endpoint.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

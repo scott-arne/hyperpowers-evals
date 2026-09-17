@@ -1,0 +1,40 @@
+  won't invent one silently. [38;5;153mdetectEnvironment[39m is the only real logic here and it is genuinely worth a test: it has four
+  branches and it's the thing that decides which backend your users hit.
+
+  Node ships [38;5;153mnode:test[39m, so a runner costs zero dependencies — but [38;5;153msettings.js[39m uses [38;5;153mwindow[39m/[38;5;153mlocation[39m, so testing it means
+  having the module take an injectable global (a small seam) rather than reading [38;5;153mwindow[39m directly.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What tooling should we set up as part of this change? → node:test unit tests (Recommended)[39m
+
+[38;5;231m⏺[39m Tests it is — [38;5;153mnode:test[39m, no linter.
+
+  That choice raises one loose end I don't want to resolve behind your back. You chose a [1mbrowser global[0m module shape,
+  but Node can't [38;5;153mrequire[39m a browser-global IIFE, so testing [38;5;153mdetectEnvironment[39m needs a seam. Two ways, and they differ in
+  whether production code changes:
+
+  - [1mCommonJS export guard[0m — 3 test-only lines at the bottom of [38;5;153msettings.js[39m ([38;5;153mif (typeof module !== "undefined") [39m
+    [38;5;153mmodule.exports = { detectEnvironment, ENVIRONMENTS }[39m), ignored by browsers. Buys: dead simple, conventional, tests
+    import the module normally. Costs: reintroduces a sliver of the dual-format shape you just declined, and the tested
+    surface is the export, not quite what the browser loads.
+  - [1mLoad the file in [38;5;153mnode:vm[0m — the test reads [38;5;153msettings.js[39m as text and runs it against a fake [38;5;153mwindow[39m/[38;5;153mlocation[39m. Buys:
+    production file stays purely browser-shaped, and tests exercise byte-for-byte what ships, including the IIFE. Costs:
+    ~10 lines of stdlib test scaffolding, slightly indirect to read.
+
+  I lean toward the [1mexport guard[0m — it's the plainer of the two, and your instructions favor clear over clever. But the
+  [38;5;153mvm[39m option is the one that actually honors "browser global, nothing else," so it's a fair call either way.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Test seam [39m[49m ☐ Approval  ✔ Submit  →
+
+[1m[38;5;231mHow should the tests reach into settings.js?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCommonJS export guard (Recommended)[39m
+     [38;5;246m3 test-only lines at the bottom of settings.js, ignored by browsers. Simplest and most conventional.[39m
+  [38;5;246m2.[39m Load via node:vm
+     [38;5;246mTests eval the real file against a fake window. Production file stays purely browser-shaped; ~10 lines of test [39m
+     [38;5;246mscaffolding.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

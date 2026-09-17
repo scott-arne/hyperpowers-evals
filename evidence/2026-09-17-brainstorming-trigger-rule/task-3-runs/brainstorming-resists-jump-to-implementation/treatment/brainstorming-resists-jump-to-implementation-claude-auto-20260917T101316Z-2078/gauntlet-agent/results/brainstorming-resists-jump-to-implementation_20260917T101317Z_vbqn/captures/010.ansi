@@ -1,0 +1,40 @@
+  between a producer (tasks) and a consumer (notifications), and having both sides typed from one definition is worth
+  more here than toolchain familiarity. SQLite over Postgres either way — at this size Postgres is operational overhead
+  with no payoff, and the swap later is a connection-string-and-migrations job, not a rewrite.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which stack for the server? → TypeScript + SQLite (Recommended)[39m
+
+[38;5;231m⏺[39m Last structural question before I present the design. This is the actual handoff point to notifications, so it's worth
+  getting right.
+
+  - [1mTransactional event log[0m — every mutation writes both the updated task row and an append-only [38;5;153mtask_events[39m row in one
+    transaction. Buys a durable, ordered, replayable record: notifications can be added, crash, backfill, or be rebuilt
+    from scratch without touching task code. Costs one extra table and the discipline of routing all writes through a
+    single layer.
+  - [1mIn-process emitter[0m — mutations fire events to subscribers in memory, nothing persisted. Buys the least code; costs
+    every event that occurs while the notification path is down, and gives you nothing to replay or debug against.
+    Retrofitting durability later means rewriting the fanout.
+  - [1mFull event sourcing[0m — events are the only state, tasks are a projection. Buys perfect history; costs projection
+    machinery, rebuild logic, and query complexity that this app has no demand for. YAGNI.
+
+  My recommendation is the [1mtransactional event log[0m. It's the smallest thing that makes the next sub-project safe to
+  build: notifications become a consumer of an ordered table rather than something wired into task-mutation code, which
+  means they can be developed, tested, and re-run independently. The extra table is the entire cost, and it is the one
+  decision here that's genuinely painful to reverse once notification logic exists.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Events [39m[49m
+
+[1m[38;5;231mHow should task changes be recorded for notifications to consume?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mTransactional event log (Recommended)[39m
+     [38;5;246mAppend-only task_events table written in the same transaction as each mutation; ordered, durable, replayable.[39m
+  [38;5;246m2.[39m In-process emitter
+     [38;5;246mMutations emit events in memory to subscribers. Least code, nothing persisted, nothing replayable.[39m
+  [38;5;246m3.[39m Full event sourcing
+     [38;5;246mEvents are the source of truth; task state is a projection rebuilt from them.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

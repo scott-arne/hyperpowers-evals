@@ -1,0 +1,40 @@
+  [1mSection 2 — Data model and notification lifecycle[0m
+
+  [1mTask record[0m (the shape [38;5;153mnotifications.js[39m reads — the one thing that's expensive to change later):
+
+  { id, title, [36mdone[39m: [34mfalse[39m, [36mdueAt[39m: [34mnull[39m, [36mwatched[39m: [34mfalse[39m, createdAt }
+  [38;5;153mdueAt[39m is epoch ms or [38;5;153mnull[39m. [38;5;153mwatched[39m is your "cares about" flag — explicit, per task, off by default.
+
+  [1mDerived notification[0m (never persisted):
+  { [36mid[39m: [31m`[39m${taskId}:${kind}`, taskId, title, [36mkind[39m: [31m'due-soon'[39m | [31m'overdue'[39m, dueAt }
+
+  [1mThe rules[0m, all inside [38;5;153mcomputeNotifications(tasks, now, acks)[39m:
+  - Ignore any task that is unwatched, done, or has no [38;5;153mdueAt[39m.
+  - [38;5;153mnow >= dueAt[39m → [1moverdue[0m. Otherwise [38;5;153mdueAt - now <= 60min[39m → [1mdue-soon[0m.
+  - At most one notification per task; overdue supersedes due-soon.
+  - Sort by [38;5;153mdueAt[39m ascending. Unread count is just the length.
+
+  [1mDismissal[0m is the only persisted notification state, and it has one subtlety worth calling out: dismissing "due in an
+  hour" must [3mnot[0m swallow the later "overdue" — that's the failure mode that makes people stop trusting a notification
+  bell. Separate ack keys per kind handle it.
+
+  Acks are stored as [38;5;153m{ dismissedAt, dueAtWhenDismissed }[39m, and an ack is ignored if [38;5;153mdueAtWhenDismissed[39m no longer matches
+  the task's current [38;5;153mdueAt[39m. So rescheduling a task automatically re-arms its notifications with no mutation hooks
+  anywhere — the staleness fix stays inside the same pure function rather than leaking into the CRUD layer. Acks for
+  deleted tasks get pruned on save.
+
+  [1mRecompute[0m on three triggers: a 30-second tick, any task mutation, and [38;5;153mvisibilitychange[39m. That last one matters —
+  browsers throttle timers in background tabs to roughly once a minute, so returning to the tab must recompute
+  immediately rather than render a stale badge.
+
+  Known limitation I'd accept rather than solve: two tabs open means last-write-wins on [38;5;153mlocalStorage[39m. Fixing it is the
+  "changes since last visit" feature you already declined.
+
+  Does the model and those rules look right?
+
+[38;5;246m✻[39m [38;5;246mCooked for 24s · done 3:39 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

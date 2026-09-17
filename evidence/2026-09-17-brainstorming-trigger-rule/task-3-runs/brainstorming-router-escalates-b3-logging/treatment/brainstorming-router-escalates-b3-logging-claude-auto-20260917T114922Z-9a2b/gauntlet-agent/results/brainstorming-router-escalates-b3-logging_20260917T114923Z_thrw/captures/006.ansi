@@ -1,0 +1,40 @@
+    [38;5;153musername)[39m
+  - [38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m — a tiny Node CLI ([38;5;153mgreet[39m), also raw [38;5;153mconsole.log[39m
+  - [38;5;153mpackage.json[39m — no dependencies, no test script, no build
+
+  One thing I want to flag up front because it shapes the design rather than being a footnote: "debug production issues"
+  for a [3mbrowser[0m app means logs live on the user's machine unless something ships them somewhere. That's a transport and
+  a privacy decision, not just a formatting one. The Node side has no such problem — stdout is already the collector.
+
+  First question, and it's the one that changes the most downstream.
+
+  [1mThe fork:[0m the two halves of this repo need genuinely different logging, and picking both means building two things,
+  not one.
+
+  - [1mBrowser ([38;5;153mapp.js[39m)[0m — buys you visibility into the failure your users actually hit (validation, login round-trip).
+    Costs a transport decision: buffer in memory and expose on demand, or POST to a collector endpoint. The endpoint
+    choice is expensive to undo later (it's an interface + a privacy surface); the logger API in front of it is cheap to
+    change.
+  - [1mNode ([38;5;153msrc/index.js[39m)[0m — buys you structured stdout that a log aggregator picks up for free. Cheap, no transport, no
+    privacy surface. Also: this is currently a [38;5;153mgreet[39m demo, so there may be no production issue here to debug.
+  - [1mBoth, one shared module[0m — one API, two sinks. Costs the most up front and forces the shared module to be
+    environment-agnostic (no [38;5;153mrequire('fs')[39m, no [38;5;153mdocument[39m).
+
+  [1mMy recommendation: browser only, for now.[0m That's where the real app and the real production failures are, and "both"
+  buys a second sink for a [38;5;153mgreet[39m function. If the Node side grows later, the same module extends to it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[1m[38;5;231mWhich part of the app should the logging cover?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser app only (Recommended)[39m
+     [38;5;246mLogging in app.js — the login form flow. Where the actual production failures are.[39m
+  [38;5;246m2.[39m Both, shared module
+     [38;5;246mOne environment-agnostic logger used by app.js and src/index.js. Most work up front.[39m
+  [38;5;246m3.[39m Node CLI only
+     [38;5;246mStructured stdout logging in src/index.js and src/utils.js. Cheapest, but currently only a greet demo.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

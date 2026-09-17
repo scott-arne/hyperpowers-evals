@@ -1,0 +1,40 @@
+  [3mComplexity:[0m trivial.
+
+  [1mB. Injectable-storage factory with a default instance[0m — the module exports [38;5;153mcreateVisitorIdStore(storage)[39m plus a
+  default [38;5;153mgetVisitorId()[39m already bound to [38;5;153mwindow.localStorage[39m. Call sites look identical to A; tests build a store over
+  an in-memory fake.
+  [3mBuys:[0m the failure modes that actually matter here — storage throwing in private mode, a corrupt or empty stored value,
+  quota errors — become ordinary unit tests with no global patching. Same ergonomics as A for consumers.
+  [3mCosts:[0m about fifteen extra lines and two exported names instead of one.
+  [3mComplexity:[0m trivial-to-moderate.
+
+  [1mC. Explicit bootstrap at app start[0m — [38;5;153minitVisitorId()[39m runs once in the entry script; the ID is then passed down as an
+  argument to anything that needs it.
+  [3mBuys:[0m fully explicit data flow, no hidden module state, trivially testable because it's a pure value.
+  [3mCosts:[0m every future form must be reached by the bootstrap and must thread the value through its call chain — the thing
+  that gets tedious exactly as "other forms will need it later" comes true. Also breaks if a page has a different entry
+  point.
+  [3mComplexity:[0m moderate.
+
+  I recommend [1mB[0m. You picked unit tests, and the only logic worth testing in this module [3mis[0m its behavior when storage
+  misbehaves — B makes that testable directly, while A forces global stubbing for the same coverage and C pushes the
+  burden onto every future call site. A is a defensible YAGNI answer if you'd rather keep it to one exported function.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: injectable factory (Recommended)[39m
+     [38;5;246mcreateVisitorIdStore(storage) plus a default getVisitorId() bound to localStorage. Storage-failure paths are [39m
+     [38;5;246munit-testable without global stubbing; call sites stay simple.[39m
+  [38;5;246m2.[39m A: lazy singleton
+     [38;5;246mOne exported getVisitorId() that touches localStorage directly. Smallest surface, but tests must stub globals to [39m
+     [38;5;246mcover corrupt/unavailable storage.[39m
+  [38;5;246m3.[39m C: explicit bootstrap
+     [38;5;246minitVisitorId() at app start, ID threaded as an argument. No hidden state, but every future form must have it [39m
+     [38;5;246mpassed down.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

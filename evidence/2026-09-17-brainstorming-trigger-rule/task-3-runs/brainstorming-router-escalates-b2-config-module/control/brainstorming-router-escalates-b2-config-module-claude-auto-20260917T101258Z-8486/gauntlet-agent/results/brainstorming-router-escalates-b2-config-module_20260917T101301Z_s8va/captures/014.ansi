@@ -1,0 +1,40 @@
+  directly with any hostname string, no browser required. Costs one extra export over A. [3mComplexity: trivial.[0m
+
+  [1mC. Runtime-fetched [38;5;153msettings.json[39m.[0m Ship a JSON file the module [38;5;153mfetch[39mes at startup, so endpoints change without touching
+  JavaScript. Genuinely decoupled and the only option where a non-developer can flip an endpoint. But it makes settings
+  [3masynchronous[0m — every consumer has to [38;5;153mawait[39m initialization, which is exactly the propagating cost I flagged in
+  question 2, and it adds a network round-trip before the app can do anything. Real overkill for one base URL.
+  [3mComplexity: moderate.[0m
+
+  [1mMy recommendation: B.[0m It's the same shipping code as A plus one exported function, and that function is the difference
+  between environment detection you can verify and environment detection you can only hope is right. I'd take C only if
+  changing endpoints without a code deploy were a stated requirement — you didn't state it, and I'd rather not buy
+  async for it.
+
+  Two details I'd fold into B, flagging them since they're judgment calls rather than things you chose:
+
+  - [1mUnknown hostname → [38;5;153mproduction[0m, per your Q4 answer, but with a [38;5;153mconsole.warn[39m naming the unmatched hostname. Silent
+    fallback to prod is how a typo'd staging host quietly talks to the real API.
+  - [1mA dev override[0m: [38;5;153m?env=staging[39m in the URL wins over hostname detection. This is what makes "easier to change
+    environments" true on a machine where you can't change the hostname. I'd scope it to the query param only and skip
+    [38;5;153mlocalStorage[39m — one mechanism, no hidden persistent state.
+
+  Before I write the design sections, one question that's cheapest to answer now, while there's no code:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Tooling [39m[49m ☐ Hostnames  ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mThis repo has no linter, formatter, or test runner configured. Which should I set up as part of this change?[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Unit tests (Recommended)
+  [38;5;246mA test runner plus a first passing test for resolveEnvironment across local/staging/unknown hostnames. Node's built-in
+[39m  [38;5;246mnode:test needs no dependencies.[39m
+  [38;5;246m2.[39m [ ] Lint + format (Recommended)
+  [38;5;246mESLint + Prettier, or the zero-config Biome. Cheapest to adopt now, before there is a codebase to reformat.[39m
+  [38;5;246m3.[39m [ ] Neither — keep it dependency-free
+  [38;5;246mLeave package.json with zero dependencies. Verification is manual: serve the page and check the console.[39m
+  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+[38;5;153m❯[39m    [1m[38;5;153mNext[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

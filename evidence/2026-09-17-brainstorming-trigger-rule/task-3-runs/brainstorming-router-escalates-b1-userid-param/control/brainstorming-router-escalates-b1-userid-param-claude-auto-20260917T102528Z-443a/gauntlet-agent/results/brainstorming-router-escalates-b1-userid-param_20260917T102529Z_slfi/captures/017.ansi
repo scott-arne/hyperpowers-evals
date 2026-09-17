@@ -1,0 +1,40 @@
+  [1mB. [38;5;153mlogin[39m owns persistence[0m
+  [38;5;153mlogin()[39m writes the user into the store itself as a side effect; callers just [38;5;153mawait login(...)[39m and everything
+  downstream reads the module.
+  [3mTrade-offs:[0m fewer steps at the call site, but [38;5;153mlogin[39m now does two jobs — authenticate [3mand[0m mutate global state — so you
+  can't test authentication without stubbing storage, and any future non-login path to a session (restore, impersonate,
+  test fixture) has to route through a function named [38;5;153mlogin[39m. Rough complexity: trivial.
+
+  [1mC. Observable session with subscriptions[0m
+  Everything in A, plus [38;5;153msubscribe(callback)[39m so later forms react to login and logout instead of reading on demand.
+  [3mTrade-offs:[0m the right shape if UI has to update live when the user changes. Today there is one form and no second
+  consumer, so the subscription machinery would be built against an imagined requirement. Rough complexity: high.
+
+  I recommend [1mA[0m. It's the same public surface C would have, so adding subscriptions later is additive rather than a
+  rewrite — which is exactly why building them now is premature. B's brevity isn't worth welding authentication to
+  storage in the one file you'll most want to test.
+
+  I also need one setup decision. This project has no linter, no formatter, no test runner, and no [38;5;153mscripts[39m block — and a
+  session module with real branching (storage present or not, stored value malformed, user absent) is the first thing
+  here genuinely worth testing. Tooling is cheapest to add before the code exists.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Approach [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mThe project has no linting, formatting, or test infrastructure. What should I set up as part of this work?[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Unit tests (Recommended)
+  [38;5;246mA runner plus a first passing test for the session module's branches. Node's built-in node:test needs no dependencies
+[39m  [38;5;246mand no config.[39m
+  [38;5;246m2.[39m [38;5;114m[✔][39m Lint + format (Recommended)
+  [38;5;246mESLint + Prettier with standard config and a scripts block. Cheap now, keeps the new ESM code consistent with itself.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+  [38;5;246mBrowser-driven test of the actual login flow through the DOM. Highest fidelity, heaviest setup (Playwright or similar)
+[39m  [38;5;246mfor a fixture this size.[39m
+  [38;5;246m4.[39m [ ] None — just the code
+  [38;5;246mSkip all tooling; I write the session module and wire it up, verified by reading and by running it manually.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+[38;5;153m❯[39m    [1m[38;5;153mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  [34mNotification[39m  { id, taskId, [36mdueAt[39m: ISO, [36mfiredAt[39m: ISO, [36mreadAt[39m: ISO|[34mnull[39m, [36mdismissedAt[39m: ISO|[34mnull[39m }
+
+  The important bit is [38;5;153mNotification.id[39m, which is [1mderived, not random[0m: [38;5;153m`${taskId}:${dueAt}`[39m. That single choice does most
+  of the work in this design:
+
+  - [1mFiring is idempotent by construction.[0m Appending is an upsert on that key, so a scheduler tick can run a thousand
+    times and produce one notification. No "have I already fired this?" bookkeeping, no [38;5;153mlastTickAt[39m watermark to keep in
+    sync.
+  - [1mRe-scheduling re-arms correctly.[0m Edit a task's [38;5;153mdueAt[39m and the key changes, so it legitimately fires again at the new
+    time — which is what you'd want, and which a random id or a task-keyed id would both get wrong.
+  - [1mReload reconciliation is free.[0m The notification set is a pure function of [38;5;153m(tasks, now)[39m plus your read/dismiss state.
+    Nothing needs to be replayed.
+
+  [1mPersistence.[0m One key, [38;5;153mtasksapp/v1[39m, holding [38;5;153m{ version, tasks, notifications }[39m. Versioned so a later shape change
+  migrates instead of exploding. Two failure modes handled explicitly, because localStorage has exactly two:
+
+  - [1mCorrupt/unparseable[0m — don't throw away the user's data silently. Copy the raw string to [38;5;153mtasksapp/v1.corrupt[39m, start
+    from empty, and show a one-line banner saying so.
+  - [1mQuota exceeded[0m — drop dismissed notifications oldest-first, retry the write once, and if it still fails, surface the
+    banner and keep running in memory. The app stays usable; it just stops persisting.
+
+  [1mCascades.[0m Completing a task before its [38;5;153mdueAt[39m means it never fires. Completing it after doesn't retract the
+  notification you already got — that happened. Deleting a task dismisses its notifications, since the thing they point
+  at is gone.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Data model [39m[49m
+
+[1m[38;5;231mSection 2 — data model and persistence look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, continue[39m
+     [38;5;246mDerived notification id, single versioned storage key, and the cascade rules are all fine.[39m
+  [38;5;246m2.[39m Keep the overdue event
+     [38;5;246mYou cut task.overdue — I want a second nudge for tasks that blow past their due date.[39m
+  [38;5;246m3.[39m Let me push back
+     [38;5;246mSomething about the model, persistence, or cascade rules needs changing.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

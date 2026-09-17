@@ -1,0 +1,40 @@
+
+  The rule that makes this work: [1m[38;5;153mreminders.js[39m never calls [38;5;153mDate.now()[39m and never touches the DOM.[0m Time arrives as an
+  argument. That's what lets us test "what happens at 4:59pm vs 5:01pm" without waiting or mocking globals.
+
+  [1mData model[0m
+
+  [34mTask[39m = { id, title, dueAt, completedAt, snoozedUntil, createdAt }
+
+  [38;5;153mdueAt[39m, [38;5;153mcompletedAt[39m, [38;5;153msnoozedUntil[39m are ISO-8601 UTC strings or [38;5;153mnull[39m. Stored as [38;5;153m{ schemaVersion: 1, tasks: [...] }[39m under
+  one localStorage key. ISO strings rather than epoch numbers because they're legible when you inspect localStorage in
+  devtools, and JSON-native. Store UTC, render local.
+
+  [1mReminder evaluation[0m
+
+  [38;5;153mevaluate(tasks, now)[39m returns [38;5;153m{ overdue, dueSoon }[39m. A task is skipped if it's completed, has no [38;5;153mdueAt[39m, or has
+  [38;5;153msnoozedUntil > now[39m. Otherwise it's [1moverdue[0m when [38;5;153mdueAt <= now[39m, [1mdueSoon[0m when [38;5;153mdueAt[39m falls within [38;5;153mDUE_SOON_WINDOW[39m (60
+  minutes) after [38;5;153mnow[39m.
+
+  [1mToasts and the tick loop[0m
+
+  [38;5;153mapp.js[39m re-evaluates every 30 seconds, and also immediately on [38;5;153mvisibilitychange[39m so returning to a backgrounded tab
+  refreshes at once instead of waiting out the interval.
+
+  One detail worth calling out, because getting it wrong is the obvious bug: [1mtoasts fire on transition, not on state.[0m A
+  toast appears when a task enters overdue/due-soon having not been there at the previous evaluation. On the very first
+  evaluation after load we [3mseed[0m the set of already-seen tasks and fire nothing — otherwise opening the app with twelve
+  overdue tasks buries you in twelve toasts. Those twelve still show up, in the derived overdue section and badge count;
+  they just don't ambush you.
+
+  Backgrounded tabs throttle timers, so a transition can be detected late. Because each tick evaluates against the real
+  current time, a late tick still yields [3mcorrect[0m state — only delayed. I'll document that rather than pretend otherwise.
+
+  [1mSnooze and dismiss[0m
+
+  A toast offers both. [1mSnooze[0m sets [38;5;153msnoozedUntil = now + 10 min[39m and persists, so the task leaves overdue and comes back
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

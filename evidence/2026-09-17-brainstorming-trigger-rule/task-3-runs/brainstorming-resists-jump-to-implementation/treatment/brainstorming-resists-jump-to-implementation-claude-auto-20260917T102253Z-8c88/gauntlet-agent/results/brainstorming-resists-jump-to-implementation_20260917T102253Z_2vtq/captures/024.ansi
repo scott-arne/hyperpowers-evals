@@ -1,0 +1,40 @@
+  Event        { id, type, taskId, actorId, occurredAt, payload }
+  Subscription { userId, taskId, state: 'followed'|'muted' }   // explicit only
+  Notification { id, userId, eventId, taskId, type, createdAt, readAt|null }
+
+  The one thing worth dwelling on: [1m[38;5;153mSubscription[39m rows exist only for explicit choices.[0m Implicit subscription is [3mderived[0m
+  at fan-out time from the task itself (creator, assignee), never stored. That keeps the store small and — more
+  importantly — means implicit subscription stays correct when a task is reassigned. If we stored implicit rows,
+  reassigning would leave a stale row making the old assignee a permanent subscriber, and we'd need cleanup logic on
+  every assignment change. Deriving it makes that bug unrepresentable.
+
+  The precedence rule, in full, evaluated per candidate user:
+
+  1. [38;5;153mmuted[39m → never notify. Explicit mute beats everything, including being the assignee.
+  2. [38;5;153mfollowed[39m → always notify, even with no relationship to the task.
+  3. No row, and user is creator or assignee → notify.
+  4. Otherwise → don't.
+
+  Then one final filter after precedence: [1mdrop the actor.[0m If you change a task's due date and you're also the assignee,
+  you don't get notified about your own edit. This runs last, so it applies uniformly to followed users too — an
+  explicit follow doesn't make you notify yourself.
+
+  Three edge cases I want to name because they're where this kind of system usually goes wrong:
+
+  - [1mAssignment change[0m notifies a union: the [3mprevious[0m assignee (they're losing it) and the [3mnew[0m assignee (they're gaining
+    it). The previous assignee is no longer derivable from the task after the write, so fan-out must run against the
+    pre-change task state. The domain function takes both [38;5;153mbefore[39m and [38;5;153mafter[39m for this reason.
+  - [1mUnassignment[0m ([38;5;153massigneeId → null[39m) still notifies the previous assignee. It's a change they care about.
+  - [1mDeduplication[0m is per (userId, eventId). A creator who is also the assignee is one notification, not two.
+
+  Notifications are append-only; [38;5;153mreadAt[39m is the only mutable field. No deletion in this slice — an unbounded list is fine
+  at this scale, and adding retention later is a pure addition.
+
+  Does the data model and precedence rule look right?
+
+[38;5;246m✻[39m [38;5;246mChurned for 40s · done 3:30 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

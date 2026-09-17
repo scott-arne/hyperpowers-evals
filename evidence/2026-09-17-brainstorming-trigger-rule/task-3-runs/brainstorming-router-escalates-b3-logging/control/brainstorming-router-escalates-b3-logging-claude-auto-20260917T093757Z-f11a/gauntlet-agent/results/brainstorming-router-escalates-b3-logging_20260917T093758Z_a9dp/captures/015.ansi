@@ -1,0 +1,40 @@
+  lives [3minside[0m the module, which is precisely the coupling the transport seam exists to prevent; it's awkward to test,
+  and the browser still needs a vendor script tag anyway. [3mRules out:[0m clean per-runtime testing, mostly.
+
+  [1mMy recommendation: A.[0m Your stated problem is that errors vanish, and the thing that fixes it is global handlers plus a
+  real sink — both of which are runtime-specific. A puts that specificity in two small adapters and keeps the part
+  worth sharing (levels, event shape, redaction) genuinely shared and testable without a network or a DOM. B is the
+  right answer the day you minify or need browser npm deps; buying the build step before then is cost without return. C
+  wins only if the ESM conversion is somehow off-limits — and for three files this size, it isn't.
+
+  Cheap to change later: level names, event fields, which service. Expensive: B's build step, once deploys depend on it.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which architecture should the design commit to? → A: ESM core + adapters (Recommended)[39m
+     [38;5;246m· This repo has no linting, no tests, and no CI. Which should the design set up alongside the logger? (Cheapest to
+[39m     [38;5;246madd now.) → Unit tests (Recommended)[39m
+
+[38;5;231m⏺[39m Approach A, unit tests only. Here's the design — first half. Flag anything that looks wrong before I continue.
+
+  [1mSection 1: Architecture and components[0m
+
+  Five small files under [38;5;153mlogging/[39m, split so that everything security-relevant or logic-bearing is pure and testable
+  without a DOM, a network, or a process:
+
+  - [1m[38;5;153mlogging/core.js[0m — [38;5;153mcreateLogger({ level, transport, context })[39m returns [38;5;153m{ debug, info, warn, error, child }[39m. Pure: it
+    builds an event, applies the level filter, runs redaction, hands the result to a transport. No globals, no I/O, no
+    knowledge of which runtime it's in.
+  - [1m[38;5;153mlogging/redact.js[0m — the allowlist. Isolated in its own file because it's the piece that keeps a password out of a
+    payload, and it should be readable and tested on its own terms.
+  - [1m[38;5;153mlogging/transport.js[0m — the seam. A transport is just [38;5;153m{ send(event) }[39m. Ships [38;5;153mcreateConsoleTransport()[39m and
+    [38;5;153mmultiTransport([...])[39m for fan-out. This is the file the vendor never gets to cross.
+  - [1m[38;5;153mlogging/browser.js[0m — [38;5;153minitBrowserLogging(config)[39m: installs [38;5;153mwindow.addEventListener('error')[39m and
+    [38;5;153m('unhandledrejection')[39m, wraps the vendor's CDN global in a transport, returns a logger.
+  - [1m[38;5;153mlogging/node.js[0m — [38;5;153minitNodeLogging(config)[39m: installs [38;5;153mprocess.on('uncaughtException')[39m and [38;5;153m('unhandledRejection')[39m,
+    wraps the npm SDK in a transport, returns a logger.
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

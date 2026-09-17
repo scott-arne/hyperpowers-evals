@@ -1,0 +1,40 @@
+
+  the spec. Unknown hostnames will fall back to production rather than failing — that's the safe default for a page
+  served from a host nobody anticipated, though I'll flag it in the design since the opposite choice (fail loudly) is
+  defensible too.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which environments should the settings module define? → local, staging, production (Recommended)[39m
+
+  [38;5;246mRead [1m1[0m[38;5;246m file, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Before the design, one note on gates: I'm [1mskipping the Codex approach gate[0m. It fires when there are ≥2 genuinely
+  different viable architectures still open, and you've now settled that space directly — hostname detection, browser
+  global, base URL. The one alternative I didn't put in front of you is a [1mruntime-fetched [38;5;153mconfig.json[0m (ops edits a JSON
+  file per host; no JS redeploy to repoint an environment), which trades an async startup fetch for that flexibility.
+  Say so if you want that reopened; otherwise I'll proceed.
+
+  ---
+
+  [1mDesign[0m
+
+  [1m1. Architecture and data flow[0m
+
+  A new root-level [38;5;153msettings.js[39m, loaded by [38;5;153mindex.html[39m immediately before [38;5;153mapp.js[39m. It self-executes at load, resolves the
+  current environment once, and publishes a frozen [38;5;153mwindow.AppSettings[39m. By the time [38;5;153mapp.js[39m runs, [38;5;153mAppSettings.apiBaseUrl[39m
+  is populated — no async, no init call, no ordering hazard beyond script order in the HTML.
+
+  Resolution order: [38;5;153mwindow.APP_ENV[39m if it names a known environment → else [38;5;153mlocation.hostname[39m looked up in a hostname map
+  → else the [38;5;153mproduction[39m default.
+
+  [1m2. The settings module[0m
+
+  Two tables and a resolver, wrapped in an IIFE so nothing leaks but [38;5;153mAppSettings[39m:
+
+  [34mvar[39m ENVIRONMENTS = {
+    [36mlocal[39m:      { [36mapiBaseUrl[39m: [31m"http://localhost:3000"[39m },
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

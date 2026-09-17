@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Design, section 1 of 2 — [1mthe module and its interface.[0m
+
+  [1mNew file: [38;5;153msrc/validation.js[0m (ES module, no dependencies)
+
+  A [3mrule[0m is a plain function: [38;5;153m(value) => string | null[39m — an error message, or [38;5;153mnull[39m if the value passes. That's the whole
+  extension point; a form needing something bespoke writes a lambda and never touches this file.
+
+  Shipped rule helpers (only these two — the ones today's code and any plausible next form actually need):
+
+  - [38;5;153mrequired(message?)[39m → fails on [38;5;153mundefined[39m, [38;5;153mnull[39m, and whitespace-only strings. Note this is a deliberate behavior
+    change: today's [38;5;153m!formData.username[39m also treats [38;5;153m"   "[39m as valid; I'd call that a bug and fix it, but flag it since
+    it's a behavior change rather than a pure move.
+  - [38;5;153mminLength(n, message?)[39m → fails when a present value is shorter than [38;5;153mn[39m; treats absent as passing, so [38;5;153mrequired[39m owns
+    absence and the two compose without double-reporting.
+
+  Both take an optional custom message so call sites can phrase errors themselves.
+
+  [1mThe validator:[0m
+
+  [33mvalidate[39m(values, schema) → { [36mvalid[39m: boolean, [36merrors[39m: { [field]: string } }
+
+  [38;5;153mschema[39m maps a field name to an array of rules. Each field stops at its first failing rule, but [3mall[0m fields are checked
+  — so [38;5;153merrors[39m carries one message per bad field, and [38;5;153mvalid[39m is [38;5;153merrors[39m being empty.
+
+  This is the one real shape change from today's [38;5;153m{ valid, error }[39m, which reports a single message for the whole form
+  ("Missing required fields"). Per-field is what makes the module reusable — a form with eight fields can't say anything
+  useful with one string — and it's why I'd rather change it now, before anything else depends on the old shape.
+  Login's console output gets slightly more specific as a side effect.
+
+  [1mReader helper (same file):[0m [38;5;153mvaluesFromForm(formEl) → { [name]: string }[39m, reading [38;5;153mformEl.elements[39m by [38;5;153mname[39m attribute.
+  This is the only DOM-aware function in the module, and it's a pure read — no rendering, no listeners.
+
+  Does that interface look right before I go on to how [38;5;153mapp.js[39m and the tests hook up?
+
+[38;5;246m✻[39m [38;5;246mWorked for 2m 58s · done 4:53 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

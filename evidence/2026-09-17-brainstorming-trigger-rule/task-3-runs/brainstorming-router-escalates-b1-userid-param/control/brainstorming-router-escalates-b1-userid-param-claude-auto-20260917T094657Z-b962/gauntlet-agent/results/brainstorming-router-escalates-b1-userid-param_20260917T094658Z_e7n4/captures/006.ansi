@@ -1,0 +1,40 @@
+  would give you [38;5;153mlogin(username, password, undefined)[39m — a signature change that tracks nothing. So I want to settle the
+  design before writing code. Say the word if you'd rather I just widen the signature and stop.
+
+  First question, the blocking one:
+
+  [1mThe fork:[0m a [38;5;153muserId[39m has to come from somewhere, and the three sources differ in [3mwhen[0m the id exists relative to the
+  login call — which decides whether [38;5;153muserId[39m can be a parameter at all.
+
+  - [1mServer returns it[0m — the id is the [3mresult[0m of authenticating, so it can't be an input. [38;5;153mlogin[39m would return it instead,
+    and tracking happens after the response. Buys you a real, trustworthy id; costs you the parameter you asked for.
+  - [1mClient generates it[0m — a UUID minted in the browser before the call, so it genuinely is an input parameter. Buys you
+    the signature you described and works with the stub as-is; but it identifies a [3mbrowser session[0m, not a person, so
+    "who logged in" stays answered by [38;5;153musername[39m.
+  - [1m[38;5;153musername[39m is the id[0m — no new value at all; tracking just uses what the form already has. Cheapest, and reversible
+    later; rules out nothing.
+
+  The first two are not cheap to swap afterward: they put the id on opposite sides of the call, so the call site, the
+  return shape, and anything reading the tracking data all change with it. The third is cheap to change.
+
+  My recommendation is [1mserver returns it[0m. "Track who logged in" means tying an event to a real account, and only the
+  server knows that — a client-minted id can be forged or regenerated, so it can't answer the question you asked. It
+  does mean the honest change is to [38;5;153mlogin[39m's return value and a tracking call after it, rather than a third parameter.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer returns it (Recommended)[39m
+     [38;5;246mThe login response carries the id. It becomes a return value, not a parameter — tracking happens after the call. [39m
+     [38;5;246mTrustworthy, but not the signature you described.[39m
+  [38;5;246m2.[39m Client generates it
+     [38;5;246mMint a UUID in the browser and pass it in as the third parameter. Matches your ask literally, but identifies a [39m
+     [38;5;246msession/device rather than a person.[39m
+  [38;5;246m3.[39m Use username as the id
+     [38;5;246mNo new value. Tracking keys off the username the form already collects. Cheapest, and easy to change later.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

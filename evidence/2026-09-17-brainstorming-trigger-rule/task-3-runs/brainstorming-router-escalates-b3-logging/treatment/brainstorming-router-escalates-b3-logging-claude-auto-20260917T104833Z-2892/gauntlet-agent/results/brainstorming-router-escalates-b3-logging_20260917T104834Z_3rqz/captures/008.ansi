@@ -1,0 +1,40 @@
+
+  This matters more than it sounds. It gets baked into the core [38;5;153mlog()[39m call, and changing it later means re-auditing
+  every call site in the codebase — so it's worth getting right before anything is written. The concrete risk here is
+  not hypothetical: [38;5;153mapp.js[39m today logs the username on every login attempt and has a password field one line away, and
+  the export flow means these logs will eventually be mailed around as a file.
+
+  - [1mDeny-list[0m — redact keys matching known-sensitive patterns ([38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mauth[39m, [38;5;153mcookie[39m, …); everything
+    else is logged as-is. Easy to adopt, reads naturally, nothing surprising goes missing from your logs. The failure
+    mode is silent and permanent: a field nobody thought of ([38;5;153mpwd[39m, [38;5;153mssn[39m, [38;5;153mapiKey2[39m, a whole request body nested three levels
+    down) leaks, and you find out when the log file is already in someone's inbox.
+  - [1mAllow-list[0m — only explicitly permitted fields are recorded; everything else becomes [38;5;153m[redacted][39m unless declared. Safe
+    by default, and the failure mode is loud and harmless — a missing field in a log, which you notice and fix. Costs
+    friction: every new field someone wants to log needs a one-line declaration, and people will grumble the first few
+    times.
+  - [1mNo structured redaction[0m — callers are responsible for not passing sensitive data. Zero machinery. I'd argue against
+    it: it's what the code does today, and it's why the username is already being logged.
+
+  My recommendation: [1mallow-list[0m. For a subsystem whose whole purpose is to produce files that get handed to other
+  people, I want the mistake mode to be "a log is less useful than it could be" rather than "a credential left the
+  building." The friction is real but it's front-loaded and small — this codebase has a handful of log sites, so the
+  declarations cost minutes now rather than an audit later.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mHow should the logger handle sensitive data in logged payloads?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAllow-list (Recommended)[39m
+     [38;5;246mOnly declared fields are recorded; everything else is [redacted] by default. Safe failure mode (missing data, not [39m
+     [38;5;246mleaked data). Costs a one-line declaration per new logged field.[39m
+  [38;5;246m2.[39m Deny-list
+     [38;5;246mRedact known-sensitive key patterns (password, token, secret...); log everything else. Low friction, but an [39m
+     [38;5;246mundeclared sensitive field leaks silently.[39m
+  [38;5;246m3.[39m No structured redaction
+     [38;5;246mCallers must avoid passing sensitive data themselves. No machinery, no guardrail — this is effectively the current
+[39m     [38;5;246mbehavior.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+  - [38;5;153msessionStorage[39m is origin-scoped and readable by [1many[0m script on the origin. The ID is not a secret, but it is an
+    identifier — an XSS on this page can read it. Acceptable for a non-secret tracking ID; not acceptable if this ever
+    holds a session token. I'd note that constraint in a comment so nobody upgrades this into a token store.
+  - [38;5;153msessionStorage[39m is [1mper-tab[0m. Two tabs means two independent IDs until each logs in. Correct, but surprising if you
+    later reason about it as one-ID-per-user.
+  - [38;5;153mclearUserId()[39m will have no caller — there's no logout in this app. It's the documented clearing contract for when
+    one exists. Say the word and I'll drop it until then.
+  - The password is never logged today and won't be.
+
+  [1m4. Error handling[0m
+
+  [38;5;153msessionStorage[39m throws in some privacy modes rather than returning null. All three functions wrap access in [38;5;153mtry[39m/[38;5;153mcatch[39m:
+  [38;5;153mgetUserId[39m degrades to [38;5;153mnull[39m, [38;5;153msetUserId[39m becomes a no-op after one [38;5;153mconsole.warn[39m. Login must keep working when storage is
+  unavailable — tracking is the thing that degrades, never authentication. A failed login stores nothing.
+
+  [1m5. Testing and tooling[0m
+
+  This project has no tooling at all: [38;5;153mpackage.json[39m has no [38;5;153mscripts[39m and no [38;5;153mdevDependencies[39m, and there are no tests. The
+  identity module has genuinely testable logic — null handling, the storage-throws path, clear-after-set — and it's
+  cheapest to set this up now, before the code exists.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Design  ☒ Tooling [38;5;16m[48;5;153m ☐ Logging [39m[49m ✔ Submit  →
+
+[1m[38;5;231mShould login keep console-logging the identifiers?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLog username + userId (Recommended)[39m
+     [38;5;246mKeeps the existing console.log and adds the ID — it's the 'track who logged in' you asked for. Identifiers land in
+[39m     [38;5;246mbrowser console logs; fine for a stub.[39m
+  [38;5;246m2.[39m Log neither
+     [38;5;246mDrop identifiers from the console entirely; tracking happens only via the stored ID. Quietest, but you lose the [39m
+     [38;5;246mvisible signal during development.[39m
+  [38;5;246m3.[39m Log behind a debug flag
+     [38;5;246mGate the console output on a DEBUG constant, off by default. No identifiers in logs in normal use; one more knob to
+[39m     [38;5;246mremember.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

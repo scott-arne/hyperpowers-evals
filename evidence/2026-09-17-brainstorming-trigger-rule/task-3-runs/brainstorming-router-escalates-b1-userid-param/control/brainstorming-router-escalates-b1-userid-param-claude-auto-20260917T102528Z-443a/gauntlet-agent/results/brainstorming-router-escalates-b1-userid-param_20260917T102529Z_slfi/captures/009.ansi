@@ -1,0 +1,40 @@
+
+  Next: what "persist across the app" means concretely. This is a storage-format and lifetime decision, and it's the one
+  that's awkward to reverse once other forms read from it.
+
+  - [1mIn-memory module[0m — a small [38;5;153msession[39m module holds the current user; everything imports it. Simplest, nothing to clear,
+    no storage to go stale. But the id is gone on page reload, so a user who refreshes is anonymous again until they
+    log in.
+  - [1m[38;5;153msessionStorage[0m — survives reload, scoped to the one tab, cleared when the tab closes. Matches "logged in until I
+    leave" intuitions and needs no logout plumbing for the common case. Serialized, so the shape becomes a small
+    contract.
+  - [1m[38;5;153mlocalStorage[0m — survives browser restart and is shared across tabs. This is "stay logged in," which implies you also
+    need explicit logout, staleness handling, and a decision about what happens when the stored id no longer matches the
+    server. Most capable, most obligations.
+
+  I recommend [38;5;153msessionStorage[39m with the in-memory module in front of it: consumers only ever talk to the module, so
+  storage is an implementation detail and moving to [38;5;153mlocalStorage[39m later is a one-line change rather than a hunt through
+  every form. The persistence choice only leaks if you let forms touch [38;5;153mStorage[39m directly, which the design won't.
+
+  One caution worth stating now: a user id in browser storage is an identifier, not a credential. It tells you who the
+  client [3mclaims[0m to be and nothing more, so nothing security-relevant should trust it — the server still has to authorize
+  every request on its own. That's fine for tracking; I just don't want the stored id mistaken for proof of login
+  later.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mHow long should the user id survive?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153msessionStorage (Recommended)[39m
+     [38;5;246mSurvives page reload, scoped to one tab, cleared when the tab closes. Fronted by an in-memory module so consumers [39m
+     [38;5;246mnever touch storage directly.[39m
+  [38;5;246m2.[39m In-memory only
+     [38;5;246mA session module holds it for the life of the page. Simplest possible; lost on reload.[39m
+  [38;5;246m3.[39m localStorage
+     [38;5;246mSurvives browser restart, shared across tabs — "stay logged in." Also requires explicit logout and staleness [39m
+     [38;5;246mhandling.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

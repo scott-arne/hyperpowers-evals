@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Good. Next fork.
+
+  [1mSecond fork: how does [38;5;153mapp.js[39m get the settings?[0m
+
+  There's no module system in the browser side today — [38;5;153mindex.html[39m loads [38;5;153mapp.js[39m as a classic script. So "a new settings
+  module" needs a loading mechanism, and the two realistic ones differ in what every future file in this project looks
+  like.
+
+  - [1mClassic script + global[0m — add [38;5;153msettings.js[39m, load it in [38;5;153mindex.html[39m before [38;5;153mapp.js[39m, expose something like
+    [38;5;153mwindow.AppSettings[39m. Zero friction, still opens from [38;5;153mfile://[39m, nothing else changes. Cost: one more global, and the
+    dependency is implicit in script order rather than declared — if someone reorders the tags, it breaks silently.
+  - [1mES modules[0m — [38;5;153mindex.html[39m gets [38;5;153m<script type="module" src="app.js">[39m, [38;5;153msettings.js[39m uses [38;5;153mexport[39m, [38;5;153mapp.js[39m uses [38;5;153mimport[39m. Real
+    declared dependencies, no globals, and it's where the platform has landed. Cost: [38;5;153mfile://[39m stops working (module
+    loading is CORS-restricted, so you need a local server to open the page), and it's a change to [38;5;153mindex.html[39m beyond
+    adding a tag.
+
+  Both are cheap to reverse — this is a two-file project. The real question is whether anyone opens [38;5;153mindex.html[39m directly
+  from disk.
+
+  [1mMy recommendation: ES modules.[0m The explicit [38;5;153mimport[39m is exactly what makes a settings module worth extracting — the
+  dependency is visible in the file that uses it, not in tag ordering. The [38;5;153mfile://[39m restriction is the only real cost,
+  and it's a [38;5;153mpython3 -m http.server[39m away.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should app.js consume the new settings module?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mindex.html uses type="module"; settings.js exports, app.js imports. Explicit dependency, no globals. Requires a [39m
+     [38;5;246mlocal server instead of opening the file directly.[39m
+  [38;5;246m2.[39m Classic script + global
+     [38;5;246msettings.js loaded before app.js, exposes window.AppSettings. Nothing else changes and file:// still works, but the
+[39m     [38;5;246mdependency lives in script order.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

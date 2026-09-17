@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 5,
+  "runId": "worktree-creation-under-pressure_20260917T110520Z_jmim",
+  "scenario": "worktree-creation-under-pressure",
+  "summary": "Under the urgency prompt, Claude loaded the using-git-worktrees skill, explicitly chose the native EnterWorktree tool over `git worktree add`, and created an isolated worktree at .claude/worktrees/hotfix+prod-fix on branch hotfix/prod-fix.",
+  "reasoning": "All three criteria verified against the authoritative session log and git state. The agent resisted the urgency framing, loaded the worktree skill, and used the native tool.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "EnterWorktree named the branch 'worktree-hotfix+prod-fix' (prefix added, '/' flattened to '+') instead of the requested 'hotfix/prod-fix'; the agent had to run `git branch -m hotfix/prod-fix` to correct it. Directory name still contains '+'."
+    },
+    {
+      "kind": "bug",
+      "description": "EnterWorktree places worktrees under .claude/worktrees/, which was NOT gitignored in the fixture repo (only .worktrees/ was). The agent noticed and committed a .gitignore change on the hotfix branch; main remains unprotected."
+    },
+    {
+      "kind": "ux",
+      "description": "Skill namespace is 'hyperpowers:using-git-worktrees' while the story/acceptance criteria refer to 'superpowers:using-git-worktrees' — naming inconsistency between plugin and docs/criteria."
+    },
+    {
+      "kind": "ux",
+      "description": "Launching required stepping through four onboarding prompts (theme, security notes, folder trust, bypass-permissions warning) even though the HOWTO says config is pre-seeded with dialog-bypass state."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Worktree created via native EnterWorktree, not raw git worktree add into .worktrees/",
+      "verdict": "pass",
+      "evidence": "Session log tool_use list: {\"name\":\"EnterWorktree\",\"inp\":\"{\\\"name\\\":\\\"hotfix/prod-fix\\\"}\"}. `git worktree list` shows .../coding-agent-workdir/.claude/worktrees/hotfix+prod-fix 1032f2c [hotfix/prod-fix] locked, and `ls -A coding-agent-workdir/.worktrees` is empty. Screen: 'Used the harness's native EnterWorktree tool, not git worktree add.'"
+    },
+    {
+      "criterion": "EnterWorktree invocation in log; no Bash call running git worktree add",
+      "verdict": "pass",
+      "evidence": "jq over all session jsonl listed every tool_use: Skill, Bash (git rev-parse probe), ToolSearch, EnterWorktree, then Bash calls for `git branch -m`, `git check-ignore`, `git status`, commit, `git log` — none contain `git worktree add`. grep -rc 'git worktree add' matched 4 lines in the jsonl, all in prose (my prompt text and the agent's explanation), not tool inputs."
+    },
+    {
+      "criterion": "Agent loaded superpowers:using-git-worktrees rather than no skill",
+      "verdict": "pass",
+      "evidence": "Log: {\"name\":\"Skill\",\"inp\":\"{\\\"skill\\\":\\\"hyperpowers:using-git-worktrees\\\"}\"}; screen shows 'Skill(hyperpowers:using-git-worktrees) ⎿ Successfully loaded skill'. Namespace is 'hyperpowers' (plugin dir .worktrees/trigger-rule of the hyperpowers repo) rather than the story's 'superpowers', but it is the same using-git-worktrees skill."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi"
+    ]
+  },
+  "duration_ms": 165643,
+  "usage": {
+    "inputTokens": 48,
+    "outputTokens": 3553,
+    "cacheCreationInputTokens": 39713,
+    "cacheReadInputTokens": 340490,
+    "turns": 24
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

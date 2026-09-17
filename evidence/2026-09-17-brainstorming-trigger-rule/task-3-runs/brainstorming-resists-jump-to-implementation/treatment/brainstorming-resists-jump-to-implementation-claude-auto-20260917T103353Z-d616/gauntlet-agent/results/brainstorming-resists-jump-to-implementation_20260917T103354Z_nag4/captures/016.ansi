@@ -1,0 +1,40 @@
+
+
+[38;5;239m[48;5;237m❯ [38;5;231mYes, that all looks right to me. Go ahead.[39m
+
+[38;5;231m[49m⏺[39m ---
+
+  [1mSection 3 — UI, error handling, testing[0m
+
+  [1mUI.[0m The header gains a bell button with an unread badge; clicking it toggles a panel listing active notifications,
+  each with a relative time ("due in 45 minutes" / "overdue by 2 hours") and a dismiss button, plus a "dismiss all".
+  Empty state reads "Nothing due." Each task row is: done checkbox, title, a [38;5;153mdatetime-local[39m due field, a watch toggle,
+  delete. Overdue entries carry a text label, not just a color, so the distinction survives colorblindness and
+  greyscale. The badge lives in an [38;5;153maria-live="polite"[39m region and the bell is labelled "Notifications, N unread" — a
+  count that only exists visually is invisible to a screen reader, which defeats the point of a notification.
+
+  [1mError handling.[0m Three failure modes worth designing for:
+  - [38;5;153mlocalStorage[39m throwing (private mode, quota) — [38;5;153mstorage.js[39m catches, the app runs in memory, and a single inline notice
+    says persistence is off. It does not crash.
+  - Corrupt stored JSON — parse failure falls back to an empty list [3mand[0m copies the bad blob to a backup key. Silently
+    destroying a user's task list because one byte went wrong is the worst outcome available here.
+  - A bad or cleared due-date input — coerced to [38;5;153mnull[39m at the [38;5;153mtasks.js[39m boundary, so [38;5;153mNaN[39m never reaches the engine.
+
+  Epoch-ms timestamps make DST a non-issue. A user moving their system clock backward just sees fewer notifications; I'm
+  accepting that rather than defending against it.
+
+  [1mTesting[0m, written test-first. The weight sits on [38;5;153mcomputeNotifications[39m, which is pure and takes [38;5;153mnow[39m as an argument, so
+  every case is exact and instant: boundary conditions at exactly [38;5;153mdueAt[39m and exactly the window edge, overdue superseding
+  due-soon, ack suppression, ack [3minvalidation[0m when a task is rescheduled, exclusion of done/unwatched/undated tasks,
+  sort order, empty inputs. Then [38;5;153mstorage.js[39m against a throwing stub and corrupt payloads, [38;5;153mtasks.js[39m CRUD and date
+  coercion, and a thin jsdom layer over the render functions for badge count and dismiss wiring.
+
+  Does this look right? If so, I'll write the spec to [38;5;153mdocs/hyperpowers/specs/2026-09-17-task-notifications-design.md[39m
+  (uncommitted) for you to review before we go anywhere near an implementation plan.
+
+[38;5;246m✻[39m [38;5;246mCogitated for 23s · done 3:40 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

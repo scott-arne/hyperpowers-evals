@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Third question — the delivery mechanism, since this repo has no build step today.
+
+  [1mThe fork:[0m how the new validation files get loaded by the browser. [38;5;153mapp.js[39m today is a bare [38;5;153m<script src>[39m defining
+  globals; [38;5;153msrc/[39m uses CommonJS but is unrelated to the webapp. Splitting validation into its own file forces a choice.
+
+  - [1mES modules, no build step[0m — [38;5;153m<script type="module" src="app.js">[39m, [38;5;153mimport[39m/[38;5;153mexport[39m between files. Native in every
+    current browser, and Node can run the same files for tests with zero tooling. Cost: [38;5;153mfile://[39m opening of [38;5;153mindex.html[39m
+    stops working (modules need an HTTP origin), so you'd serve the page locally.
+  - [1mGlobals via extra [38;5;153m<script>[39m tags[0m — [38;5;153mvalidation.js[39m assigns [38;5;153mwindow.Validation[39m. Nothing else changes and [38;5;153mfile://[39m keeps
+    working. Cost: load-order dependencies, no real import graph, and testing means faking a [38;5;153mwindow[39m.
+  - [1mAdd a bundler[0m — Vite or esbuild. Buys you the whole modern toolchain. Cost: a dependency tree and config for a
+    project that currently has zero dependencies.
+
+  Cheap to change later: adding files inside whichever scheme you pick. Expensive: switching schemes later touches every
+  file and the HTML.
+
+  [1mMy recommendation: ES modules, no build step.[0m It keeps the zero-dependency property, gives the validation core a clean
+  import surface, and makes the core unit-testable in Node without a DOM. The [38;5;153mfile://[39m loss is the only real cost and
+  [38;5;153mnpx serve[39m covers it.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module format [39m[49m
+
+[1m[38;5;231mHow should the split-out validation files be loaded?[0m
+
+[38;5;153m❯[38;5;246m 1.[1m[38;5;153m ES modules, no build [0m        [38;5;246m┌────────────────────────────────────────────────────────────┐[39m
+    [1m[38;5;153m(Recommended)[0m                 [38;5;246m│ [39m<script type="module" src="app.js"></script>[38;5;246m               │[39m
+ [38;5;246m 2.[39m Globals via script tags      [38;5;246m│                                                            │[39m
+ [38;5;246m 3.[39m Add a bundler                [38;5;246m│ [39m// app.js[38;5;246m                                                  │[39m
+    (Vite/esbuild)                [38;5;246m│ [39mimport { bindForm } from './src/form-binding.js';[38;5;246m          │[39m
+                                  [38;5;246m│ [39mimport { required, minLength } from './src/validation.js';[38;5;246m │[39m
+                                  [38;5;246m└────────────────────────────────────────────────────────────┘[39m
+
+                                  [38;5;153mNotes:[39m [3m[38;5;246mpress n to add notes[0m
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  - [3mCosts:[0m every environment difference lives inside that one file as a runtime branch — [38;5;153msendBeacon[39m vs [38;5;153mhttp.request[39m,
+    [38;5;153mcrypto.randomUUID[39m availability, [38;5;153mpagehide[39m vs [38;5;153mprocess.on('exit')[39m. That's where the [38;5;153mtypeof window !== 'undefined'[39m
+    thicket grows, in the file that's hardest to keep clean because everything imports it.
+  - [3mRules out later:[0m nothing hard, but it's the option that degrades worst as sinks multiply.
+
+  [1mB. Core plus environment adapters.[0m [38;5;153mlogging/core.js[39m (levels, record shape, allowlist, scrubber, sink dispatch),
+  [38;5;153mlogging/sink-console.js[39m, [38;5;153mlogging/sink-remote.browser.js[39m, [38;5;153mlogging/sink-remote.node.js[39m — each with the same UMD footer.
+  - [3mBuys:[0m real boundaries. The core has no environment knowledge and is testable in isolation; adding a vendor sink
+    later is one new file touching nothing else.
+  - [3mCosts:[0m the browser has no bundler, so [38;5;153mindex.html[39m grows three or four [38;5;153m<script>[39m tags that must load in dependency
+    order. That ordering is invisible coupling — someone reorders the tags and it breaks at runtime, not at build time.
+  - [3mRules out later:[0m nothing, but you carry the script-ordering hazard indefinitely.
+
+  [1mC. Convert the repo to ES modules, then build the subsystem natively.[0m [38;5;153mpackage.json[39m gets [38;5;153m"type": "module"[39m, [38;5;153msrc/[39m moves
+  from [38;5;153mrequire[39m to [38;5;153mimport[39m, [38;5;153mindex.html[39m gets [38;5;153m<script type="module">[39m, and [38;5;153mlogging/[39m uses plain [38;5;153mimport[39m/[38;5;153mexport[39m that both Node
+  and browsers run natively — still no build step.
+  - [3mBuys:[0m one module system across the repo. Real encapsulation with no globals, no UMD footers, no load-order coupling,
+    and the module graph is explicit. The two-module-system split is the direct cause of the awkwardness in A and B, so
+    fixing it is targeted at this work rather than drive-by refactoring.
+  - [3mCosts:[0m it edits files the logging task wouldn't otherwise touch — [38;5;153msrc/index.js[39m, [38;5;153msrc/utils.js[39m, [38;5;153mindex.html[39m,
+    [38;5;153mpackage.json[39m. And ES modules are blocked over [38;5;153mfile://[39m by CORS, so opening [38;5;153mindex.html[39m by double-clicking stops
+    working; you'd need to serve it ([38;5;153mpython3 -m http.server[39m or similar). If anyone's local workflow is "open the file,"
+    that's a real regression.
+  - [3mRules out later:[0m effectively locks the repo into ESM. Going back is another conversion.
+
+  [1mMy recommendation: C.[0m The reason is that the split module systems aren't incidental to this task — they're the thing
+  that makes A messy and B fragile, and both A and B pay for the split forever in order to avoid touching it once. On
+  the [38;5;153mfile://[39m cost specifically: your remote sink needs a real origin to POST from, and production serves over HTTP
+  regardless, so that limitation bites casual local browsing rather than the use case you're actually building for.
+
+  If you'd rather this change stay strictly additive and leave existing files' style alone, [1mB[0m is the right call and I'd
+  take it over A — the script-ordering hazard is annoying but visible, whereas A's environment branching quietly rots.
+
+[38;5;174m✻[39m [38;5;174mPrecipitating… [38;5;246m(3m 31s · ↓[39m [38;5;246m13.1k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

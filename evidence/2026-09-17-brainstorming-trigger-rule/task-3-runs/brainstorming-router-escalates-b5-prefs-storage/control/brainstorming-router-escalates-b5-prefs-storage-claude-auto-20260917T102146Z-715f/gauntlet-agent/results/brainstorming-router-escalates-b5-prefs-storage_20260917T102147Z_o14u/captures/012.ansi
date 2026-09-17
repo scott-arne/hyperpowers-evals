@@ -1,0 +1,40 @@
+
+  [1mMy recommendation: namespaced per username, with an anonymous namespace before login.[0m Since we picked the adapter seam
+  specifically to keep a server backend open, and server preferences are per-account by nature, a device-local store
+  with no identity would mismatch that on the day you swap adapters. The cost today is one extra parameter.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Should preferences be scoped per logged-in user, or one set per browser? → Per-username namespace (Recommended)[39m
+
+[38;5;231m⏺[39m Last question before I lay out the design.
+
+  [1mThe fork:[0m what happens when localStorage isn't usable — Safari private mode, disabled storage, or a quota error on
+  write? This decides whether every call site needs error handling.
+
+  - [1mFall back to in-memory, never throw[0m — reads return the default, writes succeed for the lifetime of the page and
+    vanish on reload. Call sites stay clean. Costs: a silent failure mode; a user can change a setting, see it apply,
+    and lose it on refresh with no warning unless the store exposes a "degraded" flag you choose to surface.
+  - [1mReject/throw on failure[0m — honest, callers can tell the user their setting won't stick. Costs: every [38;5;153msetPref[39m needs a
+    [38;5;153mcatch[39m, including in code paths where the preference is cosmetic and failure genuinely doesn't matter.
+
+  [1mMy recommendation: in-memory fallback that never throws, plus a [38;5;153misPersistent()[39m flag on the store.[0m Preferences are by
+  definition non-critical — a theme that fails to save shouldn't break a login form — but the flag means a settings UI
+  can show "settings won't be saved in private browsing" when it matters, so we don't lose the information, we just stop
+  forcing every caller to handle it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Failure mode [39m[49m
+
+[1m[38;5;231mHow should the store behave when localStorage is unavailable or a write fails?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mIn-memory fallback + flag (Recommended)[39m
+     [38;5;246mNever throws; degrades to per-page memory and exposes isPersistent() so UI can warn when settings will not stick.[39m
+  [38;5;246m2.[39m Reject on failure
+     [38;5;246mWrites reject and reads surface the error; every call site decides how to handle it.[39m
+  [38;5;246m3.[39m Silent no-op
+     [38;5;246mSwallow failures entirely, no flag. Simplest, but the app can never tell the user their settings are not being [39m
+     [38;5;246msaved.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+  So the fork is: [1mwhat is the durable destination for browser logs?[0m The Node half is the same in all three cases
+  (structured JSON, written to a file and/or stdout).
+
+  - [1mOn-device buffer + export[0m — a capped ring buffer in IndexedDB; a support flow or debug command dumps it as a file
+    the user sends you. No backend, no new dependency, no data leaving the user's machine without their action. Costs
+    you reach: you only ever see logs from users who cooperate, so it's poor for "something is broken for 3% of users
+    and nobody filed a ticket." Cheap to add an uploader to later — this is not a dead end.
+  - [1mShip to your own ingest endpoint[0m — batched POSTs, retry, offline queue. Gives you the thing you actually asked for:
+    logs from production users, automatically. Costs a backend you don't have yet (endpoint, storage, retention, auth,
+    abuse protection) and it puts you squarely in data-protection territory, since you'd be continuously collecting user
+    activity. This is the expensive, hard-to-reverse choice.
+  - [1mThird-party error/log service[0m — Sentry-style SDK. Fastest route to real visibility and someone else runs the
+    storage. Costs a vendor dependency, a per-seat/volume bill, and user data going to a third party. Also somewhat
+    sticky: the SDK's API tends to spread through your code.
+
+  My recommendation: [1mon-device buffer + export[0m, with the shared logger designed so a network sink is a drop-in addition.
+  It gets the logging subsystem — levels, structure, redaction, one API across both halves — landed and useful now, and
+  it defers the two decisions that are genuinely expensive and hard to undo (standing up an ingest backend, or
+  committing to a vendor) until you know what you're actually chasing. The redaction rule I flagged earlier matters most
+  in exactly the cases where logs leave the device, so I'd rather have it proven on the cheap path first.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Log sink [39m[49m
+
+[1m[38;5;231mWhere should browser logs durably land?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mOn-device + export (Recommended)[39m
+     [38;5;246mCapped IndexedDB ring buffer; user/support exports a dump. No backend, no vendor, no automatic data egress. Network
+[39m     [38;5;246msink can be added later without rework.[39m
+  [38;5;246m2.[39m Ship to our own endpoint
+     [38;5;246mBatched POST with retry and offline queue. Real automatic visibility, but requires building an ingest backend [39m
+     [38;5;246m(storage, retention, auth) that doesn't exist yet.[39m
+  [38;5;246m3.[39m Third-party service (Sentry-style)
+     [38;5;246mVendor SDK handles transport and storage. Fastest real visibility; adds a dependency, a bill, and sends user data [39m
+     [38;5;246mto a third party.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

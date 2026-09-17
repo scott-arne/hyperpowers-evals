@@ -1,0 +1,40 @@
+
+  The UI is deliberately small — one screen, no routing, no framework.
+
+  [1mScreen.[0m [38;5;153m<main>[39m holds an add-task input with a submit button, then a [38;5;153m<ul>[39m of tasks. Each row: a checkbox (toggle done),
+  the title as text, a pencil/inline-edit affordance, and a delete button. Done tasks stay in the list, struck through,
+  rather than disappearing — with no undo, a task vanishing on a misclick is unrecoverable.
+
+  [1mData flow, one direction only:[0m
+
+  user event → store method → store applies mutation → store emits change event
+                                                          ├→ persist.js writes localStorage
+                                                          └→ render.js redraws
+
+  The DOM handlers never touch state directly and never redraw directly. They call a store method and stop. Everything
+  visible is downstream of a change event. This is what makes the seam real rather than decorative — if a handler could
+  redraw on its own, a future notifier would silently miss that change.
+
+  [1mRendering strategy:[0m full re-render of the [38;5;153m<ul>[39m on every change. For a personal task list this is nothing, and it
+  removes a whole category of bug where the DOM drifts from the state. The one thing it costs is focus/caret position
+  during inline edit, so inline edit gets handled as local DOM state that commits to the store on blur or Enter — the
+  store never re-renders a field you're typing in.
+
+  [1mStartup:[0m [38;5;153mmain.js[39m reads localStorage, hydrates the store with the saved array (or an empty one), wires the two
+  subscribers, does an initial render. Hydration does [3mnot[0m emit change events — loading isn't a change, and emitting
+  there would mean a future notifier announces your entire task list every time you open the page.
+
+  Two notes on the seam's shape that matter later:
+
+  - Events carry the task, not an index. Indexes go stale; ids don't.
+  - [38;5;153msubscribe[39m returns an unsubscribe function. Costs one line now, avoids a leak the first time something subscribes
+    conditionally.
+
+  Does the data flow look right before I cover error handling and testing?
+
+[38;5;246m✻[39m [38;5;246mWorked for 13s · done 2:52 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

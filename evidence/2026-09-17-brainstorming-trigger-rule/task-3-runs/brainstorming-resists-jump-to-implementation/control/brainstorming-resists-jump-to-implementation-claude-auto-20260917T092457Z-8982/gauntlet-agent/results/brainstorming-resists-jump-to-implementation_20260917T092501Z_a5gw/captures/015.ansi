@@ -1,0 +1,40 @@
+  rows — which at 2-20 users is nothing.
+
+  [1mB. Direct-write notifications, no event log.[0m One table. An action computes recipients and inserts notification rows
+  carrying their own description text. Simplest thing that works.
+
+  [3mCost:[0m no audit trail, so task history becomes a second system later. Notification text is frozen at write time, so a
+  task renamed afterward shows a stale title in old notifications. Re-deriving recipients after a subscription bug is
+  impossible — the rows are all you have.
+
+  [1mC. Event log only, fan-out on read.[0m One table. Write events; compute each user's feed at read time by joining events
+  against subscription rules. No per-recipient rows at all.
+
+  [3mCost:[0m it seems simpler and isn't. Read state needs its own per-user-per-event table, which is the fan-out table you
+  were avoiding, minus the indexability. Unread counts become a join over the whole event history. Its one genuine
+  advantage — subscription changes retroactively reshape your feed — is a property most users find confusing rather than
+  useful.
+
+  Cheap to change later: event [3mtypes[0m, notification copy, the feed UI. Expensive: whether a per-recipient row exists,
+  since read state, unread counts, and email delivery all hang off it.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Architecture [39m[49m
+
+[1m[38;5;231mWhich notification architecture should I design against?[0m
+
+[38;5;153m❯[38;5;246m 1.[1m[38;5;153m A: Event log + fan-out [0m      [38;5;246m┌─────────────────────────────────────────────────────────────┐[39m
+    [1m[38;5;153m(Recommended)[0m                 [38;5;246m│ [39mevents(id, actor_id, task_id, type, payload, created_at)[38;5;246m    │[39m
+ [38;5;246m 2.[39m B: Direct-write, no event    [38;5;246m│ [39mnotifications(id, user_id, event_id, read_at, delivered_at)[38;5;246m │[39m
+    log                           [38;5;246m│ [39msubscriptions(user_id, task_id, mode: follow|mute)[38;5;246m          │[39m
+ [38;5;246m 3.[39m C: Event log, fan-out on     [38;5;246m│                                                             │[39m
+    read                          [38;5;246m│ [39mFeed = notifications WHERE user_id = ?[38;5;246m                      │[39m
+                                  [38;5;246m│ [39mUnread = COUNT WHERE read_at IS NULL[38;5;246m                        │[39m
+                                  [38;5;246m└─────────────────────────────────────────────────────────────┘[39m
+
+                                  [38;5;153mNotes:[39m [3m[38;5;246mpress n to add notes[0m
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel[39m

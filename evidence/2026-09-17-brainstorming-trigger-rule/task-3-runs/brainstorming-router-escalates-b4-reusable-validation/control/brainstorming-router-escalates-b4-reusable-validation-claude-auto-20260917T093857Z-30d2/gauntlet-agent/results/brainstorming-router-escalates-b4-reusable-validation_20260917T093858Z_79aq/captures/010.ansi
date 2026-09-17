@@ -1,0 +1,40 @@
+
+     [2m[38;5;231m 4 [0m[38;5;231m/Users/johnss51/Development/agents/hyperpowers/evals/results/brainstorming-router-escalates-b4-reusable-v[39m
+     [2m[38;5;231m   [0m[38;5;231malidation-claude-auto-20260917T093857Z-30d2/home/.cache/hyperpowers/codex-review/e9ef3003529324676e328ec4[39m
+     [2m[38;5;231m 5 [0m
+     [2m[38;5;231m 6 [0m[38;5;231mIt describes a small static webapp and a request to make its form validation[39m
+     [2m[38;5;231m 7 [0m[38;5;231mreusable across multiple forms, along with the decisions already made by the[39m
+     [2m[38;5;231m 8 [0m[38;5;231mhuman partner (validation-only scope, ES modules, a few similar forms with[39m
+     [2m[38;5;231m 9 [0m[38;5;231mrequired-field plus simple format rules).[39m
+     [38;5;246m… +18 lines [39m
+
+  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m The Codex call completed but returned an empty payload ([38;5;153m{}[39m) — no approaches. Preflight was healthy, so this isn't a
+  degrade status; the stub just produced nothing. Per the gate it's one-shot, so no retry: the shortlist below is mine
+  alone, with no independent Codex input folded in.
+
+  [1mThe fork:[0m how a form declares its rules. Everything else follows from it, and it's the expensive thing to change —
+  switching formats rewrites every form's rules.
+
+  [1m1. Declarative rule schema[0m — rules are data, keyed by name:
+  [34mconst[39m signupRules = { [36memail[39m: { [36mrequired[39m: [34mtrue[39m, [36memail[39m: [34mtrue[39m }, [36mpassword[39m: { [36mrequired[39m: [34mtrue[39m, [36mminLength[39m: [32m8[39m } };
+  The module owns a registry of rule names and dispatches on them. Buys you the most readable call site and rules that
+  are serializable (could come from JSON or a server later). Costs a dispatch table inside the module, and any rule the
+  registry doesn't have means editing shared code. Rules out cheap one-off rules.
+
+  [1m2. Composable predicates[0m — rules are functions the module exports and you compose:
+  [34mconst[39m signupRules = { [36memail[39m: [[33mrequired[39m(), [33misEmail[39m()], [36mpassword[39m: [[33mrequired[39m(), [33mminLength[39m([32m8[39m)] };
+  Buys you a smaller core — no registry, no dispatch, the validator just calls what it's handed — and a form can drop in
+  its own inline function without touching the module. Costs slightly noisier call sites and rules that aren't
+  serializable. Rules out nothing much.
+
+  [1m3. Shared predicate helpers, no schema[0m — each form hand-writes [38;5;153mvalidateSignup(data)[39m using shared helpers like [38;5;153misEmpty[39m
+  / [38;5;153misEmail[39m. Buys maximum flexibility and zero format to get wrong. Costs a hand-written validator per form and no
+  enforced error shape — which is most of the duplication you're trying to kill.
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

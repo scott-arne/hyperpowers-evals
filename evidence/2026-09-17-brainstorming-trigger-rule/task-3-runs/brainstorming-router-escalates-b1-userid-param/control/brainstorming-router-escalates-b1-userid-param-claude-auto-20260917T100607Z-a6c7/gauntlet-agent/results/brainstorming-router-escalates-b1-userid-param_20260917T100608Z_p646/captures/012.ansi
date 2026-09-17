@@ -1,0 +1,40 @@
+  The fork is the module system. Right now the browser side ([38;5;153mapp.js[39m) and the Node side ([38;5;153msrc/*.js[39m, CommonJS) are two
+  separate worlds with no bridge, and picking one determines how every future form imports the ID — a decision that gets
+  expensive to reverse once several files depend on it.
+
+  - [1mES modules[0m — new [38;5;153msrc/visitor-id.js[39m with [38;5;153mexport[39m, [38;5;153mindex.html[39m switches to [38;5;153m<script type="module" src="app.js">[39m, forms
+    [38;5;153mimport[39m it. Standard, no bundler, scales cleanly to many forms. Costs: module scripts won't load over [38;5;153mfile://[39m, so
+    you'd need to serve the page (an [38;5;153mnpm start[39m with a static server); the existing CommonJS files in [38;5;153msrc/[39m stay separate
+    or get converted.
+  - [1mPlain global script[0m — new script tag before [38;5;153mapp.js[39m exposing [38;5;153mwindow.VisitorId[39m. Zero tooling, matches the current
+    style exactly, still works by double-clicking the HTML. Costs: a global, load-order coupling, and no reuse from the
+    Node/CommonJS side.
+  - [1mDual CommonJS + global shim[0m — one file usable from both [38;5;153mrequire()[39m and the browser. Reusable everywhere with no build
+    step. Costs: wrapper boilerplate that's disproportionate for one function.
+  - [1mAdd a bundler[0m — esbuild or Vite. Most headroom, but it's real tooling for a 64-line project.
+
+  Expensive to reverse: this one, once several forms import it. Cheap: the storage key and the ID format.
+
+  I'd recommend [1mES modules[0m — "other forms will need it later" is exactly the case plain globals degrade in, and the only
+  real cost is needing to serve the page instead of opening the file.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should the shared visitor-ID module be delivered?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mexport/import, index.html uses type="module". Standard and scales to many forms. Requires serving the page over [39m
+     [38;5;246mhttp instead of opening the file directly.[39m
+  [38;5;246m2.[39m Plain global script
+     [38;5;246mExtra <script> tag exposing window.VisitorId. Zero tooling, matches current style, still works via file://. Uses a
+[39m     [38;5;246mglobal and couples to script order.[39m
+  [38;5;246m3.[39m Dual CommonJS + global
+     [38;5;246mOne file that works from require() and the browser. Reusable on both sides with no build step, at the cost of [39m
+     [38;5;246mwrapper boilerplate.[39m
+  [38;5;246m4.[39m Add a bundler
+     [38;5;246mesbuild or Vite with a build step. Most future headroom, but significant tooling for a project this size.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

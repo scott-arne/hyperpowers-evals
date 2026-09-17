@@ -1,0 +1,40 @@
+  it somehow, and with no bundler there are three real ways:
+
+  - [1mES modules[0m — [38;5;153msettings.js[39m does [38;5;153mexport const settings = ...[39m, [38;5;153mapp.js[39m does [38;5;153mimport[39m, and [38;5;153mindex.html[39m becomes [38;5;153m<script [39m
+    [38;5;153mtype="module" src="app.js">[39m. Genuinely modular, matches how anyone would write this today, and gives you a real
+    import graph for future modules. Costs: modules are deferred and strict-mode, and they won't load from [38;5;153mfile://[39m —
+    you'd need to serve the page over HTTP even for local dev. That last point is the one I want you to weigh, since
+    there's no dev server in this repo right now.
+  - [1mGlobal script[0m — [38;5;153msettings.js[39m assigns [38;5;153mwindow.AppSettings = {...}[39m and [38;5;153mindex.html[39m loads it [3mbefore[0m [38;5;153mapp.js[39m. Nothing else
+    changes; works from [38;5;153mfile://[39m. Costs: it's a module in name only — load-order-dependent, and it grows the global
+    namespace rather than shrinking it.
+  - [1mAdd a bundler[0m — real imports, works everywhere, and later you get env-var substitution at build time. Costs: a
+    toolchain, a [38;5;153mnode_modules[39m, and a build step in a repo that currently has zero dependencies. Disproportionate for
+    moving one constant.
+
+  Cheap to change later: the settings object's contents and shape. Expensive: the loading mechanism — switching from
+  globals to ESM later means touching every file that was written against globals in the meantime.
+
+  [1mMy recommendation: ES modules.[0m It's the only option that makes the word "module" mean something, it costs no
+  dependencies, and needing [38;5;153mpython3 -m http.server[39m for local dev is a smaller tax than a bundler or a load-order
+  contract. I'd reach for globals only if opening [38;5;153mindex.html[39m directly from the filesystem is something you actually rely
+  on.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should settings.js be loaded into the browser app?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mexport/import, index.html uses <script type="module">. Real module boundary, no dependencies. Requires serving over
+[39m     [38;5;246mHTTP locally (file:// stops working).[39m
+  [38;5;246m2.[39m Global script tag
+     [38;5;246msettings.js sets window.AppSettings, loaded before app.js. Zero friction, still works from file://, but load-order
+[39m     [38;5;246mdependent and adds a global.[39m
+  [38;5;246m3.[39m Add a bundler
+     [38;5;246mVite or esbuild with real imports and build-time env substitution. Most capable, but introduces a toolchain and [39m
+     [38;5;246mnode_modules to a zero-dependency repo.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

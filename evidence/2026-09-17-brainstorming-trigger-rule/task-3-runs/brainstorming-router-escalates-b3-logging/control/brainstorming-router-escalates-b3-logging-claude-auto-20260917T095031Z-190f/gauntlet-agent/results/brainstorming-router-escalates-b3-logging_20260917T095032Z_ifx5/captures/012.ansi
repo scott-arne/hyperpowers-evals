@@ -1,0 +1,40 @@
+  │ [38;5;153mindex.html[39m   │ Two [38;5;153m<script>[39m tags added before [38;5;153mapp.js[39m: the Sentry CDN bundle, then [38;5;153mlogger.js[39m.                     │
+  ├──────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153mapp.js[39m       │ Three [38;5;153mconsole.*[39m calls replaced; domain events added at the decision points. No structural change. │
+  ├──────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153mpackage.json[39m │ Gains [38;5;153mdevDependencies[39m/[38;5;153mscripts[39m only if you say yes to test tooling in Section 4.                   │
+  └──────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  [1mLoad order.[0m Plain synchronous tags, in order: Sentry bundle → [38;5;153mlogger.js[39m → [38;5;153mapp.js[39m. I'd use Sentry's [3mbundled[0m CDN build
+  rather than their async "loader" script — the loader defers SDK availability, which would make [38;5;153mlogger.js[39m's init racy
+  against [38;5;153mapp.js[39m binding its submit handler. Sync tags cost a blocking request on a page that's already one HTML file
+  and one script; that's an acceptable trade for deterministic ordering. The bundle gets [38;5;153mintegrity[39m + [38;5;153mcrossorigin[39m (SRI)
+  so a compromised CDN can't inject script into your login page — worth doing on any page, mandatory on this one.
+
+  [1mConfiguration, given no build step.[0m The Sentry DSN is a write-only ingest key and is [3mdesigned[0m to be public, so
+  shipping it in static HTML is correct, not a leak. But it does mean anyone can post events to your project, so I'd
+  turn on Sentry's inbound rate limits and allowed-domains list as part of setup — that's project config on their side,
+  not code here.
+
+  Mechanically, config rides on the [38;5;153mlogger.js[39m tag as data attributes, read via [38;5;153mdocument.currentScript[39m:
+
+  [90m<[34mscript[90m [36msrc[90m=[31m"logger.js"[90m [36mdata-dsn[90m=[31m"https://…"[90m [36mdata-env[90m=[31m"production"[90m></[34mscript[90m>[39m
+
+  That keeps config next to its consumer and avoids adding a [38;5;153mwindow.APP_CONFIG[39m global to a page that currently has none.
+  It does require the tag stay synchronous ([38;5;153mdocument.currentScript[39m is null under [38;5;153mdefer[39m/[38;5;153masync[39m) — consistent with the
+  load-order decision above.
+
+  [1mEnvironment.[0m [38;5;153mdata-env[39m wins when present; otherwise [38;5;153mlogger.js[39m infers [38;5;153mdevelopment[39m from [38;5;153mlocalhost[39m/[38;5;153m127.0.0.1[39m/[38;5;153mfile:[39m and
+  [38;5;153mproduction[39m otherwise. In [38;5;153mdevelopment[39m the façade logs to the console and does [1mnot[0m initialize Sentry — so local work
+  doesn't pollute production issue counts, and you can still see what's happening. Worth flagging: this repo has no
+  deployment story at all today, so "production" is currently a hostname guess. If you have a real deploy pipeline that
+  can template the attribute, that's strictly better and I'd use it instead.
+
+  Does the architecture and config approach look right so far?
+
+[38;5;246m✻[39m [38;5;246mCogitated for 25s · done 2:57 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

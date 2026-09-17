@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should logs end up in production? → Console + remote sink (Recommended)[39m
+
+[38;5;231m⏺[39m Good. Next: what the browser side actually captures.
+
+  The fork is whether the logger only records what we explicitly tell it to, or also installs global handlers. Most
+  production issues you'd want to debug are the ones nobody wrote a log line for — a thrown exception in an event
+  handler, a rejected fetch. Explicit-only logging misses exactly those.
+
+  - [1mExplicit calls only[0m — [38;5;153mlogger.info/warn/error[39m at hand-picked call sites. Simplest, no global state, zero surprise.
+    Misses uncaught errors entirely, so the crash you most want to see never reaches the sink.
+  - [1mExplicit + global error capture[0m — additionally hooks [38;5;153mwindow.onerror[39m and [38;5;153munhandledrejection[39m in the browser, and
+    [38;5;153muncaughtException[39m/[38;5;153munhandledRejection[39m in Node. Catches the unwritten cases with stack traces. Costs a small amount of
+    global setup and a decision about whether Node should exit after logging a fatal. This is the part that's awkward
+    to retrofit cleanly, since it affects module initialization order.
+  - [1mExplicit + globals + breadcrumbs[0m — also keeps a rolling in-memory buffer of recent events, attached to any error
+    that ships, so you see what led up to the crash. Most debuggable, most machinery.
+
+  My recommendation: [1mexplicit + global error capture[0m. It's the smallest design that actually satisfies "debug production
+  issues," and breadcrumbs can be layered onto the same buffer later if the error reports turn out to lack context.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Capture [39m[49m
+
+[1m[38;5;231mWhat should the logger capture?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mExplicit + global errors (Recommended)[39m
+     [38;5;246mHand-written log calls plus window.onerror / unhandledrejection in the browser and uncaughtException / [39m
+     [38;5;246munhandledRejection in Node, with stack traces.[39m
+  [38;5;246m2.[39m Explicit calls only
+     [38;5;246mOnly logger.info/warn/error where we put them. Simplest and most predictable; uncaught exceptions never reach the [39m
+     [38;5;246msink.[39m
+  [38;5;246m3.[39m Explicit + globals + breadcrumbs
+     [38;5;246mAdds a rolling buffer of recent events attached to each shipped error, so you see the lead-up. Most debuggable, [39m
+     [38;5;246mmost machinery to build and tune.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

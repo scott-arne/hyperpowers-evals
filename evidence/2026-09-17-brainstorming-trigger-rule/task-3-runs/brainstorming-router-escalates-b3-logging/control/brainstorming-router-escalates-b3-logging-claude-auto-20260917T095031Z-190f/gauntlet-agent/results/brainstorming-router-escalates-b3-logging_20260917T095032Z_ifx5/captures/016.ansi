@@ -1,0 +1,40 @@
+  [1mWhat's worth testing[0m (in rough priority):
+
+  1. [1mThe allowlist drops unknown keys.[0m Pass [38;5;153m{ password: "hunter2", reason: "x" }[39m and assert only [38;5;153mreason[39m survives. This
+     is [3mthe[0m safety property — if one test exists, this is it.
+  2. [1mThe scrub layer redacts[0m [38;5;153mpassword[39m / [38;5;153mtoken[39m / [38;5;153mauthorization[39m keys in a [38;5;153mbeforeSend[39m payload.
+  3. [1mNo-op fallback[0m — with [38;5;153mwindow.Sentry[39m undefined, every [38;5;153mlog.*[39m call returns without throwing.
+  4. [1m[38;5;153mlog.*[39m never throws[0m, even given circular objects, [38;5;153mundefined[39m, or a DOM-like object.
+  5. [1mEnvironment resolution[0m picks [38;5;153mdevelopment[39m for localhost and [38;5;153mproduction[39m otherwise.
+
+  These need a fake Sentry object, not the real SDK — which is a point in favour of the façade design: the vendor is one
+  injectable boundary.
+
+  [1mBeyond unit tests[0m, there's one test that proves the actual claim end-to-end: load [38;5;153mindex.html[39m in a headless browser
+  with [38;5;153mwindow.Sentry[39m stubbed to record payloads, type a real password into the form, submit, and assert the string never
+  appears in anything captured. That's a Playwright-class test — genuinely the most valuable single test here, and also
+  the only thing on this list that adds a heavyweight dependency to a repo that currently has zero.
+
+  My recommendation: [1mlint/format + unit tests[0m. Node's built-in [38;5;153mnode:test[39m runner needs no dependencies at all, which fits
+  this repo's character; [38;5;153meslint[39m + [38;5;153mprettier[39m are the JS standard and catch the "logged the whole object by accident"
+  class of mistake. I'd take the E2E leak test too if you're willing to accept Playwright, but I won't assume it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhich tooling should the spec require from the start? (These land in the spec's Global Constraints.)[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Unit tests (node:test)
+  [38;5;246mNode's built-in runner, zero dependencies. Covers the allowlist, scrub, no-op fallback, and environment resolution.[39m
+[38;5;153m❯[39m [38;5;246m2.[39m [38;5;114m[✔][39m [38;5;153mLint + format (eslint/prettier)[39m
+  [38;5;246mStandard JS toolchain. Catches accidental whole-object logging and unused-variable slips. Adds devDependencies.[39m
+  [38;5;246m3.[39m [ ] E2E leak test (Playwright)
+  [38;5;246mDrives the real page with a stubbed Sentry and asserts a typed password never reaches a payload. The strongest proof;
+[39m  [38;5;246mheaviest dependency.[39m
+  [38;5;246m4.[39m [ ] No tooling — ship the code only
+  [38;5;246mFastest path. The redaction guarantee rests on review alone, with no regression protection.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

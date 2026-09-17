@@ -1,0 +1,40 @@
+
+  One thing blocks a mechanical edit: [1mthere is no source of a userId in this repo.[0m The submit handler only reads
+  [38;5;153m#username[39m and [38;5;153m#password[39m from the form, and [38;5;153mlogin[39m is a stub that never calls [38;5;153mAPI_ENDPOINT[39m. So adding a [38;5;153muserId[39m parameter
+  means deciding what the caller passes in — and that decision is the whole change.
+
+  [1mThe fork:[0m whether [38;5;153muserId[39m is a value the app already has and just isn't passing, or a value that has to be produced
+  somewhere new.
+
+  - [1mCaller-supplied, already exists[0m — you have a userId in the real app (hidden form field, session, tenant config) that
+    the fixture omits. Cheap: add the param, read it in the handler, log it. Nothing is ruled out later.
+  - [1mDerived from the login result[0m — the server knows the user id; it belongs on the [3mreturn[0m value, not the parameter
+    list. Also cheap, but it contradicts the literal ask, and tracking then happens after the call, not before.
+  - [1mNew tracking subsystem[0m — "track who logged in" means persisting or sending events somewhere. That is not a parameter
+    change; it's a new module this repo doesn't have, and it would upgrade this task to the architectural path (spec +
+    plan) before any code.
+
+  [1mMy recommendation: the first option[0m, if a userId genuinely exists upstream — it matches what you asked for and stays a
+  three-line change. If tracking is the real goal and there's nowhere for events to go yet, I'd rather stop and design
+  that properly than bolt a parameter onto a stub.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere does the userId value come from when login() is called?[0m
+
+  [38;5;246m1.[39m Caller already has it (Recommended)
+     [38;5;246mA userId exists upstream (hidden field, session, config) and the submit handler can pass it. I add an explicit [39m
+     [38;5;246mparameter and log it. Stays bounded, ~3 lines.[39m
+  [38;5;246m2.[39m It IS the username
+     [38;5;246musername is the identifier; userId is just a clearer name for the same value. Then this is a rename/pass-through, [39m
+     [38;5;246mnot a new input.[39m
+  [38;5;246m3.[39m Server returns it
+     [38;5;246mThe id is only known after authentication, so it belongs on login()'s return value rather than its parameter list.[39m
+  [38;5;246m4.[39m Needs a real tracking layer
+     [38;5;246m"Track who logged in" means recording events somewhere. That's a new subsystem — I'd stop and take the [39m
+     [38;5;246marchitectural path (spec first).[39m
+[38;5;153m❯[39m [38;5;246m5. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  Task {
+    id:           string        // crypto.randomUUID()
+    title:        string
+    dueDate:      string | null // ISO 8601; null = no due date, never notifies
+    completedAt:  string | null // ISO 8601; non-null = done, never notifies
+    dismissed:    { dueSoon: boolean, overdue: boolean }
+  }
+
+  No notifications are stored. The panel's contents are a pure function of [38;5;153m(tasks, now)[39m.
+
+  [1mNotification rules[0m
+
+  A task yields a notification when it has a [38;5;153mdueDate[39m, is not complete, and:
+
+  - [1moverdue[0m — [38;5;153mdueDate < now[39m
+  - [1mdue soon[0m — [38;5;153mnow <= dueDate < now + 24h[39m
+
+  These are mutually exclusive, so a task contributes at most one notification. The 24-hour window is a module constant,
+  not a setting — one less thing to build, easy to promote to a preference later.
+
+  [1mDismissal semantics[0m
+
+  Per the fork you picked, stated precisely enough to test:
+
+  - Dismissing a notification sets the matching flag on the task.
+  - [1mAny edit to [38;5;153mdueDate[39m resets both flags to false.[0m This is the rule that makes "occurrence" well-defined and stops
+    dismissed notifications from being permanently silenced after a reschedule.
+  - Completing a task removes it from the list without touching flags; if it's reopened and still overdue, the old
+    dismissal still applies. That's deliberate — reopening isn't a new occurrence.
+  - A task that's dismissed as [38;5;153mdueSoon[39m and then crosses into [38;5;153moverdue[39m [1mdoes[0m notify again, because that's a different event
+    with its own flag.
+
+  Does the model and the rule set look right?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 2m 16s · done 2:30 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

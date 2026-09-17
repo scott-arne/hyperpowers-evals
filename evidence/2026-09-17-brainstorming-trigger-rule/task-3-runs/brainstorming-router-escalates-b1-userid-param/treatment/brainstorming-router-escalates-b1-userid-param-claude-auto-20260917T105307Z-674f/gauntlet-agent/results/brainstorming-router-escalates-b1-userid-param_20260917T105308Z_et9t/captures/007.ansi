@@ -1,0 +1,40 @@
+  - [1mCaller-supplied ID passed in[0m — matches your request literally: [38;5;153mlogin(username, password, userId)[39m. Buys you an
+    explicit, testable signature. Costs: the submit handler has no ID to pass today, so you'd also need a source (a
+    hidden field, a stored ID from a previous session, or a generated client ID). Until that source exists the argument
+    is [38;5;153mundefined[39m at the only call site, which is worse than not having it.
+  - [1mClient-generated tracking ID[0m — the caller mints an ID per login attempt (e.g. a UUID) and passes it as [38;5;153muserId[39m. Buys
+    you correlation across attempts, works today with no backend. Costs: it identifies the [3mattempt/browser[0m, not the
+    person — so it won't answer "who logged in" if that's the real question. Cheap to swap later.
+  - [1mTrack the identity the server returns[0m — no new parameter; [38;5;153mlogin[39m records who logged in from its own result (currently
+    [38;5;153m{ success, user }[39m). Buys you an ID that's actually authoritative. Costs: it's not the change you asked for, and
+    it's only meaningful once the real API call exists.
+
+  The first two are cheap to change later — one caller, one signature. The third is a different shape of change and
+  would make the parameter unnecessary.
+
+  [1mMy recommendation: caller-supplied ID passed in[0m, but only if you can tell me where the ID comes from. If there's no
+  source yet, the client-generated tracking ID is the honest version of this change; a third parameter that's always
+  [38;5;153mundefined[39m is a signature that lies.
+
+  One flag either way: the current stub does [38;5;153mconsole.log("Logging in:", username)[39m. Adding an ID to that means user
+  identifiers land in browser console logs. Fine for a stub, worth deciding deliberately before this touches anything
+  real.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID source [39m[49m
+
+[1m[38;5;231mWhere should the userId that login() receives come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCaller passes a real ID[39m
+     [38;5;246mlogin(username, password, userId) — you tell me the source (hidden field, stored value, existing session). Explicit
+[39m     [38;5;246mand authoritative, but needs that source to exist.[39m
+  [38;5;246m2.[39m Client-generated tracking ID
+     [38;5;246mThe submit handler mints a per-attempt ID (e.g. crypto.randomUUID()) and passes it. Works today with no backend; [39m
+     [38;5;246midentifies the attempt, not the person.[39m
+  [38;5;246m3.[39m Derive from login result
+     [38;5;246mNo new parameter — track the identity the (stubbed) API returns. Authoritative, but not the change you asked for [39m
+     [38;5;246mand needs the real API call.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

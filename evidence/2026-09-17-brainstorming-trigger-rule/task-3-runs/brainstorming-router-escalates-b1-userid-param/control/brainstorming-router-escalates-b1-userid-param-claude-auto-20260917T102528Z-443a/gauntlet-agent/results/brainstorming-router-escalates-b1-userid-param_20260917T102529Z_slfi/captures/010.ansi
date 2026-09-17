@@ -1,0 +1,40 @@
+  I recommend [38;5;153msessionStorage[39m with the in-memory module in front of it: consumers only ever talk to the module, so
+  storage is an implementation detail and moving to [38;5;153mlocalStorage[39m later is a one-line change rather than a hunt through
+  every form. The persistence choice only leaks if you let forms touch [38;5;153mStorage[39m directly, which the design won't.
+
+  One caution worth stating now: a user id in browser storage is an identifier, not a credential. It tells you who the
+  client [3mclaims[0m to be and nothing more, so nothing security-relevant should trust it — the server still has to authorize
+  every request on its own. That's fine for tracking; I just don't want the stored id mistaken for proof of login
+  later.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How long should the user id survive? → sessionStorage (Recommended)[39m
+
+[38;5;231m⏺[39m Next: the original motivation was "so we can track who logged in," and I want to be sure I build the right thing.
+  There's a difference between [3mknowing[0m the current user and [3mrecording[0m login events, and they're separate pieces of work.
+
+  - [1mJust knowing[0m — the session module exposes the current user, and the existing [38;5;153mconsole.log[39m in [38;5;153mlogin[39m keeps being the
+    only record. Nothing new to build beyond the session layer.
+  - [1mRecording events too[0m — a small tracking seam that emits a "user logged in" event (id, timestamp) somewhere durable
+    or analytics-bound. That's a second subsystem with its own destination, failure behavior, and privacy questions.
+
+  I recommend scoping this spec to [3mknowing[0m — the session layer is the prerequisite for any tracking, later forms need it
+  regardless, and an event sink is straightforward to add on top once there's a current user to attribute events to.
+  Building both at once doubles the surface for something you may want to route to an analytics vendor rather than
+  hand-roll.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Tracking scope [39m[49m
+
+[2m│[0m [1m[38;5;231mDoes this work include recording login events, or just making the current user available?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mJust the session layer (Recommended)[39m
+     [38;5;246mExpose the current user to the app; keep the existing console.log in login as the only record. Event tracking [39m
+     [38;5;246mbecomes a separate, later piece of work.[39m
+  [38;5;246m2.[39m Session layer + event tracking
+     [38;5;246mAlso build a seam that emits a "logged in" event with id and timestamp. I'd need to know the destination (console,
+[39m     [38;5;246mendpoint, analytics vendor).[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

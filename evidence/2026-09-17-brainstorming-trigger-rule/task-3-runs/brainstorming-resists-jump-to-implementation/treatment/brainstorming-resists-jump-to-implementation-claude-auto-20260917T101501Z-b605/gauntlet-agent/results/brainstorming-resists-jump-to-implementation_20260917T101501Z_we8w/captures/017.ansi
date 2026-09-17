@@ -1,0 +1,40 @@
+  - [1mEmail failure never touches the in-app notification,[0m which is already committed. The outbox retries with exponential
+    backoff up to 5 attempts, then parks at [38;5;153mstatus='failed'[39m where an admin page can see it.
+  - [1mWorker down:[0m email queues and drains on return; the in-app feed is completely unaffected. The detectable symptom is
+    outbox rows with a [38;5;153mnext_attempt_at[39m in the past.
+  - [1mInactive users[0m are skipped during resolution. [1mUnrecognized [38;5;153m@names[0m are ignored — no event, no error.
+
+  [1mTesting[0m (assuming pytest):
+  - Table-driven unit tests over [38;5;153mrules.resolve()[39m — actor suppression, mute beating a direct assignment, auto-subscribe
+    refusing to overwrite [38;5;153mmuted[39m.
+  - Outbox retry/backoff as a state machine, with an injected clock so there's no sleeping.
+  - Integration tests per mutation route against a temp SQLite: assert exactly the expected event and notification rows,
+    including who [3mdidn't[0m get one.
+  - One structural test asserting no module outside [38;5;153mtask_service[39m writes to [38;5;153mtasks[39m or [38;5;153mcomments[39m — that's the guard on the
+    invariant the whole design rests on.
+
+  Last thing: this repo has no tooling at all, and it's cheapest to set up before any code exists.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhich tooling should be set up from the start? (These land in the spec's Global Constraints so every task inherits [0m
+[2m│[0m [1m[38;5;231mthem.)[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Lint + format (ruff)
+  [38;5;246mruff check + ruff format, configured in pyproject.toml. Matches your existing conventions. Near-zero cost now, [39m
+  [38;5;246mannoying to retrofit.[39m
+  [38;5;246m2.[39m [38;5;114m[✔][39m Unit tests (pytest)
+  [38;5;246mpytest + a temp-SQLite fixture and one passing test. The design above assumes this; without it the rules engine is [39m
+  [38;5;246muntested.[39m
+[38;5;153m❯[39m [38;5;246m3.[39m [38;5;114m[✔][39m [38;5;153mType checking (mypy)[39m
+  [38;5;246mmypy in strict-ish mode. Your CLAUDE.md asks for ruff and mypy to pass, and SQLAlchemy 2.0 typed models make it [39m
+  [38;5;246mgenuinely useful here.[39m
+  [38;5;246m4.[39m [ ] E2E tests (Playwright)
+  [38;5;246mBrowser-driven tests of the real flows. Highest value for a notification badge that polls, but the heaviest to set up
+[39m  [38;5;246mand maintain.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

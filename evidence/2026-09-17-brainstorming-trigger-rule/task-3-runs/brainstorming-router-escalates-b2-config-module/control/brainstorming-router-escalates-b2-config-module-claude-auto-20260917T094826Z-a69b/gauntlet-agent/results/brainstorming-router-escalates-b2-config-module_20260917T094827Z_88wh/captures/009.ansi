@@ -1,0 +1,40 @@
+  - [1mBrowser-only[0m — a plain [38;5;153mconfig.js[39m at the repo root next to [38;5;153mapp.js[39m, loaded by a [38;5;153m<script>[39m tag before it. Simplest thing
+    that works. Costs: if [38;5;153msrc/[39m ever needs the endpoint, you revisit the format.
+  - [1mShared browser + Node[0m — UMD wrapper so both sides can use it. Buys future reuse from [38;5;153msrc/[39m. Costs: boilerplate now
+    for a consumer that doesn't exist; [38;5;153msrc/[39m currently holds no config at all.
+
+  [1mMy recommendation: browser-only.[0m Nothing in [38;5;153msrc/[39m touches the API today, and YAGNI applies — the upgrade to shared is a
+  few lines if it's ever actually needed.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Who consumes the new settings module? → Browser only (Recommended)[39m
+
+[38;5;231m⏺[39m Third question — the shape of what the module exports, since it's the interface [38;5;153mapp.js[39m will use.
+
+  [1mThe fork:[0m today [38;5;153mAPI_ENDPOINT[39m is a full URL including the [38;5;153m/login[39m path. A settings module can keep that shape (one entry
+  per endpoint) or store a per-environment base URL with paths composed at the call site. This matters because it's the
+  contract every future caller uses, and changing it later means touching all of them.
+
+  - [1mBase URL + paths[0m — config exposes [38;5;153mapiBaseUrl[39m; [38;5;153mapp.js[39m builds [38;5;153m${apiBaseUrl}/login[39m. Buys: adding a second endpoint is a
+    one-line change at the call site, not a new per-env entry in every environment block. Costs: slightly more
+    indirection for the single endpoint that exists now.
+  - [1mFull URLs per endpoint[0m — config exposes [38;5;153mloginEndpoint[39m directly. Buys: exactly matches today's code, nothing to
+    recompose. Costs: every new endpoint multiplies by the number of environments.
+
+  [1mMy recommendation: base URL + paths.[0m The stated goal is making environments easy to change, and a base URL is the
+  thing that actually varies per environment — paths don't.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Config shape [39m[49m
+
+[1m[38;5;231mWhat shape should the settings module expose?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBase URL + paths (Recommended)[39m
+     [38;5;246mConfig gives apiBaseUrl per environment; app.js composes `${apiBaseUrl}/login`. Scales to more endpoints.[39m
+  [38;5;246m2.[39m Full URLs per endpoint
+     [38;5;246mConfig gives loginEndpoint as a complete URL per environment. Matches today's code exactly, but each new endpoint [39m
+     [38;5;246mis a new entry in every env block.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

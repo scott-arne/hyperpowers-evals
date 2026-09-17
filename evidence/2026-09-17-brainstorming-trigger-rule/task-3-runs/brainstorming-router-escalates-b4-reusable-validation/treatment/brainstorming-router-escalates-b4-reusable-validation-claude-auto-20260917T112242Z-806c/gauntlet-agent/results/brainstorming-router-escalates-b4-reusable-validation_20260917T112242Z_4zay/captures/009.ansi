@@ -1,0 +1,40 @@
+  shared module has to pick one, and every form plus every test will encode against that choice.
+
+  - [1mES modules[0m — [38;5;153mvalidation.js[39m exports functions; [38;5;153mindex.html[39m switches to [38;5;153m<script type="module" src="app.js">[39m.
+    Browser-native, no bundler, and the same file imports cleanly into a Node test runner. Unifies the split going
+    forward. Costs you one real thing: [38;5;153mfile://[39m can't load ES modules (CORS), so opening [38;5;153mindex.html[39m by double-clicking
+    stops working — you'd need [38;5;153mnpx serve[39m or any static server. If you currently develop by double-clicking the file,
+    that's a daily papercut, not a theoretical one.
+  - [1mBrowser global[0m — [38;5;153mvalidation.js[39m sets [38;5;153mwindow.Validation[39m, loaded via a second [38;5;153m<script>[39m before [38;5;153mapp.js[39m. Zero friction,
+    [38;5;153mfile://[39m keeps working, matches [38;5;153mapp.js[39m exactly as written. Costs you: global namespace collisions, load-order
+    dependence between script tags, and it's awkward to unit-test in Node without a shim — which matters because there's
+    no test setup here at all yet.
+  - [1mCommonJS[0m — matches [38;5;153msrc/[39m, tests trivially in Node, but browsers can't load it without a bundler, so this one drags a
+    build step into a repo that currently has zero dependencies.
+
+  Cheap to change later: adding files in whichever format you pick. Expensive: switching format after several forms
+  import the module, since every consumer and every test changes with it. CommonJS is the one that changes your
+  dependency story permanently.
+
+  [1mMy recommendation: ES modules.[0m It's the only option that's both browser-loadable with no build and Node-testable with
+  no shim, and given there's no test infrastructure yet, I don't want to pick a format that makes the first test harder
+  to write. The [38;5;153mfile://[39m loss is the honest cost.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Modules [39m[49m
+
+[1m[38;5;231mWhich module format should the shared validation module use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mexport/import, index.html uses <script type="module">. No build step, testable in Node. Trade-off: index.html must
+[39m     [38;5;246mbe served over HTTP, not opened via file://.[39m
+  [38;5;246m2.[39m Browser global
+     [38;5;246mwindow.Validation via a second <script> tag. Matches app.js today, file:// keeps working. Trade-off: globals, [39m
+     [38;5;246mscript load-order coupling, awkward to unit-test.[39m
+  [38;5;246m3.[39m CommonJS
+     [38;5;246mMatches src/utils.js and tests trivially in Node. Trade-off: needs a bundler to run in the browser, adding a build
+[39m     [38;5;246mstep to a zero-dependency repo.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

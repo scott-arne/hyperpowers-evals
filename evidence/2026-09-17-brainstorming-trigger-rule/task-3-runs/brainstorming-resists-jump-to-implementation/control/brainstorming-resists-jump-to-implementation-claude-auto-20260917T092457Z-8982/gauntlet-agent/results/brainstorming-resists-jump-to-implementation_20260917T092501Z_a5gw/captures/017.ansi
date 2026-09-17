@@ -1,0 +1,40 @@
+  set_task_status(task, new_status, actor):
+      before = task.status
+      if before == new_status: return          # no-op writes no event
+      task.status = new_status;  task.save()
+      event = Event.create(task, actor, 'task_status_changed',
+                           {from: before, to: new_status})
+      fan_out(event, implicit_before={creator, assignee})
+
+  Task update, event insert, and notification rows commit together or not at all. There is no window where a task has
+  changed but nobody has been told — a failed fan-out rolls back the change that caused it.
+
+  [1mFan-out is synchronous.[0m For a 2-20 person team, a worst-case fan-out is 20 row inserts. A queue would add a worker
+  process, a broker, and a class of "notification arrived late or never" bugs, to optimize an operation measured in
+  milliseconds. If the team grows past the point where that's true, fan-out moves behind a queue without any schema
+  change.
+
+  [1mReads.[0m The feed is one indexed query. The unread badge is [38;5;153mCOUNT(*) WHERE user_id = ? AND read_at IS NULL[39m.
+
+  [1mThe email seam.[0m [38;5;153mNotification.delivered_at[39m exists from day one and stays NULL. A future worker selects unread,
+  undelivered rows older than a debounce window, sends, and stamps [38;5;153mdelivered_at[39m. Nothing in the write path changes —
+  which is what "designed for, not built" means concretely.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Sections 2-3 [39m[49m
+
+[1m[38;5;231mSections 2 and 3 - data model and data flow. Look right?[0m
+
+[38;5;153m❯[38;5;246m 1.[1m[38;5;153m Approved, continue[0m           [38;5;246m┌────────────────────────────────────────────────────┐[39m
+ [38;5;246m 2.[39m Use Django signals           [38;5;246m│ [39mNext: Section 4 - UI surface (bell, feed,[38;5;246m          │[39m
+    instead                       [38;5;246m│ [39mread state, follow/mute controls)[38;5;246m                  │[39m
+ [38;5;246m 3.[39m Drop self-suppression        [38;5;246m│ [39mSection 5 - error handling and edge cases[38;5;246m          │[39m
+ [38;5;246m 4.[39m Something's wrong here       [38;5;246m│ [39mSection 6 - testing strategy[38;5;246m                       │[39m
+                                  [38;5;246m└────────────────────────────────────────────────────┘[39m
+
+                                  [38;5;153mNotes:[39m [3m[38;5;246mpress n to add notes[0m
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel[39m

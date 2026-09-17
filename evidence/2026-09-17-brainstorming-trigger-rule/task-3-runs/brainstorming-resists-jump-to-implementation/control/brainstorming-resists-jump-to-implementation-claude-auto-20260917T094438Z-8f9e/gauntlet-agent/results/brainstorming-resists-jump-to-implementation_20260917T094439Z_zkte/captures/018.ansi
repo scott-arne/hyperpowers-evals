@@ -1,0 +1,40 @@
+  /codex:setup
+
+  ---
+
+  [1mDesign — Section 1 of 3: the change seam[0m
+
+  This is the part worth spending care on; the rest of the app is a list with buttons.
+
+  [1mThree ways to build the seam:[0m
+
+  1. [1mObservable store with semantic change events.[0m A [38;5;153mTaskStore[39m owns the array. Mutations are methods — [38;5;153madd[39m, [38;5;153mtoggle[39m,
+     [38;5;153mrename[39m, [38;5;153mremove[39m — and each one, after applying, emits a described event: [38;5;153m{ type: 'task:added', task }[39m, [38;5;153m{ type: [39m
+     [38;5;153m'task:toggled', task, from, to }[39m. Subscribers register with [38;5;153mstore.subscribe(fn)[39m. Three subscribe initially: the
+     renderer, the localStorage writer, and (later) whatever notifies.
+  2. [1mCommand log / event sourcing.[0m Every mutation becomes a command object appended to a persisted log; current state is
+     the reduction of that log. The log [3mis[0m the change feed, so undo and an activity feed come nearly free, and "what
+     changed" is a stored fact rather than something you reconstruct. Costs: real machinery, unbounded log growth, and
+     you need snapshotting before long.
+  3. [1mReducer + state diff.[0m A pure [38;5;153mreduce(state, action) → newState[39m, with the seam diffing old against new to describe
+     what changed. Very testable. But the action already knew what happened, so diffing to rediscover it is work you're
+     doing twice.
+
+  [1mRecommendation: #1.[0m It gives you the one property that actually matters for anything notification-shaped — [3msemantic[0m
+  events that say what happened, not "the state is different now" — at almost no cost. #3's diffing throws that
+  information away and then pays to recover it. #2 is the right shape if you commit to undo/history, but you
+  deliberately deferred that, and it's the heaviest thing on this list; notably, #1 upgrades into #2 cleanly, because
+  the events it already emits are exactly the log entries #2 would store.
+
+  Concretely, three files: [38;5;153mstore.js[39m (state + mutations + subscribe), [38;5;153mpersist.js[39m (a subscriber that writes to
+  localStorage under a versioned key), [38;5;153mrender.js[39m (a subscriber that redraws). The store knows nothing about the DOM or
+  localStorage — that's what makes it testable and what keeps a notifier from having to reach into the UI later.
+
+  Does this section look right before I move on to the UI and data flow?
+
+[38;5;246m✻[39m [38;5;246mChurned for 2m 13s · done 2:51 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

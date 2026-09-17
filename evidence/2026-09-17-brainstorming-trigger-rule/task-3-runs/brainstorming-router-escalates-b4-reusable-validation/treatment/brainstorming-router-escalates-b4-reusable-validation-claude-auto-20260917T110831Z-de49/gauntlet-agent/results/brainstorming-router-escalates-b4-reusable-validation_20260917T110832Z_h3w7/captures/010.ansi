@@ -1,0 +1,40 @@
+
+  (password confirmation, async uniqueness) later without a redesign, and it makes the pure core genuinely testable
+  rule-by-rule. I'd rule out C: it's elegant for simple cases but directly undercuts the pure-core/display-helper split
+  you chose.
+
+  Does A look right, or do you want B's serializable schema?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 2m 46s · done 4:13 AM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mA looks right.[39m
+
+[38;5;231m[49m⏺[39m [1mDesign — Section 1: architecture and files[0m
+
+  Three new/changed pieces, plus the existing form rewired:
+
+  - [1m[38;5;153msrc/validation.js[39m (new)[0m — the pure core. Exports [38;5;153mrules[39m ([38;5;153mrequired[39m, [38;5;153memail[39m, [38;5;153mminLength[39m, [38;5;153mmaxLength[39m, [38;5;153mmin[39m, [38;5;153mmax[39m — exactly
+    the set from your first answer) and [38;5;153mvalidate(values, schema)[39m. No DOM references anywhere in this file. Dual-export
+    shim at the bottom.
+  - [1m[38;5;153msrc/validation-display.js[39m (new)[0m — the display layer. Exports [38;5;153mreadValues(formEl)[39m (pulls [38;5;153m{field: value}[39m off the form
+    via [38;5;153mFormData[39m), [38;5;153mshowErrors(formEl, errors)[39m, and [38;5;153mclearErrors(formEl)[39m. This is the only file that touches the DOM.
+    Dual-export shim too.
+  - [1m[38;5;153mindex.html[39m (changed)[0m — inputs gain [38;5;153mname[39m attributes (they currently have only [38;5;153mid[39ms, and [38;5;153mFormData[39m keys off [38;5;153mname[39m), and
+    two [38;5;153m<script>[39m tags are added before [38;5;153mapp.js[39m.
+  - [1m[38;5;153mapp.js[39m (changed)[0m — [38;5;153mvalidateForm[39m is deleted; the submit handler becomes read values → validate against a schema →
+    show errors or call [38;5;153mlogin[39m. The [38;5;153mlogin[39m stub and [38;5;153mAPI_ENDPOINT[39m are untouched.
+
+  One deliberate boundary: the core never learns where errors get rendered, and the display helper never learns what
+  makes a value invalid. That's what keeps the core testable in plain Node.
+
+  On field-to-error matching, the display helper looks inside the form for [38;5;153m[data-error-for="<fieldname>"][39m and writes the
+  message there. If no such element exists it creates one after the input, so a new form works without ceremonial
+  markup but can override placement. It also sets [38;5;153maria-invalid[39m and wires [38;5;153maria-describedby[39m, since error text that only
+  sighted users can associate with a field is a bug worth not shipping.
+
+  Two decisions I need from you on this section. On the second one, the fork is whether the abstraction gets a real
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

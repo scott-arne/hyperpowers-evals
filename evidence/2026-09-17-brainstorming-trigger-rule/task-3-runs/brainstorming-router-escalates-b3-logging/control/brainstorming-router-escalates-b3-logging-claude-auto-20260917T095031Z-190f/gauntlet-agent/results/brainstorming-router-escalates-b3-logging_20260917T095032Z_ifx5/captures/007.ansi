@@ -1,0 +1,40 @@
+  What I found in the repo:
+
+  - [1mTwo disjoint runtimes.[0m [38;5;153mindex.html[39m + [38;5;153mapp.js[39m is a browser login form. [38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m is a Node entry
+    point ([38;5;153mpackage.json[39m [38;5;153mmain[39m) that prints a greeting. They share no code and [38;5;153mapp.js[39m isn't referenced by [38;5;153mpackage.json[39m.
+  - [1mNo dependencies at all[0m — [38;5;153mpackage.json[39m has no [38;5;153mdependencies[39m, no [38;5;153mscripts[39m, no test runner.
+  - [1mA live concern:[0m [38;5;153mapp.js:5[39m logs a username at login and [38;5;153mapp.js:24[39m logs the whole result object. Any logging subsystem
+    that reaches production has to answer "what must never be recorded" before it ships, since this flow handles
+    passwords.
+
+  First question — everything else depends on it.
+
+  The fork is [1mwhich runtime the logging subsystem has to serve[0m, because it decides where logs can physically go. Browser
+  code can't write a log file; it either stays in the user's devtools console (invisible to you in production) or gets
+  shipped over the network to a collector you run — which means a transport, batching, failure handling, and a privacy
+  review. Node code can write to stdout/file cheaply and a log aggregator picks it up, with none of that machinery.
+  Building for both means either one abstraction with two backends (more design, one vocabulary) or two small loggers
+  (less design, duplicated conventions). This choice is expensive to reverse: the transport decision shapes the logger's
+  API, so picking "browser" later after building a Node-only logger means redoing the interface.
+
+  My recommendation is the browser login flow — that's where the code that actually smells like a production issue lives
+  (auth, validation, a form users submit), whereas [38;5;153msrc/index.js[39m is a greeting stub with nothing to debug.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[1m[38;5;231mWhich runtime does the logging need to cover?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser app only (Recommended)[39m
+     [38;5;246mInstrument app.js — the login form, validation, and API call. Requires deciding how logs escape the user's browser
+[39m     [38;5;246mto reach you.[39m
+  [38;5;246m2.[39m Node entry point only
+     [38;5;246mInstrument src/index.js and src/utils.js. Cheap (stdout/file) but there is little real behavior there to debug.[39m
+  [38;5;246m3.[39m Both, shared logger
+     [38;5;246mOne logger module with a browser backend and a Node backend. Most design work; one vocabulary across both.[39m
+  [38;5;246m4.[39m Both, separate loggers
+     [38;5;246mTwo small independent loggers. Less upfront design, but conventions drift over time.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m
