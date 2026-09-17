@@ -20,6 +20,7 @@ import math
 import os
 import re
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -107,18 +108,34 @@ def read_manifest() -> dict:
     return manifest
 
 
-def expected_brainstorming_line(arm: str) -> str:
-    """The listing line Claude Code renders for the brainstorming skill at this arm's root."""
+def expected_brainstorming_line(arm: str, commit: str) -> str:
+    """The listing line Claude Code renders for the brainstorming skill at this arm's pinned commit.
 
-    path = os.path.join(ROOTS[arm], "skills/brainstorming/SKILL.md")
-    with open(path, encoding="utf-8") as handle:
-        for line in handle:
-            if line.startswith("description:"):
-                value = line[len("description:") :].strip()
-                if value.startswith('"') and value.endswith('"'):
-                    value = value[1:-1]
-                return f"{BRAINSTORMING_LINE}: {value}"
-    raise DesignError(f"{path}: no description line")
+    Read from the commit, not the checkout: the root is a live worktree whose
+    HEAD moves on (the description was reverted after the measurement), and
+    the evidence must reproduce from the pins it records.
+    """
+
+    proc = subprocess.run(
+        ["git", "-C", ROOTS[arm], "show", f"{commit}:skills/brainstorming/SKILL.md"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise DesignError(
+            f"{arm}: cannot read skills/brainstorming/SKILL.md at {commit} "
+            f"from {ROOTS[arm]}: {proc.stderr.strip()}"
+        )
+    for line in proc.stdout.splitlines():
+        if line.startswith("description:"):
+            value = line[len("description:") :].strip()
+            if value.startswith('"') and value.endswith('"'):
+                value = value[1:-1]
+            return f"{BRAINSTORMING_LINE}: {value}"
+    raise DesignError(
+        f"{arm}: no description line in skills/brainstorming/SKILL.md at {commit}"
+    )
 
 
 def load_json(path: str) -> dict:
@@ -425,7 +442,7 @@ def check_design(manifest: dict, runs: list[Run], trials: list[Run]) -> None:
         if not any(t.arm == arm for t in trials):
             raise DesignError(f"{arm}: no trials")
         lines = {r.brainstorming_line for r in runs if r.arm == arm}
-        if lines != {expected_brainstorming_line(arm)}:
+        if lines != {expected_brainstorming_line(arm, manifest["commits"][arm])}:
             raise DesignError(f"{arm}: brainstorming line {sorted(lines)}")
     models = {r.model for r in runs}
     if models != {manifest["model"]}:
@@ -446,13 +463,34 @@ def _write_fixture(
     """
 
     os.makedirs(os.path.join(root, "logs"), exist_ok=True)
-    os.makedirs(os.path.join(root, "skills/brainstorming"), exist_ok=True)
-    with open(
-        os.path.join(root, "skills/brainstorming/SKILL.md"), "w", encoding="utf-8"
-    ) as handle:
-        handle.write("---\nname: brainstorming\ndescription: DESC\n---\n")
-    control, treatment, harness = "1" * 40, "2" * 40, "3" * 40
-    commits = {"control": control, "treatment": treatment}
+    commits: dict[str, str] = {}
+    for arm in ("control", "treatment"):
+        arm_root = ROOTS[arm]
+        os.makedirs(os.path.join(arm_root, "skills/brainstorming"), exist_ok=True)
+        with open(
+            os.path.join(arm_root, "skills/brainstorming/SKILL.md"),
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            handle.write("---\nname: brainstorming\ndescription: DESC\n---\n")
+        git = [
+            "git",
+            "-C",
+            arm_root,
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.com",
+            "-c",
+            "commit.gpgsign=false",
+        ]
+        subprocess.run(git + ["init", "-q"], check=True)
+        subprocess.run(git + ["add", "skills"], check=True)
+        subprocess.run(git + ["commit", "-q", "-m", "fixture"], check=True)
+        commits[arm] = subprocess.run(
+            git + ["rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    control, treatment, harness = commits["control"], commits["treatment"], "3" * 40
     originals = [name for name in final_by_run if not name.startswith("rerun-")]
     with open(os.path.join(root, "manifest.tsv"), "w", encoding="utf-8") as handle:
         handle.write(
@@ -712,7 +750,10 @@ def self_test() -> int:
     for title, verdicts, reruns, mutate, expect in cases:
         with tempfile.TemporaryDirectory() as tmp:
             E = tmp
-            ROOTS = {"control": tmp, "treatment": tmp}
+            ROOTS = {
+                "control": os.path.join(tmp, "control-root"),
+                "treatment": os.path.join(tmp, "treatment-root"),
+            }
             _write_fixture(tmp, verdicts, reruns, mutate)
             detail = ""
             try:
