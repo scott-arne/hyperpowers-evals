@@ -1,0 +1,40 @@
+     parts need config later" — a new setting is a new key on each environment, and the public shape is unchanged.
+  2. [1m[38;5;153mHOSTNAME_ENVIRONMENTS[0m — the hostname → env-name mapping. [38;5;153mlocalhost[39m and [38;5;153m127.0.0.1[39m → dev; your production hostname →
+     prod.
+  3. [1m[38;5;153mresolveEnvironment(hostname)[0m — looks up [38;5;153mwindow.location.hostname[39m, and on a miss throws an error that names the
+     offending hostname and tells you to add it to [38;5;153mHOSTNAME_ENVIRONMENTS[39m.
+
+  [1mStored as base URL, not full endpoint.[0m The current constant is [38;5;153mhttps://api.example.com/login[39m — base and path fused.
+  Since more config is coming, [38;5;153msettings.js[39m holds [38;5;153mapiBaseUrl[39m per environment and composes an [38;5;153mendpoints[39m object from it
+  ([38;5;153mendpoints.login = apiBaseUrl + "/login"[39m). Adding a second endpoint becomes one line and can't drift to a different
+  host. Call sites still read one value — [38;5;153mAPP_SETTINGS.endpoints.login[39m — so no string concatenation leaks into [38;5;153mapp.js[39m.
+
+  [1m[38;5;153mapp.js[39m changes[0m: delete the [38;5;153mAPI_ENDPOINT[39m constant; [38;5;153mlogin()[39m reads [38;5;153mAPP_SETTINGS.endpoints.login[39m. That's the whole diff —
+  the stub keeps stubbing, I'm not implementing the real POST.
+
+  [1mError handling[0m: the throw is deliberate and unguarded. If the hostname is unrecognized, [38;5;153msettings.js[39m throws at load,
+  [38;5;153mAPP_SETTINGS[39m is never defined, and the login handler fails loudly on the next click. I'm specifically [3mnot[0m adding a
+  fallback or a defensive check in [38;5;153mapp.js[39m — that would restore the silent-misroute behavior we just decided against. The
+  tradeoff: the console shows two errors (the throw, then a [38;5;153mTypeError[39m on submit) rather than one. The first one names
+  the fix.
+
+  [1mOne value I don't have:[0m your production hostname — the domain the page is [3mserved from[0m, not the API's. I'll put a
+  clearly-marked placeholder in [38;5;153mHOSTNAME_ENVIRONMENTS[39m; with throw-on-unknown, prod won't work until it's filled in,
+  which is the intended loudness. Tell me the hostname and I'll bake it in instead.
+
+  [1m[38;5;153msrc/[39m is untouched.[0m No [38;5;153mrequire[39m, no conversion, no dual export.
+
+  [3mAssumption: dev API is [38;5;153mhttp://localhost:3000[39m — a guess, since no dev backend exists in this repo. Validate by telling
+[0m  [3mme the real one; it's a one-line edit either way.[0m
+
+  On testing: [38;5;153mresolveEnvironment[39m is the only real logic here, and it's currently unreachable from a test because it's
+  IIFE-scoped and there's no test runner, no linter, and no dependencies in this repo. That's fine for a three-function
+  config file, but it's the cheapest it will ever be to add.
+
+[38;5;174m✶[39m [38;5;216mT[38;5;174mhinking… [38;5;246m(1m 18s · ↓[39m [38;5;246m4.2k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

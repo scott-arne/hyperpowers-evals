@@ -1,0 +1,40 @@
+
+  Re-rendering the whole list on every change is the right call at this size: a hundred list items is microseconds, and
+  it removes an entire category of "the DOM and the state disagree" bugs. If the list ever gets long enough to feel it,
+  that's a contained fix inside [38;5;153mui.js[39m.
+
+  [1mError handling.[0m Three things actually go wrong here:
+
+  - [1mCorrupt or unparseable [38;5;153mlocalStorage[39m.[0m Don't crash and don't silently wipe it. [38;5;153mstorage[39m catches the parse error,
+    preserves the bad blob under [38;5;153mtasks.v1.corrupt.<timestamp>[39m, starts empty, and returns a flag the UI shows as a
+    visible banner ("Couldn't read saved tasks; previous data preserved"). Silently discarding someone's tasks is the
+    worst possible failure here.
+  - [1mQuota exceeded on write.[0m Caught in [38;5;153mstorage[39m. The event log is the expendable part, so: trim the log to the most
+    recent 50 and retry once; if the write still fails, keep the change in memory, surface "Changes aren't being saved"
+    in the UI, and stop pretending.
+  - [1mInvalid input.[0m Empty/whitespace-only titles and unparseable dates are rejected in the store with a thrown error the
+    form catches and shows inline. Validation lives in the store, not the form, so it holds no matter who calls it.
+
+  [1mTesting.[0m [38;5;153mnode --test[39m over the three logic modules, which is where the real behavior lives:
+
+  - [38;5;153mstore[39m — each mutation produces the right state [3mand[0m the right event; [38;5;153mupdated[39m records accurate from/to; completion
+    emits [38;5;153mtask.completed[39m not [38;5;153mtask.updated[39m; invalid titles/dates rejected; returned tasks are copies.
+  - [38;5;153mevents[39m — append, ordering, the 200-entry cap evicting oldest first.
+  - [38;5;153mstorage[39m — round-trip, corrupt-JSON recovery preserves the blob and reports the flag, quota failure trims and
+    retries. Tests inject a fake [38;5;153mlocalStorage[39m object, so no browser needed.
+
+  [38;5;153mui.js[39m gets no automated tests under this plan — it's the DOM layer, and you declined Playwright. That's a deliberate
+  gap, not an oversight: the render loop gets verified by opening the page. If it starts breaking, e2e is the answer.
+
+  [1mWhat this explicitly does not include:[0m notifications. This spec ends with a task app that emits a clean change stream.
+  Notifications are the next spec, and they'll consume [38;5;153mevents.js[39m without touching anything else.
+
+  Does this all look right? If so, I'll write it up as a spec at [38;5;153mdocs/hyperpowers/specs/2026-09-16-task-layer-design.md[39m
+  (uncommitted), review it, and hand it to you before any implementation plan gets written.
+
+[38;5;246m✻[39m [38;5;246mBaked for 18s · done 7:28 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

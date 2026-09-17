@@ -1,0 +1,40 @@
+  4. Otherwise not subscribed.
+
+  Because implicit state is derived from the task's live fields, reassignment moves the subscription automatically — the
+  new assignee starts getting notified, the old one stops, with nothing stored.
+
+  [1mFan-out[0m, run once per event inside [38;5;153mapplyChange[39m:
+
+  1. Resolve the subscriber set for the event's task.
+  2. [1mDrop the actor.[0m You are never notified about your own change. This is why the actor switcher earns its place — it's
+     the only way to exercise this branch by hand.
+  3. For each remaining subscriber, coalesce or create.
+
+  [1mCoalescing[0m keys on [38;5;153m(userId, taskId)[39m against that user's [1mmost recent unread[0m notification for the task. If one exists,
+  append the event id and bump [38;5;153mupdatedAt[39m; otherwise create a new record. Two consequences worth stating plainly, because
+  they're the ones that will surprise you if left implicit: a notification you've [1malready read never absorbs[0m new events
+  (reading it closes it, so the next change is a fresh unread row — otherwise a read item would silently mutate under
+  you), and there's [1mno time window[0m. I dropped the 5-minute window I floated earlier: read-state is a better boundary
+  than wall-clock, it's deterministic, and it removes a timer from the tests. The panel renders a coalesced row as "Ana
+  made 3 changes to [3mShip the release[0m".
+
+  [1mRead state.[0m Each notification carries [38;5;153mreadAt[39m. Opening the panel does [3mnot[0m mark everything read — the bell count
+  clearing the instant you glance at it is how people miss things. Instead: clicking a row marks that row read and
+  navigates to the task; an explicit "Mark all read" handles bulk. The bell badge counts [38;5;153mreadAt === null[39m.
+
+  [1mDeletion.[0m [38;5;153mtask_deleted[39m notifies subscribers, and its notification survives the task — it renders from the event, with
+  the title captured in the event's [38;5;153mfrom[39m value. A notification that vanishes because its subject did is worse than
+  useless.
+
+  [1mToasts[0m fire only for notifications created for the [3mcurrent[0m user during this session, capped at three on screen,
+  auto-dismissing after five seconds. Switching users does not replay the new user's backlog as toasts; the bell count
+  is how you discover those.
+
+  Does the behavior look right before I cover UI, errors, testing, and tooling?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 19s · done 7:19 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

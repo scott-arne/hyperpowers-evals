@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Recorded: [38;5;153msessionStorage[39m.
+
+  Third question, and it's the structural one. "Other forms will need it later" means the identity has to be importable
+  from somewhere, but this repo has no way to share code in the browser today — [38;5;153mapp.js[39m is a classic [38;5;153m<script src>[39m with
+  everything at top level, and [38;5;153msrc/[39m uses CommonJS [38;5;153mrequire[39m that no browser can load and no bundler processes. A second
+  form can't reach a session store until that's settled.
+
+  - [1mNative ES modules[0m — [38;5;153m<script type="module" src="app.js">[39m, with a new [38;5;153msrc/session.js[39m exporting [38;5;153mgetUserId()[39m /
+    [38;5;153msetSession()[39m / [38;5;153mclearSession()[39m. Buys you real import boundaries with no build step, and later forms just [38;5;153mimport[39m.
+    Costs: modules are fetched with CORS rules, so opening [38;5;153mindex.html[39m directly from the filesystem stops working — you'd
+    need to serve the directory ([38;5;153mnpx serve[39m, [38;5;153mpython3 -m http.server[39m). That's the one habit this changes.
+  - [1mA global namespace object[0m — [38;5;153mwindow.Session = {...}[39m from a plain [38;5;153m<script src="src/session.js">[39m loaded before [38;5;153mapp.js[39m.
+    Buys you zero disruption; [38;5;153mfile://[39m keeps working. Costs: load order becomes load-bearing, the store is mutable by
+    anything on the page, and it's not testable without a DOM. Migrating to modules later touches every consumer — so
+    the later forms make this more expensive, not less.
+  - [1mAdd a bundler[0m — real imports plus [38;5;153mfile://[39m compatibility, at the cost of a toolchain, a [38;5;153mnode_modules[39m, and a build
+    step in a repo whose [38;5;153mpackage.json[39m has no dependencies at all. YAGNI for two forms.
+
+  [1mMy recommendation: native ES modules.[0m It's the option that makes "other forms will need it later" a one-line import
+  instead of a load-order problem, and it costs you one command to serve the page instead of double-clicking the file.
+  The global approach is the one that gets more expensive with exactly the growth you described.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should the session store be shared with app.js and future forms?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mNative ES modules (Recommended)[39m
+     [38;5;246msrc/session.js with import/export, <script type="module">. Requires serving the page instead of opening the file [39m
+     [38;5;246mdirectly.[39m
+  [38;5;246m2.[39m window global
+     [38;5;246mwindow.Session loaded by a plain script tag before app.js. file:// keeps working; load order matters.[39m
+  [38;5;246m3.[39m Add a bundler
+     [38;5;246mReal imports plus file:// support, at the cost of a toolchain and build step in a zero-dependency repo.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

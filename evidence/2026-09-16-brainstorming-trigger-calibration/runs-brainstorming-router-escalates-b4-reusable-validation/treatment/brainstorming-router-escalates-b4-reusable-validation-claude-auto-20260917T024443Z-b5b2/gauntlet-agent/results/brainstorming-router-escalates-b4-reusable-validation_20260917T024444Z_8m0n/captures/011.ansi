@@ -1,0 +1,40 @@
+  - [38;5;153msrc/index.js[39m / [38;5;153msrc/utils.js[39m — CommonJS, Node-side, unrelated to the browser app.
+  - No test runner, no linter, no dependencies in [38;5;153mpackage.json[39m.
+
+  So there are two mismatched module systems already, and the browser side has neither a validation layer nor an
+  error-display convention. Both get decided by this work.
+
+  First question:
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What forms are actually coming, and what kinds of rules do they need? This sets how much the shared layer has to
+[39m     [38;5;246mhandle. → Required + format rules[39m
+
+[38;5;231m⏺[39m Noted — field-by-field required and format rules only. I'll keep cross-field and async out of the design rather than
+  building hooks for them.
+
+  Next fork. Right now a validation failure just calls [38;5;153mconsole.error[39m — the user sees nothing. Whether the shared layer
+  owns error [3mdisplay[0m or only produces error [3mdata[0m decides its surface area: a data-only validator is easy to test and
+  easy to reuse in Node, but every form re-writes the same DOM code for showing messages; a layer that also renders
+  errors kills that duplication but ties the module to a specific markup convention, and changing that convention later
+  means touching every form's HTML. Data-only is cheap to extend into rendering later; rendering is expensive to back
+  out of.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Boundary [39m[49m
+
+[1m[38;5;231mHow much should the shared layer own?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mValidate + render errors (Recommended)[39m
+     [38;5;246mShared module validates and displays messages next to each field, on a fixed markup convention. Kills the most [39m
+     [38;5;246mduplication; the convention becomes a commitment across all forms.[39m
+  [38;5;246m2.[39m Validate only, return errors
+     [38;5;246mShared module returns {valid, errors} and nothing else. Each form decides how to show them. Smallest surface, [39m
+     [38;5;246measiest to test; error display stays duplicated per form.[39m
+  [38;5;246m3.[39m Validate + render + submit wiring
+     [38;5;246mShared module also attaches the submit listener and calls your handler on success. Least per-form code; most magic,
+[39m     [38;5;246mand forms with unusual submit flows have to opt out.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

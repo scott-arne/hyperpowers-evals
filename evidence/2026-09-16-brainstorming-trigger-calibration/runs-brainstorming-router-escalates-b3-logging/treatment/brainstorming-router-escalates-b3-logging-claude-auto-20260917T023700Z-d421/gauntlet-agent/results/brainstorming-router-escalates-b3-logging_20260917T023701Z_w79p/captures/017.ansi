@@ -1,0 +1,40 @@
+
+  [1mThe allowlist, concretely[0m
+
+  A module-level [38;5;153mALLOWED_FIELDS[39m set. Serialization copies only keys in that set; anything else is dropped and counted as
+  [38;5;153mdroppedFieldCount[39m on the record — so you can tell [3mthat[0m something was suppressed without the record containing [3mwhat[0m.
+
+  Two rules that matter more than the list itself:
+
+  - [1mPrimitives only.[0m A value passes only if it's a string, number, boolean, or null. Objects, arrays, and functions are
+    dropped [3meven under an allowed key[0m. Without this, one [38;5;153mlogger.error("login.failed", {reason: formState})[39m puts the
+    whole form — password included — into a record under a perfectly legitimate key name.
+  - [1mStrings truncate[0m at 512 chars, bounding record size and limiting the blast radius of anything that does slip
+    through.
+
+  Starting list: [38;5;153mevent[39m, [38;5;153mlevel[39m, [38;5;153mok[39m, [38;5;153mreason[39m, [38;5;153mstatus[39m, [38;5;153mfield[39m, [38;5;153mdurationMs[39m, [38;5;153merrorName[39m, [38;5;153merrorMessage[39m, [38;5;153mstack[39m, [38;5;153murl[39m, [38;5;153mline[39m, [38;5;153mcol[39m.
+  Not on it: [38;5;153musername[39m, [38;5;153mpassword[39m, [38;5;153memail[39m.
+
+  Belt and braces: I'd also change [38;5;153mapp.js[39m so the password value never reaches a logging call site at all. [38;5;153mvalidateForm[39m
+  already returns a verdict rather than the data — the submit handler just needs to log the verdict, not the inputs it
+  came from. The allowlist is the guarantee; not handing it the secret in the first place is the cheaper habit.
+
+  [1mData flow[0m
+
+  1. Load → [38;5;153mcreateLogger[39m → correlation ID from [38;5;153mcrypto.randomUUID()[39m, one per page session.
+  2. Submit → breadcrumb [38;5;153mform.validate[39m [38;5;153m{ok, field}[39m — which field was missing, never its value.
+  3. Valid → breadcrumb [38;5;153mlogin.attempt[39m.
+  4. Returns or throws → breadcrumb [38;5;153mlogin.result[39m [38;5;153m{ok, status, durationMs}[39m, or [38;5;153mlogger.error[39m.
+  5. Error (explicit, uncaught, or unhandled rejection) → envelope = [38;5;153m{correlationId, sentAt, error, breadcrumbs[], [39m
+     [38;5;153mmeta:{userAgent, url}}[39m → POST.
+  6. [38;5;153mpagehide[39m → session summary [38;5;153m{correlationId, counts:{attempts, failures, envelopesSent, envelopesDropped}}[39m via
+     [38;5;153msendBeacon[39m.
+
+  Does that look right so far? Next part covers how the logger fails safely and how it gets tested.
+
+[38;5;246m✻[39m [38;5;246mChurned for 4m 32s · done 7:43 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

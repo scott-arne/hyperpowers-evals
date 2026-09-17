@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Read the fixture: [38;5;153mapp.js:4[39m has [38;5;153mlogin(username, password)[39m with a single caller at [38;5;153mapp.js:23[39m, inside the form submit
+  handler. [38;5;153msrc/[39m is unrelated (a greet util).
+
+  Classification: this looks [1mbounded[0m — one existing function, one caller, no new module. I'll present a short design in
+  chat rather than write a spec. One thing I can't resolve from the code, though, and it decides the shape of the
+  change.
+
+  [1mThe fork:[0m the login form only collects [38;5;153musername[39m and [38;5;153mpassword[39m — there is no [38;5;153muserId[39m anywhere in this repo. So either
+  [38;5;153muserId[39m is a value the caller already has access to (and I just thread it through), or it doesn't exist yet and
+  something has to produce it, which is a bigger change than one parameter. Also, [38;5;153musername[39m already identifies who logged
+  in, so "track who logged in" may not need a new parameter at all.
+
+  - [1mCaller supplies it[0m — you have a userId source I haven't seen (session, cookie, config). Cheapest: add the param,
+    pass it at [38;5;153mapp.js:23[39m. Cheap to change later.
+  - [1mDerive/generate it client-side[0m — e.g. a per-session random ID. Means inventing an identity scheme with no server to
+    validate it; the ID means nothing to a backend later. Hard to undo once logs are full of them.
+  - [1mLog the existing username instead[0m — no signature change at all. Loses nothing if username is already the identifier,
+    but doesn't give you a stable ID if usernames can change.
+
+  My recommendation: the first, if you have a source. If "track" means shipping login events somewhere (analytics, an
+  audit log), that's a new subsystem, not a parameter — I'd stop and re-classify this as architectural before writing
+  anything.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere does the userId value come from at the login call site?[0m
+
+  [38;5;246m1.[39m Caller already has it (Recommended)
+     [38;5;246mThere's an existing source (session, cookie, config, prior API call) I haven't seen. I add the param and pass it at
+[39m     [38;5;246mapp.js:23.[39m
+  [38;5;246m2.[39m Generate it client-side
+     [38;5;246mNo source exists; mint an ID (e.g. random per-session) in the app. This invents an identity scheme with no backend
+[39m     [38;5;246mvalidation.[39m
+  [38;5;246m3.[39m Use the existing username
+     [38;5;246mNo new parameter. Track the username that's already passed in. Signature stays login(username, password).[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

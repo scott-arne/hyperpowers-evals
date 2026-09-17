@@ -1,0 +1,40 @@
+
+  [1mApproaches[0m
+
+  [1mA. Versioned single blob, schema-driven, injectable storage[0m [3m(recommended)[0m
+  One [38;5;153mlocalStorage[39m key ([38;5;153m"prefs"[39m) holds [38;5;153m{"version": 1, "values": {...}}[39m. A schema object declares each preference's
+  default and a type check. The module exports a [38;5;153mcreatePrefs(storage)[39m factory defaulting to [38;5;153mglobalThis.localStorage[39m, so
+  tests inject a [38;5;153mMap[39m-backed fake with no browser and no dependency. Reads parse once and merge over defaults; unknown
+  stored keys are dropped; a value failing its type check falls back to that key's default. Writes serialize the whole
+  object.
+  [3mTrade-offs:[0m one parse and one write per operation, and a corrupt blob loses all preferences at once — mitigated
+  because the loss degrades to defaults rather than an exception. The [38;5;153mversion[39m field costs nothing now and is what makes
+  a future rename or type change a migration instead of a guess.
+  [3mComplexity:[0m low.
+
+  [1mB. One key per preference ([38;5;153mprefs.rememberUsername[39m, …)[0m
+  Each preference is its own [38;5;153mlocalStorage[39m entry.
+  [3mTrade-offs:[0m corruption is isolated to a single preference, and writes touch only what changed. But there's no way to
+  enumerate or reset preferences without prefix-scanning the whole store, every read is a separate parse-and-validate
+  site, and versioning becomes per-key. It buys isolation this app has no use for and costs coherence.
+  [3mComplexity:[0m low, but more surface.
+
+  [1mC. Blob plus an in-memory write-through cache and a change-event emitter[0m
+  A wraps itself in a cache, reads never touch storage after the first, and subscribers are notified on change so
+  multiple UI components stay in sync.
+  [3mTrade-offs:[0m the right shape once several components read the same preference, and the only one that handles another
+  tab writing the same key ([38;5;153mstorage[39m events). For one checkbox and one input it's speculative machinery, and the cache
+  introduces a staleness bug class that doesn't currently exist.
+  [3mComplexity:[0m moderate. This is what A grows into if the app grows; A's interface doesn't change when it does.
+
+  [1mRecommendation: A.[0m It's the smallest thing that handles the failure cases honestly, and its interface is a
+  superset-compatible starting point for C — adding a cache or events later doesn't change a single call site.
+
+  Does A look right, or do you want me to argue for one of the others?
+
+[38;5;246m✻[39m [38;5;246mCogitated for 3m 21s · done 7:35 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

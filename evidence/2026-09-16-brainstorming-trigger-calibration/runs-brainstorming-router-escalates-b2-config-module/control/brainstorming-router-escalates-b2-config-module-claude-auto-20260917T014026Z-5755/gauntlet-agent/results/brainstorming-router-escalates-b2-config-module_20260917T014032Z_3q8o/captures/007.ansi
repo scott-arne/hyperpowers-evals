@@ -1,0 +1,40 @@
+  - [38;5;153msrc/index.js[39m / [38;5;153msrc/utils.js[39m — CommonJS, unrelated to the page; [38;5;153mpackage.json[39m has no deps and no scripts.
+  - Two module conventions already coexist (script-tag globals vs CommonJS), which is the real decision here.
+
+  [1mThe fork:[0m how the page picks up settings determines the module format, and that's the part that's expensive to change
+  later.
+
+  - [1mSecond [38;5;153m<script src="settings.js">[39m before [38;5;153mapp.js[39m, exposing a global.[0m Buys: zero new tooling, matches how [38;5;153mapp.js[39m
+    already loads, works by opening [38;5;153mindex.html[39m from disk. Costs: settings live on a global ([38;5;153mwindow.APP_CONFIG[39m); no
+    import graph. Rules out nothing permanently — but doesn't help [38;5;153msrc/[39m reuse the config.
+  - [1mES modules ([38;5;153m<script type="module">[39m, [38;5;153mexport[39m/[38;5;153mimport[39m).[0m Buys: real imports, explicit dependencies, the modern default.
+    Costs: [38;5;153mindex.html[39m and [38;5;153mapp.js[39m both change; [38;5;153mfile://[39m opening breaks (needs a local server) — that's the sharp edge.
+    Rules in a cleaner path to sharing config with [38;5;153msrc/[39m later.
+  - [1mBuild step / bundler that injects env vars.[0m Buys: real per-environment builds, secrets kept out of source. Costs: a
+    dependency and a toolchain in a repo that currently has neither. Hardest to undo.
+
+  [1mMy recommendation: the plain script-tag global.[0m It fits the file that actually has the constant, keeps [38;5;153mfile://[39m
+  working, and "easier to change environments" here means "edit one obvious place," which it fully delivers. ES modules
+  are the better answer only if you intend [38;5;153msrc/[39m and the page to share code — worth saying now, since retrofitting is
+  cheap but rewriting twice isn't.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module fmt [39m[49m
+
+[1m[38;5;231mHow should the settings module be loaded by the page?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mScript tag global (Recommended)[39m
+     [38;5;246mAdd settings.js loaded before app.js, exposing window.APP_CONFIG. No tooling, index.html still opens from disk.[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246mSwitch app.js to type="module" with import/export. Cleaner, but the page then needs a local server instead of [39m
+     [38;5;246mfile://.[39m
+  [38;5;246m3.[39m CommonJS under src/
+     [38;5;246mMatch src/utils.js style. Only works if a bundler or Node consumer is coming; the browser page can't require() it [39m
+     [38;5;246mtoday.[39m
+  [38;5;246m4.[39m Build-step env injection
+     [38;5;246mAdd a bundler/dotenv toolchain that substitutes per-environment values at build time. Heaviest; adds the repo's [39m
+     [38;5;246mfirst dependency.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

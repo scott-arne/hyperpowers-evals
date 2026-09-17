@@ -1,0 +1,40 @@
+  then a written spec — no code until you approve.
+
+  First fork, and it's the one that determines everything downstream.
+
+  [1mThe fork:[0m the two halves of this repo run in completely different places, and "debug production issues" means
+  something different in each. A browser can't write a log file — logs either sit in a user's devtools console where
+  you'll never see them, or get shipped to a collection endpoint you have to build and operate. A Node process can write
+  structured JSON to stdout and let a log collector handle it, which is nearly free.
+
+  - [1mBrowser app only[0m — buys you visibility into the actual login failures users hit. Costs the most: you need a
+    receiving endpoint, batching, failure handling, and a privacy decision about a form that handles passwords. Hardest
+    to change later, because the transport shape locks in.
+  - [1mNode entry only[0m — cheapest by a wide margin, standard [38;5;153mstdout[39m + structured JSON, no new infrastructure. But
+    [38;5;153msrc/index.js[39m is a hello-world; there are no production issues there to debug.
+  - [1mBoth, one shared module[0m — one logger API, two destinations behind it. Buys consistency, costs a browser/Node
+    abstraction seam that's real work to get right and easy to over-build for two files this size.
+
+  [1mMy recommendation: the browser app only.[0m That's where the real behavior is, and it's the only half where "production
+  issues" is a coherent phrase today. Adding a shared abstraction now for a 6-line Node hello-world is the kind of
+  generality YAGNI should kill — and if [38;5;153msrc/[39m ever grows, retrofitting it against a proven browser logger is easier than
+  designing for a consumer that doesn't exist.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[1m[38;5;231mWhich part of the repo should the logging cover?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser app only (Recommended)[39m
+     [38;5;246mCover app.js / index.html — the login flow. This is where real production behavior lives; src/ is a hello-world [39m
+     [38;5;246mwith nothing to debug.[39m
+  [38;5;246m2.[39m Node entry only
+     [38;5;246mCover src/index.js and src/utils.js. Cheapest to build (structured JSON to stdout), but there are no production [39m
+     [38;5;246missues there today.[39m
+  [38;5;246m3.[39m Both, shared module
+     [38;5;246mOne logger API used by both halves, with browser and Node destinations behind it. Consistent, but a real [39m
+     [38;5;246mabstraction seam to design and maintain.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

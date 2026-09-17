@@ -1,0 +1,40 @@
+    no clock of its own — [38;5;153mnow[39m is passed in, which is what makes the notification rules testable without waiting for time
+    to pass.
+  - [1m[38;5;153msrc/store/[0m — the data-access layer. A [38;5;153mTaskStore[39m interface ([38;5;153mlist[39m, [38;5;153mget[39m, [38;5;153mcreate[39m, [38;5;153mupdate[39m, [38;5;153mremove[39m) with a
+    [38;5;153mLocalStorageTaskStore[39m implementation behind it. This is the single mutation path, and it emits a change event on
+    every write. Two things depend on that: the UI re-renders, and the notification scheduler re-evaluates. This module
+    is the whole "structured to grow" bet — swapping in an [38;5;153mApiTaskStore[39m later is what makes multi-user a swap rather
+    than a rewrite.
+  - [1m[38;5;153msrc/ui/[0m — renders a task list from state and calls store methods. Never reads [38;5;153mlocalStorage[39m, never computes due-soon
+    itself; it asks the model.
+  - [1m[38;5;153msrc/notify/[0m [3m(sub-project 2)[0m — subscribes to store changes, computes which tasks are due-soon or overdue, and
+    dispatches through a [38;5;153mNotifier[39m interface. Two implementations: an in-app inbox and the service worker. It reads
+    through the store like everything else.
+
+  A [38;5;153mTask[39m carries: [38;5;153mid[39m, [38;5;153mtitle[39m, [38;5;153mdueDate[39m (optional), [38;5;153mdone[39m, [38;5;153mcreatedAt[39m, and [38;5;153mownerId[39m. That last one is hardcoded to a single
+  local user for now — it costs one field today and is painful to add to stored records later.
+
+  [1mTooling question, since this is the moment it's cheapest.[0m Setting these up before any code exists is far cheaper than
+  retrofitting, and whatever you pick becomes a constraint every later task inherits.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhich tooling should be set up from the start?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mLint + format[39m
+  [38;5;246mESLint + Prettier (or Biome as a single faster tool). Auto-formatting on save, aggressive lint rules. Near-zero [39m
+  [38;5;246mongoing cost once configured.[39m
+  [38;5;246m2.[39m [ ] Unit tests (Vitest)
+  [38;5;246mRunner, layout, and a first passing test. The model predicates and store are exactly the kind of pure logic that pays
+[39m  [38;5;246mthis back immediately.[39m
+  [38;5;246m3.[39m [ ] E2E tests (Playwright)
+  [38;5;246mBrowser-level tests. Worth it here specifically because service worker notification behavior can't be verified any [39m
+  [38;5;246mother way.[39m
+  [38;5;246m4.[39m [ ] Skip for now
+  [38;5;246mNo tooling setup; just application code. Fastest to first working page, and the most expensive to add back later.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

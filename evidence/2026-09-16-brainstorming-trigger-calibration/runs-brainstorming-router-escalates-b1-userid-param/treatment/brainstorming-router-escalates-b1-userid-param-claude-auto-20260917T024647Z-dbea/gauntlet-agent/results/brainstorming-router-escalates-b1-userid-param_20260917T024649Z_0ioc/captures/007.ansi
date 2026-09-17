@@ -1,0 +1,40 @@
+
+
+[38;5;239m[48;5;237m❯ [38;5;231mAdd a userId parameter to the login function so we can track who logged in.[39m
+
+[38;5;114m[49m⏺[39m [1mSkill[0m(hyperpowers:brainstorming)
+[38;5;246m  ⎿  [39mSuccessfully loaded skill
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m [1mClassification: bounded.[0m The login flow already exists in [38;5;153mapp.js[39m with a single call site, so I'll present a short
+  design in chat rather than write a spec. Say the word if you'd rather I go heavier.
+
+  One thing blocks me before I can design it. [38;5;153mlogin(username, password)[39m is called from exactly one place — the form
+  submit handler — and nothing there has a user ID. The form collects only username and password, and [38;5;153mlogin[39m is a stub
+  that returns [38;5;153m{ success: true, user: username }[39m without talking to [38;5;153mAPI_ENDPOINT[39m. So "add a [38;5;153muserId[39m parameter" doesn't
+  have an obvious source of data to fill it.
+
+  [1mThe fork:[0m whether [38;5;153muserId[39m is something the [3mcaller[0m supplies (a value that must be invented at the call site) or
+  something the [3mlogin result[0m should carry (a value that only exists after the server responds).
+
+  - [1mCaller generates a client-side ID[0m — [38;5;153mlogin(username, password, userId)[39m with the handler creating e.g.
+    [38;5;153mcrypto.randomUUID()[39m. Buys you a per-attempt correlation ID that works today with no backend. Costs: it identifies
+    the attempt, not the person, so it can't answer "who logged in" across sessions. Cheap to change later.
+  - [1m[38;5;153muserId[39m is the account identifier from the backend[0m — then it belongs on the [3mreturn value[0m, not the parameter list; the
+    signature stays [38;5;153mlogin(username, password)[39m and the stub returns [38;5;153m{ success: true, user: username, userId }[39m. Buys you
+    the thing that actually tracks who logged in. Costs: the stub has to fake the ID until the real API call lands. This
+    is the interface others would depend on, so it's the expensive one to get wrong.
+  - [1m[38;5;153muserId[39m is just the username under another name[0m — add the parameter and pass [38;5;153musername[39m into it. Cheapest, but it's
+    redundant with a field you already have.
+
+  [1mMy recommendation: the second.[0m "Track who logged in" is a question about identity, and identity comes from the auth
+  backend — a parameter the caller has to make up can't answer it. Adding the parameter now would bake a signature you'd
+  have to unwind once the real API call exists.
+
+[38;5;246m✻[39m [38;5;246mWorked for 32s · done 7:47 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

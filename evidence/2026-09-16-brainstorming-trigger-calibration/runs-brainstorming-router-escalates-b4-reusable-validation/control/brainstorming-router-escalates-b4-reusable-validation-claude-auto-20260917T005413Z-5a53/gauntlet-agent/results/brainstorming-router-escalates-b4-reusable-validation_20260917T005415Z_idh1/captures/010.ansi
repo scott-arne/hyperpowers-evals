@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Next fork — this one sets the boundary of the module, i.e. how much work each new form still has to do.
+
+  [1mThe fork:[0m does the validation module stop at pure logic, or does it also own the DOM? Today [38;5;153mapp.js[39m manually reads each
+  input by id, calls [38;5;153mvalidateForm[39m, and dumps failures to [38;5;153mconsole.error[39m — nothing renders to the page. Multiple forms
+  means that plumbing gets repeated per form unless the module absorbs it.
+
+  - [1mPure logic only[0m — the module exports a validator that takes a plain data object and returns results. Each form keeps
+    its own code to read inputs and display errors. Smallest, trivially testable in Node with no DOM at all, but signup
+    repeats login's ~10 lines of reading fields and showing messages.
+  - [1mLogic + form binding[0m — the module also exports something like [38;5;153mattachValidation(formElement, schema)[39m that reads
+    fields via [38;5;153mFormData[39m, runs the rules on submit, and renders messages into the page. A new form becomes a schema plus
+    one call. More surface to design and test, and it makes a decision about error markup that every form inherits.
+  - [1mLogic + binding + live validation[0m — the above, plus validating on blur/input rather than only on submit. Better UX,
+    but it's the most behavior to specify and test, and it's easy to add later on top of the middle option.
+
+  Cheap to change later: adding live/on-blur validation onto a binding layer. Expensive: if forms hand-roll their own
+  error rendering now, unifying it later means rewriting each form's display code and its markup.
+
+  [1mMy recommendation is logic + form binding.[0m "Reusable across multiple forms" mostly fails at the plumbing, not the
+  rules — if signup still hand-writes field reading and error display, we've only shared the easy half. Keeping the
+  validator itself DOM-free inside that module means the rules stay unit-testable in plain Node.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Boundary [39m[49m
+
+[1m[38;5;231mHow much should the validation module own?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLogic + binding (Recommended)[39m
+     [38;5;246mPure rule engine, plus an attach helper that reads the form, validates on submit, and renders per-field errors. New
+[39m     [38;5;246mform = schema + one call.[39m
+  [38;5;246m2.[39m Pure logic only
+     [38;5;246mValidator takes a data object, returns results. Each form writes its own field-reading and error display.[39m
+  [38;5;246m3.[39m Binding + live validation
+     [38;5;246mAdds on-blur/on-input validation to the binding layer. Best UX, most to specify and test.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

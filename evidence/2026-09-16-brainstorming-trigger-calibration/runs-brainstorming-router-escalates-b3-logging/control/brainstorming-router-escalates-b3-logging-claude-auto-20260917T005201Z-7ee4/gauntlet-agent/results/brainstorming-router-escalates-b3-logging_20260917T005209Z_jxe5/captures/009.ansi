@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Noted — one shared module, used by both.
+
+  Next fork: [1mwhere the logs actually go.[0m This is the decision that determines whether "debug production issues" is
+  satisfied, and it's the expensive one to change later, because it sets the logger's interface (sync call vs.
+  buffered/async with flush) and whether there's a server-side piece to build.
+
+  - [1mConsole only, structured[0m — replace ad-hoc [38;5;153mconsole.log[39m with levelled, JSON-shaped records. Cheap, no dependency, no
+    backend. Node side is genuinely production-usable this way (stdout gets collected by whatever runs it). Browser side
+    only helps when you can ask a user to open devtools — it does [3mnot[0m let you debug sessions you can't reproduce.
+  - [1mConsole + remote sink for the browser[0m — same records, plus the browser batches them and POSTs to a collector
+    endpoint. This is what actually answers "debug production issues" for the login flow, but it needs an endpoint that
+    exists (you have none today — [38;5;153mapi.example.com[39m is a stub), plus batching, failure handling, and a hard rule about
+    never shipping passwords.
+  - [1mConsole now, pluggable transport seam[0m — structured records and one documented hook where a sink gets attached later.
+    Middle cost, keeps the remote option open without committing to an endpoint that doesn't exist yet.
+
+  My recommendation is the third. The remote sink is the only thing that truly delivers production debuggability, but
+  it's blocked on a collector you don't have, and guessing its contract now is the part most likely to be thrown away.
+  If you already have somewhere to send logs, tell me and I'll take option two instead.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mWhere should the logs go?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mConsole + transport seam (Recommended)[39m
+     [38;5;246mStructured levelled records to console now, with one documented hook to attach a remote sink later. No backend [39m
+     [38;5;246mwork, no guessed endpoint contract.[39m
+  [38;5;246m2.[39m Console + remote sink now
+     [38;5;246mBrowser batches and POSTs records to a collector. Truly debuggable in production, but I need the endpoint URL and [39m
+     [38;5;246mits expected payload shape from you.[39m
+  [38;5;246m3.[39m Console only, structured
+     [38;5;246mLevelled JSON-ish records, nothing leaves the client. Cheapest; browser-side production issues stay invisible to [39m
+     [38;5;246myou.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

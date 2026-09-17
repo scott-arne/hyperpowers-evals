@@ -1,0 +1,40 @@
+  One genuinely architectural question remains: [1mhow a task change becomes a notification.[0m Everything else follows from
+  it.
+
+  [1mA. Event log at the center.[0m All task mutations funnel through one [38;5;153mapplyChange(taskId, patch, actorId)[39m that appends an
+  immutable [38;5;153mTaskEvent[39m — [38;5;153m{id, taskId, actorId, type, field, from, to, at}[39m — to an append-only log. A fan-out step reads
+  each event, resolves subscribers, drops the actor, and writes notification records. [3mWins when[0m you later add a backend:
+  an event log is exactly the sync boundary a server needs, so the client/server split falls along a seam that already
+  exists. Also gives you free per-task activity history and replayable tests — you can assert notification behavior by
+  feeding events in, with no UI involved. [3mCosts:[0m two stores instead of one, and a retention policy, since the log grows
+  forever.
+
+  [1mB. Diff on write.[0m No log. The store compares previous and next task snapshots on each write, produces change
+  descriptors in memory, and hands them straight to fan-out. Only notifications are persisted. [3mWins when[0m you want the
+  smallest store and don't need history. [3mCosts:[0m the change detail exists only as long as the notification row it
+  produced; there's no activity feed, and when the backend arrives you'll almost certainly build the event log anyway —
+  this defers that work rather than avoiding it.
+
+  [1mC. Derived on read[0m — store a per-user [38;5;153mlastSeenAt[39m and compute "what changed" by scanning tasks at render time. I'm
+  [1mdiscarding[0m this one: it can't carry per-notification read state or coalescing counts, both of which you've already
+  chosen.
+
+  [1mMy recommendation: A.[0m The deciding factor isn't purity, it's that you picked "backend-shaped." The event log [3mis[0m the
+  backend shape — with B, the swap-in-a-server step means inventing the event model from scratch under pressure. A's
+  extra cost is one more store plus a cap (keep the last N events), which is small and self-contained.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Engine [39m[49m
+
+[1m[38;5;231mHow should a task change become a notification?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mEvent log at center (Recommended)[39m
+     [38;5;246mImmutable TaskEvent log, fan-out derives notifications. Natural backend sync seam, free activity history, [39m
+     [38;5;246mreplayable tests. Costs a second store + retention cap.[39m
+  [38;5;246m2.[39m Diff on write
+     [38;5;246mCompare snapshots, emit change descriptors in memory, persist only notifications. Smallest store, but no history [39m
+     [38;5;246mand the log gets built later anyway.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

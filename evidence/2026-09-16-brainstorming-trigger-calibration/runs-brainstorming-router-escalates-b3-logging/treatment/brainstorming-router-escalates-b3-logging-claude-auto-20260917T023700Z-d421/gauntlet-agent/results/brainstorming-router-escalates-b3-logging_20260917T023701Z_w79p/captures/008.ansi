@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Good — browser app only. Next fork, and this is the one that decides whether this actually solves your problem.
+
+  [1mThe fork:[0m a browser log is useless to you unless it leaves the user's machine. Right now nothing in this repo has a
+  backend — [38;5;153mAPI_ENDPOINT[39m points at [38;5;153mapi.example.com[39m and [38;5;153mlogin()[39m never calls it. So "debug production issues" needs a
+  destination, and picking it determines the whole transport half of the design.
+
+  - [1mYour own endpoint[0m — POST batched log records to a URL you configure. Keeps the repo zero-dependency and matches the
+    [38;5;153mAPI_ENDPOINT[39m pattern already here. Costs you a receiver to build and operate, plus batching, retry, and size limits
+    on the client. Only viable if you have, or will have, somewhere to receive them.
+  - [1mA third-party service[0m (Sentry or similar) — fastest path to logs you can actually read; the vendor handles batching,
+    retry, source maps, and search. Costs a dependency in a currently zero-dep project, and sends user data to a third
+    party. Hardest to reverse in the sense that you'll shape records around their SDK.
+  - [1mConsole only, but structured[0m — levels, timestamps, consistent shape, no transport. Cheap and reversible. But logs
+    stay in the user's devtools, so it does not let you debug production — only local and staging repro.
+
+  Transport choice is the expensive one to change later; levels and record shape are cheap either way.
+
+  [1mMy recommendation: your own endpoint[0m — if you have somewhere to receive them. It preserves the zero-dependency
+  posture, and a sink is a small enough seam that swapping in a vendor later is contained. If you don't already operate
+  a log receiver, don't build one for this — take the third-party option, because a self-hosted sink that nobody stood
+  up means logging that ships and never reaches you.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mWhere should browser logs actually land?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mOwn endpoint (Recommended)[39m
+     [38;5;246mBatch and POST records to a configurable URL. Zero dependencies. Requires you to have or build a receiver — pick [39m
+     [38;5;246mthis only if that exists.[39m
+  [38;5;246m2.[39m Third-party service
+     [38;5;246mSentry or similar SDK handles transport, retry, and search. Fastest real visibility; adds a dependency and sends [39m
+     [38;5;246muser data to a vendor.[39m
+  [38;5;246m3.[39m Structured console only
+     [38;5;246mLevels, timestamps, consistent record shape, no network. Cheap and reversible, but logs never reach you — [39m
+     [38;5;246mlocal/staging debugging only.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

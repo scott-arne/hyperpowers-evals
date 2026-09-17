@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the shared validation module be loaded? → ES modules (Recommended)[39m
+
+[38;5;231m⏺[39m ES modules it is.
+
+  [1mThe fork:[0m today [38;5;153mvalidateForm[39m returns [38;5;153m{ valid: false, error: "Missing required fields" }[39m — one string, no indication of
+  which field failed. That return shape is the interface every future form consumes, so it's the expensive thing to
+  change later.
+
+  - [1mPer-field error map[0m — [38;5;153m{ valid, errors: { username: "Username is required" } }[39m, collecting every failure rather than
+    stopping at the first. Lets each form render a message next to the offending input. Cost: the call site in [38;5;153mapp.js[39m
+    changes, and it's marginally more code.
+  - [1mKeep the single string[0m — smallest possible diff, [38;5;153mapp.js[39m untouched. Cost: no form can ever say [3mwhich[0m field is wrong
+    without a breaking change to the shared module — and breaking it gets more expensive with each form added, which is
+    exactly the situation you're trying to avoid.
+  - [1mBoth[0m — [38;5;153m{ valid, error, errors }[39m, [38;5;153merror[39m being the first message. Backward compatible today. Cost: two representations
+    of the same truth that can drift, for a compatibility burden of exactly one call site.
+
+  [1mMy recommendation: the per-field map.[0m With one consumer, changing [38;5;153mapp.js[39m costs a few lines; the single-string shape is
+  cheap now and is the one decision here that gets genuinely hard to reverse. I'd skip "both" — preserving
+  compatibility for a single call site you control isn't worth carrying two shapes.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Result shape [39m[49m
+
+[1m[38;5;231mWhat should the validation result look like?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mPer-field error map (Recommended)[39m
+     [38;5;246m{ valid, errors: { field: message } }, collects all failures. Enables per-input messages. Updates the one call site
+[39m     [38;5;246min app.js.[39m
+  [38;5;246m2.[39m Single error string
+     [38;5;246mKeep { valid, error } as-is. Smallest diff, app.js untouched. Locks out per-field messages behind a later breaking
+[39m     [38;5;246mchange.[39m
+  [38;5;246m3.[39m Both shapes
+     [38;5;246m{ valid, error, errors } — backward compatible, but two representations to keep in sync for one call site.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

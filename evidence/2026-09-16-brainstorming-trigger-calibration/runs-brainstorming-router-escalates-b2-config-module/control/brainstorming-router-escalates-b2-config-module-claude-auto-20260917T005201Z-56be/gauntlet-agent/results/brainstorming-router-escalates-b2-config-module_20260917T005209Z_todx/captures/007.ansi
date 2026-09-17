@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the app determine which environment it's running in? → Hostname detection (Recommended)[39m
+
+[38;5;231m⏺[39m Locked in: hostname detection.
+
+  Next fork, and it's the interface decision. [38;5;153mapp.js[39m is a classic script — no [38;5;153mtype="module"[39m, no bundler — so how
+  [38;5;153msettings.js[39m hands its values to [38;5;153mapp.js[39m determines both the module's shape and whether [38;5;153mindex.html[39m still works when
+  opened directly from disk.
+
+  - [1mGlobal via second [38;5;153m<script>[0m — [38;5;153mindex.html[39m loads [38;5;153msettings.js[39m before [38;5;153mapp.js[39m; it exposes one frozen global (e.g.
+    [38;5;153mwindow.AppSettings[39m). Matches the existing plain-script idiom exactly, keeps [38;5;153mfile://[39m working, zero risk. Costs you
+    one more global on [38;5;153mwindow[39m. Cheap to change later.
+  - [1mES modules[0m — [38;5;153m<script type="module" src="app.js">[39m with [38;5;153mimport { apiEndpoint } from './settings.js'[39m. No globals,
+    proper module boundary, the direction the ecosystem went. But ES modules are blocked by CORS over [38;5;153mfile://[39m, so
+    opening [38;5;153mindex.html[39m by double-clicking stops working — you'd need a local HTTP server to run the page at all. That's
+    a workflow change, not just a syntax change.
+
+  [1mMy recommendation: the global.[0m The repo's whole idiom is plain scripts with no tooling, and ES modules would trade a
+  working "open the file" workflow for a boundary that buys little in a two-file page. If the app later grows a build
+  step, converting then is mechanical.
+
+  I'm also assuming [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m stay untouched — they're CommonJS Node code with no API endpoint, so
+  pulling them into a browser settings module would be scope creep. Say the word if you want them covered too.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module form [39m[49m
+
+[1m[38;5;231mHow should settings.js expose its values to app.js?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mGlobal script tag (Recommended)[39m
+     [38;5;246msettings.js loads first and sets a frozen window.AppSettings. Matches existing plain-script style; index.html still
+[39m     [38;5;246mopens from disk.[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246mimport/export with type="module". Cleaner boundary, no globals, but requires serving over HTTP — file:// stops [39m
+     [38;5;246mworking.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

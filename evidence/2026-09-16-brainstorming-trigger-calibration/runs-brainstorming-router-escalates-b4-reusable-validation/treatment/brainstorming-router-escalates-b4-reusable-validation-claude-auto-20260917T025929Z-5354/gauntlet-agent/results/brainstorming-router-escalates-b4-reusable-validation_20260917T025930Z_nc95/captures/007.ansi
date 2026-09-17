@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Noted — preparatory, so I'll keep the rule set minimal and design for the extraction, not for imagined future forms.
+
+  Next question is the one that constrains everything else.
+
+  [1mThe fork:[0m the project has two incompatible module worlds — [38;5;153mapp.js[39m is a classic [38;5;153m<script src>[39m with plain globals, while
+  [38;5;153msrc/[39m uses CommonJS [38;5;153mrequire[39m. A shared validation module has to be loadable by the browser form code [3mand[0m ideally by a
+  test runner. Picking the loading mechanism decides file layout, how future forms import it, and whether validation is
+  testable outside a browser. This is expensive to change later: every consuming form's import style depends on it.
+
+  - [1mES modules[0m — [38;5;153mexport[39m/[38;5;153mimport[39m, [38;5;153mindex.html[39m becomes [38;5;153m<script type="module">[39m. No build step, native in browsers, and Node
+    can import it directly. Cost: [38;5;153mfile://[39m no longer works, you'd need a local static server to open the page. Rules out
+    nothing later.
+  - [1mCommonJS, matching [38;5;153msrc/[0m — consistent with [38;5;153msrc/utils.js[39m, trivially testable in Node. Cost: browsers can't [38;5;153mrequire[39m, so
+    [38;5;153mapp.js[39m needs a bundler or a duplicated global shim. Adds the build step the project currently doesn't have.
+  - [1mGlobal namespace object[0m — [38;5;153mvalidation.js[39m sets [38;5;153mwindow.Validation[39m, loaded by a second [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m. Zero
+    ceremony, [38;5;153mfile://[39m keeps working. Cost: not importable by Node without a shim, so tests get awkward, and it's the
+    style you'd migrate away from later.
+
+  [1mMy recommendation: ES modules.[0m It's the only option that gives the browser and a test runner the same file with no
+  build step, and "needs a local server" is a one-line change to how you open the page rather than a structural cost.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module system [39m[49m
+
+[1m[38;5;231mHow should the shared validation module be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mexport/import; index.html gets type="module". One file works in browser and Node, no build step. Requires serving [39m
+     [38;5;246mover a local http server instead of opening the file directly.[39m
+  [38;5;246m2.[39m CommonJS like src/
+     [38;5;246mConsistent with src/utils.js and testable in Node, but browsers can't require — needs a bundler or a duplicated [39m
+     [38;5;246mglobal shim.[39m
+  [38;5;246m3.[39m Global namespace object
+     [38;5;246mwindow.Validation via a second script tag. Simplest, file:// keeps working, but not Node-importable so tests get [39m
+     [38;5;246mawkward.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

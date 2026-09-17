@@ -1,0 +1,40 @@
+
+  [1mFlow.[0m [38;5;153mindex.html[39m gains two controls: a "Remember me" checkbox inside the form, and a theme toggle button.
+
+  On page load, [38;5;153mapp.js[39m calls [38;5;153mall()[39m once and applies the result — sets [38;5;153m<body class="theme-dark">[39m or [38;5;153mtheme-light[39m,
+  pre-fills [38;5;153m#username[39m if a remembered value exists, and checks the box if it does. Toggling the theme calls [38;5;153mset("theme",
+[39m  [38;5;153m…)[39m and re-applies the class immediately. On submit, if the box is checked, [38;5;153mset("rememberedUsername", username)[39m; if
+  not, [38;5;153mset("rememberedUsername", "")[39m — an unchecked box on submit must actively erase a previously remembered name, or
+  unchecking it appears to do nothing until the cache happens to clear.
+
+  The existing [38;5;153mlogin[39m and [38;5;153mvalidateForm[39m functions don't change. The submit handler gains the two-line remember/forget
+  branch after validation passes.
+
+  [1mError handling[0m splits along one line: whether the caller could have prevented it.
+
+  [3mEnvironmental failures degrade silently to defaults, never throw.[0m A [38;5;153mJSON.parse[39m failure on corrupt data, a value that
+  fails its validator ([38;5;153mtheme: "blue"[39m from a hand-edited entry), an unrecognized [38;5;153mv[39m, or a missing key all resolve to the
+  registry default. Per-field, not all-or-nothing: a bad [38;5;153mtheme[39m with a good username keeps the username. The principle is
+  that nothing a user can type into devtools should be able to white-screen the login page.
+
+  [3mProgrammer errors throw.[0m [38;5;153mget[39m/[38;5;153mset[39m on an unregistered key, or [38;5;153mset[39m with a value failing its validator, raise immediately.
+  These are typos, and swallowing them hides bugs.
+
+  Between those sits storage being unavailable — Safari private mode, disabled site data, a locked-down [38;5;153mfile://[39m context.
+  Merely touching [38;5;153mglobalThis.localStorage[39m can throw a [38;5;153mSecurityError[39m, so [38;5;153mcreatePrefs[39m probes it in a [38;5;153mtry[39m at construction
+  and falls back to an in-memory [38;5;153mMap[39m when it fails. The app then works normally for the session and just doesn't
+  persist. I'd rather spend three lines there than have every call site ask "did storage exist?". Writes that fail for
+  quota or security reasons return [38;5;153mfalse[39m rather than throwing, so a caller [3mcan[0m notice; nothing in this version acts on
+  that.
+
+  Flag if the in-memory fallback feels like scope you'd rather cut — it's the one piece here that's defensive against a
+  case this fixture may never hit.
+
+  Does the error handling look right?
+
+[38;5;246m✻[39m [38;5;246mBaked for 24s · done 7:04 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

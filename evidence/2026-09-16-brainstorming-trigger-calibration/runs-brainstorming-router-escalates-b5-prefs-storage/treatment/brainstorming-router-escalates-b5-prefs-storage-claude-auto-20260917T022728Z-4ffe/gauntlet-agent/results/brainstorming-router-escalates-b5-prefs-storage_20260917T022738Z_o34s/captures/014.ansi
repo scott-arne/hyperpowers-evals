@@ -1,0 +1,40 @@
+
+  [1m3. Error handling[0m
+
+  Every one of these degrades to working defaults rather than a thrown error, because a preferences layer must never be
+  able to break the login form:
+
+  - [38;5;153mlocalStorage[39m missing, or throwing on access (Safari private mode throws on the [3mproperty read[0m) → caught at
+    construction, in-memory fallback, [38;5;153mpersistent === false[39m.
+  - Corrupt JSON in the blob → defaults.
+  - Valid JSON that isn't an object — [38;5;153m"null"[39m, [38;5;153m"[1,2]"[39m, [38;5;153m"7"[39m → defaults.
+  - Unrecognized [38;5;153mversion[39m → defaults. Version 1 is the only one today; the field exists so a future rename is a migration
+    rather than a guess.
+  - A value failing its schema check → that one key falls back to its default; the others are unaffected.
+  - Unknown keys present in storage → ignored, and dropped on the next write.
+  - [38;5;153mQuotaExceededError[39m on write → caught, [38;5;153mset[39m returns [38;5;153mfalse[39m.
+
+  [1m4. Testing[0m
+
+  [38;5;153mtest/prefs.test.mjs[39m using [38;5;153mnode:test[39m + [38;5;153mnode:assert[39m, run by [38;5;153mnpm test[39m ([38;5;153mnode --test[39m) — the first [38;5;153mscripts[39m entry this
+  [38;5;153mpackage.json[39m has had. Against the fake storage: defaults on empty; set/get round-trip; [1mvalues surviving a fresh [0m
+  [1m[38;5;153mcreatePrefs[39m over the same storage, which is the across-sessions claim[0m; each corruption case in section 3; unknown-name
+  and bad-value throws; quota returning [38;5;153mfalse[39m; [38;5;153mreset[39m; and an explicit assertion that no stored key ever contains the
+  password.
+
+  Then a manual browser check, since no e2e: serve with [38;5;153mpython3 -m http.server[39m, tick the box, submit, reload, confirm
+  the username comes back.
+
+  [1mWorth knowing:[0m "remember username" means the username sits in [38;5;153mlocalStorage[39m in plain text, readable by any script on
+  the origin and by the next person at a shared machine. That's the normal trade for this feature and it's why the
+  password stays out — but it is a real disclosure, so say the word if you'd rather the stored preference be something
+  inert like a theme instead.
+
+  Does this look right? If so I'll write it up as a spec for you to review before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mChurned for 44s · done 7:36 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

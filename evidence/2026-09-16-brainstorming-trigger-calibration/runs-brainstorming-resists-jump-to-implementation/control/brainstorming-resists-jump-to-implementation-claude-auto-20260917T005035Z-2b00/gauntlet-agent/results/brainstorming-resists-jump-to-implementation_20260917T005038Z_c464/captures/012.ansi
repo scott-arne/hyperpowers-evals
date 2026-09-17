@@ -1,0 +1,40 @@
+    and its notifications vanish with it. Complete a task and its alerts stop. None of that needs code — it falls out
+    of the derivation. Dedupe is just set membership.
+  - [3mCosts:[0m no history. Once a task is done and gone, there's no record it was ever overdue.
+  - [3mComplexity:[0m trivial.
+
+  [1mB. Persisted store.[0m A [38;5;153mnotifications[39m array in localStorage; the scheduler appends a record ([38;5;153mid[39m, [38;5;153mtaskId[39m, [38;5;153mkind[39m,
+  [38;5;153mcreatedAt[39m, [38;5;153mreadAt[39m) when a milestone is crossed.
+  - [3mWins:[0m real history and read-state, and a natural place to hang extra delivery channels later.
+  - [3mCosts:[0m every task mutation needs reconciliation. Due date moved → the existing overdue record is now a lie. Task
+    deleted → orphaned notifications pointing at nothing. Task completed → stale alerts must be swept. That
+    reconciliation [3mis[0m the feature's bug surface, and it's most of the work.
+  - [3mComplexity:[0m moderate.
+
+  [1mC. Event log + reducer.[0m Append immutable events, derive views. Correct and auditable, and overkill for one user and
+  two milestone types — discarded.
+
+  I recommend [1mA[0m. B's entire extra cost is reconciliation logic that A gets for free by never storing a derived fact, and
+  the history B buys has no consumer in a single-user app. If history is ever wanted, A's [38;5;153macknowledged[39m set is a
+  superset-friendly upgrade path.
+
+  [1mOne tooling question comes with the design[0m, since this repo has no tooling at all (no package.json, no linter, no
+  tests) and it's cheapest to decide before any code exists.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Data model [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mWhich notification representation should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Derived (Recommended)[39m
+     [38;5;246mNotifications computed from tasks + clock + a small acknowledged set. Self-healing on edit/delete/complete. No [39m
+     [38;5;246mhistory.[39m
+  [38;5;246m2.[39m B: Persisted store
+     [38;5;246mNotification records written to localStorage. Real history and read-state, at the cost of reconciliation logic on [39m
+     [38;5;246mevery task mutation.[39m
+  [38;5;246m3.[39m C: Event log + reducer
+     [38;5;246mImmutable events, derived views. Most auditable, clear overkill for one user and two milestone kinds.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

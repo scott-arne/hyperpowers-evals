@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Does this work include wiring login() to the real API endpoint, or does the stub stay? → Keep the stub, define [39m
+     [38;5;246mthe contract (Recommended)[39m
+
+[38;5;231m⏺[39m Now the decision that actually shapes the subsystem: what "persist" means, since it determines storage, lifetime, and
+  what a stale ID can do.
+
+  The fork is how long the ID outlives the login and who else can see it. [38;5;153mlocalStorage[39m survives browser restarts and is
+  shared across tabs — the strongest reading of "persists," but the value sticks around indefinitely until something
+  explicitly clears it, so you need a logout path and a staleness rule or you'll show one user's ID to the next person
+  on a shared machine. [38;5;153msessionStorage[39m survives reloads but dies with the tab and isn't shared between tabs, which
+  sidesteps the stale-identity problem and costs you cross-tab continuity. In-memory module state survives neither a
+  reload nor a new tab, which I don't think meets what you asked for.
+
+  Worth being explicit about one thing: a userId is an identifier, not a credential, so web storage is a reasonable
+  place for it — but that stops being true the moment a session token rides along in the same object. If the eventual
+  real endpoint returns a token too, that needs different handling, and I'd rather the design say so now than discover
+  it during the swap.
+
+  Storage choice is moderately cheap to change later (one module), but the lifetime semantics leak into every consumer
+  that asks "am I logged in?", and those are expensive to revisit.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mHow long should the stored userId live?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage + explicit logout (Recommended)[39m
+     [38;5;246mSurvives reloads, new tabs, and browser restarts. Requires a clear() path and a staleness rule so a stale ID can't
+[39m     [38;5;246mleak to the next person on a shared machine.[39m
+  [38;5;246m2.[39m sessionStorage (per-tab)
+     [38;5;246mSurvives reloads, dies with the tab, not shared across tabs. No stale-identity risk; no cross-tab continuity.[39m
+  [38;5;246m3.[39m In-memory only
+     [38;5;246mLives for one page load. Simplest and safest, but does not survive a refresh — likely too weak for what you [39m
+     [38;5;246mdescribed.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

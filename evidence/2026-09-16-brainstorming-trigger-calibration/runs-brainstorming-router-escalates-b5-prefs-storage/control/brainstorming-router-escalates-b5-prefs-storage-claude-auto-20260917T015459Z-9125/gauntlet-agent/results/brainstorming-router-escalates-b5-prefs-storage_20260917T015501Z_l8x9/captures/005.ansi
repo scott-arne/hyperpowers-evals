@@ -1,0 +1,40 @@
+  settings flow to modify, and the choices here (where data lives, what the read/write interface looks like, what a
+  "session" is) get baked into every caller. So I'll work through questions, approaches, and a written spec rather than
+  jumping to a short in-chat design. Say the word if you'd rather I treat it as a quick one-off.
+
+  First question, and it's the one that determines everything downstream.
+
+  [1mThe fork:[0m this repo has two independent runtimes, and "persists across sessions" means a completely different
+  mechanism in each. Picking one now decides the storage backend, the API shape (sync vs async), and how it gets tested.
+
+  - [1mBrowser[0m — preferences belong to the login page UI (remembered username, theme). Backend is [38;5;153mlocalStorage[39m; the API can
+    stay synchronous; testing needs a DOM environment. Cheap to build, but data is per-device and per-browser, and
+    never reaches a server.
+  - [1mNode[0m — preferences belong to the CLI in [38;5;153msrc/[39m. Backend is a JSON file on disk (e.g. under the user's config dir); the
+    API is async or sync-fs; testing is plain file I/O with a temp dir. Also cheap, and easier to test, but irrelevant
+    to the login page.
+  - [1mBoth, over a shared interface[0m — one preferences module with a pluggable storage adapter (localStorage in the
+    browser, fs in Node). Buys reuse and one mental model, costs you an abstraction layer and forces the API to be async
+    everywhere so both backends fit. This is the expensive one to walk back if you don't actually need both, and the
+    expensive one to retrofit if you pick a single side and later need the other.
+
+  [1mMy recommendation: browser.[0m The only user-facing thing in this repo is the login page, and "settings persist across
+  sessions" reads as a UI concern. The Node half is a [38;5;153mgreet[39m stub with no user to have preferences. I'd rather build one
+  concrete backend well than an adapter layer for a second consumer that may never exist — and going browser-only now
+  doesn't block adding a Node adapter later, since the module boundary is the same either way.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Runtime [39m[49m
+
+[1m[38;5;231mWhich runtime should preferences storage serve?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser (Recommended)[39m
+     [38;5;246mlocalStorage-backed, serves the login page in index.html/app.js. Synchronous API, per-device data.[39m
+  [38;5;246m2.[39m Node CLI
+     [38;5;246mJSON file on disk, serves src/index.js. Easy to test, but no current user-facing settings there.[39m
+  [38;5;246m3.[39m Both, shared interface
+     [38;5;246mOne module with pluggable localStorage/fs adapters. Forces an async API and an extra abstraction layer.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

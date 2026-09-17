@@ -1,0 +1,40 @@
+
+  [1mClassification: architectural.[0m "Logging" here is a new subsystem this repo doesn't have — a log module, a level
+  policy, and a decision about where logs go in production. That's new structure rather than a change to an existing
+  flow, so I'll go through the full process: questions, approaches, a design you approve section by section, then a
+  written spec. If that feels heavier than you want, say so and I'll drop to a short in-chat design.
+
+  One thing I noticed while reading, which the design has to answer: [38;5;153mapp.js:5[39m logs the username inside [38;5;153mlogin()[39m, and line
+  24 logs the whole login result — both sit in the scope where the password lives. Any real logging layer needs an
+  explicit rule about what never gets logged, or we'll build a faster way to leak credentials.
+
+  First question, and it's the one that decides how big this is:
+
+  [1mThe fork:[0m whether logs have to leave the user's machine. "Debug production issues" can mean either "when a user
+  reports a problem, we ask them to paste their console" or "we can look up what happened without the user's help."
+
+  - [1mBrowser app, logs stay local[0m — a small [38;5;153mlogger[39m module wrapping [38;5;153mconsole[39m with levels and redaction. Cheap, ~one file,
+    no infra. But you only see a production issue if a user sends you the output.
+  - [1mBrowser app, logs shipped off-device[0m — everything above plus a transport: batching, a collection endpoint, failure
+    handling when the network is down, and a real privacy policy since you're now storing user data. Much bigger, and it
+    needs a backend that doesn't exist here.
+  - [1mNode side ([38;5;153msrc/index.js[39m)[0m — structured stdout that your process manager captures. Different mechanics from the
+    browser entirely, and near-free if that's where production actually runs.
+
+  Cheap to change later: log levels, format, which call sites log. Expensive to change later: whether logs are shipped
+  (that's a stored-data and privacy commitment) and the shape of the log records once something downstream parses them.
+
+  [1mMy recommendation:[0m the browser app with logs local, built behind a transport-shaped seam. You get debuggable output
+  and redaction now, and adding a shipper later is one implementation of an interface rather than a rewrite. I'd skip
+  shipping until you have somewhere to ship to.
+
+[38;5;246m⏺ [39mUser declined to answer questions
+[38;5;246m  ⎿  · Which surface needs logging, and do logs need to leave the user's machine? (Browser, local + seam (Recommended) /
+[39m     [38;5;246mBrowser, ship to backend / Node entry only / Both browser and Node)[39m
+
+[38;5;246m✻[39m [38;5;246mCooked for 48s · done 7:54 PM[39m
+                                                                                                      [38;5;246m● high · /effort[39m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

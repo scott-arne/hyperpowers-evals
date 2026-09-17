@@ -1,0 +1,40 @@
+
+  ---
+
+  [1mDesign — Section 1: Architecture[0m
+
+  Four modules, each independently testable, no DOM knowledge below the view layer:
+
+  ┌────────┬─────────────────────────────────────────────────────────────────────────────────────────┬──────────────┐
+  │ Module │                                     Responsibility                                      │  Depends on  │
+  ├────────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mstore[39m  │ The storage seam. [38;5;153mappend(event)[39m, [38;5;153mload()[39m. One localStorage implementation today.         │ nothing      │
+  ├────────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mevents[39m │ Event type definitions and the reducer that folds a log into task state. Pure           │ nothing      │
+  │        │ functions.                                                                              │              │
+  ├────────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mtasks[39m  │ Task operations ([38;5;153mcreate[39m, [38;5;153msetStatus[39m, [38;5;153msetDue[39m, …). Each emits an event; none mutate state  │ [38;5;153mstore[39m,       │
+  │        │ directly.                                                                               │ [38;5;153mevents[39m       │
+  ├────────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mview[39m   │ Renders task state, dispatches to [38;5;153mtasks[39m. The only module that touches the DOM.          │ [38;5;153mtasks[39m        │
+  └────────┴─────────────────────────────────────────────────────────────────────────────────────────┴──────────────┘
+
+  Data flow is a one-way loop: [1mview → tasks → event → store → reducer → state → view.[0m Nothing writes state except by
+  appending an event, which is what guarantees the log is complete — and a complete log is exactly what next cycle's
+  notifications read from.
+
+  Every task carries [38;5;153mid[39m, [38;5;153mtitle[39m, [38;5;153mnotes[39m, [38;5;153mstatus[39m, [38;5;153mdue[39m, [38;5;153mpriority[39m, plus [38;5;153mcreatedBy[39m and a [38;5;153mwatchers[39m list. In single-user mode
+  [38;5;153mcreatedBy[39m is a constant local identity and you're implicitly your own watcher — the fields are load-bearing structure
+  for later, not UI today.
+
+  Error handling: a corrupt or unparseable log fails loudly to an empty state with the raw data preserved under a backup
+  key, rather than silently discarding your tasks.
+
+  Does this section look right before I move on to the UI and the testing strategy?
+
+[38;5;246m✻[39m [38;5;246mChurned for 1m 31s · done 6:44 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

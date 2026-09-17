@@ -1,0 +1,40 @@
+
+  My main recommendation: [1mnotifications shouldn't be the first thing we build.[0m Not because it's a bad feature, but
+  because it's a pure downstream consumer. A notification is the answer to "something you cared about changed" — which
+  needs a task to exist, a change to be detectable, and a "care about" relationship to be defined. On an empty repo,
+  designing the notification layer first means I'd be inventing your task model, your user model, and your persistence
+  strategy as implicit side effects of a feature spec. Those are the decisions that are expensive to undo, and they'd
+  get made by accident.
+
+  So I'd decompose this into separate spec → plan → build cycles, roughly:
+
+  1. [1mTasks core[0m — the task model, create/edit/complete, persistence, and the page that renders them.
+  2. [1mChange events[0m — make mutations produce a record of [3mwhat[0m changed, [3mwhen[0m, and [3mby whom[0m. This is the seam notifications
+     plug into, and it's cheap to build in early and painful to retrofit.
+  3. [1mNotifications[0m — subscription ("care about"), delivery, read state, UI.
+
+  We'd brainstorm #1 properly now and keep #2/#3 in view so we don't design ourselves into a corner. That said, one
+  question upstream of all of it changes everything, including whether that decomposition is even right.
+
+  [1mThe fork: who, other than you, can change a task?[0m
+
+  This sounds like a detail and it's actually the whole architecture. Your phrasing — "users get notified when tasks
+  [3mthey care about[0m change" — implies someone [3melse[0m is doing the changing. If that's true, the app needs a server,
+  accounts, and a shared store from day one. If it's not true, "notification" means something completely different (a
+  reminder you scheduled for yourself), and most of that infrastructure is dead weight.
+
+  - [1mShared workspace (multiple people).[0m Buys you the feature as literally described: real change-notifications about
+    other people's edits. Costs a backend, auth, a hosted datastore, and a delivery transport (in-app feed, email, or
+    push) — that's most of the total build, and notifications stop being a small feature. Rules out staying a static
+    page.
+  - [1mJust you, several devices.[0m Buys sync and due-date reminders. Costs a sync story (hosted store or a service like a
+    backend-as-a-service) but no auth complexity beyond a single account. "Notifications" collapses to scheduled
+    reminders via the browser Notification API.
+  - [1mJust you, one device.[0m Buys the fastest path to something usable — localStorage, no server, no accounts. Costs:
+    notifications are only in-page due-date reminders, and nothing is shared. Rules out collaboration without a rewrite.
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

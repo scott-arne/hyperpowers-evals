@@ -1,0 +1,40 @@
+  What's here now:
+  - [38;5;153mindex.html[39m + [38;5;153mapp.js[39m — a browser login form, with [38;5;153mconsole.log("Logging in:", username)[39m and a [38;5;153mpassword[39m field in scope
+  - [38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m — a small Node CommonJS entry point
+  - [38;5;153mpackage.json[39m with [1mno dependencies[0m, no test script, no build step
+
+  First fork, and it's the one that shapes everything else: [1mwhich app are we instrumenting?[0m These are two different
+  runtimes with two different logging problems.
+
+  - [1mBrowser only ([38;5;153mapp.js[39m)[0m — "production issues" means errors on real users' machines. Logs are useless unless they're
+    shipped somewhere, so this pulls in a network transport, batching, and failure handling. It's also where the
+    password field lives, so redaction is mandatory, not optional.
+  - [1mNode only ([38;5;153msrc/index.js[39m)[0m — much cheaper. Structured JSON to stdout, let the platform collect it. No transport to
+    build, no PII surface. But it does nothing for the login form, which is where your actual user-facing failures are.
+  - [1mBoth, shared core[0m — one log API, two sinks behind it. Buys consistency and one place to change level/redaction
+    rules; costs a module boundary you have to get right up front.
+
+  Hard to change later: the log API shape (every call site bakes it in) and the shipped log format (whatever consumes it
+  depends on it). Cheap to change later: log levels, which events you log, the sink URL.
+
+  My recommendation is [1mbrowser only[0m — [38;5;153msrc/index.js[39m is a [38;5;153mgreet('world')[39m stub with nothing to debug, so instrumenting it
+  is ceremony. But if the Node side is really a server you plan to grow, say so and I'll design for both.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[1m[38;5;231mWhich part of the app should the logging subsystem cover?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser app only (Recommended)[39m
+     [38;5;246mInstrument app.js — the login form, validation, and API call. This is where real user-facing production failures [39m
+     [38;5;246mhappen. src/index.js is currently a stub with nothing worth logging.[39m
+  [38;5;246m2.[39m Both, shared core
+     [38;5;246mOne log API with a browser sink and a Node sink behind it. Consistent, but costs a module boundary decided up [39m
+     [38;5;246mfront. Pick this if src/index.js is going to grow into a real server.[39m
+  [38;5;246m3.[39m Node entry only
+     [38;5;246mStructured JSON to stdout from src/index.js, collected by the platform. Cheapest option by far, but does nothing [39m
+     [38;5;246mfor the login form.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

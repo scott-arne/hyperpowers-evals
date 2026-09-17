@@ -1,0 +1,40 @@
+
+  [1mError handling.[0m Four failure modes, all of which resolve to "no session" rather than an exception:
+
+  - Corrupt or unparseable JSON in localStorage → catch, clear the key, return [38;5;153mnull[39m. Hand-edited and half-written values
+    are real; a [38;5;153mJSON.parse[39m throw on page load would take the whole page down.
+  - localStorage unavailable — Safari private mode, storage disabled, quota exceeded — → every read and write wrapped in
+    try/catch, degrading to no persistence. [1mLogin must still work without storage.[0m Losing persistence is an
+    inconvenience; a login form that throws is an outage.
+  - [38;5;153msuccess: false[39m, or [38;5;153msuccess: true[39m with a missing [38;5;153muserId[39m → no session written. Never persist a partial record.
+  - Unrecognized [38;5;153mv[39m → treat as no session and clear.
+
+  [1mOne change to existing behavior:[0m I want to drop [38;5;153mconsole.log("Logging in:", username)[39m at [38;5;153mapp.js:5[39m and the result log at
+  [38;5;153mapp.js:23[39m. They put identity in the browser console today, and this change would add a stable user ID next to it.
+  That's a small deliberate reduction, not unrelated cleanup — it's the line the feature would otherwise make worse.
+
+  [1mTesting.[0m This is the gap: the repo has no test runner, no dependencies, no lint, and no test script. Approach A
+  touches [38;5;153mlocalStorage[39m directly, so to test it at all, [38;5;153msession.js[39m should reach storage through [38;5;153mglobalThis.localStorage[39m
+  rather than the bare global — a one-word difference that lets a test swap in a fake, without taking on approach C's
+  full adapter layer. Cheapest now, essentially impossible to retrofit cleanly once several consumers exist.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhich tooling should the spec set up from the start? (none exists today)[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;114m[✔][39m [38;5;153mUnit tests, zero-dep (Recommended)[39m
+  [38;5;246mnode:test + a fake localStorage injected via globalThis. No dependencies, adds a test script. Covers save/get/clear, [39m
+  [38;5;246mexpiry, corrupt JSON, and storage-unavailable.[39m
+  [38;5;246m2.[39m [ ] Unit tests via Vitest + jsdom
+  [38;5;246mReal browser-like environment, can test the DOM render paths too. Adds dependencies and a config file to a currently [39m
+  [38;5;246mdependency-free repo.[39m
+  [38;5;246m3.[39m [ ] Lint + format
+  [38;5;246mBiome (one dep, lint+format together) or eslint+prettier. Cheapest to adopt now, before there are many files.[39m
+  [38;5;246m4.[39m [ ] None — ship code only
+  [38;5;246mNo test or lint setup. Fastest, and leaves the expiry and corrupt-storage rules unverified.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

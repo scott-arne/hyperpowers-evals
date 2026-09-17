@@ -1,0 +1,40 @@
+
+  [38;5;153mname[39m gives each call site a stable tag, so the login flow's lines are filterable from everything else.
+
+  [1m2. Record shape and redaction[0m
+
+  Every call produces one record before it reaches a transport:
+
+  { [36mts[39m: [31m"2026-09-16T…Z"[39m, [36mlevel[39m: [31m"warn"[39m, [36mname[39m: [31m"auth"[39m, [36mmsg[39m: [31m"…"[39m, [36mfields[39m: { … } }
+
+  [38;5;153mfields[39m runs through the denylist scrub first: keys matching [38;5;153mpassword[39m, [38;5;153mpasswd[39m, [38;5;153msecret[39m, [38;5;153mtoken[39m, [38;5;153mapiKey[39m, [38;5;153mauthorization[39m
+  (case-insensitive) become [38;5;153m"[redacted]"[39m, recursively, with a depth cap so a cyclic or deep object can't hang the
+  logger. The scrub applies to [38;5;153mfields[39m only — [38;5;153mmsg[39m is a string the caller built, and the design doesn't pretend to scrub
+  free text. That's a real limit worth stating: [38;5;153mlog.info("logging in " + password)[39m still leaks, which is why the
+  integration step below passes structured fields rather than interpolated strings.
+
+  [1m3. Transport seam[0m
+
+  A transport is a function [38;5;153m(record) => void[39m. Shipping one: [38;5;153mconsoleTransport[39m, which maps levels to
+  [38;5;153mconsole.debug/info/warn/error[39m and prints the record. A remote transport would be the same signature — batching and
+  retry live inside it, not in the logger — so adding one later touches no call site. The seam is the interface; nothing
+  remote gets built.
+
+  [1m4. Integration[0m
+
+  - [38;5;153mapp.js[39m: replace the three [38;5;153mconsole.*[39m calls. [38;5;153mlogin()[39m logs [38;5;153mlog.info("login attempt", { username })[39m — username stays,
+    it's the thing you need to correlate on, and the password never enters a log call. Validation failure becomes
+    [38;5;153mlog.warn("validation failed", { error })[39m. The result log becomes [38;5;153mlog.info("login result", { success })[39m rather than
+    dumping the whole result object.
+  - [38;5;153msrc/index.js[39m: [38;5;153mlog.debug("greeting generated", { name })[39m. Thin, honestly — this file has nothing to debug, but wiring
+    it proves the module loads under CommonJS.
+  - [38;5;153mindex.html[39m: one [38;5;153m<script src="src/logger.js"></script>[39m before [38;5;153mapp.js[39m.
+
+  Does this look right so far?
+
+[38;5;246m✻[39m [38;5;246mWorked for 2m 8s · done 6:39 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

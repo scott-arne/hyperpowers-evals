@@ -1,0 +1,40 @@
+
+  - [1mCorrupt or unparseable localStorage[0m — wrap the read in try/catch. On failure, don't crash and don't silently wipe
+    the user's data: keep the bad payload under a backup key, start from an empty list, and surface a visible "couldn't
+    load your saved tasks" message. Silently resetting to empty is the worst option and the most common one.
+  - [1mlocalStorage unavailable or full[0m — private-browsing modes and quota limits both throw on write. The app stays usable
+    in memory for the session, with a persistent warning that changes aren't being saved. Failing loudly beats
+    pretending the save worked.
+  - [1mInvalid [38;5;153mdueAt[0m — validation lives in [38;5;153mtask.js[39m at the boundary, so [38;5;153mcomputeAlerts[39m can assume well-formed input. A task
+    with an unparseable date is treated as having no due date rather than producing [38;5;153mNaN[39m comparisons, which silently
+    evaluate false and would make alerts just quietly not fire.
+
+  [1mSchema versioning.[0m The storage key is [38;5;153mtasks.v1[39m. It costs one line now and is the difference between a migration path
+  and a data loss when the task shape changes.
+
+  [1mTesting.[0m The pure core is where the coverage goes:
+
+  - [38;5;153mcomputeAlerts[39m — table-driven, with [38;5;153mnow[39m injected: exactly at [38;5;153mdueAt[39m, one millisecond either side, the 24h threshold
+    boundary, done tasks, null [38;5;153mdueAt[39m, empty list, ordering across mixed kinds.
+  - Dismissal re-arm — dismiss then reschedule; dismiss [38;5;153mdue-soon[39m then cross into [38;5;153moverdue[39m; complete a task and confirm
+    its dismissals clear.
+  - [38;5;153mstore.js[39m — round-trip save/load, corrupt-JSON recovery, and a throwing storage stub for the quota case, all against
+    an injected fake rather than real localStorage.
+  - UI modules get thin render tests only. No e2e, per your tooling choice.
+
+  The DST and timezone concerns are covered by storing UTC and testing [38;5;153mcomputeAlerts[39m with fixed instants — no test
+  depends on the machine's local timezone.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Errors/tests [39m[49m
+
+[1m[38;5;231mDoes the error handling and testing section look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mApproved — write the spec[39m
+     [38;5;246mAll three sections are good. Write the design doc to docs/hyperpowers/specs/ (uncommitted) for my review.[39m
+  [38;5;246m2.[39m Change something first
+     [38;5;246mI want to adjust the error handling or test strategy before the spec is written.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

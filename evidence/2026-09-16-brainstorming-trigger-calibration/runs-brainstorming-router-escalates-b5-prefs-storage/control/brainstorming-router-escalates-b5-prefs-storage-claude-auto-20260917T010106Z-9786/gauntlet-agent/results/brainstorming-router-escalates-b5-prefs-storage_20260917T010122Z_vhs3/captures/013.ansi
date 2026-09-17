@@ -1,0 +1,40 @@
+  [1mSection 1 — Module, data model, and failure behavior[0m
+
+  [1mNew file [38;5;153mprefs.js[0m, one global [38;5;153mPrefs[39m, three methods:
+
+  - [38;5;153mPrefs.get(key)[39m — returns the stored value or the default
+  - [38;5;153mPrefs.set(key, value)[39m — writes the whole blob
+  - [38;5;153mPrefs.clear(key)[39m — resets one preference to its default
+
+  Defaults live in one object in that file: [38;5;153m{ theme: "light", rememberedUsername: null }[39m. [38;5;153mget[39m merges
+  stored-over-defaults, so an absent or unknown field yields the default, never [38;5;153mundefined[39m.
+
+  [1mStorage shape[0m — one key, [38;5;153mwebapp.prefs[39m, namespaced so it can't collide with anything else on the origin:
+
+  { [36m"version"[39m: [32m1[39m, [36m"theme"[39m: [31m"dark"[39m, [36m"rememberedUsername"[39m: [31m"ada"[39m }
+
+  [38;5;153mversion[39m is there so a future shape change has something to branch on. It is written but not yet read — the only reader
+  today treats anything unexpected as "use defaults."
+
+  [1mFailure behavior[0m, which is most of the real work in a storage module:
+
+  - [3m[38;5;153mlocalStorage[39m unavailable[0m — Safari private mode and some embedded contexts throw on access rather than returning
+    [38;5;153mnull[39m. Every read and write is wrapped; on throw, the module falls back to an in-memory object. The app keeps
+    working, preferences just don't survive the session. No user-facing error.
+  - [3mCorrupt or non-object JSON[0m — [38;5;153mJSON.parse[39m throws, or returns a string/array. Both are treated as absent: fall back to
+    defaults and overwrite on the next write. No attempt at partial recovery.
+  - [3mQuota exceeded[0m — a write throws; it's swallowed and the in-memory value still updates, so the current session is
+    consistent even though nothing persisted.
+  - [3mUnknown [38;5;153mtheme[39m value[0m (hand-edited storage) — validated against the known set on read; anything else is the default.
+
+  The principle across all four: [1ma preferences failure never breaks the page.[0m Preferences are a convenience, and there
+  is no state here worth an error dialog.
+
+  Does this look right before I move on to the UI behavior?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 2m 43s · done 6:08 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

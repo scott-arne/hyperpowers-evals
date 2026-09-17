@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Next: what "tasks they care about" actually means. This is the heart of the system — it determines whether there's a
+  subscriptions table at all, and what "stop bugging me about this" does.
+
+  [1mThe fork:[0m whether interest is a row you store or a fact you derive from the task.
+
+  - [1mImplicit/derived[0m — you're notified about a task if you created it or you're assigned to it. No subscription storage;
+    "who cares about task X" is a query over the task's own fields. Buys: nothing to keep in sync, no orphaned
+    subscriptions, works from day one with zero UI. Costs: no way to follow a task you're not on, and no way to mute one
+    you are on — which becomes the top complaint fast. Adding explicit watches later is additive, not a rewrite.
+  - [1mExplicit watch only[0m — a [38;5;153mwatchers[39m join table; you're notified only if you clicked watch. Buys: unambiguous semantics,
+    trivially mutable, one obvious place to look. Costs: cold start — nobody watches anything, so nobody gets notified,
+    so the feature looks broken. Needs UI in the slice.
+  - [1mHybrid: derived defaults + explicit override[0m — implicit interest from creator/assignee, plus an explicit watch/mute
+    row that overrides it. Buys: works immediately [3mand[0m users can follow or mute. Costs: two sources of truth to
+    reconcile; "why did I get this" is harder to answer. This is where most real systems end up.
+
+  [1mMy recommendation:[0m hybrid, but built in that order — derive interest in the slice, with the resolution function
+  written as a single seam ([38;5;153minterestedUsers(task, event)[39m) that the explicit override plugs into later. You get the
+  working-immediately property now and the mute story without a redesign, as long as the slice doesn't scatter interest
+  logic across call sites.
+
+  One thing I'd push back on regardless of choice: whatever we pick, the actor who [3mcaused[0m the change shouldn't be
+  notified about their own action. That sounds obvious and is the single most common bug in these systems.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Interest [39m[49m
+
+[1m[38;5;231mHow is "tasks they care about" determined?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHybrid, derived-first (Recommended)[39m
+     [38;5;246mSlice derives interest from creator/assignee behind one resolution function; explicit watch/mute plugs into that [39m
+     [38;5;246mseam later.[39m
+  [38;5;246m2.[39m Implicit / derived only
+     [38;5;246mCreator + assignee, computed from the task. No storage, no UI, but no way to follow or mute anything.[39m
+  [38;5;246m3.[39m Explicit watch only
+     [38;5;246mA watchers table; notified only if you opted in. Clean semantics, but cold-start makes the feature look dead.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

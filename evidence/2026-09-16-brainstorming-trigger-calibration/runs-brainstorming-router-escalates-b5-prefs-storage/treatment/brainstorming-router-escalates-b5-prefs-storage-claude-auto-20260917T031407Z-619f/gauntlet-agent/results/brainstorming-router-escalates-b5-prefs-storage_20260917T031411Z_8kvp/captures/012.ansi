@@ -1,0 +1,40 @@
+  Under A the persistence test has to mutate [38;5;153mglobalThis[39m and clean up after itself; under C it's a plain object passed
+  in. That's the difference between a test suite that stays honest as it grows and one that develops spooky ordering
+  failures.
+
+  [1mWhy not B:[0m the string-coercion tax is real and recurring, and its one advantage — isolated corruption — matters little
+  when there are three preferences and a corrupt read just means falling back to defaults anyway.
+
+  Two things I'd fold into C regardless:
+
+  - [1mDual export.[0m A short footer — [38;5;153mmodule.exports[39m when [38;5;153mmodule[39m is defined, otherwise assign to [38;5;153mwindow.Preferences[39m — so the
+    same file serves the [38;5;153m<script>[39m tag and [38;5;153mrequire()[39m. No build step needed.
+  - [1mStorage unavailable is not a crash.[0m Safari private mode throws on [38;5;153msetItem[39m, and the page can be opened over [38;5;153mfile://[39m.
+    The module catches, falls back to an in-memory store, and the app keeps working with preferences that simply don't
+    survive the session.
+
+  One thing the answers don't settle, which I'll propose in the design rather than ask about: [1mthe page has no CSS at [0m
+  [1mall[0m, not even inline. A theme toggle needs something to toggle. I'd add a small [38;5;153mstyles.css[39m with a [38;5;153m[data-theme="dark"][39m
+  block and have the module set [38;5;153mdata-theme[39m on [38;5;153m<html>[39m — minimal, and it keeps theming out of JS.
+
+  Blind spot worth naming: because Codex returned nothing, these three approaches are single-source. If there's a fourth
+  shape none of us considered, this gate didn't catch it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design be built around?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mC: blob + injected backend (Recommended)[39m
+     [38;5;246mSingle JSON blob under one key, createPreferences({storage, schema}) factory, declarative defaults/validators. [39m
+     [38;5;246mTests need no globals. Slightly more machinery.[39m
+  [38;5;246m2.[39m A: blob, direct localStorage
+     [38;5;246mSame storage layout, but the module reads the localStorage global directly. Smallest surface; tests must install [39m
+     [38;5;246mand tear down a global fake.[39m
+  [38;5;246m3.[39m B: one key per preference
+     [38;5;246mFlat pref:* string keys. Isolated corruption, no version envelope; recurring string-coercion cost and no atomic [39m
+     [38;5;246mwrites.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

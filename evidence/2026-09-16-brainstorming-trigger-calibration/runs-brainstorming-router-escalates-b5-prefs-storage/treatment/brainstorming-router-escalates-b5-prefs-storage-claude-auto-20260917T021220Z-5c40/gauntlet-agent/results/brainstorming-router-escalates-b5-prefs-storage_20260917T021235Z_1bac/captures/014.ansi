@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which approach should the design use? → A: schema registry (Recommended)[39m
+
+[38;5;231m⏺[39m [1mDesign — Section 1: module, interface, and stored format[0m
+
+  [1mNew file: [38;5;153mpreferences.js[0m, loaded before [38;5;153mapp.js[39m in [38;5;153mindex.html[39m. It exposes a single global, [38;5;153mPreferences[39m — matching how
+  [38;5;153mapp.js[39m already works (classic script, plain globals, no module system). I'm deliberately not introducing ES modules or
+  a bundler for this; that's a separate decision and not one this feature needs to force.
+
+  The registry is the heart of it:
+
+  [34mconst[39m PREFERENCE_SCHEMA = {
+    [36mrememberUsername[39m: { [36mdefault[39m: [34mfalse[39m, [36mvalidate[39m: [33m([39mv) => [34mtypeof[39m v === [31m"boolean"[39m },
+    [36mlastUsername[39m:     { [36mdefault[39m: [31m""[39m,    [36mvalidate[39m: [33m([39mv) => [34mtypeof[39m v === [31m"string"[39m && v.length <= [32m256[39m },
+  };
+
+  Public interface — four functions, nothing more:
+
+  - [38;5;153mPreferences.get(key)[39m — the stored value, or the declared default if the entry is missing, unparseable, fails
+    validation, or storage is unreadable. Never throws.
+  - [38;5;153mPreferences.set(key, value)[39m — validates against the schema, then writes. Returns whether the write landed. Throws on
+    an unknown key, because that's a programming error, not a runtime condition.
+  - [38;5;153mPreferences.clear(key)[39m — removes one preference, reverting it to its default.
+  - [38;5;153mPreferences.clearAll()[39m — removes every key the module owns. It iterates the schema rather than calling
+    [38;5;153mlocalStorage.clear()[39m, so it never touches storage belonging to anything else on the origin.
+
+  [1mStored format.[0m One key per preference, namespaced [38;5;153mapp.pref.<key>[39m, holding [38;5;153m{"v":1,"value":<json>}[39m. The [38;5;153mv[39m is the
+  per-value format marker — the one piece of forward-looking machinery we agreed to keep.
+
+  [1mAdding a preference later[0m is a one-line entry in [38;5;153mPREFERENCE_SCHEMA[39m. That's the whole extension story, and it's what
+  makes this worth building for the other forms you mentioned.
+
+  Does that interface look right before I detail the failure behavior and the login-form wiring?
+
+[38;5;246m✻[39m [38;5;246mWorked for 2m 51s · done 7:19 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+
+  [1mThe fork:[0m is in-app the whole story, or is a notification an event that gets delivered through channels?
+
+  - [1mIn-app only, permanently[0m — one [38;5;153mnotifications[39m row per user per event, with [38;5;153mread_at[39m. Buys: the simplest thing that
+    works; no dispatch layer, no preferences, no retry logic, no bounce handling. Costs: users only find out when they
+    open the app — which for "a task you care about changed" is often too late to matter. Adding a channel later means
+    introducing the fan-out layer and migrating.
+  - [1mIn-app now, email later[0m — notification event + per-recipient delivery records, one per channel. Buys: the fan-out
+    seam exists from day one, so email is a new adapter rather than a new architecture; enables digesting/batching,
+    which is the real fix for notification spam. Costs: more moving parts in the slice than in-app alone strictly needs;
+    email brings deliverability, an outbound provider, and unsubscribe obligations.
+  - [1mIn-app now, browser push later[0m — same fan-out shape, but the second channel is the Web Push API. Buys: real-time
+    reach with no email provider or deliverability problem. Costs: a service worker, a permission prompt users decline,
+    per-browser subscription endpoints that expire, and nothing at all for users who aren't on that browser.
+
+  [1mMy recommendation:[0m in-app now, email later — meaning we build the fan-out seam in the slice but implement exactly one
+  adapter. The concrete slice cost is small (a [38;5;153mdeliveries[39m table and an adapter interface instead of a [38;5;153mread_at[39m column),
+  and it buys the thing that actually makes notifications useful: reaching people who aren't looking at the app. Email
+  also degrades gracefully in a way push doesn't — no permission prompt, no expiry.
+
+  For transport within the in-app channel, I'd start with polling the unread count on an interval and leave SSE as a
+  later swap behind the same client-side interface; real-time is a nice-to-have that costs connection management, and
+  nothing in the slice needs sub-minute latency.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Delivery [39m[49m
+
+[1m[38;5;231mWhat delivery channels should the architecture accommodate?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mIn-app now, email later (Recommended)[39m
+     [38;5;246mBuild the fan-out seam + one adapter. Email becomes a plug-in, and batching/digests become possible.[39m
+  [38;5;246m2.[39m In-app only, permanently
+     [38;5;246mOne notification row with read_at. Simplest possible; users only find out when they open the app.[39m
+  [38;5;246m3.[39m In-app now, web push later
+     [38;5;246mSame fan-out seam, second channel is Web Push. Real-time reach, but service worker + permission prompt + expiring [39m
+     [38;5;246mendpoints.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What does "track who logged in" actually need to produce? → Console logs only (Recommended)[39m
+
+  [38;5;246mRead [1m2[0m[38;5;246m files [39m
+
+[38;5;231m⏺[39m Confirmed the wiring while I was in there: [38;5;153mindex.html:13[39m loads [38;5;153mapp.js[39m as a plain [38;5;153m<script>[39m (no [38;5;153mtype="module"[39m), while
+  [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are CommonJS for Node. Two disjoint module worlds, no bundler, no test runner, no
+  dependencies. A "shared across the app" module has to pick a side of that — I'll come back to it as the next question.
+
+  First, persistence. The fork: how long the stored userId outlives the login that produced it, which also decides how
+  wrong your tracking can get on a shared device.
+
+  - [1m[38;5;153msessionStorage[0m — survives reloads and navigation within the tab, dies when the tab closes. Cheap, and a stale id
+    can't be attributed to the next person at the machine. Costs: a second tab starts with no id until that tab logs in.
+  - [1m[38;5;153mlocalStorage[0m — survives browser restarts, shared across tabs. Matches "persist" most literally and is what you'd
+    want for cross-tab consistency. Costs: an id left behind by the previous user gets attached to the next person's
+    actions unless logout explicitly clears it, and you now owe a clear-on-logout path.
+  - [1mIn-memory only[0m — a module-level variable, gone on reload. Simplest and safest, but doesn't satisfy "persist."
+
+  Both storage options are cheap to swap later [3mif[0m reads and writes go through one session module rather than touching
+  [38;5;153mStorage[39m directly — which is the main thing the design should lock in. My recommendation is [38;5;153msessionStorage[39m: it
+  satisfies "persists across the app" for the session it describes, without inheriting the stale-attribution problem
+  that makes [38;5;153mlocalStorage[39m tracking data quietly untrustworthy.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mHow long should the stored userId persist?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153msessionStorage (Recommended)[39m
+     [38;5;246mSurvives reloads and navigation in the tab; cleared when the tab closes. No stale-user attribution risk.[39m
+  [38;5;246m2.[39m localStorage
+     [38;5;246mSurvives browser restarts and is shared across tabs. Requires an explicit clear-on-logout path or tracking [39m
+     [38;5;246mattributes actions to the wrong person.[39m
+  [38;5;246m3.[39m In-memory only
+     [38;5;246mModule-level variable, lost on reload. Simplest, but does not satisfy "persist".[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

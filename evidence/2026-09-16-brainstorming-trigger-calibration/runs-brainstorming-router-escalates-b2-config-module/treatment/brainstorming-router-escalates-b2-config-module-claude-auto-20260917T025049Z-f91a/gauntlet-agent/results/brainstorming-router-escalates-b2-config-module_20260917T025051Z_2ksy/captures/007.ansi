@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Locked: hostname detection.
+
+  Second question — how the settings module actually reaches [38;5;153mapp.js[39m. Right now [38;5;153mapp.js[39m is a classic script with no way to
+  load another file.
+
+  [1mThe fork:[0m whether we upgrade the page to ES modules or stay with classic scripts and a global.
+
+  - [1mES modules[0m — [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" src="app.js">[39m, and [38;5;153mapp.js[39m does [38;5;153mimport { apiEndpoint } from [39m
+    [38;5;153m'./src/settings.js'[39m. Buys: a real module boundary, explicit imports, the modern default, and it's the same syntax a
+    bundler would later want. Costs: module scripts are [38;5;153mfile://[39m-hostile — you need a local HTTP server to open the page,
+    whereas today double-clicking [38;5;153mindex.html[39m works. Also defers execution, which is fine here.
+  - [1mClassic script + global[0m — add [38;5;153m<script src="settings.js">[39m before [38;5;153mapp.js[39m; settings assigns [38;5;153mwindow.AppSettings[39m. Buys:
+    nothing changes about how you open or serve the page. Costs: an implicit global and a load-order dependency the HTML
+    has to get right — the exact coupling a settings module is supposed to remove.
+  - [1mCommonJS in [38;5;153msrc/[39m, shared with the Node island[0m — settings as [38;5;153mmodule.exports[39m, matching [38;5;153msrc/utils.js[39m. Buys: consistency
+    with the existing [38;5;153msrc/[39m files. Costs: the browser cannot load it at all without a bundler, so [38;5;153mapp.js[39m still couldn't
+    use it. This only works if we pick bundling, which we didn't.
+
+  [1mMy recommendation: ES modules.[0m It gives a genuine, testable boundary instead of a global, and the "needs a local
+  server" cost is small — [38;5;153mpython3 -m http.server[39m covers it, and any real deployment serves over HTTP anyway. I'd put the
+  file at [38;5;153msrc/settings.js[39m and leave the CommonJS [38;5;153msrc/index.js[39m/[38;5;153mutils.js[39m island untouched; mixing the two in one
+  directory is slightly awkward, but rewriting unrelated files isn't in scope.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should app.js consume the new settings module?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mindex.html uses <script type="module">, app.js imports from src/settings.js. Real boundary; page must be served [39m
+     [38;5;246mover HTTP, not file://.[39m
+  [38;5;246m2.[39m Classic script + window global
+     [38;5;246msettings.js sets window.AppSettings, loaded before app.js. Nothing about opening the page changes; relies on load [39m
+     [38;5;246morder and a global.[39m
+  [38;5;246m3.[39m CommonJS in src/
+     [38;5;246mMatches existing src/utils.js style, but the browser can't load it without adding a bundler.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  [38;5;153mtrue, user: username }[39m. Its only call site is the form submit handler at [38;5;153mapp.js:23[39m, which has just the username and
+  password from the DOM. There's no test setup in the repo ([38;5;153mpackage.json[39m has no scripts or deps).
+
+  [1mThe fork:[0m nothing in this codebase currently knows a user ID. [38;5;153mlogin()[39m is what establishes identity, so a userId passed
+  [3min[0m has to come from somewhere upstream that doesn't exist here yet — the form handler would pass [38;5;153mundefined[39m on every
+  call. That makes "where does userId come from" the decision, and it determines the function's signature, so it's worth
+  settling before I touch code.
+
+  - [1mTrack from the response[0m — [38;5;153mlogin()[39m keeps its two params and returns a [38;5;153muserId[39m alongside [38;5;153muser[39m; the caller logs it. Buys
+    correct data (the ID is only knowable after auth) and no dead parameter. Costs: not literally the parameter you
+    asked for. Cheap to change later.
+  - [1mCaller-supplied [38;5;153muserId[39m param[0m — [38;5;153mlogin(username, password, userId)[39m, exactly as asked. Buys a signature ready for a
+    caller that already has the ID (SSO, a stored client profile, a hidden form field). Costs: nothing supplies it
+    today, so it lands as an always-[38;5;153mundefined[39m third argument until that source exists. Changing an exported signature
+    later means touching every call site.
+  - [1mClient-generated correlation ID[0m — [38;5;153mapp.js[39m mints an ID per attempt and passes it in, tying the attempt to its result
+    even when login fails. Buys failed-attempt tracking; costs a small new concept, and it identifies the [3mattempt[0m, not
+    the person.
+
+  My recommendation is the first: you want to know who logged in, and the server is the only thing that knows that. If
+  you have an upstream source for a real user ID that I can't see in this fixture, the second is the right call and I'll
+  do it as specified.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFrom login response (Recommended)[39m
+     [38;5;246mKeep login(username, password); return userId in the result and log it. Correct because identity is only known [39m
+     [38;5;246mafter auth.[39m
+  [38;5;246m2.[39m Caller-supplied param
+     [38;5;246mlogin(username, password, userId) as literally requested. I'll add it even though the current form handler has [39m
+     [38;5;246mnothing to pass.[39m
+  [38;5;246m3.[39m Client correlation ID
+     [38;5;246mapp.js generates an ID per login attempt and passes it in, so failed attempts are traceable too.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

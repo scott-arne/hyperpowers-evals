@@ -1,0 +1,40 @@
+  One key, [38;5;153mapp.preferences[39m, holding [38;5;153m{version: 1, prefs: {...}}[39m. Reads parse the whole document; writes serialize it
+  back. Migrations are one function keyed off [38;5;153mversion[39m.
+  [3mBuys:[0m the cleanest migration story, and trivial export/import of "all my settings."
+  [3mCosts:[0m every write rewrites every preference, so a stale tab can silently clobber another tab's change. One malformed
+  blob loses every setting at once. For a login page that's survivable; as settings spread across forms, the
+  whole-document write is the part that bites.
+
+  [1mC. Thin key/value wrapper, no schema[0m
+  [38;5;153mgetPreference(key, fallback)[39m / [38;5;153msetPreference(key, value)[39m, with defaults passed in at each call site.
+  [3mBuys:[0m the least code by a wide margin; genuinely the right answer if this stayed one preference forever.
+  [3mCosts:[0m you told me other settings and forms are coming. Call-site defaults duplicate and drift, nothing validates what
+  comes back out of storage, and there's no version marker — so the first time you need to change a stored shape, you
+  can't tell old data from new. That's the failure this design exists to prevent.
+
+  [1mI recommend A.[0m It's barely more code than C and it puts the registry — the thing later forms consume — at the center
+  instead of leaving it implicit. Against B: per-key writes avoid the cross-tab clobber, and I'd rather lose one bad
+  preference than all of them.
+
+  One deliberate piece of not-yet-needed machinery I'd keep in A: the per-value version marker. Code can be added later;
+  [3mdata already sitting in users' browsers cannot be retroactively versioned[0m. It's a few bytes now against an
+  unmigratable store later. Everything else I'd cut to YAGNI.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: schema registry (Recommended)[39m
+     [38;5;246mDeclared prefs with centralized defaults + validation, one namespaced localStorage key per preference, per-value [39m
+     [38;5;246mversion marker.[39m
+  [38;5;246m2.[39m B: single JSON document
+     [38;5;246mAll prefs in one versioned key. Cleanest migrations and export/import, but whole-document writes and cross-tab [39m
+     [38;5;246mclobber risk.[39m
+  [38;5;246m3.[39m C: thin key/value wrapper
+     [38;5;246mSmallest possible module, defaults at call sites, no validation or versioning. Cheapest now, drifts as settings [39m
+     [38;5;246mmultiply.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

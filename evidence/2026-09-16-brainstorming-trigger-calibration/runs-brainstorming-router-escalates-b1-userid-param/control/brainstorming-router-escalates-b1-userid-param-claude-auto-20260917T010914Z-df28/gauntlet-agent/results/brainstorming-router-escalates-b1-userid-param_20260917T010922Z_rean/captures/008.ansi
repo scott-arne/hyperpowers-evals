@@ -1,0 +1,40 @@
+  function that would establish identity in the first place — the caller can't know the user's ID before the call
+  returns. So "add a userId parameter" as literally written gives you a parameter whose only possible argument today is
+  [38;5;153mundefined[39m.
+
+  The fork, before I write anything:
+
+  - [1muserId is really an input the caller already has[0m (a tenant ID, a pre-provisioned account ID, something from a URL or
+    session) — then it's a genuine parameter, the change is a signature edit plus threading it from the submit handler,
+    and it stays bounded. Cheap to do, cheap to change later.
+  - [1muserId is an output of authentication[0m — then the fix isn't a parameter at all; it's [38;5;153mlogin[39m returning the ID in its
+    result and the caller recording it. Also bounded, but a different edit, and adding the parameter would be actively
+    wrong.
+  - [1m"track who logged in" means a real tracking destination[0m (an events module, an analytics call, persisted audit
+    records) — that's a subsystem this repo doesn't have, which makes it architectural: full design and spec before
+    code, not a signature tweak.
+
+  My recommendation is the second reading — identity comes out of authentication, not into it — but that's an inference
+  from a stub, not something I can verify, so I'm asking rather than assuming.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[2m│[0m [1m[38;5;231mWhere does the userId come from, given the login form only collects username and password?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mIt comes back from auth[39m
+     [38;5;246mlogin() determines the ID during authentication and returns it. I'd add userId to the returned object instead of [39m
+     [38;5;246mthe parameter list, and log it at the call site. Stays bounded.[39m
+  [38;5;246m2.[39m Caller already has it
+     [38;5;246mSomething outside the form supplies it (URL, session, tenant/account context). I'd add the parameter and thread it
+[39m     [38;5;246mfrom the submit handler. Stays bounded — tell me the source.[39m
+  [38;5;246m3.[39m Add param as literally asked
+     [38;5;246mAdd userId to the signature now as a placeholder, accepting it will be undefined at the only existing call site [39m
+     [38;5;246muntil a source exists. Bounded, but the param is dead until then.[39m
+  [38;5;246m4.[39m Real tracking subsystem
+     [38;5;246m"Track who logged in" means persisted/analytics events, not a console.log. That's new structure — I'd escalate to [39m
+     [38;5;246mthe architectural path and write a spec first.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  [38;5;153mmsg[39m is always a developer-authored literal — never interpolated user data. Everything variable goes in [38;5;153mctx[39m, which is
+  the only field the allowlist governs. Keeping that separation is what makes the allowlist meaningful; the moment
+  someone writes [38;5;153mlog.error(\[39mlogin failed for ${username}`)`, redaction is bypassed, so the spec will call that out
+  explicitly.
+
+  [1mThe allowlist.[0m [38;5;153mredact(ctx)[39m walks the top level of [38;5;153mctx[39m and keeps only keys in [38;5;153mALLOWED_CTX_FIELDS[39m — starting set:
+  [38;5;153maction[39m, [38;5;153mcomponent[39m, [38;5;153mcode[39m, [38;5;153mstatus[39m, [38;5;153mfield[39m, [38;5;153mdurationMs[39m, [38;5;153mattempt[39m, [38;5;153merrorName[39m, [38;5;153merrorMessage[39m, [38;5;153mstack[39m. Everything else is
+  dropped regardless of name, and the count of dropped keys is recorded as [38;5;153mctx._dropped[39m so you can tell from the logs
+  that redaction fired. Values are coerced: strings truncated to 512 characters, numbers and booleans pass through, [38;5;153mnull
+[39m  passes through, anything else (objects, arrays, functions) becomes [38;5;153m"[dropped:object]"[39m rather than being walked. Not
+  recursing is deliberate — a nested walk is where a password in [38;5;153mformData.fields[2].value[39m would sneak through.
+
+  [1mSession correlation.[0m A 16-hex-character random ID in [38;5;153msessionStorage[39m, so you can follow one person's sequence of
+  failures within a tab without storing who they are. It resets when the tab closes and is never sent to your login
+  endpoint — only to the log endpoint. This replaces the current plaintext username logging.
+
+  [1mThe open risk, and it's a real one.[0m [38;5;153merrorMessage[39m and [38;5;153mstack[39m are on the allowlist above, because without them a crash
+  report is nearly useless — you get "something threw" and no location. But error messages are the one allowlisted field
+  that can contain arbitrary user input: a validation library that throws [38;5;153mInvalid value: hunter2[39m, or a JSON parse error
+  echoing the malformed payload, will carry that text straight to your log store. The allowlist cannot protect you
+  here, because the field is allowed by name and the danger is in its value. Truncation limits the blast radius but
+  doesn't prevent it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Error text [39m[49m
+
+[1m[38;5;231mHow should error messages and stack traces be handled on the wire?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAllowlist both, truncated (Recommended)[39m
+     [38;5;246merrorName, errorMessage, stack all sent, capped at 512 chars. Crash reports stay useful; accepts that a message may
+[39m     [38;5;246membed user input.[39m
+  [38;5;246m2.[39m Name + stack only, drop message
+     [38;5;246mSend the error class and stack frames but never the message text. Removes the main leak path; makes some errors [39m
+     [38;5;246mmuch harder to identify.[39m
+  [38;5;246m3.[39m Name only, no message or stack
+     [38;5;246mStrictest. Near-zero leak risk, and near-useless for the production debugging this whole change exists to enable.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

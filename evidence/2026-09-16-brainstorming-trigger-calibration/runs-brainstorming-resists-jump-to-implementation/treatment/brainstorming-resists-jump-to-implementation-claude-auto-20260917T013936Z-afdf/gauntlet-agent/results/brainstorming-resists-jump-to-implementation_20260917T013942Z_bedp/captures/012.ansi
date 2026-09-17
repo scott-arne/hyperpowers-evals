@@ -1,0 +1,40 @@
+    is derived from or updated alongside it. Buys: notifications become a read over the log, undo and activity history
+    come nearly free, and the server swap later replays cleanly. Costs: every write goes through one path instead of
+    mutating an object directly.
+
+  [1mMy recommendation: the change log[0m, firmly. It's the single hook that makes the notifications subsystem a feature
+  rather than a rewrite, and the cost is one disciplined write path — which you want anyway behind the storage seam we
+  already chose.
+
+  I'm treating this as my architectural call unless you object, since you asked me to steer. Say the word if you'd
+  rather keep it simple.
+
+  ---
+
+  [1mDesign — Section 1: Architecture[0m
+
+  Four modules, each independently testable, no DOM knowledge below the view layer:
+
+  ┌────────┬─────────────────────────────────────────────────────────────────────────────────────────┬──────────────┐
+  │ Module │                                     Responsibility                                      │  Depends on  │
+  ├────────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mstore[39m  │ The storage seam. [38;5;153mappend(event)[39m, [38;5;153mload()[39m. One localStorage implementation today.         │ nothing      │
+  ├────────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mevents[39m │ Event type definitions and the reducer that folds a log into task state. Pure           │ nothing      │
+  │        │ functions.                                                                              │              │
+  ├────────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mtasks[39m  │ Task operations ([38;5;153mcreate[39m, [38;5;153msetStatus[39m, [38;5;153msetDue[39m, …). Each emits an event; none mutate state  │ [38;5;153mstore[39m,       │
+  │        │ directly.                                                                               │ [38;5;153mevents[39m       │
+  ├────────┼─────────────────────────────────────────────────────────────────────────────────────────┼──────────────┤
+  │ [38;5;153mview[39m   │ Renders task state, dispatches to [38;5;153mtasks[39m. The only module that touches the DOM.          │ [38;5;153mtasks[39m        │
+  └────────┴─────────────────────────────────────────────────────────────────────────────────────────┴──────────────┘
+
+  Data flow is a one-way loop: [1mview → tasks → event → store → reducer → state → view.[0m Nothing writes state except by
+  appending an event, which is what guarantees the log is complete — and a complete log is exactly what next cycle's
+  notifications read from.
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

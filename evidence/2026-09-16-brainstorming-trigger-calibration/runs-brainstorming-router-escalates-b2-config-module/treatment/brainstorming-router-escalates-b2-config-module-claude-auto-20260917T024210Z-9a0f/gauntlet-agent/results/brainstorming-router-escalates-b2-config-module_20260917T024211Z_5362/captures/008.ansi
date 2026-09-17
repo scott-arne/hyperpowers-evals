@@ -1,0 +1,40 @@
+
+  [1mB. ES modules.[0m [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" src="app.js">[39m; [38;5;153msettings.js[39m does [38;5;153mexport const settings[39m, [38;5;153mapp.js[39m
+  does [38;5;153mimport { settings } from './settings.js'[39m. This is an actual module boundary — the dependency is written in the
+  file that has it, there's no global, and the resolver function can be imported and tested directly. One hard cost:
+  [38;5;153mtype="module"[39m is fetched under CORS rules, so [1mthe page stops working from [38;5;153mfile://[39m and must be served over http[0m. That's
+  a breaking change if you currently open [38;5;153mindex.html[39m by double-clicking it.
+
+  [1mC. Dual-format (UMD-style) settings.[0m [38;5;153msettings.js[39m detects [38;5;153mmodule.exports[39m and exposes both a CommonJS export and a
+  browser global, so Node can require it while the browser gets a global. Testable without a browser and still
+  [38;5;153mfile://[39m-safe. I'd discard this one: it's boilerplate serving a test runner this repo doesn't have, and it adds a third
+  module convention to a project that already has two. YAGNI.
+
+  [1mRecommendation: B, conditional on one fact I don't have.[0m B is what "a settings module" properly means and it's the
+  only option where the dependency is explicit, but it's the wrong call if you open this page from the filesystem rather
+  than through a server. If you do, take A — it's boring, but it cannot break, and the global is a small price in a
+  project this size.
+
+  Two things I'll fold into the design either way:
+
+  - [1mUnknown hostname should fail loudly, not guess.[0m Silently defaulting to production means a misconfigured host posts
+    credentials to your real backend. I'd throw an explicit error naming the unrecognized hostname.
+  - [1m[38;5;153mAPI_ENDPOINT[39m is currently only mentioned in a comment[0m — [38;5;153mlogin()[39m is a stub that never uses it. So the move is
+    mechanically trivial; the design work is entirely in the loading and resolution structure.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Load path [39m[49m
+
+[2m│[0m [1m[38;5;231mIs index.html ever opened directly from the filesystem (file://), or always served over http?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAlways served over http[39m
+     [38;5;246mGo with Approach B (ES modules). Real import boundary, no globals, resolver is directly testable.[39m
+  [38;5;246m2.[39m Opened from filesystem too
+     [38;5;246mGo with Approach A (classic script + frozen global). Keeps file:// working; accepts a global and script-order [39m
+     [38;5;246mcoupling.[39m
+  [38;5;246m3.[39m Not sure / whatever is safer
+     [38;5;246mGo with Approach A. It works in both cases; you can migrate to ES modules later once a server is a given.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

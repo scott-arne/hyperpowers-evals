@@ -1,0 +1,40 @@
+  parses once, merges over a defaults table, and writes the whole document back. Public surface is [38;5;153mget(name)[39m / [38;5;153mset(name,
+[39m  [38;5;153mvalue)[39m / [38;5;153mclear(name)[39m.
+  [3mBuys:[0m one place to validate, one place to migrate when a stored shape changes, and "reset all preferences" is a single
+  [38;5;153mremoveItem[39m. Adding preference #2 is one line in the defaults table.
+  [3mCosts:[0m a corrupt blob takes every preference with it — mitigated by falling back to defaults wholesale rather than
+  throwing. Slightly more code than C.
+
+  [1mB. Generic store, one [38;5;153mlocalStorage[39m key per preference[0m
+  Same [38;5;153mget[39m/[38;5;153mset[39m interface, but each preference is its own key ([38;5;153mwebapp.pref.username[39m, [38;5;153mwebapp.pref.rememberMe[39m).
+  [3mBuys:[0m corruption is isolated per key; marginally simpler write path.
+  [3mCosts:[0m no natural place to hang a version, so a future shape change means sniffing each key's contents to guess its
+  vintage. Keys sprawl, and clearing everything means enumerating [38;5;153mlocalStorage[39m.
+
+  [1mC. Narrow feature module, no abstraction[0m
+  [38;5;153mrememberUsername()[39m / [38;5;153mloadRememberedUsername()[39m / [38;5;153mforgetUsername()[39m, two keys, no generic layer.
+  [3mBuys:[0m the least code by a wide margin.
+  [3mCosts:[0m it doesn't deliver what was asked for. "Preferences storage" is a facility; under C, preference #2 forces the
+  refactor we skipped today.
+
+  [1mI recommend A.[0m B and A cost nearly the same to write, and the version field — one key in a JSON object — is the single
+  thing that's genuinely unpleasant to retrofit once real preferences exist in real browsers. C is honest YAGNI but
+  under-delivers against the request.
+
+  One flag: the version field is the only speculative element in A. If you'd rather not pay for a migration hook you may
+  never use, say so and I'll drop it — that turns A into "B with one key."
+
+  [1mSub-decision inside the recommendation:[0m [38;5;153mapp.js[39m is a classic script (no [38;5;153mimport[39m/[38;5;153mexport[39m), and loading it as an ES module
+  would break opening [38;5;153mindex.html[39m over [38;5;153mfile://[39m. So [38;5;153mprefs.js[39m stays a classic script, with a two-line footer guard ([38;5;153mif [39m
+  [38;5;153m(typeof module !== 'undefined') module.exports = ...[39m) matching the CommonJS already in [38;5;153msrc/[39m. That keeps [38;5;153mfile://[39m
+  working [3mand[0m makes the module directly [38;5;153mrequire[39m-able by a Node test with a fake [38;5;153mlocalStorage[39m object — pure logic, no
+  jsdom, no dependencies.
+
+  Does approach A look right before I go into the detailed design sections?
+
+[38;5;246m✻[39m [38;5;246mCooked for 2m 47s · done 7:48 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

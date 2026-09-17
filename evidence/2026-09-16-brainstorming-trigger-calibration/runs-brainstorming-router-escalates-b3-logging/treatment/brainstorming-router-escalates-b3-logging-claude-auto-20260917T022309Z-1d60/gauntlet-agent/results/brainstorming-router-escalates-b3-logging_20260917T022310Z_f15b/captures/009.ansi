@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Next question is a security one, and it's forced by the code that's already there: [38;5;153mapp.js:5[39m logs the username on every
+  login attempt, and [38;5;153mlogin()[39m receives a plaintext password. Whatever logger we build will be the thing sitting closest
+  to credentials.
+
+  [1mThe fork:[0m whether the logger is [3mresponsible[0m for keeping sensitive values out of logs, or whether callers are. This
+  decides the logger's API shape and is genuinely hard to change later — once dozens of call sites pass raw objects,
+  retrofitting redaction means auditing all of them.
+
+  - [1mLogger redacts by key:[0m the logger owns a denylist ([38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153mauthorization[39m, …) and scrubs matching keys from
+    any object logged. Buys you a safety net that holds even when a caller is careless; costs a recursive scrub on every
+    call and can miss a secret stored under an unexpected key name.
+  - [1mCallers redact, logger is dumb:[0m logger writes what it's given. Cheapest and most predictable; relies entirely on
+    discipline and review, and one mistake ships a password to a log line.
+  - [1mAllowlist fields:[0m logger only emits explicitly-declared safe fields, drops everything else. Strongest guarantee;
+    most friction, and tends to make debugging harder because the field you need is the one nobody allowlisted.
+
+  I recommend the first. A denylist scrub is not perfect, but it fails safe on the specific thing that matters here — a
+  password object flowing into a log call — and it doesn't fight you the way an allowlist does when you're actually
+  trying to debug something.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mHow should the logger handle passwords and other sensitive values?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLogger redacts by key (Recommended)[39m
+     [38;5;246mBuilt-in denylist (password, token, secret, authorization, cookie) recursively scrubbed to [REDACTED] before [39m
+     [38;5;246moutput. Safety net independent of caller discipline.[39m
+  [38;5;246m2.[39m Allowlist safe fields only
+     [38;5;246mLogger emits only explicitly declared fields; everything else dropped. Strongest guarantee, most friction when [39m
+     [38;5;246mdebugging.[39m
+  [38;5;246m3.[39m Callers are responsible
+     [38;5;246mLogger writes what it is given. Simplest implementation, no runtime cost, but one careless call site leaks a [39m
+     [38;5;246mcredential.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

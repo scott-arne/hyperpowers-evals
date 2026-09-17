@@ -1,0 +1,40 @@
+  server/
+    http/              Fastify routes; thin — parse, authorize, call domain
+    tasks/             task model + mutations (writes events in-transaction)
+    auth/              sessions, current user
+    events/            outbox: append(), claim(), markProcessed()
+    notifications/
+      interest.ts      interestedUsers(event) -> userId[]   ← the seam
+      coalesce.ts      window logic: collapse same task+recipient
+      dispatch.ts      creates deliveries, invokes adapters
+      channels/
+        in-app.ts      the one adapter in the slice
+    worker/            polls outbox, drives coalesce -> dispatch
+  db/                  SQLite schema + migrations
+
+  Each notification module answers the three questions cleanly: [38;5;153minterest.ts[39m takes an event and returns user IDs (depends
+  on the task/user read models only); [38;5;153mcoalesce.ts[39m takes pending deliveries and merges them (pure, depends on nothing);
+  [38;5;153mdispatch.ts[39m writes deliveries and calls adapters (depends on the channel interface, not on any concrete channel). The
+  adapter interface is one method, so adding email later touches [38;5;153mchannels/[39m and nothing else.
+
+  [1mTooling[0m — nothing is configured yet, and this is the cheapest it will ever be to set up. Which of these should be in
+  place from the start?
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Architecture [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhich tooling should be set up before any code? (cheapest now)[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Lint + format
+  [38;5;246mESLint + Prettier (or Biome) with aggressive rules, wired to run on the whole tree.[39m
+[38;5;153m❯[39m [38;5;246m2.[39m [38;5;114m[✔][39m [38;5;153mUnit test infra[39m
+  [38;5;246mTest runner, directory layout, and one passing fixture so TDD has somewhere to land.[39m
+  [38;5;246m3.[39m [ ] End-to-end test infra
+  [38;5;246mPlaywright driving a real browser against a running server — the only way to prove the bell actually updates.[39m
+  [38;5;246m4.[39m [ ] Fuzz / property tests
+  [38;5;246mProperty-based tests (fast-check) for coalescing and interest resolution, where edge cases hide.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

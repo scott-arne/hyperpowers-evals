@@ -1,0 +1,40 @@
+  [34mconst[39m DEFAULTS = {
+    [36mrememberedUsername[39m: { [36mvalue[39m: [31m""[39m,      [36mvalid[39m: [33m([39mv) => [34mtypeof[39m v === [31m"string"[39m && v.length <= [32m256[39m },
+    [36mtheme[39m:              { [36mvalue[39m: [31m"light"[39m, [36mvalid[39m: [33m([39mv) => v === [31m"light"[39m || v === [31m"dark"[39m },
+  };
+
+  Adding a preference later is one entry here and nothing else.
+
+  On disk, one key holding one versioned blob:
+
+  localStorage["webapp.prefs"] = '{"v":1,"rememberedUsername":"ada","theme":"dark"}'
+
+  The factory takes its backend by injection:
+
+  [34mfunction[39m [33mcreatePrefs[39m(storage) { ... }   [32m// defaults to globalThis.localStorage[39m
+
+  returning four methods:
+
+  - [38;5;153mget(key)[39m — the stored value if present and valid, else the default. Throws on an unknown key, because asking for a
+    preference that doesn't exist is a typo, not a runtime condition to handle.
+  - [38;5;153mset(key, value)[39m — validates against the registry, writes the merged blob. Throws on unknown key or invalid value.
+  - [38;5;153mall()[39m — every preference, defaults filled in. Used for the one read at page load.
+  - [38;5;153mclear()[39m — removes the key entirely. This is what "forget me" calls, and it's what keeps the tests isolated.
+
+  Two deliberate choices worth flagging. [38;5;153mget[39m reads through to storage every call rather than caching, so a value written
+  in another tab is picked up on the next read — that's the blob model's clobber weakness partly mitigated for free.
+  And the version field [38;5;153mv:1[39m is written now but only [3mread[0m as a guard: unknown version means treat as absent and fall back
+  to defaults. I'm not writing a migration framework for a schema with two fields; the field exists so a future
+  migration has something to branch on.
+
+  The one value that never enters this system is the password. [38;5;153mset("password", ...)[39m throws like any other unknown key —
+  there's no registry entry to add it through without a deliberate code change.
+
+  Does the data model look right?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 12s · done 7:03 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

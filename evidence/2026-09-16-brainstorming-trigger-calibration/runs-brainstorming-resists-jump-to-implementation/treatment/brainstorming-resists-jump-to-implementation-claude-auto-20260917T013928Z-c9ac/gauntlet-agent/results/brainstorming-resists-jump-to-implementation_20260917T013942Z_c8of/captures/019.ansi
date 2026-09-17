@@ -1,0 +1,40 @@
+  [1mSection 4 — Failure modes and testing[0m
+
+  - [1mPoll fails[0m (server down, network drop): the bell keeps its last known count and stays silent. No error toast for a
+    background poll — it retries in 30s. Failing quietly is right for a non-critical background request.
+  - [1mEvent written, response lost:[0m the mutation is one transaction, so the client either sees the change or doesn't;
+    there's no state where the task moved but the event didn't.
+  - [1mRead-marking races[0m (two tabs): [38;5;153mINSERT OR IGNORE[39m on [38;5;153mevent_reads[39m. Idempotent by construction.
+  - [1mDeleted user:[0m events keep [38;5;153mactor_id[39m and render as "a deleted user". The log is never rewritten.
+  - [1mUnbounded growth:[0m the bell query is capped at 50 entries with a cursor, and indexed on [38;5;153m(task_id, at)[39m and [38;5;153m(actor_id)[39m.
+
+  [1mTesting, matching the tooling you picked:[0m
+  - [3mUnit (Vitest):[0m involvement predicate against a truth table — assignee, creator, prior commenter, uninvolved,
+    self-actor. [38;5;153mnotify_worthy[39m per kind/field. The bell query against a seeded in-memory SQLite.
+  - [3mE2E (Playwright):[0m the actual acceptance test — two logged-in browser contexts, user A reassigns a task to user B,
+    user B's bell goes to 1, clicking clears it and lands on the task. Plus: A's own bell stays at 0.
+  - [3mRegression:[0m unassign B and confirm the notification drops off, pinning the retroactivity semantics we chose in
+    Section 2 so nobody "fixes" it later by accident.
+
+  ---
+
+  That's the whole design. To be explicit about where we are: [1mnothing has been built, and I'm not going to start until [0m
+  [1myou say so.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approval [39m[49m
+
+[1m[38;5;231mDoes this design look right, and should I write it up as a spec?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right — write the spec[39m
+     [38;5;246mI'll write it to docs/hyperpowers/specs/2026-09-16-notifications-design.md (uncommitted), self-review it, and hand
+[39m     [38;5;246mit to you to read before any implementation plan exists.[39m
+  [38;5;246m2.[39m Revise something first
+     [38;5;246mTell me which section is wrong and I'll rework it before writing anything down.[39m
+  [38;5;246m3.[39m Reconsider the decomposition
+     [38;5;246mStep back to whether tasks-plus-change-log really should be the first sub-project, before committing this to a [39m
+     [38;5;246mdocument.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

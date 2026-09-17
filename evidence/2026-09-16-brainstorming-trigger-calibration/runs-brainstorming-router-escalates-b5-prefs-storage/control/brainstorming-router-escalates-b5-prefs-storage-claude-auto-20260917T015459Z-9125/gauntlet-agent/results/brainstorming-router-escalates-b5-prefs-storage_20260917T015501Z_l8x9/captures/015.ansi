@@ -1,0 +1,40 @@
+  genuine multi-tab write contention, which isn't this app. Taking A now doesn't foreclose B — the registry makes the
+  on-disk layout an implementation detail behind a stable [38;5;153mget[39m/[38;5;153mset[39m API.
+
+  Does that read right before I go into the design sections?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 2m 42s · done 7:01 PM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231myes, that reads right[39m
+
+[38;5;231m[49m⏺[39m Design, section 1 of 4: [1marchitecture and the module boundary.[0m
+
+  New file [38;5;153mprefs.js[39m at the repo root, alongside [38;5;153mapp.js[39m (matching where the browser half already lives — [38;5;153msrc/[39m is the
+  unrelated Node half, and mixing them would imply a shared codebase that doesn't exist).
+
+  The dual-load problem: [38;5;153mindex.html[39m uses a plain [38;5;153m<script src>[39m tag, and the tests run under Node. Rather than introduce a
+  bundler or convert the page to ESM, [38;5;153mprefs.js[39m ends with a conditional CommonJS export:
+
+  [34mif[39m ([34mtypeof[39m module !== [31m"undefined"[39m && module.exports) {
+    module.exports = { createPrefs, DEFAULTS };
+  }
+
+  In the browser that branch is skipped and [38;5;153mcreatePrefs[39m is a global, exactly like [38;5;153mlogin[39m and [38;5;153mvalidateForm[39m are today.
+  Under [38;5;153mrequire()[39m it exports normally. No build step, no dependency, and the existing loading pattern in [38;5;153mindex.html[39m is
+  untouched — I just add one [38;5;153m<script src="prefs.js">[39m before [38;5;153mapp.js[39m.
+
+  The alternative was switching the page to [38;5;153mtype="module"[39m. I'm avoiding it because ESM over [38;5;153mfile://[39m is blocked by CORS,
+  so opening [38;5;153mindex.html[39m directly in a browser — which is how this fixture is usable at all right now — would break.
+
+  [38;5;153mprefs.js[39m knows nothing about the DOM, the login form, or theming. It's a storage module with a [38;5;153mget[39m/[38;5;153mset[39m API. All the
+  wiring to inputs and the [38;5;153m<body>[39m class lives in [38;5;153mapp.js[39m. That keeps the piece with logic worth testing free of anything
+  that needs a DOM to run.
+
+  Does the boundary look right?
+
+[38;5;246m✻[39m [38;5;246mBaked for 11s · done 7:02 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

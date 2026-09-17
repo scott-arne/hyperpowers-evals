@@ -1,0 +1,40 @@
+  one transaction, so the log cannot drift from state. [38;5;153mkind[39m is a small closed set: [38;5;153mcreated[39m, [38;5;153mfield_changed[39m, [38;5;153mcommented[39m,
+  [38;5;153mclosed[39m, [38;5;153mreopened[39m. Comments live in the log rather than a separate table, since a comment [3mis[0m a change you'd be notified
+  about.
+
+  [1mInvolvement[0m — you are involved in a task if you are its [38;5;153massignee_id[39m, its [38;5;153mcreator_id[39m, or the actor on any prior event
+  for it. That's one [38;5;153mEXISTS[39m clause, and it's the single place the rule is defined.
+
+  [1mThe bell query:[0m events on tasks you're involved in, where [38;5;153mactor_id != you[39m, left-joined to [38;5;153mevent_reads[39m. Unread count is
+  the rows with no matching read row.
+
+  Two semantics I've decided, both worth your objection:
+
+  - [1mYou never get notified of your own actions.[0m Obvious, but it's the rule that makes the log usable as a notification
+    source rather than an activity dump.
+  - [1mInvolvement is evaluated now, not then.[0m Get unassigned from a task, and its older notifications drop off your bell.
+    This is the honest consequence of approach A. The alternative — snapshot recipients per event — is a fifth table and
+    drags us halfway to approach B. I think dropping them is also the better behavior: it's no longer your task, so
+    it's no longer your problem.
+
+  One real decision left in this section, and it's the noise question. A coordination tool that notifies on every
+  keystroke-level field change gets muted in a week.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Granularity [39m[49m
+
+[1m[38;5;231mWhich changes should actually produce a notification?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mSignificant changes only (Recommended)[39m
+     [38;5;246mAssignment, status, due date, and comments notify. Title and body edits are logged to the event stream but don't [39m
+     [38;5;246mring the bell. Keeps the bell trustworthy; the full history is still there in the task's activity view.[39m
+  [38;5;246m2.[39m Every logged change notifies
+     [38;5;246mOne rule, no notify-worthy flag, nothing to explain. Simplest to build and reason about, but a wordy teammate [39m
+     [38;5;246mediting a description five times generates five notifications.[39m
+  [38;5;246m3.[39m Significant, plus collapse bursts
+     [38;5;246mAs recommended, but multiple events on the same task within a short window collapse into one bell entry. Noticeably
+[39m     [38;5;246mnicer to use; adds grouping logic to the query and a window to tune.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

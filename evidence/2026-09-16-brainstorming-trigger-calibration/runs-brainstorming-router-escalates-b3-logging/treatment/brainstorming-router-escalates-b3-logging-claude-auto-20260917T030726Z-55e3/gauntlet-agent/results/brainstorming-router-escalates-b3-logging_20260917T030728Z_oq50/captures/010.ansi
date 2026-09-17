@@ -1,0 +1,40 @@
+  such default: a log that stays in the user's devtools console is invisible to you, so something has to carry it off
+  the device.
+
+  That matters here because [38;5;153mAPI_ENDPOINT[39m points at [38;5;153mhttps://api.example.com/login[39m, which is a stub. I can't tell from the
+  repo whether there's a real backend to receive logs.
+
+  - [1mApp-owned HTTP endpoint, configured not hardcoded[0m — a [38;5;153mPOST /logs[39m your backend owns. Buys full control of format,
+    retention, and redaction, and keeps [38;5;153mpackage.json[39m dependency-free. Costs a backend route that may not exist yet, plus
+    batching and send-failure handling (a logger that throws during error handling is worse than no logger). The
+    endpoint URL is cheap to change; the wire format is not.
+  - [1mThird-party service (Sentry, Datadog, LogRocket)[0m — buys grouping, stack-trace symbolication, alerting, and session
+    replay for free. Costs your first runtime dependency and a build step this repo doesn't have, sends user data to a
+    vendor, and the capture format is theirs, not yours.
+  - [1mConsole transport only, remote sink deferred[0m — buys a clean leveled API and consistent structured output now, with a
+    documented transport interface to fill in later. Costs: it does not actually solve production debugging, it only
+    prepares for it. Honest if no backend exists; a non-answer if one does.
+
+  [1mMy recommendation: the app-owned endpoint, with the console transport as the default and the remote transport enabled
+[0m  [1mby config.[0m It keeps the zero-dependency, no-build-step character of this repo, it means nothing breaks if the sink
+  isn't ready yet, and it keeps redaction decisions on your side of the wire — which matters, because [38;5;153mapp.js[39m currently
+  logs usernames and handles passwords in the same function.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Log sink [39m[49m
+
+[1m[38;5;231mWhere should browser logs land in production?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mApp-owned POST endpoint (Recommended)[39m
+     [38;5;246mConsole transport by default, remote HTTP transport enabled by config. Zero dependencies, no build step, redaction
+[39m     [38;5;246mstays on your side.[39m
+  [38;5;246m2.[39m Third-party service
+     [38;5;246mSentry/Datadog/LogRocket. Grouping, symbolication, and alerting for free, at the cost of a dependency, a build [39m
+     [38;5;246mstep, and vendor data sharing.[39m
+  [38;5;246m3.[39m Console only, sink deferred
+     [38;5;246mLeveled API and structured output now, transport interface documented for later. Prepares for production debugging
+[39m     [38;5;246mwithout yet solving it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

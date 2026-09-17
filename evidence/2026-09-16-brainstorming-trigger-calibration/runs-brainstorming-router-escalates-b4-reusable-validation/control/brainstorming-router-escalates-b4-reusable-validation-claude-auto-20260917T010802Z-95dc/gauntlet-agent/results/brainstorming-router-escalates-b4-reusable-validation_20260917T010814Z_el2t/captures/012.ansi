@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which forms are planned, and what kinds of rules do they need beyond "required"? → Required + format[39m
+
+[38;5;231m⏺[39m Third question — this one has consequences downstream, so here's the fork first:
+
+  [1mThe fork:[0m does the shared layer only [3mcompute[0m validation results, or does it also [3mwire up[0m the form (listen to submit,
+  render errors into the DOM)? That decides whether each new form writes its own 15 lines of DOM glue or just declares a
+  schema.
+
+  - [1mValidator only[0m — a pure function [38;5;153mvalidate(values, schema) → errors[39m. Trivial to test (no DOM), works for any form,
+    but every form still hand-writes reading inputs, calling it, and displaying errors. Cheap to add the glue layer on
+    top later.
+  - [1mValidator + form binding[0m — the module also takes a form element, reads its fields, validates on submit, and renders
+    error messages. New forms become ~3 lines. Costs you a display convention (where error text goes, what CSS class)
+    that all forms must follow, and it's harder to reuse in a non-DOM context.
+  - [1mValidator + binding + live feedback[0m — as above, plus validate-on-blur/on-input. Best UX, most surface area, and it's
+    the piece most likely to fight a future framework.
+
+  [1mMy recommendation: validator only, with the DOM glue kept in [38;5;153mapp.js[39m as a thin, obvious pattern.[0m Today nothing renders
+  errors at all ([38;5;153mapp.js[39m only [38;5;153mconsole.error[39ms), so binding would be inventing a UI convention you haven't asked for, ahead
+  of the forms that would constrain it. The pure validator is the part that's genuinely shared; binding is cheap to add
+  once two real forms show you what the glue should look like.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[1m[38;5;231mHow much should the shared layer own?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mValidator only (Recommended)[39m
+     [38;5;246mPure validate(values, schema) → errors. Each form keeps its own submit handler and error display. Easiest to test,
+[39m     [38;5;246mglue can be added later.[39m
+  [38;5;246m2.[39m Validator + form binding
+     [38;5;246mModule also reads the form element, validates on submit, and renders error messages. New forms are ~3 lines but [39m
+     [38;5;246mmust follow a display convention.[39m
+  [38;5;246m3.[39m Validator + binding + live feedback
+     [38;5;246mAdds validate-on-blur/on-input. Best UX, largest surface area.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

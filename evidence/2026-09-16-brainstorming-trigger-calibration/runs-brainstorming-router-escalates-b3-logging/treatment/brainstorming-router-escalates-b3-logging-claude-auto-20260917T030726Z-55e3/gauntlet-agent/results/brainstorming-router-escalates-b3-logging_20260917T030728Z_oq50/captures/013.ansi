@@ -1,0 +1,40 @@
+  [3mWins when[0m you care about the redaction actually being correct, which given the password-adjacent call sites you
+  should.
+
+  [1mB. Single-file universal logger[0m
+  One [38;5;153msrc/logger.js[39m with the same dual-export footer, transports registered by the host at init time. Everything in ~120
+  lines.
+  [3mTrade-offs:[0m simplest thing that works, and honestly proportionate to a repo this size. But core logic and runtime I/O
+  live in one file, so testing redaction means loading the module that also installs global error handlers. That
+  coupling is exactly what makes the security-critical part awkward to verify.
+  [3mWins when[0m you want this done in one sitting and accept thinner tests.
+
+  [1mC. Migrate the repo to native ESM[0m
+  Convert [38;5;153msrc/*.js[39m off CommonJS, set [38;5;153m"type": "module"[39m, switch [38;5;153mindex.html[39m to [38;5;153m<script type="module">[39m, and use real
+  [38;5;153mimport[39m/[38;5;153mexport[39m everywhere. Both Node and browsers support this natively — still no bundler.
+  [3mTrade-offs:[0m the cleanest module story, but it's a repo-wide migration riding along with a logging request, it changes
+  [38;5;153mapp.js[39m from global scope to module scope, and native ESM won't load over [38;5;153mfile://[39m — so opening [38;5;153mindex.html[39m directly from
+  disk stops working and you'd need a local server. That's a real regression bought with a change nobody asked for.
+  [3mWins when[0m the module system is itself a problem you want to fix. It isn't yet.
+
+  [1mI recommend A.[0m The allowlist is the one piece of this change that causes harm if it's subtly wrong, and A is the only
+  option that lets you test it as a pure function in isolation. It costs you three extra small files and buys a
+  verifiable security boundary, with no dependency and no build step.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Architecture [39m[49m
+
+[1m[38;5;231mWhich architecture should I design against?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Core + adapters (Recommended)[39m
+     [38;5;246mPure testable core (levels, shaping, allowlist) plus thin browser/Node adapters. Four small files, no deps, no [39m
+     [38;5;246mbuild step.[39m
+  [38;5;246m2.[39m B: Single-file logger
+     [38;5;246mOne universal logger.js, transports registered at init. Fastest to build; redaction is harder to test in isolation.
+[39m  [38;5;246m3.[39m C: Migrate repo to ESM
+     [38;5;246mReal imports across both runtimes. Cleanest modules, but a repo-wide migration and index.html stops working over [39m
+     [38;5;246mfile://.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

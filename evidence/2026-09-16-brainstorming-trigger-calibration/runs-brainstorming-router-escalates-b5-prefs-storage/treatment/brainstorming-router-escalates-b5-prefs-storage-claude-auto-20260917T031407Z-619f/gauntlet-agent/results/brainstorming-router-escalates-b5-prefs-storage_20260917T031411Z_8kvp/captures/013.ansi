@@ -1,0 +1,40 @@
+  │ [38;5;153mrememberUsername[39m │ boolean │ [38;5;153mfalse[39m   │ must be a real boolean         │
+  ├──────────────────┼─────────┼─────────┼────────────────────────────────┤
+  │ [38;5;153mlastUsername[39m     │ string  │ [38;5;153m""[39m      │ string, trimmed, max 256 chars │
+  └──────────────────┴─────────┴─────────┴────────────────────────────────┘
+
+  [38;5;153mlastUsername[39m is only written when [38;5;153mrememberUsername[39m is true. Turning the toggle off clears it immediately rather than
+  leaving a stale value parked in storage — off should mean the name is gone, not merely unused.
+
+  [38;5;153mversion[39m exists so a future rename isn't guesswork. The rule for v1: if the stored [38;5;153mversion[39m is missing or isn't [38;5;153m1[39m,
+  discard the blob and start from defaults. That's the honest behavior when there's exactly one version and nothing to
+  migrate from — I'd rather write that than a migration framework with no migrations in it.
+
+  [1mSection 2: Module API[0m
+
+  New file [38;5;153mprefs.js[39m at the repo root, alongside [38;5;153mapp.js[39m (matching where the browser half already lives).
+
+  [33mcreatePreferences[39m({ storage, schema })  [32m// → a preferences instance[39m
+    .[33mget[39m(key)             [32m// validated value, or the default[39m
+    .[33mset[39m(key, value)      [32m// validates, persists; throws on unknown key[39m
+    .[33mreset[39m()              [32m// clears stored blob, back to defaults[39m
+    .[33mall[39m()                [32m// plain object of every current value[39m
+
+  - [38;5;153mstorage[39m defaults to [38;5;153mglobalThis.localStorage[39m when omitted, so browser callers just write [38;5;153mcreatePreferences()[39m.
+  - [38;5;153mschema[39m defaults to the built-in table; injectable mainly so tests can exercise validation edge cases without
+    inventing fake preferences.
+  - [38;5;153mset[39m throws on an unknown key — a typo'd preference name is a bug, and silently accepting it would make it a very
+    quiet one.
+  - [38;5;153mset[39m on a value that fails validation also throws. [38;5;153mget[39m on corrupt [3mstored[0m data does not throw; it returns the default.
+    The asymmetry is deliberate: bad input from code is a defect, bad data on disk is a runtime condition the page must
+    survive.
+  - Writes persist the whole blob each time. With three keys that's cheaper than tracking dirty state.
+
+  Does the data model and API shape look right before I go on to the UI wiring, error handling, and tests?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 3m 10s · done 8:22 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

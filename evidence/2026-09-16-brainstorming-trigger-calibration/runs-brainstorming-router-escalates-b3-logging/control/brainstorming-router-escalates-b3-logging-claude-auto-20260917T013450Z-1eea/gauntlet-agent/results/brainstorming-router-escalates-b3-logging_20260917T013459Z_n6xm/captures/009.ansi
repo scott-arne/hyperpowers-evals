@@ -1,0 +1,40 @@
+  retention policy inside a task scoped as "add logging." If you already have a log endpoint I don't know about, option
+  2 becomes the right answer.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should logs go in production? → Transport seam, console now (Recommended)[39m
+
+[38;5;231m⏺[39m Now the one that made me flag [38;5;153mapp.js:5[39m.
+
+  [1mThe fork — how sensitive fields stay out of the logs.[0m Right now [38;5;153mlogin()[39m logs a username, and a password sits in the
+  same scope. Once a logger exists and is easy to call, the chance of a credential landing in a log line goes up, not
+  down. Where you put the guard determines what a mistake costs.
+
+  - [1mDenylist in the logger[0m — logger scrubs known-sensitive keys ([38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, …) from any object it's
+    handed. Catches accidents without making callers think. Fails open: a field nobody listed gets logged verbatim.
+  - [1mAllowlist in the logger[0m — only explicitly permitted keys are serialized; everything else becomes [38;5;153m[redacted][39m. Fails
+    closed, which is the right default for credentials, but it's friction on every new log call and tends to get worked
+    around with string interpolation.
+  - [1mCaller's responsibility, no redaction[0m — simplest logger, all discipline lives in code review. Given this repo logs a
+    username next to a password today, I don't think that discipline is there to rely on.
+
+  I'd recommend the [1mdenylist[0m: it fixes the actual bug in front of us ([38;5;153mconsole.log("Logging in:", username)[39m), costs
+  nothing at call sites, and can be tightened to an allowlist later. An allowlist is the more defensible choice if you
+  expect real user data to flow through these logs.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mHow should sensitive fields be kept out of log output?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDenylist in logger (Recommended)[39m
+     [38;5;246mLogger scrubs known-sensitive keys from logged objects. No friction at call sites; unlisted fields still get [39m
+     [38;5;246mthrough.[39m
+  [38;5;246m2.[39m Allowlist in logger
+     [38;5;246mOnly permitted keys are serialized, everything else redacted. Fails closed, but adds friction to every log call.[39m
+  [38;5;246m3.[39m No redaction
+     [38;5;246mCallers are responsible for not logging secrets. Simplest logger, relies entirely on review discipline.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

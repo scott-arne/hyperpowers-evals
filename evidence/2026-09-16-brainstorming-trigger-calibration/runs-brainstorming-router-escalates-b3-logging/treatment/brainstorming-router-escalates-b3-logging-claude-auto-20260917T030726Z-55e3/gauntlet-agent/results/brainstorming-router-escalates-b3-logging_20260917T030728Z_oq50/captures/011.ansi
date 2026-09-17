@@ -1,0 +1,40 @@
+  This logger's first call site is a login function that takes a password as an argument, and the current code already
+  logs the username in plaintext on every attempt. Once logs are POSTed to a server, anything the logger touches becomes
+  data you've collected, stored, and have to protect. A redaction rule added after the fact doesn't retroactively clean
+  the logs you already shipped.
+
+  - [1mDeny-by-default allowlist on the remote transport[0m — only fields explicitly declared safe get serialized and sent;
+    everything else is dropped, whatever it's called. Buys the property that a future careless [38;5;153mlog.info('ctx', formData)
+[39m    cannot leak, because the default is to drop. Costs a little friction at each call site: you name what you want.
+    This is the choice that's genuinely hard to reverse — retrofitting deny-by-default onto call sites written against a
+    permissive logger means auditing every one of them.
+  - [1mDenylist / key scrubbing[0m — log whatever's passed, recursively strip keys matching [38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m,
+    [38;5;153mauthorization[39m. Buys convenience; ergonomics stay identical to [38;5;153mconsole.log[39m. Costs: it fails open. A key named [38;5;153mpwd[39m,
+    [38;5;153mcredentials[39m, or a password nested in an array of form entries sails straight through, and you find out from the
+    logs.
+  - [1mNo automatic redaction[0m — call-site discipline only. Cheapest to build, and the failure mode is plaintext passwords
+    in your log store.
+
+  [1mMy recommendation: deny-by-default allowlist for the remote transport, with the console transport left verbose.[0m The
+  split matters — on a user's own machine the console showing their own username costs nothing, so local debugging stays
+  rich, while the allowlist applies at exactly the boundary where data leaves the device. I'd also log a stable
+  anonymous session ID rather than the username, so you can still correlate a user's sequence of failures without your
+  log store becoming a list of who tried to log in and when.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mWhat redaction policy should the remote transport enforce?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDeny-by-default allowlist (Recommended)[39m
+     [38;5;246mOnly explicitly declared-safe fields are sent; everything else dropped. Console stays verbose locally. Hard to [39m
+     [38;5;246mretrofit later, so worth choosing now.[39m
+  [38;5;246m2.[39m Denylist / key scrubbing
+     [38;5;246mSend everything except keys matching password/token/secret. Ergonomic, but fails open on key names nobody [39m
+     [38;5;246manticipated.[39m
+  [38;5;246m3.[39m No automatic redaction
+     [38;5;246mCall-site discipline only. Cheapest to build; the failure mode is credentials in your log store.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

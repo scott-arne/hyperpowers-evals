@@ -1,0 +1,40 @@
+  thing.
+
+  My proposal: dismissal is recorded per [1m[38;5;153m(taskId, kind)[0m, persisted, and [1mre-arms[0m when either
+
+  1. the task's [38;5;153mdueAt[39m changes (you rescheduled it — it's a new commitment), or
+  2. the alert escalates [38;5;153mdue-soon → overdue[39m (a genuinely new fact).
+
+  So dismissing "due soon" still lets the overdue alert through later; dismissing "overdue" silences that task until you
+  reschedule it. Completing the task clears its dismissals.
+
+  [1mData flow.[0m One direction, no reactive framework:
+
+  load() ──> tasks ──┬──> renderTaskList
+                     └──> computeAlerts(tasks, now) ──> renderAlertBanner
+
+  mutation (add/edit/complete/dismiss) ──> update tasks ──> save() ──> re-render both
+  timer (60s) ──> recompute alerts with fresh now ──> re-render banner only
+
+  The 60-second tick only recomputes alerts; it never touches storage or re-renders the task list, so it can't clobber
+  something you're typing.
+
+  [1mWhy 60 seconds:[0m it bounds how stale an alert can be, and the cost is a pure function over a small array. A [38;5;153msetTimeout[39m
+  scheduled exactly at the next [38;5;153mdueAt[39m would be more elegant but breaks when a laptop sleeps through the wake time.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Semantics [39m[49m
+
+[1m[38;5;231mDoes the alert semantics section look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, continue[39m
+     [38;5;246mTwo kinds, 24h threshold, UTC storage, dismissal per (taskId, kind) re-arming on reschedule or escalation, 60s [39m
+     [38;5;246mtick.[39m
+  [38;5;246m2.[39m Change the dismissal rule
+     [38;5;246mThe re-arm behavior isn't what I want — let's rework when a dismissed alert comes back.[39m
+  [38;5;246m3.[39m Change the threshold
+     [38;5;246m24 hours for 'due soon' isn't right; I want a different window or a user-configurable one.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

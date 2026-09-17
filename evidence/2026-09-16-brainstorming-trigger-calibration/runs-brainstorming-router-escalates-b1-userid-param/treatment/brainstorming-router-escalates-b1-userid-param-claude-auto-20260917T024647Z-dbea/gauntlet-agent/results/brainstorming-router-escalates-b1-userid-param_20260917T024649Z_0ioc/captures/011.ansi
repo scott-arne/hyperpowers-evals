@@ -1,0 +1,40 @@
+  [1mMy recommendation: native ES modules.[0m It's the option that makes "other forms will need it later" a one-line import
+  instead of a load-order problem, and it costs you one command to serve the page instead of double-clicking the file.
+  The global approach is the one that gets more expensive with exactly the growth you described.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the session store be shared with app.js and future forms? → Native ES modules (Recommended)[39m
+
+[38;5;231m⏺[39m Recorded: native ES modules, with a [38;5;153msrc/session.js[39m.
+
+  Last question before I lay out approaches. "Track who logged in" could mean just the ID, or enough to actually show
+  and audit it — and since later forms will read whatever shape this is, the stored record is the interface they'll
+  depend on.
+
+  - [1m[38;5;153muserId[39m only[0m — the store holds one string. Smallest possible surface; anything else a form needs (a display name,
+    when the login happened) has to be fetched or re-derived. Adding fields later is easy; [3mremoving[0m them isn't, so
+    starting small is the reversible direction.
+  - [1m[38;5;153m{ userId, username }[0m — lets a later form render "Signed in as jane" without a round trip. Costs a duplicated
+    username that could drift from the server's record, though with one write path that risk is near zero.
+  - [1m[38;5;153m{ userId, username, loginAt }[0m — adds a timestamp, which is what makes "track" auditable and gives you a hook for
+    session expiry later. Costs a field nothing reads today.
+
+  [1mMy recommendation: [38;5;153m{ userId, username, loginAt }[39m.[0m You used the word "track," and a login you can't timestamp isn't
+  tracked — it's just a current value. The timestamp is also the precondition for expiring a [38;5;153msessionStorage[39m session,
+  which is the most likely next ask after "persist."
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Record shape [39m[49m
+
+[1m[38;5;231mWhat should the persisted session record contain?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153muserId, username, loginAt (Recommended)[39m
+     [38;5;246mEnough to display the user and audit/expire the session. One unread field today (loginAt).[39m
+  [38;5;246m2.[39m userId + username
+     [38;5;246mDisplay-capable without a round trip, no timestamp. Smaller surface.[39m
+  [38;5;246m3.[39m userId only
+     [38;5;246mMinimal. Later forms must fetch or re-derive anything else.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

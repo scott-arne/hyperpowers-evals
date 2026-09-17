@@ -1,0 +1,40 @@
+
+  Consequence worth stating plainly: after this, [1mopening [38;5;153mindex.html[39m by double-clicking stops working[0m — module scripts
+  are blocked on [38;5;153mfile://[39m. You'll need [38;5;153mpython3 -m http.server[39m or similar. That's inherent to the ES-modules decision, not
+  something the design adds.
+
+  [1mSection 3 — Testing, and one wrinkle I hit[0m
+
+  The repo has [1mno test runner, no linter, no build step, no CI[0m. It also has a module-system conflict I need to flag:
+
+  [38;5;153mpackage.json[39m has no [38;5;153m"type"[39m field, so Node treats [38;5;153m.js[39m as CommonJS — which is what [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m rely
+  on. But [38;5;153msrc/settings.js[39m must be ESM for the browser. The browser ignores [38;5;153mpackage.json[39m entirely, so [1mthe app works fine
+[0m  [1meither way[0m; the conflict only bites if you want to run Node tests against [38;5;153msrc/settings.js[39m. Resolving it means either
+  adding [38;5;153m"type": "module"[39m and renaming the two CommonJS files to [38;5;153m.cjs[39m, or naming the new file [38;5;153msrc/settings.mjs[39m
+  (unambiguous to Node, but some minimal static servers send the wrong MIME type for [38;5;153m.mjs[39m and browsers then refuse the
+  module).
+
+  This is the only part of the work that reaches outside the feature, so it's yours to decide rather than mine to
+  assume.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Interface [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mHow should the ESM-vs-CommonJS conflict be resolved, and how much tooling do you want set up?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mtype:module + .cjs renames + node:test (Recommended)[39m
+     [38;5;246mWhole repo on ESM; rename src/index.js and src/utils.js to .cjs. Adds a node:test unit test for the hostname map. [39m
+     [38;5;246mNo dependencies. Touches two files outside the feature.[39m
+  [38;5;246m2.[39m Name it src/settings.mjs, add node:test
+     [38;5;246mLeaves the CommonJS island completely alone. Unambiguous for Node tests; small risk that a minimal static server [39m
+     [38;5;246msends the wrong MIME type for .mjs.[39m
+  [38;5;246m3.[39m No tests, no tooling changes
+     [38;5;246mShip src/settings.js as ESM for the browser only and leave the conflict unresolved. Fastest; the hostname mapping [39m
+     [38;5;246mstays unverified.[39m
+  [38;5;246m4.[39m Add linting/formatting too
+     [38;5;246mEverything in the recommended option, plus set up a linter and formatter from scratch (adds node_modules to a [39m
+     [38;5;246mcurrently dependency-free repo).[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

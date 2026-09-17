@@ -1,0 +1,40 @@
+  [1mB. Buffered log stream[0m — every record appends to a queue; the queue flushes on a timer, on a size threshold, and on
+  [38;5;153mpagehide[39m/[38;5;153mvisibilitychange[39m via [38;5;153msendBeacon[39m. Records are uniform, level-tagged, independent, and share the session's
+  correlation ID.
+  [3mWins when[0m you want both incident debugging and aggregate questions ("what's the login failure rate this week") from
+  one pipeline. [3mCosts:[0m you transmit for healthy sessions too, so volume and endpoint cost scale with traffic, not with
+  failures. Needs a sane level threshold or it floods.
+  [3mComplexity: moderate.[0m
+
+  [1mC. Immediate per-record POST[0m — no buffer at all; each call builds a record and fires [38;5;153mfetch(..., {keepalive: true})[39m
+  right away.
+  [3mWins when[0m you want the smallest possible amount of code and there's very little log volume. [3mCosts:[0m one request per log
+  line. With breadcrumbs enabled that's a dozen-plus requests per login attempt, which is punishing for the client and
+  for whatever receives it. Failures silently drop.
+  [3mComplexity: trivial.[0m
+
+  [1mMy recommendation: A, the black-box recorder.[0m You asked for this specifically to debug production issues, and A puts
+  essentially all of its cost on the sessions that actually broke. B is the better general-purpose telemetry pipeline,
+  but you'd be paying for a lot of uninteresting successful logins to get there, and you didn't ask for analytics. C I'd
+  only take if you wanted this done in twenty lines and accepted that it won't scale past a trickle.
+
+  The denominator gap is A's one real weakness, and it's cheap to close if you care: one tiny session-summary record on
+  [38;5;153mpagehide[39m (correlation ID, attempt count, outcome counts — no breadcrumbs) gives you rates without shipping the
+  healthy-session detail. I'd include it.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Architecture  ☒ Summary rec [38;5;16m[48;5;153m ✔ Submit [38;5;246m[49m →[39m
+
+[1m[38;5;231mReview your answers[0m
+
+ ● Which logging architecture should the spec be built around?
+   [38;5;114m→ A: Black-box recorder (Recommended)[39m
+ ● Include the session-summary record that closes A's denominator gap?
+   [38;5;114m→ Yes, include it (Recommended)[39m
+
+[38;5;246mReady to submit your answers?[39m
+
+[38;5;153m❯[39m [38;5;246m1. [38;5;153mSubmit answers[39m
+  [38;5;246m2. [39mCancel
+
+

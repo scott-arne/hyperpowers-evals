@@ -1,0 +1,40 @@
+  — [38;5;153mindex.html[39m uses a plain [38;5;153m<script src="app.js">[39m (no module system at all) and [38;5;153msrc/index.js[39m uses CommonJS [38;5;153mrequire[39m.
+  There's no format that both consume as-is, so sharing a module forces a choice:
+
+  - [1mESM everywhere[0m — [38;5;153mpackage.json[39m gets [38;5;153m"type": "module"[39m, [38;5;153msrc/index.js[39m/[38;5;153mutils.js[39m convert [38;5;153mrequire[39m→[38;5;153mimport[39m, [38;5;153mindex.html[39m
+    becomes [38;5;153m<script type="module">[39m. Native in both runtimes, no build step, and it's the format any future tooling will
+    assume. Cost: it touches [38;5;153mutils.js[39m and [38;5;153mindex.html[39m, which are otherwise unrelated to logging.
+  - [1mDual-format wrapper (UMD-style)[0m — one file that detects [38;5;153mmodule.exports[39m and otherwise attaches to [38;5;153mwindow[39m. Touches
+    nothing existing. Cost: a dated pattern, awkward to test, and it tends to be the thing you rip out the first time
+    you add a bundler.
+  - [1mTwo thin adapters over a shared core[0m — core logic in one file, a CommonJS shim and a browser-global shim. Honest but
+    the most code for a project this size.
+
+  This one is genuinely hard to change later — the format is baked into every import site — which is why it's worth a
+  minute now.
+
+  [1mMy recommendation: ESM everywhere.[0m The conversion here is about six lines across three files, and it's the only option
+  that doesn't leave a legacy pattern in a brand-new module.
+
+  On tooling: this repo has no test runner, no linter, and no scripts. A redaction rule with no test asserting that
+  passwords don't appear in output is a rule that quietly stops holding. Setting this up is cheapest now, before the
+  module exists.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Module fmt [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhat tooling should I set up alongside the logger?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;114m[✔][39m [38;5;153mUnit tests (Recommended)[39m
+  [38;5;246mNode's built-in node:test runner, zero dependencies. Needed to assert redaction actually redacts and levels filter [39m
+  [38;5;246mcorrectly — the two things most likely to silently break.[39m
+  [38;5;246m2.[39m [ ] Lint + format
+  [38;5;246mESLint + Prettier, the stack standard. Catches the console.log calls that bypass the logger. Adds dev dependencies to
+[39m  [38;5;246ma currently zero-dependency repo.[39m
+  [38;5;246m3.[39m [ ] Neither
+  [38;5;246mShip the logger alone. Fastest, but the redaction guarantee is then untested and unenforced.[39m
+  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

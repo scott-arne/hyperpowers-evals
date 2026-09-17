@@ -1,0 +1,40 @@
+  [1mB. Leveled logger, allowlist at the transport boundary[0m
+  Conventional [38;5;153mlogger.info / warn / error(message, fields)[39m, with a single [38;5;153msanitize()[39m applied to [38;5;153mfields[39m just before
+  enqueue against one global list of allowed field names.
+  [3mBuys:[0m familiar, less ceremony, faster to write, no catalog upkeep.
+  [3mCosts:[0m weaker in exactly the way that matters here. The allowlist is global rather than per-event, so any call site
+  can attach any allowed field in any context, and the free-text [38;5;153mmessage[39m argument is an unguarded channel —
+  [38;5;153mlogger.error(\[39mlogin failed for ${username}`)` sails straight through a field allowlist. Given that avoiding precisely
+  that leak is why you chose deny-by-default, this partly undoes the decision you just made.
+
+  [1mC. Console interception[0m — [3mdiscarded, but worth naming so it's not re-proposed:[0m wrapping [38;5;153mconsole.log/error[39m to capture
+  existing calls needs zero call-site changes, but its whole appeal is capturing calls verbatim — including the current
+  [38;5;153mconsole.log("Logging in:", username)[39m. It is structurally incompatible with an allowlist. Rewriting the call sites to
+  make it safe removes its only advantage.
+
+  [1mMy recommendation is A.[0m You picked deny-by-default for a form that will grow, and A is the only one of these where
+  that policy is enforced by the structure rather than by everyone remembering it. The catalog is maybe fifteen lines at
+  this size.
+
+  Two things I'd deliberately leave out under YAGNI, unless you say otherwise: persisting unsent logs to [38;5;153mlocalStorage[39m
+  across page loads, and sampling/rate-limiting. Both are real needs at volume and neither is a need at this app's size;
+  both are additive later.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Architecture [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mWhich logging architecture should I design in full?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Event catalog (Recommended)[39m
+     [38;5;246mPer-event field schema; deny-by-default enforced structurally. No free-text message channel. Catalog entry required
+[39m     [38;5;246mper new log line.[39m
+  [38;5;246m2.[39m B: Leveled logger + sanitize
+     [38;5;246mConventional info/warn/error API with a global field allowlist. Faster to write, but the free-text message argument
+[39m     [38;5;246mbypasses the allowlist.[39m
+  [38;5;246m3.[39m A, plus localStorage persistence
+     [38;5;246mApproach A with unsent logs persisted across page loads, so a crash-then-reload doesn't lose the logs that explain
+[39m     [38;5;246mthe crash. More moving parts and a storage-quota failure mode.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

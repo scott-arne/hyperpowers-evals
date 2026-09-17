@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Got it — hostname detection with a [38;5;153m?env=[39m override.
+
+  Next question: how the settings module is packaged, which decides who can consume it.
+
+  [1mThe fork:[0m whether [38;5;153msrc/[39m (the CommonJS Node side) ever needs to read settings too. Today it doesn't touch the endpoint,
+  but the answer fixes the module's export shape, and changing it later means touching every consumer.
+
+  - [1mBrowser-only global script[0m — [38;5;153msettings.js[39m at the repo root, loaded by a [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m, exposing a single
+    [38;5;153mwindow.SETTINGS[39m. Matches exactly how [38;5;153mapp.js[39m already works, zero new tooling. Costs you a global and leaves the Node
+    side unable to import it. Cheap to change later while there's one consumer.
+  - [1mES modules[0m — [38;5;153mindex.html[39m gets [38;5;153m<script type="module">[39m, [38;5;153msettings.js[39m uses [38;5;153mexport[39m, [38;5;153mapp.js[39m uses [38;5;153mimport[39m. Cleaner and no
+    globals, but it converts [38;5;153mapp.js[39m to a module (its [38;5;153mdocument.getElementById[39m wiring still works, but the file now can't
+    be opened over [38;5;153mfile://[39m without a local server) and still doesn't interoperate with the CommonJS under [38;5;153msrc/[39m.
+  - [1mDual-format (works in both)[0m — one file with a [38;5;153mmodule.exports[39m guard so Node and the browser can both load it.
+    Genuinely shared, but it's the awkward pattern of the three and only pays off if the Node side actually needs
+    settings.
+
+  [1mMy recommendation: browser-only global script.[0m [38;5;153msrc/index.js[39m is a [38;5;153mgreet()[39m demo with no network concerns; building a
+  shared-config bridge for a consumer that doesn't exist is the kind of thing worth cutting until it's real. The
+  hostname table and the [38;5;153mSettings.apiEndpoint[39m interface stay the same if you later need to share it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Packaging [39m[49m
+
+[1m[38;5;231mHow should the settings module be packaged?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser-only global (Recommended)[39m
+     [38;5;246msettings.js loaded via <script> before app.js, exposing window.SETTINGS. Matches the existing no-build setup; src/
+[39m     [38;5;246mcan't import it.[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246mindex.html uses <script type="module">, settings.js exports, app.js imports. No globals, but app.js becomes a [39m
+     [38;5;246mmodule and needs a local server.[39m
+  [38;5;246m3.[39m Dual-format (browser + Node)
+     [38;5;246mOne file usable by both the browser and the CommonJS code under src/. Shareable, but the most awkward pattern and [39m
+     [38;5;246mno consumer needs it yet.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

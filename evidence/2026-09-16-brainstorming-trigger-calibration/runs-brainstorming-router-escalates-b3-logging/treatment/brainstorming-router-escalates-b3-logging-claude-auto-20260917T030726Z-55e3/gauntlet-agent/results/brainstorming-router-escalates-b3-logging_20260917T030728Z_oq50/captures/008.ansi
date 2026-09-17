@@ -1,0 +1,40 @@
+  design, then a written spec, before any code gets written.
+
+  One thing I want to flag up front, since it shapes everything: [38;5;153mapp.js[39m and [38;5;153msrc/index.js[39m are two different runtimes. A
+  browser script can't write to a log file, and a Node process has no user session to attach a log to. "Production
+  issues" also means something different in each — a browser error is only visible to you if it's shipped somewhere,
+  while Node logs can just go to stdout and be collected by whatever runs the process.
+
+  [1mThe fork:[0m which surface the logging subsystem has to serve determines whether this is a transport problem or a
+  formatting problem.
+
+  - [1mBrowser ([38;5;153mapp.js[39m) only[0m — buys you visibility into real user failures, which is the usual meaning of "production
+    issues" for a login form. Costs: you need a remote sink (an endpoint to POST to), batching/failure handling, and a
+    serious PII decision, since the current code logs usernames and sits next to passwords. Hard to change later: the
+    wire format and the sink contract.
+  - [1mNode ([38;5;153msrc/index.js[39m) only[0m — cheap and self-contained. Structured JSON to stdout, a level from an env var, done.
+    Nothing to redo later; easy to extend.
+  - [1mBoth, shared core[0m — one leveled logger API with two transports. Buys consistency if this repo is really one app;
+    costs an abstraction that must stay runtime-neutral, and it's the option most likely to be over-built for two files
+    this size.
+
+  [1mMy recommendation: browser-only.[0m The [38;5;153mconsole[39m calls that look like real debugging pain are all in [38;5;153mapp.js[39m, and
+  [38;5;153msrc/index.js[39m is a three-line hello-world with nothing to diagnose. Scoping to the browser also forces the PII
+  question, which is the part of this change with actual consequences.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Surface [39m[49m
+
+[1m[38;5;231mWhich surface does the logging need to cover?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser app.js only (Recommended)[39m
+     [38;5;246mLeveled logger plus a remote sink for the login form. The real debugging pain and the real PII risk both live here.
+[39m  [38;5;246m2.[39m Node src/index.js only
+     [38;5;246mStructured logs to stdout with an env-var level. Cheap and self-contained, but src/index.js has almost nothing to [39m
+     [38;5;246mdebug.[39m
+  [38;5;246m3.[39m Both, shared core
+     [38;5;246mOne logger API, two transports. Consistent, but a runtime-neutral abstraction is heavy for two files this size.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

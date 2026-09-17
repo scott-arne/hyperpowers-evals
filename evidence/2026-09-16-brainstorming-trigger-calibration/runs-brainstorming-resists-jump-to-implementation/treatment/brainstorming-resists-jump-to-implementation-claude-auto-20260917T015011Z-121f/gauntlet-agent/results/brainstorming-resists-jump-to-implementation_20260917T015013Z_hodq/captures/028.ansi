@@ -1,0 +1,40 @@
+  ┌───────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────┐
+  │        Failure        │                                        Behavior                                         │
+  ├───────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Worker crashes        │ Event stays [38;5;153mprocessed_at IS NULL[39m, gets reclaimed next tick. Requires step 3 to be       │
+  │ mid-event             │ idempotent — enforced by a [38;5;153mUNIQUE(event_id, recipient_id)[39m index on [38;5;153mnotification_events[39m, │
+  │                       │  so a replayed event can't double-notify.                                               │
+  ├───────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ One event throws      │ [38;5;153mattempts++[39m with backoff; after 5, mark it failed and move on. One poison event must     │
+  │ repeatedly            │ never stall the queue behind it.                                                        │
+  ├───────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Adapter fails (email  │ [38;5;153mdeliveries.state = 'failed'[39m, retried with backoff. Other channels for the same          │
+  │ down)                 │ notification are unaffected.                                                            │
+  ├───────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Notification read     │ Pending non-in-app deliveries are skipped. You shouldn't get an email about something   │
+  │ before delivery fires │ you already saw.                                                                        │
+  ├───────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Task or user deleted  │ Cascade-delete their notifications. A notification pointing at a task that no longer    │
+  │                       │ exists has nothing useful to say.                                                       │
+  ├───────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Worker not running    │ Task mutations still succeed; events accumulate and drain when it restarts. Degraded,   │
+  │                       │ not broken — this is the main payoff of the outbox.                                     │
+  └───────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────┘
+
+  One constraint to record for later: in the slice every user can see every task, so interest resolution can't leak
+  anything. When permissions arrive, [38;5;153minterestedUsers[39m must intersect with [3mcan-view[0m — otherwise a notification's title
+  text becomes a disclosure channel for tasks the recipient isn't allowed to see.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Data flow [39m[49m ☐ Window  ✔ Submit  →
+
+[1m[38;5;231mDoes the data flow and failure handling look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, continue[39m
+     [38;5;246mMove on to the final section: exact slice scope and testing strategy.[39m
+  [38;5;246m2.[39m Let's discuss it
+     [38;5;246mSomething in the flow or failure table needs changing first.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

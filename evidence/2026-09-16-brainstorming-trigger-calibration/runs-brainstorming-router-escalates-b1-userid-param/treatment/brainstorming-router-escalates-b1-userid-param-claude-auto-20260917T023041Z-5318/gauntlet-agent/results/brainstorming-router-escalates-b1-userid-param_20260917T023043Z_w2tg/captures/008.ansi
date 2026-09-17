@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should the userId value come from, given the form only collects username and password? → It should be a [39m
+     [38;5;246mreal user identifier, it should persist, it should work across the app, and other forms will need it later too.[39m
+
+[38;5;231m⏺[39m That answer changes the classification. A real identifier that persists, is shared across the app, and gets consumed
+  by forms that don't exist yet is a new subsystem — identity/session state plus storage — not a parameter on one
+  function.
+
+  [1mUpgrading to the architectural path.[0m The brainstorming ratchet is one-way, so I'll do the full process: clarifying
+  questions, 2-3 approaches with trade-offs, a sectioned design you approve, then a written spec. No code until you've
+  approved that.
+
+  Before approaches, one thing I need to resolve, because it inverts the change you originally asked for. Right now
+  [38;5;153mlogin()[39m is a stub ([38;5;153mapp.js:4-8[39m) that fabricates [38;5;153m{ success: true, user: username }[39m and never actually calls
+  [38;5;153mAPI_ENDPOINT[39m. A [3mreal[0m user identifier generally can't be passed [1minto[0m login — pre-authentication, the app only knows
+  what someone typed into a form, and a client-chosen "user ID" is self-asserted, not real. The usual shape is the
+  reverse: login authenticates, the server [1mreturns[0m the canonical userId, the app persists it, and everything downstream
+  reads it from there. That's [38;5;153mlogin()[39m returning a userId, not accepting one.
+
+  So:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID origin [39m[49m
+
+[2m│[0m [1m[38;5;231mWho mints the canonical user ID — and is it known before or after authentication?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer returns it on login[39m
+     [38;5;246mThe login API responds with the canonical userId. login() returns it instead of taking it; the app persists it and
+[39m     [38;5;246mother forms read it. Requires deciding what the real endpoint returns.[39m
+  [38;5;246m2.[39m Restored from prior session
+     [38;5;246mA stored session from a previous login supplies the userId on page load, so it exists before this login call. Login
+[39m     [38;5;246mrefreshes it. Needs a storage + expiry design.[39m
+  [38;5;246m3.[39m Already known pre-auth
+     [38;5;246mSomething outside the login form (SSO handoff, URL token, server-rendered page context) supplies a real userId [39m
+     [38;5;246mbefore login runs. Tell me which, since nothing in this repo does.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

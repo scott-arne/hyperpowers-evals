@@ -1,0 +1,40 @@
+  - [1m[38;5;153mGET /notifications[39m is always scoped to the session user; there is no [38;5;153muser_id[39m parameter.[0m Notification lists are the
+    classic IDOR target, and the way you don't have that bug is by making it unrepresentable in the API rather than by
+    checking authorization carefully.
+
+  [1mFailure handling — the part that matters most, since a notification system's job is to not lose things:[0m
+
+  ┌───────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────┐
+  │        Failure        │                                        Behavior                                         │
+  ├───────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Worker crashes        │ Event stays [38;5;153mprocessed_at IS NULL[39m, gets reclaimed next tick. Requires step 3 to be       │
+  │ mid-event             │ idempotent — enforced by a [38;5;153mUNIQUE(event_id, recipient_id)[39m index on [38;5;153mnotification_events[39m, │
+  │                       │  so a replayed event can't double-notify.                                               │
+  ├───────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ One event throws      │ [38;5;153mattempts++[39m with backoff; after 5, mark it failed and move on. One poison event must     │
+  │ repeatedly            │ never stall the queue behind it.                                                        │
+  ├───────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Adapter fails (email  │ [38;5;153mdeliveries.state = 'failed'[39m, retried with backoff. Other channels for the same          │
+  │ down)                 │ notification are unaffected.                                                            │
+  ├───────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Notification read     │ Pending non-in-app deliveries are skipped. You shouldn't get an email about something   │
+  │ before delivery fires │ you already saw.                                                                        │
+  ├───────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Task or user deleted  │ Cascade-delete their notifications. A notification pointing at a task that no longer    │
+  │                       │ exists has nothing useful to say.                                                       │
+  ├───────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Worker not running    │ Task mutations still succeed; events accumulate and drain when it restarts. Degraded,   │
+  │                       │ not broken — this is the main payoff of the outbox.                                     │
+  └───────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────┘
+
+  One constraint to record for later: in the slice every user can see every task, so interest resolution can't leak
+  anything. When permissions arrive, [38;5;153minterestedUsers[39m must intersect with [3mcan-view[0m — otherwise a notification's title
+  text becomes a disclosure channel for tasks the recipient isn't allowed to see.
+
+[38;5;174m✳[39m [38;5;174mConcoctin[38;5;216mg…[38;5;174m [38;5;246m(4m 37s · ↓[39m [38;5;246m16.8k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

@@ -1,0 +1,40 @@
+  file ends with a three-line footer so Node's [38;5;153mrequire[39m gets the same object, which is what makes [38;5;153mnode:test[39m work with no
+  build step. Call sites in [38;5;153mapp.js[39m change from [38;5;153mconsole.log(...)[39m to [38;5;153mlog.info('event.name', { ...context })[39m.
+  [3mTrade-off:[0m costs a global and a script-ordering dependency ([38;5;153mlogger.js[39m must load first). Buys a testable module,
+  structured records, and one choke point where redaction and the sink live.
+
+  [1mB. Console interceptor.[0m [38;5;153mlogger.js[39m monkey-patches [38;5;153mconsole.log/warn/error[39m, wrapping each to emit a structured record
+  before delegating to the original. Existing call sites need no edits at all, and logs from any future third-party
+  script get captured too.
+  [3mTrade-off:[0m the smallest diff by far, but it undercuts the point. Call sites still pass loose strings ([38;5;153m"Logging in:", [39m
+  [38;5;153musername[39m), so records stay unstructured — you'd get timestamps and levels but not queryable fields, and the deny-list
+  scrub has nothing keyed to scrub. It also makes devtools line numbers point at the wrapper instead of the real call
+  site, which actively hurts production debugging. And patching a global that other code depends on is a surprising
+  thing to find in a codebase.
+
+  [1mC. Inline the logger at the top of [38;5;153mapp.js[39m.[0m No new file, no script tag, no global.
+  [3mTrade-off:[0m simplest possible wiring, but it can't be unit-tested from Node — [38;5;153mapp.js[39m calls [38;5;153mdocument.getElementById[39m at
+  load time, so requiring it in a test crashes. That contradicts the testing decision you just made. It also roughly
+  doubles the length of the file.
+
+  [1mRecommendation: A.[0m It's the only one of the three that delivers structured, redacted records [3mand[0m stays testable under
+  [38;5;153mnode:test[39m. B's zero-diff appeal is real but it produces worse logs than what you asked for, and C is ruled out by the
+  test runner.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: separate logger.js (Recommended)[39m
+     [38;5;246mNew logger.js classic script + dual-export footer, loaded before app.js. Structured records, central redaction, [39m
+     [38;5;246mtestable from node:test.[39m
+  [38;5;246m2.[39m B: console interceptor
+     [38;5;246mMonkey-patch console.* so existing call sites are untouched. Smallest diff, but unstructured records and misleading
+[39m     [38;5;246mdevtools line numbers.[39m
+  [38;5;246m3.[39m C: inline in app.js
+     [38;5;246mLogger lives at the top of app.js. No new file or script tag, but not unit-testable from Node.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

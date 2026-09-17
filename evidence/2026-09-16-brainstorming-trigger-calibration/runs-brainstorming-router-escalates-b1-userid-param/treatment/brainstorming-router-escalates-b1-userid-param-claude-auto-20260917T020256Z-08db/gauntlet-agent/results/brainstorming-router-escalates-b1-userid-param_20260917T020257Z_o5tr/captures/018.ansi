@@ -1,0 +1,40 @@
+  envelope for a single string is complexity bought against a migration that may never come. If the format ever does
+  need to change, the [3mkey name[0m is the version lever: write [38;5;153mapp.userId.v2[39m, read both during a transition, drop the old
+  key. Same headroom, no ceremony now.
+
+  [1mStorage can fail.[0m [38;5;153mlocalStorage[39m throws in private-browsing modes, when disabled by policy, and on quota. Every access
+  is wrapped; on failure the module keeps the value in a module-level variable for the page's lifetime. The app degrades
+  to "works this visit, forgets on reload" rather than breaking the login form. This is the main reason storage access
+  is centralized at all.
+
+  [1mNot an auth credential.[0m Written into the module's header comment and the spec: this value is a correlation key. Any
+  code on the origin can read or forge it. If it ever needs to authenticate, it moves to an [38;5;153mhttpOnly[39m cookie and the
+  client stops reading it.
+
+  [1mSection 2 — The login contract[0m
+
+  Pinned in the spec for a real backend to honor later:
+
+  POST  https://api.example.com/login
+  body  { "username": string, "password": string }
+
+  200   { "success": true,  "user": string, "userId": string }
+        userId: opaque, non-empty, server-assigned, stable per account.
+                    Clients must not parse or derive meaning from it.
+  4xx   { "success": false, "error": string }   // no userId
+
+  [1mOne consequence worth your explicit sign-off:[0m a real [38;5;153mfetch[39m is asynchronous, so I'd make [38;5;153mlogin()[39m [38;5;153masync[39m [1mnow[0m, while the
+  stub still returns a canned object. The submit handler at [38;5;153mapp.js:23[39m becomes [38;5;153masync[39m and [38;5;153mawait[39ms it. If we leave [38;5;153mlogin()[39m
+  synchronous, then dropping in the real network call later changes the signature [3mand[0m every caller — a breaking change
+  deferred rather than avoided. Doing it now costs two keywords and makes the eventual swap a body-only edit.
+
+  The stub returns a fixed placeholder [38;5;153muserId[39m so the storage path is exercised end to end from day one.
+
+  Does this hold up? Say the word and I'll lay out module loading, error handling, and the test plan.
+
+[38;5;246m✻[39m [38;5;246mWorked for 3m 46s · done 7:12 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

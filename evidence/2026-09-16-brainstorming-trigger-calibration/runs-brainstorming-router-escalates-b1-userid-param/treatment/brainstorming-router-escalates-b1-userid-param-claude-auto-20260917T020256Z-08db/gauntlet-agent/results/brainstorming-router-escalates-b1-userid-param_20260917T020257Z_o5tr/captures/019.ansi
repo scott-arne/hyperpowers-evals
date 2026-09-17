@@ -1,0 +1,40 @@
+  - [1mSuccess response missing or malformed [38;5;153muserId[0m → contract violation: warn, leave the stored value untouched, but still
+    treat the login as successful. Missing tracking data must never fail a user's login.
+  - [1m[38;5;153msetUserId[39m given empty or non-string[0m → throws [38;5;153mTypeError[39m. That's a programmer error, not a runtime condition, and it
+    should be loud.
+
+  [1mSection 5 — Testing[0m
+
+  Runner: Node's built-in [38;5;153mnode:test[39m + [38;5;153mnode:assert[39m, wired as [38;5;153m"test": "node --test"[39m. Zero dependencies, which keeps
+  [38;5;153mpackage.json[39m's empty dependency list intact.
+
+  Covered: get/set round-trip; [38;5;153mnull[39m when unset; [38;5;153mclearUserId[39m; rejection of empty and non-string input; storage-throws
+  falls back to in-memory; the in-memory fallback does [3mnot[0m survive a fresh module instance; and the login stub returns
+  the pinned contract shape and is awaitable.
+
+  [1mExplicit gap:[0m the DOM submit handler at [38;5;153mapp.js:17[39m stays untested — that's the e2e layer you declined. The wiring
+  between [38;5;153mlogin()[39m's return and [38;5;153msetUserId()[39m will be verified by reading, not by a test.
+
+  [1mThe fork:[0m the module-system question decides whether this change stays inside the files it touches.
+
+  - [1m[38;5;153m.mjs[39m extension[0m — [38;5;153midentity.mjs[39m + [38;5;153mtest/identity.test.mjs[39m. Node loads it as ESM unconditionally; [38;5;153msrc/[39m is never touched.
+    Cost: some static file servers don't map [38;5;153m.mjs[39m to a JS MIME type, and the browser refuses modules served with the
+    wrong type. Fixable, but a real deployment footgun.
+  - [1m[38;5;153m"type": "module"[39m in [38;5;153mpackage.json[0m — clean [38;5;153m.js[39m everywhere, no MIME risk. Cost: it flips the whole package to ESM,
+    which breaks [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m ([38;5;153mrequire[39m/[38;5;153mmodule.exports[39m) unless I convert them — two lines each, in files
+    unrelated to your request.
+  - [1mBrowser global, no modules[0m — [38;5;153midentity.js[39m assigns [38;5;153mwindow.Identity[39m, matching [38;5;153mapp.js[39m exactly. No module system
+    anywhere. Cost: the test has to load the file through [38;5;153mnode:vm[39m to get at the global, which is clumsier test code in
+    exchange for zero production risk.
+
+  My recommendation: [38;5;153m"type": "module"[39m, converting the two [38;5;153msrc/[39m files. The conversion is four lines total and leaves the
+  repo with one module convention instead of three; the [38;5;153m.mjs[39m MIME footgun is the kind of thing that fails in staging on
+  a Friday. But it does edit files outside your ask, so it's your call.
+
+[38;5;174m✽[39m [38;5;174mWorking[38;5;216m…[38;5;174m [38;5;246m(50s · ↓[39m [38;5;246m2.6k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

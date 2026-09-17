@@ -1,0 +1,40 @@
+
+  [1mA. Single JSON blob, eager-loaded[0m — one localStorage key ([38;5;153mapp.preferences[39m) holding a JSON object plus a schema
+  version. The module parses it once at init, validates each field against the schema, substitutes defaults for anything
+  missing or malformed, and keeps the result in memory; [38;5;153mset[39m updates memory and rewrites the whole blob. [3mBuys:[0m one
+  parse, one place to version and migrate, trivial "reset everything," and a corrupt blob degrades to all-defaults
+  rather than throwing. [3mCosts:[0m two tabs writing different preferences clobber each other, since each rewrites the entire
+  object. [3mComplexity:[0m low.
+
+  [1mB. Key-per-preference[0m — each preference in its own key ([38;5;153mpref:rememberedUsername[39m), read through to localStorage on [38;5;153mget[39m.
+  [3mBuys:[0m two tabs editing different preferences never conflict, and one corrupt value can't affect its neighbors. [3mCosts:[0m
+  no atomic multi-write, migrations must enumerate keys, and "clear all preferences" means scanning the whole keyspace
+  and guessing which keys are yours. [3mComplexity:[0m low, but the sharp edges arrive later.
+
+  [1mC. Blob plus cross-tab sync[0m — A, plus a [38;5;153mstorage[39m event listener that reloads when another tab writes, plus a
+  [38;5;153msubscribe()[39m so forms re-render on change. [3mBuys:[0m correct multi-tab behavior and reactive consumers. [3mCosts:[0m real
+  machinery — subscription lifecycle, re-entrancy, teardown — for a benefit v1 has no consumer of. [3mComplexity:[0m moderate.
+
+  [1mRecommendation: A.[0m The clobber problem is B's only genuine advantage, and it requires a user with two tabs open
+  changing different preferences in each — against which B trades away cheap migration, which you [3mwill[0m need the first
+  time a preference changes shape. C is the right destination if multi-tab ever matters, and A upgrades into C without
+  touching a single call site: same key, same schema, you add a listener. That makes A the cheap-to-reverse choice and B
+  the one that quietly taxes every future change.
+
+  Two sub-decisions I'd fold into A rather than ask separately, since neither has a real competitor here:
+
+  - [1mLoading:[0m a new [38;5;153mpreferences.js[39m via a second [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m, exposing a global. The alternative is
+    converting the page to ES modules, which would also make [38;5;153mapp.js[39m's top-level functions non-global and break opening
+    the page over [38;5;153mfile://[39m. Not worth it for one module.
+  - [1mTestability:[0m the module is a factory, [38;5;153mcreatePreferences(schema, storage)[39m, with the browser entry doing the
+    [38;5;153mwindow.localStorage[39m wiring. That's what lets the logic be tested in Node against a fake storage object, with no DOM
+    and no dependencies.
+
+  Does approach A sound right before I detail the design?
+
+[38;5;246m✻[39m [38;5;246mWorked for 2m 41s · done 8:05 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

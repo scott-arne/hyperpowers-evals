@@ -1,0 +1,40 @@
+      toaster.js                  transient toasts
+      settings.js                 OS-notification opt-in, reminder lead time
+
+  [1mTask:[0m [38;5;153m{ id, title, status: 'open' | 'done', dueAt: ISO | null, watched: boolean, createdAt, updatedAt }[39m
+
+  [1mNotification:[0m [38;5;153m{ id, kind: 'due-soon' | 'overdue' | 'feedback', taskId | null, title, body, createdAt, readAt, [39m
+  [38;5;153mdedupeKey, transient }[39m
+
+  Two decisions in there worth flagging explicitly, because they're the ones I'd want you to push back on:
+
+  [1m[38;5;153mrules.js[39m is a pure function.[0m Given a task list, a timestamp, and the set of reminder keys already fired, it returns
+  the notifications that should now exist. It touches no timers, no DOM, no storage. The scheduler is a dumb shell that
+  calls it on an interval, on task change, and when the tab becomes visible. This is deliberate: the reminder logic is
+  the only genuinely tricky part of this feature, and this shape lets it be tested by passing in a fake [38;5;153mnow[39m instead of
+  waiting for clocks.
+
+  [1m"Shared surface" means one queue, not one lifetime.[0m Both reminders and action feedback go through a single [38;5;153mnotify()[39m
+  entry point and a single store. But reminders persist in the tray until dismissed, while action feedback is [38;5;153mtransient:
+[39m  [38;5;153mtrue[39m — it shows as a toast, auto-expires, and is never archived. An activity log of "Task saved" entries would be
+  noise, and a tray you have to clear out constantly is a tray people stop opening.
+
+  Storage is three versioned localStorage keys ([38;5;153mtasks.v1[39m, [38;5;153mnotifications.v1[39m, [38;5;153msettings.v1[39m). If localStorage is unavailable
+  (private browsing) or holds corrupt JSON, we fall back to in-memory, tell the user once, and keep running rather than
+  failing to boot.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 1 [39m[49m
+
+[1m[38;5;231mDoes Section 1 (modules and data model) look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, continue[39m
+     [38;5;246mModule boundaries, task/notification shapes, pure rules function, and the transient-vs-persisted split all work. [39m
+     [38;5;246mMove on to Section 2.[39m
+  [38;5;246m2.[39m I want changes
+     [38;5;246mSomething in the module split, the data shapes, or the transient/persisted distinction needs rework before [39m
+     [38;5;246mcontinuing.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  requirements you don't have — no second storage backend exists, and no component currently needs to react to consent
+  changing mid-session.
+  [3mWins when:[0m server identity is already scheduled, or consent can be revoked from several places at once.
+  [3mComplexity:[0m high, and mostly speculative.
+
+  [1mMy recommendation: A.[0m It fits the codebase as it actually is, and the interface — five functions — is identical in all
+  three. That's the part other forms depend on, so choosing A now doesn't make B or C harder later; you'd be changing
+  how the module is loaded, not what it does.
+
+  [1mOne data-model choice inside whichever you pick:[0m store consent and id as a [3msingle[0m versioned JSON blob under one key
+  ([38;5;153m{v: 1, consent: true, userId: "...", createdAt: "..."}[39m) rather than two separate keys. Two keys can desync — consent
+  revoked while an id lingers, which is the exact failure a consent gate exists to prevent — and one key gives a single
+  place to handle format changes. I'd fold this into the design unless you object.
+
+  [1mTwo consequences worth naming now:[0m [38;5;153mgetUserId()[39m returns [38;5;153mnull[39m when consent hasn't been granted, so [38;5;153mlogin[39m must treat a
+  missing id as ordinary, not an error — it logs without one. And id generation uses [38;5;153mcrypto.randomUUID()[39m, which needs a
+  secure context; I'll spec a fallback so opening the page from disk doesn't break.
+
+  [1mTooling:[0m this repo has no linter, formatter, or test framework, and nothing in it is currently tested. Consent logic
+  that's wrong fails silently and in the user's favor least — it's worth a test. Cheapest to set up now, before the code
+  exists.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Approach [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhat tooling should the spec set up alongside this?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mUnit tests[39m
+  [38;5;246mA test runner plus a first passing test, covering consent gating, id stability across reloads, and clear(). Adds a dev
+[39m  [38;5;246mdependency to a currently dependency-free repo.[39m
+  [38;5;246m2.[39m [ ] Lint + format
+  [38;5;246mESLint + Prettier with a standard config, so the new file and the existing ones stay consistent.[39m
+  [38;5;246m3.[39m [ ] Neither, keep it dependency-free
+  [38;5;246mThe repo has zero dependencies today and you want it to stay that way. I will verify behavior manually and say so [39m
+  [38;5;246mplainly in the spec.[39m
+  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

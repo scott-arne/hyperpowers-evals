@@ -1,0 +1,40 @@
+
+  [1mA. Singleton with environment-detected sink.[0m One [38;5;153mlogger.js[39m that checks [38;5;153mtypeof window[39m at import time and installs the
+  matching sink itself. Call sites do [38;5;153mimport { log } from './logger.js'[39m. Fewest files. The cost is testability:
+  import-time environment detection is exactly the thing [38;5;153mnode:test[39m can't easily vary, so the browser policy (hashed
+  usernames) would go untested — and that's one of the two rules you're adding the module to guarantee.
+
+  [1mB. Pure core + factory + two thin entry modules.[0m [38;5;153msrc/logging/core.js[39m exports [38;5;153mcreateLogger({ sink, level, [39m
+  [38;5;153musernamePolicy })[39m and a pure [38;5;153mredact(fields)[39m. [38;5;153mlogger.node.js[39m and [38;5;153mlogger.browser.js[39m each construct a preconfigured
+  singleton with the right sink and username policy. Call sites import the entry module for their half. One more file
+  than A. The core is pure, so [38;5;153mnode:test[39m covers redaction, level filtering, record shape, [3mand[0m the browser's hashing
+  policy by injecting a fake sink — no browser needed.
+
+  [1mC. Pub/sub core.[0m The logger emits records to N registered subscribers; console is one subscriber, a future remote sink
+  is another. Fan-out to console [3mand[0m a collector comes free, which is the realistic end state once shipping exists. But
+  it buys flexibility you don't need for one sink, and it raises questions you'd then have to answer — subscriber error
+  isolation, ordering, backpressure — none of which have a forcing function yet.
+
+  [1mRecommendation: B.[0m It delivers the sink seam you asked for at nearly A's size, and it's the only one where the
+  redaction and username guarantees are actually covered by tests. C's fan-out is a real advantage later, but B's sink
+  parameter can become a sink [3marray[0m when a collector exists — that upgrade is contained in the core, not spread across
+  call sites.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Architecture [39m[49m
+
+[1m[38;5;231mWhich logger architecture should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: core + factory + entries (Recommended)[39m
+     [38;5;246mPure testable core, two thin per-environment entry modules. Covers redaction and username policy with node:test. [39m
+     [38;5;246mOne extra file versus A.[39m
+  [38;5;246m2.[39m A: singleton, detected sink
+     [38;5;246mFewest files, simplest imports. Import-time environment detection leaves the browser username policy effectively [39m
+     [38;5;246muntestable.[39m
+  [38;5;246m3.[39m C: pub/sub core
+     [38;5;246mSinks as subscribers, free fan-out to console plus a future collector. More machinery and unanswered questions [39m
+     [38;5;246m(error isolation, ordering) than two sinks justify today.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

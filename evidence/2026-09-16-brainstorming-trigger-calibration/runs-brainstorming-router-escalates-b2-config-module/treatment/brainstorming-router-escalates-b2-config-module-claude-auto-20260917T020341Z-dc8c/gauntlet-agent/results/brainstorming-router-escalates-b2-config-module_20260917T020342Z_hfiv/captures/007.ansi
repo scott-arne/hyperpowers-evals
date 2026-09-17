@@ -1,0 +1,40 @@
+  module gets loaded is a real design decision, not a mechanical edit. I'll work through questions → approaches → a
+  design → a spec. Say the word if you'd rather I just treat it as a quick edit.
+
+  First question, and it's the one that constrains everything else.
+
+  [1mThe fork:[0m [38;5;153mapp.js[39m is a classic browser script — it can't [38;5;153mrequire()[39m and can't [38;5;153mimport[39m as-is. So "put settings in a
+  module" means picking how that module reaches [38;5;153mapp.js[39m, and each option changes what [38;5;153mindex.html[39m looks like and what the
+  settings file can export.
+
+  - [1mGlobal script[0m — add [38;5;153msettings.js[39m, load it before [38;5;153mapp.js[39m in [38;5;153mindex.html[39m, expose one global object. Buys: zero other
+    changes, works by opening the file directly ([38;5;153mfile://[39m). Costs: a global, and the load-order dependency is invisible
+    from [38;5;153mapp.js[39m. Rules out nothing — easy to upgrade to ESM later.
+  - [1mES modules[0m — [38;5;153msettings.js[39m uses [38;5;153mexport[39m, [38;5;153mapp.js[39m uses [38;5;153mimport[39m, [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" src="app.js">[39m.
+    Buys: real module boundary, explicit dependency, the modern default. Costs: [38;5;153mfile://[39m stops working (needs a local
+    server, CORS blocks module loads), and it changes [38;5;153mindex.html[39m. Hard to reverse quietly once other code starts
+    importing.
+  - [1mCommonJS under [38;5;153msrc/[0m — matches [38;5;153msrc/utils.js[39m. Buys: consistency with the existing Node files. Costs: the browser can't
+    load it without a bundler, so [38;5;153mapp.js[39m couldn't actually use it — this only makes sense if you want the settings
+    shared with Node code too.
+
+  [1mMy recommendation: ES modules.[0m The repo is small enough that converting one script is cheap, and it's the only option
+  that gives a genuine module boundary rather than a global with a naming convention. The [38;5;153mfile://[39m caveat is the real
+  cost — if you rely on double-clicking [38;5;153mindex.html[39m to test, global script is the pragmatic pick instead.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module fmt [39m[49m
+
+[1m[38;5;231mHow should the new settings module reach app.js?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246msettings.js exports, app.js imports, index.html uses type="module". Real boundary; requires a local server instead
+[39m     [38;5;246mof file://.[39m
+  [38;5;246m2.[39m Global script
+     [38;5;246msettings.js loaded before app.js, exposes one global object. No other changes; still works via file://.[39m
+  [38;5;246m3.[39m CommonJS in src/
+     [38;5;246mMatches src/utils.js. Only useful if Node code should share the settings; browser can't load it without a bundler.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

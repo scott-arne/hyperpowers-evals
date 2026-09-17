@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m [38;5;153mlocalStorage[39m it is.
+
+  One more structural question, then I'll lay out approaches. [1mThe fork:[0m how a shared module actually reaches [38;5;153mapp.js[39m,
+  which today is a bare [38;5;153m<script src="app.js">[39m with no module system.
+
+  - [1mES modules[0m — [38;5;153m<script type="module" src="app.js">[39m, and [38;5;153mapp.js[39m does [38;5;153mimport { ... } from './src/session.js'[39m. Standard,
+    explicit dependencies, no global namespace, and each module is independently testable. Cost: browsers block module
+    imports over [38;5;153mfile://[39m, so opening [38;5;153mindex.html[39m by double-clicking stops working — you'd need a local static server
+    ([38;5;153mpython3 -m http.server[39m, one line). Also note [38;5;153msrc/utils.js[39m uses CommonJS ([38;5;153mmodule.exports[39m) for Node, so the repo
+    would have two module styles coexisting unless we convert.
+  - [1mPlain scripts + a global[0m — add [38;5;153m<script src="src/session.js">[39m before [38;5;153mapp.js[39m and hang the API off a namespace like
+    [38;5;153mwindow.AppSession[39m. Zero tooling, [38;5;153mfile://[39m keeps working. Cost: load order becomes an invisible dependency, and the
+    global namespace is exactly what gets messy once "other forms" arrive.
+  - [1mA bundler[0m — correct at scale, and unjustifiable for six files. I'd rule this out under YAGNI.
+
+  This one is genuinely hard to change later: whichever you pick, every future form inherits it, and converting a grown
+  app between the two is tedious.
+
+  [1mMy recommendation:[0m ES modules. The thing you described — a shared module several forms depend on — is the case module
+  syntax exists for, and losing [38;5;153mfile://[39m costs one command to fix. I'd leave [38;5;153msrc/utils.js[39m and [38;5;153msrc/index.js[39m on CommonJS
+  for now rather than expand scope; the new session module is browser-only anyway, since [38;5;153mlocalStorage[39m doesn't exist in
+  Node.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module loading [39m[49m
+
+[1m[38;5;231mHow should the shared session module be loaded by the browser?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246m<script type="module">, explicit imports, no globals. Requires serving over a local HTTP server instead of opening
+[39m     [38;5;246mindex.html directly.[39m
+  [38;5;246m2.[39m Plain scripts + global
+     [38;5;246mAn extra <script> tag exposing window.AppSession. Keeps file:// working with zero tooling; relies on script order [39m
+     [38;5;246mand a global namespace.[39m
+  [38;5;246m3.[39m Add a bundler
+     [38;5;246mVite or similar. Handles both, but adds a dependency and a build step to a six-file project.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

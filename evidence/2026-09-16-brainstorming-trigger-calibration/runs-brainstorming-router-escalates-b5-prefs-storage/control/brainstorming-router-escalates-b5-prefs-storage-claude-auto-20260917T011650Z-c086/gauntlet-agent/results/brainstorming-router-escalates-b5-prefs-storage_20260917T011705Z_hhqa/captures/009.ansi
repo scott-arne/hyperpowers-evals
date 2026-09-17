@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Last question before I lay out approaches. It's about wiring, and it matters because it decides whether unrelated
+  files get touched.
+
+  [38;5;153mindex.html[39m loads [38;5;153mapp.js[39m as a classic [38;5;153m<script>[39m (globals, no modules), while [38;5;153msrc/[39m is CommonJS for Node. A preferences
+  module has to be reachable from the browser [3mand[0m from a test runner, and those two conventions don't currently meet
+  anywhere.
+
+  - [1mDual export (CommonJS + browser global)[0m — [38;5;153msrc/preferences.js[39m assigns [38;5;153mmodule.exports[39m when it exists, otherwise hangs
+    the API off [38;5;153mwindow[39m. [38;5;153mindex.html[39m gains one [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m; Node tests [38;5;153mrequire()[39m it. Matches the repo
+    as-is, touches no existing file's module style. Cost: the dual-export shim is a slightly dated pattern.
+  - [1mES modules everywhere[0m — set [38;5;153m"type": "module"[39m in [38;5;153mpackage.json[39m, convert [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m off [38;5;153mrequire[39m,
+    switch [38;5;153mindex.html[39m to [38;5;153m<script type="module">[39m. Cleanest end state. Cost: converts two files unrelated to this task,
+    which is exactly the kind of drive-by refactor I'd normally avoid.
+  - [1mESM for the new file only[0m — [38;5;153msrc/preferences.mjs[39m, browser uses [38;5;153mtype="module"[39m, Node tests import it natively. No
+    unrelated files touched and no shim. Cost: the repo ends up with two module conventions side by side, and [38;5;153mapp.js[39m
+    must also become a module to import it.
+
+  Recommendation: [1mdual export.[0m It's the only one that adds the subsystem without restyling code that has nothing to do
+  with preferences, and the shim is three lines confined to the bottom of one new file.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should the preferences module be loaded in the browser and in tests?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDual export (Recommended)[39m
+     [38;5;246mCommonJS export with a window global fallback. One new script tag in index.html; no existing file changes module [39m
+     [38;5;246mstyle.[39m
+  [38;5;246m2.[39m ES modules everywhere
+     [38;5;246mSet type:module, convert src/index.js and src/utils.js off require, app.js becomes a module. Cleanest, but [39m
+     [38;5;246mrefactors unrelated files.[39m
+  [38;5;246m3.[39m ESM for new file only
+     [38;5;246msrc/preferences.mjs imported by a module-ified app.js. No unrelated files touched, but the repo carries two module
+[39m     [38;5;246mconventions.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

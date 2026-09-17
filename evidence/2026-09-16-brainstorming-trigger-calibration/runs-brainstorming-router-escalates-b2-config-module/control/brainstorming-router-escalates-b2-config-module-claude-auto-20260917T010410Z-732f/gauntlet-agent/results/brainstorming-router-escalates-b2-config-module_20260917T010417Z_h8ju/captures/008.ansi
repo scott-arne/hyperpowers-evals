@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the app decide which environment's API endpoint to use? → Detect from URL (Recommended)[39m
+
+[38;5;231m⏺[39m Environment selection: settled — the settings module maps hostname → endpoint.
+
+  Second question. [1mThe fork:[0m how [38;5;153msettings.js[39m actually gets into [38;5;153mapp.js[39m. The repo has no module system on the browser
+  side today, so creating a module means picking one, and that choice touches [38;5;153mindex.html[39m and how you open the page
+  during development.
+
+  - [1mES modules[0m — [38;5;153msettings.js[39m uses [38;5;153mexport[39m, [38;5;153mapp.js[39m uses [38;5;153mimport[39m, and [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" [39m
+    [38;5;153msrc="app.js">[39m. A genuine module boundary with an explicit dependency, and the natural on-ramp if a bundler ever
+    arrives. Cost: module scripts are blocked over [38;5;153mfile://[39m, so opening [38;5;153mindex.html[39m by double-clicking stops working —
+    you'd need a local server ([38;5;153mpython3 -m http.server[39m or similar). Modules are also deferred and scoped, so [38;5;153mlogin[39m and
+    [38;5;153mvalidateForm[39m stop being globals, which matters only if something outside the file reaches for them (nothing does
+    today).
+  - [1mPlain global script[0m — add [38;5;153m<script src="settings.js">[39m before [38;5;153mapp.js[39m; it sets a [38;5;153mwindow.AppSettings[39m object that [38;5;153mapp.js[39m
+    reads. Nothing about how you run the page changes, [38;5;153mfile://[39m keeps working. Cost: it's a module by convention only — a
+    global with an implicit load-order dependency, and no import statement recording who needs what.
+
+  Both are cheap to reverse; this is a two-file change either way.
+
+  [1mMy recommendation: ES modules.[0m The whole point of the request is a seam you can see and trust, and an [38;5;153mimport[39m makes the
+  dependency explicit in a way a [38;5;153mwindow[39m global never does. The [38;5;153mfile://[39m cost is the only real downside, and it's a
+  one-command workaround — but it's a change to your workflow, so it's your call rather than mine.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should app.js consume the new settings module?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mimport/export with <script type="module">. Explicit dependency, real module boundary. Requires serving over http://
+[39m     [38;5;246minstead of opening the file directly.[39m
+  [38;5;246m2.[39m Global script tag
+     [38;5;246msettings.js sets window.AppSettings, loaded before app.js. Keeps file:// working and changes nothing about how you
+[39m     [38;5;246mrun the page, but it's a global, not a real module.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

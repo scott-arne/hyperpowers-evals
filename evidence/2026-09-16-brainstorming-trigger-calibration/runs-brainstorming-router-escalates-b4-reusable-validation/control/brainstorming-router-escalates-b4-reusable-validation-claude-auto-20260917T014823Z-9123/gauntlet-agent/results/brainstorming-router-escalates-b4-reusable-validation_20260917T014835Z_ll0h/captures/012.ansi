@@ -1,0 +1,40 @@
+  A schema is [38;5;153m{ fieldName: [rule, ...] }[39m. For login:
+
+  [34mconst[39m loginSchema = {
+    [36musername[39m: [[33mrequired[39m([31m"Username is required"[39m)],
+    [36mpassword[39m: [[33mrequired[39m([31m"Password is required"[39m)],
+  };
+
+  [1mData flow:[0m [38;5;153mattachValidation[39m binds one [38;5;153msubmit[39m listener → [38;5;153me.preventDefault()[39m → [38;5;153mnew FormData(formEl)[39m → plain values
+  object → [38;5;153mvalidate(values, schema)[39m → on pass calls [38;5;153monValid(values)[39m, on fail calls [38;5;153monInvalid(errors, values)[39m. The form
+  does the rest. [38;5;153mvalidate[39m never touches the DOM, so it tests as a plain function.
+
+  [1mError shape[0m — [38;5;153m{ valid: false, errors: { username: "Username is required" } }[39m. Per-field, replacing today's single
+  whole-form string, so a caller can point at the field that failed. Rules short-circuit per field: first failure wins,
+  one message per field. That keeps the shape predictable; collecting all failures per field is a change we can make
+  later without touching callers.
+
+  [1mTwo behavior changes this implies, both deliberate:[0m
+  1. [38;5;153mrequired[39m will reject whitespace-only input. Today [38;5;153mformData.username[39m is a falsy check, so [38;5;153m"   "[39m passes validation —
+     that's a latent bug, and a shared [38;5;153mrequired[39m that keeps it would propagate it to every future form.
+  2. [38;5;153mindex.html[39m needs [38;5;153mname[39m attributes on both inputs for [38;5;153mFormData[39m to see them.
+
+  [1mOne thing this deliberately does not fix:[0m errors still go wherever the caller sends them, and in [38;5;153mapp.js[39m that stays
+  [38;5;153mconsole.error[39m — invisible to the user. That follows from scoping display out, and I'd flag it as the obvious next
+  piece of work rather than quietly widening this change.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 1 [39m[49m
+
+[1m[38;5;231mDoes the module design look right before I move to testing and tooling?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, continue[39m
+     [38;5;246mApprove the two-layer design, the rule/schema shapes, per-field errors, and the two implied behavior changes.[39m
+  [38;5;246m2.[39m Drop minLength
+     [38;5;246mShip only required() — the single rule the login form actually uses — and add minLength when a form needs it.[39m
+  [38;5;246m3.[39m Collect all errors per field
+     [38;5;246mInstead of first-failure-wins, run every rule for a field and return an array of messages per field.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

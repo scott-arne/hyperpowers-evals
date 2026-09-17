@@ -1,0 +1,40 @@
+
+  That split is why this isn't a one-line move: a new settings module has to pick a delivery mechanism the browser side
+  doesn't currently have. Two questions matter before I design anything; here's the first.
+
+  [1mThe fork:[0m how the app decides [3mwhich[0m environment's endpoint it's using at runtime. This is the part that determines
+  whether "changing environments" means editing code, swapping a file at deploy, or running a build.
+
+  - [1mHostname detection[0m — [38;5;153msettings.js[39m maps [38;5;153mlocation.hostname[39m to an endpoint set and resolves itself on load. Nothing to
+    do at deploy; works with the plain [38;5;153m<script>[39m you have today. Costs: every environment's URL ships to the browser, and
+    it breaks down if two environments share a hostname.
+  - [1mInjected config script[0m — [38;5;153mindex.html[39m loads a small [38;5;153mconfig.js[39m (or sets [38;5;153mwindow.APP_ENV[39m) before [38;5;153mapp.js[39m; the settings
+    module reads it and falls back to a default. Keeps env data out of app code, but deploy has to place the right file,
+    and the HTML grows a second script tag.
+  - [1mBuild-time substitution[0m — add a bundler/env-var replacement, which also unlocks real [38;5;153mimport[39m/[38;5;153mexport[39m. The conventional
+    answer for a growing app, but it puts a toolchain and a build step into a repo that currently has neither.
+
+  Cheap to change later: hostname → injected config is a small edit. Moving to a build step later is more work, but
+  adopting it [3mnow[0m taxes every file from here on.
+
+  My recommendation is hostname detection — it matches a repo with no build pipeline, and it's the only option where
+  "change environments" requires no deploy-time ceremony at all.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Env select [39m[49m
+
+[1m[38;5;231mHow should the app pick which environment's API endpoint to use at runtime?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHostname detection (Recommended)[39m
+     [38;5;246msettings.js maps location.hostname to an endpoint set and resolves on load. No build step, no deploy-time step; all
+[39m     [38;5;246menv URLs ship to the browser.[39m
+  [38;5;246m2.[39m Injected config script
+     [38;5;246mindex.html loads a small config.js setting the env before app.js; settings.js reads it with a default. Deploy swaps
+[39m     [38;5;246mone file per environment.[39m
+  [38;5;246m3.[39m Build-time substitution
+     [38;5;246mAdd a bundler/env-var replacement and real import/export. Most conventional, but introduces a toolchain to a [39m
+     [38;5;246mzero-dependency repo.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

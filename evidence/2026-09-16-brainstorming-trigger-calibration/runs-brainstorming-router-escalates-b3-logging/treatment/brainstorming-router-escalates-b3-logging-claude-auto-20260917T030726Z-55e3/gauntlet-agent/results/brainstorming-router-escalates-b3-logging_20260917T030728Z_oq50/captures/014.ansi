@@ -1,0 +1,40 @@
+  alone.
+
+  ---
+
+  [1;3;4mDesign — Section 1 of 3: Architecture and module layout[0m
+
+  Four files under [38;5;153msrc/logger/[39m, each ending with a small dual-export footer so the same file loads via [38;5;153mrequire[39m in Node
+  and via [38;5;153m<script>[39m in the browser:
+
+  - [1m[38;5;153msrc/logger/redact.js[0m — the security boundary, isolated on purpose. Exports [38;5;153mALLOWED_CTX_FIELDS[39m and a pure [38;5;153mredact(ctx)
+[39m    that returns a new object containing only allowlisted keys. Depends on nothing.
+  - [1m[38;5;153msrc/logger/core.js[0m — [38;5;153mcreateLogger({ level, transports, runtime })[39m returning [38;5;153m{ debug, info, warn, error }[39m. Pure
+    record assembly and level filtering. Touches no [38;5;153mwindow[39m, no [38;5;153mprocess[39m, no network. Every transport call is wrapped so a
+    broken transport cannot propagate an exception into your app.
+  - [1m[38;5;153msrc/logger/browser.js[0m — console transport, batching HTTP transport, [38;5;153mwindow[39m error handlers, session ID. Exposes
+    [38;5;153minitLogger(config)[39m.
+  - [1m[38;5;153msrc/logger/node.js[0m — stdout/stderr transport, [38;5;153mprocess[39m error handlers, env-var config. Exposes [38;5;153minitLogger()[39m.
+
+  The dependency direction is one-way: adapters depend on core, core depends on redact, redact depends on nothing.
+  That's what makes the allowlist testable without a DOM, a network, or a running app.
+
+  Two notes on what I am deliberately [3mnot[0m doing. [38;5;153mindex.html[39m gains three [38;5;153m<script>[39m tags before [38;5;153mapp.js[39m rather than any
+  build step. And [38;5;153msrc/index.js[39m's [38;5;153mconsole.log(greet('world'))[39m stays a [38;5;153mconsole.log[39m — that line is the program's [3moutput[0m,
+  not a diagnostic, and routing it through the logger would send "Hello, world!" to your production log endpoint.
+
+  [1mTooling.[0m This repo has no configured tooling at all: no [38;5;153mscripts[39m, no linter, no test directory, no dependencies.
+  Setting tooling up is cheapest now, before the code exists, and whatever you pick lands in the spec's constraints so
+  every later task inherits it. Relevant specifics here: Node's built-in [38;5;153mnode:test[39m and [38;5;153mnode:assert[39m would give you unit
+  tests with [3mzero[0m added dependencies, matching the repo's current character; ESLint + Prettier are dev-only
+  dependencies; end-to-end testing would mean Playwright and a real browser, which is heavy for a login stub; and
+  property-based testing (fast-check) is unusually well-suited to a redactor, since "no non-allowlisted key ever
+  survives" is exactly the kind of invariant you can throw generated garbage at.
+
+[38;5;174m✶[39m [38;5;174mGalloping… [38;5;246m(4m 11s · ↓[39m [38;5;246m16.0k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

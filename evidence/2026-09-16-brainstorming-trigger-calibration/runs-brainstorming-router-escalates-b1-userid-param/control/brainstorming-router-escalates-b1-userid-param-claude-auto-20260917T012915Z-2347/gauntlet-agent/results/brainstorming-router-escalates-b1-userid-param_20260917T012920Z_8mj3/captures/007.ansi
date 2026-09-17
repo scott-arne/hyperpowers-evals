@@ -1,0 +1,40 @@
+
+  One thing needs resolving before I can write it, though. Here's the fork:
+
+  [38;5;153mlogin(username, password)[39m is called from exactly one place — the form submit handler in [38;5;153mapp.js:23[39m — and that handler
+  only has the two form fields. There is no [38;5;153muserId[39m anywhere in the repo, so wherever it comes from, adding the parameter
+  means changing the call site too, not just the signature.
+
+  - [1mCaller supplies it[0m — form gains a hidden/extra [38;5;153muserId[39m input (or it's read from session/localStorage) and is passed
+    through. Buys a real identifier independent of the typed username; costs a source of truth that doesn't exist yet in
+    this fixture, and you have to decide who populates it.
+  - [1mDerived inside login[0m — signature stays, [38;5;153mlogin()[39m generates or looks up the id and returns it in its result. Cheapest,
+    no call-site change, but then it isn't a [3mparameter[0m, which is what you asked for.
+  - [1mIt's just the username[0m — [38;5;153muserId[39m is a rename/alias for what's already being logged. Nearly free and easy to change
+    later, but it adds nothing over the current [38;5;153mconsole.log[39m.
+
+  My recommendation is the first one, since you asked specifically for a parameter, and a parameter only earns its place
+  if the caller knows something [38;5;153mlogin()[39m doesn't.
+
+  Second, smaller unknown that I'll fold into the design once you answer: "track who logged in" could mean just
+  including [38;5;153muserId[39m in the existing [38;5;153mconsole.log[39m and return value (bounded, what I'd assume), or standing up actual
+  audit/telemetry logging — which this repo has none of, and which would make this architectural rather than bounded.
+  I'm assuming the former unless you say otherwise.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId value come from?[0m
+
+  [38;5;246m1.[39m Caller supplies it (Recommended)
+     [38;5;246mForm handler reads a userId (hidden field / session / localStorage) and passes it to login(). True new parameter; [39m
+     [38;5;246mrequires deciding what populates it.[39m
+  [38;5;246m2.[39m Derived inside login()
+     [38;5;246mSignature unchanged; login() generates or looks up the id and returns it. No call-site change, but not actually a [39m
+     [38;5;246mparameter.[39m
+  [38;5;246m3.[39m It's an alias for username
+     [38;5;246muserId is just the username under a clearer name. Nearly free, but adds nothing over today's console.log.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

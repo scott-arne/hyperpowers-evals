@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the logger handle sensitive values like the password field? → Deny-list scrub (Recommended)[39m
+
+[38;5;231m⏺[39m Next — [1mhow much gets instrumented.[0m Replacing the four existing [38;5;153mconsole.*[39m calls is the floor; the question is what
+  else.
+
+  - [1mExisting call sites + global error capture[0m — adds [38;5;153mwindow.onerror[39m and [38;5;153munhandledrejection[39m handlers routed through the
+    logger. Buys you the errors you most need in production, which are exactly the ones that never pass through a call
+    site you wrote. Costs two handlers.
+  - [1mExisting call sites only[0m — a straight swap of the four [38;5;153mconsole.*[39m calls. Cheapest, but an uncaught [38;5;153mTypeError[39m in the
+    submit handler still vanishes silently.
+  - [1mThe above plus lifecycle and timing[0m — page load, submit duration, a per-page-load session ID stamped on every record
+    so you can correlate one user's sequence. Buys real debuggability; costs a handful of extra call sites in a 28-line
+    file.
+
+  Cheap to change later: adding call sites, adding the session ID. Nothing here is expensive to reverse — this is the
+  least locked-in decision of the four.
+
+  [1mMy recommendation: existing call sites + global error capture + a session ID on every record.[0m The global handlers are
+  the actual answer to "debug production issues," and the session ID costs about three lines while making a console dump
+  from a user readable as a sequence rather than loose lines. I'd skip the timing instrumentation — there's nothing
+  slow here yet to measure.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Coverage [39m[49m
+
+[1m[38;5;231mHow much should the logger instrument?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCall sites + global errors + session ID (Recommended)[39m
+     [38;5;246mSwap the four console.* calls, add window.onerror and unhandledrejection handlers, stamp a per-page-load session ID
+[39m     [38;5;246mon every record.[39m
+  [38;5;246m2.[39m Existing call sites only
+     [38;5;246mStraight swap of the four console.* calls in app.js. Smallest diff; uncaught errors still go unlogged.[39m
+  [38;5;246m3.[39m Add lifecycle and timing too
+     [38;5;246mEverything above plus page-load and submit-duration timing records. More signal, more call sites in a small file.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

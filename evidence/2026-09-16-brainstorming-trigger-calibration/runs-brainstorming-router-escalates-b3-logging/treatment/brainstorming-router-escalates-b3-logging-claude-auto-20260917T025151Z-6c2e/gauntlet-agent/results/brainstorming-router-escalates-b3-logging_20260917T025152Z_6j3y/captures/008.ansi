@@ -1,0 +1,40 @@
+    file on disk. Survives reloads and restarts. No backend, no new dependency on the browser side. You still need the
+    user to export and send it, and storing usernames on a shared computer becomes your problem.
+  - [1mCentral collection[0m — same core, but the adapters batch and POST to a collection endpoint. This is the only option
+    that actually answers "debug a production issue" unassisted. It needs a service to receive them (nothing in this
+    repo does), plus offline buffering, retry, and a retention policy.
+  - [1mBoth, tiered[0m — persist locally always, ship a filtered subset (warn/error) centrally. Best debugging story, most
+    moving parts, and it's the one I'd only build if you already have the endpoint.
+
+  Cheap to change later: levels, format, which call sites log, the size of the buffer. Expensive to change later: the
+  record schema once something downstream parses it, and the decision to store user data — on-device or central, that's
+  a commitment you can't quietly walk back.
+
+  [1mMy recommendation:[0m on-device persistence now, with the adapter interface shaped so a shipping adapter drops in later.
+  It's buildable in this repo today with no new infrastructure, and it does not pretend you have a log backend you don't
+  have. The moment you tell me there's an endpoint to POST to, central collection becomes the better answer and the
+  core doesn't change.
+
+  Either way, the redaction rule I flagged goes in the core, not the adapters — [38;5;153mapp.js:5[39m and [38;5;153mapp.js:24[39m currently log in
+  the scope where the password lives, and persisting that would turn a transient console leak into a stored one.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mWhere should the persisted logs actually live?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mOn-device (Recommended)[39m
+     [38;5;246mBrowser: capped ring buffer in localStorage/IndexedDB with an export. Node: rotated file on disk. No backend [39m
+     [38;5;246mneeded; adapter seam lets shipping drop in later.[39m
+  [38;5;246m2.[39m Central collection
+     [38;5;246mAdapters batch and POST to a collection endpoint you can query without the user. Requires a receiving service, [39m
+     [38;5;246moffline buffering, retry, and a retention policy.[39m
+  [38;5;246m3.[39m Both, tiered
+     [38;5;246mAlways persist locally, ship warn/error centrally. Best debugging coverage, most moving parts. Worth it only if the
+[39m     [38;5;246mendpoint already exists.[39m
+  [38;5;246m4.[39m Node file only
+     [38;5;246mPersist just the Node side to disk; browser keeps transient console output with levels and redaction.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

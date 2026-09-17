@@ -1,0 +1,40 @@
+
+  [1mThis repo has two disconnected JavaScript worlds.[0m [38;5;153mapp.js[39m is loaded by [38;5;153mindex.html:13[39m as a classic [38;5;153m<script>[39m tag — no
+  imports, no module system, everything is a global. Meanwhile [38;5;153msrc/utils.js[39m uses CommonJS ([38;5;153mmodule.exports[39m) and
+  [38;5;153msrc/index.js[39m [38;5;153mrequire[39ms it — that's Node-only code the browser page never loads. There is no bundler, no build step, and
+  [38;5;153mpackage.json[39m has no dependencies or scripts.
+
+  So "a module holding the logged-in user" can't just be [38;5;153mrequire[39md from [38;5;153mapp.js[39m. How it gets there is a real decision:
+
+  - [1mPlain script tag + global.[0m Add [38;5;153msrc/session.js[39m defining a global (e.g. [38;5;153mwindow.Session[39m), load it before [38;5;153mapp.js[39m in
+    [38;5;153mindex.html[39m. Matches the existing zero-build style exactly, works immediately, no tooling. Costs you: it's a global,
+    and it won't be importable by the CommonJS code in [38;5;153msrc/[39m.
+  - [1mSwitch the page to ES modules.[0m [38;5;153m<script type="module" src="app.js">[39m with real [38;5;153mimport[39m/[38;5;153mexport[39m. Proper interface, no
+    globals, and the same file can be tested. Costs you: [38;5;153mapp.js[39m becomes a module (so its top-level code stops being
+    global), it won't run from [38;5;153mfile://[39m without a local server, and [38;5;153msrc/utils.js[39m's CommonJS is still a separate world
+    unless you convert it too.
+  - [1mAdd a bundler.[0m Unifies both worlds properly. Costs you a build step and dependencies in a repo that currently has
+    neither — heavy for one small state holder.
+
+  [1mMy recommendation: ES modules.[0m The global works today but you asked for a module other code depends on, and a global
+  is the version of that with no interface — you'd be choosing the thing you'd have to redo first. [38;5;153mtype="module"[39m is a
+  one-line change to [38;5;153mindex.html[39m, costs no dependencies, and gives you a real [38;5;153mexport[39m. The [38;5;153mfile://[39m caveat is the only
+  genuine downside, and it's the one that pushes people to the global.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should the session module be wired into the page?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mChange index.html to <script type="module">, use real import/export. Real interface, no dependencies. Needs a local
+[39m     [38;5;246mserver instead of opening the file directly.[39m
+  [38;5;246m2.[39m Global via script tag
+     [38;5;246msrc/session.js sets window.Session, loaded before app.js. Matches the current zero-build style and works from [39m
+     [38;5;246mfile://, but it's a global with no real interface.[39m
+  [38;5;246m3.[39m Add a bundler
+     [38;5;246mUnifies the browser and CommonJS code properly, at the cost of a build step and the repo's first dependencies.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

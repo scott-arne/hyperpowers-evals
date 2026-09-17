@@ -1,0 +1,40 @@
+
+  [38;5;153mcore.js[39m exports a [38;5;153mcreateLogger({ sink, level, name })[39m factory rather than a singleton, so tests can construct one with
+  a fake sink and no global state. Its last line is the dual-mode footer that makes the same file work under [38;5;153mrequire()[39m
+  and under a [38;5;153m<script>[39m tag.
+
+  Wiring: [38;5;153mindex.html[39m gains three script tags before [38;5;153mapp.js[39m ([38;5;153mredact.js[39m, [38;5;153mcore.js[39m, [38;5;153msink-browser.js[39m) — order matters and
+  I'll comment it. [38;5;153msrc/index.js[39m requires the core and the Node sink and builds its logger at startup.
+
+  The four existing [38;5;153mconsole.*[39m calls get replaced, not supplemented: [38;5;153mapp.js:5[39m and [38;5;153mapp.js:24[39m are the ones currently
+  sitting in the password's scope, and leaving them alongside a redacting logger would mean the redaction is decorative.
+  [38;5;153msrc/index.js:4[39m is a genuine program output rather than a diagnostic, so that one stays a [38;5;153mconsole.log[39m — logging and
+  printing aren't the same job.
+
+  [1mTooling.[0m The repo has no linter, formatter, test runner, or scripts, and it's cheapest to set these up before the code
+  exists rather than after. My suggestion: ESLint + Prettier, and [38;5;153mnode:test[39m as the runner — it's built into Node, so
+  the repo stays zero-dependency for tests, which matters for a project that currently has no [38;5;153mnode_modules[39m at all. E2E
+  (Playwright) I'd skip; there's one form and the cost is disproportionate. Property-based testing I'd normally skip
+  too, except the redactor is an unusually good fit for it — it has a simple invariant ("no denied field ever appears in
+  output") that's much better checked by generated input than by examples.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Section 1 [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhich tooling should I set up from the start?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mESLint + Prettier[39m
+  [38;5;246mStandard JS linting and auto-formatting, wired as npm scripts. Cheapest to adopt now, before there is code to [39m
+  [38;5;246mreformat.[39m
+  [38;5;246m2.[39m [ ] Unit tests (node:test)
+  [38;5;246mNode's built-in test runner plus a first passing test. Keeps the repo dependency-free for testing.[39m
+  [38;5;246m3.[39m [ ] Property tests for redactor
+  [38;5;246mfast-check over the redaction function to assert no denied field ever survives. Adds one dev dependency; targets the [39m
+  [38;5;246msecurity-critical code.[39m
+  [38;5;246m4.[39m [ ] E2E (Playwright)
+  [38;5;246mBrowser-driven test of the login form. Thorough, but heavy for a single form and adds a large dependency.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

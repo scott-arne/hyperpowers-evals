@@ -1,0 +1,40 @@
+  - [1m[38;5;153msrc/store.js[0m — localStorage load/save behind a versioned key ([38;5;153mtasks.v1[39m). Handles the cases that actually bite:
+    absent key, malformed JSON, a value that isn't an array. Returns an empty list rather than throwing, so one bad
+    write can't brick the page.
+  - [1m[38;5;153msrc/reminders.js[0m — [1mthe keystone.[0m A pure function [38;5;153mcategorize(tasks, now)[39m returning [38;5;153m{overdue, dueToday, dueSoon, [39m
+    [38;5;153mlater}[39m. No [38;5;153mDate.now()[39m inside, no DOM, no storage — [38;5;153mnow[39m is a parameter. All the time reasoning lives here and nowhere
+    else.
+  - [1m[38;5;153msrc/ui.js[0m — renders the reminder summary and the task list from state. Takes data, returns/patches DOM. No business
+    logic.
+  - [1m[38;5;153msrc/main.js[0m — wiring only: load, render, handle events, save, and a one-minute tick so a task can cross into overdue
+    while you're looking at it.
+
+  [1mData flow:[0m [38;5;153mstore.load()[39m → in-memory array → [38;5;153mcategorize(tasks, new Date())[39m → [38;5;153mui.render()[39m. Every mutation goes through
+  the same path: mutate → save → re-categorize → re-render. One direction, no partial updates, no sync bugs.
+
+  [1mWhy [38;5;153mreminders.js[39m is separate and pure:[0m date-boundary logic is where this feature will actually go wrong — midnight
+  rollovers, "due today" when it's 11:58pm, timezone edges, a task due in the past being created. Injecting [38;5;153mnow[39m makes
+  every one of those a plain unit test with no fake timers and no waiting.
+
+  [1mTooling[0m — cheapest to set up now, before any code exists. My recommendation is the first two; e2e is hard to justify
+  at this size.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Architecture [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhich tooling should I set up from the start?[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Unit tests
+  [38;5;246mVitest + a first passing test for categorize(). Recommended — the pure reminder logic is exactly what unit tests are [39m
+  [38;5;246mfor.[39m
+  [38;5;246m2.[39m [38;5;114m[✔][39m Lint + format
+  [38;5;246mESLint + Prettier on defaults, run on the whole tree. Recommended — near-free before there's code.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+  [38;5;246mPlaywright driving a real browser. Real cost; probably overkill at this size.[39m
+  [38;5;246m4.[39m [ ] None — keep it bare
+  [38;5;246mNo npm, no node_modules, just the HTML and JS files.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+[38;5;153m❯[39m    [1m[38;5;153mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

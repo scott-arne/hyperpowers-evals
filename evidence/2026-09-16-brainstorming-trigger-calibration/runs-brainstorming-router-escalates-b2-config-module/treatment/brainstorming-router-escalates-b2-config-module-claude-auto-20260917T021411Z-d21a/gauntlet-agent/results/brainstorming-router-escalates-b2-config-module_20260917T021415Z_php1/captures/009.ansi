@@ -1,0 +1,40 @@
+  [38;5;153msrc/[39m stays untouched.
+
+  Last thing I need before I can write the design.
+
+  [1mThe fork:[0m the hostname table needs a rule for hostnames it doesn't recognize, and that rule is a safety decision, not
+  a detail. Your app is a login form, so "which API did this password go to" has real consequences.
+
+  - [1mUnknown host → production[0m — the common default. Buys: deploy to a new domain, preview URL, or CDN alias and it just
+    works. Costs: a misconfigured dev box, a typo'd hostname, or a teammate's local alias silently sends real
+    credentials at production. The failure is invisible — everything appears to work.
+  - [1mUnknown host → throw at load[0m — fail loud. Buys: an unrecognized environment is impossible to miss; you can never
+    accidentally point somewhere you didn't intend. Costs: every new domain requires a code change before the page works
+    at all, including preview deploys.
+  - [1mUnknown host → dev[0m — inverts the risk. A forgotten production hostname means prod users hit your dev API, which is
+    worse than the reverse.
+
+  [1mMy recommendation: unknown → throw[0m, with [38;5;153mlocalhost[39m and [38;5;153m127.0.0.1[39m both mapped to dev. This repo has no deploy pipeline
+  and no preview URLs, so the "new domain just works" benefit is hypothetical while the credential-misrouting risk is
+  not. If preview deploys show up later, switching the fallback is a one-line change — the direction that's expensive to
+  undo is the silent one, because you don't find out you needed the other behavior.
+
+  Now the factual part:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Environments [39m[49m
+
+[1m[38;5;231mWhich environments should the hostname table cover?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mdev + prod[39m
+     [38;5;246mlocalhost/127.0.0.1 -> dev API, your production hostname -> prod API. Smallest table that's actually useful; add [39m
+     [38;5;246mstaging later by adding a row.[39m
+  [38;5;246m2.[39m dev + staging + prod
+     [38;5;246mAdds a staging tier. Needs a staging hostname and a staging API URL from you.[39m
+  [38;5;246m3.[39m dev only for now
+     [38;5;246mJust localhost -> dev; production URL stays the current https://api.example.com. Least useful, but honest if prod [39m
+     [38;5;246misn't real yet.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

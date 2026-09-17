@@ -1,0 +1,40 @@
+  I recommend [1mconsole only for now, behind a real interface[0m. Everything in this repo is a stub, and the durable part of
+  this work is the module boundary and the ID lifecycle — not the transport. Picking a backend or a vendor is a decision
+  you can make later without reworking call sites, [3mprovided[0m the interface is right, which is what the spec will pin
+  down.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should tracking events be sent? → Console only for now (Recommended)[39m
+
+[38;5;231m⏺[39m Next fork — [1mhow the device ID persists[0m. Since nothing server-side needs to read it (console-only destination), this is
+  a browser-storage choice, and it's the one thing here that's genuinely awkward to change later: once IDs are written
+  under one mechanism, switching means either migrating them or resetting everyone's identity.
+
+  - [1m[38;5;153mlocalStorage[0m — survives reloads, tab closes, and browser restarts; same value across tabs. Buys the longest-lived
+    "same visitor" signal with no size or request overhead. Costs: not readable by your server, and cleared by the
+    user's privacy tooling like anything else.
+  - [1m[38;5;153msessionStorage[0m — survives reloads but dies with the tab, and each tab gets its own ID. Buys a tighter privacy story.
+    Costs: the same person in two tabs looks like two visitors, which undercuts "persists" and "works across the app."
+  - [1mCookie[0m — survives like [38;5;153mlocalStorage[39m and is sent to your server automatically. Buys server-side correlation for free,
+    which matters if the backend transport you deferred ever lands. Costs: sent on every request, needs [38;5;153mSameSite[39m/expiry
+    decisions, and squarely triggers consent-banner obligations.
+
+  I recommend [1m[38;5;153mlocalStorage[0m. It's the plain reading of "persists," it needs no consent machinery for a first-party
+  first-order identifier of this kind, and if you later move to a backend transport the module can attach the ID to the
+  request body explicitly — you don't need the cookie's automatic behavior to get there.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Storage [39m[49m
+
+[1m[38;5;231mHow should the device ID persist in the browser?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage (Recommended)[39m
+     [38;5;246mSurvives reloads and browser restarts, shared across tabs. No server access, no consent banner needed.[39m
+  [38;5;246m2.[39m Cookie
+     [38;5;246mSame lifetime plus automatic server visibility. Adds SameSite/expiry decisions and consent obligations.[39m
+  [38;5;246m3.[39m sessionStorage
+     [38;5;246mPer-tab and dies with the tab. Tightest privacy story, but the same person in two tabs looks like two visitors.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Last question before I lay out the design: what counts as "a change"?
+
+  [1mThe fork:[0m whether the notification unit is "this task was modified" or a named thing that happened.
+
+  - [1mCurated semantic events[0m — a fixed vocabulary: [38;5;153mtask.assigned[39m, [38;5;153mtask.status_changed[39m, [38;5;153mtask.due_date_changed[39m,
+    [38;5;153mtask.commented[39m. Buys: notification copy a human can act on ("Dana assigned you [3mFix login[0m"), and per-type preferences
+    later hang naturally off the type. Costs: every new notifiable change is a code change, and a field nobody wrote an
+    event for silently notifies no one.
+  - [1mGeneric diff[0m — any mutation emits [38;5;153mtask.updated[39m carrying a before/after diff; the UI renders the changed fields.
+    Buys: nothing is ever missed, zero per-field work, new fields are covered for free. Costs: the copy degrades to
+    "Task updated" with a field list, which is the kind of notification people learn to ignore. Per-type muting becomes
+    per-[3mfield[0m muting, which is worse UX.
+  - [1mCurated + catch-all[0m — named events for the ones that matter, generic [38;5;153mtask.updated[39m for the rest. Buys: both. Costs:
+    two rendering paths, and the catch-all quietly becomes the dumping ground nobody upgrades.
+
+  [1mMy recommendation:[0m curated events, with the type as a first-class column. Notification quality is almost entirely a
+  copywriting problem, and you can't write good copy against a diff. The "silently notifies no one" cost is real but
+  it's the safe failure — under-notifying is recoverable, training users to ignore the bell is not.
+
+  Coupled to this, and I'd build it into the slice rather than defer: [1mcoalescing.[0m If a task changes five times in a
+  minute, that's one notification, not five. The cheap version is a short delay before a notification becomes visible,
+  during which further events on the same task+recipient collapse into it. Deferring this means shipping a spam
+  generator and then retrofitting the fix through the whole write path.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Events [39m[49m ☐ Coalescing  ✔ Submit  →
+
+[1m[38;5;231mWhat is the unit of "a change"?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCurated semantic events (Recommended)[39m
+     [38;5;246mFixed vocabulary (assigned, status_changed, due_date_changed, commented). Actionable copy, per-type prefs later. [39m
+     [38;5;246mNew fields need code.[39m
+  [38;5;246m2.[39m Generic diff
+     [38;5;246mAny mutation emits task.updated with a before/after diff. Nothing missed, but copy degrades to noise people ignore.
+[39m  [38;5;246m3.[39m Curated + generic catch-all
+     [38;5;246mNamed events where they matter, task.updated for everything else. Covers both; two rendering paths to maintain.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

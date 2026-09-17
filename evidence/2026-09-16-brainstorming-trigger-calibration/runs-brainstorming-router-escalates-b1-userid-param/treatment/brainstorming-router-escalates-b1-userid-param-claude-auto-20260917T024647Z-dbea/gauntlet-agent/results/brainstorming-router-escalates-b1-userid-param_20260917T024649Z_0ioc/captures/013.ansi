@@ -1,0 +1,40 @@
+
+  - [1m[38;5;153msrc/session.js[0m — the only code in the app that touches [38;5;153msessionStorage[39m. Exports [38;5;153mgetSession()[39m, [38;5;153mgetUserId()[39m,
+    [38;5;153msetSession({ userId, username, loginAt })[39m, and [38;5;153mclearSession()[39m. One storage key, [38;5;153m"session"[39m, holding JSON. It knows
+    nothing about login, forms, or the DOM.
+  - [1m[38;5;153msrc/auth.js[0m — [38;5;153mlogin(username, password)[39m and [38;5;153mvalidateForm(formData)[39m, moved out of [38;5;153mapp.js[39m unchanged except for [38;5;153mlogin[39m
+    becoming async. Imports [38;5;153msession.js[39m. Holds [38;5;153mAPI_ENDPOINT[39m. No DOM access, which is what makes it testable.
+  - [1m[38;5;153mapp.js[0m — DOM wiring only: read the inputs, call [38;5;153mvalidateForm[39m, [38;5;153mawait login(...)[39m, log the result. Loaded as [38;5;153m<script [39m
+    [38;5;153mtype="module" src="app.js">[39m.
+
+  [1mData flow on submit:[0m handler reads inputs → [38;5;153mvalidateForm[39m → [38;5;153mawait login(username, password)[39m → [38;5;153mlogin[39m resolves a stub
+  [38;5;153muserId[39m, builds [38;5;153m{ userId, username, loginAt }[39m, calls [38;5;153msession.setSession(record)[39m, returns [38;5;153m{ success: true, ...record }[39m →
+  handler logs it. Any later form calls [38;5;153mgetUserId()[39m and gets the persisted value with no login involved.
+
+  [1mThe stub [38;5;153muserId[39m:[0m [38;5;153mcrypto.randomUUID()[39m, generated inside [38;5;153mlogin()[39m. It's a placeholder standing in for a server-issued ID,
+  and the one line that changes when the real API call lands. [38;5;153mloginAt[39m is [38;5;153mnew Date().toISOString()[39m.
+
+  [1mThe unrelated [38;5;153msrc/[39m pair:[0m [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are CommonJS, aren't loaded by the page, and [38;5;153mpackage.json[39m [38;5;153mmain[39m
+  points at them. I'll leave them completely alone — mixing them into this is scope creep. Worth flagging though: [38;5;153msrc/[39m
+  will then hold both CommonJS and ESM files, and adding [38;5;153m"type": "module"[39m to [38;5;153mpackage.json[39m (which I am [3mnot[0m proposing)
+  would break them. Browser-loaded ESM doesn't need that field, so nothing forces the issue today.
+
+  [1mOne consequence to confirm:[0m [38;5;153m<script type="module">[39m means [38;5;153mindex.html[39m can no longer be opened by double-clicking it —
+  the browser blocks module loads over [38;5;153mfile://[39m. You'd serve it instead ([38;5;153mpython3 -m http.server[39m, or [38;5;153mnpx serve[39m). That
+  follows from the module decision you already made; I want it stated plainly rather than discovered later.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 1 [39m[49m
+
+[2m│[0m [1m[38;5;231mDoes Section 1 (modules, data flow, stub userId, leaving src/ CommonJS alone) look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, continue[39m
+     [38;5;246mThree modules as described; app.js becomes DOM-only; serving the page replaces opening it via file://.[39m
+  [38;5;246m2.[39m Right, but keep it in app.js
+     [38;5;246mSkip src/auth.js; keep login/validateForm in app.js and add only src/session.js.[39m
+  [38;5;246m3.[39m Needs changes
+     [38;5;246mSomething in the module split, data flow, or the file:// consequence is wrong — I'll revise.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

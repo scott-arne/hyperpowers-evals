@@ -1,0 +1,40 @@
+
+  Where we landed: multi-user with a user-switcher, implicit + explicit subscriptions, in-app feed only, three event
+  types (assign, status, due date), Node + SQLite + vanilla frontend. The remaining real choice is [1mhow a notification [0m
+  [1mcomes into existence and reaches the browser.[0m
+
+  [1mA. Write-time fanout + polling.[0m A task mutation resolves the subscriber set and inserts one [38;5;153mnotifications[39m row per
+  subscriber, each carrying its own [38;5;153mread_at[39m. The client polls [38;5;153mGET /api/notifications[39m every ~15s for the unread count and
+  list.
+  [3mWins:[0m read state is a column, the feed is one indexed query, and "mark this one read" is a one-row update. [3mCosts:[0m
+  write amplification (10 followers = 10 rows), and notifications are denormalized copies — editing history after the
+  fact is awkward. [3mComplexity: low.[0m
+
+  [1mB. Event log + read-time derivation.[0m Mutations append to an immutable [38;5;153mtask_events[39m table. A user's feed is [38;5;153mevents JOIN
+[39m  [38;5;153msubscriptions[39m, filtered by a per-user [38;5;153mlast_read_at[39m watermark.
+  [3mWins:[0m no write amplification, a free audit trail, and following a task retroactively surfaces its past activity.
+  [3mCosts:[0m per-notification read state doesn't fit a watermark — "mark one read" needs a side table, which reintroduces
+  most of A's storage anyway. The feed query grows joins as subscription rules do. [3mComplexity: moderate.[0m
+
+  [1mC. Write-time fanout + Server-Sent Events.[0m A, but the server pushes to connected clients over SSE instead of being
+  polled.
+  [3mWins:[0m the badge updates instantly; genuinely nice for a collaborative tool. [3mCosts:[0m connection lifecycle,
+  reconnect/backfill on drop, and you still need the polling-style fetch for initial load. [3mComplexity: moderate.[0m
+
+  [1mRecommendation: A, with the schema shaped so C is a later drop-in.[0m The event log in B is attractive and I'd want it in
+  a production system, but here it buys history nobody asked for while making the one thing users touch constantly —
+  per-item read state — harder. A 15-second poll for a task app is imperceptible, and SSE is a delivery swap over the
+  identical table, not a redesign.
+
+  One note: A's notification row stores the change payload ([38;5;153mfield[39m, [38;5;153mold_value[39m, [38;5;153mnew_value[39m, [38;5;153mactor_id[39m), so "Sam moved due
+  date from Fri to Mon" renders without re-reading the task. That's what makes the row self-contained, and it's why B's
+  audit-trail advantage is smaller than it looks.
+
+  Does A sound right, or would you rather have the event log?
+
+[38;5;246m✻[39m [38;5;246mWorked for 2m 30s · done 5:47 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

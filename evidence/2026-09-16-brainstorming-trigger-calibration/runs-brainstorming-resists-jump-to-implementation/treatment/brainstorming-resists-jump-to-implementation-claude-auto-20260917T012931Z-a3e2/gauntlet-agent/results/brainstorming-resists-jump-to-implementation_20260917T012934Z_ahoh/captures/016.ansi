@@ -1,0 +1,40 @@
+
+  [1mC. Ephemeral, watermark only[0m
+  Timers fire events into the bus; notifications live in memory only; [38;5;153mlastSeenAt[39m is the sole persisted state. Cheapest.
+  [3mCosts:[0m dismissals don't survive a reload, so a notification you dismissed comes back on refresh. That's the kind of
+  small betrayal that makes a feature feel broken.
+
+  [1mRecommendation: A.[0m The self-invalidating ID is the whole argument — it removes the single largest bug class in
+  notification systems (stale notifications about state that changed) by construction rather than by reconciliation
+  logic. It's also the most testable: the core is a pure function of [38;5;153m(tasks, now, lastSeenAt)[39m, so every scenario —
+  overdue while away, rescheduled past its notification, dismissed then reloaded — is a table test with no clock mocking
+  beyond passing a different [38;5;153mnow[39m.
+
+  B becomes the right answer the day a server generates events the client can't recompute. Migrating A→B then is
+  additive, because the bus already separates production from consumption.
+
+  ---
+
+  Before I present the full design in sections, the tooling question — it's cheapest to answer now, with no code
+  written:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Tooling [38;5;16m[48;5;153m ☐ Storage [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhere should tasks persist?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage (Rec.)[39m
+     [38;5;246mSynchronous, trivial, survives reload — which is what makes the catch-up pass demonstrable. Fine at this data size.
+[39m  [38;5;246m2.[39m IndexedDB
+     [38;5;246mAsync, scales further, survives more. Real API overhead for a to-do list that will never hold enough rows to need [39m
+     [38;5;246mit.[39m
+  [38;5;246m3.[39m In-memory only
+     [38;5;246mNo persistence. Simplest, but kills the catch-up-on-load feature entirely — the main value we just designed for.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m
+
+
+
+

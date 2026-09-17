@@ -1,0 +1,40 @@
+
+  First question, and it's the one the whole design hangs on. "Persist" and "track" can mean two quite different
+  modules:
+
+  - [1mA current-user store[0m — one live answer to "who is logged in right now," written at login, read by any other code,
+    surviving page reloads. Other forms [3mread[0m from it. This is session/identity state; it's small, and it's what "other
+    forms will need it later" most naturally describes.
+  - [1mAn event trail[0m — an append-only record of things that happened ("user X logged in at T," later "user X submitted
+    form Y"). Other forms [3mwrite[0m to it. This is audit/analytics; it grows without bound, needs a retention story, and
+    usually needs somewhere off-device to go.
+
+  They're not mutually exclusive — the trail usually sits on top of the store, since you need to know who the current
+  user is to attribute an event to them. But building both when you need one is the expensive mistake here, and the
+  store is the cheaper thing to change later; a trail with a storage location and a format is much harder to walk back
+  once other code writes to it.
+
+  My recommendation is the current-user store, because "other forms will need it later" reads like those forms want to
+  [3mknow[0m the user, not report on them.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ What persists [39m[49m
+
+[2m│[0m [1m[38;5;231mWhat is the subsystem actually holding — current identity, or a record of events?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCurrent-user store[39m
+     [38;5;246mOne live 'who is logged in' value, set at login, readable app-wide, surviving reloads. Other forms read it to [39m
+     [38;5;246mattribute their own work. Smallest thing that satisfies the ask.[39m
+  [38;5;246m2.[39m Event trail
+     [38;5;246mAppend-only log of login and later form events. Other forms write entries. Needs a storage target, a record format,
+[39m     [38;5;246mand a retention/size policy.[39m
+  [38;5;246m3.[39m Both, store first
+     [38;5;246mDesign the current-user store now with the event trail as an explicit later layer on top. Spec covers both; plan [39m
+     [38;5;246mbuilds the store first.[39m
+  [38;5;246m4.[39m Both, together
+     [38;5;246mTreat them as one subsystem built in one pass. Largest scope, longest spec, most that can be wrong before anything
+[39m     [38;5;246mships.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

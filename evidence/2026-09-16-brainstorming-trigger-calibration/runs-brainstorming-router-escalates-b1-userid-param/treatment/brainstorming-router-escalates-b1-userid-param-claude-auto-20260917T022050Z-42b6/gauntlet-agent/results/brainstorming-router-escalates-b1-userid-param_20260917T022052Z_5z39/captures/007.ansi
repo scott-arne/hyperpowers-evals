@@ -1,0 +1,40 @@
+  rather than write a spec. One thing needs deciding first.
+
+  [1mThe fork:[0m the form has no user-id field, so nothing in the current flow can supply a [38;5;153muserId[39m. Whatever we pick here
+  becomes [38;5;153mlogin()[39m's signature and the thing the submit handler has to produce, so it's worth a sentence before I write
+  it.
+
+  - [1mClient-generated tracking id[0m — the handler creates an id (e.g. [38;5;153mcrypto.randomUUID()[39m) per login attempt and passes it
+    in. Buys you a correlatable handle for logs immediately with no backend work; costs you that it identifies an
+    [3mattempt[0m, not a person, so it can't answer "which account logged in" later. Cheap to change.
+  - [1mCaller-supplied account id[0m — the handler passes an id it got from somewhere else (a stored session, an existing user
+    record). Buys a real identity in the log line; costs you that there is no such source in this app today, so the
+    handler would pass [38;5;153mnull[39m/[38;5;153mundefined[39m until one exists. Cheap to change.
+  - [1mServer-assigned id echoed back[0m — [38;5;153mlogin()[39m keeps its two params and the returned object carries the id the API
+    assigns. Buys the only id that's actually authoritative about who logged in; costs you that it isn't the parameter
+    you asked for, and the stub returns a fixed shape today so it's a placeholder until the real POST exists. Changing
+    this later means changing the return contract, not just a call site.
+
+  [1mMy recommendation: caller-supplied account id, as an optional third parameter[0m ([38;5;153mlogin(username, password, userId = [39m
+  [38;5;153mnull)[39m). It's literally what you asked for, it keeps the existing call working, and it doesn't invent an identity
+  scheme that pretends to be more than a correlation token. If the intent is really "tag each attempt in the logs," the
+  client-generated id is the honest version of that instead.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId value come from when the submit handler calls login()?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCaller-supplied account id (Recommended)[39m
+     [38;5;246mlogin(username, password, userId = null). Handler passes an account id when one is available; null until a source [39m
+     [38;5;246mexists. Matches your request, existing call keeps working.[39m
+  [38;5;246m2.[39m Client-generated tracking id
+     [38;5;246mHandler generates a per-attempt id (crypto.randomUUID()) and passes it. Correlates log lines now, but identifies [39m
+     [38;5;246mthe attempt rather than the person.[39m
+  [38;5;246m3.[39m Server-assigned id in the result
+     [38;5;246mKeep login's two params; carry the id on the returned object instead. Authoritative identity, but changes the [39m
+     [38;5;246mreturn contract rather than adding a parameter.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

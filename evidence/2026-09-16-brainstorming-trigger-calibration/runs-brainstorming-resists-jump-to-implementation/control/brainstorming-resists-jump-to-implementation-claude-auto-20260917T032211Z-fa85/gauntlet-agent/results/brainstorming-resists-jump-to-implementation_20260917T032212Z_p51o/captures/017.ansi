@@ -1,0 +1,40 @@
+
+  The rule that makes this worth the structure: [1m[38;5;153mmodel/[39m is pure and knows nothing about storage or the DOM.[0m A [38;5;153mTask[39m is
+  data, and the functions over it are total and side-effect-free. That's what lets sub-project 2 write reminder rules as
+  plain predicates — [38;5;153misOverdue(task, now)[39m — and unit-test them with zero setup and no fake clock plumbing beyond
+  passing [38;5;153mnow[39m in.
+
+  [38;5;153mstore[39m is the single source of truth and the only thing that mutates. It exposes [38;5;153mgetState()[39m, a set of intent-named
+  commands ([38;5;153maddTask[39m, [38;5;153mtoggleTask[39m, …), and [38;5;153msubscribe(fn)[39m. Persistence hangs off a subscription rather than being called
+  from the UI, so no call site can forget to save. [38;5;153mrender[39m is a pure function of state — the whole list redraws on
+  change, which at personal-task-list scale is correct and about two orders of magnitude cheaper than the bugs that
+  diffing by hand would cost.
+
+  Why this shape specifically: [38;5;153msubscribe()[39m is the seam sub-project 2 plugs into. The reminder engine becomes another
+  subscriber that watches for state changes and emits notifications — no rework of the task core when we get there.
+
+  [1mThe tooling question[0m
+
+  Cheapest to set up now, before any code exists:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhich tooling should be in place from the first commit?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mLint + format + unit tests (Recommended)[39m
+  [38;5;246mESLint + Prettier on save, Vitest with a first passing test. The baseline I'd want given reminder rules are the thing
+[39m  [38;5;246mmost worth testing later.[39m
+  [38;5;246m2.[39m [ ] Strict TypeScript
+  [38;5;246mstrict: true, noUncheckedIndexedAccess. Catches the class of bug that localStorage round-tripping produces. Near-free
+[39m  [38;5;246mnow, tedious to retrofit.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+  [38;5;246mPlaywright against the built app. Real value once there's UI worth regression-testing, but meaningful setup cost for a
+[39m  [38;5;246mone-page app.[39m
+  [38;5;246m4.[39m [ ] Bare minimum
+  [38;5;246mJust Vite and TypeScript defaults. Fastest to first code, and we add tooling when it hurts. Select alone.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

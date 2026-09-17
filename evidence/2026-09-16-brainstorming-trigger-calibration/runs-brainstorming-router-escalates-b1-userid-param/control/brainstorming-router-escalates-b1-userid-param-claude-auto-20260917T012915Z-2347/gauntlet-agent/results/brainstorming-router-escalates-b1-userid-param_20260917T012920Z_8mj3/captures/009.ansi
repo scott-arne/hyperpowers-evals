@@ -1,0 +1,40 @@
+  describe a shared, persistent identity store that this repo does not have — right now there's one [38;5;153mlogin()[39m in [38;5;153mapp.js[39m, a
+  [38;5;153mgreet()[39m util, and no storage, no session, no module wiring between [38;5;153mapp.js[39m and [38;5;153msrc/[39m. That's a new subsystem, not a
+  parameter. The brainstorming ratchet is one-way, so I'm stepping up:
+
+  [1mRe-classifying from bounded to architectural.[0m That means: clarifying questions, 2-3 approaches with trade-offs, a
+  sectioned design you approve section by section, then a written spec at
+  [38;5;153mdocs/hyperpowers/specs/2026-09-16-user-identity-tracking-design.md[39m for your review — and only then an implementation
+  plan. No code until you've approved the spec.
+
+  I'll keep the questions to the ones that actually shape the design. First one:
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What kind of identifier is userId — an authenticated identity, or a client-side tracking id? → Server-issued, [39m
+     [38;5;246mpost-auth[39m
+
+[38;5;231m⏺[39m Worth flagging plainly: a server-issued, post-auth id can't be a parameter [3mto[0m [38;5;153mlogin()[39m — [38;5;153mlogin()[39m is what causes it to
+  exist. So the shape of this ends up inverted from the original request: [38;5;153mlogin()[39m returns the id, a session module holds
+  it, and everything else reads it from there. The "userId parameter" will likely show up on the tracking/logging calls
+  rather than on [38;5;153mlogin[39m itself. I'll design it that way unless you push back.
+
+  Next question:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Tracking sink [39m[49m
+
+[1m[38;5;231mWhat does "track who logged in" actually need to produce?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mConsole logs only (Recommended)[39m
+     [38;5;246mExisting console.log calls gain the userId. No network, no event schema, no backend contract. Smallest subsystem: [39m
+     [38;5;246mjust the session store. Easy to add a real sink later.[39m
+  [38;5;246m2.[39m Send events to a backend
+     [38;5;246mA tracking module POSTs login/action events with the userId to an analytics or audit endpoint. Needs an event [39m
+     [38;5;246mschema, an endpoint, and a failure/retry policy — a second subsystem alongside the session store.[39m
+  [38;5;246m3.[39m In-app audit trail
+     [38;5;246mEvents accumulate client-side (viewable/exportable in the app) rather than being sent anywhere. Needs storage [39m
+     [38;5;246mgrowth limits and a UI surface that doesn't exist yet.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

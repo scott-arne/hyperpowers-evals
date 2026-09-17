@@ -1,0 +1,40 @@
+  on), but it's not in this scope.
+
+  [1mRendering convention[0m, applied identically by every form:
+  - For each invalid field, find-or-create [38;5;153m<span class="field-error" data-error-for="<name>" id="<formId>-<name>-error">
+[39m    immediately after the input, and set its text to the message.
+  - Set [38;5;153maria-invalid="true"[39m on the input and [38;5;153maria-describedby[39m to the span's id, so screen readers announce the message
+    rather than silently marking the field wrong.
+  - [38;5;153mclearErrors[39m removes the spans and both ARIA attributes.
+
+  Find-or-create (rather than always-create) matters for two reasons: repeated submits don't stack duplicate spans, and
+  a form that needs the message somewhere specific for layout can pre-place the span in its HTML and the module will
+  fill it in.
+
+  The id is prefixed with the form's id because [38;5;153maria-describedby[39m needs a page-unique target and two forms may both have
+  an [38;5;153memail[39m field. If a form has no [38;5;153mid[39m, the module falls back to a generated counter.
+
+  [1mEdge cases, decided:[0m
+  - [1mSchema names a field that isn't in the DOM[0m — throw immediately with the field name. This is always a typo or a stale
+    schema, and silently skipping it means a field ships with no validation and nobody notices.
+  - [1mWhitespace-only input[0m — [38;5;153mrequired()[39m treats [38;5;153m"   "[39m as empty. But nothing is trimmed globally, and [38;5;153mvalues[39m comes back
+    exactly as typed: trimming every value would quietly alter passwords, which is a correctness bug, not a convenience.
+  - [1mA field in the DOM with no schema entry[0m — ignored, not an error. Forms legitimately have fields that need no
+    validation.
+  - [1mCheckbox/radio/select[0m — [38;5;153mformEl.elements[name][39m returns a [38;5;153mRadioNodeList[39m for grouped inputs, so the value read isn't a
+    plain [38;5;153m.value[39m. Given your scope answer (required + format rules on text-ish fields), I'm scoping v1 to single-value
+    inputs and throwing a clear error on a grouped control rather than half-supporting it.
+
+  [1mOne small thing this drags in:[0m there's no CSS in the repo at all, so an error span renders as plain black body text,
+  indistinguishable from a label. I'd add a three-line [38;5;153m<style>[39m block to [38;5;153mindex.html[39m giving [38;5;153m.field-error[39m a red color and a
+  smaller font. Minimal, but it's a new thing in a file that currently has none — say if you'd rather have a [38;5;153mstyles.css[39m
+  or nothing at all.
+
+  Does this section look right? Next is testing and tooling, where I have a question for you.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 30s · done 7:52 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

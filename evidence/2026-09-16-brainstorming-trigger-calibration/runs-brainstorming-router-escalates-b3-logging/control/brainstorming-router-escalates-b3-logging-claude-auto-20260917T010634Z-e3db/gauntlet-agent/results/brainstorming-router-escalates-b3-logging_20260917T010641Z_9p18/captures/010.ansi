@@ -1,0 +1,40 @@
+
+  - [1mKey-pattern redaction (denylist)[0m — the logger walks structured fields and replaces values whose keys match [38;5;153mpassword[39m,
+    [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mauth[39m, etc. with [38;5;153m[redacted][39m. Low friction, catches the known cases. [1mFails open[0m: a field nobody
+    anticipated ([38;5;153mpwd2[39m, [38;5;153manswer[39m) logs in the clear.
+  - [1mAllowlist[0m — only explicitly-declared fields are serialized; everything else is dropped. [1mFails closed[0m, which is the
+    right direction for auth. Costs friction at every new log site, and in my experience under-specified allowlists get
+    worked around with string interpolation, which bypasses redaction entirely.
+  - [1mNo redaction, call-site discipline[0m — cheapest, and it is exactly how credentials end up in log aggregators. I don't
+    recommend it for an app whose only flow is a login form.
+
+  Worth separating from all three: [1musernames[0m. A username is PII but is also the single most useful field for correlating
+  a production report to a log line. Redacting it makes logs safer and substantially less useful; the usual middle
+  ground is logging a stable hash or a truncated form.
+
+  Once a sink exists, redaction is not cheap to add retroactively — anything already shipped is already shipped. That
+  argues for deciding it now, which is why I'm asking before the design rather than after.
+
+  [1mMy recommendation: key-pattern redaction as a backstop, plus a rule in the design that credential-bearing objects are
+[0m  [1mnever passed to the logger at all[0m — log [38;5;153m{ hasPassword: true }[39m, never the value. The pattern match catches mistakes;
+  the rule prevents them. For usernames I'd log them in full in Node and hashed in the browser sink, but I'd rather you
+  pick.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Redaction [38;5;16m[48;5;153m ☐ Usernames [39m[49m ✔ Submit  →
+
+[1m[38;5;231mHow should usernames be logged?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFull in Node, hashed in browser (Recommended)[39m
+     [38;5;246mKeeps correlation power where logs stay local; limits PII exposure on the sink that may leave the device. Requires
+[39m     [38;5;246ma small stable-hash helper.[39m
+  [38;5;246m2.[39m Always full
+     [38;5;246mMaximum debuggability — a production report maps straight to log lines. Puts identifiable PII into anything the [39m
+     [38;5;246mbrowser sink later ships.[39m
+  [38;5;246m3.[39m Always hashed
+     [38;5;246mConsistent behavior in both halves, correlation still works across entries. You lose the ability to look up 'what [39m
+     [38;5;246mhappened to this specific user' without hashing their name first.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

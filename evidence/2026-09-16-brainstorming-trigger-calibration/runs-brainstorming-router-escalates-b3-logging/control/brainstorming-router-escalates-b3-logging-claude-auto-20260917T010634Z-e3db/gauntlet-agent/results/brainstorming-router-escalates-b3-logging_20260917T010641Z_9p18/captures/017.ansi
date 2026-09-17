@@ -1,0 +1,40 @@
+  than the whole thing.
+
+  [1m1. Components[0m
+
+  src/logging/core.js            createLogger(), redact(), LEVELS   (pure, no I/O)
+  src/logging/sinks/console.js   createConsoleSink()
+  src/logging/logger.node.js     createNodeLogger() + default `log`
+  src/logging/logger.browser.js  createBrowserLogger() + default `log`
+  test/logging.test.js           node:test
+
+  Modified: [38;5;153mpackage.json[39m ([38;5;153m"type": "module"[39m, [38;5;153mscripts.test[39m), [38;5;153msrc/index.js[39m, [38;5;153msrc/utils.js[39m, [38;5;153mapp.js[39m, [38;5;153mindex.html[39m, [38;5;153mREADME.md[39m.
+
+  [1m2. Log record[0m
+
+  { [36mts[39m: [31m"2026-09-16T18:22:01.334Z"[39m, [36mlevel[39m: [31m"info"[39m, [36mevent[39m: [31m"login_attempt"[39m,
+    [36mfields[39m: { [36musername[39m: [31m"3f2a91c7"[39m }, [36mctx[39m: { [36menv[39m: [31m"browser"[39m } }
+
+  [38;5;153mevent[39m is a stable snake_case identifier, not a sentence — [38;5;153mlogin_attempt[39m, not [38;5;153m"Logging in: bob"[39m. Prose messages are
+  ungreppable, which is precisely the failure mode of the current [38;5;153mconsole.log("Logging in:", username)[39m. Variable data
+  goes in [38;5;153mfields[39m, never interpolated into [38;5;153mevent[39m.
+
+  [1m3. Redaction — the load-bearing invariant[0m
+
+  [38;5;153mredact()[39m runs [1min the core, before any sink sees the record[0m. No sink can receive an unredacted record; a future remote
+  sink inherits the guarantee rather than reimplementing it. It walks [38;5;153mfields[39m recursively, replacing values whose key
+  matches [38;5;153m/pass|secret|token|auth|credential|cookie|api[_-]?key/i[39m with [38;5;153m"[redacted]"[39m. Cycle-safe via [38;5;153mWeakSet[39m, with a
+  depth cap so a pathological object can't hang the app.
+
+  [1m4. Username handling[0m
+
+  [38;5;153musernamePolicy: 'full' | 'hash'[39m on the core; the Node entry sets [38;5;153mfull[39m, the browser entry sets [38;5;153mhash[39m.
+
+  [1mAssumption you should push back on:[0m the hash will be FNV-1a, a fast synchronous non-cryptographic hash. The
+  alternative, SubtleCrypto SHA-256, is async and would make every [38;5;153mlog.info()[39m call async — a bad trade for a logger. The
+  consequence is that [1mthis hash is a correlation ID, not a privacy guarantee[0m: usernames come from a small guessable
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m
