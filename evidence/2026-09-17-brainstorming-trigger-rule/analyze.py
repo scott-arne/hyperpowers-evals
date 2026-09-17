@@ -66,6 +66,14 @@ HARNESS_RE = re.compile(
 )
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 BRAINSTORMING_LINE = "- hyperpowers:brainstorming"
+
+
+def is_brainstorming_line(line: str) -> bool:
+    """The listing line of the brainstorming skill itself: the bare name or the name followed by its description."""
+
+    return line == BRAINSTORMING_LINE or line.startswith(BRAINSTORMING_LINE + ":")
+
+
 CHECKBOX = "cost-checkbox-over-trigger"
 TIMEOUT = "cost-session-timeout-boundary"
 EXPORT = "cost-remove-export-boundary"
@@ -297,12 +305,18 @@ def load_json(path: str) -> dict:
 
 
 def iter_records(path: str):
+    """Every JSON record of a transcript; a non-empty line that is not JSON is an error, not a skip."""
+
     with open(path, encoding="utf-8", errors="replace") as handle:
-        for line in handle:
+        for number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
             try:
                 yield json.loads(line)
-            except json.JSONDecodeError:
-                continue
+            except json.JSONDecodeError as error:
+                raise DesignError(
+                    f"{path}: malformed transcript record at line {number} ({error.msg})"
+                ) from None
 
 
 def first_action(transcript: str) -> str:
@@ -361,12 +375,12 @@ def context(transcript: str) -> tuple[str, list[str], str, str, str]:
         )
     listing = next(iter(listings)) if listings else ""
     lines = listing.split("\n")
-    own = [line for line in lines if line.startswith(BRAINSTORMING_LINE)]
+    own = [line for line in lines if is_brainstorming_line(line)]
     if listing and len(own) != 1:
         raise DesignError(
             f"{transcript}: the listing has {len(own)} brainstorming lines, expected exactly one"
         )
-    rest = [line for line in lines if not line.startswith(BRAINSTORMING_LINE)]
+    rest = [line for line in lines if not is_brainstorming_line(line)]
     brainstorming = own[0] if own else ""
     listing_rest = (
         hashlib.sha256("\n".join(rest).encode()).hexdigest()[:12] if listing else ""
@@ -1255,7 +1269,7 @@ def self_test() -> int:
         _rewrite(
             os.path.join(root, "results", "run-c", "home/.claude/projects/p/t.jsonl"),
             '"- other:skill: text\\n- hyperpowers:brainstorming"',
-            '"- other:skill: text\\n- hyperpowers:brainstorming (other)"',
+            '"- other:skill: text\\n- hyperpowers:brainstorming: OTHER"',
         )
 
     def rerun_other_budget(root: str) -> None:
@@ -1355,6 +1369,19 @@ def self_test() -> int:
             "run-a",
             {"type": "assistant", "message": {"model": "other-model", "content": []}},
         )
+
+    def prefixed_other_skill(root: str) -> None:
+        for name in ("run-d", "run-c"):
+            _rewrite(
+                os.path.join(root, "results", name, "home/.claude/projects/p/t.jsonl"),
+                '"- other:skill: text\\n- hyperpowers:brainstorming"',
+                '"- other:skill: text\\n- hyperpowers:brainstorming-old"',
+            )
+
+    def corrupt_record(root: str) -> None:
+        path = os.path.join(root, "results", "run-a", "home/.claude/projects/p/t.jsonl")
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write('{"type": "assistant", "mess\n')
 
     def second_listing(root: str) -> None:
         _append_record(
@@ -1614,6 +1641,20 @@ def self_test() -> int:
             None,
             later_model,
             "models differ within the session",
+        ),
+        (
+            "a default listing whose only brainstorming-like line is another prefixed skill",
+            two_passes,
+            None,
+            prefixed_other_skill,
+            "brainstorming lines, expected exactly one",
+        ),
+        (
+            "a transcript with a corrupt trailing record",
+            two_passes,
+            None,
+            corrupt_record,
+            "malformed transcript record",
         ),
         (
             "a second skill listing that differs",
