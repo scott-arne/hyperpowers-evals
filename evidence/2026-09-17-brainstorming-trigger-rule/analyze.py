@@ -50,7 +50,7 @@ BUDGETS = ("raised", "default")
 MAX_TOPUPS = 3
 TOPUP_RE = re.compile(r"^# top-up: (\S+) indeterminate twice$")
 CONTROL_RUN_COMMENT = "# control run for criterion 4: treatment failed"
-VOID_RE = re.compile(r"quorum error|without writing a result")
+VOID_RE = re.compile(r"quorum error|without writing a result|no Gauntlet-Agent verdict")
 RUN_DIR_RE = re.compile(r"run-dir\s+(\S+)")
 LOG_RE = re.compile(r"(control|treatment)-(.+)-([pr]\d+)\.log")
 PROC_RE = re.compile(r"p\d{1,2}")
@@ -527,14 +527,16 @@ def build_runs(manifest: dict) -> list[Run]:
         reason = str(verdict.get("final_reason") or "")
         grader = verdict.get("gauntlet")
         summary = str(grader.get("summary") or "") if isinstance(grader, dict) else ""
-        grader_exited = (
-            final == "indeterminate"
-            and isinstance(grader, dict)
-            and not summary.strip()
-            and not grader.get("run_id")
+        grader_exited = final == "indeterminate" and (
+            not isinstance(grader, dict)
+            or (not summary.strip() and not grader.get("run_id"))
         )
         if VOID_RE.search(reason) or VOID_RE.search(summary) or grader_exited:
-            why = reason or summary or "the grader exited without a summary or run id"
+            why = (
+                reason
+                or summary
+                or "no grader block, or one without a summary or run id"
+            )
             raise DesignError(
                 f"{name}: void attempt left in the logs ({why[:80]!r}); "
                 "move its log to logs/failed/ and relaunch the row"
@@ -1296,6 +1298,15 @@ def self_test() -> int:
             gauntlet={"status": "investigate", "summary": "", "run_id": None},
         )
 
+    def missing_grader(root: str) -> None:
+        _set_verdict(
+            root,
+            "run-a",
+            final="indeterminate",
+            final_reason="no Gauntlet-Agent verdict",
+            gauntlet=None,
+        )
+
     def unjustified_row(root: str) -> None:
         _fixture_add_row(root, "control", "p3", "raised", "pass", None)
 
@@ -1549,6 +1560,13 @@ def self_test() -> int:
             two_passes,
             None,
             grader_exited,
+            "void attempt",
+        ),
+        (
+            "a missing grader verdict",
+            two_passes,
+            None,
+            missing_grader,
             "void attempt",
         ),
         (
