@@ -1,0 +1,40 @@
+
+  Next fork. Right now a validation failure just calls [38;5;153mconsole.error[39m — the user sees nothing. Whether the shared layer
+  owns error [3mdisplay[0m or only produces error [3mdata[0m decides its surface area: a data-only validator is easy to test and
+  easy to reuse in Node, but every form re-writes the same DOM code for showing messages; a layer that also renders
+  errors kills that duplication but ties the module to a specific markup convention, and changing that convention later
+  means touching every form's HTML. Data-only is cheap to extend into rendering later; rendering is expensive to back
+  out of.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How much should the shared layer own? → Validate + render errors (Recommended)[39m
+
+[38;5;231m⏺[39m Good — the shared layer validates and renders. That makes the markup convention part of the contract, so I'll pin it
+  explicitly in the spec.
+
+  One more constraint question. The browser app loads [38;5;153mapp.js[39m with a plain [38;5;153m<script>[39m tag, and [38;5;153msrc/[39m uses CommonJS — two
+  incompatible conventions, and a shared validation file has to pick one. ES modules mean [38;5;153m<script type="module">[39m and
+  real [38;5;153mimport[39m/[38;5;153mexport[39m, which is also what makes the module testable in Node later; the cost is that [38;5;153mfile://[39m opening of
+  [38;5;153mindex.html[39m stops working (modules need an HTTP server) and it's a change to existing HTML. A second plain [38;5;153m<script>[39m tag
+  that defines a global keeps [38;5;153mfile://[39m working and changes nothing, but leaves you with an implicit load-order
+  dependency and a global that's awkward to test. A bundler solves both and adds a toolchain this repo currently doesn't
+  have.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Modules [39m[49m
+
+[1m[38;5;231mHow should the shared validation module be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mvalidation.js exports; index.html uses <script type="module" src="app.js">. Standard, testable, no dependencies. [39m
+     [38;5;246mRequires serving over HTTP instead of opening the file directly.[39m
+  [38;5;246m2.[39m Global via second script tag
+     [38;5;246mvalidation.js sets window.FormValidation; index.html loads it before app.js. Zero disruption, file:// keeps [39m
+     [38;5;246mworking. Implicit load order, global namespace, harder to test.[39m
+  [38;5;246m3.[39m Add a bundler
+     [38;5;246mesbuild or Vite, with a build step. Best long-term ergonomics; introduces a toolchain and a dependency this repo [39m
+     [38;5;246mhas avoided so far.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

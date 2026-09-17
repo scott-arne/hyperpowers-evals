@@ -1,0 +1,40 @@
+  index.html
+  src/
+    app.js                        wiring only: construct stores, mount UI, start scheduler
+    store/
+      task-store.js               task CRUD + persistence, emits 'change'
+      persistence.js              localStorage read/write, versioned keys, safe fallback
+    notifications/
+      notification-store.js       the notification queue, read/unread, emits 'change'
+      rules.js                    PURE: (tasks, now, firedKeys) -> notifications to create
+      scheduler.js                timers + event wiring; owns no rules logic itself
+      os-adapter.js               Web Notifications permission + display; no-ops when denied
+    ui/
+      task-list.js                render tasks, edit, watch toggle
+      notification-tray.js        panel + unread badge
+      toaster.js                  transient toasts
+      settings.js                 OS-notification opt-in, reminder lead time
+
+  [1mTask:[0m [38;5;153m{ id, title, status: 'open' | 'done', dueAt: ISO | null, watched: boolean, createdAt, updatedAt }[39m
+
+  [1mNotification:[0m [38;5;153m{ id, kind: 'due-soon' | 'overdue' | 'feedback', taskId | null, title, body, createdAt, readAt, [39m
+  [38;5;153mdedupeKey, transient }[39m
+
+  Two decisions in there worth flagging explicitly, because they're the ones I'd want you to push back on:
+
+  [1m[38;5;153mrules.js[39m is a pure function.[0m Given a task list, a timestamp, and the set of reminder keys already fired, it returns
+  the notifications that should now exist. It touches no timers, no DOM, no storage. The scheduler is a dumb shell that
+  calls it on an interval, on task change, and when the tab becomes visible. This is deliberate: the reminder logic is
+  the only genuinely tricky part of this feature, and this shape lets it be tested by passing in a fake [38;5;153mnow[39m instead of
+  waiting for clocks.
+
+  [1m"Shared surface" means one queue, not one lifetime.[0m Both reminders and action feedback go through a single [38;5;153mnotify()[39m
+  entry point and a single store. But reminders persist in the tray until dismissed, while action feedback is [38;5;153mtransient:
+[39m  [38;5;153mtrue[39m — it shows as a toast, auto-expires, and is never archived. An activity log of "Task saved" entries would be
+  noise, and a tray you have to clear out constantly is a tray people stop opening.
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

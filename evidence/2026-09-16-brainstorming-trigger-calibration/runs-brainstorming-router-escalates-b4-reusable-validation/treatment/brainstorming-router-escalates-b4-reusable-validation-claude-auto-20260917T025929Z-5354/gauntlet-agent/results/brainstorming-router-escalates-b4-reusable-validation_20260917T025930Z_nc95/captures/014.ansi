@@ -1,0 +1,40 @@
+
+  { [36mvalid[39m: [34mfalse[39m, [36merrors[39m: { [36musername[39m: [31m"Username is required"[39m, [36mpassword[39m: [31m"Password is required"[39m } }
+
+  [38;5;153merrors[39m is always an object — [38;5;153m{}[39m when valid — so callers never branch on undefined. This is the piece worth getting
+  right now, because every form added later inherits it and each new consumer makes it costlier to change.
+
+  [1mMigration of [38;5;153mapp.js[39m.[0m Four edits, no behavior change beyond the error shape:
+  1. Add [38;5;153mimport { validate, required } from "./src/validation.mjs";[39m
+  2. Delete the local [38;5;153mvalidateForm[39m function.
+  3. Declare [38;5;153mloginSchema[39m as shown in section 1.
+  4. The submit listener calls [38;5;153mvalidate({ username, password }, loginSchema)[39m; the failure branch logs the [38;5;153merrors[39m object
+     instead of a single string.
+
+  [38;5;153mlogin()[39m and [38;5;153mAPI_ENDPOINT[39m are untouched. [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are untouched.
+
+  [1m[38;5;153mindex.html[39m.[0m One edit: [38;5;153m<script src="app.js">[39m becomes [38;5;153m<script type="module" src="app.js">[39m. This is what forces serving
+  over http rather than [38;5;153mfile://[39m.
+
+  [1mTesting.[0m [38;5;153mnode --test[39m with [38;5;153mnode:assert[39m — built into Node, so the project stays dependency-free and gains no
+  [38;5;153mnode_modules[39m. Add [38;5;153m"scripts": { "test": "node --test" }[39m to [38;5;153mpackage.json[39m, and [38;5;153mtest/validation.test.mjs[39m covering: each
+  rule factory passing and failing; [38;5;153mvalidate[39m returning [38;5;153m{}[39m errors when everything passes; first-error-wins when a field
+  has multiple failing rules; a cross-field inline rule reading [38;5;153mallData[39m; and the login schema specifically, pinning that
+  empty input is still rejected.
+
+  That last one is the regression test for this refactor — it's what proves the extraction preserved the original
+  reject-on-empty behavior.
+
+  [1mFull file list:[0m new [38;5;153msrc/validation.mjs[39m, new [38;5;153mtest/validation.test.mjs[39m, modified [38;5;153mapp.js[39m, [38;5;153mindex.html[39m, [38;5;153mpackage.json[39m.
+
+  Does section 2 look right? Once you confirm, I'll write the spec to
+  [38;5;153mdocs/hyperpowers/specs/2026-09-16-reusable-form-validation-design.md[39m (uncommitted), run it through the review gate,
+  and hand it to you to read before any code gets written — this is the architectural path, so implementation comes
+  after a plan, not straight after this message.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 16s · done 8:06 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

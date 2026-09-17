@@ -1,0 +1,40 @@
+     value. It never touches [38;5;153msessionStorage[39m.
+
+  The invalid-input branch keeps its existing [38;5;153mconsole.error[39m as-is. A failed field validation isn't a login and has no
+  user to attribute, so routing it through the tracker would be scope creep.
+
+  [1mAssumption to record in the spec:[0m [38;5;153mlogin()[39m is a stub that never calls [38;5;153mAPI_ENDPOINT[39m, so no server issues an id. The stub
+  will synthesize a deterministic placeholder ([38;5;153mstub-<username>[39m) so the flow is observable end to end. When the real
+  POST lands, the only change is reading the id out of the response instead of synthesizing it — the session and tracker
+  layers don't move. I'll write this as an explicit assumption with that validation path, not as though the server
+  contract exists.
+
+  [1mError handling.[0m The governing rule: tracking must never break login.
+
+  - [1mStorage unavailable.[0m [38;5;153msessionStorage[39m access throws in Safari private browsing and when site data is disabled.
+    [38;5;153msession.js[39m catches and falls back to a module-level in-memory value. Tracking degrades to "this page load only"; the
+    login flow doesn't notice. This same fallback is what will let the modules run under [38;5;153mnode:test[39m without a DOM —
+    covered in Section 3.
+  - [1mLogin failed or no id returned.[0m The store is left untouched; no writing [38;5;153mundefined[39m over a good value. [38;5;153mgetUserId()[39m
+    returns [38;5;153mnull[39m and the tracker logs [38;5;153manonymous[39m.
+  - [1m[38;5;153mAppSession[39m missing entirely.[0m If a future page adds [38;5;153mtracker.js[39m but forgets [38;5;153msession.js[39m, [38;5;153mTracker.log[39m logs [38;5;153manonymous[39m
+    instead of throwing a [38;5;153mReferenceError[39m into that page's submit handler. Given "other forms will need it later," the
+    failure mode for a miswired page should be a degraded log line, not a broken form.
+
+  No new exceptions are introduced anywhere in this design.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 2 [39m[49m
+
+[1m[38;5;231mDoes Section 2 (data flow and error handling) look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, continue[39m
+     [38;5;246mProceed to Section 3: testing.[39m
+  [38;5;246m2.[39m Revise it
+     [38;5;246mSomething is off in the flow or the error handling — I'll tell you what before you go on.[39m
+  [38;5;246m3.[39m Reconsider the stub id
+     [38;5;246mThe synthesized stub-<username> placeholder isn't what I want; discuss that before continuing.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

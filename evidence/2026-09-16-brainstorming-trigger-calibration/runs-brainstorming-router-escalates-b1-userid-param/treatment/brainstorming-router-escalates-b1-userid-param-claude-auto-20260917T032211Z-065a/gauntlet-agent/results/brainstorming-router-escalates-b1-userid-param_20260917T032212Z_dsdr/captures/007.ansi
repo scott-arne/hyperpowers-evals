@@ -1,0 +1,40 @@
+  build. So I'll present a short design in chat rather than write a spec. Say the word if you want it heavier.
+
+  One thing I need from you first, because the repo can't answer it.
+
+  [1mThe fork:[0m there is no [38;5;153muserId[39m anywhere in this codebase to pass. [38;5;153mindex.html:8-12[39m collects only username and password,
+  and [38;5;153mlogin()[39m is a stub that fabricates its own response. So "add a userId parameter" can only mean one of a few
+  different things, and they differ in what gets built afterward:
+
+  - [1m[38;5;153mlogin()[39m returns the userId instead of taking one[0m — the server identifies the user; the caller can't know the ID
+    before authenticating. Costs a change to the return shape ([38;5;153mapp.js:7[39m) and the caller, not the signature. Rules out
+    nothing; this is the shape most auth flows converge on.
+  - [1mClient-generated correlation ID passed in[0m — [38;5;153mcrypto.randomUUID()[39m at submit time, threaded through so a login attempt
+    can be tied to later events. Buys you tracking of [3mattempts[0m (including failed ones). Costs an ID-generation decision
+    and, to be useful, somewhere to persist it.
+  - [1mCaller-supplied userId parameter, value wired later[0m — literally the signature change you asked for, with the call
+    site passing a placeholder. Cheap now, but a parameter no caller can populate tends to rot.
+
+  The first two are cheap to reverse in a stub this small. The third is cheap now and awkward later.
+
+  [1mMy recommendation:[0m the return-value option, if "track who logged in" means recording the authenticated identity. A
+  parameter can't carry that information at call time. But if you actually want to correlate a login [3mattempt[0m with other
+  client events, the correlation-ID option is the right one and the parameter belongs in the signature.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId value come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn it from login() (Recommended)[39m
+     [38;5;246mlogin() keeps its (username, password) signature and returns { success, user, userId }. The identity comes from the
+[39m     [38;5;246mauth response, since the caller cannot know it beforehand.[39m
+  [38;5;246m2.[39m Client-generated correlation ID
+     [38;5;246mGenerate an ID at form submit (crypto.randomUUID) and pass it into login(username, password, userId). Tracks [39m
+     [38;5;246mattempts, including failures.[39m
+  [38;5;246m3.[39m Parameter now, value later
+     [38;5;246mAdd userId to the signature exactly as asked; the call site passes a placeholder until a real source exists.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

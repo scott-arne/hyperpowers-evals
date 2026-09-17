@@ -1,0 +1,40 @@
+  - [38;5;153mapp.js[39m — plain browser script (loaded by [38;5;153mindex.html[39m via [38;5;153m<script src>[39m), holds [38;5;153mconst API_ENDPOINT = [39m
+    [38;5;153m"https://api.example.com/login"[39m and a stub [38;5;153mlogin()[39m that never actually uses it yet.
+  - [38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m — CommonJS Node modules, entirely separate from the browser page. No bundler, no test
+    runner, no linter, no deps in [38;5;153mpackage.json[39m.
+
+  [1mClassification: architectural.[0m Not because the edit is big — moving one constant is trivial — but because "a new
+  settings module" is structure this repo doesn't have, and the repo currently runs two incompatible module systems (a
+  bare browser script and CommonJS). Where the settings module lives and how it's loaded determines what every future
+  consumer has to do. So I'll work through questions → approaches → a design → a spec, rather than just making the edit.
+  Say the word if you'd rather I keep it short.
+
+  First question, and it's the one that shapes everything else.
+
+  [1mThe fork:[0m "easier to change environments" can mean two very different things. Either the environment is chosen [3mat [0m
+  [3mruntime[0m by the page itself (it looks at where it's running and picks), or it's chosen [3mat deploy time[0m by whoever ships
+  the files (the right config is placed/swapped before the page ever loads). This isn't a naming difference — it decides
+  whether the settings module contains all environments' URLs and selection logic, or just one environment's values.
+
+  - [1mRuntime detection (hostname-based)[0m — one file ships everywhere; [38;5;153mlocalhost[39m → dev API, everything else → prod. Buys:
+    zero deploy ceremony, and you can test env switching by just opening the page locally. Costs: every environment's
+    URL is visible in the shipped source, and the mapping is a hardcoded list you must edit to add an environment. Rules
+    out nothing permanently — cheap to replace later.
+  - [1mRuntime override (global/query param)[0m — [38;5;153mwindow.__APP_CONFIG__[39m or [38;5;153m?env=staging[39m picks from a table. Buys: switch
+    environments without a rebuild, useful for QA poking at staging from a prod build. Costs: same URL exposure, plus
+    anyone can repoint your page at any environment — real consideration on a login form specifically.
+  - [1mDeploy-time swap[0m — [38;5;153msettings.js[39m holds one environment's values; CI or a deploy script drops the right variant in.
+    Buys: shipped artifact contains only the environment it's for; no selection logic to get wrong. Costs: you can't
+    switch by editing one line locally, and it presumes a build/deploy step this repo doesn't currently have.
+
+  [1mMy recommendation: runtime detection by hostname.[0m This repo is a static page with no build step, and the login call is
+  still a stub — introducing a deploy pipeline to solve a one-constant problem is backwards. Hostname detection gets
+  you the "easier to change environments" benefit today, and if a real build step arrives later, collapsing the table
+  down to a single injected value is a small, contained change.
+
+[38;5;246m✻[39m [38;5;246mWorked for 45s · done 7:15 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

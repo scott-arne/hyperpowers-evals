@@ -1,0 +1,40 @@
+
+  [1mB. Materialized fan-out — one notification row per recipient[0m
+  On each mutation, compute the recipient set and insert a row per person: [38;5;153mnotifications (user_id, task_id, event_kind,
+[39m  [38;5;153mread, at)[39m.
+  [3mBuys:[0m trivial read path ([38;5;153mWHERE user_id = ? AND read = false[39m), read state is just a column, and recipients are frozen
+  at the moment it happened — which matches most people's intuition.
+  [3mCosts:[0m write amplification, and recipient logic sits on the write path where a bug silently drops notifications.
+  You'll still want an events table for audit, so this tends to become two tables anyway. Rule changes don't apply
+  retroactively.
+  [3mRules out:[0m little, but it's the harder one to walk back, because the rows are already written.
+
+  [1mC. Hybrid — events table plus fan-out rows referencing it[0m
+  What GitHub-scale systems converge on: log for truth, materialized rows for delivery.
+  [3mBuys:[0m both sets of advantages, and each notification row is already a delivery job when email or push arrives.
+  [3mCosts:[0m two tables, two code paths, and a consistency question between them, bought entirely for channels you've said
+  you don't want.
+
+  [1mMy recommendation: A.[0m In-app-only delivery and implicit involvement are exactly the conditions where the derived
+  approach wins — the reasons to materialize are outbound delivery and huge fan-out, and you have neither. It's also the
+  smallest thing that still gives you the audit trail, which for a coordination tool you'll want regardless. If email
+  ever lands, A becomes C by adding a table, not by rewriting one.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Data model [39m[49m
+
+[1m[38;5;231mWhich notification data model should the design commit to?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA — derived from change log (Recommended)[39m
+     [38;5;246mAppend-only events table is the source of truth; the bell is a query plus a thin read-state table. Smallest write [39m
+     [38;5;246mpath, audit log free, upgrades to C later without a rewrite.[39m
+  [38;5;246m2.[39m B — materialized fan-out
+     [38;5;246mOne stored notification row per recipient, written at mutation time. Simplest reads and frozen recipients, at the [39m
+     [38;5;246mcost of write amplification and non-retroactive rules.[39m
+  [38;5;246m3.[39m C — hybrid log + fan-out
+     [38;5;246mBoth tables from day one. Right answer if you're confident email or push is coming soon and want the delivery-job [39m
+     [38;5;246mshape already in place.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

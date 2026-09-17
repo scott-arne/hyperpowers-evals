@@ -1,0 +1,40 @@
+  [34mconst[39m ENVIRONMENTS = {
+    [36mlocal[39m:      { [36mapiBaseUrl[39m: [31m"http://localhost:3000"[39m },
+    [36mstaging[39m:    { [36mapiBaseUrl[39m: [31m"https://api.staging.example.com"[39m },  [32m// placeholder[39m
+    [36mproduction[39m: { [36mapiBaseUrl[39m: [31m"https://api.example.com"[39m },
+  };
+
+  [38;5;153mlocal[39m and [38;5;153mstaging[39m are placeholders — give me the real values and I'll drop them in. Production preserves today's host
+  exactly.
+
+  [1mResolution order.[0m [38;5;153mresolveEnvironmentName(hostname, search)[39m, a pure function: an explicit [38;5;153m?env=[39m override wins if it
+  names a known environment; otherwise [38;5;153mlocalhost[39m / [38;5;153m127.0.0.1[39m / [38;5;153m[::1][39m / empty hostname (a [38;5;153mfile://[39m load) resolve to [38;5;153mlocal[39m;
+  otherwise a [38;5;153mstaging.[39m hostname resolves to [38;5;153mstaging[39m; otherwise [38;5;153mproduction[39m.
+
+  [1mData flow.[0m [38;5;153mindex.html[39m gets [38;5;153m<script src="settings.js"></script>[39m immediately before the existing [38;5;153mapp.js[39m tag. On load,
+  [38;5;153msettings.js[39m resolves from [38;5;153mwindow.location[39m and sets [38;5;153mwindow.SETTINGS = { environment, apiBaseUrl, loginEndpoint }[39m. In
+  [38;5;153mapp.js[39m, line 2 becomes [38;5;153mconst API_ENDPOINT = window.SETTINGS.loginEndpoint;[39m — the stub comment in [38;5;153mlogin()[39m stays valid,
+  and nothing else in that file changes.
+
+  [1mError handling.[0m An unrecognized hostname falls back to [38;5;153mproduction[39m rather than throwing; a page pointing at prod beats
+  a page that can't log in. An unrecognized [38;5;153m?env=[39m value is ignored with a [38;5;153mconsole.warn[39m and detection proceeds normally —
+  a typo shouldn't silently pin you to prod with no signal. [38;5;153msettings.js[39m failing to load will throw at [38;5;153mapp.js[39m parse
+  time; that's intentional, since a missing endpoint should be loud, and the script ordering makes it a build-breaking
+  mistake rather than a runtime one.
+
+  [1mTesting.[0m [38;5;153mtest/settings.test.js[39m under [38;5;153mnode:test[39m, plus [38;5;153m"scripts": { "test": "node --test" }[39m in [38;5;153mpackage.json[39m. Cases: each
+  hostname class resolves correctly, [38;5;153m?env=staging[39m overrides, an unknown [38;5;153m?env=[39m value falls back to detection, an unknown
+  hostname lands on production. This needs two small guards in [38;5;153msettings.js[39m — the [38;5;153mwindow[39m assignment wrapped in [38;5;153mtypeof [39m
+  [38;5;153mwindow !== "undefined"[39m, and a [38;5;153mmodule.exports[39m block at the bottom — so importing it under Node has no side effects.
+  I'll also load [38;5;153mindex.html[39m in a browser and confirm [38;5;153mwindow.SETTINGS[39m reports [38;5;153mproduction[39m, and [38;5;153m?env=local[39m flips it.
+
+  [1mFiles touched:[0m [38;5;153msettings.js[39m (new), [38;5;153mtest/settings.test.js[39m (new), [38;5;153mapp.js[39m (line 2), [38;5;153mindex.html[39m (one script tag),
+  [38;5;153mpackage.json[39m (test script).
+
+  ---
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

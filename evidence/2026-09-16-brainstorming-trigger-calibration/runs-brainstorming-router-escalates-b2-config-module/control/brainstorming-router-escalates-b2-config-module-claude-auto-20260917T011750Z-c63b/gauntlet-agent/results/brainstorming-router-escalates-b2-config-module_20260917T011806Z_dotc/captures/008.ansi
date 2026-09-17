@@ -1,0 +1,40 @@
+  - No tests, no lint config, no dependencies in [38;5;153mpackage.json[39m.
+
+  That split matters: the repo has two module conventions already, and a browser settings file can't use [38;5;153mrequire[39m. So the
+  first fork is about how an environment actually gets chosen.
+
+  [1mThe fork:[0m how does the running page know [3mwhich[0m environment it's in?
+
+  - [1mRuntime detection from hostname[0m — settings ships all environments; the module picks one by looking at
+    [38;5;153mwindow.location.hostname[39m. Buys: one artifact deploys everywhere, switching environments is editing a map in one
+    file. Costs: all endpoint URLs are visible in the shipped source, and local/preview hostnames need entries. Cheap to
+    change later.
+  - [1mSingle active config, edited/swapped per deploy[0m — settings exports one flat config; you change the value (or swap
+    the file) when you deploy elsewhere. Buys: dead simple, nothing conditional, only the live URL ships. Costs:
+    switching means a file edit or a deploy-time copy, which is easy to get wrong by hand. Cheap to change later.
+  - [1mBuild-time injection[0m — a build step substitutes values from env vars. Buys: the standard answer at scale,
+    secrets/URLs stay out of source. Costs: introduces a bundler and a build to a repo that currently has neither, and
+    [38;5;153mindex.html[39m would stop working as a plain file open. Expensive to undo.
+
+  [1mMy recommendation: runtime detection from hostname.[0m It directly delivers "easier to change environments" — one map, no
+  deploy choreography — and it keeps [38;5;153mindex.html[39m working as a plain static page with no toolchain added. Build-time
+  injection is the right answer for a real app with secrets, but nothing here justifies adopting a bundler yet, and it's
+  the one option that's costly to walk back.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Env select [39m[49m
+
+[1m[38;5;231mHow should the app decide which environment's API endpoint to use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHostname detection (Recommended)[39m
+     [38;5;246mSettings holds a map of all environments; picks one from window.location.hostname at load. No build step, switching
+[39m     [38;5;246m= edit one map.[39m
+  [38;5;246m2.[39m Single active config
+     [38;5;246mSettings exports one flat config object; you edit the value or swap the file when deploying to another environment.
+[39m  [38;5;246m3.[39m Build-time injection
+     [38;5;246mAdd a bundler/build step that substitutes values from env vars. Most standard at scale, but adds a toolchain and [39m
+     [38;5;246mbreaks plain-file loading.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

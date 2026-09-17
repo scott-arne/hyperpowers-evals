@@ -1,0 +1,40 @@
+
+  [1mRetrieval.[0m On-device persistence is worthless without a way to get the logs out. Browser: a [38;5;153mwindow.__appLogs[39m handle
+  with [38;5;153mdump()[39m, [38;5;153mcopy()[39m (NDJSON to clipboard), and [38;5;153mclear()[39m. No UI button — this is a support tool, not a product feature,
+  and you walk a user through one console command. Node: the file is the interface. The trade-off is that [38;5;153m__appLogs[39m is
+  undiscoverable unless someone tells you it exists, which is fine for support-guided retrieval and useless for
+  self-service; say the word if you want a UI affordance instead.
+
+  [1mLevel control.[0m Node reads [38;5;153mLOG_LEVEL[39m, default [38;5;153minfo[39m. Browser reads [38;5;153mlocalStorage['app.logLevel'][39m, default [38;5;153minfo[39m.
+  Deliberately localStorage rather than a query param, because it survives reloads — "set this, then reproduce the bug"
+  is the actual support workflow, and a query param gets lost on the first navigation.
+
+  [1mFailure behavior — the rule the whole thing hangs on.[0m The logger never throws into the app. Every sink write is
+  wrapped; on failure ([38;5;153mQuotaExceededError[39m, read-only filesystem, corrupt stored JSON) it evicts and retries once, then
+  falls back to [38;5;153mconsole[39m and disables that sink for the session, reporting the failure once. A logging subsystem that can
+  break the login form is a worse bug than the one you added it to diagnose.
+
+  [1mTesting.[0m [38;5;153mnode:test[39m for core level filtering and record shape; example plus [38;5;153mfast-check[39m property tests for the redactor,
+  asserting no non-permitted key's value survives at any depth; sink tests against a fake [38;5;153mlocalStorage[39m object and a
+  temp directory, covering rotation, quota exhaustion, and corrupt-input recovery. ESLint + Prettier wired as [38;5;153mnpm run [39m
+  [38;5;153mlint[39m / [38;5;153mnpm run format[39m, tests as [38;5;153mnpm test[39m.
+
+  That's the complete design. Nothing here contacts the network or changes what the app does — [38;5;153mAPI_ENDPOINT[39m stays a
+  stub.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 3 [39m[49m
+
+[2m│[0m [1m[38;5;231mSection 3 (persistence, retrieval, level control, failure behavior) — does this look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right — write the spec[39m
+     [38;5;246mAccept the design as presented. I'll write it to docs/hyperpowers/specs/ (uncommitted) for your review, then move [39m
+     [38;5;246mto the implementation plan.[39m
+  [38;5;246m2.[39m Right, but add a UI export button
+     [38;5;246mSame design, plus a visible affordance in index.html for exporting logs rather than console-only retrieval.[39m
+  [38;5;246m3.[39m Needs changes
+     [38;5;246mSomething in persistence, retrieval, or failure handling is wrong — I'll tell you what.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

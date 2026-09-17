@@ -1,0 +1,40 @@
+
+  [1mB. Observable session store[0m — everything in A, plus [38;5;153msubscribe(fn)[39m that fires on local writes [3mand[0m on the [38;5;153mwindow[39m [38;5;153mstorage
+[39m  event, which browsers dispatch to other tabs when [38;5;153mlocalStorage[39m changes. Log out in one tab and every other tab
+  reacts.
+  [3mTrades:[0m solves exactly the staleness hole I flagged when recommending [38;5;153mlocalStorage[39m, at the cost of subscription
+  lifecycle (unsubscribe, avoiding leaks) for zero subscribers today. [3mComplexity: moderate.[0m
+
+  [1mC. [38;5;153mlogin()[39m owns the write[0m — [38;5;153mlogin()[39m calls into the session module itself, so the caller just awaits it and the store
+  is populated as a side effect.
+  [3mTrades:[0m fewest steps at the call site, but it welds auth transport to browser storage. [38;5;153mlogin()[39m stops being testable
+  without a DOM, and a function whose name promises authentication silently mutating persistent state is the kind of
+  hidden coupling that gets hard to unpick once three forms depend on it. [3mComplexity: trivial.[0m I'd rule this one out.
+
+  [1mMy recommendation: A, with B's [38;5;153msubscribe[39m deliberately deferred.[0m The module boundary is the part that's expensive to
+  get wrong and it's identical in both; adding [38;5;153msubscribe()[39m later is purely additive and breaks no existing consumer.
+  Building pub/sub now means maintaining a notification system with nothing subscribed to it. B wins the moment you have
+  a second long-lived view that must react without a reload — at which point it's a small addition to the same file,
+  not a redesign.
+
+  Keeping the write at the call site (A/B over C) also means [38;5;153mlogin()[39m remains a plain function you can test without a
+  browser, which matters more once it stops being a stub.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: plain session module (Recommended)[39m
+     [38;5;246mget/set/clear over one localStorage key; login() stays pure and the form handler writes. subscribe() deferred until
+[39m     [38;5;246ma second consumer needs it.[39m
+  [38;5;246m2.[39m B: observable store
+     [38;5;246mA plus subscribe() and cross-tab sync via the storage event. Solves staleness now; more machinery than today's [39m
+     [38;5;246msingle consumer needs.[39m
+  [38;5;246m3.[39m C: login() owns the write
+     [38;5;246mlogin() writes the session itself. Fewest call-site steps, but couples auth to storage and makes login() untestable
+[39m     [38;5;246mwithout a browser.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

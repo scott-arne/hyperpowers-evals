@@ -1,0 +1,40 @@
+  │ [38;5;153mapp.js[39m       │ Wiring only. Loads state, starts the tick, routes events to transforms, persists, │ all          │
+  │              │  re-renders.                                                                      │              │
+  └──────────────┴───────────────────────────────────────────────────────────────────────────────────┴──────────────┘
+
+  The boundary that matters is [38;5;153mdue-state.js[39m. It never touches the DOM, [38;5;153mlocalStorage[39m, or [38;5;153mDate.now()[39m — pass it a timestamp
+  and it answers. That's what makes the notification logic testable without a browser and reviewable on its own, which
+  was the whole justification for putting tasks and notifications in one spec.
+
+  [1mSection 2 — Data model[0m
+
+  [32m// Task[39m
+  { id, title, dueAt, completedAt, createdAt, updatedAt }   [32m// dueAt: ISO string | null[39m
+
+  [32m// Dismissal ack[39m
+  { taskId, threshold, forDueAt }   [32m// threshold: 'dueSoon' | 'overdue'[39m
+
+  One design point worth flagging, because it's where approach A earns its keep: [1mthe ack stores the [38;5;153mdueAt[39m it was made [0m
+  [1magainst.[0m If you dismiss "due soon" and then push the due date out a week, [38;5;153mack.forDueAt !== task.dueAt[39m, so the ack is
+  silently ignored and the alert correctly fires again at the new time. No invalidation pass, no reconciliation job, no
+  cleanup on delete — a stale ack just never matches anything. Approach B would have needed explicit code for each of
+  those cases.
+
+  Rules, stated so they can't be read two ways:
+
+  - [38;5;153moverdue[39m when [38;5;153mnow > dueAt[39m. [38;5;153mdueSoon[39m when [38;5;153m0 < dueAt - now <= 24h[39m. Otherwise [38;5;153mok[39m.
+  - A task with [38;5;153mdueAt: null[39m never alerts.
+  - A completed task never alerts, regardless of [38;5;153mdueAt[39m.
+  - The two thresholds are dismissed independently — dismissing [38;5;153mdueSoon[39m does not pre-dismiss [38;5;153moverdue[39m.
+
+  [1mOpen question I'm defaulting rather than asking:[0m the due-soon window is 24 hours. It's a one-line constant, trivially
+  changeable, so it doesn't warrant a decision from you — but say the word if it should be something else.
+
+  Does this look right so far?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 2m 16s · done 6:56 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

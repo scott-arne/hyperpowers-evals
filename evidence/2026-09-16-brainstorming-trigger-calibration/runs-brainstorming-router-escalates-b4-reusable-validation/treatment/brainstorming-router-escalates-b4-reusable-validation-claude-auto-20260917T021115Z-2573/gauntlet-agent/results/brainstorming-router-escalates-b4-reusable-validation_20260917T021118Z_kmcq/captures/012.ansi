@@ -1,0 +1,40 @@
+  [38;5;153mvaluesFromForm[39m trims, a whitespace-only username now fails where it previously passed. Both are improvements, but
+  they are changes. The [38;5;153mminLength(8)[39m on password is a suggestion — say the word and I'll drop it so the migration is
+  behavior-identical apart from the trim.
+
+  [1mError handling:[0m malformed rules (a non-function in a rule array, [38;5;153mvalidateForm[39m called on a non-form element) throw
+  [38;5;153mTypeError[39m immediately. Those are programming errors, and failing loudly beats silently skipping a check that someone
+  thinks is running.
+
+  [1mThe tooling fork.[0m The repo has no test runner, and there's a real constraint: [38;5;153mpackage.json[39m has no [38;5;153m"type"[39m field, so
+  Node treats [38;5;153m.js[39m as CommonJS — which is what [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m rely on. A browser loading [38;5;153mvalidation.js[39m as
+  a module doesn't care, but a Node test importing it does. Three ways out:
+
+  - [1mAdd [38;5;153m"type": "module"[39m and convert [38;5;153msrc/[0m — the two [38;5;153msrc[39m files are three lines each; converting [38;5;153mrequire[39m/[38;5;153mmodule.exports[39m to
+    [38;5;153mimport[39m/[38;5;153mexport[39m makes the whole package consistently ESM. Costs: touches two files unrelated to your request.
+  - [1mName it [38;5;153mvalidation.mjs[0m — root config untouched, Node tests work immediately. Costs: some static servers don't map
+    [38;5;153m.mjs[39m to a JS MIME type, and the browser then refuses the module. A real, annoying failure mode.
+  - [1mNo unit tests[0m — verify by hand in the browser. Costs: the shared module everything will depend on has no tests.
+
+  [1mMy recommendation: the first[0m, with [38;5;153mnode --test[39m (built into Node, zero dependencies) and a [38;5;153mtest/validation.test.js[39m
+  covering the rule factories, per-field error collection, and trimming. It's the option where nothing is booby-trapped
+  later, and the "unrelated" churn is six lines.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Tooling [39m[49m ☐ Password rule  ✔ Submit  →
+
+[1m[38;5;231mHow do you want to resolve the ESM/testing fork?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mtype:module + node --test (Recommended)[39m
+     [38;5;246mAdd "type": "module", convert the two tiny src/ files to ESM, add test/validation.test.js run via node --test. [39m
+     [38;5;246mConsistent package, real tests, six lines of unrelated churn.[39m
+  [38;5;246m2.[39m validation.mjs + node --test
+     [38;5;246mLeave package.json and src/ alone; name the module .mjs so Node resolves it as ESM. Tests work, but .mjs MIME [39m
+     [38;5;246mmapping can break the browser load on some static servers.[39m
+  [38;5;246m3.[39m No unit tests
+     [38;5;246mShip the module and migration only, verified by hand in the browser. Smallest diff, no test coverage on the shared
+[39m     [38;5;246mmodule.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

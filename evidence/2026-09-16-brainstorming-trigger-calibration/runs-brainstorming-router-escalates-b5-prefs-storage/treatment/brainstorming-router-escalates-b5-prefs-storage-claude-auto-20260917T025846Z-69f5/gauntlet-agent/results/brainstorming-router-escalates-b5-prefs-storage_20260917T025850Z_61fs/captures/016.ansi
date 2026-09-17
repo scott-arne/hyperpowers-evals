@@ -1,0 +1,40 @@
+  [1mWhen localStorage is unavailable at all[0m, the factory falls back to an in-memory store. This matters more than it
+  sounds: some browsers throw a [38;5;153mSecurityError[39m on merely [3maccessing[0m [38;5;153mwindow.localStorage[39m (a page embedded in an iframe with
+  third-party storage blocked), so the wiring has to guard property access, not just [38;5;153msetItem[39m. With the fallback,
+  preferences work normally for the life of the page and simply don't survive it, and the login form never knows the
+  difference.
+
+  [1mCorrupt data always degrades to defaults, never to an exception.[0m Unparseable JSON, a stored value that isn't an
+  object, [38;5;153mnull[39m, or an unrecognised [38;5;153mversion[39m all load as all-defaults. A single field failing its validator falls back to
+  just that field's default, as covered in section 1.
+
+  [1mIn [38;5;153mapp.js[0m, two changes. On load, prefill [38;5;153m#username[39m from [38;5;153mrememberedUsername[39m when it's non-empty. On login, save the
+  username — gated on [38;5;153mresult.success[39m, so it behaves correctly once [38;5;153mlogin()[39m stops being a stub that always returns true.
+
+  [1mThe password is never persisted, under any preference.[0m There's no schema entry for it and no code path that could add
+  one by accident. Worth stating explicitly in the spec so nobody later reads "remember the login" as an invitation.
+
+  One thing I want to flag rather than decide for you. A remembered username with no way to turn it off is a genuine
+  problem on a shared machine — the next person at that keyboard sees the previous user's name prefilled, and there's no
+  UI to clear it. The fix is a "Remember me" checkbox next to the submit button, backed by a second schema entry
+  ([38;5;153mrememberUsername[39m, boolean, default true or false); unchecking it clears the stored username. It's maybe fifteen extra
+  lines across the markup and the wiring. Strictly it's beyond the v1 scope you picked, which is why I'm asking instead
+  of adding it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Opt-out [39m[49m
+
+[1m[38;5;231mInclude a "Remember me" opt-out in v1?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, add the checkbox (Recommended)[39m
+     [38;5;246mAdds a rememberUsername boolean preference plus a checkbox. Unchecking clears the stored username. Gives users a [39m
+     [38;5;246mway to turn it off on a shared machine.[39m
+  [38;5;246m2.[39m No, always remember
+     [38;5;246mKeeps v1 to exactly the scope you picked. No UI change. No way for a user to stop or clear the remembered username.
+[39m  [38;5;246m3.[39m No checkbox, default off
+     [38;5;246mShip the preference and the prefill, but leave it disabled until a later change adds the UI to enable it. Nothing [39m
+     [38;5;246mis stored in v1.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

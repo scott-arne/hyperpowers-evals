@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Noted — no confirmed second form. I'll hold that against the design: with nothing concrete to generalize from, the
+  honest target is a small declarative rule set the login form actually uses, not a validation framework. I'll push back
+  on anything that only pays off for forms that may never arrive.
+
+  Next fork, and it's the one that shapes everything else: [1mhow much of the form lifecycle the reusable piece owns.[0m Today
+  [38;5;153mvalidateForm[39m is pure (data in, verdict out) and [38;5;153mapp.js:17-28[39m does the DOM work inline — reading [38;5;153m.value[39m by literal id,
+  reporting failures to [38;5;153mconsole.error[39m where no user ever sees them.
+
+  - [1mPure rules only[0m — the module validates a plain object against a schema; each form keeps its own handler for reading
+    inputs and showing errors. Cheapest, trivially testable without a DOM, and the wiring duplication is ~8 lines per
+    form. Costs: every new form re-writes that wiring, and the invisible-error bug stays unfixed unless each form fixes
+    it separately.
+  - [1mRules + input reading[0m — the module also pulls values off a [38;5;153m<form>[39m element (via [38;5;153mFormData[39m), so a form declares fields
+    once. Removes the per-field [38;5;153mgetElementById[39m. Costs: now DOM-coupled, so tests need jsdom or a fake element.
+  - [1mRules + reading + error display[0m — the module also renders messages next to the offending inputs. Fixes the
+    invisible-error problem once for all forms. Costs: the module now owns markup and styling decisions, which is the
+    part most likely to fight a future UI direction — and it's the hardest of the three to back out of.
+
+  My recommendation is the middle one, with error [3mreporting[0m exposed as a callback the form supplies rather than markup
+  the module emits. You get the real duplication removed, and display stays the caller's business — which matters
+  precisely because there's no second form yet to tell us what error UI should look like.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[1m[38;5;231mHow much should the reusable validation piece own?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mRules + reading (Recommended)[39m
+     [38;5;246mValidates a <form> element against a declared schema; hands errors back to a caller-supplied callback. Display [39m
+     [38;5;246mstays with each form.[39m
+  [38;5;246m2.[39m Pure rules only
+     [38;5;246mSchema-driven validation over a plain object. Each form keeps its own DOM reading and error handling. Smallest [39m
+     [38;5;246mchange.[39m
+  [38;5;246m3.[39m Rules + reading + display
+     [38;5;246mModule also renders error messages beside inputs. Fixes invisible errors everywhere at once, but owns markup [39m
+     [38;5;246mdecisions.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

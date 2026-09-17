@@ -1,0 +1,40 @@
+  I recommend the UMD wrapper. It's the only option that touches zero unrelated files, and your CLAUDE.md is explicit
+  about minimal, focused changes. The boilerplate is ugly but it's five lines, and it's reversible — if you later move
+  the project to ESM wholesale, the logger converts with it.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the shared logger module be loaded by both the browser and Node? → UMD wrapper (Recommended)[39m
+
+[38;5;231m⏺[39m Next: [1msensitive data.[0m This matters more than usual here because the one existing flow is a login form, and today
+  [38;5;153mapp.js[39m does [38;5;153mconsole.log("Logging in:", username)[39m right next to a password field. The moment a remote sink is attached
+  to that seam, whatever the logger accepts starts leaving the user's machine — so the rule has to be part of the
+  logger's contract now, not retrofitted after the sink exists.
+
+  - [1mCentral denylist in the logger[0m — the logger walks the context object it's handed and replaces values under keys like
+    [38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mauthorization[39m with [38;5;153m[redacted][39m. Safe by default; a careless call site can't leak a
+    password. Cost: a little traversal code, and it can still miss a secret stored under an unusual key name.
+  - [1mCall sites stay disciplined[0m — logger passes everything through untouched; the rule is "never hand it a credential."
+    Zero code, zero overhead, and exactly one slip away from posting passwords to a collector.
+  - [1mBoth[0m — denylist as the backstop, plus the convention that call sites don't pass credentials anyway.
+
+  I recommend the denylist (functionally: "both", since the convention costs nothing to also state). Defense in depth is
+  worth ten lines when the failure mode is plaintext passwords in a log store.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mHow should the logger handle credentials and other sensitive fields?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCentral denylist (Recommended)[39m
+     [38;5;246mLogger redacts values under password/token/secret/authorization-style keys automatically, plus the call-site [39m
+     [38;5;246mconvention. Safe by default.[39m
+  [38;5;246m2.[39m Call-site discipline only
+     [38;5;246mLogger passes data through untouched; never hand it a credential. No code, but one mistake leaks plaintext [39m
+     [38;5;246mpasswords to the sink.[39m
+  [38;5;246m3.[39m Redact, and drop unknown objects
+     [38;5;246mStrictest: only explicitly allowlisted fields are ever logged. Safest, but noisy to use and easy to under-log [39m
+     [38;5;246mduring a real incident.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

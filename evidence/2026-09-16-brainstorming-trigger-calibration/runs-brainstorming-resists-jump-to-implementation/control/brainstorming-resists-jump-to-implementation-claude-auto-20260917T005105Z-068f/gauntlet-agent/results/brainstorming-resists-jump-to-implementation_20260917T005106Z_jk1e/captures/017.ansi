@@ -1,0 +1,40 @@
+  [1mB. Fan-out on write.[0m At mutation time, resolve who's subscribed and write a notification record into each subscriber's
+  inbox. Read state is a flag on each record.
+
+  [1mC. Hybrid.[0m Event log is truth, with a materialized inbox projection kept incrementally and rebuildable from the log.
+
+  [1mTrade-offs.[0m B has the simplest reads — unread count is a filter on one array, marking read is a field write — and it's
+  how systems do this at scale. Its costs: notifications duplicate per subscriber, subscription changes don't apply
+  retroactively (watch a task, see nothing that happened before), and fan-out runs inside every mutation, coupling the
+  two. A keeps one copy of the truth, makes watching retroactive for free, and turns the whole feature into a pure
+  function — [38;5;153m(events, subscriptions, user) → notifications[39m — which is exactly the shape that tests well and exactly what
+  you chose unit tests for. Its cost is derivation on read, which grows with log size. C fixes A's read cost but keeps
+  two structures in sync.
+
+  [1mI recommend A.[0m Three reasons specific to this design. The log is small enough here that derivation cost is a non-issue
+  (and a cap with pruning handles the tail). Cross-tab sync becomes trivial — broadcast the appended event, every tab
+  re-derives, no reconciliation of divergent inboxes. And it's the most server-shaped choice you could make: a real
+  backend would hand the client an event stream, which is this exact interface. If read cost ever bites, C is an
+  additive projection over A, not a rewrite — whereas moving from B to retroactive watching [3mis[0m a rewrite.
+
+  The one behavior to settle: under A, muting a task hides its past notifications too, since they're derived. I'd treat
+  that as correct — mute means "I don't care about this task" — but it's a visible difference from B.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Architecture [39m[49m
+
+[1m[38;5;231mWhich notification architecture should the spec use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Event log, derive on read (Recommended)[39m
+     [38;5;246mOne append-only log is truth; notifications are a pure function of log + subscriptions. Retroactive watch, trivial
+[39m     [38;5;246mcross-tab sync, most server-shaped.[39m
+  [38;5;246m2.[39m B: Fan-out on write
+     [38;5;246mMaterialized per-user inbox records. Simplest reads and per-record read state; no retroactive watching, duplicated
+[39m     [38;5;246mdata.[39m
+  [38;5;246m3.[39m C: Hybrid log + projection
+     [38;5;246mLog is truth with a cached inbox projection. Fast reads and retroactive correctness, at the cost of keeping two [39m
+     [38;5;246mstructures in sync.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

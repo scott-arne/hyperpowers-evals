@@ -1,0 +1,40 @@
+
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How long should the stored userId persist? → sessionStorage (Recommended)[39m
+
+[38;5;231m⏺[39m Last question before I lay out approaches. The fork: how a "shared across the app" session module gets loaded, given
+  [38;5;153mapp.js[39m is a classic script and [38;5;153msrc/*.js[39m are CommonJS for Node — and nothing bridges them.
+
+  - [1mClassic script + one global namespace[0m — [38;5;153msession.js[39m loaded by a [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m, exposing a single
+    [38;5;153mAppSession[39m object. Matches the pattern already in [38;5;153mindex.html[39m, needs no tooling, and every future form gets it by
+    adding one script tag. Costs: a global, and no sharing with the Node-side CommonJS files (which don't need it — the
+    tracking is browser-only).
+  - [1mConvert the browser side to ES modules[0m — [38;5;153mindex.html[39m becomes [38;5;153m<script type="module">[39m, [38;5;153msession.js[39m uses [38;5;153mexport[39m/[38;5;153mimport[39m.
+    No globals, scales cleanly to many forms, no bundler required. Costs: every page's script tag changes, and the app
+    can no longer be opened via [38;5;153mfile://[39m — ES modules require serving over http, which this repo has no server for.
+  - [1mDual-format module[0m — works under both CommonJS and the browser global. Buys Node-side reuse you don't currently
+    need; costs boilerplate on every file. This is the YAGNI casualty.
+
+  Both real options keep the same key property: all reads and writes go through one session module, so the storage
+  choice stays swappable. My recommendation is the classic-script namespace — it's the existing local pattern, and
+  converting the page-loading model is more restructuring than tracking a userId warrants. ESM stays available later as
+  a mechanical migration.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should the shared session module be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mClassic script + global (Recommended)[39m
+     [38;5;246msession.js via a <script> tag exposing one AppSession namespace. Matches index.html's existing pattern; zero [39m
+     [38;5;246mtooling; file:// still works.[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246mBrowser side converts to type="module" with import/export. No globals, scales to many forms, but requires serving [39m
+     [38;5;246mover http and changes every page's script tag.[39m
+  [38;5;246m3.[39m Dual CommonJS + browser
+     [38;5;246mOne module usable from Node and the browser. Reuse you don't need yet, boilerplate everywhere.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

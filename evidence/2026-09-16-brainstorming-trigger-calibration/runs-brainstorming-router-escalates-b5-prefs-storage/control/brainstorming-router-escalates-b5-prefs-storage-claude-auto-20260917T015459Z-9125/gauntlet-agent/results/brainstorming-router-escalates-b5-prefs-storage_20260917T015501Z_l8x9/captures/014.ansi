@@ -1,0 +1,40 @@
+  and validation live in exactly one table, so adding a preference is a one-line registry entry. The [38;5;153mv[39m field gives you a
+  migration hook before you need it. Costs you: a two-tab race where both write different preferences means
+  last-writer-wins clobbers the other field. For per-device UI settings I think that's an acceptable loss; it's the
+  classic objection to blob storage and it's real.
+
+  [1mB. One namespaced key per preference[0m
+
+  [38;5;153mwebapp.pref.rememberedUsername[39m, [38;5;153mwebapp.pref.theme[39m, written independently.
+
+  Buys you: no cross-field clobber — two tabs writing different preferences both survive. Per-key migration is
+  independent. Costs you: no atomic multi-field update, you need a key registry anyway to enumerate and clear
+  preferences, and schema versioning gets awkward (a version per key, or a side-car version key that reintroduces the
+  coupling you were avoiding). You pay real structural complexity for a concurrency guarantee that a single-user
+  settings panel rarely needs.
+
+  [1mC. Hydrate-once in-memory store with an injected storage adapter[0m
+
+  Parse localStorage once at load into an in-memory object; reads hit memory only, writes update memory and flush
+  through. The storage backend is a constructor parameter defaulting to [38;5;153mlocalStorage[39m.
+
+  Buys you: reads are free, and the injection seam makes Node testing trivial — pass a [38;5;153mMap[39m-backed fake, no jsdom, no
+  dependency. Costs you: the in-memory copy goes stale the moment another tab writes, so you'd want a [38;5;153mstorage[39m event
+  listener to resync, which is a real chunk of the complexity back. It also front-loads a performance concern that
+  doesn't exist — we're talking about two values read on page load.
+
+  [1mMy recommendation: A, with C's injected-storage seam grafted on.[0m The blob's clobber risk is the weakest objection of
+  the three because these are per-device UI settings a single user changes deliberately, not concurrent shared state.
+  But C is right about testability, and that part is free: making the storage backend an injectable parameter costs one
+  constructor argument and buys dependency-free unit tests in Node's built-in runner. B's advantage only pays off under
+  genuine multi-tab write contention, which isn't this app. Taking A now doesn't foreclose B — the registry makes the
+  on-disk layout an implementation detail behind a stable [38;5;153mget[39m/[38;5;153mset[39m API.
+
+  Does that read right before I go into the design sections?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 2m 42s · done 7:01 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

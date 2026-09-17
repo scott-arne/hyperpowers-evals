@@ -1,0 +1,40 @@
+
+  Proceeding with my own approaches.
+
+  [1mApproaches for the change-event seam[0m
+
+  This is the one genuinely architectural choice left, because it decides what notifications can ever be built on top.
+
+  [1mA. State is truth, events are a side channel (recommended).[0m [38;5;153mlocalStorage[39m holds the current array of tasks. Every
+  mutation goes through a small store module that writes the new state [3mand[0m appends a change record ([38;5;153m{id, type, taskId, [39m
+  [38;5;153mat, fields}[39m) to a capped log. Notifications read the log.
+  - [3mBuys:[0m dead simple to reason about; rendering reads state directly; the log can be truncated or dropped without data
+    loss.
+  - [3mCosts:[0m the log can drift from state if someone writes [38;5;153mlocalStorage[39m directly — prevented by making the store the only
+    writer.
+  - [3mRules out:[0m nothing important. A server can append to the same log later.
+
+  [1mB. Event-sourced — the log is truth.[0m Only events are stored; current state is a fold over the log at load time.
+  - [3mBuys:[0m perfect history, undo, and audit for free; a natural fit if sync arrives later (events merge better than
+    snapshots).
+  - [3mCosts:[0m every read replays the log; you need snapshotting once the log grows; a bad event shape is now a migration
+    problem, not a cleanup.
+  - [3mWhen it wins:[0m if undo/history is a headline feature, or multi-device sync is a near-term certainty.
+
+  [1mC. No log — derive changes by diffing snapshots.[0m Keep the previous task array, diff on write.
+  - [3mBuys:[0m least code; nothing extra to store.
+  - [3mCosts:[0m diffing loses intent (a title edit and a retitle-plus-complete look alike), and it can't represent anything
+    that happened while the tab was closed.
+  - [3mRules out:[0m meaningful notification text. I'd avoid this.
+
+  I recommend [1mA[0m. It gives notifications a real, intentional event stream at almost no extra cost, keeps rendering
+  trivial, and leaves B reachable later (the log is already there — you'd just promote it to source of truth).
+
+  Does A sound right, or does undo/history matter enough to pull you toward B?
+
+[38;5;246m✻[39m [38;5;246mCogitated for 1m 44s · done 7:25 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  reverse: login authenticates, the server [1mreturns[0m the canonical userId, the app persists it, and everything downstream
+  reads it from there. That's [38;5;153mlogin()[39m returning a userId, not accepting one.
+
+  So:
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Who mints the canonical user ID — and is it known before or after authentication? → Server returns it on login[39m
+
+[38;5;231m⏺[39m Good — that settles the direction: [38;5;153mlogin()[39m returns the userId rather than accepting one, and the original request's
+  signature change goes away.
+
+  Next fork, and it sets how much of this is real versus scaffolded. [38;5;153mlogin()[39m currently never touches [38;5;153mAPI_ENDPOINT[39m — it
+  synthesizes a success response locally. If the server is the source of the ID, either we wire up the actual call now
+  (real [38;5;153mfetch[39m, real async, real error and failure handling, and [38;5;153mlogin()[39m becomes a promise, which changes its one call
+  site at [38;5;153mapp.js:22[39m), or we keep the stub and have it hand back a fake ID so the persistence and cross-app plumbing can
+  be built and tested against a stable seam. The first gives you something that works end-to-end but needs a real
+  endpoint contract from whoever owns the API; the second is cheap and doesn't block on them, but the network path stays
+  unverified. Keeping the stub is easy to change later; a rushed guess at the response contract is not, since
+  everything downstream reads whatever shape we pick.
+
+  I'd lean toward the stub with a deliberately-specified response shape — it lets the identity layer be built and tested
+  now, and swapping the stub for [38;5;153mfetch[39m later touches one function.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[2m│[0m [1m[38;5;231mDoes this work include wiring login() to the real API endpoint, or does the stub stay?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mKeep the stub, define the contract (Recommended)[39m
+     [38;5;246mlogin() stays local but returns a userId in the exact shape the real endpoint will use. Build persistence and [39m
+     [38;5;246mcross-app access now; swap in fetch later in one place.[39m
+  [38;5;246m2.[39m Wire up the real fetch now
+     [38;5;246mlogin() becomes async and POSTs to API_ENDPOINT, with real network error handling. Needs the actual response [39m
+     [38;5;246mcontract and a reachable endpoint.[39m
+  [38;5;246m3.[39m Stub now, real fetch in the same spec
+     [38;5;246mDesign and build both: stub-backed identity layer first, then the real call as a later phase of the same plan.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

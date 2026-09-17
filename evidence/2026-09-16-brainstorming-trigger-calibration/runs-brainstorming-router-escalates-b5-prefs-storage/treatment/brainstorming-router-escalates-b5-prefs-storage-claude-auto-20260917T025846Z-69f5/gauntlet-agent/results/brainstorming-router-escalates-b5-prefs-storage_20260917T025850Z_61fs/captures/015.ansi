@@ -1,0 +1,40 @@
+  [34mconst[39m PREFERENCES_SCHEMA = {
+    [36mrememberedUsername[39m: {
+      [36mdefault[39m: [31m""[39m,
+      [36mvalidate[39m: [33m([39mvalue) => [34mtypeof[39m value === [31m"string"[39m && value.length <= [32m256[39m,
+    },
+  };
+
+  A later form adds a preference by adding one entry here. That's the whole extension story.
+
+  [1mThe factory[0m is [38;5;153mcreatePreferences(schema, storage)[39m, returning an object with four methods:
+
+  - [38;5;153mget(key)[39m — the validated stored value, or the default. Never returns [38;5;153mundefined[39m, never throws for data reasons.
+  - [38;5;153mset(key, value)[39m — validates, then persists. Rejects invalid values.
+  - [38;5;153mreset(key)[39m — restores one preference to its default.
+  - [38;5;153mclear()[39m — restores all defaults and removes the storage entry.
+
+  [38;5;153mget[39m, [38;5;153mset[39m, and [38;5;153mreset[39m throw on a key not in the schema. That's a programming error, not bad data, and the whole point of
+  choosing a declared schema is to surface it at the call site instead of returning a silent [38;5;153mundefined[39m.
+
+  [1mStorage format[0m — one key, [38;5;153mapp.preferences[39m, holding:
+
+  { [36m"version"[39m: [32m1[39m, [36m"values"[39m: { [36m"rememberedUsername"[39m: [31m"alice"[39m } }
+
+  The [38;5;153mversion[39m field is the migration seam. Today nothing reads it beyond a mismatch check; the first time a preference
+  changes shape, the load path gains a migration step keyed on it rather than a guessing game about which shape is on
+  disk.
+
+  Two load-time rules worth stating because they're easy to get wrong later: a key present in storage but [3mabsent[0m from
+  the schema is dropped and not written back (that's how a removed preference gets garbage-collected), and a key present
+  in both but failing its validator falls back to that key's default without discarding the rest of the blob — one bad
+  value shouldn't cost the user their other settings.
+
+  Does this section look right?
+
+[38;5;246m✻[39m [38;5;246mCooked for 20s · done 8:06 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

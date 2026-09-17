@@ -1,0 +1,40 @@
+  [1mThe first fork, because it determines nearly every later decision:[0m
+
+  Where does notification state live and who can be notified? The options differ in what has to exist before a single
+  notification can fire, and switching later is expensive — the subscription store, the event source, and the delivery
+  path all change shape.
+
+  - [1mClient-only, single user[0m — tasks and notifications live in [38;5;153mlocalStorage[39m; "notification" means an in-page toast and
+    an unread badge. Buys you a working thing in a day with zero infrastructure. Costs: nothing fires when the tab is
+    closed, and there's no second user to be notified [3mby[0m. Rules out email/push and cross-device sync without a rewrite
+    of the storage and event layers.
+  - [1mBackend, multi-user[0m — a server owns tasks, subscriptions, and an event log; notifications are delivered in-app plus
+    optionally email/push. Buys you real "someone else changed your task" semantics, offline delivery, and durable
+    read-state. Costs: you're now choosing a runtime, a database, and an auth story before the first notification ships.
+  - [1mClient-only now, backend-shaped[0m — put an event/subscription boundary behind an interface with a [38;5;153mlocalStorage[39m
+    implementation today, swap in a server later. Buys a cheap start without painting in a corner. Costs: some
+    abstraction you don't need yet, and it still can't deliver to a closed tab.
+
+  [1mMy recommendation: the third[0m, unless you already know this is a multi-user product. In a repo this empty, committing
+  to a backend is a bigger decision than the notifications feature itself — but "notify users about tasks [3mthey care [0m
+  [3mabout[0m" implies other actors making changes, which is a multi-user idea. The interface boundary lets you keep that door
+  open for roughly one extra file's worth of work.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Substrate [39m[49m
+
+[1m[38;5;231mWhere should notification state and delivery live?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mClient-only, backend-shaped (Recommended)[39m
+     [38;5;246mlocalStorage today behind an event/subscription interface, so a server can be swapped in later without rewriting [39m
+     [38;5;246mthe feature.[39m
+  [38;5;246m2.[39m Backend, multi-user
+     [38;5;246mServer owns tasks, subscriptions, and an event log. Real cross-user notifications, offline delivery, durable read [39m
+     [38;5;246mstate. Requires picking a runtime, DB, and auth.[39m
+  [38;5;246m3.[39m Client-only, single user
+     [38;5;246mEverything in localStorage, in-page toasts and an unread badge. Cheapest, but no cross-device, no email/push, [39m
+     [38;5;246mnothing fires with the tab closed.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

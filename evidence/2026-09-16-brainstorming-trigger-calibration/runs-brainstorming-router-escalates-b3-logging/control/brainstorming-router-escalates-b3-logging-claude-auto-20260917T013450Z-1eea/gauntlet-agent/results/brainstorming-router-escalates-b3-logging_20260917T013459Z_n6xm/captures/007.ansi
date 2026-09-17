@@ -1,0 +1,40 @@
+  - [38;5;153mpackage.json[39m — no dependencies, no test script, no lint config
+  - Two different runtimes, so "the app" is ambiguous, and "production" means different things in each
+
+  One flag before we go further: [38;5;153mapp.js:5[39m already logs a username right next to a password variable. Any logging design
+  here needs a redaction rule, not just a log call — I'll come back to that.
+
+  [1mThe fork — which surface gets the logger.[0m This decides almost everything downstream: a browser logger can't write to a
+  file or stderr and is useless for production debugging unless logs are shipped somewhere; a Node logger is the
+  opposite, stdout is free and a remote sink is optional. Trying to serve both means an interface with two transports
+  behind it.
+
+  - [1mBrowser only[0m — matches where the real behavior is (the login flow), but forces the "where do logs go" question
+    immediately; console-only logging in a user's browser is invisible to you in production. Hard to change later if you
+    pick a browser-specific library.
+  - [1mNode only[0m — cheapest useful thing: structured lines to stdout, your platform collects them. But [38;5;153msrc/index.js[39m is a
+    stub that prints a greeting; there's nothing there to debug.
+  - [1mBoth, one shared module[0m — one [38;5;153mlog.debug()[39m API, transport chosen per environment. Costs a small abstraction layer up
+    front and is the only option that stays cheap if you later add the other surface.
+
+  I'd recommend [1mboth via one shared module[0m, because the code you actually want to debug is the browser flow, but the
+  abstraction is a few dozen lines and picking one surface now is the expensive thing to undo.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Surface [39m[49m
+
+[1m[38;5;231mWhich part of the app needs logging?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBoth, shared module (Recommended)[39m
+     [38;5;246mOne logging module with a common API; transport differs per runtime. Costs a small abstraction now, cheap to extend
+[39m     [38;5;246mlater.[39m
+  [38;5;246m2.[39m Browser only (app.js)
+     [38;5;246mLog the login flow only. Raises the 'where do logs go' question immediately since the browser console is invisible
+[39m     [38;5;246min production.[39m
+  [38;5;246m3.[39m Node only (src/index.js)
+     [38;5;246mStructured lines to stdout, collected by your platform. Simplest, but src/index.js currently has nothing worth [39m
+     [38;5;246mdebugging.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

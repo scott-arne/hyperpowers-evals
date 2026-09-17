@@ -1,0 +1,40 @@
+
+  [1mThe fork:[0m whether logs have to leave the user's machine. "Debug production issues" can mean either "when a user
+  reports a problem, we ask them to paste their console" or "we can look up what happened without the user's help."
+
+  - [1mBrowser app, logs stay local[0m — a small [38;5;153mlogger[39m module wrapping [38;5;153mconsole[39m with levels and redaction. Cheap, ~one file,
+    no infra. But you only see a production issue if a user sends you the output.
+  - [1mBrowser app, logs shipped off-device[0m — everything above plus a transport: batching, a collection endpoint, failure
+    handling when the network is down, and a real privacy policy since you're now storing user data. Much bigger, and it
+    needs a backend that doesn't exist here.
+  - [1mNode side ([38;5;153msrc/index.js[39m)[0m — structured stdout that your process manager captures. Different mechanics from the
+    browser entirely, and near-free if that's where production actually runs.
+
+  Cheap to change later: log levels, format, which call sites log. Expensive to change later: whether logs are shipped
+  (that's a stored-data and privacy commitment) and the shape of the log records once something downstream parses them.
+
+  [1mMy recommendation:[0m the browser app with logs local, built behind a transport-shaped seam. You get debuggable output
+  and redaction now, and adding a shipper later is one implementation of an interface rather than a rewrite. I'd skip
+  shipping until you have somewhere to ship to.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Log scope [39m[49m
+
+[1m[38;5;231mWhich surface needs logging, and do logs need to leave the user's machine?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser, local + seam (Recommended)[39m
+     [38;5;246mLogger module for app.js with levels and redaction, written behind a transport interface so shipping can be added [39m
+     [38;5;246mlater without a rewrite. No backend needed.[39m
+  [38;5;246m2.[39m Browser, ship to backend
+     [38;5;246mAdds batching, a collection endpoint, offline handling, and a data-retention/privacy policy. Needs a backend that [39m
+     [38;5;246mdoesn't exist in this repo yet.[39m
+  [38;5;246m3.[39m Node entry only
+     [38;5;246mStructured stdout from src/index.js for a process manager to capture. Smallest option, but doesn't touch the login
+[39m     [38;5;246mflow.[39m
+  [38;5;246m4.[39m Both browser and Node
+     [38;5;246mA shared logger core with a per-runtime output adapter. Largest surface; worth it only if both actually run in [39m
+     [38;5;246mproduction.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

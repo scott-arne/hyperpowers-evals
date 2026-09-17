@@ -1,0 +1,40 @@
+  First question, and it's the one that determines everything downstream.
+
+  [1mThe fork:[0m "session" means two different things in these two halves, and they need different storage mechanisms — this
+  isn't a detail I can defer and swap later.
+
+  - [1mBrowser[0m — "across sessions" means the user closes the tab and reopens it. Storage is [38;5;153mlocalStorage[39m; preferences are
+    per-browser, synchronous, string-keyed, and capped around 5MB. Buys you something visible in the actual UI. Costs:
+    nothing persists across devices, and it's untestable without a DOM or a fake.
+  - [1mNode[0m — "across sessions" means across process runs. Storage is a JSON file on disk ([38;5;153m~/.config/…[39m or similar). Buys
+    you straightforward testability with a temp directory and no browser shims. Costs: it's invisible to the login page,
+    which is the only user-facing surface here.
+  - [1mBoth, over a shared core[0m — a storage-agnostic preferences module with a pluggable backend, adapters for each side.
+    Buys you one schema and one validation path. Costs: it's the most machinery, and it's only worth it if both halves
+    genuinely need preferences rather than one.
+
+  Cheap to change later: the individual preference keys and defaults. Expensive to change later: which side owns the
+  data, since that decides the module's API shape (sync vs. async) and whether tests need a DOM.
+
+  [1mMy recommendation: browser/localStorage.[0m The webapp is the only part of this repo with a user who could have a
+  preference — [38;5;153msrc/index.js[39m is a hello-world with no user and no session to speak of. Starting there keeps the module
+  honest and small, and a backend seam can be added later if the Node side ever grows a real need.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Surface [39m[49m
+
+[1m[38;5;231mWhich half of the repo should own persistent preferences?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser / localStorage (Recommended)[39m
+     [38;5;246mPreferences live in the webapp, persist across tab closes. Per-browser, no cross-device sync. Smallest honest [39m
+     [38;5;246msurface — the login page is the only place with a real user.[39m
+  [38;5;246m2.[39m Node / JSON file
+     [38;5;246mPreferences persist across process runs in a config file on disk. Easy to test with a temp dir, but invisible to [39m
+     [38;5;246mthe login page.[39m
+  [38;5;246m3.[39m Both, shared core
+     [38;5;246mStorage-agnostic module with pluggable backends and an adapter per side. One schema, most machinery — worth it only
+[39m     [38;5;246mif both halves really need preferences.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

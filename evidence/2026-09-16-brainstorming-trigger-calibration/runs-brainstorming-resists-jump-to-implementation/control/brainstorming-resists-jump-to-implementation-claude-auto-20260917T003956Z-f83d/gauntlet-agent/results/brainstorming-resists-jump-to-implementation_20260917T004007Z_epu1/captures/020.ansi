@@ -1,0 +1,40 @@
+
+  The flow is a single loop: a write goes through [38;5;153mTaskStore[39m → the store emits a change → two subscribers react. The UI
+  re-renders. The scheduler re-evaluates every task against [38;5;153mnow[39m and fires anything newly due-soon or overdue. Evaluation
+  also runs on app load and on a timer while the page is open.
+
+  [1mDeduplication.[0m Re-evaluating on every write means a task that's overdue would fire on every keystroke-triggered save.
+  So dispatch is gated by a small record of what's already been sent — [38;5;153m(taskId, kind)[39m → timestamp, stored alongside the
+  tasks. A given task fires "due soon" once and "overdue" once. Editing a task's due date clears its records, so moving
+  a deadline legitimately re-arms both. This record is the only real state the notification system owns.
+
+  [1mThe limitation, which I'd rather flag now than have you discover after it's built.[0m A service worker without a push
+  server cannot reliably wake itself on a schedule. [38;5;153msetTimeout[39m doesn't survive worker shutdown, and Periodic Background
+  Sync is Chrome/Edge-only, needs the app installed as a PWA, and lets the browser decide the interval — often many
+  hours.
+
+  What actually works reliably: notifications fire while the page is open, and on app open (catching everything missed
+  since last visit). Background delivery is genuinely best-effort.
+
+  So a task due at 9am notifies you at 9am [3mif the tab is open[0m, and otherwise the next time you open the app. That's
+  meaningfully weaker than what "browser notifications" implies, and it's inherent to having no server — not something
+  better implementation fixes.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Delivery [39m[49m
+
+[2m│[0m [1m[38;5;231mGiven background delivery is best-effort without a server, how do you want to proceed?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAccept best-effort[39m
+     [38;5;246mFire while open and catch up on app open, plus Periodic Background Sync where the browser supports it. No backend.
+[39m     [38;5;246mKeeps sub-project 1 scoped as designed.[39m
+  [38;5;246m2.[39m Add a server after all
+     [38;5;246mReal Web Push with a backend, so notifications reach you reliably when the app is closed. Pulls backend, auth, and
+[39m     [38;5;246mhosting into scope now — and effectively moves you to the multi-user stack early.[39m
+  [38;5;246m3.[39m Drop to in-app only
+     [38;5;246mSkip the service worker entirely; just the inbox and badge when the page is open. Honest about the constraint [39m
+     [38;5;246mrather than implying delivery it can't guarantee. Least work.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

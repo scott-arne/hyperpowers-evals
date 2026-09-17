@@ -1,0 +1,40 @@
+  [1mNew module: [38;5;153msession.js[0m (ES module, browser). The whole identity layer, three exported functions:
+
+  - [38;5;153msaveSession({ userId, username, expiresIn })[39m — writes the record, stamping absolute [38;5;153missuedAt[39m/[38;5;153mexpiresAt[39m.
+  - [38;5;153mgetSession()[39m — reads localStorage, validates, returns the record or [38;5;153mnull[39m.
+  - [38;5;153mclearSession()[39m — removes the key. This is the logout path the storage choice obligates us to build.
+
+  localStorage is the source of truth; nothing caches it in memory.
+
+  [1mStored record[0m, under a single key [38;5;153mauth.session[39m, JSON:
+
+  { [36m"v"[39m: [32m1[39m, [36m"userId"[39m: [31m"usr_3f9c2a"[39m, [36m"username"[39m: [31m"alice"[39m, [36m"issuedAt"[39m: [32m1789000000000[39m, [36m"expiresAt"[39m: [32m1789043200000[39m }
+
+  The [38;5;153mv[39m field costs nothing now and is what lets you change this shape later without mis-reading old records left in
+  people's browsers — which, with localStorage, will genuinely still be there months from now.
+
+  [1mLogin response contract[0m — the shape the stub returns today and the real endpoint must return tomorrow:
+
+  { [36m"success"[39m: [34mtrue[39m, [36m"userId"[39m: [31m"usr_3f9c2a"[39m, [36m"username"[39m: [31m"alice"[39m, [36m"expiresIn"[39m: [32m43200[39m }
+
+  with [38;5;153m{ "success": false, "error": "..." }[39m on failure. Two notes on it. [38;5;153mexpiresIn[39m is seconds and server-supplied, so
+  the session lifetime is the server's call rather than a constant baked into the client — I'd default the stub to 43200
+  (12h). And the stub should derive its fake [38;5;153muserId[39m deterministically from the username rather than using a random
+  UUID, so logging in twice as the same person yields the same ID; that's how the real thing will behave, and a
+  random-per-login ID would hide bugs in anything that compares IDs.
+
+  [1mChanged files:[0m [38;5;153mapp.js[39m (becomes a module, [38;5;153mlogin()[39m returns the userId, handler persists it, logout wired), [38;5;153mindex.html[39m
+  ([38;5;153m<script type="module">[39m, plus a logout control — currently there is none anywhere).
+
+  [1mOne scope boundary I want explicit:[0m this delivers the identity layer, which makes "track who logged in" [3mpossible[0m. It
+  does not emit analytics or tracking events anywhere — there's no telemetry in this repo to hook into. If you want an
+  actual tracking call, say so and I'll fold it in; otherwise the spec states it as out of scope.
+
+  Does that look right so far?
+
+[38;5;246m✻[39m [38;5;246mChurned for 4m 0s · done 7:39 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

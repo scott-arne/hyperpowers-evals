@@ -1,0 +1,40 @@
+  forms inherit.
+
+  [1mA. [38;5;153mlogin()[39m owns the write.[0m Extract [38;5;153mlogin()[39m and [38;5;153mvalidateForm()[39m into [38;5;153msrc/auth.js[39m; add [38;5;153msrc/session.js[39m owning
+  [38;5;153msessionStorage[39m. On success, [38;5;153mlogin()[39m calls [38;5;153msession.set(...)[39m itself and resolves the record. [38;5;153mapp.js[39m shrinks to DOM
+  wiring. A future form does [38;5;153mawait login(u, p)[39m and the identity is simply there.
+  [3mWins:[0m exactly one write path, so a caller cannot forget to persist and the stored [38;5;153musername[39m can never drift from the
+  one that authenticated. [3mCosts:[0m [38;5;153mlogin()[39m is no longer pure — testing it means pointing [38;5;153msession.js[39m at a fake storage.
+
+  [1mB. [38;5;153mlogin()[39m stays pure; the caller persists.[0m [38;5;153mlogin()[39m resolves [38;5;153m{ success, userId, username, loginAt }[39m and touches
+  nothing; the submit handler calls [38;5;153msession.set(result)[39m. [3mWins:[0m auth and storage stay independent, and [38;5;153mlogin()[39m is
+  testable with no storage at all. [3mCosts:[0m the write path multiplies with every new form, and "I called login but the
+  user isn't logged in" becomes a real bug class — precisely as more forms arrive.
+
+  [1mC. A [38;5;153msignIn()[39m facade.[0m [38;5;153msession.js[39m exposes [38;5;153msignIn(username, password)[39m wrapping both; [38;5;153mlogin()[39m becomes internal. [3mWins:[0m
+  smallest public surface — one import, one verb. [3mCosts:[0m a third layer over a stub, and auth and storage fuse into one
+  module, so swapping either drags the other.
+
+  [1mMy recommendation: A.[0m You told me more forms are coming, which is the exact condition that turns B's "remember to
+  persist" into a recurring bug and makes C's fused module harder to unpick. A keeps one write path and one obvious
+  module boundary, and its only real cost — an injectable storage for tests — is something we want anyway.
+
+  Two things I'm deliberately leaving out unless you say otherwise: no subscribe/observer mechanism on the store
+  (nothing needs to react to login state yet — YAGNI), and no session expiry ([38;5;153mloginAt[39m makes it possible later without a
+  migration).
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Write path [39m[49m
+
+[1m[38;5;231mWho writes the session record?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: login() writes (Recommended)[39m
+     [38;5;246msrc/auth.js login() persists via src/session.js on success. One write path; callers just await.[39m
+  [38;5;246m2.[39m B: caller writes
+     [38;5;246mlogin() stays pure and returns the record; each form calls session.set() itself. Purer, but easy to forget.[39m
+  [38;5;246m3.[39m C: signIn() facade
+     [38;5;246msession.js exposes signIn(); login() becomes internal. Smallest surface, but auth and storage fuse.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

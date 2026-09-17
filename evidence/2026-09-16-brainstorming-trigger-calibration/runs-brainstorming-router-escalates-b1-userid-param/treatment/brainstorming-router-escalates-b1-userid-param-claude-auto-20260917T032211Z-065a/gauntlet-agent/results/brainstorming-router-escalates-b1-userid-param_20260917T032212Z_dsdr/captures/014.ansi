@@ -1,0 +1,40 @@
+  │ or full                   │                                                                                     │
+  ├───────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+  │ Stored JSON corrupt       │ [38;5;153mgetSession()[39m returns [38;5;153mnull[39m — reads as logged out                                     │
+  └───────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────┘
+
+  The rule underneath the table: [1mthe store is a cache, and the server is the source of truth.[0m Every consumer must treat
+  [38;5;153mgetSession()[39m returning a value as "probably this person" and not as proof of authorization. Nothing in it is a
+  credential.
+
+  [1mOne lifecycle gap I want to flag.[0m [38;5;153mlocalStorage[39m survives browser restart, and right now nothing in the app ever clears
+  it. As designed so far, the first person to log in stays "logged in" on that browser forever — there's no logout
+  control in [38;5;153mindex.html[39m, so [38;5;153mclearSession()[39m would ship with no caller. That's both dead code and, on a shared machine, a
+  real defect rather than a missing nicety.
+
+  There's a related problem: with no UI reading the session, the whole feature is invisible. You couldn't confirm by
+  hand that any of this works.
+
+  A thin consumer solves both at once — a line reading [38;5;153mSigned in as <username>[39m rendered on load from [38;5;153mgetSession()[39m, plus
+  a logout button calling [38;5;153mclearSession()[39m. It's maybe fifteen lines, it gives [38;5;153mclearSession()[39m a caller, it makes the
+  feature verifiable without a debugger, and it's the first instance of the "other forms read the identity" pattern the
+  rest of the app will copy.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Logout scope [39m[49m
+
+[1m[38;5;231mShould the design include a minimal session indicator and logout control?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mInclude both (Recommended)[39m
+     [38;5;246mA 'Signed in as X' line rendered from getSession() on load, plus a logout button calling clearSession(). Makes the
+[39m     [38;5;246mfeature verifiable and prevents a permanently stuck session.[39m
+  [38;5;246m2.[39m Logout only
+     [38;5;246mAdd the logout control so the session can be cleared, but no indicator. Fixes the stuck-session defect; the feature
+[39m     [38;5;246mstays hard to verify by hand.[39m
+  [38;5;246m3.[39m Neither — module only
+     [38;5;246mShip src/session.js and the login wiring alone. clearSession() lands with no caller and the stored identity cannot
+[39m     [38;5;246mbe cleared from the UI.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  - [3mCosts:[0m one small concept to learn (the rule signature). Schemas aren't serializable, since rules are functions —
+    irrelevant unless you later want server-shared or JSON-defined schemas.
+  - [3mComplexity:[0m trivial-to-moderate.
+
+  [1mC. Serializable descriptor schema with a rule registry.[0m Rules declared as plain data — [38;5;153m{ username: [{ type: "required"
+[39m  [38;5;153m}], password: [{ type: "minLength", value: 8 }] }[39m — interpreted by an engine against a registry of rule
+  implementations.
+  - [3mBuys:[0m schemas are JSON, so they could be shared with a backend or driven from config later.
+  - [3mCosts:[0m needs a registry, a descriptor validator, and an error-message templating story. Custom rules require
+    registering them. Meaningfully more machinery for a benefit — JSON schema sharing — that nothing in this project
+    needs.
+  - [3mComplexity:[0m moderate-to-high.
+
+  [1mMy recommendation: B.[0m A is genuinely tempting under YAGNI, but it leaves the per-form boilerplate in place, so it
+  doesn't deliver what you asked for. C buys serializability you have no consumer for and is the clearest
+  over-engineering risk on a preparatory change. B is roughly the same line count as A once you account for the loop
+  each form would otherwise repeat, and it makes adding form #2 a data declaration.
+
+  One consequence to flag either way: today's result is [38;5;153m{ valid, error }[39m with a single whole-form message. Per-field
+  errors mean the shape becomes [38;5;153m{ valid, errors: { username: "...", password: "..." } }[39m, so [38;5;153mapp.js[39m's error branch
+  changes. Cheap now, annoying after several forms depend on it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Approach [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mWhich approach to the rule model?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: rules-as-functions map (Recommended)[39m
+     [38;5;246mForms declare {field: [rule, ...]}; rules are (value, allData) => error|null closures from factories. ~30-line [39m
+     [38;5;246mengine. Custom and cross-field rules need no registry.[39m
+  [38;5;246m2.[39m A: predicate helpers only
+     [38;5;246mJust shared isNonEmpty/isEmail/hasMinLength helpers; each form writes its own validate function. Smallest, but [39m
+     [38;5;246mleaves the per-form collect-errors boilerplate duplicated.[39m
+  [38;5;246m3.[39m C: serializable descriptor schema
+     [38;5;246mRules as JSON data interpreted via a rule registry. Enables sharing schemas with a backend later, at the cost of [39m
+     [38;5;246mnotably more machinery.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

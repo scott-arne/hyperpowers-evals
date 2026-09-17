@@ -1,0 +1,40 @@
+  [1mClassification: bounded[0m — the login flow already exists here and this is a one-file change, so I'll present a short
+  design in chat rather than write a spec. Say the word if you want the heavier treatment.
+
+  One thing blocks me from just doing it: [1mthere is no [38;5;153muserId[39m anywhere in this repo.[0m The form collects only [38;5;153musername[39m and
+  [38;5;153mpassword[39m ([38;5;153mapp.js:19-20[39m), and [38;5;153mlogin()[39m is a stub that fabricates its response. So "add a userId parameter" needs a
+  source for the value, and the choices differ in what you're stuck with afterward:
+
+  - [1mClient-generated attempt ID[0m ([38;5;153mcrypto.randomUUID()[39m at the call site) — buys you a correlation ID to tie a login
+    attempt to later requests, costs nothing on the backend, but it does [3mnot[0m identify a person; it's per-attempt, not
+    per-user. Cheap to change later.
+  - [1mCaller-supplied real user identifier[0m — actually identifies who logged in, but nothing in this repo produces one
+    pre-authentication. You'd be committing to a new identity source (page context, tenant config, or a lookup) that
+    doesn't exist yet. That's a new subsystem, and it would re-classify this as architectural.
+  - [1mNo new parameter; track on the existing [38;5;153musername[0m — [38;5;153musername[39m already answers "who logged in," so the tracking goes
+    around the call rather than into its signature. Buys you the stated goal with no interface change; costs you nothing
+    except the parameter you asked for.
+
+  Worth flagging either way: [38;5;153mlogin()[39m currently [38;5;153mconsole.log[39ms the identity ([38;5;153mapp.js:5[39m), so whatever identifier we add lands
+  in browser console logs. If it's PII, that's a data-handling decision, not a formatting one.
+
+  My recommendation is the attempt ID [3mif[0m what you actually want is correlating a login to downstream activity, and
+  option 3 if you just want a record of who logged in — but you know which of those it is and I don't.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[2m│[0m [1m[38;5;231mWhere should the userId value come from, given the form only collects username and password?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mClient-generated attempt ID[39m
+     [38;5;246mlogin(username, password, userId) where the call site passes crypto.randomUUID(). Correlates one login attempt to [39m
+     [38;5;246mlater requests. Not a durable person identifier.[39m
+  [38;5;246m2.[39m Real identifier from elsewhere
+     [38;5;246mA genuine user identity supplied by the caller. Nothing in this repo produces one pre-auth, so this adds an [39m
+     [38;5;246midentity source and re-classifies the task as architectural.[39m
+  [38;5;246m3.[39m No parameter; use username
+     [38;5;246musername already identifies who logged in. Add the tracking around the existing call and leave the signature alone.
+[39m  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

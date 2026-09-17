@@ -1,0 +1,40 @@
+  [3mCosts:[0m no single place that knows the set of preferences or their defaults, so defaults get restated at each call site
+  and drift. No versioning story — if the shape of a value changes later you have no marker to migrate from.
+  Unnamespaced keys collide with anything else on the origin.
+
+  [1mC. Injectable-storage core in [38;5;153msrc/[39m, thin browser adapter[0m
+  The logic goes in [38;5;153msrc/preferences.js[39m as CommonJS (matching [38;5;153msrc/utils.js[39m), taking a storage object as a parameter so it
+  defaults to [38;5;153mlocalStorage[39m in the browser and accepts a fake in tests. A small [38;5;153mprefs.js[39m adapter wires it to the page.
+  [3mBuys:[0m the only option that is genuinely unit-testable today, with no test-runner or DOM-shim install — Node's built-in
+  [38;5;153mnode:test[39m can drive the core against a plain object. Clean boundary.
+  [3mCosts:[0m two files and an indirection for what is currently ~40 lines of logic; and it couples the browser app to [38;5;153msrc/[39m,
+  which today is an unrelated CLI with nothing crossing the boundary in either direction. That coupling is the real
+  price — it makes a deliberate structural claim about the repo that doesn't exist yet.
+
+  [1mI recommend A.[0m It matches the code that's actually here, and B's cost is the one that bites: defaults scattered across
+  call sites is exactly the bug you get six months later when a preference is read somewhere that forgot the fallback.
+  C is tempting for the testability, but inventing a shared-core boundary between two currently-unrelated trees is a
+  bigger structural commitment than two preferences justify — and A's logic can be extracted into C later if [38;5;153msrc/[39m and
+  the browser app ever genuinely converge.
+
+  One constraint that applies to all three and shapes the design: [1mtheme has to be applied before first paint[0m, or the
+  page renders light and flips to dark. [38;5;153mapp.js[39m loads at the end of [38;5;153m<body>[39m, so the theme read cannot live there — it
+  needs a small script in [38;5;153m<head>[39m.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: global + JSON blob (Recommended)[39m
+     [38;5;246mprefs.js classic script, one namespaced localStorage key holding a JSON object, defaults merged on read. Matches [39m
+     [38;5;246mexisting style.[39m
+  [38;5;246m2.[39m B: flat per-setting keys
+     [38;5;246mDirect localStorage calls per setting, no wrapper. Least code; defaults drift across call sites, no versioning.[39m
+  [38;5;246m3.[39m C: injectable-storage core in src/
+     [38;5;246mCommonJS core with injected storage + browser adapter. Unit-testable in Node today; couples the browser app to the
+[39m     [38;5;246munrelated src/ tree.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

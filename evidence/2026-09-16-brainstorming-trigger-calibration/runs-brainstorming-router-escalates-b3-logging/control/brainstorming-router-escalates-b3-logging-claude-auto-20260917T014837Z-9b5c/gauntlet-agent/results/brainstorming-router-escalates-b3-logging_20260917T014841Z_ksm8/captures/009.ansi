@@ -1,0 +1,40 @@
+  instrumenting is a login form, and the current code already logs the username on every attempt. Whatever policy we
+  pick becomes the interface: a remote sink added later inherits it, and by then the call sites are written.
+
+  - [1mDeny-list scrub in the logger[0m — the logger walks the context object and replaces values under sensitive keys
+    ([38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mauthorization[39m, [38;5;153mapiKey[39m) with [38;5;153m[redacted][39m, recursively. Buys you safety against the realistic
+    mistake, which is someone spreading a whole [38;5;153mformData[39m object into a log call. Costs: it fails open on a sensitive
+    key nobody thought to name.
+  - [1mAllow-list[0m — the logger serializes only explicitly permitted fields and drops everything else. Buys you a policy
+    that fails closed. Costs real friction: every new field needs registering, and the usual outcome is people logging
+    less than they should, or routing around the logger.
+  - [1mCall-site discipline only[0m — no central enforcement, just a rule that you don't log secrets. Buys simplicity, costs
+    the guarantee. One careless spread puts a password in the console, and later in whatever sink you add.
+
+  Separate from that, [38;5;153musername[39m is arguably PII in its own right. Console-only, that's low stakes — it's already in the
+  user's own console. If logs ever ship remotely it stops being low stakes.
+
+  Cheap to change later: adding keys to the deny-list. Expensive: switching allow-list ↔ deny-list once call sites
+  exist, since it changes what every call site may pass.
+
+  [1mMy recommendation: deny-list scrub, username logged in full.[0m It catches the failure mode this codebase actually has,
+  without the friction that makes people bypass the logger. Console-only makes full usernames fine for now, and the sink
+  seam is the right place to add stricter handling if logs ever leave the machine.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mHow should the logger handle sensitive values like the password field?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDeny-list scrub (Recommended)[39m
+     [38;5;246mLogger recursively replaces values under known sensitive keys with [redacted]. Low friction, catches the [39m
+     [38;5;246mformData-spread mistake, fails open on unknown keys.[39m
+  [38;5;246m2.[39m Allow-list only
+     [38;5;246mLogger serializes only registered fields and drops the rest. Fails closed, but every new field needs registering [39m
+     [38;5;246mand people may route around it.[39m
+  [38;5;246m3.[39m Call-site discipline
+     [38;5;246mNo central enforcement. Simplest logger; relies on reviewers catching any secret that gets logged.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

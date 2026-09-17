@@ -1,0 +1,40 @@
+
+  All three assume the decisions you've made: required + minLength/maxLength/email/pattern, a [38;5;153m{valid, errors: {field: [39m
+  [38;5;153mmessage}}[39m result, and [38;5;153msrc/validation.js[39m as a browser global with a CommonJS footer.
+
+  [1mThe fork:[0m how a form [3mdeclares[0m its rules — that's the thing every future form is written against and the expensive part
+  to change later.
+
+  - [1mA. Plain-data schema[0m — a form passes an object literal: [38;5;153m{username: {required: true, minLength: 3}, email: {required:
+[39m    [38;5;153mtrue, email: true}}[39m. The validator holds a fixed table of rule names. Cheapest to read, and the schema is
+    serializable. Cost: a rule the table doesn't have means editing the library, and one-off custom logic needs an
+    escape hatch bolted on.
+  - [1mB. Rule functions (recommended)[0m — the library ships factories and a form composes them: [38;5;153m{username: [required(), [39m
+    [38;5;153mminLength(3)], email: [required(), email()]}[39m. Each rule is just [38;5;153m(value) => null | "message"[39m, and the core is a
+    ~20-line loop that returns the first failure per field. Common usage reads about the same as A, custom rules are
+    plain functions needing no library change, and per-call message overrides ([38;5;153mrequired("Pick a username")[39m) come free.
+  - [1mC. Rules declared in HTML[0m — [38;5;153m<input data-rules="required|minLength:3">[39m, with one generic submit handler scanning the
+    form. Zero per-form JS, config sits next to the markup. Cost: stringly-typed rules with a parser to maintain, and it
+    pulls validation back into the DOM, which works against the plain-data/Node-testable decision you just made.
+
+  [1mRecommendation: B.[0m It covers your chosen rule set today with a core small enough to read in one sitting, and it's the
+  only one of the three where adding a rule the library never anticipated costs nothing. A is a fine fallback if you'd
+  rather forms carry no imports at all; C I'd rule out here.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Rule API [39m[49m
+
+[1m[38;5;231mWhich rule-declaration approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB. Rule functions (Recommended)[39m
+     [38;5;246mForms compose shipped factories: [required(), minLength(3)]. Tiny core, custom rules need no library change, [39m
+     [38;5;246mper-rule message overrides.[39m
+  [38;5;246m2.[39m A. Plain-data schema
+     [38;5;246mForms pass {required: true, minLength: 3}. Most readable and serializable, but new rule types mean editing the [39m
+     [38;5;246mlibrary.[39m
+  [38;5;246m3.[39m C. Rules in HTML attributes
+     [38;5;246mdata-rules="required|minLength:3" scanned from the DOM. No per-form JS, but stringly-typed and DOM-coupled.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

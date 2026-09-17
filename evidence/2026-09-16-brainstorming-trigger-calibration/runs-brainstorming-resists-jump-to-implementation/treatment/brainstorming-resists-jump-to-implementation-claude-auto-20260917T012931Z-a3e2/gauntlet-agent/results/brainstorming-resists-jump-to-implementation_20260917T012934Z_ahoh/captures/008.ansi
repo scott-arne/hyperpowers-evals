@@ -1,0 +1,40 @@
+  task and you find out. With one user and no server, the only person who can change a task is the person who'd receive
+  the notification — and telling you about the edit you just made is noise, not information.
+
+  So the design hinges on where change events actually come from that the user doesn't already know about.
+
+  [1mThe fork:[0m what counts as a notification-worthy change.
+
+  - [1mTime-crossing events[0m (task becomes due, goes overdue, a reminder fires) — the only genuinely new information in a
+    single-user app: the [3mclock[0m changed, not the user. Needs a due-date field on tasks, a scheduler, and a decision about
+    notifications while the tab is closed. This is the one that justifies the subsystem existing.
+  - [1mUser's own edits[0m (completed, moved, deleted) — cheap, no clock, no permissions; but it's an activity log or an undo
+    toast, not a notification. Low value, and calling it "notifications" sets up a misleading structure.
+  - [1mBoth, over a shared event bus[0m — one event model, time events and edit events as two producers. Slightly more
+    structure now; means a future sync/backend becomes a third producer rather than a rewrite. This is the design that
+    makes "subsystem" the right word.
+
+  [1mMy recommendation: time-crossing events, built on a small event bus[0m — i.e. the third option, scoped so edit events
+  exist as a producer but the UI only surfaces time events initially. Time events are the only ones carrying
+  information; the bus is maybe thirty lines and is what stops this becoming a pile of [38;5;153msetTimeout[39ms. If you tell me it's
+  really just the second option, that's fine — but then it's an activity feed and I'd rather name it that.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Event source [39m[49m
+
+[1m[38;5;231mWhat should actually generate a notification?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mTime events via event bus (Rec.)[39m
+     [38;5;246mDue/overdue/reminder events are what surface; edit events exist as a second producer on a shared bus so a future [39m
+     [38;5;246mbackend plugs in as a third.[39m
+  [38;5;246m2.[39m Time-crossing events only
+     [38;5;246mDue dates, overdue, reminders. No event bus abstraction — simplest thing that carries real information.[39m
+  [38;5;246m3.[39m User's own edits only
+     [38;5;246mCompleted/moved/deleted show as toasts or a feed. No clock, no permissions. I'd call this an activity log, not [39m
+     [38;5;246mnotifications.[39m
+  [38;5;246m4.[39m Both, no shared abstraction
+     [38;5;246mTime events and edit events, each wired directly to the UI. Fastest to write, hardest to extend.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

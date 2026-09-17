@@ -1,0 +1,40 @@
+  A single [38;5;153mlogger.js[39m declaring a catalog: each event name maps to the exact field names permitted for it ([38;5;153mlogin_attempt[39m
+  → [38;5;153moutcome[39m, [38;5;153mdurationMs[39m; [38;5;153mvalidation_failed[39m → [38;5;153mreason[39m). Call sites write [38;5;153mlogger.event("login_attempt", { outcome: [39m
+  [38;5;153m"success", durationMs: 42 })[39m. The logger looks up the event, keeps only catalog-declared fields, drops the rest
+  silently, then attaches level, ISO timestamp, session ID, page URL, and buffers it. Free-text messages aren't part of
+  the call signature at all.
+  [3mBuys:[0m the deny-by-default guarantee is structural — there is no code path that carries an undeclared value to the
+  collector, including one added six months from now. Unknown events are dropped too. It also makes the wire format
+  self-describing, which the collector will want.
+  [3mCosts:[0m every new log line needs a catalog entry, which is friction by design. Slightly unusual API for anyone
+  expecting [38;5;153mlogger.info(...)[39m.
+
+  [1mB. Leveled logger, allowlist at the transport boundary[0m
+  Conventional [38;5;153mlogger.info / warn / error(message, fields)[39m, with a single [38;5;153msanitize()[39m applied to [38;5;153mfields[39m just before
+  enqueue against one global list of allowed field names.
+  [3mBuys:[0m familiar, less ceremony, faster to write, no catalog upkeep.
+  [3mCosts:[0m weaker in exactly the way that matters here. The allowlist is global rather than per-event, so any call site
+  can attach any allowed field in any context, and the free-text [38;5;153mmessage[39m argument is an unguarded channel —
+  [38;5;153mlogger.error(\[39mlogin failed for ${username}`)` sails straight through a field allowlist. Given that avoiding precisely
+  that leak is why you chose deny-by-default, this partly undoes the decision you just made.
+
+  [1mC. Console interception[0m — [3mdiscarded, but worth naming so it's not re-proposed:[0m wrapping [38;5;153mconsole.log/error[39m to capture
+  existing calls needs zero call-site changes, but its whole appeal is capturing calls verbatim — including the current
+  [38;5;153mconsole.log("Logging in:", username)[39m. It is structurally incompatible with an allowlist. Rewriting the call sites to
+  make it safe removes its only advantage.
+
+  [1mMy recommendation is A.[0m You picked deny-by-default for a form that will grow, and A is the only one of these where
+  that policy is enforced by the structure rather than by everyone remembering it. The catalog is maybe fifteen lines at
+  this size.
+
+  Two things I'd deliberately leave out under YAGNI, unless you say otherwise: persisting unsent logs to [38;5;153mlocalStorage[39m
+  across page loads, and sampling/rate-limiting. Both are real needs at volume and neither is a need at this app's size;
+  both are additive later.
+
+[38;5;174m✢[39m [38;5;174mI[38;5;216moni[38;5;174mzing… [38;5;246m(3m 19s · ↓[39m [38;5;246m11.4k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

@@ -1,0 +1,40 @@
+  │ Stored JSON unparseable            │ Treated as empty; every key reads its default; next [38;5;153mset[39m overwrites with    │
+  │                                    │ clean JSON                                                                 │
+  ├────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤
+  │ A stored value fails its validator │ That key alone reads its default; other keys unaffected                    │
+  ├────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153msetItem[39m throws mid-session (quota) │ Caught; the write is dropped and reported via [38;5;153mconsole.warn[39m; in-memory      │
+  │                                    │ value still reflects the change so the UI stays consistent                 │
+  └────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────┘
+
+  Unknown-key [38;5;153mget[39m/[38;5;153mset[39m is the deliberate exception: it throws, because that's a programming error, not a runtime
+  condition.
+
+  [1mTesting.[0m [38;5;153mpackage.json[39m gains [38;5;153m"scripts": { "test": "node --test" }[39m — no dependencies. Tests live in
+  [38;5;153mtest/preferences.test.js[39m and run against an injected fake backend, so no DOM or browser is needed:
+
+  - defaults returned when storage is empty
+  - [38;5;153mset[39m then [38;5;153mget[39m round-trips each type (string, boolean, enum)
+  - values survive a fresh [38;5;153mcreatePreferences[39m over the same backend — this is the actual "persists across sessions"
+    assertion
+  - corrupt JSON in the backend → defaults, and a subsequent [38;5;153mset[39m repairs the blob
+  - an out-of-range value ([38;5;153mtheme: "purple"[39m) → default for that key only, others intact
+  - unknown key throws on both [38;5;153mget[39m and [38;5;153mset[39m
+  - a backend whose [38;5;153msetItem[39m throws → no exception escapes, in-memory value still updated
+  - [38;5;153mreset(key)[39m and [38;5;153mreset()[39m restore defaults
+  - the serialized blob never contains a [38;5;153mpassword[39m key
+
+  Not covered by tests: the DOM wiring in [38;5;153mapp.js[39m and the real [38;5;153mlocalStorage[39m probe. Testing those means a DOM shim or a
+  browser runner, which is beyond the zero-dependency tooling you picked — I'll verify them by loading the page manually
+  and report what I see.
+
+  If this looks right, I'll write it up as a spec in
+  [38;5;153mdocs/hyperpowers/specs/2026-09-16-user-preferences-storage-design.md[39m (uncommitted), run it through the review gates,
+  and hand it to you to read before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mWorked for 20s · done 6:48 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

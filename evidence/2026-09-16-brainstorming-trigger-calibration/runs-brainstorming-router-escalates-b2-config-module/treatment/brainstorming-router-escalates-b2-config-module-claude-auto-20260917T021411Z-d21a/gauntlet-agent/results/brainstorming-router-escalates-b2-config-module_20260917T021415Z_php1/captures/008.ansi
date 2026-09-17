@@ -1,0 +1,40 @@
+
+[38;5;239m[48;5;237m❯ [38;5;231mRuntime detection by hostname sounds right. Yes, it should work across the app, and other parts will need config [39m
+  [38;5;231mlater.[39m
+
+[38;5;231m[49m⏺[39m Good — that's locked in: hostname-based selection, and the module is a general config surface (named keys in a
+  settings object), not a single exported URL. I'll design it so adding a second setting later is editing a table, not
+  reshaping the interface.
+
+  Next fork, and it's forced by "across the app."
+
+  [1mThe fork:[0m this repo has two runtimes that can't currently share a file. [38;5;153mapp.js[39m is a bare browser script — no module
+  system at all, loaded by [38;5;153m<script src>[39m, everything a global. [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are CommonJS,
+  [38;5;153mrequire[39m/[38;5;153mmodule.exports[39m, Node-only. A settings module has to pick one, and that choice decides whether "across the app"
+  includes the [38;5;153msrc/[39m tree or stops at the browser page.
+
+  - [1mBare script + global[0m — [38;5;153msettings.js[39m sets [38;5;153mwindow.APP_SETTINGS[39m; [38;5;153mindex.html[39m loads it before [38;5;153mapp.js[39m. Buys: works right
+    now, zero tooling, nothing else changes, still opens fine from [38;5;153mfile://[39m. Costs: [38;5;153msrc/[39m can't consume it (no [38;5;153mwindow[39m, no
+    exports), so "across the app" means the browser half only. Also puts config on a mutable global. Cheap to migrate
+    away from later — one file, one consumer.
+  - [1mES modules everywhere[0m — [38;5;153msettings.js[39m uses [38;5;153mexport[39m; [38;5;153mindex.html[39m becomes [38;5;153m<script type="module">[39m; [38;5;153msrc/[39m converts from
+    [38;5;153mrequire[39m to [38;5;153mimport[39m and [38;5;153mpackage.json[39m gets [38;5;153m"type": "module"[39m. Buys: one module system, a settings file both halves
+    genuinely share, and the direction the ecosystem already went. Costs: converts two files that have nothing to do
+    with your request, and ES modules are blocked over [38;5;153mfile://[39m by CORS — you'd need [38;5;153mnpx serve[39m to open the page in dev,
+    which you don't need today. Not easily undone.
+  - [1mDual export wrapper[0m — [38;5;153msettings.js[39m detects [38;5;153mmodule.exports[39m vs [38;5;153mwindow[39m and serves both. Buys: both runtimes, no
+    conversion of existing files. Costs: boilerplate on every shared module, and a pattern the ecosystem abandoned
+    deliberately.
+
+  [1mMy recommendation depends on something I should just ask rather than assume:[0m [38;5;153msrc/[39m today is a hello-world
+  ([38;5;153mgreet('world')[39m) with no connection to the login page — no imports between them, separate entry points. If it's
+  scaffolding you don't intend to grow, ES modules buys you a conversion you'll never cash in, and I'd take the bare
+  script + global. If [38;5;153msrc/[39m is where the real application is actually going to live, ES modules is worth its cost now,
+  because doing it after there are ten files is much worse than after three.
+
+[38;5;246m✻[39m [38;5;246mWorked for 25s · done 7:17 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

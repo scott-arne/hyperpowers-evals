@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Codex was available (preflight [38;5;153mok[39m), but the call came back empty — no usable approaches. Per the gate that's a
+  no-retry degrade, so the shortlist below is mine alone, with no Codex provenance to tag.
+
+  Three shapes for how a form declares its rules:
+
+  - [1mA. Declarative rule descriptors[0m — rules are plain data: [38;5;153m{ username: { required: true, minLength: 3 } }[39m. The
+    validator holds a table of known rule kinds and their messages. Buys: rules are readable, serializable, uniform.
+    Costs: every new kind of check means editing the validator's dispatch table, and anything conditional or cross-field
+    doesn't fit the shape.
+  - [1mB. Predicate functions per field[0m — [38;5;153m{ username: [required(), minLength(3)] }[39m, where each entry is [38;5;153m(value, values) =>
+[39m    [38;5;153mstring | null[39m and the built-ins are small factories. Buys: the core is ~15 lines and never changes; a custom or
+    cross-field check ("passwords match") is just a function, no engine change. Costs: rules are code rather than data,
+    so they can't be serialized or driven from config.
+  - [1mC. One hand-written validator per form[0m — [38;5;153mvalidateLogin(values)[39m composed from a few shared helpers. Buys: least
+    machinery, nothing to learn. Costs: it's the current code with better helpers — "reusable" only in the sense that
+    the helpers are shared; each form still writes its own control flow.
+
+  [1mMy recommendation: B.[0m It's the only one where adding a rule type doesn't mean modifying the shared module, which is
+  what makes it hold up as more forms arrive. A is prettier on paper but its rule table becomes the thing everyone
+  edits, and C doesn't really deliver the reuse you asked for.
+
+  Both A and B return the same thing: [38;5;153m{ valid, errors }[39m with [38;5;153merrors[39m keyed by field, so switching later is contained.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Rule format [39m[49m
+
+[1m[38;5;231mWhich rule-declaration shape do you want?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: predicate functions (Recommended)[39m
+     [38;5;246mRules are arrays of (value, values) => string | null. Tiny fixed core, custom and cross-field rules need no change
+[39m     [38;5;246mto the shared module. Rules are code, not data.[39m
+  [38;5;246m2.[39m A: declarative descriptors
+     [38;5;246mRules are plain objects like { required: true, minLength: 3 }. Most readable and serializable, but new rule kinds [39m
+     [38;5;246mrequire editing the validator itself.[39m
+  [38;5;246m3.[39m C: one validator per form
+     [38;5;246mEach form hand-writes its validator from shared helpers. Least machinery, but the least actual reuse.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  [3mComplexity: moderate.[0m
+
+  [1mC. Immediate per-record POST[0m — no buffer at all; each call builds a record and fires [38;5;153mfetch(..., {keepalive: true})[39m
+  right away.
+  [3mWins when[0m you want the smallest possible amount of code and there's very little log volume. [3mCosts:[0m one request per log
+  line. With breadcrumbs enabled that's a dozen-plus requests per login attempt, which is punishing for the client and
+  for whatever receives it. Failures silently drop.
+  [3mComplexity: trivial.[0m
+
+  [1mMy recommendation: A, the black-box recorder.[0m You asked for this specifically to debug production issues, and A puts
+  essentially all of its cost on the sessions that actually broke. B is the better general-purpose telemetry pipeline,
+  but you'd be paying for a lot of uninteresting successful logins to get there, and you didn't ask for analytics. C I'd
+  only take if you wanted this done in twenty lines and accepted that it won't scale past a trickle.
+
+  The denominator gap is A's one real weakness, and it's cheap to close if you care: one tiny session-summary record on
+  [38;5;153mpagehide[39m (correlation ID, attempt count, outcome counts — no breadcrumbs) gives you rates without shipping the
+  healthy-session detail. I'd include it.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which logging architecture should the spec be built around? → A: Black-box recorder (Recommended)[39m
+     [38;5;246m· Include the session-summary record that closes A's denominator gap? → Yes, include it (Recommended)[39m
+
+[38;5;231m⏺[39m Good. Design, part one — structure and data flow.
+
+  [1mArchitecture[0m
+
+  One new ES module, [38;5;153mlogger.js[39m, with a deliberately dependency-free core. The core knows nothing about the browser: no
+  [38;5;153mwindow[39m, no [38;5;153mfetch[39m, no [38;5;153mDate.now[39m, no [38;5;153mcrypto[39m. Those arrive through an init config ([38;5;153mtransport[39m, [38;5;153mnow[39m, [38;5;153midGen[39m). A separate
+  exported [38;5;153minstallBrowserHandlers(logger)[39m does the wiring to real browser globals.
+
+  That split is the whole reason the thing is testable. With no bundler and no DOM in the test environment, a logger
+  that reaches for [38;5;153mwindow[39m directly can only be tested in a browser — which means, in practice, not tested. Injecting the
+  seams costs a few lines and makes every rule below verifiable in plain Node.
+
+  This does mean [38;5;153mindex.html[39m moves to [38;5;153m<script type="module" src="app.js">[39m and [38;5;153mapp.js[39m imports the logger. Alternative was
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

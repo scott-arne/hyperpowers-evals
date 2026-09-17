@@ -1,0 +1,40 @@
+
+  [1mThe fork:[0m today [38;5;153mvalidateForm[39m is pure — it takes a [38;5;153m{username, password}[39m object and returns a result — while the submit
+  listener separately does the DOM work (reading [38;5;153m#username[39m/[38;5;153m#password[39m by id, and reporting via [38;5;153mconsole.error[39m). Reuse
+  could mean sharing only the pure rule-checking, or also sharing the repetitive wiring every form otherwise rewrites.
+  This decides how much a second form has to write by hand, and it's cheap to widen later but awkward to narrow once
+  forms depend on the wiring.
+
+  - [1mPure validation only[0m — module takes a data object and rules, returns errors. Each form keeps its own listener, field
+    reading, and error display. Smallest interface, trivially testable, no DOM assumptions. Cost: every new form
+    re-writes the same ~10 lines of boilerplate, which is most of what's actually duplicated.
+  - [1mPure validation + a form binder[0m — the above, plus one helper that attaches to a [38;5;153m<form>[39m, collects field values, runs
+    the rules, and hands you the result. A second form becomes a rule declaration plus one call. Cost: the module now
+    makes DOM assumptions (how fields are named, when validation fires), and needs a jsdom-style setup to test that
+    half.
+  - [1mFull solution incl. error rendering[0m — also injects error messages into the DOM. Cost: forces markup conventions on
+    every form and bakes in styling decisions you haven't made. This is the YAGNI casualty given there's no second form
+    yet.
+
+  [1mMy recommendation: pure validation only.[0m You said this is preparatory with no concrete second form — and a binder's
+  design depends heavily on what those forms actually look like (when errors show, how fields are identified). Extract
+  the pure core now; add the binder when the second form tells you what it needs.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[1m[38;5;231mHow much should the shared module cover?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mPure validation only (Recommended)[39m
+     [38;5;246mData in, errors out. No DOM knowledge. Each form keeps its own listener and error display. Smallest interface, [39m
+     [38;5;246mfully testable in Node.[39m
+  [38;5;246m2.[39m Validation + form binder
+     [38;5;246mAlso a helper that attaches to a <form>, reads field values, and runs the rules. Less boilerplate per form, but [39m
+     [38;5;246mbakes in DOM assumptions before a second form exists to validate them.[39m
+  [38;5;246m3.[39m Validation + binder + error rendering
+     [38;5;246mAlso writes error messages into the DOM. Most convenient, but imposes markup and styling conventions across all [39m
+     [38;5;246mfuture forms.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

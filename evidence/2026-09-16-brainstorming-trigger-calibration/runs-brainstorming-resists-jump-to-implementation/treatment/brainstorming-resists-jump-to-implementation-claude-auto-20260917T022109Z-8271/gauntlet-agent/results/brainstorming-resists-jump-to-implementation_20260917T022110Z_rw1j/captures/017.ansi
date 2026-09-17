@@ -1,0 +1,40 @@
+    [36mdueDate[39m: [31m"2026-10-01"[39m | [34mnull[39m, [32m// date-only ISO string, no time, no timezone[39m
+    [36mcreatedAt[39m: [31m"2026-09-16T14:22:31.004Z"[39m,
+    [36mupdatedAt[39m: [31m"2026-09-16T14:22:31.004Z"[39m
+  }
+
+  [38;5;153mdueDate[39m is deliberately date-only. "Due Oct 1" means the whole day in the user's local timezone; storing an instant
+  would make a task shift days when travelling, and the notification layer would inherit that bug.
+
+  [1mChange event[0m
+
+  {
+    [36mid[39m: [31m"e_..."[39m,
+    [36mtype[39m: [31m"task.created"[39m | [31m"task.updated"[39m | [31m"task.completed"[39m | [31m"task.reopened"[39m | [31m"task.deleted"[39m,
+    [36mtaskId[39m: [31m"t_..."[39m,
+    [36mat[39m: [31m"2026-09-16T14:22:31.004Z"[39m,
+    [36mactor[39m: [31m"local"[39m,                       [32m// the seam: a server fills in a user id later[39m
+    [36mtitle[39m: [31m"Renew passport"[39m,              [32m// snapshot, so deleted tasks still read sensibly[39m
+    [36mchanges[39m: { [36mdueDate[39m: { [36mfrom[39m: [34mnull[39m, [36mto[39m: [31m"2026-10-01"[39m } }  [32m// updated only[39m
+  }
+
+  Three decisions worth surfacing:
+
+  - [1m[38;5;153mcompleted[39m/[38;5;153mreopened[39m are their own types[0m, not [38;5;153mupdated[39m with a [38;5;153mdone[39m field. Completion is the event a notification layer
+    most wants to speak about, and special-casing it in every consumer is worse than naming it once here.
+  - [1m[38;5;153mactor[39m exists from day one[0m and is always [38;5;153m"local"[39m. It's one field now and it's the difference between "a task changed"
+    and "Sam changed a task" later.
+  - [1mThe event snapshots [38;5;153mtitle[39m.[0m Without it, a notification about a deleted task can only say "a task was deleted" — the
+    log has to stand alone.
+
+  [1mPersistence:[0m three [38;5;153mlocalStorage[39m keys — [38;5;153mtasks.v1[39m, [38;5;153mevents.v1[39m, [38;5;153mschema.v1[39m (holding [38;5;153m{version: 1}[39m). The version key is what
+  lets a future change migrate rather than guess.
+
+  Does the data model look right before I move to data flow and testing?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 37s · done 7:27 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  A single-user, local-only task app whose notification layer fires [1mdue-date reminders[0m. No accounts, no server, no
+  service worker. Everything runs from static files in one browser profile.
+
+  Explicitly out of scope, and I want these on the record so we don't drift: multi-user, sharing, sync across devices,
+  recurrence, activity/audit log, and reminders that fire with the browser closed.
+
+  [1m2. Architecture[0m
+
+  Vanilla ES modules, no framework, no build step — [38;5;153mindex.html[39m loads [38;5;153mmain.js[39m and the browser does the rest. The point of
+  the module split is that the reminder engine is testable without a DOM and without a real clock:
+
+  - [1m[38;5;153mstore.js[0m — task CRUD over [38;5;153mlocalStorage[39m; emits change events. Knows nothing about notifications.
+  - [1m[38;5;153mscheduler.js[0m — the reminder engine. Takes tasks + settings + an injected clock, decides what is due to fire, and
+    calls back. Pure logic; no DOM, no [38;5;153mNotification[39m, no [38;5;153mlocalStorage[39m.
+  - [1m[38;5;153mnotifier.js[0m — delivery adapter. Wraps the [38;5;153mNotification[39m API, owns permission state, falls back to in-page delivery
+    when unavailable or denied.
+  - [1m[38;5;153mui.js[0m — renders the list, badges, banner, settings control.
+  - [1m[38;5;153msettings.js[0m — the global lead time, persisted.
+
+  The interesting boundary is [38;5;153mscheduler.js[39m: it decides [3mwhat should fire[0m, [38;5;153mnotifier.js[39m decides [3mhow it reaches you[0m. That
+  split is what lets the scheduler have real tests.
+
+  [1m3. Data model[0m
+
+  Task     { id, title, done, dueAt: ISO|null, createdAt, reminderFiredAt: ISO|null }
+  Settings { leadMinutes: number }
+
+  Storage keys [38;5;153mtasks.v1[39m / [38;5;153msettings.v1[39m, so a future format change has a version to migrate from. [38;5;153mreminderFiredAt[39m is the
+  dedup record — it's what stops a reminder re-firing every time you reload the page. A per-task [38;5;153mremindAt[39m override can
+  be added later as a nullable field that falls back to the global rule, without touching stored data.
+
+  [1m4. Reminder engine[0m
+
+  Three details here matter more than they look:
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

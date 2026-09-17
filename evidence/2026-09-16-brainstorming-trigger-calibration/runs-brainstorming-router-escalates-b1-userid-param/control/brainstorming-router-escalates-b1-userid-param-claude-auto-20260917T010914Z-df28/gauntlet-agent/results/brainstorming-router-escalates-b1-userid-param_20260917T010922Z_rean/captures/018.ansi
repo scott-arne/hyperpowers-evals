@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Codex returned an empty payload. It's a stub build ([38;5;153mcodexVersion 0.0.0-stub[39m), so there are no independent approaches
+  to fold in — per the gate that's treated as an incomplete call: noted once, not retried, not blocking. Proceeding with
+  my own approaches only.
+
+  [1mApproaches for the store[0m (everything else is locked by your answers):
+
+  - [1mA — Accessor with a versioned record.[0m The module exposes [38;5;153mset()[39m, [38;5;153mget()[39m, [38;5;153mclear()[39m. It persists one JSON envelope under
+    a single [38;5;153msessionStorage[39m key: [38;5;153m{ v: 1, userId, username, loginAt }[39m. Anything unparseable or carrying an unknown [38;5;153mv[39m is
+    treated as "no user" and cleared, so a bad write can never wedge the app. The storage object is a constructor/init
+    argument defaulting to [38;5;153msessionStorage[39m, which is what makes it testable under [38;5;153mnode:test[39m. Moderate complexity.
+  - [1mB — Observable store.[0m A, plus [38;5;153msubscribe(fn)[39m so future forms re-render when identity changes. Buys reactivity; costs
+    listener lifecycle, teardown, and a bigger API surface to get right. It's only worth it if the later forms need to
+    [3mreact[0m to identity changing rather than read it when they submit. Moderate-to-high.
+  - [1mC — Bare key/value.[0m Write the [38;5;153muserId[39m string straight to a [38;5;153msessionStorage[39m key; no envelope, no module state, maybe no
+    module at all. Smallest possible change. But there's nowhere to put [38;5;153musername[39m or [38;5;153mloginAt[39m later without a migration
+    over data already in users' browsers, and no way to tell corrupt data from absent data. Trivial.
+
+  I recommend [1mA[0m. C is tempting given how small this app is, but you told me other forms will consume this later, and the
+  envelope is the cheap insurance that makes adding a field later a non-event rather than a migration. B's reactivity
+  is speculative — nothing in the app today re-renders on identity change, and [38;5;153msubscribe[39m is easy to add to A later
+  without touching the stored format.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Store shape [39m[49m
+
+[1m[38;5;231mWhich store architecture should the spec describe?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA — Accessor + versioned record (Recommended)[39m
+     [38;5;246mset/get/clear over a versioned JSON envelope in one sessionStorage key. Corrupt data treated as absent. Injectable
+[39m     [38;5;246mstorage for node:test.[39m
+  [38;5;246m2.[39m B — Observable store
+     [38;5;246mA plus subscribe() so future forms react to identity changes. Reactivity now, at the cost of listener lifecycle and
+[39m     [38;5;246ma wider API.[39m
+  [38;5;246m3.[39m C — Bare key/value
+     [38;5;246mPlain userId string under a sessionStorage key. Smallest change, but no room to grow and no corruption detection.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

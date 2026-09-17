@@ -1,0 +1,40 @@
+  [34mfunction[39m [33mlogin[39m(username, password, userId = [34mnull[39m) {
+    console.[33mlog[39m([31m"Logging in:"[39m, username, [31m"userId:"[39m, userId);
+    [34mreturn[39m { [36msuccess[39m: [34mtrue[39m, [36muser[39m: username, userId };
+  }
+
+  Third and optional, so the existing single call site and any future caller that doesn't have an id keep working
+  unchanged. The call site at [38;5;153mapp.js:23[39m becomes [38;5;153mlogin(username, password, AppIdentity.getUserId())[39m. A [38;5;153mnull[39m [38;5;153muserId[39m logs
+  as [38;5;153mnull[39m and is not an error — that's the ordinary state for a user who declined, and the consent decision would be
+  worthless if declining broke login.
+
+  [38;5;153mvalidateForm[39m is untouched. The id is not a form field and must never become a required one.
+
+  [1mTesting — zero new dependencies.[0m Node's built-in runner ([38;5;153mnode --test[39m), with [38;5;153m"test": "node --test"[39m added to
+  [38;5;153mpackage.json[39m. [38;5;153midentity.js[39m gets a two-line tail — [38;5;153mif (typeof module !== "undefined") module.exports = AppIdentity;[39m — so
+  it loads in both the browser and the test, which is the whole cost of making it testable. Tests inject a fake
+  [38;5;153mlocalStorage[39m on [38;5;153mglobalThis[39m. Cases:
+
+  - No record → [38;5;153mgetConsent()[39m is [38;5;153m"unset"[39m and [38;5;153mgetUserId()[39m is [38;5;153mnull[39m
+  - [38;5;153mgrantConsent()[39m mints an id; a fresh load with the same storage returns that same id
+  - [38;5;153mgrantConsent()[39m twice returns the same id
+  - [38;5;153mrevokeConsent()[39m clears the id and [38;5;153mgetConsent()[39m becomes [38;5;153m"denied"[39m
+  - [38;5;153mclear()[39m returns everything to [38;5;153m"unset"[39m
+  - Corrupt JSON and an unknown [38;5;153mv[39m both read as [38;5;153m"unset"[39m instead of throwing
+  - Storage that throws on every access still yields a working in-memory id
+
+  The banner and the DOM wiring aren't unit-tested — that needs a DOM harness, which means the dependency you asked me
+  to avoid. I'll verify those manually in a browser and say so explicitly rather than imply coverage I don't have.
+
+  [1mWhat I am not building:[0m event recording, any network call, a server component, and any reconciliation with future
+  server-issued ids. [38;5;153mAPI_ENDPOINT[39m stays an unused stub.
+
+  Does this look right? If so I'll write the spec to [38;5;153mdocs/hyperpowers/specs/2026-09-16-client-identity-design.md[39m for you
+  to review — still no code.
+
+[38;5;246m✻[39m [38;5;246mCooked for 16s · done 6:02 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What other forms should this validation serve? The answer sets how much the rule vocabulary needs to cover. → [39m
+     [38;5;246mLogin + signup[39m
+
+[38;5;231m⏺[39m Got it — login plus signup. Next fork, and this one has consequences worth laying out before you pick.
+
+  [1mThe fork:[0m how the shared validation file gets loaded. Right now the repo is split: [38;5;153mindex.html[39m loads [38;5;153mapp.js[39m as a plain
+  script tag (browser globals, no modules), while [38;5;153msrc/index.js[39m/[38;5;153msrc/utils.js[39m use CommonJS [38;5;153mrequire[39m. A shared validation
+  module has to pick one, and that choice decides whether the same file can be unit-tested in Node without a build step.
+
+  - [1mES modules[0m — [38;5;153mvalidation.js[39m uses [38;5;153mexport[39m; [38;5;153mindex.html[39m becomes [38;5;153m<script type="module">[39m. Browsers load it natively, and
+    Node imports the exact same file for tests. Costs one line in the HTML and leaves [38;5;153msrc/[39m's CommonJS as the odd one
+    out. No build tooling.
+  - [1mCommonJS[0m — matches [38;5;153msrc/utils.js[39m exactly, tests trivially in Node, but browsers can't load [38;5;153mrequire[39m without a bundler.
+    That means adding a build step, which this repo doesn't have, or a dual-format shim.
+  - [1mBrowser global[0m — [38;5;153mvalidation.js[39m sets [38;5;153mwindow.Validation[39m, added as a second [38;5;153m<script>[39m tag. Matches today's [38;5;153mapp.js[39m style
+    with zero tooling, but the file isn't importable in Node, so testing needs jsdom or a workaround.
+
+  Cheap to change later: the HTML script tag. Expensive: if we go global-only and then want real unit tests, the module
+  gets rewritten and every call site with it.
+
+  [1mMy recommendation is ES modules[0m — it's the only option that gets browser loading and Node-testable validation logic
+  without introducing a bundler this project currently has no reason to own.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module fmt [39m[49m
+
+[1m[38;5;231mWhich module format for the shared validation module?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mexport/import; index.html uses <script type="module">. Native in browsers, importable by Node tests, no build step.
+[39m  [38;5;246m2.[39m CommonJS
+     [38;5;246mMatches src/utils.js. Needs a bundler or shim for the browser to load it.[39m
+  [38;5;246m3.[39m Browser global
+     [38;5;246mwindow.Validation via a second script tag. Zero tooling, but not Node-importable, so tests need jsdom.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

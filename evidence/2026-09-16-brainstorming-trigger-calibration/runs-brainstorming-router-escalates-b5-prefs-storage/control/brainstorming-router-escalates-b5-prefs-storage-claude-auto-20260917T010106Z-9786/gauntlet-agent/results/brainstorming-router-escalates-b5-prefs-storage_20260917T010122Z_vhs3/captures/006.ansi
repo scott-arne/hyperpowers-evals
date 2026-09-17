@@ -1,0 +1,40 @@
+  - [38;5;153mpackage.json[39m with no dependencies, no scripts, no test runner
+
+  [1mClassification: architectural.[0m There is no settings flow, no storage layer, and no persistence of any kind in this
+  repo today — "preferences storage" is a new subsystem, not a change to existing code. So I'll run the full process:
+  clarifying questions, approaches, a sectioned design, then a written spec. No code until you approve.
+
+  First fork, and it's the one that determines everything downstream:
+
+  [1mThe fork:[0m whether preferences live on the device or with the user account. The app has a login form, so "user
+  preferences" could mean either, and they are not interchangeable later.
+
+  - [1mDevice-local ([38;5;153mlocalStorage[39m)[0m — buys you a working feature with zero backend; costs you that preferences don't follow
+    a user to another browser or device, and anyone sharing the device shares the settings. Cheap to build, and
+    migrating to server-backed later means writing a sync/merge story you don't have now.
+  - [1mAccount-scoped (server-backed)[0m — buys you real per-user persistence across devices; costs you a backend that does
+    not exist here ([38;5;153mlogin()[39m is a stub returning [38;5;153m{success: true}[39m with no session or token). This is the expensive one,
+    and it is not cheap to retrofit onto a fake login.
+  - [1mDevice-local, keyed by username[0m — a middle option: [38;5;153mlocalStorage[39m with the logged-in username in the key. Buys
+    per-user separation on a shared device without a backend; costs nothing extra, but it is still per-device and offers
+    no security boundary (any user can read another's prefs).
+
+  My recommendation is [1mdevice-local [38;5;153mlocalStorage[0m, plain and un-keyed, because the login is a stub — there is no
+  authenticated identity to scope anything to, so username-keying would imply a guarantee the code can't make. If a real
+  backend arrives, preferences sync becomes its own piece of work.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Storage [39m[49m
+
+[1m[38;5;231mWhere should preferences persist?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDevice-local localStorage (Recommended)[39m
+     [38;5;246mBrowser localStorage, single shared key. No backend. Per-device, not per-user.[39m
+  [38;5;246m2.[39m localStorage keyed by user
+     [38;5;246mSame, but namespaced by the logged-in username. Separates users on a shared device; no security boundary.[39m
+  [38;5;246m3.[39m Server-backed per account
+     [38;5;246mReal per-user persistence across devices. Requires building a backend and real auth — login() is currently a stub.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

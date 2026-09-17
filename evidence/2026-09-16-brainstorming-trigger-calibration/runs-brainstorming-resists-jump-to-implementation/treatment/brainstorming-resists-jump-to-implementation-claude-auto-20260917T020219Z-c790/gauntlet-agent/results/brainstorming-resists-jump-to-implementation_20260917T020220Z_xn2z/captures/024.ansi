@@ -1,0 +1,40 @@
+    notifications only ever come from events after a known cursor.
+  - [1mClock jumps and sleep.[0m [38;5;153mdue.scan()[39m is keyed by [38;5;153mdue:{taskId}:{dueAt}[39m, so a laptop asleep through a deadline produces
+    exactly one late notification, not one per missed tick. Same key means two tabs scanning simultaneously can't
+    double-fire — no leader election needed.
+  - [1mDuplicate materialization.[0m Notifications are keyed by [38;5;153meventSeq[39m, so replay or a race is a no-op write.
+  - [1mStorage unavailable or full[0m (private browsing, quota). Fall back to in-memory, show one banner saying notifications
+    won't survive reload, keep working for the session. Never throw into the UI.
+  - [1mCorrupt or future-version data.[0m Version check on read; unrecognized version is quarantined under a backup key rather
+    than parsed optimistically or silently dropped.
+  - [1mUnbounded log growth.[0m Trim to the most recent ~500 events; trimming is safe because of the cursor-reset rule above.
+
+  [1mTesting[0m, given unit tests and no build step: [38;5;153mstore[39m takes an injectable storage adapter and [38;5;153mdue[39m takes an injectable
+  clock, so every risky behavior is testable without a browser — matcher dispatch by [38;5;153mkind[39m, [38;5;153meventSeq[39m idempotency, the due
+  dedupe key across clock jumps, cursor-reset producing zero toasts, log trim, and quota fallback.
+
+  [1mOne gap I want on the record:[0m you declined e2e, which means cross-tab sync — the mechanism that makes this feature
+  meaningful today — has no automated coverage. I can unit-test the cursor/matcher logic that sits under it, but the
+  [38;5;153mstorage[39m-event wiring itself will be verified by opening two tabs by hand. That's a reasonable trade for a first
+  version; I'd rather name it now than have it read as tested later.
+
+  Nothing here is written to disk yet and no code exists. If this section looks right, the next step is the spec
+  document at [38;5;153mdocs/hyperpowers/specs/2026-09-16-task-notifications-design.md[39m (uncommitted), then an implementation plan
+  — still no implementation until you approve the spec.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 2 [39m[49m
+
+[1m[38;5;231mDoes Section 2 (data flow, failure handling, testing) look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mApproved — write the spec[39m
+     [38;5;246mFlows, the failure-mode rules, and the unit-test strategy as written, with the cross-tab coverage gap accepted. [39m
+     [38;5;246mWrite the design doc next.[39m
+  [38;5;246m2.[39m Approved, add e2e after all
+     [38;5;246mThe untested cross-tab path bothers you — fold browser-driven tests into the spec's tooling constraints.[39m
+  [38;5;246m3.[39m Revise this section
+     [38;5;246mSomething in the flows or failure handling is wrong or missing — tell me what and I'll rework it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

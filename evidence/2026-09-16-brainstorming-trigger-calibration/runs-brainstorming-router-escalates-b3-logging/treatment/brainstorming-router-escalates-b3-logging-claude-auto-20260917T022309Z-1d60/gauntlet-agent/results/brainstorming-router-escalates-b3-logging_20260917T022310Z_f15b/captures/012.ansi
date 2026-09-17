@@ -1,0 +1,40 @@
+  log.[33merror[39m([31m'request failed'[39m, { status, url });
+
+  [1mRecord shape.[0m Each call builds one structured object — [38;5;153m{ ts, level, name, msg, ...fields }[39m — with [38;5;153mts[39m as an ISO-8601
+  string. Structured from day one is what makes the future remote sink useful; if we emit formatted strings now, the
+  collector later has to parse them back apart.
+
+  [1mThe sink seam.[0m The record goes through exactly one exit point:
+
+  [34mLogger[39m.[33msetSink[39m(fn);   [32m// fn(record) -> void[39m
+
+  The default sink maps level to [38;5;153mconsole.debug/info/warn/error[39m. That single function is the entire extension point —
+  adding remote shipping later means writing one new sink that batches and POSTs, with no change to any call site. This
+  is the "seam" we agreed to, made concrete.
+
+  [1mLevel resolution[0m, read once at load, with an explicit override:
+
+  - Node: [38;5;153mprocess.env.LOG_LEVEL[39m
+  - Browser: [38;5;153m?logLevel=debug[39m in the query string, else [38;5;153mlocalStorage.getItem('logLevel')[39m
+  - Neither present: [38;5;153minfo[39m
+  - Also [38;5;153mLogger.setLevel('debug')[39m at runtime from the console
+
+  URL beats localStorage so you can hand someone a link. I'm proposing the URL override [3mnot[0m persist to localStorage —
+  persisting it means a user who clicks a debug link stays in debug forever, which is a slow leak of verbose output.
+
+  [1mDual-mode footer[0m — the last lines of the file, and the only unusual thing in it:
+
+  [34mif[39m ([34mtypeof[39m module !== [31m'undefined'[39m && module.exports) module.exports = [34mLogger[39m;
+  [34melse[39m globalThis.Logger = [34mLogger[39m;
+
+  [1mData flow:[0m call site → level check (early return, so a suppressed [38;5;153mdebug[39m costs almost nothing) → build record →
+  recursive redaction → sink → console.
+
+  Does that shape look right before I go on to redaction, error handling, and the call-site migration?
+
+[38;5;246m✻[39m [38;5;246mCogitated for 3m 7s · done 7:29 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

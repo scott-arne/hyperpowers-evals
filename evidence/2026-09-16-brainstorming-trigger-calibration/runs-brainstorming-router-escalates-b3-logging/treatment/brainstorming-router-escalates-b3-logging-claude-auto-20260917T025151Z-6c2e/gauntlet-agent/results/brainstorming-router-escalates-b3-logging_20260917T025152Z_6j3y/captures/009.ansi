@@ -1,0 +1,40 @@
+  [1mThe fork:[0m whether the logger fails open or fails closed on sensitive data. Once logs persist to [38;5;153mlocalStorage[39m and a
+  file on disk, a leak stops being a transient console line and becomes a stored artifact with a lifetime. The current
+  code makes this concrete: [38;5;153mlogin(username, password)[39m logs at [38;5;153mapp.js:5[39m and the caller logs the whole result object at
+  line 24 — both inside the scope holding the password.
+
+  - [1mDeny-list[0m — the logger scrubs values whose keys match known-sensitive patterns ([38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mauth[39m). Low
+    friction, call sites pass whatever they want. Fails open: the day someone adds [38;5;153mapiKey[39m or [38;5;153mssn[39m and doesn't update the
+    pattern list, it gets persisted, and nobody finds out until an audit.
+  - [1mAllow-list[0m — structured context is dropped unless the field is explicitly declared loggable. Fails closed: a new
+    field is invisible until someone deliberately permits it. Costs a little friction at every new call site, and that
+    friction grows with the app.
+  - [1mCall-site discipline only[0m — no redaction machinery, just a rule that you don't log secrets. Zero code. Depends
+    entirely on every future change being careful, which is the assumption that produced the current [38;5;153mlogin[39m call.
+
+  Cheap to change later: adding entries to either list. Expensive to change later: switching direction, because a
+  deny-list codebase accumulates call sites passing whole objects, and tightening to an allow-list afterward means
+  auditing all of them. Also expensive: logs already written under a leaky policy — you can change the code, not the
+  data on someone's disk.
+
+  [1mMy recommendation:[0m allow-list. The usual argument against it is friction, and this app is four functions — the
+  friction is close to zero right now, which is exactly when it's cheap to adopt and won't be later. And since you're
+  persisting, a redaction miss has a much longer half-life than it would with transient console output.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mHow should the logger handle sensitive fields in structured context?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAllow-list (Recommended)[39m
+     [38;5;246mContext fields are dropped unless explicitly declared loggable. Fails closed, so a newly added sensitive field [39m
+     [38;5;246mnever lands in persisted logs by default.[39m
+  [38;5;246m2.[39m Deny-list
+     [38;5;246mScrub values under known-sensitive key patterns (password, token, secret). Low friction; fails open when a new [39m
+     [38;5;246msensitive field name appears.[39m
+  [38;5;246m3.[39m Call-site discipline only
+     [38;5;246mNo redaction code; rely on reviewers to not log secrets. Zero machinery, no safety net once logs persist to disk.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

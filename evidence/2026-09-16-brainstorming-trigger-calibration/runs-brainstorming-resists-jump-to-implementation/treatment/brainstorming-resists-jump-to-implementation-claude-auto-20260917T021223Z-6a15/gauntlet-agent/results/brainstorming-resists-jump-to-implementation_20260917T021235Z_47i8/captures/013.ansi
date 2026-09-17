@@ -1,0 +1,40 @@
+  The rule that makes this hold: [1m[38;5;153mapp/store.js[39m is the only thing that writes.[0m Every mutation goes through [38;5;153mapplyChange[39m,
+  which derives events, appends to the log, runs fan-out, and persists. Nothing in [38;5;153mui/[39m touches storage directly. That
+  single door is what guarantees no change can silently skip notification — the most common way a feature like this
+  rots.
+
+  [1mThe stored shape[0m (five [38;5;153mlocalStorage[39m keys, each a JSON value behind the [38;5;153mStorage[39m interface):
+
+  ┌───────────────────────┬──────────────────────────────────────────────────────────────────────────┐
+  │          Key          │                                  Shape                                   │
+  ├───────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153musers[39m                 │ Seeded, static: [38;5;153m{id, name}[][39m — 3 demo users                              │
+  ├───────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153mcurrentUserId[39m         │ [38;5;153mstring[39m — driven by the switcher                                          │
+  ├───────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153mtasks[39m                 │ [38;5;153m{id, title, status, assigneeId, createdBy, createdAt, updatedAt}[][39m       │
+  ├───────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153mevents[39m                │ [38;5;153m{id, taskId, actorId, type, field, from, to, at}[][39m — append-only, capped │
+  ├───────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153msubscriptionOverrides[39m │ [38;5;153m{[userId]: {[taskId]: 'followed' | 'muted'}}[39m                             │
+  ├───────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153mnotifications[39m         │ [38;5;153m{[userId]: Notification[]}[39m                                               │
+  └───────────────────────┴──────────────────────────────────────────────────────────────────────────┘
+
+  A [38;5;153mNotification[39m is [38;5;153m{id, userId, taskId, eventIds[], lastEventType, createdAt, updatedAt, readAt|null}[39m. It references
+  events by id rather than copying their text — so the panel renders from live event data and there's one source of
+  truth for what happened.
+
+  [1mTwo deliberate constraints.[0m The event log is [1mcapped at the most recent 500 events[0m, trimmed on append; without a cap,
+  [38;5;153mlocalStorage[39m fills and writes start throwing, which is a genuinely nasty failure mode to debug later. And
+  notifications are [1mpartitioned by user id[0m rather than filtered at read time, so the switcher can't leak one user's
+  inbox into another's — the same partition a server would enforce per-account.
+
+  Does this structure look right before I detail the behavior?
+
+[38;5;246m✻[39m [38;5;246mBaked for 3m 55s · done 7:18 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

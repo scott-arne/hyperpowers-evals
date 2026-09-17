@@ -1,0 +1,40 @@
+  ├───────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153mconsole.error("Validation error:", [39m   │ [38;5;153mlog.warn('login.validation_failed', { username, error: validation.error[39m │
+  │ [38;5;153m...)[39m                                  │ [38;5;153m })[39m                                                                     │
+  └───────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────┘
+
+  Plus two new global handlers, installed in [38;5;153mapp.js[39m (not [38;5;153mlogger.js[39m, per the constraint above):
+  [38;5;153mwindow.addEventListener('error', ...)[39m → [38;5;153mlog.error('uncaught.error', { message, source, lineno, colno, stack })[39m, and
+  [38;5;153m'unhandledrejection'[39m → [38;5;153mlog.error('uncaught.rejection', { reason })[39m.
+
+  Two judgment calls worth your veto: I'm [1mdowngrading the validation failure from [38;5;153merror[39m to [38;5;153mwarn[0m, because a user
+  forgetting a field is not an application fault and shouldn't pollute an error feed. And I'm logging [38;5;153mresult.success[39m
+  rather than the whole [38;5;153mresult[39m object, so the record shape doesn't silently change if [38;5;153mlogin()[39m stops being a stub.
+
+  [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are untouched.
+
+  [1m4. Error handling[0m
+
+  The logger must never break the app: the sink call is wrapped in [38;5;153mtry/catch[39m and a throwing sink is swallowed. A logging
+  failure taking down a login form would be worse than the bug you were chasing.
+
+  [1m5. Testing ([38;5;153mtest/logger.test.js[39m, new)[0m
+
+  [38;5;153mpackage.json[39m gets [38;5;153m"scripts": { "test": "node --test" }[39m — no dependencies. Tests cover: redaction at top level, nested,
+  inside arrays, and case-insensitive keys; non-sensitive fields surviving untouched; the cycle guard; level filtering
+  above and below threshold; record shape and a stable [38;5;153msessionId[39m across calls; a custom sink receiving records; and a
+  throwing sink not propagating.
+
+  [1mFiles touched:[0m [38;5;153mlogger.js[39m (new, ~90 lines), [38;5;153mtest/logger.test.js[39m (new), [38;5;153mapp.js[39m (modified), [38;5;153mindex.html[39m (one line),
+  [38;5;153mpackage.json[39m (one script).
+
+  Since this is the architectural path, once you approve I'll write this to
+  [38;5;153mdocs/hyperpowers/specs/2026-09-16-browser-logging-design.md[39m (uncommitted), run the spec review, and hand off to the
+  writing-plans skill for the implementation plan — I won't start coding off this message.
+
+[38;5;246m✻[39m [38;5;246mBaked for 4m 19s · done 6:58 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

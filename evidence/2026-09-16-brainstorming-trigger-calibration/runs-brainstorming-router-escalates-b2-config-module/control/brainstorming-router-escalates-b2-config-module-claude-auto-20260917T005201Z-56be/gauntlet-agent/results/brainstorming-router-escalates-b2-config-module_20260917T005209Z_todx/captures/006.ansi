@@ -1,0 +1,40 @@
+  through questions → approaches → a design you approve section by section → a spec file, before any code. The code
+  change itself is small; the decisions around it are the part worth getting right.
+
+  First question, and it's the one that shapes everything else.
+
+  [1mThe fork:[0m how does the app know [3mwhich[0m environment it's running in? The settings module is trivial either way — a
+  lookup table or a constant. What differs is whether switching environments is automatic, a one-line edit, or a
+  deploy-tooling concern, and that decision is baked into the module's interface.
+
+  - [1mHostname detection[0m — [38;5;153msettings.js[39m maps hostname → endpoint and picks at load. Switching environments is free: deploy
+    the same files anywhere and they self-configure. Costs you a hostname table shipped to the client (endpoints aren't
+    secrets, so this is cosmetic) and requires knowing your hostnames up front. Cheap to change later.
+  - [1mExplicit env flag[0m — [38;5;153mindex.html[39m sets [38;5;153mwindow.APP_ENV = "staging"[39m before [38;5;153mapp.js[39m loads; [38;5;153msettings.js[39m reads it, defaults
+    to production. Dead simple and explicit, no magic. Cost: each environment needs that one line different, so you're
+    editing a file per deploy. Cheap to change later.
+  - [1mBuild/deploy-time substitution[0m — a placeholder in [38;5;153msettings.js[39m replaced at deploy, or per-env copies. The real answer
+    for a production pipeline, but this repo has no build step or deploy process, so choosing it means introducing
+    tooling. Expensive to undo.
+
+  [1mMy recommendation: hostname detection.[0m It's the only one where "change environments" requires no edit at all, which is
+  what you asked for, and it adds no tooling to a repo that deliberately has none. If you later get a build pipeline,
+  moving to substitution is a small change to one file.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Env select [39m[49m
+
+[1m[38;5;231mHow should the app determine which environment it's running in?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHostname detection (Recommended)[39m
+     [38;5;246msettings.js maps window.location.hostname to an endpoint. Zero edits to switch environments; same files deploy [39m
+     [38;5;246manywhere.[39m
+  [38;5;246m2.[39m Explicit env flag
+     [38;5;246mindex.html sets window.APP_ENV before app.js loads. Simple and explicit, but one line differs per environment.[39m
+  [38;5;246m3.[39m Build-time substitution
+     [38;5;246mPlaceholder replaced at deploy time. Standard for real pipelines, but introduces build tooling this repo doesn't [39m
+     [38;5;246mhave.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

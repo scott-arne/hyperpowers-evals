@@ -1,0 +1,40 @@
+  [1mStorage.[0m One versioned object in [38;5;153mlocalStorage[39m under [38;5;153mtasksapp:v1[39m, holding every collection below plus a [38;5;153mschemaVersion[39m.
+  A single write path keeps the log and task state consistent, and a [38;5;153mBroadcastChannel[39m publishes each committed change so
+  other tabs reload and re-derive. That channel is the seam a server's push stream would replace.
+
+  [1mCollections.[0m
+  users         [{ id, name }]                        // local roster, no auth
+  currentUserId                                        // the identity picker
+  tasks         [{ id, title, description, status,
+                   assigneeId, creatorId, dueDate, deletedAt }]
+  events        [{ id, taskId, actorId, type, field,
+                   from, to, timestamp }]              // append-only, the truth
+  subscriptions [{ userId, taskId, mode }]             // mode: 'watch' | 'mute'
+  readState     { [userId]: { readEventIds: [...] } }
+  [38;5;153msubscriptions[39m stores [3monly[0m explicit overrides — implicit creator/assignee subscription is computed, never written. That
+  keeps "I'm subscribed because I'm the assignee" from going stale when the assignee changes.
+
+  [1mModules[0m — each one testable alone, with the domain layer entirely pure:
+  - [38;5;153mstore/store.js[39m — load/persist, [38;5;153mcommit(mutation)[39m, cross-tab broadcast. The only impure module.
+  - [38;5;153mdomain/diff.js[39m — [38;5;153m(taskBefore, taskAfter, actorId) → events[][39m. Owns which fields are notifiable.
+  - [38;5;153mdomain/subscriptions.js[39m — [38;5;153m(userId, task, subscriptions) → boolean[39m. Owns mute-beats-implicit.
+  - [38;5;153mdomain/notifications.js[39m — [38;5;153m(events, tasks, subscriptions, userId, readState) → { items, unreadCount }[39m. Owns
+    self-suppression and collapsing.
+  - [38;5;153mui/[39m — task list, identity picker, bell + inbox panel, toast host. Views read derived state; they never compute it.
+
+  The whole feature's correctness lives in three pure functions. The UI and the store stay boring, which is deliberate —
+  it's what makes the unit tests meaningful rather than DOM-shaped.
+
+  [1mOne honest wrinkle:[0m collapsing means a notification can cover several events, so read state keys on the group's newest
+  event id. Marking a group read then leaves older events in it unread-but-hidden; re-deriving after a new event on
+  that task produces a fresh group that is correctly unread. I've traced it and it behaves, but it's the subtlest part
+  of the design and I'd call it out for review.
+
+  Does this section look right before I move on to behavior rules and UI?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 3m 19s · done 5:59 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

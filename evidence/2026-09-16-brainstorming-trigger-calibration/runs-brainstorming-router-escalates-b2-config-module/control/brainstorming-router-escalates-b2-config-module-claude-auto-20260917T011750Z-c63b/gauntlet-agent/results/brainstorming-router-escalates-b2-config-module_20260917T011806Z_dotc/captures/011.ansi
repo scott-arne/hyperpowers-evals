@@ -1,0 +1,40 @@
+  - [38;5;153mENDPOINT_PATHS[39m — path suffixes, starting with [38;5;153mlogin: "/login"[39m.
+
+  Note the data-model choice: today's constant is a full URL with [38;5;153m/login[39m baked in. I'm splitting it into base URL + path
+  so adding a second endpoint means one line in [38;5;153mENDPOINT_PATHS[39m rather than three new full URLs per environment.
+  Resolved endpoints are precomputed onto [38;5;153mAppSettings.endpoints[39m, so callers see [38;5;153mwindow.AppSettings.endpoints.login[39m — a
+  plain string, same as the constant it replaces.
+
+  I'll use placeholder URLs derived from the existing one ([38;5;153mapi.example.com[39m for production, [38;5;153mapi.dev.[39m / [38;5;153mapi.staging.[39m for
+  the others) and mark them in the spec as an assumption for you to correct — I don't know your real hostnames.
+
+  [1mData flow.[0m [38;5;153mindex.html[39m gains [38;5;153m<script src="settings.js"></script>[39m immediately before the existing [38;5;153mapp.js[39m tag. On load,
+  [38;5;153msettings.js[39m reads [38;5;153mwindow.location.hostname[39m, resolves an environment, and freezes the result onto [38;5;153mwindow.AppSettings[39m.
+  In [38;5;153mapp.js[39m, the [38;5;153mAPI_ENDPOINT[39m constant at line 2 goes away and [38;5;153mlogin()[39m reads [38;5;153mwindow.AppSettings.endpoints.login[39m instead.
+  [38;5;153mlogin()[39m stays a stub — I'm not adding a real [38;5;153mfetch[39m; it will log the endpoint it would POST to, which keeps the
+  reference live so a misconfigured load is visible rather than silently unused.
+
+  [1mError handling.[0m Unknown hostname → development plus a [38;5;153mconsole.warn[39m naming the unrecognized host, so the fallback is
+  never silent. If [38;5;153mapp.js[39m runs and [38;5;153mwindow.AppSettings[39m is absent (script tags out of order), [38;5;153mlogin()[39m throws a named error
+  rather than yielding [38;5;153mundefined[39m deep in a URL string.
+
+  [1mTesting.[0m This is where I need one more decision. [38;5;153mresolveEnvironment(hostname)[39m is a pure function and the natural thing
+  to test, but the repo has no test runner, no lint config, and no dependencies at all — so testing it means
+  introducing tooling this project doesn't have yet.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Tooling [39m[49m
+
+[1m[38;5;231mThe repo has no test or lint tooling. What should this change set up?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mNode test runner only (Recommended)[39m
+     [38;5;246mAdd `node --test` (built-in, zero dependencies) with unit tests for hostname resolution and fallback. No new [39m
+     [38;5;246mpackages.[39m
+  [38;5;246m2.[39m Tests + lint/format
+     [38;5;246mNode test runner plus ESLint + Prettier configured from the start. More upfront setup, adds dev dependencies.[39m
+  [38;5;246m3.[39m No tooling, manual verification
+     [38;5;246mShip the module with no tests; verify by opening index.html and checking the console. Fastest, nothing to maintain.
+[39m  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

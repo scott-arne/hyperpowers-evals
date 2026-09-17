@@ -1,0 +1,40 @@
+  The governing asymmetry: [1mbad calling code throws, bad stored data degrades silently.[0m A misspelled preference name is a
+  bug I want surfaced immediately; a mangled [38;5;153mlocalStorage[39m entry is a condition in the wild that must never break a
+  login page.
+
+  ┌──────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────┐
+  │                Condition                 │                               Behavior                               │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153mget[39m/[38;5;153mset[39m with an unregistered name        │ Throw — programmer error                                             │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153mset[39m with a value failing its validator   │ Throw — programmer error                                             │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Key absent                               │ All defaults                                                         │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153mJSON.parse[39m fails                         │ All defaults; next write overwrites the garbage                      │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ Parsed value isn't an object, or [38;5;153mvalues[39m  │ All defaults                                                         │
+  │ is missing                               │                                                                      │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ One field fails its validator            │ [1mOnly that field[0m falls back; siblings survive                         │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153mversion[39m higher than known                │ All defaults — don't guess at a future shape                         │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153mlocalStorage[39m access throws (private      │ Fall back to an in-memory store for the page's lifetime; preferences │
+  │ mode, storage disabled)                  │  stop persisting, the app keeps working                              │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────────────────────┤
+  │ [38;5;153msetItem[39m throws (quota)                   │ Caught; in-memory value retained, no crash                           │
+  └──────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────┘
+
+  Per-field fallback is what defuses approach A's main weakness — a single bad field no longer costs you every
+  preference, only itself.
+
+  Does the model and the failure behavior look right? Then I'll lay out the page integration and the testing/tooling
+  question.
+
+[38;5;246m✻[39m [38;5;246mWorked for 47s · done 7:50 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  Next: what actually goes in the store. This decides whether the module has a known schema with typed defaults and
+  validation, or is a generic key-value bag.
+
+  [1mThe fork:[0m a fixed schema means the module owns the list of valid preference keys and their defaults, and can reject
+  garbage; a generic bag means callers can store anything and the module never knows what's valid. Changing from a bag
+  to a schema later means retrofitting validation onto data already in users' browsers — not cheap.
+
+  - [1mFixed schema with defaults[0m — e.g. [38;5;153m{ rememberedUsername, theme }[39m. The module exports [38;5;153mget(key)[39m / [38;5;153mset(key, value)[39m that
+    validate against a declared schema and fall back to defaults on missing or corrupt data. Buys: corrupt [38;5;153mlocalStorage[39m
+    can never crash the app; every caller gets a valid value. Costs: adding a preference means editing the schema.
+  - [1mGeneric key-value store[0m — [38;5;153mget(key)[39m / [38;5;153mset(key, value)[39m over any JSON-serializable value, no schema. Buys: nothing to
+    update when prefs are added. Costs: no defaults, no validation, and callers each have to handle [38;5;153mundefined[39m and
+    corrupt data themselves.
+
+  [1mMy recommendation: fixed schema with defaults[0m, seeded with just the preferences this app actually has a use for today.
+  Concretely I'd suggest two: [38;5;153mrememberedUsername[39m (so the login form pre-fills) and [38;5;153mtheme[39m ([38;5;153mlight[39m/[38;5;153mdark[39m) —
+  [38;5;153mrememberedUsername[39m is the one that makes the feature visibly do something, and [38;5;153mtheme[39m is the standard second case that
+  proves the schema handles a non-string-ish value with a constrained set. To be explicit: the password is never stored,
+  in any option.
+
+  If you only want the storage layer and no wiring into the login form, say so — that's a smaller scope and I'll design
+  it that way.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Schema [39m[49m
+
+[1m[38;5;231mWhat should the preferences module store, and how strict should it be?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFixed schema + defaults (Recommended)[39m
+     [38;5;246mDeclared keys with typed defaults and validation. Start with rememberedUsername and theme. Corrupt storage falls [39m
+     [38;5;246mback to defaults.[39m
+  [38;5;246m2.[39m Fixed schema, rememberedUsername only
+     [38;5;246mSame validated approach, but only the one preference the login form actually needs. Smallest honest scope.[39m
+  [38;5;246m3.[39m Generic key-value store
+     [38;5;246mAny JSON-serializable value under any key, no schema or defaults. Flexible, but callers handle validation [39m
+     [38;5;246mthemselves.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

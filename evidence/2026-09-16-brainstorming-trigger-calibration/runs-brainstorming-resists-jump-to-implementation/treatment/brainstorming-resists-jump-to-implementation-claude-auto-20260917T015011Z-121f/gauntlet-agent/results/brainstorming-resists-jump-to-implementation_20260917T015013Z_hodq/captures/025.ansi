@@ -1,0 +1,40 @@
+
+  [1m[38;5;153mevents[39m is append-only and never deleted.[0m It's the audit trail and it's what makes the worker retryable — [38;5;153mprocessed_at
+[39m  [38;5;153mIS NULL[39m is the work queue, and [38;5;153mattempts[39m/[38;5;153mlast_error[39m are what you read when something's stuck.
+
+  [1m[38;5;153mnotification_events[39m is a join because coalescing makes a notification one-to-many over events.[0m Which raises the one
+  open question in this section.
+
+  [1mThe fork:[0m what the coalesce key is — how aggressively rapid changes merge.
+
+  - [1m[38;5;153m(recipient, task)[0m — all changes to one task inside the window become one notification. Buys: maximum noise
+    reduction; the mental model is "this task changed" and that's what users actually track. Costs: the copy has to
+    degrade to "3 changes to [3mFix login[0m" when the set is mixed, and a genuinely important change (reassigned to you) can
+    hide inside a batch of trivial ones.
+  - [1m[38;5;153m(recipient, task, type)[0m — five status changes merge, but a reassignment and a status change stay separate. Buys:
+    every notification keeps its specific, actionable copy; nothing important gets buried. Costs: less noise reduction —
+    a flurry of edits across fields still produces several notifications.
+  - [1m[38;5;153m(recipient, task)[39m with priority escape[0m — merge everything, except events marked high-signal (assigned-to-you) which
+    always get their own notification. Buys: both properties. Costs: a priority classification to maintain, and a second
+    code path.
+
+  [1mMy recommendation:[0m [38;5;153m(recipient, task, type)[39m. It's the simplest rule that never buries a reassignment, and it keeps
+  every notification's copy specific — which was the whole reason we chose curated events over a generic diff. The third
+  option is where this ends up if type-level merging proves too noisy, and it's an additive change from here.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Coalesce key [38;5;16m[48;5;153m ☐ Schema [39m[49m ✔ Submit  →
+
+[1m[38;5;231mDoes the rest of the data model look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, continue[39m
+     [38;5;246mMove on to data flow and the slice's exact scope.[39m
+  [38;5;246m2.[39m Let's discuss it
+     [38;5;246mSomething in the tables needs changing first.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m
+
+
+

@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Design, section 1 of 3 — [1marchitecture and data flow.[0m
+
+  Three new files, all ES modules, no build step:
+
+  - [38;5;153msrc/validation/rules.js[39m — the rule factories. [38;5;153mrequired()[39m, [38;5;153mminLength(n)[39m, [38;5;153mmaxLength(n)[39m, [38;5;153memail()[39m, [38;5;153mmatches(otherField)[39m,
+    [38;5;153mpattern(re, message)[39m, [38;5;153mcustom(fn, message)[39m. Each returns [38;5;153m{ name, message, test(value, allValues) }[39m. Pure, no DOM, no
+    imports.
+  - [38;5;153msrc/validation/validate.js[39m — the engine. [38;5;153mvalidate(values, schema)[39m walks the schema, runs each field's rules in
+    order, stops at that field's first failure but keeps going across other fields. Returns [38;5;153m{ valid: boolean, errors: {
+[39m    [38;5;153mfieldName: message } }[39m — [38;5;153merrors[39m is empty when valid. Also pure and DOM-free.
+  - [38;5;153msrc/validation/bind.js[39m — the DOM layer, and the only file that touches [38;5;153mdocument[39m. [38;5;153mbindForm(formElement, schema, [39m
+    [38;5;153monValid)[39m attaches a submit handler, reads values via [38;5;153mnew FormData(form)[39m, calls [38;5;153mvalidate[39m, renders errors on failure,
+    and calls [38;5;153monValid(values)[39m on success.
+
+  Data flow on submit: [38;5;153mbindForm[39m's handler calls [38;5;153mpreventDefault[39m, builds a values object from [38;5;153mFormData[39m, hands it to
+  [38;5;153mvalidate[39m along with the schema, and branches — errors get rendered per field and nothing else happens; a clean result
+  calls [38;5;153monValid(values)[39m, which for login is the existing [38;5;153mlogin()[39m call.
+
+  [38;5;153mapp.js[39m becomes the login form's wiring only: import the pieces, declare the login schema, call [38;5;153mbindForm[39m. The current
+  [38;5;153mvalidateForm[39m function goes away — its behavior is the schema [38;5;153m{ username: [required()], password: [required()] }[39m.
+
+  Two notes on the split. The engine never imports the rules — it only calls [38;5;153mtest[39m, so a schema can mix built-in
+  factories and inline [38;5;153mcustom[39m rules without the engine knowing the difference. And [38;5;153mmatches(otherField)[39m is why [38;5;153mtest[39m takes
+  [38;5;153mallValues[39m rather than just [38;5;153mvalue[39m; that signature is the one thing here that's awkward to change later, since every
+  rule would need rewriting.
+
+  [1mScope I'm assuming, correct me if wrong:[0m this task builds the mechanism and converts the existing login form, and adds
+  the signup form (markup plus schema) as the second consumer that proves the reuse. Without a real second form,
+  "reusable" is untested.
+
+  Does section 1 look right?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 2m 52s · done 5:59 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

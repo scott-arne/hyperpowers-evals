@@ -1,0 +1,40 @@
+
+  Second question, on where the boundary sits:
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Should the shared validation also handle showing errors in the UI, or only compute them? → Compute only[39m
+
+[38;5;231m⏺[39m Third question. This one has downstream consequences, so here's the fork before the widget:
+
+  [1mThe fork:[0m how the browser — and any future test — gets hold of the validator. [38;5;153mapp.js[39m is loaded as a plain [38;5;153m<script src>
+[39m  with no build step; [38;5;153msrc/[39m uses CommonJS but is Node-side and unrelated to the page.
+
+  - [1mPlain script + global[0m (e.g. [38;5;153mwindow.Validation[39m): zero tooling, works with today's [38;5;153mindex.html[39m untouched, and still
+    opens fine from [38;5;153mfile://[39m. But there's no clean import for a test runner, and it adds a global. Cheap to change later.
+  - [1mNative ES modules[0m ([38;5;153m<script type="module">[39m, [38;5;153mexport[39m/[38;5;153mimport[39m): no build step, importable directly by a test runner,
+    standard for new browser code. Costs one line of change in [38;5;153mindex.html[39m, and the page must then be served over [38;5;153mhttp://
+[39m    — opening [38;5;153mindex.html[39m by double-clicking stops working. Cheap to change later, but it's the one that touches how you
+    run the app.
+  - [1mCommonJS + bundler[0m: matches [38;5;153msrc/[39m, but adds a build step and the repo's first dependencies. Expensive to undo.
+
+  [1mMy recommendation: native ES modules.[0m It's the only option that gives you a validator a test can import without
+  inventing a build pipeline, and the cost is a single attribute in [38;5;153mindex.html[39m. I'd skip the bundler — a two-file webapp
+  doesn't earn one.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module fmt [39m[49m
+
+[1m[38;5;231mHow should the validation module be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mNative ES modules (Recommended)[39m
+     [38;5;246mexport/import, <script type="module">. No build step, test-importable. Requires serving over http:// instead of [39m
+     [38;5;246mopening the file directly.[39m
+  [38;5;246m2.[39m Plain script + global
+     [38;5;246mvalidation.js defines a global; index.html gains one more <script> tag. Zero tooling, keeps file:// working, but [39m
+     [38;5;246mharder to unit test.[39m
+  [38;5;246m3.[39m CommonJS + bundler
+     [38;5;246mMatches src/, but introduces a build step and the repo's first dependencies.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+[38;5;246m  ⎿  · Which notification representation should the design use? → A: Derived (Recommended)[39m
+     [38;5;246m· What tooling should we set up before writing code? (cheapest now, while the repo is empty) → Unit tests[39m
+
+[38;5;231m⏺[39m Noted: unit tests only — so no ESLint/Prettier, no Playwright, and the app stays plain ES modules with no build step
+  (Vitest can import them directly; the browser loads them via [38;5;153m<script type="module">[39m).
+
+  [1mDesign — Section 1: Architecture & data model[0m
+
+  [1mScope note up front:[0m notifications need something to observe, so this design necessarily includes a minimal task CRUD
+  (create with title + optional due date, list, complete, delete). That's prerequisite scope you're implicitly buying.
+  Say the word if you'd rather split it into its own spec first.
+
+  [1mModules[0m — the organizing principle is that all decision logic is pure and all I/O is thin:
+
+  ┌──────────────────────┬──────────────────────────────────────────────────────┬─────────────┐
+  │        Module        │                    Responsibility                    │ Depends on  │
+  ├──────────────────────┼──────────────────────────────────────────────────────┼─────────────┤
+  │ [38;5;153msrc/tasks.js[39m         │ Task CRUD + persistence                              │ storage     │
+  ├──────────────────────┼──────────────────────────────────────────────────────┼─────────────┤
+  │ [38;5;153msrc/notifications.js[39m │ [1mPure.[0m [38;5;153mcomputeNotifications(tasks, now, acknowledged)[39m │ nothing     │
+  ├──────────────────────┼──────────────────────────────────────────────────────┼─────────────┤
+  │ [38;5;153msrc/acknowledged.js[39m  │ Persisted set of dismissed [38;5;153mtaskId:milestone[39m keys     │ storage     │
+  ├──────────────────────┼──────────────────────────────────────────────────────┼─────────────┤
+  │ [38;5;153msrc/scheduler.js[39m     │ Clock ticks; diffs results; drives panel + toast     │ the above   │
+  ├──────────────────────┼──────────────────────────────────────────────────────┼─────────────┤
+  │ [38;5;153msrc/toast.js[39m         │ Notifications API wrapper; no-ops when unavailable   │ browser API │
+  ├──────────────────────┼──────────────────────────────────────────────────────┼─────────────┤
+  │ [38;5;153msrc/ui/*.js[39m          │ Task list, bell, badge, panel rendering              │ DOM         │
+  └──────────────────────┴──────────────────────────────────────────────────────┴─────────────┘
+
+  [38;5;153mnotifications.js[39m takes [38;5;153mnow[39m as an argument and never calls [38;5;153mDate.now()[39m or touches the DOM. That single constraint is
+  what makes the whole feature testable without a browser — which matters more than usual given you've opted out of e2e.
+
+  [1mShapes:[0m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

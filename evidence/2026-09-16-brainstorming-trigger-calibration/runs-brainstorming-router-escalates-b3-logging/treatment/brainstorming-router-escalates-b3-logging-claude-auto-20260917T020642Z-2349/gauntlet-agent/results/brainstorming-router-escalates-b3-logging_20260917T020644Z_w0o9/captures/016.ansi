@@ -1,0 +1,40 @@
+  flushes on a size/time threshold, plus [38;5;153mnavigator.sendBeacon[39m on [38;5;153mvisibilitychange[39m so a record survives the user closing
+  the tab. Node sink writes one JSON object per line to stdout.
+  [3mBuys:[0m no build step, no dependencies, no change to how either runtime loads code. [3mCosts:[0m the dual-export shim is
+  mildly unfashionable. [3mRules out:[0m nothing — ESM conversion stays available later.
+
+  [1mB. Convert the project to ES modules first, then add the core[0m
+  [38;5;153m"type": "module"[39m in [38;5;153mpackage.json[39m, [38;5;153msrc/index.js[39m rewritten off [38;5;153mrequire[39m, [38;5;153mindex.html[39m switched to [38;5;153m<script type="module">[39m.
+  The logging core is then an ordinary module both sides import.
+  [3mBuys:[0m the clean version, better test ergonomics, the direction the ecosystem went. [3mCosts:[0m it is two changes wearing
+  one coat — a module-system migration plus a logging subsystem. [38;5;153m<script type="module">[39m also defers execution and scopes
+  [38;5;153mapp.js[39m's functions to the module, which is fine but is a real behavior change to code you didn't ask me to touch.
+  [3mRules out:[0m nothing, but it's the expensive door.
+
+  [1mC. Minimal: fire-and-forget per record[0m
+  Each log call POSTs immediately, no buffer, no flush logic.
+  [3mBuys:[0m the smallest amount of code by a wide margin. [3mCosts:[0m one request per record, records lost whenever the tab
+  closes mid-flight, and no backpressure when the collector is down — which is precisely when you're trying to debug.
+  [3mWhen it wins:[0m if log volume is genuinely a handful of records per session and you'd rather not maintain buffer code.
+
+  I recommend [1mA[0m. It gets the shared core and reliable delivery you asked for without turning a logging task into a
+  module-system migration, and the buffering in A is the part that makes logs trustworthy during an outage — the failure
+  mode C accepts is "logs disappear exactly when production breaks."
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should I design in detail?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: dual-mode core (Recommended)[39m
+     [38;5;246mSingle src/logger.js consumable as a browser global and a CommonJS module. Batched delivery with sendBeacon on [39m
+     [38;5;246munload. No build step, no dependencies, no module-system change.[39m
+  [38;5;246m2.[39m B: convert to ESM first
+     [38;5;246mMigrate package to type: module and script type=module, then add the core as a normal module. Cleaner long-term, [39m
+     [38;5;246mbut bundles a migration into this task.[39m
+  [38;5;246m3.[39m C: minimal fire-and-forget
+     [38;5;246mPOST each record immediately, no buffering. Least code; loses records on tab close and during collector outages.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

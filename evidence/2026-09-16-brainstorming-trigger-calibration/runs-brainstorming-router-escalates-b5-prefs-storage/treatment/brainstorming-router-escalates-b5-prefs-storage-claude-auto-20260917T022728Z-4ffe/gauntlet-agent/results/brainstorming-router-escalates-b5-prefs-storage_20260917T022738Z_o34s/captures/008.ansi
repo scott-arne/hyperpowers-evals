@@ -1,0 +1,40 @@
+
+  Next: how the module is loaded and tested. This repo has two incompatible conventions — [38;5;153msrc/utils.js[39m uses CommonJS
+  ([38;5;153mmodule.exports[39m), while [38;5;153mapp.js[39m is a plain browser script with no module system at all (loaded via [38;5;153m<script src>[39m,
+  functions as globals). A preferences module has to be loadable by both the page and a test runner, so this has to be
+  settled now.
+
+  [1mThe fork:[0m whether the browser code adopts a module system, and therefore whether the prefs module can be imported by
+  tests directly.
+
+  - [1mES modules ([38;5;153m<script type="module">[39m)[0m — [38;5;153mprefs.js[39m exports get/set/reset; [38;5;153mapp.js[39m imports it. Native in every current
+    browser, no bundler. Tests import the same file. Requires serving over [38;5;153mhttp://[39m rather than opening the file directly
+    (ES modules are blocked on [38;5;153mfile://[39m), and [38;5;153mapp.js[39m becomes a module.
+  - [1mCommonJS, matching [38;5;153msrc/utils.js[0m — consistent with the existing Node code and trivially testable, but browsers can't
+    load [38;5;153mrequire()[39m natively, so the page needs a bundler or a duplicated build. New infrastructure for a two-file app.
+  - [1mPlain global script, matching [38;5;153mapp.js[39m today[0m — [38;5;153mprefs.js[39m defines a global, zero setup, page keeps working from [38;5;153mfile://[39m.
+    But testing means loading the script into a fake global and there's no import boundary, so it's the least isolated
+    of the three.
+
+  Cheap to change later: nothing here, really — module format propagates into every file that touches prefs, so
+  switching means editing all of them.
+
+  [1mMy recommendation: ES modules.[0m It's the one option that gives the page and the tests the same file with no build step,
+  and the only cost is running a local static server instead of double-clicking the HTML.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Modules [39m[49m
+
+[1m[38;5;231mHow should the prefs module be loaded by the page and tests?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mprefs.js exports; app.js imports; tests import the same file. No bundler. Page must be served over http:// instead
+[39m     [38;5;246mof file://.[39m
+  [38;5;246m2.[39m CommonJS like src/utils.js
+     [38;5;246mConsistent with existing Node code, easy to test, but needs a bundler for the browser.[39m
+  [38;5;246m3.[39m Plain global script
+     [38;5;246mZero setup, works from file://, matches app.js today. Weakest test isolation, no import boundary.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

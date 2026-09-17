@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Got it — generality with one real consumer, so I'll keep the rule set minimal rather than building a schema library.
+
+  Next question, and this one has consequences worth laying out first.
+
+  [1mThe fork:[0m how the shared validation code gets into the page. [38;5;153mindex.html[39m loads [38;5;153mapp.js[39m with a plain [38;5;153m<script>[39m tag and
+  there's no bundler, so a new file can't just be [38;5;153mrequire[39md. This decides the module's public interface and whether a
+  build step or local server ever becomes necessary.
+
+  - [1mPlain script + global[0m — add [38;5;153m<script src="validation.js">[39m before [38;5;153mapp.js[39m; it exposes one global (e.g. [38;5;153mFormValidation[39m).
+    Buys: zero tooling, still opens over [38;5;153mfile://[39m, smallest diff. Costs: a global, and no import graph. Rules out
+    nothing permanently — moving to modules later is a mechanical change.
+  - [1mES modules[0m — [38;5;153m<script type="module" src="app.js">[39m with real [38;5;153mimport[39m/[38;5;153mexport[39m. Buys: proper module boundary, matches how
+    you'd grow this. Costs: [38;5;153mfile://[39m stops working (needs a local server), and [38;5;153mapp.js[39m becomes deferred. Cheap to adopt
+    now, mildly annoying to retrofit later once several scripts exist.
+  - [1mCommonJS under [38;5;153msrc/[0m — matches the existing [38;5;153msrc/utils.js[39m style. Buys: consistency with the Node side and directly
+    unit-testable. Costs: the browser can't load it without a bundler, so it needs either a build step or a dual export
+    shim. This is the expensive one to undo.
+
+  [1mMy recommendation: ES modules.[0m It's the same amount of work as the global today, gives a real interface for the
+  "multiple forms" goal, and the only cost is serving the page over [38;5;153mhttp://[39m instead of double-clicking it. I'd only pick
+  the global if opening [38;5;153mindex.html[39m directly from disk matters to you.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should the shared validation module be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mvalidation.js uses export; app.js imports it via <script type="module">. Real module boundary, no bundler, but the
+[39m     [38;5;246mpage must be served over http rather than opened from disk.[39m
+  [38;5;246m2.[39m Plain script + global
+     [38;5;246mvalidation.js exposes a single global, loaded by a second <script> tag before app.js. Zero tooling, file:// keeps [39m
+     [38;5;246mworking, at the cost of a global.[39m
+  [38;5;246m3.[39m CommonJS under src/
+     [38;5;246mMatches src/utils.js and is directly testable in Node, but needs a bundler or a dual-export shim for the browser to
+[39m     [38;5;246mload it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

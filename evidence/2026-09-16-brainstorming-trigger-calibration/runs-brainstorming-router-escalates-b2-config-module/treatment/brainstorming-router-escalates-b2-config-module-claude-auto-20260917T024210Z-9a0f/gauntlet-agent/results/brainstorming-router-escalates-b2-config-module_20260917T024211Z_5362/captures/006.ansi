@@ -1,0 +1,40 @@
+  this repo doesn't have, and — more to the point — [38;5;153mindex.html[39m loads [38;5;153mapp.js[39m as a classic script with no module loader.
+  There is no existing config layer to change, so introducing one means deciding how a second file gets loaded and what
+  interface it exposes. That's structure, not a one-line edit. So: questions, approaches, a design you approve section
+  by section, then a spec.
+
+  First question, and it's the one that drives everything else.
+
+  [1mThe fork:[0m "easier to change environments" can mean the page figures out its own environment, or it can mean there's
+  exactly one obvious line a human edits before deploying. That choice decides whether the settings module contains
+  logic or just data, and it's expensive to reverse later because consumers end up shaped around it.
+
+  - [1mAuto-detect from hostname[0m — ship one identical file to every environment; nothing to remember at deploy time. Costs
+    a small mapping table, and adding an environment means editing that table. Rules out nothing.
+  - [1mSingle edit point[0m — module exports one [38;5;153mCURRENT_ENV[39m you change by hand. Simplest possible thing, zero logic to test.
+    Cost: it's still a manual step, and the wrong value silently ships to production.
+  - [1mRuntime override[0m — [38;5;153m?env=[39m query param or [38;5;153mlocalStorage[39m, layered over a default. Great for testing prod builds against
+    staging. Cost: real code to write, and anyone can point your page at any backend.
+
+  [1mRecommendation: auto-detect from hostname.[0m Your stated pain is the effort of changing environments, and only
+  auto-detect removes the step entirely rather than relocating it. There's no build step here to inject a value, so
+  hostname is the only signal actually available at runtime. Option 3 is cheap to add on top of it later if you ever
+  need it — I'd leave it out now.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Env select [39m[49m
+
+[1m[38;5;231mHow should the app decide which environment's API endpoint to use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAuto-detect from hostname (Recommended)[39m
+     [38;5;246mSettings module maps location.hostname to an endpoint set. One file ships everywhere; no deploy-time step.[39m
+  [38;5;246m2.[39m Single edit point
+     [38;5;246mModule exports one CURRENT_ENV constant a human changes before deploying. Simplest, but manual and easy to get [39m
+     [38;5;246mwrong.[39m
+  [38;5;246m3.[39m Runtime override
+     [38;5;246m?env= query param or localStorage layered over a default. Flexible for testing, but more code and anyone can [39m
+     [38;5;246mredirect the page.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

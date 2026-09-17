@@ -1,0 +1,40 @@
+  [38;5;153merrors[39m contains only failing fields, and [38;5;153mvalid[39m is exactly [38;5;153mObject.keys(errors).length === 0[39m. The first failing rule for
+  a field wins; remaining rules for that field are skipped. This replaces today's single [38;5;153merror[39m string, which can't
+  represent two bad fields at once.
+
+  [1mEdge cases, decided explicitly[0m (these are the things that cause bugs when left implicit):
+
+  - [1mWhat counts as empty for [38;5;153mrequired()[39m:[0m [38;5;153mundefined[39m, [38;5;153mnull[39m, [38;5;153m""[39m, a whitespace-only string, an empty array, and [38;5;153mfalse[39m (an
+    unchecked checkbox). Notably [38;5;153m0[39m passes — it's a real value.
+  - [1mNo mutation.[0m [38;5;153mvalidate()[39m never trims or coerces the caller's values. [38;5;153mrequired()[39m ignores surrounding whitespace when
+    deciding emptiness, but the value the form submits is whatever the form had.
+  - [1mFields in [38;5;153mvalues[39m but not in [38;5;153mschema[39m are ignored[0m — forms often carry state that isn't user input.
+  - [1mFields in [38;5;153mschema[39m but missing from [38;5;153mvalues[0m are validated as [38;5;153mundefined[39m, so [38;5;153mrequired()[39m catches them.
+  - [1mType mismatches throw.[0m [38;5;153mminLength(3)[39m against a number, or a schema entry that isn't an array of functions, throws a
+    [38;5;153mTypeError[39m naming the field. These are schema bugs, not user errors; failing loudly means a test catches them instead
+    of a form silently accepting anything.
+
+  [1mMigration of the login form:[0m [38;5;153mvalidateForm[39m is deleted from [38;5;153mapp.js[39m and replaced by a [38;5;153mloginSchema[39m const plus a [38;5;153mvalidate()
+[39m  call. [38;5;153mindex.html[39m's script tag becomes [38;5;153m<script type="module" src="app.js">[39m, which is what requires serving over HTTP
+  rather than [38;5;153mfile://[39m.
+
+  [1mOne thing I want to flag rather than decide for you:[0m [38;5;153mapp.js[39m today only [38;5;153mconsole.error[39ms validation failures — nothing is
+  ever shown to the user. Keeping the shared layer validator-only (your Section-1 choice) means error [3mdisplay[0m is each
+  form's own job, and the login form currently has no display. I can leave that as-is, or add error rendering to the
+  login form only, as ordinary form code and not shared infrastructure.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Error display [39m[49m
+
+[2m│[0m [1m[38;5;231mShould the login form actually display its validation errors, or keep console-only?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mKeep console-only (Recommended)[39m
+     [38;5;246mStrictly scoped to making validation reusable. app.js logs per-field errors as it does today. No UI convention [39m
+     [38;5;246minvented before the other forms exist.[39m
+  [38;5;246m2.[39m Render errors in login form
+     [38;5;246mAdd error <span>s under each input in index.html and populate them in app.js. Useful now, but sets a display [39m
+     [38;5;246mconvention the planned forms will likely copy.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

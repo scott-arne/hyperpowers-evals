@@ -1,0 +1,40 @@
+
+
+  [38;5;246mRead [1m1[0m[38;5;246m file [39m
+
+[38;5;231m⏺[39m [38;5;153mindex.html:13[39m loads [38;5;153mapp.js[39m as a classic script — no [38;5;153mtype="module"[39m — while [38;5;153msrc/index.js[39m uses CommonJS [38;5;153mrequire[39m. There's
+  no bundler and no [38;5;153mnode_modules[39m. So "one shared module" has a concrete obstacle: the two runtimes currently can't
+  consume the same file.
+
+  [1mThe fork — how both runtimes load the shared logger.[0m This also settles the library question, since any npm logger
+  (pino, loglevel, winston) needs a resolution step the browser side doesn't have today.
+
+  - [1mUMD-style single file, no build[0m — [38;5;153msrc/logger.js[39m detects [38;5;153mmodule.exports[39m and otherwise attaches to [38;5;153mwindow[39m; [38;5;153mindex.html[39m
+    gains one [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m. Zero new tooling, zero dependencies, stays consistent with a repo that has
+    neither. The cost is a hand-rolled logger (~60 lines) and a slightly dated module idiom.
+  - [1mConvert everything to ESM[0m — [38;5;153mtype="module"[39m in [38;5;153mindex.html[39m, [38;5;153m"type": "module"[39m in [38;5;153mpackage.json[39m, [38;5;153mimport[39m/[38;5;153mexport[39m throughout.
+    Cleaner and the direction the ecosystem went, but it converts files the logging task didn't ask to touch, and ESM
+    in the browser means [38;5;153mapp.js[39m stops working from [38;5;153mfile://[39m.
+  - [1mAdd a bundler and use a real logging library[0m — pino or loglevel, properly maintained, features you won't have to
+    write. Costs a build step, a lockfile, and a dependency tree in a repo that has deliberately had none.
+
+  I'd recommend [1mUMD-style, no build[0m: the logger this app needs is small enough that a library is mostly overhead, and
+  introducing a toolchain is a much larger change than the one you asked for. If you'd rather modernize the module
+  system anyway, ESM is a fine call — just note it's a separate change riding along.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module format [39m[49m
+
+[1m[38;5;231mHow should the shared logger be loaded by both runtimes?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mUMD-style, no build (Recommended)[39m
+     [38;5;246mSingle hand-rolled file working as a classic browser script and a CommonJS module. No new tooling or dependencies.[39m
+  [38;5;246m2.[39m Convert to ESM
+     [38;5;246mModule scripts in the browser, ESM in Node. Cleaner, but touches files outside the task and breaks file:// loading.
+[39m  [38;5;246m3.[39m Bundler + logging library
+     [38;5;246mAdd a build step and use pino/loglevel. Mature features, but introduces a toolchain and dependency tree this repo [39m
+     [38;5;246mhas avoided.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

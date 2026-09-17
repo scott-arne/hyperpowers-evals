@@ -1,0 +1,40 @@
+  design, then a written spec. Say the word if you'd rather I collapse this into a short in-chat design instead.
+
+  First question, and it's the one that determines everything downstream.
+
+  [1mThe fork:[0m which surface owns the preferences decides the storage mechanism, the API shape, and whether "session" means
+  a browser tab or a process run. These are not cheap to swap later — the persistence layer and the module's public
+  interface both change.
+
+  - [1mBrowser (the login webapp)[0m — prefs live in [38;5;153mlocalStorage[39m, the module is a plain script or ES module loaded by
+    [38;5;153mindex.html[39m, "persists across sessions" means surviving a tab close. Buys: matches the only real UI here. Costs:
+    synchronous string-only storage, no access from the Node side.
+  - [1mNode ([38;5;153msrc/[39m)[0m — prefs live in a JSON file on disk (e.g. [38;5;153m~/.config/<app>/preferences.json[39m), CommonJS module, "persists
+    across sessions" means surviving a process exit. Buys: real durability, testable without a browser. Costs:
+    irrelevant to the login form as it stands.
+  - [1mBoth, shared core[0m — one pure preferences module (defaults, validation, merge) with two thin storage adapters. Buys:
+    one set of semantics. Costs: roughly double the work and an interface you have to get right up front; premature
+    unless you actually need both.
+
+  [1mMy recommendation: browser/[38;5;153mlocalStorage[39m.[0m The login form is the only thing in this repo a user interacts with, and
+  "settings persist across sessions" is textbook [38;5;153mlocalStorage[39m. The Node side is a greeting stub with no settings to
+  speak of. I'd rather build the one real surface well than build an abstraction over a hypothetical second one.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Surface [39m[49m
+
+[1m[38;5;231mWhich surface should own preferences storage?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser / localStorage (Recommended)[39m
+     [38;5;246mPrefs for the login webapp, persisted in localStorage, loaded by index.html. Matches the only interactive surface [39m
+     [38;5;246min the repo.[39m
+  [38;5;246m2.[39m Node / JSON file
+     [38;5;246mPrefs for src/, persisted to a JSON file on disk. Durable and easy to unit test, but src/ currently has no [39m
+     [38;5;246msettings.[39m
+  [38;5;246m3.[39m Both, shared core
+     [38;5;246mOne pure preferences module with browser and Node storage adapters. Most work; only worth it if both surfaces [39m
+     [38;5;246mgenuinely need prefs.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

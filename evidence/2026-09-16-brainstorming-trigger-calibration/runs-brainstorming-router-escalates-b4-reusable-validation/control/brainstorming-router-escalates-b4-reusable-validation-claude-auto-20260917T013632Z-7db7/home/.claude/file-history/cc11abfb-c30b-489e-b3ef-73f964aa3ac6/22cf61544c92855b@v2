@@ -1,0 +1,224 @@
+# Reusable Form Validation — Design
+
+Date: 2026-09-16
+Status: approved in brainstorming, pending implementation plan
+
+## Problem
+
+`app.js` contains a `validateForm` function hardcoded to the login form: it
+checks `formData.username` and `formData.password` for presence and returns a
+single error string. Any second form would have to copy it. The goal is to
+extract validation into a reusable module so that adding a form does not mean
+duplicating validation logic.
+
+No second form exists today. The deliverable is therefore the reusable module
+plus the login form migrated onto it — not a set of new forms.
+
+## Decisions taken with the human partner
+
+| Question | Decision |
+|---|---|
+| What drives the work | No second form yet; extract now so the next form is cheap |
+| Validator's boundary | Compute only — returns results, never touches the DOM |
+| Module loading | Native ES modules; no bundler, no build step, no dependencies |
+| Rule shape | Predicate map plus a minimal rule library |
+| Tooling | Unit tests via `node --test`; no linter, formatter, or e2e |
+
+Approaches considered and rejected: HTML-native constraint validation (rules as
+input attributes — rejected because error messages would be browser-supplied
+and cross-field rules have no home) and a declarative schema with a full rule
+library (rejected as code written against imagined requirements; it can be
+layered on top of the chosen core later without changing it).
+
+The Codex approach gate ran and returned an incomplete result (preflight
+`ok`, companion call returned `{}`); it contributed no approaches. This is a
+recorded degrade, not a blocker.
+
+## Global Constraints
+
+- No third-party dependencies. Everything uses the standard library and
+  built-in browser APIs.
+- No build step. Source files are served as written.
+- Unit-test infrastructure is set up as part of this work: `node --test` with
+  `node:assert`, a `"test"` script in `package.json`, and at least one passing
+  test before the change is considered done.
+- Match the existing style in `app.js`: two-space indent, double-quoted
+  strings, plain function declarations, semicolons.
+- Do not modify `src/index.js` or `src/utils.js`. They are an unrelated
+  Node-side CommonJS demo not loaded by the page.
+- Design documents are not committed unless explicitly requested.
+
+## Architecture
+
+One new browser module, imported by the page's existing script.
+
+```
+index.html
+  └── <script type="module" src="app.js">
+        └── imports ./validation.js   (pure, no DOM)
+```
+
+`validation.js` is the reusable unit. It has one job: given field values and
+field rules, produce a validation result. It knows nothing about forms,
+elements, or rendering. `app.js` remains the login form's controller: it reads
+the DOM, calls the validator, and decides what to do with the result.
+
+This boundary is what makes the module reusable — a second form imports the
+same `validate` and supplies its own rules object, with no changes to
+`validation.js` unless it needs a rule that does not exist yet.
+
+### `validation.js` public interface
+
+```js
+/**
+ * A rule is a function: (value) => string | null
+ * It returns an error message, or null when the value is acceptable.
+ */
+
+export function required(value)
+export function validate(values, rules)
+```
+
+`required` is the only built-in rule shipped, because presence is the only rule
+the login form actually has. Additional rules (`minLength`, `pattern`, `email`)
+are added when a real form needs them, not before.
+
+`validate(values, rules)`:
+
+- `values` — a plain object of field name → value, e.g. `{ username, password }`.
+- `rules` — a plain object of field name → array of rules, e.g.
+  `{ username: [required] }`.
+- Returns `{ valid: boolean, errors: object }`.
+
+### Result contract
+
+```js
+{ valid: true,  errors: {} }
+{ valid: false, errors: { password: "This field is required." } }
+```
+
+- `errors` is always present, `{}` when valid, so callers never branch on
+  `undefined`.
+- `errors` is a per-field map. This replaces the current single `error` string,
+  which is a breaking change to the one existing caller (migrated as part of
+  this work). Per-field messages are the point: a single string cannot tell a
+  form which input to mark.
+- `valid` is `true` exactly when `errors` has no keys.
+
+### Evaluation semantics
+
+- Rules for a field run in array order and stop at the first failure, so each
+  field contributes at most one message.
+- A rule receives `values[field] ?? ""`, so a field missing from `values`
+  behaves identically to an empty input and no rule ever sees `undefined`.
+- Fields present in `values` but absent from `rules` are ignored, not rejected.
+- Iteration is driven by the keys of `rules`, not of `values`.
+
+## Data flow
+
+Unchanged in shape from today:
+
+1. Submit handler intercepts the event and calls `preventDefault()`.
+2. It reads the input values from the DOM.
+3. It builds a `values` object and calls `validate` with the form's rules.
+4. On `valid`, it proceeds to `login()`. Otherwise it reports the errors.
+
+## Changes by file
+
+### `validation.js` (new)
+
+Exports `required` and `validate` as specified above.
+
+### `app.js`
+
+- Remove the local `validateForm` function.
+- Add `import { validate, required } from "./validation.js";`
+- Declare the login form's rules as a module-level constant:
+
+```js
+const LOGIN_RULES = {
+  username: [required],
+  password: [required],
+};
+```
+
+- Update the submit handler to consume the new result shape, reporting each
+  field's message:
+
+```js
+const result = validate({ username, password }, LOGIN_RULES);
+if (result.valid) {
+  const loginResult = login(username, password);
+  console.log("Login result:", loginResult);
+} else {
+  for (const [field, message] of Object.entries(result.errors)) {
+    console.error(`Validation error (${field}):`, message);
+  }
+}
+```
+
+- `login()` and `API_ENDPOINT` are unchanged.
+
+### `index.html`
+
+- One change: `<script src="app.js"></script>` becomes
+  `<script type="module" src="app.js"></script>`.
+
+### `package.json`
+
+- Add `"type": "module"` so `node --test` treats `validation.js` and its test
+  as ES modules.
+- Add `"scripts": { "test": "node --test" }`.
+
+Note: `src/index.js` and `src/utils.js` use CommonJS `require` /
+`module.exports`. Setting `"type": "module"` makes Node treat `.js` files in
+this package as ES modules, which would break those two files if they were
+executed. They are a demo that nothing runs, and `package.json`'s `main` points
+at `src/index.js` but no script or test invokes it. **Assumption: nothing
+depends on running `src/index.js`, validated by confirming with the human
+partner during the plan review and by checking that `node --test` passes
+without touching `src/`.** If that assumption fails, the fallback is to rename
+the two demo files to `.cjs` rather than to abandon `"type": "module"`.
+
+### `validation.test.js` (new)
+
+Unit tests using `node:test` and `node:assert/strict`, importing
+`validation.js` directly. Cases to cover:
+
+- Valid input across all fields → `{ valid: true, errors: {} }`.
+- One empty field → `valid: false`, message under that field's key only.
+- All fields empty → a message under each field's key.
+- A field missing from `values` entirely → treated as empty, same message.
+- A field in `values` with no entry in `rules` → ignored, does not appear in
+  `errors`.
+- A field with multiple rules → only the first failing rule's message appears.
+- `required` in isolation → returns a string for `""`, `null`, and `undefined`;
+  returns `null` for a non-empty string.
+
+## Error handling
+
+- Validation failures are data, not exceptions. `validate` does not throw for
+  invalid input values.
+- `validate` is not defensive about programmer error: passing a rules object
+  whose values are not arrays of functions is a bug in the caller, and the
+  resulting `TypeError` is the correct signal. No silent coercion.
+- The login form's failure path stays console-based, matching current
+  behavior. Rendering messages into the page is out of scope.
+
+## Testing
+
+- `npm test` (`node --test`) runs the unit tests described above.
+- Manual verification: serve the directory over HTTP (for example
+  `python3 -m http.server`), open the page, submit the form empty and confirm
+  per-field errors in the console, then submit it filled and confirm the login
+  result logs. Opening `index.html` from `file://` no longer works, because
+  module scripts are blocked by CORS on that scheme — this is a known and
+  accepted consequence of the ES-module decision.
+
+## Non-goals
+
+- No second form is built.
+- No DOM rendering of error messages.
+- No rules beyond `required`.
+- No linter, formatter, or end-to-end test setup.
+- No changes to `login()`, `API_ENDPOINT`, or anything under `src/`.

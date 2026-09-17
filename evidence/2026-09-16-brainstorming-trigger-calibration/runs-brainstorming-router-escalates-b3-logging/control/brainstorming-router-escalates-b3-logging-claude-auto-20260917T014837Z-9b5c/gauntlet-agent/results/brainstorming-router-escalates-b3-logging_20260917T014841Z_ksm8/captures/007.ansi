@@ -1,0 +1,40 @@
+  First question — the biggest fork, because it decides whether this is one small module or a real subsystem:
+
+  [1mThe fork:[0m whether log records ever leave the user's machine. That's the difference between a formatting change and a
+  pipeline with batching, retry, and redaction.
+
+  - [1mStructured console only[0m — buys you consistent, greppable, level-filtered output and a single choke point for every
+    log call. Costs almost nothing and adds no dependency. But it rules out seeing a production user's logs unless they
+    send them to you; "debug production issues" would mean asking users for console dumps.
+  - [1mOwn remote collector[0m — buys you actual production visibility on your own infrastructure. Costs a backend endpoint
+    plus client-side batching, retry/backoff, failure handling, and a hard redaction rule for the password field. You
+    own the data.
+  - [1mThird-party SDK (Sentry/LogRocket/etc.)[0m — buys you production visibility plus error grouping and stack traces on day
+    one. Costs a dependency, a vendor, and sending user data to a third party — which for a login form is a real review
+    question, not a checkbox.
+
+  Cheap to change later: log levels, message wording, which call sites log. Expensive to change later: the destination
+  and the record shape, because they set the interface every call site and any collector depends on.
+
+  [1mMy recommendation: structured console only, behind a small logger module with a pluggable sink.[0m This repo has no
+  dependencies and no backend, so a collector or SDK is a large step to take before the logging call sites even exist.
+  The sink seam means adding remote shipping later is a new sink, not a rewrite of every call site.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mWhere do log records need to end up for you to debug a production issue?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mStructured console + sink seam (Recommended)[39m
+     [38;5;246mOne logger module, levels, structured records, console output. Pluggable sink so remote shipping is an additive [39m
+     [38;5;246mchange later. No dependencies, no backend.[39m
+  [38;5;246m2.[39m Ship to our own collector
+     [38;5;246mClient batches records and POSTs them to an endpoint we build. Real production visibility, but needs a backend, [39m
+     [38;5;246mretry/backoff, and strict redaction.[39m
+  [38;5;246m3.[39m Third-party SDK (Sentry etc.)
+     [38;5;246mVendor SDK for logs and error grouping. Fastest to real visibility, but adds a dependency and sends user data [39m
+     [38;5;246moff-site.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

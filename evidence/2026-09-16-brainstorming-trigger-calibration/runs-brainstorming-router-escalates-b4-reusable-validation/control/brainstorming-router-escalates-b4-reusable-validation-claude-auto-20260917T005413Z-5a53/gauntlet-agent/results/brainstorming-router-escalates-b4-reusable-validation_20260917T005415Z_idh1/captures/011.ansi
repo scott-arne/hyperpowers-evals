@@ -1,0 +1,40 @@
+  factories: [38;5;153m{ username: [required(), minLength(3)], password: [required(), minLength(8)], confirmPassword: [39m
+  [38;5;153m[matches('password')] }[39m. Each factory returns a plain [38;5;153m{ name, test, message }[39m object where [38;5;153mtest(value, allValues)[39m is a
+  pure function. Cross-field rules fall out for free because every test sees the whole value set. Extending means
+  writing one more factory, or dropping in [38;5;153mcustom(fn, message)[39m inline.
+  [3mTrade-off:[0m you have to design the factory set up front, and every rule carries a default message you'll want
+  overridable.
+
+  [1mB. Bare predicate functions[0m — the schema maps each field to an array of [38;5;153m(value, allValues) => string | null[39m functions,
+  returning an error message or null. No rule library at all, maybe a handful of shared helpers.
+  [3mTrade-off:[0m the least machinery by a wide margin, and trivially extensible. But messages get hand-written at every call
+  site, so login and signup drift apart on wording, and there's nothing to introspect — a rule can't tell the binding
+  layer "this field is required" for an [38;5;153maria-required[39m attribute.
+
+  [1mC. Fluent chained builder[0m — zod-style: [38;5;153mfield('password').required().min(8)[39m, with a chainable object per field.
+  [3mTrade-off:[0m the nicest authoring ergonomics of the three, and the most code to build and keep stable. It's a public API
+  surface with ordering and immutability questions, for a repo with two forms.
+
+  [1mMy recommendation is A.[0m It gets B's pure-function testability while keeping messages centralized and rules
+  introspectable, and it costs a fraction of C — the factories are each two or three lines. C is the right shape at
+  twenty forms, not two, and it's a mechanical upgrade from A later if you ever get there.
+
+  One thing to flag: B is the only one that stays honest if the real answer is "we actually just need four rules and
+  never more." If that's your read, say so and I'll shrink the design.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Rule model [39m[49m
+
+[1m[38;5;231mWhich rule representation?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mRule descriptors (Recommended)[39m
+     [38;5;246mFactories like required(), minLength(8), matches('password') returning {name, test, message}. Pure tests, central [39m
+     [38;5;246mmessages, introspectable.[39m
+  [38;5;246m2.[39m Bare predicates
+     [38;5;246mfield -> [(value, all) => string | null]. Minimal machinery, messages written per call site, not introspectable.[39m
+  [38;5;246m3.[39m Fluent builder
+     [38;5;246mfield('password').required().min(8). Best ergonomics, most API surface to build and stabilize.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

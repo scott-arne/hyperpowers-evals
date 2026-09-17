@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What should preferences storage hold in v1? → Remember username[39m
+
+[38;5;231m⏺[39m One more clarifying question before I lay out approaches — this one's about the interface other forms will call, so
+  it's the expensive-to-change decision.
+
+  [1mThe fork:[0m whether the module knows its preferences up front, or is an open bag callers write whatever they like into.
+
+  - [1mDeclared schema[0m — each preference is registered with a key, a default, and a validator.
+    [38;5;153mprefs.get('rememberedUsername')[39m always returns a usable value, corrupt or missing data falls back to the default,
+    and an unknown key is a bug you catch immediately. Costs: adding a preference means editing the schema, so a new
+    form can't just start writing keys.
+  - [1mOpen key-value bag[0m — [38;5;153mprefs.set(k, v)[39m / [38;5;153mprefs.get(k)[39m with no registration. Buys total freedom for later forms. Costs:
+    no defaults, so every call site handles [38;5;153mundefined[39m itself; no validation, so a bad write from one form silently
+    breaks another; key collisions between forms are invisible until they bite.
+  - [1mDeclared schema + namespaces[0m — same as the first, but each form registers its own group. Buys collision safety for
+    many independent forms. Costs: more machinery than two preferences justify right now.
+
+  My recommendation is [1mdeclared schema[0m. With "other forms will need it later" as the driver, the thing that actually
+  protects those forms is defaults and validation at the boundary, not write freedom — the bag pushes that work into
+  every consumer and gets it done inconsistently. Registration is also the cheap direction to reverse: a schema can grow
+  namespaces later without changing existing call sites, while retrofitting validation onto a bag means auditing every
+  writer.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ API shape [39m[49m
+
+[1m[38;5;231mHow should other forms declare and access preferences?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDeclared schema (Recommended)[39m
+     [38;5;246mEach preference registered with key, default, and validator. Reads always return a valid value; unknown keys throw.
+[39m  [38;5;246m2.[39m Open key-value bag
+     [38;5;246mFree-form get/set. Maximum flexibility, no defaults or validation, collisions possible between forms.[39m
+  [38;5;246m3.[39m Schema + namespaces
+     [38;5;246mPer-form preference groups on top of a declared schema. Collision-safe, more machinery than v1 needs.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

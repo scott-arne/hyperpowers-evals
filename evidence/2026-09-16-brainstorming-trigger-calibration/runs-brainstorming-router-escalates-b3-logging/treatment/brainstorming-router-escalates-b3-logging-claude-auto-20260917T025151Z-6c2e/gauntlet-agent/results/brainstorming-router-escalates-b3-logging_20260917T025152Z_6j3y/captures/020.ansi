@@ -1,0 +1,40 @@
+
+  [38;5;153mts[39m as an ISO string rather than epoch millis — these logs are read by a human out of a file or a devtools dump, not by
+  a parser, and readability wins. This is the one part of the design that's expensive to change later, since anything
+  that ever reads a persisted log depends on it.
+
+  [1mRedaction mechanics.[0m [38;5;153mredact.js[39m exports a single [38;5;153mPERMITTED[39m set of key names and a [38;5;153mredact(ctx)[39m function. Anything not in
+  the set is replaced by the string [38;5;153m"[redacted]"[39m rather than dropped — if a field was present and got scrubbed, you
+  want to see that it existed, otherwise you spend debugging time wondering whether the code path ran at all. The key
+  name is revealed; the value never is.
+
+  It recurses to every depth, so a permitted key holding a nested object doesn't become a hole in the policy, with a
+  depth cap and a total-size cap so one bad call site can't fill the ring buffer with a single record. [38;5;153mError[39m values are
+  special-cased to [38;5;153m{ name, message, stack }[39m — a logging layer that swallows stack traces isn't worth having.
+
+  [1mThe honest limitation.[0m The allow-list governs [38;5;153mctx[39m only. Nothing stops someone writing [38;5;153mlog.info("password is " + [39m
+  [38;5;153mpassword)[39m, and no redactor can catch that, because by then it's an opaque string. The mitigation is convention — [38;5;153mmsg[39m
+  is a static description, all variable data goes in [38;5;153mctx[39m — plus review. I'd rather state that plainly than imply the
+  allow-list makes the logger leak-proof.
+
+  [1mInitial permitted set.[0m [38;5;153musername[39m, [38;5;153muserId[39m, [38;5;153mevent[39m, [38;5;153mdurationMs[39m, [38;5;153mstatus[39m, [38;5;153merrorCode[39m, [38;5;153mformField[39m. That's what the current code
+  would actually need. [38;5;153musername[39m deserves a deliberate decision rather than a default, which is the question below.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Section 2  ☒ Username [38;5;16m[48;5;153m ✔ Submit [38;5;246m[49m →[39m
+
+[1m[38;5;231mReview your answers[0m
+
+ ● Section 2 (record shape and redaction) — does this look right?
+   [38;5;114m→ Looks right, continue[39m
+ ● Should `username` be in the permitted set?
+   [38;5;114m→ Permit it (Recommended)[39m
+
+[38;5;246mReady to submit your answers?[39m
+
+[38;5;153m❯[39m [38;5;246m1. [38;5;153mSubmit answers[39m
+  [38;5;246m2. [39mCancel
+
+
+
+

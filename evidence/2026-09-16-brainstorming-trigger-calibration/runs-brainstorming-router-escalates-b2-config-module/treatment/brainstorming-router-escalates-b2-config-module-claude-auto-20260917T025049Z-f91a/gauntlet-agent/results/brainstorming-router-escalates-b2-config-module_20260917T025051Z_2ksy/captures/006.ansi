@@ -1,0 +1,40 @@
+  First question, and it's the one that determines everything else.
+
+  [1mThe fork:[0m how does the running page know [3mwhich[0m environment it's in? A browser has no env vars, so this is either
+  decided at deploy time (a file is written/swapped before the page ships) or at page-load time (the code inspects
+  something and picks).
+
+  - [1mRuntime detection from hostname[0m — the settings module maps [38;5;153mlocation.hostname[39m to an endpoint. Buys: one artifact
+    ships everywhere, zero build tooling, works today with a static file server. Costs: every environment's URL is
+    visible in shipped source; adding an environment means a code edit. Rules out little — cheap to replace later.
+  - [1mDeploy-time config file[0m — [38;5;153mconfig.js[39m (or a [38;5;153mwindow.APP_CONFIG[39m block) is generated or swapped per environment; the
+    settings module just reads it. Buys: environments stay out of the source, standard 12-factor shape. Costs: you now
+    need a deploy step that didn't exist, and local dev needs a default. Harder to undo — it puts a build/deploy
+    contract in place.
+  - [1mBuild-time bundling[0m — introduce a bundler, [38;5;153mimport[39m the settings module, inline the value per build. Buys: real module
+    system for the whole app, dead-code elimination. Costs: a toolchain, [38;5;153mnode_modules[39m, and a build for a two-file
+    static page. This is the big one to walk back.
+
+  [1mMy recommendation: runtime detection from hostname.[0m The app is a static page with a stubbed login that never actually
+  calls the endpoint. Hostname mapping gets you environment switching with no toolchain and no deploy contract, and if
+  you later add a bundler or a deploy step, the settings module's [3minterface[0m ([38;5;153msettings.apiEndpoint[39m) doesn't change — only
+  its internals do. The other two buy infrastructure this repo isn't paying for yet.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Env source [39m[49m
+
+[1m[38;5;231mHow should the app determine which environment's API endpoint to use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHostname detection (Recommended)[39m
+     [38;5;246mSettings module maps location.hostname to an endpoint. No toolchain, no deploy step, works with the current static
+[39m     [38;5;246mpage.[39m
+  [38;5;246m2.[39m Deploy-time config file
+     [38;5;246mA per-environment config.js / window.APP_CONFIG is swapped at deploy; settings reads it. Needs a deploy step that [39m
+     [38;5;246mdoesn't exist yet.[39m
+  [38;5;246m3.[39m Build-time bundling
+     [38;5;246mAdd a bundler, use real imports, inline the value per build. Most capable, but introduces a full toolchain for a [39m
+     [38;5;246mtwo-file page.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

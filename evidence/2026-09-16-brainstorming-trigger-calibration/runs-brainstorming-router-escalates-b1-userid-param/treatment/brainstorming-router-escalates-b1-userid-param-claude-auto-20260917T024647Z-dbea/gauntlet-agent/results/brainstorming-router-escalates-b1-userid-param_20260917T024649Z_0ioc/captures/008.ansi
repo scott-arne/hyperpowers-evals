@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m [1mUpgrading the path: bounded → architectural.[0m "Across the app," "persist," and "other forms will need it later" all
+  name structure this repo doesn't have — there's no session store, no module shared between forms, and no second form
+  yet. That's a new subsystem, not a parameter change, so I'm stepping up to the full process: clarifying questions one
+  at a time, then approaches, then a design you approve section by section, then a written spec. The ratchet is one-way,
+  so I won't quietly drop back down.
+
+  Recording what I've got so far: a persistent identity that outlives a single [38;5;153mlogin()[39m call, readable from anywhere in
+  the app, and consumable by forms that don't exist yet.
+
+  First question, and it shapes everything after it. Right now [38;5;153mlogin()[39m is synchronous and fabricates its own result — it
+  never touches [38;5;153mAPI_ENDPOINT[39m. Whether a real server is in play decides the shape of the whole thing:
+
+  - [1mReal backend now[0m — [38;5;153mlogin()[39m becomes async and returns a Promise; the [38;5;153muserId[39m is whatever the server says it is, and
+    the store holds a server-issued identity. Every current and future caller has to [38;5;153mawait[39m. That's the change that's
+    expensive to reverse, because it rewrites the signature for all those later forms too.
+  - [1mStub for now, real backend later[0m — [38;5;153mlogin()[39m stays synchronous and mints a placeholder [38;5;153muserId[39m; the store and its
+    interface get built and tested today. Cheap now, but you pay the async conversion later, and at that point the later
+    forms exist and all have to change with it.
+  - [1mStub, but async-shaped from day one[0m — [38;5;153mlogin()[39m returns a Promise that currently resolves a fake [38;5;153muserId[39m. Slightly
+    awkward to read while it's fake, but the signature never changes again.
+
+  [1mMy recommendation: the third.[0m The async boundary is the one decision here that gets more expensive the longer it
+  waits, and you've just told me more callers are coming. Paying for it while there's exactly one call site is the
+  cheapest it will ever be.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Backend [39m[49m
+
+[2m│[0m [1m[38;5;231mIs there a real auth backend behind API_ENDPOINT that will return the userId, or does login() stay a stub?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mStub, async-shaped (Recommended)[39m
+     [38;5;246mlogin() returns a Promise resolving a fake userId now; signature never changes when the real API lands.[39m
+  [38;5;246m2.[39m Real backend now
+     [38;5;246mlogin() POSTs to API_ENDPOINT and returns the server-issued userId. Async from the start, real error cases.[39m
+  [38;5;246m3.[39m Stub, stays synchronous
+     [38;5;246mKeep login() sync with a placeholder userId; convert to async later when the backend exists.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  │ Delivery   │ In-app adapter only, written against the channel interface.                                         │
+  ├────────────┼─────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ UI         │ Task list, task edit, bell with unread count, dropdown list, mark-read. 30s poll.                   │
+  └────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  [1mExplicitly deferred[0m — named here so they're decisions, not oversights: explicit watch/mute (seam exists), email
+  channel (interface exists), [38;5;153mtask.commented[39m and [38;5;153mtask.due_date_changed[39m, per-type preferences, SSE/WebSocket, permissions
+  and task visibility, e2e and property tests.
+
+  [1mTesting.[0m Unit tests, written first (TDD). The valuable ones:
+
+  - [38;5;153minterest.ts[39m — table-driven: actor excluded; creator and assignee both notified; creator-is-assignee yields one
+    recipient, not two; unassigned task notifies only the creator.
+  - [38;5;153mcoalesce.ts[39m — pure function, so this is where the edge cases get pinned: same key merges inside the window,
+    different type doesn't merge, closed window starts a new notification, an open window is [1mnot[0m extended by new events.
+  - Worker — process the same event twice, assert exactly one notification exists (this is the test that proves the
+    [38;5;153mUNIQUE(event_id, recipient_id)[39m index does its job). A poison event doesn't block the ones behind it.
+  - Dispatch — a failing adapter marks its delivery failed without affecting other channels.
+  - HTTP — [38;5;153mGET /notifications[39m returns only the session user's rows. This is the security test; it should exist from the
+    first commit.
+
+  The two [38;5;153mcoalesce.ts[39m cases about windows, and the worker idempotency case, are the ones I'd expect to actually catch
+  bugs. Everything else is regression insurance.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[1m[38;5;231mDoes the slice scope and testing plan look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes — write the spec[39m
+     [38;5;246mDesign approved. I'll write it to docs/hyperpowers/specs/ (uncommitted) for your review, then move to [39m
+     [38;5;246mwriting-plans.[39m
+  [38;5;246m2.[39m Trim it further
+     [38;5;246mSomething in the slice should be cut or deferred — I'll ask what.[39m
+  [38;5;246m3.[39m Let's discuss it
+     [38;5;246mScope or testing needs changing before I write anything down.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

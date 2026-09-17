@@ -1,0 +1,40 @@
+  [38;5;153msrc/settings.js[39m, a new ES module. It owns a hostname→endpoint map, a production default, and the resolution logic.
+  [38;5;153mapp.js[39m stops declaring [38;5;153mAPI_ENDPOINT[39m and imports instead.
+
+  The one genuinely open choice is [1mwhat the module exports[0m, because it decides whether the thing is testable:
+
+  - [1mPure resolver + resolved object[0m — export [38;5;153mresolveApiEndpoint(hostname)[39m (a pure function, hostname passed in) [3mand[0m a
+    [38;5;153msettings[39m object resolved once at import from [38;5;153mlocation.hostname[39m. App code reads [38;5;153msettings.apiEndpoint[39m; tests call the
+    resolver directly with any hostname string, no DOM, no globals.
+  - [1mResolved constant only[0m — export [38;5;153mconst apiEndpoint = ...[39m, computed at import. Smallest file, but the only way to test
+    the mapping is to stub a global [38;5;153mlocation[39m before import, which is exactly the awkwardness a settings module should
+    avoid.
+  - [1m[38;5;153mgetSettings()[39m factory[0m — call it to get a frozen object. Flexible, but nothing here needs re-resolution at runtime;
+    it's ceremony for a value that can't change during a page load.
+
+  [1mRecommendation: pure resolver + resolved object.[0m It costs one extra exported symbol and makes every environment
+  mapping verifiable with a plain function call.
+
+  [1mSection 2 — Files touched and data flow[0m
+
+  - [1m[38;5;153msrc/settings.js[0m (new) — the map, the production default, [38;5;153mresolveApiEndpoint()[39m, the [38;5;153mconsole.warn[39m on an unmatched
+    hostname, and the resolved [38;5;153msettings[39m export.
+  - [1m[38;5;153mapp.js[0m — delete line 2; add the import; update the stub comment to reference [38;5;153msettings.apiEndpoint[39m. No behavior
+    change, since nothing currently reads the constant.
+  - [1m[38;5;153mindex.html[0m — [38;5;153m<script src="app.js">[39m becomes [38;5;153m<script type="module" src="app.js">[39m.
+  - [1m[38;5;153msrc/index.js[39m, [38;5;153msrc/utils.js[0m — untouched by the feature itself (see the wrinkle below).
+
+  Flow: page load → [38;5;153mapp.js[39m imports [38;5;153msrc/settings.js[39m → module resolves [38;5;153mlocation.hostname[39m against the map once → [38;5;153mapp.js[39m
+  reads [38;5;153msettings.apiEndpoint[39m.
+
+  Consequence worth stating plainly: after this, [1mopening [38;5;153mindex.html[39m by double-clicking stops working[0m — module scripts
+  are blocked on [38;5;153mfile://[39m. You'll need [38;5;153mpython3 -m http.server[39m or similar. That's inherent to the ES-modules decision, not
+  something the design adds.
+
+  [1mSection 3 — Testing, and one wrinkle I hit[0m
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

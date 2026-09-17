@@ -1,0 +1,40 @@
+
+  Next fork, and it's the one that decides whether this actually solves "debug production issues": [1mwhere do browser logs
+[0m  [1mgo?[0m Node's answer is easy (structured JSON to stdout, platform collects it). The browser has no equivalent — a
+  [38;5;153mconsole.log[39m on a user's laptop is invisible to you unless something ships it.
+
+  - [1mShip to an endpoint you own[0m — the core batches records and POSTs them to a collect URL. No new dependencies, fits
+    the zero-dep repo, and you own the data. The catch: [1mthere is no backend in this repo.[0m [38;5;153mAPI_ENDPOINT[39m points at
+    [38;5;153mhttps://api.example.com/login[39m, a stub. So this option is only real if a collector endpoint exists or someone will
+    build one — otherwise I'd be writing a transport that posts into the void.
+  - [1mThird-party service (Sentry or similar)[0m — you get grouping, stack traces, release tracking, and a UI on day one,
+    which is most of what "debug production issues" actually means in practice. Cost: your first runtime dependency, an
+    SDK you don't control, and log data leaving your infrastructure.
+  - [1mConsole only, structured[0m — same record shape, no shipping. Honest scaffolding, but it does not let you debug
+    anything you can't reproduce locally. I'd only pick this as a deliberate phase one.
+
+  Hard to reverse: the record schema, once a collector or Sentry is parsing it. Easy to reverse: the sink itself — the
+  whole point of the shared core is that swapping the transport touches one file.
+
+  My recommendation is [1mship to your own endpoint[0m, designed so the sink is pluggable, [3mprovided[0m a collector exists. If
+  nothing will receive the POSTs, I'd rather build console-only now with the transport seam in place than ship dead
+  code.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Log sink [39m[49m
+
+[1m[38;5;231mWhere should browser logs be sent in production?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mOwn endpoint, batched (Recommended)[39m
+     [38;5;246mCore batches records and POSTs to a collect URL. Zero dependencies, you own the data. Requires a collector endpoint
+[39m     [38;5;246mto exist — tell me the URL or that someone will build it.[39m
+  [38;5;246m2.[39m Third-party (Sentry etc.)
+     [38;5;246mGrouping, stack traces, and a UI on day one. Costs your first runtime dependency and sends log data off your [39m
+     [38;5;246minfrastructure.[39m
+  [38;5;246m3.[39m Console only, for now
+     [38;5;246mStructured records to the console with the transport seam built but unwired. Phase one only — does not actually let
+[39m     [38;5;246myou debug unreproducible production failures.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

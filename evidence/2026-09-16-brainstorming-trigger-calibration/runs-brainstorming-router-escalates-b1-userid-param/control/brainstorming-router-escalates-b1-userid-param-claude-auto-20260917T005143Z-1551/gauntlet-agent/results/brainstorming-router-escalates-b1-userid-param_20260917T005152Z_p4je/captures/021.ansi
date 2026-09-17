@@ -1,0 +1,40 @@
+  │ [38;5;153mgetUserId()[39m     │ [38;5;153mstring[39m | [38;5;153mnull[39m                  │ [38;5;153mnull[39m whenever consent isn't granted              │
+  ├─────────────────┼────────────────────────────────┼──────────────────────────────────────────────────┤
+  │ [38;5;153mgrantConsent()[39m  │ [38;5;153mstring[39m                         │ Mints the id if absent, returns it               │
+  ├─────────────────┼────────────────────────────────┼──────────────────────────────────────────────────┤
+  │ [38;5;153mrevokeConsent()[39m │ [38;5;153mvoid[39m                           │ Records [38;5;153m"denied"[39m [1mand[0m deletes the id              │
+  ├─────────────────┼────────────────────────────────┼──────────────────────────────────────────────────┤
+  │ [38;5;153mclear()[39m         │ [38;5;153mvoid[39m                           │ Removes the record entirely, back to [38;5;153m"unset"[39m     │
+  └─────────────────┴────────────────────────────────┴──────────────────────────────────────────────────┘
+
+  Consent is tri-state, not a boolean, because "hasn't been asked" and "said no" need different behavior — the first
+  shows the banner, the second must not nag.
+
+  [1mData model[0m — one [38;5;153mlocalStorage[39m key, [38;5;153mapp.identity[39m, holding one versioned JSON object:
+
+  { [36m"v"[39m: [32m1[39m, [36m"consent"[39m: [31m"granted"[39m, [36m"userId"[39m: [31m"…"[39m, [36m"createdAt"[39m: [31m"2026-09-16T…Z"[39m }
+
+  Single key rather than separate [38;5;153mconsent[39m and [38;5;153muserId[39m keys: two keys can desync into "consent revoked, id still present,"
+  which is precisely the state a consent gate exists to prevent. [38;5;153mv[39m gives one place to handle format changes when
+  server-issued ids eventually arrive.
+
+  [1mId generation:[0m [38;5;153mcrypto.randomUUID()[39m when available, falling back to building a v4 UUID from [38;5;153mcrypto.getRandomValues()[39m.
+  [38;5;153mrandomUUID[39m is restricted to secure contexts; [38;5;153mgetRandomValues[39m is not, so the fallback keeps the page working when
+  opened straight from disk. No [38;5;153mMath.random()[39m anywhere — it's not suitable for identifiers.
+
+  [1mFailure handling[0m, the part most likely to bite:
+  - [38;5;153mlocalStorage[39m throws in Safari private browsing and when storage is disabled. Every access is wrapped; on failure the
+    module degrades to an in-memory record for the page's lifetime. The app keeps working, the id just doesn't survive
+    reload.
+  - A corrupt or unknown-[38;5;153mv[39m record is treated as [38;5;153m"unset"[39m rather than throwing — a bad blob shouldn't brick the login
+    form.
+  - [38;5;153mgrantConsent()[39m is idempotent: called twice, the second call returns the existing id rather than minting a new one.
+
+  Does this section look right before I move on to the banner and the [38;5;153mlogin[39m integration?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 4m 13s · done 6:01 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+
+  Next fork, and it's the one with lasting consequences.
+
+  [1mThe fork:[0m [38;5;153mapp.js[39m is loaded as a plain [38;5;153m<script>[39m, so it has no [38;5;153mimport[39m. [38;5;153msrc/utils.js[39m and [38;5;153msrc/index.js[39m are CommonJS, which
+  browsers can't load at all. A shared validation module has to be reachable from both the page and (if you want tests)
+  Node — and the three ways to do that differ in what you're locked into later, not just in syntax.
+
+  - [1mES modules[0m — [38;5;153msrc/validation.mjs[39m uses [38;5;153mexport[39m; [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" src="app.js">[39m. Browser-native,
+    no build step, and Node can [38;5;153mimport[39m the same file for tests. Cost: module scripts are blocked over [38;5;153mfile://[39m by CORS,
+    so opening [38;5;153mindex.html[39m by double-clicking stops working — you'd need [38;5;153mnpx serve[39m or similar. Hard to walk back cheaply
+    once other forms import it.
+  - [1mGlobal script[0m — [38;5;153msrc/validation.js[39m attaches to [38;5;153mwindow[39m; add a second [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m. Zero friction, still
+    works over [38;5;153mfile://[39m. Cost: no import graph, and unit-testing it in Node needs a shim. Cheap to migrate to ESM later
+    while there's one consumer; progressively less cheap as forms are added.
+  - [1mDual export (UMD-ish)[0m — one file that works as both a browser global and a CommonJS [38;5;153mrequire[39m. Buys both without
+    choosing. Cost: boilerplate wrapper around a ~30-line module, and it's a pattern the rest of this repo doesn't use.
+
+  [1mMy recommendation: ES modules.[0m It's the only one of the three that makes the module testable in Node without a shim,
+  and since "future-proofing" is the actual goal here, the import graph is the part that pays off when forms two and
+  three arrive. The [38;5;153mfile://[39m regression is the real cost and I don't want to hide it — if you open [38;5;153mindex.html[39m directly
+  rather than through a server, that alone should decide it for the global script.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should the shared validation module be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mNative import/export, testable in Node, no build step. Breaks opening index.html via file:// — needs a local [39m
+     [38;5;246mserver.[39m
+  [38;5;246m2.[39m Global script
+     [38;5;246mSecond <script> tag, attaches to window. Keeps file:// working, no tooling. Needs a shim to unit-test; migrate to [39m
+     [38;5;246mESM later.[39m
+  [38;5;246m3.[39m Dual export (UMD-ish)
+     [38;5;246mWorks as browser global and CommonJS require. Avoids the choice, at the cost of wrapper boilerplate this repo uses
+[39m     [38;5;246mnowhere else.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

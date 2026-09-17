@@ -1,0 +1,40 @@
+  password" is not a control.
+
+  - [1mAllowlist[0m — the logger accepts only explicitly named, pre-declared fields; anything else in a payload is dropped
+    before it can serialize. Buys you a guarantee that a future careless call site can't leak a new field. Costs a small
+    amount of friction: adding a field to a log means declaring it.
+  - [1mDenylist / scrub[0m — log what's passed, strip known-sensitive keys ([38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m) on the way out. Less
+    friction day to day. Fails open: a field nobody thought to add to the list ships in the clear, and you find out from
+    a log dump.
+  - [1mDeveloper discipline[0m — no enforcement, just a convention. Cheapest now, and the failure mode is credentials in a log
+    store you then have to purge.
+
+  This one is genuinely expensive to change later, and not because of the code. Once records with a password or an
+  unhashed identifier land in your log store, you own a cleanup and possibly a disclosure — you can't retract them by
+  changing the logger afterward.
+
+  There's a sub-question riding along: [1musernames are PII.[0m They're also the single most useful key for tracing one user's
+  failed login. The middle path is logging a stable hash or a per-session correlation ID instead of the raw username —
+  you can still follow one session end to end, without the log store becoming an account list.
+
+  [1mMy recommendation: allowlist, plus a correlation ID instead of the raw username, and the password value never enters a
+[0m  [1mrecord under any key.[0m The friction is small at this size, and it's the only option where a mistake in a future call
+  site is contained by default.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Redaction [39m[49m ☐ User ID  ✔ Submit  →
+
+[1m[38;5;231mHow should the logger prevent credentials and PII from reaching your log store?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAllowlist (Recommended)[39m
+     [38;5;246mOnly pre-declared fields serialize; everything else is dropped. Fails closed, so a careless future call site can't
+[39m     [38;5;246mleak a new field.[39m
+  [38;5;246m2.[39m Denylist / scrub
+     [38;5;246mLog what's passed, strip known-sensitive keys on the way out. Lower friction, but fails open on any field nobody [39m
+     [38;5;246mlisted.[39m
+  [38;5;246m3.[39m Convention only
+     [38;5;246mNo enforcement; rely on developers not logging secrets. Cheapest now, worst failure mode.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

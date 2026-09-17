@@ -1,0 +1,40 @@
+  Context I found: the repo is two disconnected halves. A browser webapp ([38;5;153mindex.html[39m + [38;5;153mapp.js[39m — a login form, stubbed
+  API call, no build step, no framework) and a Node CLI ([38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m — a [38;5;153mgreet[39m function). No tests, no
+  test runner, no linter. [38;5;153mpackage.json[39m has no dependencies and no scripts.
+
+  First fork, and it's the one that determines everything else:
+
+  [1mWhich half owns preferences?[0m "Persist across sessions" means something different on each side, and the two have no
+  shared code today.
+
+  - [1mBrowser[0m — preferences live in [38;5;153mlocalStorage[39m, keyed per browser profile. Buys you zero infrastructure and instant
+    persistence. Costs: per-device, wiped by clearing site data, and a user on a second machine sees defaults. Rules out
+    cross-device sync unless you later add a server.
+  - [1mNode CLI[0m — preferences live in a JSON file ([38;5;153m~/.config/<app>/preferences.json[39m or similar). Buys you real
+    cross-invocation persistence for the CLI and something testable without a DOM. Costs: irrelevant to the login page;
+    needs path resolution and file-error handling.
+  - [1mBoth, over a shared module[0m — one preferences API in [38;5;153msrc/[39m, with a swappable storage backend (localStorage adapter /
+    file adapter). Buys you one schema and one set of tests. Costs: the repo has no bundler, so sharing [38;5;153msrc/[39m code with
+    [38;5;153mapp.js[39m means either adding one or duplicating — real work for a benefit nothing currently needs.
+
+  My recommendation is [1mbrowser / localStorage[0m, on the evidence that the only user-facing surface here is the login page
+  — [38;5;153msrc/index.js[39m is a hello-world with no user to have preferences. Going browser-only now is cheap to reverse: if the
+  CLI later needs settings, the schema and defaults lift out into a shared module, and only the read/write calls change.
+  Going "both" now is the expensive, hard-to-undo choice, since it drags in a build step.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Surface [39m[49m
+
+[1m[38;5;231mWhich half of the repo should preferences storage serve?[0m
+
+  [38;5;246m1.[39m Browser (localStorage) (Recommended)
+     [38;5;246mPreferences for the webapp in index.html/app.js, persisted in localStorage. No new tooling. Per-device only.[39m
+  [38;5;246m2.[39m Node CLI (JSON file)
+     [38;5;246mPreferences for src/index.js, persisted to a JSON file on disk. Testable without a DOM, irrelevant to the login [39m
+     [38;5;246mpage.[39m
+  [38;5;246m3.[39m Both, shared module
+     [38;5;246mOne preferences API with swappable backends. Requires adding a bundler or duplicating code.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

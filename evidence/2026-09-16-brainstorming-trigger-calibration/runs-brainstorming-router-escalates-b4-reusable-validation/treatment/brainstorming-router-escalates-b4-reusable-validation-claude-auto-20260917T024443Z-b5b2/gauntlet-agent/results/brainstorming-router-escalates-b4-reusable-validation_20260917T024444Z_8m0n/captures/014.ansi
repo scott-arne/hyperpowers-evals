@@ -1,0 +1,40 @@
+  3. [1mDOM layer[0m: [38;5;153mshowErrors(formEl, errors)[39m, [38;5;153mclearErrors(formEl)[39m, and the one function forms actually call:
+     [38;5;153mvalidateForm(formEl, schema) → { valid, values, errors }[39m — reads the field values, validates, renders errors, hands
+     back the result.
+
+  [38;5;153mapp.js[39m keeps its own submit listener (per your boundary choice, the module doesn't touch submit):
+
+  [34mimport[39m { validateForm, required, minLength, email } [34mfrom[39m [31m"./validation.mjs"[39m;
+
+  [34mconst[39m loginSchema = {
+    [36musername[39m: [[33mrequired[39m(), [33mminLength[39m([32m3[39m)],
+    [36mpassword[39m: [[33mrequired[39m(), [33mminLength[39m([32m8[39m)],
+  };
+
+  document.[33mgetElementById[39m([31m"login-form"[39m).[33maddEventListener[39m([31m"submit"[39m, [33m([39me) => {
+    e.[33mpreventDefault[39m();
+    [34mconst[39m { valid, values } = [33mvalidateForm[39m(e.target, loginSchema);
+    [34mif[39m (!valid) [34mreturn[39m;
+    console.[33mlog[39m([31m"Login result:"[39m, [33mlogin[39m(values.username, values.password));
+  });
+
+  [38;5;153mvalidateForm[39m returning [38;5;153mvalues[39m means the handler never does [38;5;153mgetElementById[39m again — that's the duplication that would
+  otherwise grow with every new form.
+
+  [1mWhy [38;5;153m.mjs[39m and not [38;5;153m.js[39m.[0m There's a snag worth surfacing: [38;5;153mpackage.json[39m has no [38;5;153m"type"[39m field, so Node treats every [38;5;153m.js[39m file
+  as CommonJS. A [38;5;153mvalidation.js[39m using [38;5;153mexport[39m would work in the browser but fail to import in a Node test. The fixes are
+  to set [38;5;153m"type": "module"[39m — which breaks [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m, files unrelated to this work — or to use the
+  [38;5;153m.mjs[39m extension, which Node always reads as ESM and browsers don't care about either way. I'm proposing [38;5;153m.mjs[39m to keep
+  the change off the [38;5;153msrc/[39m tree. The cost is a one-off extension inconsistency next to [38;5;153mapp.js[39m.
+
+  [1mFiles touched:[0m [38;5;153mvalidation.mjs[39m (new), [38;5;153mapp.js[39m (import the module, drop the local [38;5;153mvalidateForm[39m, read values from the
+  returned object), [38;5;153mindex.html[39m ([38;5;153mname[39m attributes on the two inputs; [38;5;153m<script type="module" src="app.js">[39m).
+
+  Does the API shape and the [38;5;153m.mjs[39m call look right before I move on to the rendering and error-handling section?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 35s · done 7:51 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

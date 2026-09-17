@@ -1,0 +1,40 @@
+  localStorage is the single source of truth: every read hits storage and validates the expiry stamp, so there's no
+  cached copy to go stale. Cross-tab consistency is free — a second tab reads the same storage. Consumers pull the ID
+  when they need it. Tradeoff: no way to [3mreact[0m to login/logout, so anything that needs to update on a login in another
+  tab has to re-read on its own schedule. Complexity: trivial.
+
+  [1mB. Observable session store[0m — same storage, but the module keeps an in-memory copy hydrated at startup, writes through
+  to localStorage, and exposes [38;5;153msubscribe(fn)[39m plus a [38;5;153mwindow[39m [38;5;153mstorage[39m-event listener so other tabs propagate. Consumers
+  react to identity changes instead of polling. Buys you live UI updates across tabs; costs you a cache that can diverge
+  from storage and a subscription lifecycle to get right. Complexity: moderate.
+
+  [1mC. Pure session rules + injected storage adapter[0m — the session record and its rules (parse, validate, expire) are pure
+  functions with no browser dependency; a thin adapter binds them to localStorage at the app edge. Fully testable in
+  Node with no DOM harness, which matters here because the repo has [3mno[0m test setup at all, and it makes the eventual
+  "what if the server also returns a token" question a swap at one boundary. Costs the most files and indirection for an
+  app this small. Complexity: moderate.
+
+  [1mI recommend A.[0m It meets every requirement you named with the least machinery, and critically it doesn't foreclose the
+  others: B's [38;5;153msubscribe[39m can be added later without changing A's function signatures, and C's pure-rules split can be
+  extracted from A's internals when there's a test runner to justify it. Starting at B or C means buying cross-tab
+  reactivity and an injection seam before any consumer exists that needs them — and you said the other forms are [3mlater[0m,
+  not now.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich identity-layer approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Read-through module (Recommended)[39m
+     [38;5;246mlocalStorage is the source of truth; get/save/clear functions validate expiry on every read. Least machinery, [39m
+     [38;5;246mcross-tab correct, upgradable to B or C later.[39m
+  [38;5;246m2.[39m B: Observable store
+     [38;5;246mIn-memory cache + subscribe() + cross-tab storage events. Live reactivity now, at the cost of cache coherence and [39m
+     [38;5;246msubscription lifecycle.[39m
+  [38;5;246m3.[39m C: Pure rules + storage adapter
+     [38;5;246mBrowser-free session logic behind an injected adapter. Best testability and the cleanest seam for future token [39m
+     [38;5;246mhandling; the most structure for this app's size.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+    [36mtitle[39m: [36mstring[39m;
+    [36mdone[39m: [36mboolean[39m;
+    [36mdueDate[39m: [36mstring[39m | [34mnull[39m;   [32m// ISO date, date-only ("2026-09-20")[39m
+    [36mcreatedAt[39m: [36mstring[39m;        [32m// ISO instant[39m
+    [36mupdatedAt[39m: [36mstring[39m;        [32m// ISO instant[39m
+    [36mownerId[39m: [36mstring[39m;          [32m// the multi-user seam[39m
+  };
+
+  Three decisions inside that worth naming:
+
+  [1m[38;5;153mdueDate[39m is date-only, not an instant.[0m "Due Friday" means Friday in the user's local calendar, not a UTC timestamp.
+  Storing an instant makes a task flip to overdue at the wrong moment for anyone whose timezone shifts — and it's
+  sub-project 2 that will suffer for it, since every reminder rule compares against it. [38;5;153mcreatedAt[39m/[38;5;153mupdatedAt[39m stay full
+  instants because they're machine facts.
+
+  [1m[38;5;153mownerId[39m gets a real value now[0m, a generated local-user id persisted alongside tasks, not a hardcoded [38;5;153m"me"[39m. A constant
+  would satisfy the type and silently break the day a second user exists, because nothing would distinguish rows written
+  before the seam was real.
+
+  [1mStorage envelope[0m, so migration is possible rather than hypothetical:
+
+  { [36mschemaVersion[39m: [32m1[39m, [36mownerId[39m: [31m"..."[39m, [36mtasks[39m: [34mTask[39m[] }
+
+  Load path: read → [38;5;153mJSON.parse[39m in a [38;5;153mtry[39m → validate the envelope shape and every task field → on any failure, [1mpreserve [0m
+  [1mthe bad blob[0m under [38;5;153mtasks.corrupt.<timestamp>[39m and start empty, surfacing a non-blocking banner. The alternative —
+  throwing, or silently discarding — either bricks the app on one malformed field or destroys a user's data with no
+  recovery path. Validation lives in [38;5;153mpersist.ts[39m only; once data crosses that boundary, the rest of the app trusts its
+  types.
+
+  Save path: subscribe to the store, serialize on change, debounced ~200ms. [38;5;153mQuotaExceededError[39m is caught and surfaced
+  rather than thrown into the void.
+
+  Does that look right so far?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 3m 18s · done 8:29 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

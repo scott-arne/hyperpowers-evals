@@ -1,0 +1,40 @@
+  [1mThe fork:[0m how long the id survives, and who can read it. This is expensive to change later — it's the stored format,
+  and any id already issued under the old scheme is either migrated or orphaned.
+
+  - [1m[38;5;153mlocalStorage[0m — survives tab close and browser restart, shared across tabs on the origin, never sent to the server
+    automatically. Simple synchronous API, no expiry to manage. Costs: client-only, so the backend can't see the id
+    unless you put it in a request body explicitly; and it lives forever until something clears it.
+  - [1m[38;5;153msessionStorage[0m — same API, but scoped to one tab and erased when that tab closes. Cheap and privacy-light, but it
+    does not really satisfy "it should persist," and two tabs would carry different ids.
+  - [1mCookie[0m — persists with an explicit expiry you control, and rides along on requests to the origin so the backend sees
+    it for free. Costs: it's sent on every request whether you want it or not, needs [38;5;153mSameSite[39m/[38;5;153mSecure[39m attributes handled
+    correctly, and the size budget is tight.
+
+  [1mMy recommendation: [38;5;153mlocalStorage[39m.[0m It matches "persists" and "works across the app" exactly, and since the backend is a
+  stub, the automatic-transmission advantage of a cookie buys nothing today. When a real API arrives, passing the id in
+  a request body is a small change; unwinding a cookie's transmission semantics later is not.
+
+  One risk to flag before you pick, because it applies to any of these: a persistent, app-wide identifier whose stated
+  purpose is tracking users is exactly what GDPR/ePrivacy-style consent rules cover, and cookie-vs-[38;5;153mlocalStorage[39m doesn't
+  change that — what matters is the purpose, not the mechanism. If this app has or will have users in those
+  jurisdictions, consent and a deletion path are design constraints, not follow-ups. I'll put whatever you decide in the
+  spec's constraints; I just don't want it discovered after the interface is set.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Persistence [39m[49m ☐ Privacy  ✔ Submit  →
+
+[1m[38;5;231mHow should the userId persist?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage (Recommended)[39m
+     [38;5;246mSurvives browser restart, shared across tabs, client-only. Matches "persists" and "works across the app" with the [39m
+     [38;5;246mcurrent stub backend.[39m
+  [38;5;246m2.[39m Cookie
+     [38;5;246mExplicit expiry and automatically sent to the server on requests. Useful if the backend will need to read the id, [39m
+     [38;5;246mbut adds SameSite/Secure handling.[39m
+  [38;5;246m3.[39m sessionStorage
+     [38;5;246mCleared when the tab closes and not shared between tabs. Lightest on privacy, but does not really satisfy "it [39m
+     [38;5;246mshould persist".[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

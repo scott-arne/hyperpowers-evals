@@ -1,0 +1,40 @@
+  [1mWhy the module holds a base URL and not the full login URL:[0m the host is a property of the environment, the [38;5;153m/login[39m path
+  is a property of the login feature. [38;5;153mapp.js[39m composes [38;5;153m${settings.apiBaseUrl}/login[39m. That way adding a second endpoint
+  later doesn't mean touching [38;5;153msettings.js[39m at all — which is the "easier to change environments" goal, generalized.
+
+  [1mData flow.[0m [38;5;153mapp.js[39m calls [38;5;153mresolveSettings(location.hostname)[39m once at module scope. Passing the hostname in as an
+  argument (rather than reading it inside [38;5;153msettings.js[39m) is the whole reason the module stays testable without a browser.
+
+  [1mError handling.[0m An unrecognized hostname throws an [38;5;153mError[39m naming the hostname and listing the known ones. Because the
+  call sits at module scope, this fails at page load rather than at form submit — so a misconfigured host breaks visibly
+  instead of quietly POSTing credentials to whichever backend happened to be the default. That's deliberate: it means a
+  new hostname (a preview deploy, say) hard-fails until it's added to the table. I think that's the right trade for an
+  auth endpoint, but say so if you'd rather it warn and fall back to local.
+
+  [1mScope note.[0m [38;5;153mAPI_ENDPOINT[39m is currently referenced only inside a comment — [38;5;153mlogin()[39m is a stub. I'll wire
+  [38;5;153msettings.apiBaseUrl[39m into that same commented stub and update the comment, without turning the stub into a real [38;5;153mfetch[39m.
+  Making the login call real is a separate request.
+
+  [1mFiles touched:[0m [38;5;153msettings.js[39m (new), [38;5;153mapp.js[39m (remove the constant, add the import), [38;5;153mindex.html[39m (add [38;5;153mtype="module"[39m).
+
+  One thing the design needs from you. This project has no linting, formatting, or test infrastructure at all, and
+  that's cheapest to decide now — the pure [38;5;153mresolveSettings[39m function is the kind of thing a single test pins down
+  permanently.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Tooling [39m[49m ☐ Hostnames  ✔ Submit  →
+
+[1m[38;5;231mSet up any tooling as part of this change?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;114m[✔][39m [38;5;153mUnit test infra (Recommended)[39m
+  [38;5;246mAdd a test runner (node:test, zero-dependency) plus a first test pinning resolveSettings across all three hostnames [39m
+  [38;5;246mand the unknown-host throw.[39m
+  [38;5;246m2.[39m [ ] Lint + format
+  [38;5;246mAdd ESLint + Prettier with a standard config and an npm script. Catches the script-order and typo class of bug.[39m
+  [38;5;246m3.[39m [ ] Neither — just the change
+  [38;5;246mShip settings.js, app.js, index.html only. Fastest; leaves the resolver unverified by anything automated.[39m
+  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+     [1mNext[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

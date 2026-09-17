@@ -1,0 +1,40 @@
+  - [1m[38;5;153msrc/index.js[39m, [38;5;153msrc/utils.js[0m — untouched by the feature itself (see the wrinkle below).
+
+  Flow: page load → [38;5;153mapp.js[39m imports [38;5;153msrc/settings.js[39m → module resolves [38;5;153mlocation.hostname[39m against the map once → [38;5;153mapp.js[39m
+  reads [38;5;153msettings.apiEndpoint[39m.
+
+  Consequence worth stating plainly: after this, [1mopening [38;5;153mindex.html[39m by double-clicking stops working[0m — module scripts
+  are blocked on [38;5;153mfile://[39m. You'll need [38;5;153mpython3 -m http.server[39m or similar. That's inherent to the ES-modules decision, not
+  something the design adds.
+
+  [1mSection 3 — Testing, and one wrinkle I hit[0m
+
+  The repo has [1mno test runner, no linter, no build step, no CI[0m. It also has a module-system conflict I need to flag:
+
+  [38;5;153mpackage.json[39m has no [38;5;153m"type"[39m field, so Node treats [38;5;153m.js[39m as CommonJS — which is what [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m rely
+  on. But [38;5;153msrc/settings.js[39m must be ESM for the browser. The browser ignores [38;5;153mpackage.json[39m entirely, so [1mthe app works fine
+[0m  [1meither way[0m; the conflict only bites if you want to run Node tests against [38;5;153msrc/settings.js[39m. Resolving it means either
+  adding [38;5;153m"type": "module"[39m and renaming the two CommonJS files to [38;5;153m.cjs[39m, or naming the new file [38;5;153msrc/settings.mjs[39m
+  (unambiguous to Node, but some minimal static servers send the wrong MIME type for [38;5;153m.mjs[39m and browsers then refuse the
+  module).
+
+  This is the only part of the work that reaches outside the feature, so it's yours to decide rather than mine to
+  assume.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Interface [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mWhat should src/settings.js export?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mResolver + settings object (Recommended)[39m
+     [38;5;246mExport resolveApiEndpoint(hostname) plus a settings object resolved at import. Mapping is testable with plain [39m
+     [38;5;246mcalls, no DOM stubbing.[39m
+  [38;5;246m2.[39m Resolved constant only
+     [38;5;246mExport just `apiEndpoint`, computed at import. Smallest file; testing the mapping requires stubbing a global [39m
+     [38;5;246mlocation.[39m
+  [38;5;246m3.[39m getSettings() factory
+     [38;5;246mCall it for a frozen settings object. Flexible, but nothing needs re-resolution during a page load.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

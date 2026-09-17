@@ -1,0 +1,40 @@
+
+  [1mB — Session store + tracking facade (recommended).[0m [38;5;153msession.js[39m owns storage only. A second small [38;5;153mtracker.js[39m exposes
+  [38;5;153mTracker.log(event, detail)[39m, which stamps the current userId automatically. Call sites stop touching [38;5;153mconsole.log[39m for
+  user-attributable events and stop touching storage at all.
+  [3mBuys:[0m a future form adds two script tags and calls [38;5;153mTracker.log(...)[39m — it cannot forget the userId, and it cannot drift
+  on format. Each module answers "what does it do" in one sentence. If tracking ever grows a network sink, only
+  [38;5;153mtracker.js[39m changes.
+  [3mCosts:[0m two new files instead of one, and a convention to follow.
+  [3mComplexity:[0m moderate — still under ~40 lines total.
+
+  [1mC — One combined module.[0m A single [38;5;153msession.js[39m that owns both the stored id and a [38;5;153mlogWithUser()[39m helper.
+  [3mBuys:[0m one file, one global.
+  [3mCosts:[0m the module does two things, so "swap the storage" and "change the log format" touch the same file. Cheapest
+  now, muddiest later.
+  [3mComplexity:[0m trivial.
+
+  I recommend [1mB[0m. Your stated requirement is reuse across forms that don't exist yet, and B is the only one where a
+  future form gets correct tracking by default rather than by remembering. The extra cost is one ~15-line file.
+
+  One thing B doesn't fix, which I'll flag now rather than bury in the spec: [38;5;153mlogin()[39m is a stub that never calls
+  [38;5;153mAPI_ENDPOINT[39m, so there is no server to issue an id. Whatever we build, the id will be locally faked until the real
+  call exists. I'll record that in the spec as an explicit assumption with a note on what changes when the API lands,
+  rather than writing it as though it's real.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB — store + tracker (Recommended)[39m
+     [38;5;246msession.js for storage, tracker.js auto-stamps userId on logged events. Future forms get correct tracking by [39m
+     [38;5;246mdefault. Two small files.[39m
+  [38;5;246m2.[39m A — thin store only
+     [38;5;246msession.js only; call sites format their own log lines. Smallest change, but future forms duplicate the formatting.
+[39m  [38;5;246m3.[39m C — one combined module
+     [38;5;246mSingle session.js owning both storage and a logWithUser helper. One file, but storage and log format are entangled.
+[39m  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+  [1mThe fork (third question):[0m "persists" needs a concrete storage location, and this is the one choice that's genuinely
+  expensive to reverse — once IDs are written to a particular store on real browsers, changing it means a migration path
+  for users who already have the old value.
+
+  - [1m[38;5;153mlocalStorage[0m — survives tab close and browser restart, readable by any code on the origin, one simple synchronous
+    API. Matches "persist" and "other forms need it" directly. The cost: any XSS on the page can read it, so the ID can
+    never double as an auth credential — it's a correlation key only.
+  - [1mJS-readable cookie[0m — also persists, and gets sent to the server automatically on requests. Adds expiry and
+    domain/path semantics you have to get right, ships on every request whether you want it or not, and is no more
+    secure than localStorage if JS can read it.
+  - [1m[38;5;153mhttpOnly[39m cookie, server-set[0m — the actually-secure option: JS can't read it, so XSS can't steal it. But that's
+    precisely the problem here — you said other forms need the value, and they'd have no way to read it. It only works
+    if the server, not the client, attaches identity to requests.
+
+  My recommendation: [38;5;153mlocalStorage[39m, with an explicit rule written into the spec that this ID is a tracking/correlation
+  key and never an authentication token. If it ever needs to authenticate anything, it has to move to [38;5;153mhttpOnly[39m and the
+  client stops reading it.
+
+  I'll ask about the privacy/consent side and what "track" writes to next — those are the last two before I lay out
+  approaches.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Storage [39m[49m
+
+[1m[38;5;231mWhere should the persisted userId live?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage (Recommended)[39m
+     [38;5;246mSurvives restarts, simple API, readable by all app forms. Spec forbids using it as an auth credential since XSS can
+[39m     [38;5;246mread it.[39m
+  [38;5;246m2.[39m JS-readable cookie
+     [38;5;246mPersists and auto-sends to the server. Adds expiry/domain semantics and per-request overhead; same XSS exposure as
+[39m     [38;5;246mlocalStorage.[39m
+  [38;5;246m3.[39m httpOnly cookie (server-set)
+     [38;5;246mMost secure — XSS cannot read it. But client-side forms cannot read it either, which conflicts with the stated [39m
+     [38;5;246mrequirement.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

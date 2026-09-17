@@ -1,0 +1,40 @@
+
+  [1mB. Two independent loggers sharing only a written contract[0m
+  [38;5;153mapp-logger.js[39m and [38;5;153msrc/logger.js[39m, each self-contained and idiomatic to its runtime, sharing a documented record schema
+  and a duplicated allow-list.
+  [3mTrade-offs:[0m least plumbing, nothing clever. But it duplicates the allow-list, which is exactly the thing whose whole
+  value is that it can't silently fall out of date. Two copies means the browser one gets a new permitted field and the
+  Node one doesn't, and you find out from a log that's missing data or from one that isn't.
+  [3mComplexity:[0m trivial.
+
+  [1mC. Convert the repo to ES modules[0m
+  [38;5;153m"type": "module"[39m in [38;5;153mpackage.json[39m, [38;5;153m<script type="module">[39m in [38;5;153mindex.html[39m, one genuinely shared module imported by both.
+  [3mTrade-offs:[0m the cleanest structure with no dual-mode hack. Two real costs: it rewrites [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m
+  from CommonJS for reasons unrelated to logging, and [38;5;153mtype="module"[39m is blocked by CORS over [38;5;153mfile://[39m, so opening
+  [38;5;153mindex.html[39m directly stops working and you need a local server. That's a workflow change smuggled in under a logging
+  ticket.
+  [3mComplexity:[0m moderate, with unrelated blast radius.
+
+  [1mMy recommendation: A.[0m It puts the redaction logic — the part where a mistake writes credentials to disk — in exactly
+  one place, which is the entire point of choosing an allow-list. B is simpler today and quietly gives that back. C is
+  the nicest end state but pays for it by converting the module system and breaking [38;5;153mfile://[39m loading, which isn't a trade
+  a logging change should be making on your behalf.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Structure [39m[49m
+
+[1m[38;5;231mWhich structural approach should the logging subsystem take?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Dual-mode core (Recommended)[39m
+     [38;5;246mOne core file loadable as both CommonJS and a browser global, plus a localStorage sink and a file sink. Redaction [39m
+     [38;5;246mand record shape live in exactly one place.[39m
+  [38;5;246m2.[39m B: Two independent loggers
+     [38;5;246mSeparate per-runtime loggers sharing only a written schema. Least plumbing, but the allow-list is duplicated and [39m
+     [38;5;246mwill drift.[39m
+  [38;5;246m3.[39m C: Convert to ES modules
+     [38;5;246mCleanest sharing, but rewrites the CommonJS files and breaks opening index.html over file:// (needs a local [39m
+     [38;5;246mserver).[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

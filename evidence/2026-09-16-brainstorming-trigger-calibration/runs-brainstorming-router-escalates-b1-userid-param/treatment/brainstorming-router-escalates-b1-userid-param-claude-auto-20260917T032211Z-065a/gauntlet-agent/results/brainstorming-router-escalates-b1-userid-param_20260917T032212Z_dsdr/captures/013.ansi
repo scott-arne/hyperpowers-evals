@@ -1,0 +1,40 @@
+  [34mexport[39m [34mfunction[39m [33mclearSession[39m()                     [32m// removes the key[39m
+
+  - One namespaced key, [38;5;153mappSession[39m, holding JSON. Namespacing avoids collisions with anything else on the origin.
+  - [38;5;153mgetSession()[39m never throws: a missing key, malformed JSON, or an object lacking [38;5;153muserId[39m all return [38;5;153mnull[39m. Corrupt
+    storage means "logged out", not a crashed page. This is the defensive edge the rest of the app gets to stop worrying
+    about.
+  - [38;5;153msetSession()[39m rejects a missing or non-string [38;5;153muserId[39m — writing a broken record is worse than not writing one, because
+    it persists.
+  - Writes are wrapped for [38;5;153mQuotaExceededError[39m and for Safari private-mode, where [38;5;153mlocalStorage[39m access can throw. A failed
+    write degrades to an in-memory-only session for that page rather than breaking login.
+
+  [1m[38;5;153mapp.js[0m — [38;5;153mlogin()[39m changes contract rather than signature:
+
+  [34masync[39m [34mfunction[39m [33mlogin[39m(username, password)   [32m// → { success: true, userId, username }[39m
+                                             [32m//   { success: false, error }[39m
+
+  Two deliberate points here:
+
+  - [1mThe signature keeps [38;5;153m(username, password)[39m.[0m The [38;5;153muserId[39m comes back from the auth response, as you specified — it's in
+    the return value, not a parameter. This is the one place the design departs from the literal wording of your
+    original request, and it's because a caller can't supply an identity it hasn't authenticated yet.
+  - [1m[38;5;153mlogin()[39m becomes [38;5;153masync[39m now, while it's still a stub.[0m A real [38;5;153mfetch[39m to [38;5;153mAPI_ENDPOINT[39m forces this eventually, and
+    converting a sync function to async later breaks every call site silently — callers get a [38;5;153mPromise[39m where they
+    expected an object, and [38;5;153mresult.success[39m is [38;5;153mundefined[39m, which is falsy, so the failure is quiet. Paying the one [38;5;153mawait[39m
+    today costs nothing. The stub keeps returning a fabricated [38;5;153muserId[39m until the backend exists.
+
+  [1m[38;5;153mindex.html[0m — [38;5;153m<script src="app.js">[39m becomes [38;5;153m<script type="module" src="app.js">[39m. This is what requires serving over
+  HTTP rather than [38;5;153mfile://[39m.
+
+  [1m[38;5;153msrc/utils.js[39m / [38;5;153msrc/index.js[0m stay untouched on CommonJS. They're the Node side, they don't interact with [38;5;153mapp.js[39m, and
+  converting them is scope creep.
+
+  Does that structure look right before I go on to data flow, error handling, and testing?
+
+[38;5;246m✻[39m [38;5;246mBaked for 4m 4s · done 8:29 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

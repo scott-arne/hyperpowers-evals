@@ -1,0 +1,40 @@
+  logs [38;5;153musername[39m from a function that also holds the password, and we're about to start sending that off the machine.
+
+  [1mThe fork:[0m whether the logger is allowed to log user-supplied values by default, or has to be told explicitly which
+  ones are safe.
+
+  - [1mAllowlist (deny by default)[0m — the logger only records values from an explicit safe list (event name, error code,
+    HTTP status, timing, form-valid/invalid). Anything not on the list is dropped, including fields added later. Buys
+    you: a new field can never leak by accident. Costs: you have to name what you want, and a missing entry shows up as
+    a gap in logs rather than a leak. Hard to retrofit later — this decides the logger's core call signature.
+  - [1mDenylist (scrub known-sensitive keys)[0m — log what's passed, but recursively strip keys matching [38;5;153mpassword[39m, [38;5;153mtoken[39m,
+    [38;5;153msecret[39m, [38;5;153mauth[39m, etc. Buys you: convenience, richer logs with no upkeep. Costs: it fails open. A field named [38;5;153mpwd[39m or
+    [38;5;153mcredentials.value[39m, or a password inside a free-text error string, goes to the collector.
+  - [1mNo user values at all[0m — events, codes, and timings only; never any value from the form. Buys you: nothing to leak.
+    Costs: some production bugs are unreproducible without knowing what the input looked like.
+
+  [1mMy recommendation: allowlist.[0m The field set here is three items, so deny-by-default costs almost nothing today, and
+  it's the only one of the three that stays safe as the form grows. Concretely, I'd have [38;5;153mlogin()[39m log an event and
+  outcome but never the username — and if you need to correlate sessions, a random per-session ID rather than the
+  username, since usernames here are plausibly email addresses.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mWhat's the redaction policy for data sent to the collector?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAllowlist, deny by default (Recommended)[39m
+     [38;5;246mOnly explicitly-named safe fields are logged. Username excluded; random session ID for correlation instead. Safe as
+[39m     [38;5;246mthe form grows; decides the logger's call signature so it's hard to change later.[39m
+  [38;5;246m2.[39m Denylist sensitive keys
+     [38;5;246mLog what's passed, scrub keys like password/token/secret. Richer logs, less upkeep, but fails open on unanticipated
+[39m     [38;5;246mfield names and free-text strings.[39m
+  [38;5;246m3.[39m No user-supplied values at all
+     [38;5;246mEvents, codes, timings only. Nothing to leak, but some bugs won't be reproducible from the logs.[39m
+  [38;5;246m4.[39m Allowlist, but keep username
+     [38;5;246mDeny by default, with username explicitly allowed because you need it to trace a specific user's report. Accepts [39m
+     [38;5;246mthat usernames may be emails (PII) in your logs.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

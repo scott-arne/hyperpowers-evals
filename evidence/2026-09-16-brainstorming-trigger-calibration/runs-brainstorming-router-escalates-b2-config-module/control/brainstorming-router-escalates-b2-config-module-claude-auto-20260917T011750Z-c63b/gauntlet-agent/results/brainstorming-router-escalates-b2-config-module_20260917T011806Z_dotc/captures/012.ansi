@@ -1,0 +1,40 @@
+
+  [1mError handling.[0m Unknown hostname → development plus a [38;5;153mconsole.warn[39m naming the unrecognized host, so the fallback is
+  never silent. If [38;5;153mapp.js[39m runs and [38;5;153mwindow.AppSettings[39m is absent (script tags out of order), [38;5;153mlogin()[39m throws a named error
+  rather than yielding [38;5;153mundefined[39m deep in a URL string.
+
+  [1mTesting.[0m This is where I need one more decision. [38;5;153mresolveEnvironment(hostname)[39m is a pure function and the natural thing
+  to test, but the repo has no test runner, no lint config, and no dependencies at all — so testing it means
+  introducing tooling this project doesn't have yet.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · The repo has no test or lint tooling. What should this change set up? → Node test runner only (Recommended)[39m
+
+[38;5;231m⏺[39m One consequence of choosing [38;5;153mnode --test[39m: the module has to be loadable outside a browser. So [38;5;153msettings.js[39m gets a small
+  tail —
+
+  [34mif[39m ([34mtypeof[39m module !== [31m"undefined"[39m && module.exports) {
+    module.exports = { resolveEnvironment, buildSettings, ENVIRONMENTS };
+  }
+
+  — which the browser ignores and Node uses. The [38;5;153mwindow.AppSettings[39m assignment is guarded by [38;5;153mtypeof window !== [39m
+  [38;5;153m"undefined"[39m, so importing the file under Node doesn't try to read [38;5;153mlocation.hostname[39m. That also matches the CommonJS
+  convention already in [38;5;153msrc/utils.js[39m.
+
+  Tests go in [38;5;153mtest/settings.test.js[39m covering: each mapped hostname resolves to its environment, an unmapped hostname
+  falls back to development, the fallback emits a warning, and [38;5;153mendpoints.login[39m composes base + path correctly.
+  [38;5;153mpackage.json[39m gets [38;5;153m"scripts": { "test": "node --test" }[39m — still zero dependencies.
+
+  [1mFull scope:[0m new [38;5;153msettings.js[39m, new [38;5;153mtest/settings.test.js[39m, edits to [38;5;153mapp.js[39m (drop the constant, read from settings) and
+  [38;5;153mindex.html[39m (one script tag), and a [38;5;153mtest[39m script in [38;5;153mpackage.json[39m.
+
+  Does this design look right? If so, I'll write it up as a spec at
+  [38;5;153mdocs/hyperpowers/specs/2026-09-16-settings-module-design.md[39m (uncommitted), run it through the review gates, and hand
+  it to you to read before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mBaked for 2m 23s · done 6:22 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

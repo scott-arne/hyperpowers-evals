@@ -1,0 +1,40 @@
+  if it turns out smaller than it sounds.
+
+  Context worth flagging before the next question: [38;5;153mapp.js[39m is loaded as a bare [38;5;153m<script src="app.js">[39m ([38;5;153mindex.html:13[39m) with
+  no modules, no bundler, and no test runner in [38;5;153mpackage.json[39m. A shared cross-app module has to answer "how does it get
+  loaded" too. I'll fold that into the design.
+
+  Next question. [1mThe fork:[0m what the store actually holds decides whether this is a convenience cache or a
+  security-relevant artifact.
+
+  - [1mJust the identity[0m ([38;5;153muserId[39m, maybe a display name) — a cache of who's logged in. Wrong values cause a wrong greeting,
+    not a breach. Cheap, no XSS exposure worth arguing about, and cheap to extend later.
+  - [1mIdentity plus an auth token[0m — what you need if other forms will make authenticated requests. Costs you a real
+    decision about storage: [38;5;153mlocalStorage[39m is readable by any script on the page (XSS lifts the token), which is why
+    token-bearing apps usually push the credential into an httpOnly cookie the JS never sees and keep only the identity
+    client-side.
+  - [1mA full session object[0m (identity, token, expiry, refresh) — needed if sessions expire and renew. Most expensive; hard
+    to add halfway later because expiry handling touches every consumer.
+
+  [1mMy recommendation:[0m store identity only client-side and, when a real backend arrives, let the credential live in an
+  httpOnly cookie. It gives the other forms what they need to display and attribute activity, and it keeps the token out
+  of reach of page scripts. Expiry can be added later without redesign; token storage cannot easily be un-decided.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Store contents [39m[49m
+
+[1m[38;5;231mWhat should the shared store hold after a successful login?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mIdentity only (Recommended)[39m
+     [38;5;246muserId plus username/display name. Other forms read who is logged in. Any auth credential stays server-side in an [39m
+     [38;5;246mhttpOnly cookie when a real backend arrives.[39m
+  [38;5;246m2.[39m Identity + auth token
+     [38;5;246mOther forms will make authenticated API calls from JS and need the token in hand. Accepts that a page-script XSS [39m
+     [38;5;246mcan read it.[39m
+  [38;5;246m3.[39m Full session object
+     [38;5;246mIdentity, token, expiry, and refresh handling. Needed if sessions time out and renew; the most work and it touches
+[39m     [38;5;246mevery consumer.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

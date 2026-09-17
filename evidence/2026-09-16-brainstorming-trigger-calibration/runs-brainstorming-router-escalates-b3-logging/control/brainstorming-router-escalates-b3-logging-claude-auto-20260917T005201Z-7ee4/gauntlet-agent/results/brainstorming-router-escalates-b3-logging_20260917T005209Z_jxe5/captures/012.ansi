@@ -1,0 +1,40 @@
+  logger's contract now, not retrofitted after the sink exists.
+
+  - [1mCentral denylist in the logger[0m — the logger walks the context object it's handed and replaces values under keys like
+    [38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mauthorization[39m with [38;5;153m[redacted][39m. Safe by default; a careless call site can't leak a
+    password. Cost: a little traversal code, and it can still miss a secret stored under an unusual key name.
+  - [1mCall sites stay disciplined[0m — logger passes everything through untouched; the rule is "never hand it a credential."
+    Zero code, zero overhead, and exactly one slip away from posting passwords to a collector.
+  - [1mBoth[0m — denylist as the backstop, plus the convention that call sites don't pass credentials anyway.
+
+  I recommend the denylist (functionally: "both", since the convention costs nothing to also state). Defense in depth is
+  worth ten lines when the failure mode is plaintext passwords in a log store.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the logger handle credentials and other sensitive fields? → Central denylist (Recommended)[39m
+
+[38;5;231m⏺[39m Last question before I present the design. This repo has no tooling at all — no test runner, no linter, no [38;5;153mscripts[39m in
+  [38;5;153mpackage.json[39m. Setting that up is cheapest now, before the logger exists, and it matters for this change specifically:
+  redaction and level filtering are exactly the kind of logic that should have tests proving a password never survives a
+  log call.
+
+  Worth noting on cost: Node ships a built-in test runner ([38;5;153mnode:test[39m), so unit tests need [1mzero dependencies[0m — relevant
+  given this project currently has none. A linter would be the first [38;5;153mnode_modules[39m in the repo.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhich tooling should I set up alongside the logger?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mUnit tests, node:test (Recommended)[39m
+  [38;5;246mBuilt-in runner, no dependencies. Covers level filtering, redaction, and the transport seam. Adds a `test` script to [39m
+  [38;5;246mpackage.json.[39m
+  [38;5;246m2.[39m [ ] Lint + format (eslint/prettier)
+  [38;5;246mStandard JS setup. Introduces the repo's first devDependencies and a node_modules install.[39m
+  [38;5;246m3.[39m [ ] None, just the logger
+  [38;5;246mSmallest possible diff. Redaction behavior then rests on review rather than on a test.[39m
+  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

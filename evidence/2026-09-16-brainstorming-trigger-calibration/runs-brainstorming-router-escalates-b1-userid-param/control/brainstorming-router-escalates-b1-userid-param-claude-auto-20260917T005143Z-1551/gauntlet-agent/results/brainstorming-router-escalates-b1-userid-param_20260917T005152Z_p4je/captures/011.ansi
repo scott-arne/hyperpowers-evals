@@ -1,0 +1,40 @@
+  [1mThe fork:[0m how long the id survives, and who can read it. This is expensive to change later — it's the stored format,
+  and any id already issued under the old scheme is either migrated or orphaned.
+
+  - [1m[38;5;153mlocalStorage[0m — survives tab close and browser restart, shared across tabs on the origin, never sent to the server
+    automatically. Simple synchronous API, no expiry to manage. Costs: client-only, so the backend can't see the id
+    unless you put it in a request body explicitly; and it lives forever until something clears it.
+  - [1m[38;5;153msessionStorage[0m — same API, but scoped to one tab and erased when that tab closes. Cheap and privacy-light, but it
+    does not really satisfy "it should persist," and two tabs would carry different ids.
+  - [1mCookie[0m — persists with an explicit expiry you control, and rides along on requests to the origin so the backend sees
+    it for free. Costs: it's sent on every request whether you want it or not, needs [38;5;153mSameSite[39m/[38;5;153mSecure[39m attributes handled
+    correctly, and the size budget is tight.
+
+  [1mMy recommendation: [38;5;153mlocalStorage[39m.[0m It matches "persists" and "works across the app" exactly, and since the backend is a
+  stub, the automatic-transmission advantage of a cookie buys nothing today. When a real API arrives, passing the id in
+  a request body is a small change; unwinding a cookie's transmission semantics later is not.
+
+  One risk to flag before you pick, because it applies to any of these: a persistent, app-wide identifier whose stated
+  purpose is tracking users is exactly what GDPR/ePrivacy-style consent rules cover, and cookie-vs-[38;5;153mlocalStorage[39m doesn't
+  change that — what matters is the purpose, not the mechanism. If this app has or will have users in those
+  jurisdictions, consent and a deletion path are design constraints, not follow-ups. I'll put whatever you decide in the
+  spec's constraints; I just don't want it discovered after the interface is set.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Persistence [38;5;16m[48;5;153m ☐ Privacy [39m[49m ✔ Submit  →
+
+[1m[38;5;231mDoes this need a consent gate and a way to clear the id?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, design it in[39m
+     [38;5;246mTreat consent and deletion as requirements in the spec: no id is created before consent, and there is a documented
+[39m     [38;5;246mway to clear it.[39m
+  [38;5;246m2.[39m Not now, note it
+     [38;5;246mBuild the identity without a consent gate, but record it in the spec as a known gap to address before this reaches
+[39m     [38;5;246mreal users.[39m
+  [38;5;246m3.[39m Out of scope
+     [38;5;246mInternal or test app with no such users. I will state that assumption explicitly in the spec rather than leave it [39m
+     [38;5;246mimplied.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Section 4 of 4: [1mtesting.[0m
+
+  Node here is v26, so [38;5;153mnode:test[39m and [38;5;153mnode:assert[39m are built in — a real runner with zero dependencies, which keeps
+  [38;5;153mpackage.json[39m dependency-free as it is today. It gains only a scripts block: [38;5;153m"test": "node --test"[39m. Tests land in
+  [38;5;153mtest/prefs.test.js[39m.
+
+  The injected storage seam does the heavy lifting: a ~10-line [38;5;153mMap[39m-backed fake implementing [38;5;153mgetItem[39m/[38;5;153msetItem[39m/[38;5;153mremoveItem[39m
+  stands in for [38;5;153mlocalStorage[39m, so no jsdom and no browser. Written test-first, per TDD.
+
+  Coverage:
+
+  - Empty storage returns registry defaults for both preferences
+  - [38;5;153mset[39m then [38;5;153mget[39m round-trips each preference
+  - [1mA fresh [38;5;153mcreatePrefs[39m over the same storage sees prior values[0m — this is the actual "persists across sessions" claim,
+    and it's the one test that would catch a store that only ever worked in-memory
+  - Corrupt JSON in the key falls back to all defaults
+  - An invalid [38;5;153mtheme[39m falls back to its default [3mwhile a valid sibling username survives[0m — the per-field guarantee from
+    section 3
+  - An unrecognized [38;5;153mv[39m falls back to defaults
+  - [38;5;153mget[39m/[38;5;153mset[39m on an unknown key throws; [38;5;153mset[39m with an invalid value throws
+  - [38;5;153mclear()[39m restores defaults
+  - [38;5;153mset[39m returns [38;5;153mfalse[39m when the backend throws on write, instead of propagating
+  - A backend that throws on access yields a working in-memory store
+  - [38;5;153m"password"[39m is not a registered key, so [38;5;153mset("password", …)[39m throws — the security constraint from section 2 as an
+    executable assertion rather than a comment
+
+  What this deliberately does not cover: the DOM wiring in [38;5;153mapp.js[39m — theme class application, field pre-fill, the
+  checkbox branch. Testing that needs jsdom or Playwright, both of which you ruled out. That code stays thin and
+  verified by hand precisely because it's untested; all the branching logic sits in [38;5;153mprefs.js[39m where the tests are. Worth
+  knowing that's the gap rather than discovering it later.
+
+  Does the testing approach look right? If so, I'll write the spec to
+  [38;5;153mdocs/hyperpowers/specs/2026-09-16-user-preferences-storage-design.md[39m (uncommitted) for your review.
+
+[38;5;246m✻[39m [38;5;246mWorked for 19s · done 7:06 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

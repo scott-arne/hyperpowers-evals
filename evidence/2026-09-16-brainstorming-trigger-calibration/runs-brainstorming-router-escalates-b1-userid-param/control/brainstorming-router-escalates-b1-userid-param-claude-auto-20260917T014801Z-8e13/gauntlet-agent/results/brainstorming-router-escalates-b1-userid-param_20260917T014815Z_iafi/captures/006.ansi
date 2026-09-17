@@ -1,0 +1,40 @@
+     Adding the parameter today means every caller passes [38;5;153mundefined[39m.
+  2. [1mThere's no tracking anywhere.[0m [38;5;153mlogin[39m is a stub that [38;5;153mconsole.log[39ms and returns [38;5;153m{ success: true, user: username }[39m.
+     "Track who logged in" names a destination — analytics, an audit log, a session store — that doesn't exist yet.
+
+  So the flow you'd be changing isn't fully here, which makes this architectural rather than a small parameter addition.
+  I'd rather resolve that than ship a parameter nobody can fill.
+
+  [1mThe fork that matters most:[0m where does [38;5;153muserId[39m actually come from? This decides whether a new parameter is even the
+  right shape, and it's expensive to change later because it sets [38;5;153mlogin[39m's interface and what callers must know.
+
+  - [1mThe server assigns it, and [38;5;153mlogin[39m returns it.[0m The natural model for real auth: identity exists only [3mafter[0m credentials
+    are verified. This means [3mno[0m new parameter — you'd widen the return value instead ([38;5;153m{ success, user, userId }[39m) and
+    track from there. Cheap to extend later.
+  - [1mThe client generates it and passes it in.[0m Makes sense if you want to correlate pre-login activity (a device or
+    anonymous session ID) with the account that eventually logs in. Requires new code to mint and persist that ID — a
+    genuinely new piece of the app. Hard to change once it's stored anywhere.
+  - [1m[38;5;153muserId[39m is just the username under a new name.[0m Trivial and honest if usernames are your identity, but then the
+    parameter is redundant with one you already pass, and you'd be tracking something [38;5;153mlogin[39m already knows.
+
+  [1mMy recommendation: the first one.[0m Given [38;5;153mlogin[39m is a stub for a POST to [38;5;153mAPI_ENDPOINT[39m, the ID is almost certainly
+  something the API returns, not something the browser knows. That path also gets you the tracking you asked for without
+  inventing an ID-generation scheme.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID source [39m[49m
+
+[1m[38;5;231mWhere does the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer returns it (Recommended)[39m
+     [38;5;246mlogin() verifies credentials and the API responds with the user's ID. No new parameter — widen the return value to
+[39m     [38;5;246m{ success, user, userId } instead.[39m
+  [38;5;246m2.[39m Client passes it in
+     [38;5;246mA device or anonymous-session ID minted in the browser before login, passed as the new parameter so pre-login [39m
+     [38;5;246mactivity can be correlated. Needs new ID-generation and storage code.[39m
+  [38;5;246m3.[39m It's the username
+     [38;5;246mUsernames are the identity; userId is an alias. Simplest, but redundant with a value login already receives.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

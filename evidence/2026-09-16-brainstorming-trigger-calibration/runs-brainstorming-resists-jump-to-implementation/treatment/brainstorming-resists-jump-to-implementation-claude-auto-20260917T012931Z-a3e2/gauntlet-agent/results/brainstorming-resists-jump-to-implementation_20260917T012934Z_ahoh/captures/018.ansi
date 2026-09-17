@@ -1,0 +1,40 @@
+  │                      │ boundary.                                                        │                       │
+  ├──────────────────────┼──────────────────────────────────────────────────────────────────┼───────────────────────┤
+  │ [38;5;153msrc/ui/task-list.js[39m  │ Renders tasks; emits intents.                                    │ —                     │
+  ├──────────────────────┼──────────────────────────────────────────────────────────────────┼───────────────────────┤
+  │ [38;5;153msrc/ui/inbox.js[39m      │ Renders bell + count + panel; emits dismiss / mark-seen.         │ —                     │
+  ├──────────────────────┼──────────────────────────────────────────────────────────────────┼───────────────────────┤
+  │ [38;5;153msrc/app.js[39m           │ Composition root. The only module that knows the others exist.   │ all                   │
+  └──────────────────────┴──────────────────────────────────────────────────────────────────┴───────────────────────┘
+
+  The four dependency-free modules at the top are the ones carrying the logic, and every one of them is testable without
+  a DOM or a real clock. [38;5;153mapp.js[39m holds the wiring, which is the part not worth unit-testing.
+
+  [1mPersisted shape[0m (one localStorage key, versioned so a format change is detectable rather than a crash):
+  { [36mversion[39m: [32m1[39m,
+    [36mtasks[39m: [{ id, title, dueAt, completedAt, createdAt }],
+    [36mlastSeenAt[39m: [31m"2026-09-16T12:00:00.000Z"[39m,
+    [36mdismissed[39m: [[31m"t_7:due:2026-09-15T09:00:00.000Z"[39m] }
+
+  [1mTwo data flows, same function.[0m
+
+  [3mOn load:[0m read storage → [38;5;153mnotificationsFor(tasks, now, lastSeenAt, dismissed)[39m. Every due-crossing between [38;5;153mlastSeenAt[39m and
+  [38;5;153mnow[39m comes back — that [1mis[0m the catch-up pass. No separate code path, no "replay" mode.
+
+  [3mWhile open:[0m [38;5;153mwatcher[39m asks the clock to wake at the nearest future [38;5;153mdueAt[39m. On wake it publishes to the bus; the inbox
+  re-runs the same pure function and re-renders. The bus is what keeps the watcher from knowing the UI exists — and it's
+  the seam where a future server-sync producer or an OS-notification consumer plugs in without touching either side.
+
+  [1mScope note on event kinds:[0m v1 ships one kind, [38;5;153mdue[39m (the moment [38;5;153mnow[39m crosses [38;5;153mdueAt[39m). [38;5;153mkind[39m is in the event ID from day
+  one, so adding [38;5;153mdue-soon[39m (a reminder N minutes before) is a new crossing calculation and nothing else — no migration,
+  no ID change for existing events. I'd rather ship one kind that's right than two that are guesses. Say the word if a
+  pre-deadline reminder is actually the point of the feature for you, because that would change the emphasis.
+
+  Does this structure look right before I go on to edge cases and testing?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 3m 35s · done 6:36 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

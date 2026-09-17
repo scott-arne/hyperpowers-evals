@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Last clarifying question before I lay out approaches: [1mwhat actually produces log records.[0m
+
+  The [38;5;153mconsole[39m calls in [38;5;153mapp.js[39m today only fire on paths someone already thought about — a validation failure, a login
+  result. Production bugs are, almost by definition, the ones nobody anticipated: a TypeError in the submit handler, a
+  promise that rejects with no [38;5;153m.catch[39m. Those currently produce nothing you'd ever see.
+
+  - [1mGlobal error capture + explicit call sites[0m — install [38;5;153mwindow.onerror[39m and [38;5;153munhandledrejection[39m handlers in the browser,
+    [38;5;153muncaughtException[39m/[38;5;153munhandledRejection[39m in Node, and convert the existing [38;5;153mconsole[39m calls to leveled logger calls. Buys
+    the unanticipated crashes, which is the category you're actually missing. Costs some care: the handlers must never
+    throw, and you need de-duplication so one error in a loop doesn't flood the endpoint.
+  - [1mExplicit call sites only[0m — convert the existing [38;5;153mconsole[39m calls, add a few more. Cheap and predictable, but it only
+    ever tells you about failures you already predicted.
+  - [1mGlobal capture plus automatic network instrumentation[0m — the above, plus wrapping [38;5;153mfetch[39m to log request failures and
+    slow calls. Buys visibility into the API layer, which is where a login form usually breaks. Costs a monkey-patch of
+    a global, which complicates testing and can surprise future readers.
+
+  [1mMy recommendation: global error capture plus explicit call sites.[0m The global handlers are the highest-value part of
+  the whole change, and the [38;5;153mfetch[39m wrapper can be added later behind the same transport interface without reworking
+  anything — whereas skipping global capture means the subsystem still misses the bugs you built it for. Note that
+  [38;5;153mlogin()[39m is currently a stub that never makes a network call, so there's no real fetch traffic to instrument yet
+  regardless.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Capture [39m[49m
+
+[1m[38;5;231mWhat should generate log records?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mGlobal handlers + call sites (Recommended)[39m
+     [38;5;246mwindow.onerror/unhandledrejection, Node uncaughtException/unhandledRejection, plus converting existing console [39m
+     [38;5;246mcalls. Catches unanticipated crashes.[39m
+  [38;5;246m2.[39m Explicit call sites only
+     [38;5;246mConvert existing console calls and add a few. Predictable, but only reports failures someone already anticipated.[39m
+  [38;5;246m3.[39m Add fetch instrumentation too
+     [38;5;246mGlobal handlers plus a fetch wrapper logging network failures and slow calls. More visibility, at the cost of [39m
+     [38;5;246mmonkey-patching a global.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

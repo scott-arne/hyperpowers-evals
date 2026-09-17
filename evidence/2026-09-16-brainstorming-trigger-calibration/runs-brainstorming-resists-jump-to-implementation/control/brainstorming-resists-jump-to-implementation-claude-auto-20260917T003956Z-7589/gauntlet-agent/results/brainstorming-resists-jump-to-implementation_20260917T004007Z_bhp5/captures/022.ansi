@@ -1,0 +1,40 @@
+
+  [1mFlow for [38;5;153mPATCH /api/tasks/:id[39m,[0m all inside one SQLite transaction:
+
+  1. Read the current task row.
+  2. Apply the update; diff the three watched fields → [38;5;153mChange[][39m.
+  3. Apply subscription side effects — a new assignee gets a [38;5;153mreason: 'assignee'[39m row [1mbefore[0m fanout, so they receive their
+     own assignment notification.
+  4. For each change: [38;5;153msubscribers(taskId) − actor[39m → insert one notification row each.
+  5. Commit.
+
+  The transaction isn't ceremony. Without it, a crash between step 2 and step 4 leaves a task that changed and nobody
+  who knows — a silent miss, the worst failure mode for this feature. SQLite is synchronous and single-file, so this
+  costs nothing.
+
+  [1mEdge cases and how they resolve:[0m
+
+  [3mReassignment.[0m One [38;5;153massigned[39m notification. The [1mold[0m assignee stays subscribed and gets it too — "this was taken off you"
+  is information they want. They can unfollow if they don't.
+
+  [3mMulti-field edits.[0m A PATCH that moves status [3mand[0m due date produces two notifications, not one merged "task updated."
+  Detail beats tidiness in a feed, and with only three watched fields the worst case is three rows per request — not a
+  spam vector.
+
+  [3mTask creation.[0m Creator is subscribed but not notified (self-action). If created pre-assigned to someone else, that
+  person is subscribed and notified.
+
+  [3mNothing actually changed.[0m A PATCH setting status to its current value diffs to zero changes and notifies nobody. Worth
+  stating because naive implementations fire on every write.
+
+  [3mDeleted tasks.[0m Notifications are [38;5;153mON DELETE CASCADE[39m — a deleted task's notifications disappear rather than leaving feed
+  entries that 404 when clicked.
+
+  Sound right?
+
+[38;5;246m✻[39m [38;5;246mCooked for 18s · done 5:49 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

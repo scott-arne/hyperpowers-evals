@@ -1,0 +1,40 @@
+  honest.
+
+  [1mThe fork:[0m all three put validation in [38;5;153msrc/validation.mjs[39m behind ES modules with a per-field error map. What differs is
+  how much a [3msecond[0m form has to write — and how much machinery you're buying today against forms that may never arrive.
+
+  - [1mRule table + validator primitives[0m — [38;5;153mvalidate(values, rules)[39m where [38;5;153mrules[39m is [38;5;153m{ username: [required("Username is [39m
+    [38;5;153mrequired")], ... }[39m and each validator is a tiny function returning a message or [38;5;153mnull[39m. A new form declares a rule
+    object and makes one call. ~25 lines. Cost: each form still reads its own values out of the DOM.
+  - [1mRule table + DOM binding helper[0m — everything above, plus [38;5;153mvalidateFormElement(formEl, rules)[39m that pulls values off
+    the form by field name and optionally renders messages next to inputs. A new form needs a rule object and nothing
+    else. Cost: more machinery now, it couples the module to the DOM, and your inputs use [38;5;153mid[39m with no [38;5;153mname[39m attribute — so
+    I'd be inventing a binding convention for hypothetical forms. Additive later: A can grow into B without breaking
+    A's consumers.
+  - [1mPrimitives only, no rule table[0m — export [38;5;153mrequired[39m and friends; each form writes its own explicit validate function.
+    Most flexible, least abstraction. Cost: every form repeats the loop-and-collect logic, so "reusable" ends up meaning
+    "we share two helper functions" — the weakest answer to the actual request.
+
+  [1mMy recommendation: the rule table.[0m It's the smallest thing that makes form two genuinely cheap, and given "no specific
+  second form yet," the DOM binding layer is precisely the speculative generality that tends to be wrong when the real
+  form shows up — it guesses at markup conventions you haven't written. Going rule-table now and adding binding when a
+  second form proves what it needs is strictly cheaper than guessing today.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Approach [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mWhich approach for the shared validation layer?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mRule table (Recommended)[39m
+     [38;5;246mvalidate(values, rules) + validator primitives. New form = a rule object + one call. ~25 lines, no DOM coupling. [39m
+     [38;5;246mCan grow a binding layer later.[39m
+  [38;5;246m2.[39m Rule table + DOM binding
+     [38;5;246mAdds auto-reading values from the form element and rendering errors. Least per-form code, but invents markup [39m
+     [38;5;246mconventions for forms that don't exist.[39m
+  [38;5;246m3.[39m Primitives only
+     [38;5;246mShare just required() etc.; each form writes its own validate function. Minimal abstraction, but each form repeats
+[39m     [38;5;246mthe collect logic.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

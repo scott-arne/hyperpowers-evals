@@ -1,0 +1,40 @@
+  ├──────────────────────┼──────────────────────────────────────────────────────┼─────────────┤
+  │ [38;5;153msrc/notifications.js[39m │ [1mPure.[0m [38;5;153mcomputeNotifications(tasks, now, acknowledged)[39m │ nothing     │
+  ├──────────────────────┼──────────────────────────────────────────────────────┼─────────────┤
+  │ [38;5;153msrc/acknowledged.js[39m  │ Persisted set of dismissed [38;5;153mtaskId:milestone[39m keys     │ storage     │
+  ├──────────────────────┼──────────────────────────────────────────────────────┼─────────────┤
+  │ [38;5;153msrc/scheduler.js[39m     │ Clock ticks; diffs results; drives panel + toast     │ the above   │
+  ├──────────────────────┼──────────────────────────────────────────────────────┼─────────────┤
+  │ [38;5;153msrc/toast.js[39m         │ Notifications API wrapper; no-ops when unavailable   │ browser API │
+  ├──────────────────────┼──────────────────────────────────────────────────────┼─────────────┤
+  │ [38;5;153msrc/ui/*.js[39m          │ Task list, bell, badge, panel rendering              │ DOM         │
+  └──────────────────────┴──────────────────────────────────────────────────────┴─────────────┘
+
+  [38;5;153mnotifications.js[39m takes [38;5;153mnow[39m as an argument and never calls [38;5;153mDate.now()[39m or touches the DOM. That single constraint is
+  what makes the whole feature testable without a browser — which matters more than usual given you've opted out of e2e.
+
+  [1mShapes:[0m
+  Task         { id, title, dueAt: ISO|null, completedAt: ISO|null, createdAt: ISO }
+  Notification { key: "<taskId>:<milestone>", taskId, milestone: "due-soon"|"overdue", title, dueAt }
+  acknowledged Set<key>   // the only notification state that persists
+
+  [1mMilestone rules[0m (pure, total — never throws):
+  - Tasks with no [38;5;153mdueAt[39m, an unparseable [38;5;153mdueAt[39m, or a [38;5;153mcompletedAt[39m produce nothing.
+  - [38;5;153moverdue[39m when [38;5;153mnow >= dueAt[39m; [38;5;153mdue-soon[39m when [38;5;153mdueAt - 24h <= now < dueAt[39m.
+  - [1mMutually exclusive[0m — an overdue task yields only [38;5;153moverdue[39m, so one task never occupies two rows.
+  - Any key present in [38;5;153macknowledged[39m is filtered out.
+
+  [1mTwo consequences of the derived model worth your sign-off:[0m
+  1. Dismissing [38;5;153mdue-soon[39m does [3mnot[0m suppress the later [38;5;153moverdue[39m — different key, so it fires. I think that's right: they're
+     different pieces of news.
+  2. [38;5;153macknowledged[39m keys outlive deleted tasks. I'll prune on save by intersecting with live task ids. And when a task's
+     [38;5;153mdueAt[39m changes, I'll clear that task's keys — so pushing a deadline out and back in re-alerts, matching intent.
+
+  Does this look right so far?
+
+[38;5;246m✻[39m [38;5;246mWorked for 3m 22s · done 5:57 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m
