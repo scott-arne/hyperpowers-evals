@@ -19,6 +19,7 @@ import json
 import math
 import os
 import re
+import shutil
 import sys
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
@@ -272,6 +273,10 @@ def build_runs(manifest: dict) -> list[Run]:
         if not os.path.isabs(run_dir):
             run_dir = os.path.join(EV, run_dir)
         name = os.path.basename(run_dir)
+        if not os.path.isdir(run_dir):
+            # The live results/ tree is pruned over time; the archive committed
+            # beside this script is the durable copy of the same run.
+            run_dir = os.path.join(E, f"runs-{scenario}", arm, name)
         if name in seen:
             raise DesignError(f"{name}: listed twice")
         seen.add(name)
@@ -596,6 +601,12 @@ def self_test() -> int:
                 text.replace('"content": ["boot"]', '"content": ["boot-foreign"]')
             )
 
+    def archived_only(root: str) -> None:
+        src = os.path.join(root, "results", "run-a")
+        dst = os.path.join(root, "runs-scenario-x", "control", "run-a")
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.move(src, dst)
+
     two_passes = {"run-a": "pass", "run-b": "pass"}
     cases: list[
         tuple[str, dict[str, str], str | None, Callable[[str], None] | None, str | None]
@@ -688,6 +699,13 @@ def self_test() -> int:
             "run-b\trerun-b\n",
             foreign_original,
             "payload hashes differ",
+        ),
+        (
+            "a run present only in its archive under runs-<scenario>/<arm>/",
+            two_passes,
+            None,
+            archived_only,
+            None,
         ),
     ]
     failures = 0
