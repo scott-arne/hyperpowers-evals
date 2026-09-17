@@ -2,7 +2,8 @@
 # launch-all.sh <manifest.tsv> [max-concurrent]
 # Validates every row of the manifest first, then runs every four-field row
 # (arm, scenario, repeat, proc) through the launcher, at most N at a time
-# (default 8), waits for every child, and fails closed: a malformed or
+# (default 8), waits for every child, and fails closed: a malformed row (wrong
+# field count, an empty field, a misspelled arm, a bad proc or repeat) or a
 # duplicate row stops the campaign before anything is launched; a child that
 # exits non-zero, or a manifest row whose log is missing or does not end with
 # DONE, makes the exit status 1 and the closing line say so. LAUNCHER
@@ -14,10 +15,13 @@ E=$(cd "$(dirname "$manifest")" && pwd)
 launcher="${LAUNCHER:-$E/logs/measure-launch.sh}"
 [ -f "$manifest" ] || { echo "no manifest at $manifest" >&2; exit 1; }
 [ -x "$launcher" ] || [ -f "$launcher" ] || { echo "no launcher at $launcher" >&2; exit 1; }
-arms=(); scens=(); reps=(); procs=(); keys=" "; bad=0
+arms=(); scens=(); reps=(); procs=(); keys=" "; bad=0; tab=$'\t'
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in ''|'#'*) continue ;; esac
+  case "$line" in "$tab"*|*"$tab"|*"$tab$tab"*) echo "malformed row '$line' (empty field)" >&2; bad=1; continue ;; esac
+  ntab=$(printf '%s' "$line" | tr -cd '\t' | wc -c | tr -d ' ')
   IFS=$'\t' read -r -a f <<< "$line"
+  [ "${#f[@]}" -eq $((ntab + 1)) ] || { echo "malformed row '$line'" >&2; bad=1; continue; }
   case "${#f[@]}" in
     2) case "${f[0]}" in harness|control|treatment|model) continue ;; esac
        echo "malformed row '$line'" >&2; bad=1; continue ;;
