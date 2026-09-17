@@ -21,4 +21,4 @@ is declared in `manifest.tsv`; `launch-all.sh` runs it; `analyze.py`
 refuses to report unless the observed runs match the manifest exactly.
 Indeterminate trials re-run once, recorded in `reruns.tsv`. Logs under
 `logs/`, run copies under `runs-<scenario>/<arm>/`, the analysis in
-`analysis.md` and `analysis-table.txt`. The analysis resolves each run from the log's recorded results/ path and falls back to the archive under runs-<scenario>/<arm>/ when that path is gone, so the committed directory recomputes its own table.
+`analysis.md` and `analysis-table.txt`. The analysis resolves each run from the log's recorded results/ path and falls back to the archive under runs-<scenario>/<arm>/ when that path is gone, so the committed directory recomputes its own table. Each arm's expected brainstorming line is read from the manifest's root commit with git show, not from the checkout, so the roots' later commits (the description was reverted on the treatment branch after the measurement) do not change the analysis.
