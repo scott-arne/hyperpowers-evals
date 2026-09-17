@@ -141,9 +141,9 @@ new measured change, not an edit to this one.
   brainstorming's; the production listing renders far fewer (see the skill
   listing budget note in the hyperpowers repository).
 - Router briefs have five sessions per arm: one session moves a rate by 20
-  points, and b1's 3-of-5 against 4-of-5 has Wilson intervals of 12-77
-  against 4-62. The criterion is strict on purpose; the gap is not evidence
-  of a regression by itself.
+  points, and b1's failure rates, 2 of 5 in treatment against 1 of 5 in
+  control, have Wilson 95% intervals of 12-77 against 4-62. The criterion is
+  strict on purpose; the gap is not evidence of a regression by itself.
 - Both boundary scenarios sit at 0% pass in both arms, so they can show
   neither a regression nor an improvement from a description change; the
   behaviour they probe is not decided by the description under this model
