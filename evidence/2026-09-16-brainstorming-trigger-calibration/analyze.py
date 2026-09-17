@@ -390,7 +390,13 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, centre - half), min(1.0, centre + half))
 
 
-def check_design(manifest: dict, trials: list[Run]) -> None:
+def check_design(manifest: dict, runs: list[Run], trials: list[Run]) -> None:
+    """Counts on the collapsed trials; the measurement context on every run.
+
+    A replaced indeterminate original still ran under the instrument, so its
+    payload, listing, brainstorming line, and model must match the cohort too.
+    """
+
     expected = manifest["trials"]
     for scenario, arms in expected.items():
         for arm, count in arms.items():
@@ -402,10 +408,10 @@ def check_design(manifest: dict, trials: list[Run]) -> None:
     for scenario in {t.scenario for t in trials}:
         if scenario not in expected:
             raise DesignError(f"{scenario}: not in the declared design")
-    payloads = {t.payload for t in trials}
+    payloads = {r.payload for r in runs}
     if len(payloads) != 1:
         raise DesignError(f"payload hashes differ: {sorted(payloads)}")
-    rests = {t.listing_rest for t in trials}
+    rests = {r.listing_rest for r in runs}
     if len(rests) != 1:
         raise DesignError(
             f"listings differ outside the brainstorming line: {sorted(rests)}"
@@ -413,10 +419,10 @@ def check_design(manifest: dict, trials: list[Run]) -> None:
     for arm in ("control", "treatment"):
         if not any(t.arm == arm for t in trials):
             raise DesignError(f"{arm}: no trials")
-        lines = {t.brainstorming_line for t in trials if t.arm == arm}
+        lines = {r.brainstorming_line for r in runs if r.arm == arm}
         if lines != {expected_brainstorming_line(arm)}:
             raise DesignError(f"{arm}: brainstorming line {sorted(lines)}")
-    models = {t.model for t in trials}
+    models = {r.model for r in runs}
     if models != {manifest["model"]}:
         raise DesignError(f"models differ from the design: {sorted(models)}")
 
@@ -581,6 +587,15 @@ def self_test() -> int:
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(verdict, handle)
 
+    def foreign_original(root: str) -> None:
+        path = os.path.join(root, "results", "run-b", "home/.claude/projects/p/t.jsonl")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(
+                text.replace('"content": ["boot"]', '"content": ["boot-foreign"]')
+            )
+
     two_passes = {"run-a": "pass", "run-b": "pass"}
     cases: list[
         tuple[str, dict[str, str], str | None, Callable[[str], None] | None, str | None]
@@ -667,6 +682,13 @@ def self_test() -> int:
             boolean_identity,
             "trial identity",
         ),
+        (
+            "a replaced indeterminate whose bootstrap payload differs",
+            {"run-a": "pass", "run-b": "indeterminate", "rerun-b": "fail"},
+            "run-b\trerun-b\n",
+            foreign_original,
+            "payload hashes differ",
+        ),
     ]
     failures = 0
     for title, verdicts, reruns, mutate, expect in cases:
@@ -677,7 +699,8 @@ def self_test() -> int:
             detail = ""
             try:
                 manifest = read_manifest()
-                check_design(manifest, collapse(build_runs(manifest)))
+                runs = build_runs(manifest)
+                check_design(manifest, runs, collapse(runs))
                 accepted = True
             except DesignError as error:
                 accepted = False
@@ -719,7 +742,7 @@ def main() -> int:
     manifest = read_manifest()
     runs = build_runs(manifest)
     trials = collapse(runs)
-    check_design(manifest, trials)
+    check_design(manifest, runs, trials)
     with open(os.path.join(E, "runs.json"), "w", encoding="utf-8") as handle:
         json.dump([asdict(run) for run in runs], handle, indent=1)
     header = "{:<50} {:<10} {:>3} {:>4} {:>4} {:>3}  {:<14} {}"
