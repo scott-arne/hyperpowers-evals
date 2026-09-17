@@ -300,7 +300,8 @@ def build_runs(manifest: dict) -> list[Run]:
             )
         trial = verdict.get("trial") or {}
         index = trial.get("index")
-        if trial.get("count") != repeat or not isinstance(index, int):
+        count = trial.get("count")
+        if type(count) is not int or count != repeat or type(index) is not int:
             raise DesignError(
                 f"{name}: trial identity {trial!r} does not fit a log with repeat {repeat}"
             )
@@ -533,7 +534,7 @@ def _write_fixture(
 
 
 def self_test() -> int:
-    """The analysis must accept the clean cohort and refuse each broken one."""
+    """The analysis must accept the clean cohort and refuse each broken one for its own reason."""
 
     import tempfile
 
@@ -573,37 +574,44 @@ def self_test() -> int:
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(verdict, handle)
 
+    def boolean_identity(root: str) -> None:
+        path = os.path.join(root, "results", "run-t", "verdict.json")
+        verdict = load_json(path)
+        verdict["trial"] = {"index": True, "count": True}
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(verdict, handle)
+
     two_passes = {"run-a": "pass", "run-b": "pass"}
     cases: list[
-        tuple[str, dict[str, str], str | None, Callable[[str], None] | None, bool]
+        tuple[str, dict[str, str], str | None, Callable[[str], None] | None, str | None]
     ] = [
         (
             "a clean cohort with one replaced indeterminate",
             {"run-a": "pass", "run-b": "indeterminate", "rerun-b": "fail"},
             "run-b\trerun-b\n",
             None,
-            True,
+            None,
         ),
         (
             "an indeterminate trial never re-run",
             {"run-a": "pass", "run-b": "indeterminate"},
             None,
             None,
-            False,
+            "indeterminate and never re-run",
         ),
         (
             "a replacement whose original was not indeterminate",
             {"run-a": "pass", "rerun-a": "pass"},
             "run-a\trerun-a\n",
             None,
-            False,
+            "was replaced but was not indeterminate",
         ),
         (
             "a rerun not listed in reruns.tsv",
             {"run-a": "indeterminate", "rerun-a": "pass"},
             None,
             None,
-            False,
+            "a rerun not listed in reruns.tsv",
         ),
         (
             "a replacement that is itself replaced",
@@ -615,34 +623,53 @@ def self_test() -> int:
             },
             "run-b\trerun-b\nrerun-b\trerun-c\n",
             None,
-            False,
+            "itself a replacement",
         ),
         (
             "a log whose last line is FAILED after an earlier DONE",
             two_passes,
             None,
             done_then_failed,
-            False,
+            "not this log's DONE line",
         ),
-        ("a stray log beside the manifest logs", two_passes, None, stray_log, False),
+        (
+            "a stray log beside the manifest logs",
+            two_passes,
+            None,
+            stray_log,
+            "not a launch log name",
+        ),
         (
             "a run whose verdict names another scenario",
             two_passes,
             None,
             wrong_scenario,
-            False,
+            "verdict.json names scenario",
         ),
-        ("a manifest row with repeat 0", two_passes, None, zero_repeat, False),
+        (
+            "a manifest row with repeat 0",
+            two_passes,
+            None,
+            zero_repeat,
+            "repeat must be 1..99",
+        ),
         (
             "two runs of one log with the same trial index",
             two_passes,
             None,
             duplicate_index,
-            False,
+            "are not 1..2",
+        ),
+        (
+            "a trial identity made of booleans",
+            two_passes,
+            None,
+            boolean_identity,
+            "trial identity",
         ),
     ]
     failures = 0
-    for title, verdicts, reruns, mutate, should_pass in cases:
+    for title, verdicts, reruns, mutate, expect in cases:
         with tempfile.TemporaryDirectory() as tmp:
             E = tmp
             ROOTS = {"control": tmp, "treatment": tmp}
@@ -655,11 +682,18 @@ def self_test() -> int:
             except DesignError as error:
                 accepted = False
                 detail = f": {error}"
-        if accepted == should_pass:
+        if expect is None:
+            as_expected = accepted
+        else:
+            as_expected = not accepted and expect in detail
+        if as_expected:
             verb = "accepted as expected" if accepted else "refused as expected"
             print(f"{verb} ({title}){detail}")
         else:
-            print(f"SELF-TEST FAILURE ({title}): accepted={accepted}{detail}")
+            print(
+                f"SELF-TEST FAILURE ({title}): accepted={accepted}, "
+                f"expected {expect!r}{detail}"
+            )
             failures += 1
     E, ROOTS = saved
     return 1 if failures else 0
