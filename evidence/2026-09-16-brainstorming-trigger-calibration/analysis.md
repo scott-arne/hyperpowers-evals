@@ -8,9 +8,12 @@ in that repository). Fail-closed analysis by `analyze.py` in this directory;
 
 ## Instrument
 
-- Harness: hyperpowers-evals `4fd69ed` (pinned in `manifest.tsv`; the evals
-  head at launch was `3edd668`, the manifest commit, and every launch verified
-  `src scenarios coding-agents package.json bun.lock` identical to the pin).
+- Harness: hyperpowers-evals `4fd69ed` (pinned in `manifest.tsv`). The evals
+  head recorded by the launches was `3edd668`, the manifest commit, for the
+  first 14 processes and `43bde87`, an evidence-only commit correcting the
+  README's scenario labels, for the remaining 16 processes and the 3 reruns;
+  every launch verified `src scenarios coding-agents package.json bun.lock`
+  identical to the pin before starting.
 - Control root: hyperpowers `external-workflow-adoption` at `2e83fd8`, the
   upstream description ("You MUST use this before any creative work ...").
 - Treatment root: hyperpowers `brainstorming-trigger` at `8fbbb42`: the
