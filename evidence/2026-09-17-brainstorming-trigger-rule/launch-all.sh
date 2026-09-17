@@ -11,7 +11,8 @@
 # logs/measure-launch.sh beside the manifest.
 set -uo pipefail
 manifest="$1"; max="${2:-8}"
-case "$max" in ''|*[!0-9]*|0) echo "max-concurrent must be a positive integer, got '$max'" >&2; exit 2 ;; esac
+case "$max" in ''|*[!0-9]*) echo "max-concurrent must be a positive integer, got '$max'" >&2; exit 2 ;; esac
+[ "$max" -gt 0 ] || { echo "max-concurrent must be a positive integer, got '$max'" >&2; exit 2; }
 E=$(cd "$(dirname "$manifest")" && pwd)
 launcher="${LAUNCHER:-$E/logs/measure-launch.sh}"
 [ -f "$manifest" ] || { echo "no manifest at $manifest" >&2; exit 1; }

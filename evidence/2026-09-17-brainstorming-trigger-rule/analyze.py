@@ -19,8 +19,10 @@ refusals on throwaway cohorts; ``--archives`` prints the archive set
 
 from __future__ import annotations
 
+import contextlib
 import glob
 import hashlib
+import io
 import json
 import math
 import os
@@ -39,6 +41,11 @@ ROOTS = {
 }
 ARCHIVES = "task-3-runs"
 BASE_MANIFEST = "manifest.base.tsv"
+BASE_MANIFEST_SHA256 = (
+    "c949742baade55adbc1f96994645953a00ac8ad500d7393c737c6816c63805cf"
+)
+CONTROL_COMMIT = "a04fe31557c2de3e5e4821a404433ef99231b890"
+MODEL = "claude-opus-5"
 BUDGETS = ("raised", "default")
 MAX_TOPUPS = 3
 TOPUP_RE = re.compile(r"^# top-up: (\S+) indeterminate twice$")
@@ -155,6 +162,13 @@ def read_manifest() -> dict:
         raise DesignError(
             f"{BASE_MANIFEST} is missing; the base design must be committed"
         )
+    with open(base_path, "rb") as raw_base:
+        digest = hashlib.sha256(raw_base.read()).hexdigest()
+    if digest != BASE_MANIFEST_SHA256:
+        raise DesignError(
+            f"{BASE_MANIFEST} digest {digest[:12]} is not the frozen design's "
+            f"{BASE_MANIFEST_SHA256[:12]}"
+        )
     base_rows = {row for _, row in _launch_rows(base_path) if row is not None}
     if not base_rows:
         raise DesignError(f"{BASE_MANIFEST}: no launch rows")
@@ -220,8 +234,15 @@ def read_manifest() -> dict:
     for name in ("harness", "control", "treatment"):
         if not SHA_RE.fullmatch(manifest["commits"].get(name, "")):
             raise DesignError(f"manifest.tsv: {name} commit missing or not a full sha")
-    if not manifest["model"]:
-        raise DesignError("manifest.tsv: no model")
+    if manifest["commits"]["control"] != CONTROL_COMMIT:
+        raise DesignError(
+            f"manifest.tsv: control commit {manifest['commits']['control']} is not "
+            f"the design's {CONTROL_COMMIT}"
+        )
+    if manifest["model"] != MODEL:
+        raise DesignError(
+            f"manifest.tsv: model {manifest['model']!r} is not the design's {MODEL!r}"
+        )
     if not manifest["rows"]:
         raise DesignError("manifest.tsv: no launch rows")
     return manifest
@@ -300,30 +321,58 @@ def first_action(transcript: str) -> str:
     return "none"
 
 
-def context(transcript: str) -> tuple[str, str, str, str, str]:
-    """(payload hash, payload text, listing hash outside the brainstorming line, brainstorming line, model)."""
+def context(transcript: str) -> tuple[str, list[str], str, str, str]:
+    """(payload hash, every payload text, listing hash outside the brainstorming line, brainstorming line, model).
 
-    payload = payload_text = listing_rest = brainstorming = model = ""
+    The first hook context is the payload the hash records; every hook context
+    (a compaction re-injects the bootstrap) is returned so each can be checked
+    for the pinned bootstrap. Every skill listing in the session must be the
+    same listing and carry exactly one brainstorming line; every assistant
+    record must name the same model.
+    """
+
+    payload = ""
+    payload_texts: list[str] = []
+    listings: set[str] = set()
+    models: set[str] = set()
     for rec in iter_records(transcript):
         att = rec.get("attachment") or {}
-        if att.get("type") == "hook_additional_context" and not payload:
+        if att.get("type") == "hook_additional_context":
             content = att.get("content")
-            payload = hashlib.sha256(
-                json.dumps(content, sort_keys=True).encode()
-            ).hexdigest()[:12]
+            if not payload:
+                payload = hashlib.sha256(
+                    json.dumps(content, sort_keys=True).encode()
+                ).hexdigest()[:12]
             if isinstance(content, list):
-                payload_text = "\n".join(str(item) for item in content)
+                payload_texts.append("\n".join(str(item) for item in content))
             else:
-                payload_text = str(content)
-        if att.get("type") == "skill_listing" and not listing_rest:
-            lines = (att.get("content") or "").split("\n")
-            own = [line for line in lines if line.startswith(BRAINSTORMING_LINE)]
-            rest = [line for line in lines if not line.startswith(BRAINSTORMING_LINE)]
-            brainstorming = own[0] if own else ""
-            listing_rest = hashlib.sha256("\n".join(rest).encode()).hexdigest()[:12]
-        if rec.get("type") == "assistant" and not model:
-            model = (rec.get("message") or {}).get("model") or ""
-    return payload, payload_text, listing_rest, brainstorming, model
+                payload_texts.append(str(content))
+        if att.get("type") == "skill_listing":
+            listings.add(att.get("content") or "")
+        if rec.get("type") == "assistant":
+            models.add((rec.get("message") or {}).get("model") or "")
+    if len(listings) > 1:
+        raise DesignError(
+            f"{transcript}: the session received {len(listings)} different skill listings"
+        )
+    if len(models) > 1:
+        raise DesignError(
+            f"{transcript}: models differ within the session: {sorted(models)}"
+        )
+    listing = next(iter(listings)) if listings else ""
+    lines = listing.split("\n")
+    own = [line for line in lines if line.startswith(BRAINSTORMING_LINE)]
+    if listing and len(own) != 1:
+        raise DesignError(
+            f"{transcript}: the listing has {len(own)} brainstorming lines, expected exactly one"
+        )
+    rest = [line for line in lines if not line.startswith(BRAINSTORMING_LINE)]
+    brainstorming = own[0] if own else ""
+    listing_rest = (
+        hashlib.sha256("\n".join(rest).encode()).hexdigest()[:12] if listing else ""
+    )
+    model = next(iter(models)) if models else ""
+    return payload, payload_texts, listing_rest, brainstorming, model
 
 
 def token_total(run_dir: str) -> int | None:
@@ -462,10 +511,18 @@ def build_runs(manifest: dict) -> list[Run]:
         if final not in ("pass", "fail", "indeterminate"):
             raise DesignError(f"{name}: unexpected final verdict {final!r}")
         reason = str(verdict.get("final_reason") or "")
-        summary = str((verdict.get("gauntlet") or {}).get("summary") or "")
-        if VOID_RE.search(reason) or VOID_RE.search(summary):
+        grader = verdict.get("gauntlet")
+        summary = str(grader.get("summary") or "") if isinstance(grader, dict) else ""
+        grader_exited = (
+            final == "indeterminate"
+            and isinstance(grader, dict)
+            and not summary.strip()
+            and not grader.get("run_id")
+        )
+        if VOID_RE.search(reason) or VOID_RE.search(summary) or grader_exited:
+            why = reason or summary or "the grader exited without a summary or run id"
             raise DesignError(
-                f"{name}: void attempt left in the logs ({(reason or summary)[:80]!r}); "
+                f"{name}: void attempt left in the logs ({why[:80]!r}); "
                 "move its log to logs/failed/ and relaunch the row"
             )
         if verdict.get("scenario") != scenario:
@@ -492,15 +549,16 @@ def build_runs(manifest: dict) -> list[Run]:
         )
         if not transcripts:
             raise DesignError(f"{name}: no transcript")
-        payload, payload_text, listing_rest, brainstorming, model = context(
+        payload, payload_texts, listing_rest, brainstorming, model = context(
             transcripts[0]
         )
         if not payload or not listing_rest or not brainstorming:
             raise DesignError(f"{name}: payload, listing or brainstorming line missing")
-        if boots[arm] not in payload_text:
-            raise DesignError(
-                f"{name}: payload does not contain the pinned bootstrap of {arm}"
-            )
+        for text in payload_texts:
+            if boots[arm] not in text:
+                raise DesignError(
+                    f"{name}: a hook payload does not contain the pinned bootstrap of {arm}"
+                )
         runs.append(
             Run(
                 arm,
@@ -875,6 +933,11 @@ def _fixture_run(
                 "scenario": "scenario-x",
                 "coding_agent": CODING_AGENT,
                 "trial": {"index": index, "count": count},
+                "gauntlet": {
+                    "status": "investigate" if final == "indeterminate" else final,
+                    "summary": "the grader reached a verdict or ran out of budget",
+                    "run_id": f"grader-{name}",
+                },
             },
             handle,
         )
@@ -981,6 +1044,10 @@ def _write_fixture(
     for filename in ("manifest.tsv", BASE_MANIFEST):
         with open(os.path.join(root, filename), "w", encoding="utf-8") as handle:
             handle.write(manifest_text)
+    global BASE_MANIFEST_SHA256, CONTROL_COMMIT, MODEL
+    BASE_MANIFEST_SHA256 = hashlib.sha256(manifest_text.encode()).hexdigest()
+    CONTROL_COMMIT = _fixture_commit("control")
+    MODEL = "model-x"
     runs = [("control", name, final, "raised") for name, final in final_by_run.items()]
     runs.append(("treatment", "run-t", "pass", "raised"))
     runs.append(("treatment", "run-d", "pass", "default"))
@@ -1026,13 +1093,109 @@ def _set_verdict(root: str, name: str, **fields: object) -> None:
         json.dump(verdict, handle)
 
 
+def _append_record(root: str, name: str, record: dict) -> None:
+    path = os.path.join(root, "results", name, "home/.claude/projects/p/t.jsonl")
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record) + "\n")
+
+
+def _criteria_check() -> list[str]:
+    """The ship-decision arithmetic on synthetic trials: every expected line must be produced verbatim."""
+
+    def run(scenario: str, arm: str, budget: str, final: str, name: str) -> Run:
+        return Run(arm, scenario, budget, name, final, "x", None, "p", "l", "b", MODEL)
+
+    trials: list[Run] = []
+    trials += [
+        run(CHECKBOX, "treatment", "raised", "fail" if i == 0 else "pass", f"cb-t{i}")
+        for i in range(5)
+    ]
+    trials += [
+        run(TIMEOUT, "treatment", "raised", "pass" if i < 3 else "fail", f"to-t{i}")
+        for i in range(5)
+    ]
+    trials += [
+        run(EXPORT, "treatment", "raised", "pass" if i < 4 else "fail", f"ex-t{i}")
+        for i in range(5)
+    ]
+    trials += [run(TWIN, "treatment", "raised", "pass", f"tw-t{i}") for i in range(3)]
+    trials += [
+        run(
+            ROUTER_PREFIX + "b1",
+            "treatment",
+            "raised",
+            "pass" if i < 4 else "fail",
+            f"b1-t{i}",
+        )
+        for i in range(5)
+    ]
+    trials += [
+        run(ROUTER_PREFIX + "b1", "control", "raised", "pass", f"b1-c{i}")
+        for i in range(5)
+    ]
+    trials.append(
+        run(
+            "triggering-test-driven-development",
+            "treatment",
+            "default",
+            "pass",
+            "reg-1",
+        )
+    )
+    trials.append(
+        run(
+            "mid-conversation-skill-invocation", "treatment", "default", "fail", "reg-2"
+        )
+    )
+    trials.append(
+        run("mid-conversation-skill-invocation", "control", "default", "fail", "reg-2c")
+    )
+    trials += [
+        run(CHECKBOX, "treatment", "default", "fail" if i < 3 else "pass", f"cb-d{i}")
+        for i in range(10)
+    ]
+    trials += [
+        run(TIMEOUT, "treatment", "default", "pass" if i < 4 else "fail", f"to-d{i}")
+        for i in range(5)
+    ]
+    trials += [
+        run(EXPORT, "treatment", "default", "pass", f"ex-d{i}") for i in range(5)
+    ]
+    trials.append(run(EXPORT, "treatment", "default", "indeterminate", "ex-d-ind"))
+    lines = criteria_lines(trials)
+    expected = [
+        "1 checkbox raised, treatment triggered: 1/5 = 20% [bar <= 20%] -> met",
+        f"2 {TIMEOUT} raised, treatment gated: 3/5 = 60% [bar >= 70%] -> not met",
+        f"2 {EXPORT} raised, treatment gated: 4/5 = 80% [bar >= 70%] -> met",
+        "3 twin raised, treatment failures: 0/3 = 0% [bar 0] -> met",
+        f"3 {ROUTER_PREFIX}b1 raised, treatment pass 4/5 = 80% against control 5/5 = 100% [bar >= control] -> not met",
+        "4 regression default, treatment triggering-test-driven-development (sentinel): pass [bar pass]",
+        "4 regression default, treatment mid-conversation-skill-invocation (non-sentinel): fail [bar pass]; control run: fail",
+        "5 checkbox default, treatment triggered: 3/10 = 30% [bar <= 20%] -> not met",
+        f"5 {TIMEOUT} default, treatment gated: 4/5 = 80% [bar >= 80%] -> met",
+        f"5 {EXPORT} default, treatment gated: 5/5 = 100% [bar >= 80%] -> met",
+    ]
+    return [line for line in expected if line not in lines]
+
+
 def self_test() -> int:
-    """The analysis must accept the clean cohorts and refuse each broken one for its own reason."""
+    """The analysis must accept the clean cohorts and refuse each broken one for its own reason.
+
+    Also proves the acceptance arithmetic on synthetic trials and runs the whole
+    main path once on the clean cohort (table, criteria, runs.json).
+    """
 
     import tempfile
 
-    global E, ROOTS, NON_SENTINEL
-    saved = (E, ROOTS, NON_SENTINEL)
+    global E, ROOTS, NON_SENTINEL, BASE_MANIFEST_SHA256, CONTROL_COMMIT, MODEL
+    saved = (E, ROOTS, NON_SENTINEL, BASE_MANIFEST_SHA256, CONTROL_COMMIT, MODEL)
+    failures = 0
+    missing = _criteria_check()
+    if missing:
+        failures += 1
+        print(f"SELF-TEST FAILURE (criteria arithmetic): missing lines {missing}")
+    else:
+        print("criteria arithmetic: 10 expected lines produced")
 
     def done_then_failed(root: str) -> None:
         path = os.path.join(root, "logs", "control-scenario-x-p1.log")
@@ -1048,12 +1211,11 @@ def self_test() -> int:
         _set_verdict(root, "run-a", scenario="scenario-y")
 
     def zero_repeat(root: str) -> None:
-        for filename in ("manifest.tsv", BASE_MANIFEST):
-            _rewrite(
-                os.path.join(root, filename),
-                "control\tscenario-x\t2\tp1\traised",
-                "control\tscenario-x\t0\tp1\traised",
-            )
+        _rewrite(
+            os.path.join(root, "manifest.tsv"),
+            "control\tscenario-x\t2\tp1\traised",
+            "control\tscenario-x\t0\tp1\traised",
+        )
 
     def duplicate_index(root: str) -> None:
         _set_verdict(root, "run-a", trial={"index": 2, "count": 2})
@@ -1111,6 +1273,15 @@ def self_test() -> int:
             final_reason="quorum error (setup): setup.sh failed (exit 1)",
         )
 
+    def grader_exited(root: str) -> None:
+        _set_verdict(
+            root,
+            "run-a",
+            final="indeterminate",
+            final_reason="Gauntlet-Agent did not complete (status: investigate)",
+            gauntlet={"status": "investigate", "summary": "", "run_id": None},
+        )
+
     def unjustified_row(root: str) -> None:
         _fixture_add_row(root, "control", "p3", "raised", "pass", None)
 
@@ -1154,6 +1325,49 @@ def self_test() -> int:
     def justified_control_run(root: str) -> None:
         _set_verdict(root, "run-d", final="fail")
         _fixture_add_row(root, "control", "p3", "default", "pass", CONTROL_RUN_COMMENT)
+
+    def base_edited(root: str) -> None:
+        with open(os.path.join(root, BASE_MANIFEST), "a", encoding="utf-8") as handle:
+            handle.write("# edited after the fact\n")
+
+    def wrong_model(root: str) -> None:
+        _rewrite(
+            os.path.join(root, "manifest.tsv"), "model\tmodel-x", "model\tother-model"
+        )
+
+    def wrong_control(root: str) -> None:
+        _rewrite(
+            os.path.join(root, "manifest.tsv"),
+            f"control\t{CONTROL_COMMIT}\n",
+            f"control\t{'9' * 40}\n",
+        )
+
+    def two_brainstorming_lines(root: str) -> None:
+        _rewrite(
+            os.path.join(root, "results", "run-a", "home/.claude/projects/p/t.jsonl"),
+            '"- other:skill: text\\n- hyperpowers:brainstorming: DESC"',
+            '"- other:skill: text\\n- hyperpowers:brainstorming: DESC\\n- hyperpowers:brainstorming: OLD"',
+        )
+
+    def later_model(root: str) -> None:
+        _append_record(
+            root,
+            "run-a",
+            {"type": "assistant", "message": {"model": "other-model", "content": []}},
+        )
+
+    def second_listing(root: str) -> None:
+        _append_record(
+            root,
+            "run-a",
+            {
+                "type": "attachment",
+                "attachment": {
+                    "type": "skill_listing",
+                    "content": "- other:skill: changed",
+                },
+            },
+        )
 
     two_passes = {"run-a": "pass", "run-b": "pass"}
     one_replaced = {"run-a": "pass", "run-b": "indeterminate", "rerun-b": "fail"}
@@ -1304,6 +1518,13 @@ def self_test() -> int:
             "void attempt",
         ),
         (
+            "a grader that exited without a summary or run id",
+            two_passes,
+            None,
+            grader_exited,
+            "void attempt",
+        ),
+        (
             "an added manifest row without a justification",
             two_passes,
             None,
@@ -1359,8 +1580,49 @@ def self_test() -> int:
             justified_control_run,
             None,
         ),
+        (
+            "a base manifest edited after the fact",
+            two_passes,
+            None,
+            base_edited,
+            "digest",
+        ),
+        (
+            "a manifest whose model is not the design's",
+            two_passes,
+            None,
+            wrong_model,
+            "is not the design's",
+        ),
+        (
+            "a manifest whose control pin is not the design's",
+            two_passes,
+            None,
+            wrong_control,
+            "control commit",
+        ),
+        (
+            "a listing with two brainstorming lines",
+            two_passes,
+            None,
+            two_brainstorming_lines,
+            "brainstorming lines, expected exactly one",
+        ),
+        (
+            "a later assistant turn on another model",
+            two_passes,
+            None,
+            later_model,
+            "models differ within the session",
+        ),
+        (
+            "a second skill listing that differs",
+            two_passes,
+            None,
+            second_listing,
+            "different skill listings",
+        ),
     ]
-    failures = 0
     for title, verdicts, reruns, mutate, expect in cases:
         with tempfile.TemporaryDirectory() as tmp:
             E = tmp
@@ -1379,6 +1641,25 @@ def self_test() -> int:
             except DesignError as error:
                 accepted = False
                 detail = f": {error}"
+            if accepted and title.startswith("a clean cohort"):
+                captured = io.StringIO()
+                argv = sys.argv
+                sys.argv = ["analyze.py"]
+                try:
+                    with contextlib.redirect_stdout(captured):
+                        code = main()
+                finally:
+                    sys.argv = argv
+                text = captured.getvalue()
+                if (
+                    code != 0
+                    or "design checks passed" not in text
+                    or not os.path.exists(os.path.join(tmp, "runs.json"))
+                ):
+                    accepted = False
+                    detail = f": main() returned {code}; runs.json present: {os.path.exists(os.path.join(tmp, 'runs.json'))}"
+                else:
+                    title = title + ", through main(): table, criteria, runs.json"
         if expect is None:
             as_expected = accepted
         else:
@@ -1392,7 +1673,7 @@ def self_test() -> int:
                 f"expected {expect!r}{detail}"
             )
             failures += 1
-    E, ROOTS, NON_SENTINEL = saved
+    E, ROOTS, NON_SENTINEL, BASE_MANIFEST_SHA256, CONTROL_COMMIT, MODEL = saved
     return 1 if failures else 0
 
 
