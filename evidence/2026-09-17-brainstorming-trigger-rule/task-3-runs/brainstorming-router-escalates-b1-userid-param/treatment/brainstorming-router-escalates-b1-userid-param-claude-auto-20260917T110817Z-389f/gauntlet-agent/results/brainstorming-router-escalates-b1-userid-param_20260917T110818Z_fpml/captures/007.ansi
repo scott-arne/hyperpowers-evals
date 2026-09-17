@@ -1,0 +1,40 @@
+
+  - [1mCorrelation ID generated at submit[0m — caller mints a [38;5;153mcrypto.randomUUID()[39m per attempt and passes it in. Buys you
+    attempt-level tracking that works for failed logins too, and ties client logs to server logs. Costs a line at the
+    call site. Doesn't identify the human, only the attempt.
+  - [1mPass the username through as userId[0m — zero new plumbing, but it's the data [38;5;153mlogin[39m already has; the parameter is pure
+    redundancy and the "tracking" tells you nothing new.
+  - [1mAdd a [38;5;153muserId[39m field to the login form[0m — the only option where a real user identifier is available pre-auth. Costs a
+    new input in [38;5;153mindex.html[39m plus validation. Worth flagging: a client-supplied identity value must never be trusted as
+    identity by the server — it's a hint, not authentication.
+  - [1mReturn the userId from [38;5;153mlogin[39m instead of taking it[0m — matches how auth usually works (the server resolves identity and
+    hands it back). This is a return-shape change, not a parameter, so it's not literally what you asked for, but it's
+    the option that yields a trustworthy "who logged in".
+
+  [1mMy recommendation:[0m the correlation ID. It's the one that genuinely delivers "track who logged in" at the point [38;5;153mlogin[39m
+  is called, it works for failed attempts, and it's cheap to change later. The form-field option is the only one I'd
+  push back on without more context.
+
+  Cheap to change later: correlation ID, username passthrough. Harder: the form field (touches HTML and validation) and
+  the return-shape change (affects every future caller).
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[2m│[0m [1m[38;5;231mWhat should `userId` actually be, given the form has no user identifier before authentication?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCorrelation ID (Recommended)[39m
+     [38;5;246mCaller generates a per-attempt UUID and passes it to login(). Tracks attempts including failures; cheap to change [39m
+     [38;5;246mlater.[39m
+  [38;5;246m2.[39m Pass username through
+     [38;5;246muserId = the username login() already receives. No new plumbing, but the parameter adds no new information.[39m
+  [38;5;246m3.[39m New form field
+     [38;5;246mAdd a userId input to index.html plus validation. Real identifier, but client-supplied and must not be trusted as [39m
+     [38;5;246midentity server-side.[39m
+  [38;5;246m4.[39m Return it instead
+     [38;5;246mHave login() return the userId rather than accept it. Matches real auth flows but changes the return shape, not the
+[39m     [38;5;246mparameter list.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

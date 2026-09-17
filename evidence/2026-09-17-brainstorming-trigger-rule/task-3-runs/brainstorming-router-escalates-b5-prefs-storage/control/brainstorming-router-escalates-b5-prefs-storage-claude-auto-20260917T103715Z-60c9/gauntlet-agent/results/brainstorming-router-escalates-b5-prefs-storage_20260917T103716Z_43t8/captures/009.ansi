@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Third fork, and the last one before I present the design: how the new module gets loaded, and whether we set up tests.
+  These are coupled — what makes [38;5;153mpreferences.js[39m importable by a test runner is the same choice that decides how [38;5;153mapp.js[39m
+  consumes it.
+
+  Today [38;5;153mapp.js[39m is a plain [38;5;153m<script src>[39m with everything in global scope; [38;5;153msrc/[39m uses CommonJS but is unrelated code the
+  page never loads.
+
+  - [1mES modules + [38;5;153mnode:test[0m — [38;5;153mpreferences.js[39m exports a store; [38;5;153mindex.html[39m switches to [38;5;153m<script type="module">[39m. Node's
+    built-in test runner (zero dependencies, already on your machine) imports the module directly and tests it against
+    an in-memory [38;5;153mlocalStorage[39m fake. Cost: ES modules don't load over [38;5;153mfile://[39m, so opening [38;5;153mindex.html[39m by double-clicking
+    stops working — you'd need [38;5;153mnpx serve[39m or similar.
+  - [1mKeep script globals, no tests[0m — add a second [38;5;153m<script src="preferences.js">[39m before [38;5;153mapp.js[39m, exposing a global. Matches
+    the current style exactly and keeps [38;5;153mfile://[39m working. Cost: nothing verifies the store except loading the page by
+    hand.
+  - [1mKeep script globals + [38;5;153mnode:test[0m — same loading, but the file needs a dual export shim (global in the browser,
+    [38;5;153mmodule.exports[39m in Node) so tests can reach it. Works, but the shim is boilerplate that exists purely for the test
+    runner.
+
+  I recommend ES modules + [38;5;153mnode:test[39m: it's still zero-dependency, and a storage layer is exactly the kind of code where
+  an unnoticed serialization bug survives manual clicking. The [38;5;153mfile://[39m tradeoff is real though — if you open this page
+  straight from disk, say so and I'll take the third option.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Tooling [39m[49m
+
+[1m[38;5;231mHow should the module load, and do we add tests?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules + node:test (Recommended)[39m
+     [38;5;246mpreferences.js as an ES module, index.html uses <script type="module">, tested with Node's zero-dependency built-in
+[39m     [38;5;246mrunner. Breaks opening index.html via file://.[39m
+  [38;5;246m2.[39m Script globals, no tests
+     [38;5;246mSecond <script> tag exposing a global, matching the current style. file:// keeps working. No automated [39m
+     [38;5;246mverification.[39m
+  [38;5;246m3.[39m Script globals + node:test
+     [38;5;246mCurrent loading style preserved, plus a dual export shim so Node tests can import the file. Tests work and file://
+[39m     [38;5;246mworks; the shim is boilerplate.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

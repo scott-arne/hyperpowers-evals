@@ -1,0 +1,40 @@
+  {
+    [36mts[39m:        [31m"2026-09-17T10:21:02.123Z"[39m,  [32m// ISO 8601, UTC[39m
+    [36mlevel[39m:     [31m"info"[39m,                       [32m// debug | info | warn | error[39m
+    [36mmsg[39m:       [31m"login attempt"[39m,              [32m// static string[39m
+    [36msessionId[39m: [31m"9f2c..."[39m,                    [32m// ephemeral, per page load / process[39m
+    [36menv[39m:       [31m"browser"[39m,                    [32m// or "node"[39m
+    [36mctx[39m:       { [32m/* allowlisted keys only */[39m },
+    [36merr[39m:       { name, message, stack }      [32m// errors only[39m
+  }
+
+  [1mThe one rule that holds the whole redaction story together: [38;5;153mmsg[39m is a static string.[0m All variable data goes in [38;5;153mctx[39m,
+  where the allowlist can see it. If [38;5;153mmsg[39m were interpolated — [38;5;153m`Logging in: ${username}`[39m — the deny-by-default allowlist
+  would be bypassable by accident in the most natural-looking way possible, and your log store would fill with
+  unredacted values that no scrubber ever inspected. Static messages also make records groupable, which is the other
+  thing you want during an incident. I'd enforce this by having the logger take [38;5;153m(msg, ctx)[39m and never accepting a
+  template, and by lint if we add one.
+
+  Four levels, numerically ordered, with a configurable minimum. Node reads [38;5;153mLOG_LEVEL[39m, defaulting to [38;5;153minfo[39m. The browser
+  defaults to [38;5;153mwarn[39m, with [38;5;153mdebug[39m on [38;5;153mlocalhost[39m, and an explicit override the page can set.
+
+  [38;5;153msessionId[39m is a [38;5;153mcrypto.randomUUID()[39m minted once at module load — available natively in both Node 18+ and all current
+  browsers, so no dependency and no fallback.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Core design [38;5;16m[48;5;153m ☐ Level override [39m[49m ✔ Submit  →
+
+[1m[38;5;231mHow should the browser's log level be overridable in production?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage key (Recommended)[39m
+     [38;5;246mA support engineer can tell a user to set localStorage.logLevel='debug' and reproduce with full verbosity. It's a [39m
+     [38;5;246msettings value, not an identifier, so it doesn't conflict with the ephemeral-session decision.[39m
+  [38;5;246m2.[39m Build/page-injected constant only
+     [38;5;246mLevel is fixed by whatever the page sets at load. No field override; reproducing a verbose trace needs a deploy.[39m
+  [38;5;246m3.[39m URL query parameter
+     [38;5;246m?logLevel=debug turns up verbosity for one page load. Easy to share in a support ticket; also trivially [39m
+     [38;5;246mdiscoverable by anyone.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

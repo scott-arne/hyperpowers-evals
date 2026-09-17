@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which events should actually produce a notification? → Due-date reminders only (Recommended)[39m
+
+[38;5;231m⏺[39m Last big question before I lay out approaches — where a reminder actually appears.
+
+  [1mThe fork:[0m a static page can only reach the user while it's loaded. True "notify me when the app is closed" needs a
+  push server, which we've ruled out. So the choice is how far to go within that limit.
+
+  - [1mIn-page only[0m — a reminder banner/list rendered in the page. No permission prompt, no service worker, fully testable
+    with a fake clock. Invisible if the tab is backgrounded or closed.
+  - [1mOS notifications (Notification API)[0m — desktop notifications that surface over other windows while the tab is open,
+    including backgrounded. Costs a permission prompt, and permission is a one-shot decision per origin: if the user
+    denies it, you can't re-ask. Still silent when the page is closed.
+  - [1mBoth, layered[0m — in-page is the source of truth; an OS notification fires additionally when permission has been
+    granted.
+
+  [1mMy recommendation:[0m both, layered, with one constraint — the permission prompt fires only when the user explicitly
+  turns reminders on, never on page load. A cold permission prompt is the fastest way to get permanently denied, and
+  that's not recoverable in-app. Layering also keeps the OS notification a thin adapter over logic that's testable
+  without a browser permission.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Delivery [39m[49m
+
+[1m[38;5;231mWhere should reminders be delivered?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBoth, layered (Recommended)[39m
+     [38;5;246mIn-page reminders always; OS notification additionally when the user has opted in and granted permission. [39m
+     [38;5;246mPermission requested only on explicit opt-in.[39m
+  [38;5;246m2.[39m In-page only
+     [38;5;246mReminder UI inside the page. No permissions, no browser APIs, simplest to build and test. User must be looking at [39m
+     [38;5;246mthe tab.[39m
+  [38;5;246m3.[39m OS notifications only
+     [38;5;246mDesktop notifications via the Notification API. Nothing shown in-page, so denied or unsupported permission means no
+[39m     [38;5;246mreminders at all.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

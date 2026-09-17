@@ -1,0 +1,40 @@
+
+  Proceeding with my own approaches.
+
+  ---
+
+  [1mApproaches[0m
+
+  All three take the same UI and the same rules — watchers, three event types, bell + toasts. They differ in [1mwhere a [0m
+  [1mnotification lives[0m, which turns out to matter more than it sounds for a prototype whose purpose is exploring the idea.
+
+  [1mA. Materialized notifications (fan-out on write).[0m When Bob changes a task, look up its watchers and write one
+  notification record per watcher. Each record carries its own read/unread flag. Alice's feed is [38;5;153mnotifications.filter(n
+[39m  [38;5;153m=> n.userId === alice)[39m.
+  [3mWins when:[0m you want the simplest possible read path and the most conventional structure — this is how production
+  systems actually do it.
+  [3mCosts:[0m the subscription rule is baked in at write time. Change your mind about what "care about" means and the
+  existing feed is frozen under the old rule. Also duplicates a payload per watcher.
+  [3mComplexity:[0m trivial.
+
+  [1mB. Event log + derived feeds.[0m Store one append-only list of events — [38;5;153m{id, taskId, type, actor, from, to, at}[39m. Nobody's
+  feed is stored. Each user's feed is computed at render time by filtering the log through a subscription predicate.
+  Read state is a per-user set of seen event IDs.
+  [3mWins when:[0m the subscription rule is the thing you're still figuring out. Swap the predicate — watched, assigned-only,
+  implicit involvement, everything — and every feed re-derives instantly, including history. You can A/B the [3msemantics[0m
+  without touching storage or regenerating data.
+  [3mCosts:[0m one extra indirection, and unread state needs a seen-set rather than a boolean. Recomputing per render is free
+  at this scale and would not be at real scale.
+  [3mComplexity:[0m moderate, barely.
+
+  [1mC. Task revision history + diffing.[0m Store full task versions; derive events by diffing consecutive revisions.
+  [3mWins when:[0m you need "what exactly changed" detail views, undo, or audit.
+  [3mCosts:[0m the heaviest model, and diffing is the wrong problem to be solving here. You'd spend your effort on version
+  reconciliation instead of on notification design.
+  [3mComplexity:[0m high.
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

@@ -1,0 +1,40 @@
+  task_events    id, task_id, actor_id, type, old_value, new_value, created_at
+  notifications  id, user_id, event_id, read_at?, created_at
+                 UNIQUE (user_id, event_id)
+
+  Four decisions in there are load-bearing, and they're the ones I'd want you to push back on now rather than later:
+
+  [1m[38;5;153mtask_watchers.source[0m — one of [38;5;153mimplicit_assignee[39m, [38;5;153mimplicit_creator[39m, [38;5;153mexplicit[39m. Without this column, reassigning a task
+  either strips a watch the user deliberately added, or leaves the old assignee subscribed forever. With it, removing an
+  implicit subscription can't clobber an explicit one. This is the single subtlest part of the whole design and it's
+  cheap now and painful to retrofit.
+
+  [1m[38;5;153mold_value[39m / [38;5;153mnew_value[39m as text on one events table[0m, rather than three typed tables. The feed has to render "moved from
+  In Progress to Done" correctly [3meven after the task has changed twice more[0m — so the event has to carry its own values
+  rather than reading the task's current state. One table with text values keeps the feed query a single join.
+
+  [1m[38;5;153mUNIQUE (user_id, event_id)[0m — makes fan-out idempotent. A retried or double-fired write can't produce duplicate feed
+  items, which means the fan-out path doesn't need a transaction spanning event-insert and notification-insert to be
+  safe.
+
+  [1mThe actor is excluded from their own fan-out.[0m You don't get notified about your own edits. Obvious, universally
+  forgotten, and it's a filter at fan-out time rather than at read time so the unread count stays a plain [38;5;153mCOUNT(*)[39m.
+
+  Two semantics that follow, worth confirming: unwatching a task leaves your existing notifications in place — they were
+  already yours — it only stops new ones. And setting [38;5;153mdue_at[39m from null counts as a due-date change, same as moving it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Schema [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mDoes the data model look right before I move to components and data flow?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, continue[39m
+     [38;5;246mMove on to module boundaries, the API surface, and the fan-out data flow.[39m
+  [38;5;246m2.[39m Drop the source column
+     [38;5;246mSimplify watchers to a plain join table and accept that reassignment clobbers explicit watches.[39m
+  [38;5;246m3.[39m Revisit event storage
+     [38;5;246mYou'd rather discuss typed per-event tables, or storing a JSON payload instead of old/new text values.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+  [1mSection 1 — Scope and data model[0m
+
+  [1mScope reminder:[0m this is two sub-projects. Sub-project 1 is the tasks foundation (users, tasks, comments, session auth)
+  and sub-project 2 is notifications. I'm designing them together here because notifications constrain the foundation's
+  shape, but they'd be specced and built in that order. Everything below marked [3m(foundation)[0m is sub-project 1.
+
+  [1mTables:[0m
+
+  [3m(foundation)[0m
+  - [38;5;153musers[39m — [38;5;153mid, name, email, is_active[39m. No self-signup; an admin adds people. At 5–50 internal users, sessions via a
+    signed cookie; no password reset flow.
+  - [38;5;153mtasks[39m — [38;5;153mid, title, description, status, assignee_id, creator_id, created_at, updated_at[39m.
+  - [38;5;153mcomments[39m — [38;5;153mid, task_id, author_id, body, created_at[39m. Included in the foundation because commenting is both a
+    subscription trigger and the highest-value notification event; a task app without it can't demonstrate the feature.
+
+  [3m(notifications)[0m
+  - [38;5;153msubscriptions[39m — [38;5;153m(user_id, task_id, state)[39m, unique per pair. [38;5;153mstate[39m is one of [38;5;153mauto[39m (system-subscribed you because you
+    got involved), [38;5;153mwatching[39m (you asked explicitly), [38;5;153mmuted[39m (you opted out; wins over involvement, so an assignee can
+    silence a noisy task without unassigning themselves). This single table carries both halves of the auto+manual model
+    you chose.
+  - [38;5;153mtask_events[39m — [38;5;153mid, task_id, actor_id, type, data (JSON), created_at[39m. One row per change. The canonical record of [3mwhat
+[0m    [3mhappened[0m, written once.
+  - [38;5;153mnotifications[39m — [38;5;153mid, user_id, event_id, read_at[39m. One row per recipient per event. Thin on purpose: the description
+    lives in the event, so a notification is just "this person should see that event, and here's whether they have."
+  - [38;5;153memail_outbox[39m — [38;5;153mid, notification_id, status, attempts, next_attempt_at, sent_at, last_error[39m.
+
+  [1mThe one rule that keeps this correct:[0m all task and comment mutations go through a single [38;5;153mtask_service[39m module. It
+  performs the mutation, writes the [38;5;153mtask_events[39m row, resolves subscribers, and writes the [38;5;153mnotifications[39m and [38;5;153memail_outbox
+[39m  rows — all in one transaction. Nothing else is permitted to write to [38;5;153mtasks[39m or [38;5;153mcomments[39m. That's what makes "a change
+  that fires no notification" structurally impossible rather than a thing we have to remember.
+
+  Does the model look right? In particular: is admin-adds-users acceptable, or do you need self-signup?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 3m 46s · done 3:21 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

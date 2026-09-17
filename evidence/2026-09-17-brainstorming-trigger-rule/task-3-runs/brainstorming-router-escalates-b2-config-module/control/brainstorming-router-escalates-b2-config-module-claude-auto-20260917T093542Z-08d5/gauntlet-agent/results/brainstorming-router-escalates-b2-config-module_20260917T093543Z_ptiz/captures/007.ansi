@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the app determine which environment it's running in? → Hostname + override (Recommended)[39m
+
+[38;5;231m⏺[39m Hostname with an override it is.
+
+  [1mSecond question: what shape should the settings module take?[0m
+
+  The repo has two conventions and they don't mix: [38;5;153mapp.js[39m is a browser global script, [38;5;153msrc/*.js[39m is CommonJS for Node. The
+  settings module has to pick one, and that picks who can consume it later.
+
+  - [1mBrowser global script[0m — [38;5;153msettings.js[39m at the root, loaded by [38;5;153mindex.html[39m before [38;5;153mapp.js[39m, exposing something like
+    [38;5;153mwindow.AppSettings[39m. Buys: matches how [38;5;153mapp.js[39m already works, zero other changes, opens from [38;5;153mfile://[39m. Costs: [38;5;153msrc/[39m Node
+    code can't [38;5;153mrequire[39m it without a compatibility shim; globals don't scale past a handful of settings.
+  - [1mES module[0m — add [38;5;153mtype="module"[39m to the script tag and use real [38;5;153mimport[39m/[38;5;153mexport[39m. Buys: the modern default, explicit
+    dependencies, no globals, and it's the direction you'd grow toward anyway. Costs: [38;5;153mtype="module"[39m means the page must
+    be served over HTTP — opening [38;5;153mindex.html[39m directly from disk stops working. That's the tradeoff that bites.
+  - [1mDual CommonJS/browser file in [38;5;153msrc/[0m — one file with an export guard both sides can load. Buys: single source of truth
+    shared with the Node entry point. Costs: shim boilerplate for a sharing need that doesn't exist yet — [38;5;153msrc/index.js[39m
+    makes no API calls at all. This is the YAGNI option.
+
+  My recommendation is the browser global script. It's the smallest change that matches existing code, and [38;5;153mapp.js[39m and
+  [38;5;153msrc/[39m share nothing today, so designing for reuse between them would be inventing a requirement.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module shape [39m[49m
+
+[1m[38;5;231mWhat module shape should the settings module use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser global (Recommended)[39m
+     [38;5;246msettings.js loaded before app.js in index.html, exposing window.AppSettings. Matches app.js today; still works from
+[39m     [38;5;246mfile://.[39m
+  [38;5;246m2.[39m ES module
+     [38;5;246mAdd type="module" and use import/export. Cleaner and more modern, but the page must then be served over HTTP.[39m
+  [38;5;246m3.[39m Dual CommonJS/browser in src/
+     [38;5;246mOne file both the browser and Node can load, via an export guard. Shares config with src/, at the cost of shim [39m
+     [38;5;246mboilerplate.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

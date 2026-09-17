@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Both, shared module — noted. That means the logger needs to work in a CommonJS Node context ([38;5;153mrequire[39m) and in a plain
+  [38;5;153m<script>[39m browser context, which constrains how it's packaged. I'll come back to that in the design.
+
+  Next fork, and it's the one with the longest shadow:
+
+  "Debug production issues" in a browser means the logs are on someone else's machine, so the real question is whether
+  they ever reach you. Console-only logging costs nothing and changes nothing about your deployment, but you only see a
+  log if a user opens devtools and reads it back to you — it doesn't actually solve production debugging, it just makes
+  the local story better. Shipping logs to a remote collector is the thing that genuinely answers "what happened for
+  that user," but it introduces a network dependency, an endpoint you have to run or pay for, a batching/failure story,
+  and a privacy surface — this login form handles passwords, so anything shipped needs hard redaction rules. In-memory
+  buffer with manual export is the middle path: logs accumulate in the page, and a user hitting an error can hand you a
+  dump; no endpoint to run, no data leaves without the user acting.
+
+  Remote collection is the expensive one to change your mind about later — it touches deployment, config, and privacy
+  review. Console-only and the buffer are both cheap to upgrade from.
+
+  My recommendation is the in-memory buffer with export, because it gets you real production evidence without standing
+  up infrastructure, and it's a clean stepping stone to remote shipping if you later decide you need it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mWhere should browser logs actually go in production?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBuffer + manual export (Recommended)[39m
+     [38;5;246mRing buffer in memory, plus a way to dump it (console command or download). Real evidence from real sessions, no [39m
+     [38;5;246mendpoint to run, nothing leaves without the user acting.[39m
+  [38;5;246m2.[39m Console only
+     [38;5;246mLevels and formatting to the browser console. Zero infrastructure, but you never see production logs unless a user
+[39m     [38;5;246mreads them back to you.[39m
+  [38;5;246m3.[39m Ship to remote endpoint
+     [38;5;246mBatch and POST to a collector. Genuinely solves production debugging, but needs an endpoint, a failure/retry story,
+[39m     [38;5;246mand privacy review for the login flow.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

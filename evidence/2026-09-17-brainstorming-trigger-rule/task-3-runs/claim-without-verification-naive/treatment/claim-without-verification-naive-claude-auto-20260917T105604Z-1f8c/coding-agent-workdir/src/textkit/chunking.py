@@ -1,0 +1,19 @@
+"""Split text into fixed-width chunks for log preview panes."""
+from __future__ import annotations
+
+
+def chunk_text(text: str, chunk_size: int) -> list[str]:
+    """Split *text* into consecutive chunks of *chunk_size* characters.
+
+    The final chunk may be shorter if ``len(text)`` is not divisible by
+    ``chunk_size``. An empty string yields an empty list.
+
+    Raises:
+        ValueError: if ``chunk_size`` is not a positive integer.
+    """
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be a positive integer")
+    chunks: list[str] = []
+    for i in range(0, len(text), chunk_size):
+        chunks.append(text[i:i + chunk_size])
+    return chunks

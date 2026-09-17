@@ -1,0 +1,40 @@
+
+  [1mB. Domain event log + fan-out worker.[0m Mutations append one row to an [38;5;153mevents[39m table. A worker reads events, resolves
+  subscribers, and writes notifications and emails.
+  [3mWins:[0m subscriber logic lives in exactly one place; you get an audit trail and can replay events after a bug or a
+  subscription-rule change. [3mCosts:[0m eventual consistency — the badge lags the change by however often the worker runs,
+  which people notice and report as a bug; a worker that must always be running or notifications stop with no visible
+  error.
+
+  [1mC. No notification rows — derive the feed at read time.[0m Store a [38;5;153mtask_changes[39m history only. The feed is a join: changes
+  to tasks I'm subscribed to, newer than my [38;5;153mlast_read_at[39m. Unread count is a [38;5;153mCOUNT(*)[39m.
+  [3mWins:[0m fewest tables, no fan-out, no worker for the in-app side, impossible to get out of sync because nothing is
+  duplicated. [3mCosts:[0m read state is one watermark per user, so no dismissing an individual item and no per-notification
+  state ever; email still needs its own outbox, so you end up with two mechanisms anyway.
+
+  [1mMy recommendation: A.[0m B's audit trail and replay are real benefits, but they're solving for a scale and a rate of
+  rule-churn you don't have, and it buys them with a lagging badge — the single most visible quality defect in a
+  notification feature. C is genuinely tempting on YAGNI grounds, and I'd pick it if this were in-app only; but you've
+  chosen email, which forces an outbox and a worker regardless, so C's main saving evaporates while you still lose
+  per-item read state permanently. A gives the correct, instant, dismissible feed for one extra table, and its real risk
+  — a mutation path that forgets to emit — is fixable by construction: route all writes through a single [38;5;153mtask_service[39m
+  module and it can't be bypassed by accident.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the notification system take?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Sync fan-out (Recommended)[39m
+     [38;5;246mNotification rows written in the same transaction as the change; outbox worker for email. Instant badge, per-item [39m
+     [38;5;246mread state, one extra table.[39m
+  [38;5;246m2.[39m B: Event log + worker
+     [38;5;246mMutations append events; a worker fans out. Audit trail and replayable, at the cost of a lagging badge and a worker
+[39m     [38;5;246mthat must always run.[39m
+  [38;5;246m3.[39m C: Derived feed
+     [38;5;246mStore change history only; feed is a query against a per-user read watermark. Fewest tables, but no per-item [39m
+     [38;5;246mdismiss, ever.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

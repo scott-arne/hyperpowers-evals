@@ -1,0 +1,40 @@
+    data alone. No notification records at all. Cheapest and least buggy — you cannot have an orphaned notification
+    pointing at a deleted task, because there are no notification objects. Costs: no history, and no meaningful
+    "dismiss," since there's nothing to dismiss. Honestly, this is a due-date view wearing a notifications hat.
+  - [1mB — Persisted notification inbox.[0m The evaluator writes [38;5;153mNotification[39m records ([38;5;153mid[39m, [38;5;153mtaskId[39m, [38;5;153mkind[39m, [38;5;153mfiredAt[39m, [38;5;153mreadAt[39m) next
+    to the tasks; the UI is an inbox with an unread badge. Buys history, per-item read/dismiss, and room for other
+    notification kinds later — and it's the shape a server push system would eventually need. Costs: all the real
+    bookkeeping. Dedup so a reload doesn't re-fire everything, cleanup when a task is deleted or its due date moves,
+    pruning so the store doesn't grow forever. That's where the bugs in this kind of feature actually live.
+  - [1mC — Derived state, transient toasts, snooze on the task (recommended).[0m Computed like A, plus a toast when a task
+    crosses into due or overdue while you're watching, plus a [38;5;153msnoozedUntil[39m field on the task so dismissal means
+    something. No notification entity.
+
+  I recommend [1mC[0m. It produces the thing you actually asked for — something that [3mtells[0m you — without buying B's inbox
+  bookkeeping to get history and read-state that nobody has asked for yet. And all three share the same core: a pure
+  [38;5;153mevaluate(tasks, now)[39m function. Keeping that pure and isolated is what makes B reachable later if you ever add push, so
+  choosing C now doesn't paint us in.
+
+  [1mTooling[0m
+
+  There's no tooling in this repo at all, and it's cheapest to set up before any code exists. The reminder evaluator is
+  a pure function of [38;5;153m(tasks, now)[39m — time-dependent logic that's miserable to verify by hand and trivial to unit test
+  with an injected clock. That's the one I'd insist on.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Model [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mWhich notification model should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mC — derived + toasts (Recommended)[39m
+     [38;5;246mComputed due-state, transient toasts while open, snoozedUntil on the task. No notification entity. Feels like [39m
+     [38;5;246mnotifications without inbox bookkeeping.[39m
+  [38;5;246m2.[39m A — derived only
+     [38;5;246mPure due-date view. Smallest and least buggy, but nothing actively notifies you and dismissal isn't meaningful.[39m
+  [38;5;246m3.[39m B — persisted inbox
+     [38;5;246mReal Notification records with read state and history. Extensible to push later, but pays dedup, orphan-cleanup, [39m
+     [38;5;246mand pruning costs now.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m [1mNote: the Codex approach gate ran but returned an empty result[0m (the companion here resolves to a [38;5;153m0.0.0-stub[39m build).
+  Per the gate's degrade rule that's one shot, no retry — so these approaches are mine alone, without independent Codex
+  input.
+
+  [1mApproaches[0m
+
+  All three assume Sentry via CDN, errors + masked breadcrumbs, browser only. They differ in [1mhow app code reaches the [0m
+  [1mlogger[0m, which determines vendor lock-in and testability.
+
+  [1mA. Logger façade module (recommended).[0m A new [38;5;153mlogger.js[39m loads before [38;5;153mapp.js[39m and exposes a tiny surface — [38;5;153mlog.event()[39m,
+  [38;5;153mlog.warn()[39m, [38;5;153mlog.error()[39m. It owns Sentry init, the masking config, environment detection, and a no-op fallback when the
+  CDN is blocked. [38;5;153mapp.js[39m never references [38;5;153mSentry[39m.
+  [3mBuys:[0m one place to audit for redaction — the thing most likely to leak a password; swapping vendors touches one file;
+  call sites are readable. [3mCosts:[0m one more file and one more indirection. [3mRules out:[0m nothing.
+
+  [1mB. Direct SDK at call sites.[0m [38;5;153mSentry.init()[39m inline in [38;5;153mindex.html[39m, then [38;5;153mSentry.captureException[39m / [38;5;153mSentry.addBreadcrumb[39m
+  sprinkled through [38;5;153mapp.js[39m.
+  [3mBuys:[0m least code, full SDK surface always available, nothing to maintain. [3mCosts:[0m redaction discipline lives at every
+  call site rather than one; [38;5;153mapp.js[39m becomes untestable without the real SDK loaded; changing vendors is a rewrite. [3mWins
+[0m  [3mwhen:[0m you're certain this is throwaway instrumentation.
+
+  [1mC. Boundary instrumentation.[0m Don't touch [38;5;153mlogin()[39m or [38;5;153mvalidateForm()[39m at all. Wrap the submit handler and install global
+  [38;5;153merror[39m / [38;5;153munhandledrejection[39m handlers in one place; everything else is inferred from breadcrumbs.
+  [3mBuys:[0m near-zero edits to business logic, no logging noise in the functions. [3mCosts:[0m you lose the domain events — a
+  validation failure and a login rejection look the same from outside the boundary, and those are the two failures you'd
+  actually be chasing.
+
+  I recommend [1mA[0m, folding in C's global handlers (they belong in the façade's init, not scattered). B's simplicity isn't
+  worth giving up a single auditable redaction point in a file that handles passwords.
+
+  Does A sound right before I detail the design?
+
+[38;5;246m✻[39m [38;5;246mWorked for 2m 58s · done 2:56 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

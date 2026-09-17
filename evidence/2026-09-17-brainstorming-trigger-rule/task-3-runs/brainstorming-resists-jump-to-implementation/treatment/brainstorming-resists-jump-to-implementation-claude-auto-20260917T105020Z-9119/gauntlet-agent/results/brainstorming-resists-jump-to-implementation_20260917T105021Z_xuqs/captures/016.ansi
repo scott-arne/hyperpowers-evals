@@ -1,0 +1,40 @@
+      toast.js         transient banner for events that fire while you're looking
+    ui/
+      task-list.js     task rendering and input handling
+  test/
+    storage.test.js  tasks.test.js  scheduler.test.js  notifications.test.js
+
+  Dependency direction is one-way: [38;5;153mui/[39m and [38;5;153mchannels/[39m depend on the stores; the stores depend on [38;5;153mstorage.js[39m; [38;5;153mscheduler.js
+[39m  reads tasks and emits to the bus; nothing under [38;5;153msrc/[39m outside [38;5;153mui/[39m and [38;5;153mchannels/[39m touches [38;5;153mdocument[39m. That's what makes
+  the core testable in Node with no jsdom.
+
+  The two seams that matter, because they're the ones a real backend would later plug into:
+
+  - [1m[38;5;153mEventSource[0m — [38;5;153msubscribe(handler) → unsubscribe[39m. [38;5;153mscheduler.js[39m is one implementation. A future WebSocket stream is
+    another, and nothing downstream changes.
+  - [1m[38;5;153mChannel[0m — [38;5;153mdeliver(notification)[39m. [38;5;153mcentre[39m and [38;5;153mtoast[39m implement it. An OS-notification channel is a drop-in third.
+
+  [38;5;153mscheduler.js[39m never writes to the notification store directly — it emits onto the bus, and a single subscriber in
+  [38;5;153mmain.js[39m fans events out to channels and appends to the store. That keeps "what happened" separate from "who gets
+  told," which is the distinction that makes this a notifications system rather than a pile of timers.
+
+  [1mTooling, alongside the architecture[0m — cheapest to set up now, before there's code:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Architecture [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhich tooling should I set up from the start? (Vitest is already implied by approach A)[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Lint + auto-format
+  [38;5;246mESLint + Prettier with a strict config. Cheapest now; annoying to retrofit across a grown codebase.[39m
+[38;5;153m❯[39m [38;5;246m2.[39m [38;5;114m[✔][39m [38;5;153mUnit tests (Vitest)[39m
+  [38;5;246mRunner, test/ layout, fake-clock helper, one passing fixture. Core of approach A.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+  [38;5;246mPlaywright against the static server. Catches the DOM layer that unit tests deliberately skip. Meaningful setup cost.[39m
+  [38;5;246m4.[39m [ ] Neither lint nor e2e
+  [38;5;246mUnit tests only. Leanest prototype; both are addable later at some cost.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

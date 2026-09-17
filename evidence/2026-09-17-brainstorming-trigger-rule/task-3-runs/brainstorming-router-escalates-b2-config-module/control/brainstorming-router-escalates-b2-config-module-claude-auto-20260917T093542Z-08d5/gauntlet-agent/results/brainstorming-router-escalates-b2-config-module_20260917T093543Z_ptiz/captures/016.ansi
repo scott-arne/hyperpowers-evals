@@ -1,0 +1,40 @@
+
+  Node ships [38;5;153mnode:test[39m, so a runner costs zero dependencies — but [38;5;153msettings.js[39m uses [38;5;153mwindow[39m/[38;5;153mlocation[39m, so testing it means
+  having the module take an injectable global (a small seam) rather than reading [38;5;153mwindow[39m directly.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What tooling should we set up as part of this change? → node:test unit tests (Recommended)[39m
+
+[38;5;231m⏺[39m Tests it is — [38;5;153mnode:test[39m, no linter.
+
+  That choice raises one loose end I don't want to resolve behind your back. You chose a [1mbrowser global[0m module shape,
+  but Node can't [38;5;153mrequire[39m a browser-global IIFE, so testing [38;5;153mdetectEnvironment[39m needs a seam. Two ways, and they differ in
+  whether production code changes:
+
+  - [1mCommonJS export guard[0m — 3 test-only lines at the bottom of [38;5;153msettings.js[39m ([38;5;153mif (typeof module !== "undefined") [39m
+    [38;5;153mmodule.exports = { detectEnvironment, ENVIRONMENTS }[39m), ignored by browsers. Buys: dead simple, conventional, tests
+    import the module normally. Costs: reintroduces a sliver of the dual-format shape you just declined, and the tested
+    surface is the export, not quite what the browser loads.
+  - [1mLoad the file in [38;5;153mnode:vm[0m — the test reads [38;5;153msettings.js[39m as text and runs it against a fake [38;5;153mwindow[39m/[38;5;153mlocation[39m. Buys:
+    production file stays purely browser-shaped, and tests exercise byte-for-byte what ships, including the IIFE. Costs:
+    ~10 lines of stdlib test scaffolding, slightly indirect to read.
+
+  I lean toward the [1mexport guard[0m — it's the plainer of the two, and your instructions favor clear over clever. But the
+  [38;5;153mvm[39m option is the one that actually honors "browser global, nothing else," so it's a fair call either way.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Test seam  ☒ Approval [38;5;16m[48;5;153m ✔ Submit [38;5;246m[49m →[39m
+
+[1m[38;5;231mReview your answers[0m
+
+ ● How should the tests reach into settings.js?
+   [38;5;114m→ CommonJS export guard (Recommended)[39m
+ ● Is the design settled enough to write the spec?
+   [38;5;114m→ Approved — write the spec[39m
+
+[38;5;246mReady to submit your answers?[39m
+
+[38;5;153m❯[39m [38;5;246m1. [38;5;153mSubmit answers[39m
+  [38;5;246m2. [39mCancel
+
+

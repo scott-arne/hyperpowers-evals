@@ -1,0 +1,112 @@
+# Review package: 228b213da81068f51f4430b0a683362976d35aa9..cd7ac40a7ada6d733cf37fb986c170ae145fbb0e
+
+## Commits
+cd7ac40 Add Bearer token parsing
+
+## Files changed
+ package.json           |  5 ++++-
+ src/authToken.js       | 23 +++++++++++++++++++++++
+ test/authToken.test.js | 50 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 77 insertions(+), 1 deletion(-)
+
+## Diff
+diff --git a/package.json b/package.json
+index c550c1c..f26c860 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,9 @@
+ {
+   "name": "drill-test-project",
+   "version": "1.0.0",
+   "description": "Test project for Drill scenarios",
+-  "main": "src/index.js"
++  "main": "src/index.js",
++  "scripts": {
++    "test": "node --test"
++  }
+ }
+diff --git a/src/authToken.js b/src/authToken.js
+new file mode 100644
+index 0000000..83179d3
+--- /dev/null
++++ b/src/authToken.js
+@@ -0,0 +1,23 @@
++function parseAuthToken(header) {
++  if (header === null || header === undefined) {
++    return null;
++  }
++
++  if (typeof header !== 'string') {
++    return null;
++  }
++
++  if (!header.startsWith('Bearer ')) {
++    return null;
++  }
++
++  const token = header.slice(7).trim();
++
++  if (token === '') {
++    return null;
++  }
++
++  return token;
++}
++
++module.exports = { parseAuthToken };
+diff --git a/test/authToken.test.js b/test/authToken.test.js
+new file mode 100644
+index 0000000..220f3ba
+--- /dev/null
++++ b/test/authToken.test.js
+@@ -0,0 +1,50 @@
++const { describe, it } = require('node:test');
++const assert = require('node:assert');
++const { parseAuthToken } = require('../src/authToken');
++
++describe('parseAuthToken', () => {
++  it('valid Bearer token returns the token', () => {
++    const result = parseAuthToken('Bearer abc123');
++    assert.strictEqual(result, 'abc123');
++  });
++
++  it('valid Bearer token with surrounding spaces returns trimmed token', () => {
++    const result = parseAuthToken('Bearer   token-with-spaces  ');
++    assert.strictEqual(result, 'token-with-spaces');
++  });
++
++  it('empty Bearer token returns null', () => {
++    const result = parseAuthToken('Bearer ');
++    assert.strictEqual(result, null);
++  });
++
++  it('Bearer with only spaces returns null', () => {
++    const result = parseAuthToken('Bearer    ');
++    assert.strictEqual(result, null);
++  });
++
++  it('Basic auth returns null', () => {
++    const result = parseAuthToken('Basic dXNlcjpwYXNz');
++    assert.strictEqual(result, null);
++  });
++
++  it('missing header returns null', () => {
++    const result = parseAuthToken(undefined);
++    assert.strictEqual(result, null);
++  });
++
++  it('null header returns null', () => {
++    const result = parseAuthToken(null);
++    assert.strictEqual(result, null);
++  });
++
++  it('non-string header returns null', () => {
++    const result = parseAuthToken(123);
++    assert.strictEqual(result, null);
++  });
++
++  it('object header returns null', () => {
++    const result = parseAuthToken({ auth: 'Bearer token' });
++    assert.strictEqual(result, null);
++  });
++});

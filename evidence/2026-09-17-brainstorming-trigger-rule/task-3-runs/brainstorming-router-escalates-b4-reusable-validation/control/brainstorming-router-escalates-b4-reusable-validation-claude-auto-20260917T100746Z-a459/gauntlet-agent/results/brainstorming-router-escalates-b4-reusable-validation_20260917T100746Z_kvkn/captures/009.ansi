@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Today validation failures go to `console.error`. What should users actually see when a field is invalid? → Inline
+[39m     [38;5;246mper-field messages[39m
+
+[38;5;231m⏺[39m One more fork before I sketch approaches, and this one has real downstream consequences:
+
+  [1mThe fork:[0m how the shared validation code gets loaded in the browser. There's no build step here — [38;5;153mindex.html[39m loads
+  [38;5;153mapp.js[39m with a plain [38;5;153m<script src>[39m, and the only module-style code ([38;5;153msrc/utils.js[39m) uses CommonJS, which browsers can't
+  load and nothing in the page actually imports.
+
+  - [1mES modules[0m ([38;5;153m<script type="module">[39m, [38;5;153mimport[39m/[38;5;153mexport[39m): browsers load it natively, no build step, and the module is
+    importable by a test runner later. Costs one line of change in [38;5;153mindex.html[39m, and modules are subject to CORS — the
+    page must be served over [38;5;153mhttp://[39m rather than opened as a [38;5;153mfile://[39m path. Hard to reverse cheaply once several forms
+    import it.
+  - [1mGlobal namespace[0m (a second [38;5;153m<script src>[39m defining [38;5;153mwindow.Validation[39m): works from [38;5;153mfile://[39m, zero HTML semantics to
+    learn. Costs you implicit load-order coupling and awkward testing; migrating to modules later means touching every
+    form.
+  - [1mMatch [38;5;153msrc/[39m's CommonJS[0m: consistent with the existing files, but those files are dead weight in the browser — this
+    would need a bundler to ship, which is new tooling this repo doesn't have.
+
+  [1mMy recommendation: ES modules.[0m It's the current default for buildless browser code, it's the only option of the three
+  that's directly unit-testable without new infrastructure, and the [38;5;153mfile://[39m constraint is minor for a project that would
+  be served anyway.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module format [39m[49m
+
+[1m[38;5;231mHow should the shared validation module be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246m`<script type="module">` with import/export. No build step, natively testable. Requires serving over http:// [39m
+     [38;5;246minstead of opening the file directly.[39m
+  [38;5;246m2.[39m Global namespace script
+     [38;5;246mExtra <script src> defining a window global. Works from file://, but couples load order and resists unit testing.[39m
+  [38;5;246m3.[39m CommonJS like src/
+     [38;5;246mConsistent with existing src/ files, but needs a bundler to run in the browser — new tooling.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

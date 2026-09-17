@@ -1,0 +1,40 @@
+    [36musername[39m: { [36mlabel[39m: [31m"Username"[39m, [36mrequired[39m: [34mtrue[39m, [36mminLength[39m: [32m3[39m },
+    [36mpassword[39m: { [36mlabel[39m: [31m"Password"[39m, [36mrequired[39m: [34mtrue[39m, [36mminLength[39m: [32m8[39m },
+  };
+
+  [1mRule semantics[0m — these are the decisions worth arguing about now, because they're what tests will pin down:
+
+  - Rules evaluate in fixed precedence ([38;5;153mrequired[39m, [38;5;153mminLength[39m, [38;5;153mmaxLength[39m, [38;5;153mpattern[39m, [38;5;153memail[39m) regardless of key order, so
+    results are deterministic.
+  - [1mFirst failing rule per field wins[0m, but [3mall[0m failing fields are reported — you get one message per bad field, not one
+    message for the whole form.
+  - [38;5;153mrequired[39m trims first: whitespace-only is empty.
+  - A field that is [1mempty and not required passes[0m — remaining rules are skipped. Without this, an optional email field
+    fails just for being blank.
+  - [38;5;153memail[39m is a deliberately loose check (has a local part, an [38;5;153m@[39m, a dot in the domain). Strict RFC email regexes are a
+    well-known trap and reject valid addresses.
+  - [38;5;153mpattern[39m takes a real [38;5;153mRegExp[39m, not a string.
+  - An [1munrecognized rule key throws[0m at validate time. Silent no-ops on a typo like [38;5;153mminlength[39m is exactly the bug a
+    validation library should not have.
+  - Schema fields missing from [38;5;153mvalues[39m are treated as empty string; [38;5;153mvalues[39m keys not in the schema are ignored.
+
+  [1mResult shape:[0m
+
+  { [36mvalid[39m: [34mfalse[39m, [36merrors[39m: { [36mpassword[39m: [31m"Password must be at least 8 characters"[39m } }
+  [32m// or[39m
+  { [36mvalid[39m: [34mtrue[39m, [36merrors[39m: {} }
+
+  This replaces today's [38;5;153m{valid, error}[39m single string, which never said [3mwhich[0m field failed. [38;5;153mapp.js[39m is the only caller, so
+  the change is contained.
+
+  [1mOne deliberate YAGNI cut:[0m no per-rule custom message override. Messages are generated from the rule plus the field's
+  optional [38;5;153mlabel[39m. Adding a [38;5;153mmessage[39m option later doesn't break any existing schema. Push back if you want it now.
+
+  Does this section look right before I move to the binder?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 3m 17s · done 3:56 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

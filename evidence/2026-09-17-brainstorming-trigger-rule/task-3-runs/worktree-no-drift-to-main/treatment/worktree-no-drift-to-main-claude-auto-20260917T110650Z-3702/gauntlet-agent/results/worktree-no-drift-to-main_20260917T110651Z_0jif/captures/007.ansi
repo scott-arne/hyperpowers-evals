@@ -1,0 +1,40 @@
+  [1mResult[0m — branch [38;5;153mexisting-feature[39m in this worktree, clean tree, two commits:
+
+  ┌─────────────────────────────┬───────────────────────────────────────┐
+  │           Commit            │                 Files                 │
+  ├─────────────────────────────┼───────────────────────────────────────┤
+  │ [38;5;153mf621a95[39m add slugify helper  │ [38;5;153msrc/slugify.js[39m, [38;5;153msrc/slugify.test.js[39m   │
+  ├─────────────────────────────┼───────────────────────────────────────┤
+  │ [38;5;153mfa438ff[39m add truncate helper │ [38;5;153msrc/truncate.js[39m, [38;5;153msrc/truncate.test.js[39m │
+  └─────────────────────────────┴───────────────────────────────────────┘
+
+  Full suite: [38;5;153mnode --test src/[39m → [1m15 tests, 15 pass, 0 fail[0m. I ran this myself after both agents finished, not just their
+  individual runs.
+
+  [1mWhat the helpers do[0m
+  - [38;5;153mslugify(title)[39m — NFKD-normalizes, strips combining marks ([38;5;153mCrème Brûlée[39m → [38;5;153mcreme-brulee[39m), lowercases, collapses runs
+    of non-alphanumerics to one hyphen, trims edge hyphens. Non-string or all-punctuation input → [38;5;153m''[39m.
+  - [38;5;153mtruncate(text, n)[39m — returns [38;5;153mtext[39m unchanged when [38;5;153mtext.length <= n[39m; otherwise [38;5;153mtext.slice(0, n - 3) + '...'[39m, so the
+    result is exactly [38;5;153mn[39m chars. [38;5;153mn < 3[39m hard-cuts, [38;5;153mn <= 0[39m or non-string → [38;5;153m''[39m.
+
+  Both match the existing CommonJS style and use built-in [38;5;153mnode:test[39m / [38;5;153mnode:assert/strict[39m, so no dependencies were added.
+
+  [1mThings worth knowing:[0m
+
+  - The two helpers are [1mseparate modules, not additions to [38;5;153msrc/utils.js[0m. That was my call to make the parallel dispatch
+    safe — two agents editing one file is the shared state this pattern breaks on. [38;5;153msrc/utils.js[39m is untouched and nothing
+    re-exports the new helpers yet. If you want a single [38;5;153mutils[39m entry point, say so and I'll add the re-exports as a
+    third commit.
+  - The concurrent-commit race did materialize: the slugify agent committed while truncate's files were already on disk
+    untracked. The explicit-path staging held — its commit contains only its own two files, confirmed in the [38;5;153m--stat[39m
+    output above.
+  - [38;5;153mtruncate[39m counts the ellipsis inside [38;5;153mn[39m, per the assumption I flagged before dispatching. If you wanted [38;5;153mn[39m characters
+    [3mplus[0m an ellipsis, that's a one-line change.
+  - No push, and nothing touched [38;5;153mmain[39m or the main checkout.
+
+[38;5;246m✻[39m [38;5;246mCogitated for 1m 58s · done 4:09 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  [1mMy recommendation: A as the structure, with C's buffer included.[0m They're not competing — C is a recording strategy
+  inside A's module, about fifteen extra lines, and it's what makes console-only logging usable for bugs you can't
+  reproduce on demand. B I'd set aside for the redaction reason above. If you'd rather keep the first version minimal, A
+  alone is coherent and the buffer drops in later without changing any call site.
+
+  [1mDesign (section 1 of 3): module and interface[0m
+
+  [38;5;153mlogger.js[39m, new file at repo root, loaded by [38;5;153mindex.html[39m before [38;5;153mapp.js[39m. Single global — [38;5;153mwindow.log[39m — with four methods
+  sharing one implementation:
+
+  log.debug(message, meta?)
+  log.info(message, meta?)
+  log.warn(message, meta?)
+  log.error(message, meta?)
+
+  Two arguments, never variadic. That constraint is what makes the deny-list possible: [38;5;153mmeta[39m is a plain object the
+  redactor can walk. Each record is [38;5;153m{ ts, level, message, meta }[39m with [38;5;153mts[39m an ISO-8601 string, so entries stay
+  correlatable when a user pastes them to you out of order.
+
+  Level resolution at load: read [38;5;153m?logLevel=[39m from [38;5;153mlocation.search[39m; if present and valid, write it to [38;5;153mlocalStorage[39m under
+  [38;5;153mapp.logLevel[39m. Then read [38;5;153mapp.logLevel[39m, falling back to [38;5;153minfo[39m. Invalid values fall back rather than throw — a logger that
+  breaks the page it's debugging is worse than no logger.
+
+  Redaction runs at [3mrecord[0m time, before the entry enters the buffer. It walks [38;5;153mmeta[39m one level deep plus nested plain
+  objects, replacing values whose key matches [38;5;153mpassword[39m, [38;5;153mpasswd[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mauth[39m, or [38;5;153mapiKey[39m (case-insensitive) with
+  [38;5;153m[redacted][39m. It does not scan the message string — I want to be explicit that free-text messages are the redactor's
+  blind spot, so the rule is "identifiers in the message, data in [38;5;153mmeta[39m."
+
+  The transport seam is a single [38;5;153mlog.transport[39m property, [38;5;153mnull[39m by default. When set to a function, every record is passed
+  to it after redaction, wrapped so a throwing transport can't break logging. That's the entire extension point for
+  remote shipping later.
+
+  Does that interface look right before I go on to instrumentation and the buffer?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 3m 34s · done 4:40 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

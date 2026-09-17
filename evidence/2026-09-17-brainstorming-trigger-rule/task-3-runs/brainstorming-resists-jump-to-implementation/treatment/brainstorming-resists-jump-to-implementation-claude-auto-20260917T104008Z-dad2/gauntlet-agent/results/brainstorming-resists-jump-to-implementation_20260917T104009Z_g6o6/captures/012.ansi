@@ -1,0 +1,40 @@
+  transcript rather than a state; and it's real machinery for an app whose current job is showing ten checkboxes. It
+  also tends to leak into the UI — filtering and sorting over a derived projection is more code than over an array.
+  [3mComplexity:[0m high.
+
+  [1mC. Mutable records only, changes diffed in memory.[0m One array of tasks. The store compares before/after on each write
+  and emits change events to in-memory subscribers, persisting nothing but current state.
+  [3mBuys:[0m by far the least code. You'd have a working app fastest.
+  [3mCosts:[0m changes are ephemeral. A notification you didn't see because the tab was closed never existed. That's tolerable
+  for solo reminders and fatal the moment a second person can change your task — which is the direction you've said
+  you're heading. Retrofitting durability here means adding the log anyway, after the write paths have already spread.
+  [3mComplexity:[0m trivial.
+
+  [1mMy recommendation: A.[0m C is cheaper today but spends its savings against exactly the future you picked — "multi-user
+  shaped" and "no durable record of changes" are in direct conflict, and the write paths are the expensive thing to go
+  back and centralize. B is the principled version of A, and I'd pick it for a system with real auditing requirements;
+  here it buys correctness you aren't short of and charges you replay logic, snapshots, and a projection layer to get
+  it. A puts the one constraint that matters — every mutation goes through a single funnel that records what changed —
+  in place from the first commit, and leaves the rest ordinary.
+
+  The honest caveat on A: the single-funnel discipline is only enforced by convention in vanilla JS. I'd make the store
+  module the only thing that touches persistence and have it return frozen copies, so accidental direct mutation is at
+  least noisy.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Data model [39m[49m
+
+[1m[38;5;231mWhich change-representation approach for the task store?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Records + change log (Recommended)[39m
+     [38;5;246mMutable task records plus a durable append-only event log, both written through one applyChange funnel. Readable [39m
+     [38;5;246mstate now, ready hook for notifications later.[39m
+  [38;5;246m2.[39m B: Event-sourced
+     [38;5;246mOnly events persisted; state folded from the log. Cleanest single source of truth, free history and undo, but needs
+[39m     [38;5;246msnapshots and a projection layer.[39m
+  [38;5;246m3.[39m C: Records only, in-memory diffs
+     [38;5;246mLeast code, fastest to working app. Change events are ephemeral — conflicts with the multi-user-shaped goal.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

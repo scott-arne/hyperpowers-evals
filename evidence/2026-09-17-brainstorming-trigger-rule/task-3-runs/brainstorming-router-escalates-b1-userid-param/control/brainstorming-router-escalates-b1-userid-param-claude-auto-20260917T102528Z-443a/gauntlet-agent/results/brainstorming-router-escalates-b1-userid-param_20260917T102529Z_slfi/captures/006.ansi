@@ -1,0 +1,40 @@
+  rather than write a spec. Say the word if you'd rather I treat it as bigger.
+
+  One thing blocks me before I can design it: [1mnothing in this app currently has a userId.[0m The form collects a username
+  and a password, and the login stub never contacts a server. So adding a [38;5;153muserId[39m parameter means deciding where the
+  value comes from, and that choice is an interface decision the call site has to live with.
+
+  - [1mCaller generates it[0m — the submit handler mints an id (e.g. [38;5;153mcrypto.randomUUID()[39m) and passes it in. Cheap, no new
+    fields, works offline. But it identifies a [3mlogin attempt[0m, not a person — it's a session/correlation id wearing the
+    name [38;5;153muserId[39m. Cheap to change later.
+  - [1mUsername [3mis[0;1m the identity[0m — no new parameter; [38;5;153mlogin[39m already receives and logs the username. Zero cost, but it doesn't
+    answer your request as literally stated.
+  - [1mServer returns it[0m — [38;5;153mlogin[39m calls [38;5;153mAPI_ENDPOINT[39m and the real user id comes back in the response. This is the only
+    option that yields a genuine user identity, but it's a return value, not a parameter, and it means making the stub
+    real (async, fetch, error handling). Expensive and hard to undo.
+
+  My recommendation is the first one, [3mif[0m what you actually want is to correlate a login attempt across logs. If you want
+  to know which real person logged in, the third is the only honest answer and the request should become "have login
+  return a user id" rather than "take one as a parameter."
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[2m│[0m [1m[38;5;231mThe form has no userId field and the login stub never calls a server — so where should the userId value come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCaller generates it (Recommended)[39m
+     [38;5;246mSubmit handler mints a client-side id (crypto.randomUUID()) and passes it to login(). Identifies the login attempt,
+[39m     [38;5;246mnot the person. Smallest change, easy to revise later.[39m
+  [38;5;246m2.[39m Server returns it
+     [38;5;246mMake login() actually POST to API_ENDPOINT and read the real user id from the response. A genuine identity, but it
+[39m     [38;5;246mbecomes a return value rather than a parameter, and requires async + error handling. I'd re-classify this as [39m
+     [38;5;246marchitectural.[39m
+  [38;5;246m3.[39m Add a field to the form
+     [38;5;246mAdd a userId input to index.html that the user types, read it in the submit handler, pass it through. Real [39m
+     [38;5;246mparameter, but asks people to know their own id.[39m
+  [38;5;246m4.[39m Username already covers it
+     [38;5;246mSkip the new parameter — login() already receives the username and logs it, which identifies who logged in.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

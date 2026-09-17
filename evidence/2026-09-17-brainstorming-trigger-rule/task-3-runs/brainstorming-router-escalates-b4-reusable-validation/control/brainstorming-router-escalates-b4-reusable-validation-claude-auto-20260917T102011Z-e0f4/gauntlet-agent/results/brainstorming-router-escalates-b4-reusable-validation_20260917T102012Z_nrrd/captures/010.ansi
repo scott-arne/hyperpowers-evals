@@ -1,0 +1,40 @@
+
+  [1mThe fork:[0m whether the reusable piece is [3mjust the rule-checking logic[0m, or [3malso the wiring[0m — the submit handler, reading
+  values out of the DOM, and putting error messages on screen. Right now [38;5;153mapp.js[39m does all three inline and reports
+  errors to [38;5;153mconsole.error[39m, so nothing visible exists to reuse.
+
+  - [1mValidation core only[0m — a [38;5;153mvalidate(values, schema)[39m function returning errors. Each form keeps its own submit handler
+    and decides how to display errors. Cheap, testable in isolation, zero DOM assumptions. Cost: every new form
+    re-writes the same ~10 lines of read-fields/handle-submit/show-errors glue, which is the part that actually rots.
+  - [1mCore + DOM binding[0m — the above plus [38;5;153mbindForm(formEl, schema, onValid)[39m that wires submit, pulls values by input
+    [38;5;153mid[39m/[38;5;153mname[39m, and renders messages. A new form becomes a schema plus one call. Cost: the binder makes choices for you
+    about error markup and where messages go, and it's the harder half to test without a DOM.
+  - [1mCore + binding + a rendering hook[0m — as above, but the caller can supply its own renderer. Buys per-form flexibility
+    at the price of an extra concept in the API.
+
+  Cheap to change later: adding rules to the library, changing error message text. Expensive to change later: the
+  schema's shape, and whether callers get an errors object or a rendered UI — both get baked into every call site.
+
+  [1mMy recommendation: core + DOM binding[0m, with the binder a thin separate file over the core. "Reusable across multiple
+  forms" is only really paid off when adding a form is a schema plus one line; keeping the core pure and DOM-free in its
+  own file preserves testability, and a rendering hook can be added later without breaking the default.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module scope [39m[49m
+
+[1m[38;5;231mHow much should the reusable layer own?[0m
+
+[38;5;153m❯[38;5;246m 1.[1m[38;5;153m Core + DOM binding [0m          [38;5;246m┌────────────────────────────────────────────────────┐[39m
+    [1m[38;5;153m(Recommended)[0m                 [38;5;246m│ [39m// signup.js[38;5;246m                                       │[39m
+ [38;5;246m 2.[39m Validation core only         [38;5;246m│ [39mbindForm(document.getElementById('signup-form'), {[38;5;246m │[39m
+ [38;5;246m 3.[39m Core + binding + render      [38;5;246m│ [39m  email:    [required(), email()],[38;5;246m                 │[39m
+    hook                          [38;5;246m│ [39m  password: [required(), minLength(8)],[38;5;246m            │[39m
+                                  [38;5;246m│ [39m}, (values) => signup(values));[38;5;246m                    │[39m
+                                  [38;5;246m└────────────────────────────────────────────────────┘[39m
+
+                                  [38;5;153mNotes:[39m [3m[38;5;246mpress n to add notes[0m
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel[39m

@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should login events actually go? → Tracking module w/ seam (Recommended)[39m
+
+[38;5;231m⏺[39m Settled: [38;5;153mtracking.js[39m with a [38;5;153mtrackLoginEvent[39m seam.
+
+  Last question that changes the shape of things, then I'll put the design in front of you.
+
+  [1mThe fork:[0m which events get recorded. This matters now rather than later because it decides whether [38;5;153muserId[39m is always
+  present in an event or sometimes absent — and that's the field other code will come to depend on.
+
+  - [1mSuccessful logins only[0m — one call, after login returns success. Every event has a real [38;5;153muserId[39m. Buys the simplest
+    possible event shape and matches what you asked for literally. Costs: adding failures later means [38;5;153muserId[39m becomes
+    nullable, and anything reading events has to handle that.
+  - [1mSuccesses and failed authentication[0m — events for both, with [38;5;153muserId[39m null on failure plus a [38;5;153msuccess[39m boolean. Buys the
+    security-relevant half of login tracking (repeated failures against one username). Costs: nullable [38;5;153muserId[39m from day
+    one, and a fabricated failure path, since the stub always returns success.
+  - [1mEverything, including client-side validation errors[0m — also records the "Missing required fields" case at [38;5;153mapp.js:11[39m.
+    Buys funnel visibility. Costs: mixes two different kinds of event into one stream; those aren't login attempts,
+    they're form errors.
+
+  [1mMy recommendation: successful logins only.[0m You said "track who logged in," and that's what this is. The stub always
+  returns [38;5;153m{ success: true }[39m, so a failure path today would be untestable theater. The seam makes adding failures later a
+  change in one file — and I'd rather you decide to add them when there's a real auth backend to produce real failures
+  than pay for a nullable field now.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Event scope [39m[49m
+
+[1m[38;5;231mWhich login events should be tracked?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mSuccesses only (Recommended)[39m
+     [38;5;246mOne event after a successful login. userId always present. Matches the ask; YAGNI.[39m
+  [38;5;246m2.[39m Successes + auth failures
+     [38;5;246mAdds failed-login events with null userId and a success flag. Security-relevant, but the stub can't fail today.[39m
+  [38;5;246m3.[39m All of the above + validation errors
+     [38;5;246mAlso records client-side form validation failures. Funnel visibility, mixed event stream.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+  Two rules beyond the name check, both aimed at the ways an allowlist usually leaks:
+
+  - [1mAllowlisted keys must hold primitives.[0m A string, number, boolean, or null passes; anything else is replaced with
+    [38;5;153m"[object]"[39m / [38;5;153m"[array]"[39m / [38;5;153m"[function]"[39m. Without this, an allowlisted [38;5;153mreason[39m field holding an error object with the
+    request body attached would carry a password straight through a filter that "passed."
+  - [1mStrings truncate at 200 characters[0m, with an ellipsis. Cheap guard against a stack trace or a serialized payload
+    becoming a log line.
+
+  Rejected keys are not silent. The record carries [38;5;153m"_dropped":["username","password"][39m listing the rejected key [3mnames[0m
+  only — names aren't the secret, values are, and without this you get a debugging session that ends in "why is my field
+  missing?" rather than "right, it's not allowlisted."
+
+  [1mLevel resolution.[0m [38;5;153mresolveLevel(candidates)[39m takes an ordered array of raw strings and returns the first valid one,
+  falling back to [38;5;153minfo[39m. Browser passes [38;5;153m[?log= param, localStorage "logLevel"][39m; Node passes [38;5;153m[process.env.LOG_LEVEL][39m. The
+  URL param wins for that page load and does not write to storage — a support link shouldn't silently leave someone in
+  debug mode forever.
+
+  An invalid value falls through to the next candidate and emits one [38;5;153mwarn[39m record, [38;5;153mlogger.bad_level[39m, carrying the [3msource[0m
+  ([38;5;153m"url"[39m, [38;5;153m"storage"[39m, [38;5;153m"env"[39m) rather than the offending value. A typo shouldn't be silent, but the URL param is
+  user-controlled input, and echoing user-controlled strings into a log that may later ship to a collector is how log
+  injection starts.
+
+  [1mThe logger never breaks the app.[0m Sink calls are wrapped; a throwing sink is swallowed and latched off after one
+  [38;5;153mconsole.error[39m, so a broken transport degrades to no logs rather than to an error per log line, or to a login form that
+  stops working. Per-key reads in the filter are guarded too, so a throwing getter on a passed object can't take down
+  the caller.
+
+  Node writes one JSON line per record — stdout for [38;5;153mdebug[39m/[38;5;153minfo[39m, stderr for [38;5;153mwarn[39m/[38;5;153merror[39m. The browser maps to
+  [38;5;153mconsole.debug/info/warn/error[39m and passes the record as an object so devtools keeps it expandable.
+
+  Look right? Section 3 covers the call sites, and there are two behavior changes in it I want your explicit sign-off
+  on.
+
+[38;5;246m✻[39m [38;5;246mWorked for 31s · done 4:10 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

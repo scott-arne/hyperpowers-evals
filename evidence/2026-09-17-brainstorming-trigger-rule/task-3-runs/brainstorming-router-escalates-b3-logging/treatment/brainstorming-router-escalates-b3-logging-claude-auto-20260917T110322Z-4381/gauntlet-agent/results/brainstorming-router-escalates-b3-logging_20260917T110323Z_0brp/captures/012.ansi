@@ -1,0 +1,40 @@
+  - [1mAlways verbose[0m — no switch needed, everything is always there. Costs console noise for every user and raises the
+    stakes on redaction considerably, since every debug line ships on every session.
+
+  [1mMy recommendation: the runtime switch.[0m It's maybe fifteen lines across both sinks and it's the specific thing that
+  makes production debugging possible rather than theoretical. The one consequence to accept knowingly: a
+  user-controllable debug level means debug output is effectively public, so nothing sensitive can be logged at any
+  level — which is the redaction rule I'd want anyway.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should log verbosity be controlled? → Runtime switch (Recommended)[39m
+
+[38;5;231m⏺[39m Last question before I lay out the design: [1mthe redaction posture.[0m This is the one with real consequences — the logger
+  will sit directly around a function that receives a password.
+
+  - [1mAllowlist[0m — the logger emits only fields explicitly marked loggable; anything unrecognized is dropped or replaced
+    with a type marker. A new field added to a payload later is silently [3mnot[0m logged until someone opts it in. Fails
+    closed.
+  - [1mDenylist[0m — the logger scrubs known-sensitive keys ([38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153mauthorization[39m, …) and passes everything else
+    through. More convenient, more useful by default. A new sensitive field added later leaks until someone remembers to
+    add it to the list. Fails open.
+
+  [1mMy recommendation: allowlist.[0m Given you just chose a user-togglable debug level, debug output is reachable by anyone
+  with devtools, and the flow in question is authentication. A denylist's failure mode here is a password in a log line;
+  an allowlist's failure mode is a missing field in a log line, which you notice while debugging and fix in a minute.
+  Both are cheap to write; only one is cheap to get wrong.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mHow should the logger handle sensitive data?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAllowlist (Recommended)[39m
+     [38;5;246mOnly explicitly-marked fields are emitted; everything else dropped. Fails closed — a missed field is absent, not [39m
+     [38;5;246mleaked.[39m
+  [38;5;246m2.[39m Denylist
+     [38;5;246mScrub known keys like password and token, pass the rest. More convenient, but fails open on new sensitive fields.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

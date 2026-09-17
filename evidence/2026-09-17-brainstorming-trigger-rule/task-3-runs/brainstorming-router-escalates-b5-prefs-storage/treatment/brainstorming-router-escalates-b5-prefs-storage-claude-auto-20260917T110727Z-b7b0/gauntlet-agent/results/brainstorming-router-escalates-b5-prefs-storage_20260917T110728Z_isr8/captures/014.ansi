@@ -1,0 +1,40 @@
+
+  - Buys: all preferences written atomically in one operation; one place to do migrations; tests run in plain Node with
+    no DOM shim and no dependency.
+  - Costs: an indirection (the factory) that a 30-line app doesn't strictly need; every write serializes the whole
+    document.
+
+  [1m2. Flat per-key entries, direct localStorage[0m
+  [38;5;153mlocalStorage.setItem("pref.rememberUsername", "true")[39m, one key per setting, module talks to the global [38;5;153mlocalStorage[39m
+  directly.
+
+  - Buys: the least code; trivially inspectable in devtools; no serialization of unrelated values on write.
+  - Costs: no atomicity, so a half-written pair is reachable; no version field, so changing the shape later means
+    guessing at what's in the wild; and testing requires installing a [38;5;153mglobalThis.localStorage[39m shim inside the test file,
+    which is exactly the DOM-shimming the zero-dependency runner choice was meant to avoid.
+
+  [1m3. Load-once in-memory cache with explicit [38;5;153msave()[0m
+  Read the blob at startup into a plain object, mutate freely, persist only on an explicit [38;5;153msave()[39m.
+
+  - Buys: fewest writes; synchronous reads with no parse cost.
+  - Costs: real staleness bugs — two tabs open means last-[38;5;153msave()[39m-wins silently clobbers, and anything not saved before
+    unload is lost. That's a meaningful failure mode to buy for a single checkbox.
+
+  I recommend [1m1[0m. The injected backend is what makes [38;5;153mnode:test[39m viable without adding a jsdom dependency, so it pays for
+  its own indirection immediately rather than speculatively; and the version field is nearly free now and awkward to
+  retrofit. [1m2[0m is tempting on size alone, but it trades away the testability we just chose tooling for. [1m3[0m's multi-tab
+  clobbering isn't worth it here.
+
+  [1mSecurity note, carried into the design as an explicit non-goal:[0m anything in localStorage is readable by any script on
+  the origin, so the password is never stored, and "remember username" stores a username only — not a token, not a
+  session, not a credential. Nothing about this change makes the user authenticated on return; it prefills a text field.
+
+  Does this approach selection look right before I go on to the design sections (module interface, data flow, error
+  handling, testing)?
+
+[38;5;246m✻[39m [38;5;246mChurned for 2m 31s · done 4:13 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

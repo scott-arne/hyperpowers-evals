@@ -1,0 +1,40 @@
+
+  Buffer in memory; flush when any of: 20 records queued, 5 seconds elapsed, an [38;5;153merror[39m-level record arrives (flush
+  immediately — the crash is the thing you need), or the page/process is going away.
+
+  Transport is [38;5;153mnavigator.sendBeacon[39m for the unload flush specifically, because [38;5;153mfetch[39m isn't reliably delivered during
+  teardown, and [38;5;153mfetch(..., { keepalive: true })[39m otherwise. Payload is [38;5;153m{ sessionId, env, records: [...] }[39m.
+
+  The failure behavior matters more than the happy path, because a logger that degrades the app it's debugging is worse
+  than no logger:
+
+  - [1mNever throws into caller code.[0m Every sink call is wrapped; a sink failure can't break a login.
+  - [1mNo retry storm.[0m A failed batch is dropped, not requeued. A [38;5;153mdropped[39m counter rides along in the next successful
+    envelope so you know the record stream has holes.
+  - [1mBounded buffer[0m at 200 records, dropping oldest. A long-lived tab with a dead endpoint can't grow memory without
+    limit.
+  - [1mCircuit breaker.[0m After 3 consecutive failures, stop trying for 60s. Otherwise a down endpoint means every user's
+    browser POSTs at it every 5 seconds indefinitely — you'd be self-inflicting load during exactly the incident you're
+    trying to debug.
+
+  Config: the remote sink is only wired if an endpoint URL is configured. Unset means console-only, so local development
+  needs no setup and can't accidentally ship records anywhere.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Redact/sink [38;5;16m[48;5;153m ☐ Username [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhat should the username field policy be?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mpresence (Recommended)[39m
+     [38;5;246mRecords whether a username was supplied, never its value. No PII reaches the log store. Cost: you can't tell which
+[39m     [38;5;246maccount hit a bug from logs alone.[39m
+  [38;5;246m2.[39m raw
+     [38;5;246mLog the actual username. Makes 'user X can't log in' directly answerable, which is a very common support need. [39m
+     [38;5;246mCost: PII in your log store, with the retention and access-control obligations that brings.[39m
+  [38;5;246m3.[39m length
+     [38;5;246mRecords only the character count. Catches whitespace/truncation/encoding bugs without storing identity; useless for
+[39m     [38;5;246mcorrelating with a specific user report.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

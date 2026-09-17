@@ -1,0 +1,40 @@
+  /codex:setup
+
+  The four answers have pinned the architecture, so rather than propose alternative shapes I'll present the design that
+  follows from them, in sections. Section 1:
+
+  ---
+
+  [1mSection 1 — Architecture and module boundaries[0m
+
+  Four layers, each independently testable, with the dependency arrows pointing one way only:
+
+  [1m[38;5;153mdb/[0m — SQLite connection, schema, and migrations. Knows nothing about tasks.
+
+  [1m[38;5;153mdomain/[0m — pure types and validation for [38;5;153mUser[39m, [38;5;153mTask[39m, [38;5;153mWatcher[39m, [38;5;153mTaskEvent[39m. No I/O, no SQLite. This is where the shapes
+  the browser and the future notification service both agree on are defined, and it's what makes them one definition
+  rather than two.
+
+  [1m[38;5;153mstore/[0m — the only code that writes. Exposes [38;5;153mcreateTask[39m, [38;5;153mupdateTask[39m, [38;5;153mdeleteTask[39m, [38;5;153maddWatcher[39m, [38;5;153mremoveWatcher[39m. Every
+  mutating call opens a transaction, writes the task row, and appends the matching [38;5;153mtask_events[39m row before committing.
+  There is no other write path — this is the invariant the whole event-log decision rests on, and enforcing it
+  structurally (rather than by convention) is the point of having this layer at all.
+
+  [1m[38;5;153mapi/[0m — HTTP handlers: parse, authenticate, call [38;5;153mstore/[39m, serialize. No SQL, no business rules.
+
+  The browser side stays deliberately thin: [38;5;153mindex.html[39m plus a small module that fetches and renders. No framework. The
+  task UI is a list, a form, and a watch toggle; a framework would be more setup than the thing it renders.
+
+  What notifications will later attach to: a reader over [38;5;153mtask_events[39m, consuming by cursor. It does not get to import
+  [38;5;153mstore/[39m, and nothing in these four layers imports it. That's the seam.
+
+  ---
+
+  Does that structure look right before I go on to the data model?
+
+[38;5;246m✻[39m [38;5;246mBaked for 2m 24s · done 3:17 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

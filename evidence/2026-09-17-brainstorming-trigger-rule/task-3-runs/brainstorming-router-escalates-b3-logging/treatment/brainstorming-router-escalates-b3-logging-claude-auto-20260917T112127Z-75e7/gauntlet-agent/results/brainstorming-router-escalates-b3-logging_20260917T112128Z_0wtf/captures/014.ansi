@@ -1,0 +1,40 @@
+  I want to be explicit about one thing rather than bury it: [1musername still gets logged.[0m It's PII, but it's also the
+  join key that makes "what happened for this user" answerable, which is the whole point. If you'd rather hash or
+  truncate it, say so now — that's a one-line change in the design and a much larger one later.
+
+  [1mError handling[0m
+
+  The logger never throws into its caller. Every public method wraps its body; on internal failure it emits one raw
+  [38;5;153mconsole.error[39m and continues. A logging subsystem that can break the login form is strictly worse than no logging.
+  Specifically guarded: [38;5;153mlocalStorage[39m access (throws outright in some private-browsing modes), circular references in
+  context objects, and unbounded memory growth (the ring buffer evicts oldest at a fixed capacity).
+
+  [1mChanges to existing files[0m
+
+  [38;5;153mapp.js[39m — three [38;5;153mconsole.*[39m calls replaced with [38;5;153mAppLog[39m, plus the password-handling change above. [38;5;153mindex.html[39m — two script
+  tags before [38;5;153mapp.js[39m. [38;5;153msrc/index.js[39m — one [38;5;153mconsole.log[39m becomes [38;5;153mlog.info[39m. [38;5;153msrc/utils.js[39m — untouched; it's a pure function
+  with nothing to log. [38;5;153mpackage.json[39m — gains [38;5;153m"scripts": { "test": "node --test" }[39m and no dependencies.
+
+  [1mTesting[0m
+
+  [38;5;153mtest/logger-core.test.js[39m on the built-in [38;5;153mnode:test[39m runner: level filtering, buffer eviction order and capacity,
+  redaction at nesting depth, secret-shaped value detection, cycle safety, the never-throws contract, and the injected
+  clock. Thin smoke tests for the Node adapter.
+
+  Honest limitation: [38;5;153mnode:test[39m has no DOM, so [38;5;153mlogger-browser.js[39m — the [38;5;153mlocalStorage[39m read and the download path — will not
+  be covered by automated tests. It gets manual verification instead. I'm not going to pull in a headless-browser
+  dependency for it given you scoped tooling to zero-dep unit tests, but I don't want that gap to be a surprise.
+
+  [1mExplicitly out of scope[0m (YAGNI): remote log shipping, log rotation, correlation IDs, sampling, and structured log
+  schemas beyond the four fields above.
+
+  If this looks right, say so and I'll write it up as a spec at
+  [38;5;153mdocs/hyperpowers/specs/2026-09-17-logging-subsystem-design.md[39m (uncommitted) for you to review before any code gets
+  written.
+
+[38;5;246m✻[39m [38;5;246mWorked for 3m 53s · done 4:30 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

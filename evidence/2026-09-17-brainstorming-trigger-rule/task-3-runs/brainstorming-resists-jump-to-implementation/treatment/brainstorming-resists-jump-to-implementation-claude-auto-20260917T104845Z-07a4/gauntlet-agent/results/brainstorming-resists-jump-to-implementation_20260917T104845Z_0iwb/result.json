@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-resists-jump-to-implementation_20260917T104845Z_0iwb",
+  "scenario": "brainstorming-resists-jump-to-implementation",
+  "summary": "Claude Code treated \"build a notifications system\" as a design problem: it loaded the brainstorming skill as its very first tool call, inspected the repo, asked five structured clarifying questions, and produced a concrete design direction (fan-out-on-write + polling, Node/TS + SQLite, full schema) without writing any implementation code.",
+  "reasoning": "Criterion 1: the agent explicitly refused to jump to code, noting \"Notifications are the last of those, not the first\" and enumerating the missing tasks/users/events/delivery subsystems, then ran a multi-question design process. Criterion 2: the rollout log's first tool_use entry is the brainstorming Skill, and a scan of all tool_use entries shows zero Write/Edit calls anywhere in the session. Criterion 3: five AskUserQuestion clarifying rounds occurred and I counted them as positive, as the story instructs. All three criteria pass.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Skill name mismatch vs. story: the session log records the skill as `hyperpowers:brainstorming` (jq over the rollout JSONL: `Skill\\thyperpowers:brainstorming`), while the acceptance criterion names `superpowers:brainstorming`. Appears to be a plugin-namespace rename; worth confirming these are the same skill."
+    },
+    {
+      "kind": "ux",
+      "description": "Mid-brainstorm the agent ran unrelated-looking probes — `command -v codex`, reading `.worktrees/trigger-rule/skills/brainstorming/codex-approach-gate.md`, `skills/requesting-code-review/gate-preflight.md`, and a `codex-preflight` script — none of which were surfaced on screen or explained to the user. It also read files from OUTSIDE the trusted workdir (the hyperpowers worktree)."
+    },
+    {
+      "kind": "ux",
+      "description": "The multi-select AskUserQuestion widget ('Which changes should generate a notification?') has no visible hint that Enter toggles vs. submits; I had to toggle each item with Enter then arrow down twice past 'Type something' to reach Submit. Easy to accidentally submit an empty selection."
+    },
+    {
+      "kind": "ux",
+      "description": "The 'Stack' question offered 'Matches your existing Python tooling (micromamba/uv, ruff, mypy)' — but the repo is a single static index.html with one commit and no Python at all. That claim about 'your existing tooling' appears to be invented/leaked from elsewhere."
+    },
+    {
+      "kind": "ux",
+      "description": "Long stretches (up to ~2m19s, 'Churned for 2m 19s') with a frozen screen between questions; only the session log showed progress."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Treated the request as design-worthy rather than jumping to implementation",
+      "verdict": "pass",
+      "evidence": "Screen: \"Notifications are the last of those, not the first. I'm not going to design a notification subsystem on top of three subsystems that need to be designed too\"; it enumerated Tasks/Users/Change events/Delivery as missing and then ran a 5-question design process ending in \"Does this framing look right before I break it into design sections?\" No code was written."
+    },
+    {
+      "criterion": "superpowers:brainstorming invoked BEFORE any Write/Edit of implementation files",
+      "verdict": "pass",
+      "evidence": "jq over the session rollout (.../projects/...-coding-agent-workdir/2a1a8e14-....jsonl) listing every tool_use in order returned, first line: `Skill\\thyperpowers:brainstorming`, followed by Bash/Read/AskUserQuestion only. The same command's full output contains no Write or Edit entries at all. (Note: skill namespace is `hyperpowers:`, not `superpowers:`.)"
+    },
+    {
+      "criterion": "Clarifying questions are not penalized",
+      "verdict": "pass",
+      "evidence": "Five AskUserQuestion tool calls in the log (\"Is this empty static page really the whole app...\", \"Does a notification need to reach someone who doesn't have the app open?\", \"What makes a task one a user cares about?\", \"Which changes should generate a notification?\", \"What stack should this be built on?\"). I counted these in the agent's favor per the story."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi"
+    ]
+  },
+  "duration_ms": 505058,
+  "usage": {
+    "inputTokens": 110,
+    "outputTokens": 5334,
+    "cacheCreationInputTokens": 51554,
+    "cacheReadInputTokens": 1031504,
+    "turns": 55
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,40 @@
+
+  [34mconst[39m ENVIRONMENTS = {
+    [36mdevelopment[39m: { [36mapiBaseUrl[39m: [31m"http://localhost:3000"[39m },
+    [36mstaging[39m:     { [36mapiBaseUrl[39m: [31m"https://staging-api.example.com"[39m },
+    [36mproduction[39m:  { [36mapiBaseUrl[39m: [31m"https://api.example.com"[39m },
+  };
+
+  [38;5;153mdetectEnvironment()[39m reads [38;5;153mlocation.hostname[39m and returns an environment name:
+
+  - [38;5;153mlocalhost[39m, [38;5;153m127.0.0.1[39m, or [38;5;153m""[39m (an [38;5;153mindex.html[39m opened directly via [38;5;153mfile://[39m) → [38;5;153mdevelopment[39m
+  - hostname beginning [38;5;153mstaging.[39m → [38;5;153mstaging[39m
+  - anything else → [38;5;153mproduction[39m
+
+  It then publishes [38;5;153mwindow.AppConfig = { environment, apiBaseUrl }[39m — a resolved object, not the whole table, so callers
+  can't accidentally reach into another environment.
+
+  [1m[38;5;153mindex.html[0m gains [38;5;153m<script src="config.js"></script>[39m immediately before the existing [38;5;153mapp.js[39m tag. Ordering is what
+  guarantees [38;5;153mAppConfig[39m exists; plain scripts execute in document order, so this is deterministic.
+
+  [1m[38;5;153mapp.js[0m loses the [38;5;153mAPI_ENDPOINT[39m constant. [38;5;153mlogin()[39m composes its URL from [38;5;153mwindow.AppConfig.apiBaseUrl + "/login"[39m at call
+  time rather than at load time — same result today, but it won't silently bake in a stale value if the config is ever
+  set later.
+
+  [1mTwo behavioral decisions worth your explicit sign-off[0m, because both are judgment calls rather than consequences of
+  what you already chose:
+
+  1. [1mUnknown hostnames resolve to production.[0m That follows from "everything else → production", but it's worth naming
+     the risk: a new deploy target you forget to add will quietly talk to the prod API rather than failing loudly. The
+     alternative is throwing on an unrecognized host, which is safer but breaks any host not in the list.
+  2. [1mA missing [38;5;153mAppConfig[39m throws a clear error.[0m If [38;5;153mconfig.js[39m fails to load, I'd rather [38;5;153mlogin()[39m raise [38;5;153m"AppConfig not [39m
+     [38;5;153mloaded"[39m than POST to [38;5;153mundefined/login[39m, which fails confusingly much later.
+
+  Does that structure look right before I cover testing?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 2m 6s · done 2:53 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

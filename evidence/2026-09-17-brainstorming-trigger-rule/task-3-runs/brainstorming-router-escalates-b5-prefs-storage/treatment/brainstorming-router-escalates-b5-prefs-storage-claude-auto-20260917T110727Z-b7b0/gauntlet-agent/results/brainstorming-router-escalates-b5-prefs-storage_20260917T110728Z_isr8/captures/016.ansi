@@ -1,0 +1,40 @@
+  checked, write [38;5;153m{rememberUsername: true, username}[39m; if unchecked, write [38;5;153m{rememberUsername: false, username: ""}[39m. Gating
+  the write on login success rather than on submit means that when [38;5;153mlogin()[39m stops being a stub, the rule still reads
+  correctly — you remember the name you actually logged in with. The password is never read by this code path.
+
+  [1mError handling[0m
+
+  Preferences are [1mbest-effort[0m: a storage failure degrades to "not remembered" and never blocks a login. Concretely:
+
+  - Merely touching [38;5;153mwindow.localStorage[39m throws in some blocked-cookie configurations, so [38;5;153mapp.js[39m acquires the backend in
+    a [38;5;153mtry[39m/[38;5;153mcatch[39m and falls back to an in-memory object. The app then works normally for the session and simply forgets
+    afterward.
+  - [38;5;153msetItem[39m throws on quota and in some private-browsing modes. [38;5;153mset()[39m catches, [38;5;153mconsole.warn[39ms once, and returns [38;5;153mfalse[39m
+    instead of propagating.
+  - [38;5;153mget()[39m/[38;5;153mgetAll()[39m never throw — every bad-input path already resolves to defaults per the data model.
+
+  [1mTesting[0m
+
+  TDD, tests first. [38;5;153mpackage.json[39m gains [38;5;153m"scripts": { "test": "node --test" }[39m; tests live in [38;5;153mtest/prefs.test.js[39m using
+  [38;5;153mnode:test[39m and [38;5;153mnode:assert[39m, with a [38;5;153mMap[39m-backed fake backend. Cases: empty storage yields defaults; set/get round-trips;
+  corrupt JSON yields defaults; a valid-JSON non-object ([38;5;153m"3"[39m, [38;5;153m"null"[39m) yields defaults; a wrong [38;5;153mv[39m yields defaults;
+  unknown stored keys are dropped; unchecking clears the stored username in one write; a backend whose [38;5;153msetItem[39m throws
+  makes [38;5;153mset()[39m return [38;5;153mfalse[39m without throwing; [38;5;153mclear()[39m removes the key.
+
+  [1mCoverage gap, stated plainly:[0m the DOM wiring in [38;5;153mapp.js[39m gets no automated test — that was the cost of choosing the
+  zero-dependency runner over jsdom. The prefill-and-persist path gets verified by opening [38;5;153mindex.html[39m manually, and I'll
+  report that as a manual check rather than a passing test.
+
+  [1mNon-goals[0m
+
+  No password or token persistence. No server sync or cross-device. No theme setting. No encryption and no cookie
+  fallback. No change to authentication behavior — returning users are not logged in, a text field is prefilled.
+
+  Does this look right? If so I'll write it up as a spec for you to review.
+
+[38;5;246m✻[39m [38;5;246mChurned for 30s · done 4:16 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  (no bundler) and [38;5;153mrequire()[39m in the Node test runner — so it ends with a small UMD-style footer: assign to
+  [38;5;153mmodule.exports[39m when [38;5;153mmodule[39m exists, otherwise hang a [38;5;153mPreferences[39m global off [38;5;153mself[39m. That footer is the only unusual thing
+  in the file, and it exists because the repo has no build step, not as a preference.
+
+  The module exports one factory plus its defaults:
+
+  [33mcreatePreferences[39m(backend) -> { [33mget[39m(key), [33mset[39m(key, value), [33mgetAll[39m(), [33mclear[39m() }
+  DEFAULTS  [32m// exported so tests assert against the real object, not a copy[39m
+
+  [38;5;153mbackend[39m is anything with [38;5;153mgetItem[39m/[38;5;153msetItem[39m/[38;5;153mremoveItem[39m. The browser passes [38;5;153mwindow.localStorage[39m; tests pass a ~10-line
+  [38;5;153mMap[39m-backed fake. [38;5;153mindex.html[39m gains one line: [38;5;153m<script src="prefs.js"></script>[39m [1mbefore[0m [38;5;153mapp.js[39m, since [38;5;153mapp.js[39m reads the
+  global at parse time.
+
+  [38;5;153mapp.js[39m keeps its current shape — classic script, module-scope functions. It gains a single module-scope [38;5;153mconst prefs =
+[39m  [38;5;153mcreatePreferences(window.localStorage)[39m.
+
+  [1mData model[0m
+
+  One key, [38;5;153mwebapp.prefs[39m, holding one JSON object:
+
+  { [36m"v"[39m: [32m1[39m, [36m"rememberUsername"[39m: [34mfalse[39m, [36m"username"[39m: [31m""[39m }
+
+  [38;5;153mDEFAULTS[39m is [38;5;153m{ rememberUsername: false, username: "" }[39m; [38;5;153mSCHEMA_VERSION[39m is [38;5;153m1[39m. Reads parse the stored string, then build
+  the result as defaults overlaid with [1monly keys present in [38;5;153mDEFAULTS[0m — an unknown or stale key in storage is ignored
+  rather than handed to the app, so a future rename can't resurrect old data. If the parse fails, the value isn't a
+  plain object, or [38;5;153mv[39m isn't [38;5;153m1[39m, the read returns defaults and the bad value is left in place rather than deleted (a failed
+  read shouldn't destroy data a later version might migrate).
+
+  Writes serialize the whole document with the current [38;5;153mv[39m. [38;5;153musername[39m is stored only while [38;5;153mrememberUsername[39m is true;
+  unchecking it clears the stored username in the same write, so there's no window where the box is off but the name is
+  still on disk.
+
+  Does this look right so far?
+
+[38;5;246m✻[39m [38;5;246mBaked for 25s · done 4:14 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

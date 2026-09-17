@@ -1,0 +1,40 @@
+  cookie. No password reset, no email verification, no OAuth. Those are real features and they're out of scope; I'd
+  rather name them as absent than half-build them. Seed users via a script for development.
+
+  [1mEndpoints:[0m
+
+  POST   /api/sessions                      log in
+  DELETE /api/sessions                      log out
+
+  POST   /api/tasks                         create
+  PATCH  /api/tasks/:id                     edit; assignee change emits task.assigned
+  POST   /api/tasks/:id/comments            emits comment.created
+  PUT    /api/tasks/:id/subscription        { state: 'subscribed' | 'muted' }
+
+  GET    /api/notifications?cursor=&unread= cursor-paginated, newest first
+  GET    /api/notifications/unread-count    badge
+  POST   /api/notifications/:id/read
+  POST   /api/notifications/read-all
+
+  Every notification response embeds what the row needs to render — actor name, task id and title, event type, the
+  [38;5;153mmentioned[39m flag — so the bell is one request, not one request plus an N+1 of task lookups.
+
+  [1mTwo behavioral decisions worth naming:[0m
+
+  [3mOpening the inbox does not mark everything read.[0m Reading a notification marks that one read; there's a separate
+  explicit "mark all read." Auto-clearing on open is easier to build and it destroys the feature — you glance at the
+  bell, the badge zeroes, and the thing you were going to act on is gone.
+
+  [3mThe badge polls every 30 seconds.[0m You chose in-app without real-time, so polling is the honest consequence: a
+  notification can be up to 30s stale in the badge. The interval lives in one constant so swapping in SSE later is a
+  contained change. Worth saying plainly since it's the main felt limitation of the no-real-time choice.
+
+  [1mUI.[0m A bell in the header with an unread count, opening a panel of the 20 most recent — actor, verb, task title,
+  relative time, unread dot — with "mark all read" and a link to a full [38;5;153m/notifications[39m page. Clicking a row marks it
+  read and navigates to the task.
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

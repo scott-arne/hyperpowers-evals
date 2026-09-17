@@ -1,0 +1,40 @@
+    plain [38;5;153m<script src="app.js">[39m — a browser global script, not a module.
+  - [38;5;153msrc/index.js[39m / [38;5;153msrc/utils.js[39m use CommonJS [38;5;153mrequire[39m/[38;5;153mmodule.exports[39m — Node style, and entirely disconnected from [38;5;153mapp.js[39m.
+  - [38;5;153mpackage.json[39m has zero dependencies, no build step, no test runner.
+
+  So the repo has two incompatible module conventions already, and the settings module has to land in one of them.
+
+  [1mFirst question — the fork that decides everything else: how does the running app learn which environment it's in?[0m
+
+  Because [38;5;153mapp.js[39m runs as a bare browser script, there's no [38;5;153mprocess.env[39m and no build step to substitute into. The
+  settings module can hold the endpoint table easily; the open question is what it keys on.
+
+  - [1mHostname lookup[0m — settings maps [38;5;153mlocation.hostname[39m → endpoint set. Buys: no new tooling, one identical file ships
+    everywhere, works today. Costs: environment is inferred from where the page is served, so pointing local dev at
+    staging needs an override. Cheap to change later.
+  - [1mExplicit marker in HTML[0m — [38;5;153mwindow.APP_ENV = "staging"[39m or a [38;5;153mdata-env[39m attribute, read by settings. Buys: explicit and
+    overridable per deploy. Costs: each deployed [38;5;153mindex.html[39m differs, which eventually pulls a deploy-time substitution
+    step into your release process. This one leaks outward.
+  - [1mBuild-time substitution[0m — add a bundler that inlines the right config. Buys: the industry-standard answer, dead
+    config stripped. Costs: adds a toolchain and a build to a zero-dependency repo. Hardest to walk back.
+
+  My recommendation is hostname lookup with an explicit-marker override ([38;5;153mwindow.APP_ENV[39m wins when set) — it needs no new
+  tooling and degrades into the explicit-marker approach for free if your deploy story later wants it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Env source [39m[49m
+
+[1m[38;5;231mHow should the app determine which environment it's running in?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHostname + override (Recommended)[39m
+     [38;5;246msettings maps location.hostname to an endpoint set; window.APP_ENV overrides it when set. No new tooling, same file
+[39m     [38;5;246meverywhere.[39m
+  [38;5;246m2.[39m Explicit marker only
+     [38;5;246mindex.html declares window.APP_ENV (or data-env); settings reads it. Explicit, but each deploy's HTML differs.[39m
+  [38;5;246m3.[39m Build-time substitution
+     [38;5;246mAdd a bundler/build step that inlines the right config. Standard, but introduces a toolchain to a zero-dependency [39m
+     [38;5;246mrepo.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

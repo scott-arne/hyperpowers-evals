@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How much should the shared module own? → Validation only (Recommended)[39m
+
+[38;5;231m⏺[39m Validation only. One more constraint question before I lay out approaches — this one is forced by the repo being
+  split.
+
+  [1mThe fork:[0m [38;5;153mapp.js[39m loads as a plain [38;5;153m<script>[39m in [38;5;153mindex.html[39m with no module system, while [38;5;153msrc/utils.js[39m uses CommonJS
+  [38;5;153mrequire[39m. A shared validation module has to be reachable from browser form code, and there's no bundler and no build
+  step here.
+
+  - [1mES modules[0m — change [38;5;153mindex.html[39m to [38;5;153m<script type="module">[39m and use [38;5;153mimport[39m/[38;5;153mexport[39m. Modern, no build step, works in
+    every current browser. Costs: [38;5;153mapp.js[39m becomes a module (file:// loading now needs a local server), and it won't
+    [38;5;153mrequire()[39m from the existing CommonJS [38;5;153msrc/[39m without care.
+  - [1mPlain script + global[0m — load [38;5;153mvalidation.js[39m before [38;5;153mapp.js[39m, expose [38;5;153mwindow.Validation[39m. Zero friction, matches what's
+    there today. Costs: no import graph, awkward to unit-test in Node, and it's the thing you'd migrate away from later.
+  - [1mCommonJS + add a bundler[0m — consistent with [38;5;153msrc/[39m, testable in Node directly. Costs: introduces a build step and a
+    dependency to a repo that currently has neither.
+
+  Expensive to change later: none of these badly — the validator's [3mrules format[0m is the sticky part, not its module
+  wrapper. But switching module systems does touch every file that imports it.
+
+  [1mMy recommendation: ES modules.[0m It's the only option that's both build-step-free and testable, and the repo is small
+  enough that converting [38;5;153mapp.js[39m is a two-line change.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Modules [39m[49m
+
+[1m[38;5;231mHow should the shared module be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mexport/import, index.html uses <script type="module">. No build step. Needs a local server for file:// dev.[39m
+  [38;5;246m2.[39m Plain script + global
+     [38;5;246mLoad validation.js first, expose a global. Matches the current setup exactly, zero friction, hardest to test.[39m
+  [38;5;246m3.[39m CommonJS + bundler
+     [38;5;246mConsistent with src/. Directly testable in Node, but adds a build step and a dependency.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

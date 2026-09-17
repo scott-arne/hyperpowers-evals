@@ -1,0 +1,40 @@
+  [1mDesign: minimal auth POC[0m
+
+  [1mShape.[0m [38;5;153mapp.js[39m stays the entry point; everything else lands in small focused modules so each piece is testable on its
+  own:
+
+  - [38;5;153msrc/app.js[39m — [38;5;153mcreateApp()[39m factory (wires middleware + routes); [38;5;153mapp.js[39m just calls it and listens
+  - [38;5;153msrc/store.js[39m — the in-memory [38;5;153musers[39m array plus a [38;5;153mresetTokens[39m Map
+  - [38;5;153msrc/passwords.js[39m — [1mmock[0m hashing: [38;5;153msha256(salt + password)[39m via [38;5;153mnode:crypto[39m. Explicitly not bcrypt/argon2, explicitly
+    not production-safe
+  - [38;5;153msrc/tokens.js[39m — HS256 JWT sign/verify hand-rolled on [38;5;153mnode:crypto[39m (~30 lines)
+  - [38;5;153msrc/middleware.js[39m — [38;5;153mrequireAuth[39m: parses [38;5;153mAuthorization: Bearer[39m, verifies signature + [38;5;153mexp[39m, attaches [38;5;153mreq.user[39m
+  - [38;5;153msrc/routes/auth.js[39m — [38;5;153mPOST /auth/register[39m, [38;5;153mPOST /auth/login[39m, [38;5;153mPOST /auth/forgot-password[39m, [38;5;153mPOST /auth/reset-password[39m
+  - [38;5;153msrc/mailer.js[39m — [1mmock[0m mailer: prints the reset link to stdout, returns the token for tests
+  - [38;5;153mGET /me[39m — the protected route demonstrating the middleware
+
+  [1mNotable calls I'm making for you:[0m
+
+  - [1mZero new dependencies.[0m [38;5;153mjsonwebtoken[39m is the conventional choice, but a POC in a sandbox shouldn't depend on an npm
+    install succeeding, and HS256 is ~30 lines of [38;5;153mcrypto.createHmac[39m. Cost: no algorithm negotiation, no RS256, no [38;5;153mjwks[39m.
+    Cheap to swap later since sign/verify sit behind one module.
+  - [1mSecurity posture, stated plainly[0m (this is the part I'd normally get a yes on before touching code): mock password
+    hashing, a dev-fallback signing secret when [38;5;153mJWT_SECRET[39m is unset, tokens that cannot be revoked before expiry, and a
+    reset token printed to stdout. That is fine for a POC and unsafe for anything real.
+  - [1m24h access tokens[0m, no refresh tokens. Reset tokens: random hex, [1m15-minute[0m expiry, single use, invalidated on use and
+    on password change.
+  - Registration rejects duplicate emails (409); login and forgot-password return the same response whether or not the
+    user exists, so the endpoints don't enumerate accounts.
+  - [1mTesting:[0m [38;5;153mnode --test[39m with the built-in runner, no framework — a handful of tests over
+    register/login/protected-route/expiry/reset. No linter or formatter configured; say the word if you want one.
+
+  [1mOut of scope:[0m persistence, refresh tokens, rate limiting, email verification, roles/permissions, real SMTP.
+
+  Approve and I'll write the spec, then the implementation plan, then build it.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 47s · done 4:03 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

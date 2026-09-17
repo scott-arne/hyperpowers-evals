@@ -1,0 +1,40 @@
+  dispatch to a sink. It touches no environment globals — no [38;5;153mwindow[39m, no [38;5;153mprocess[39m, no direct [38;5;153mconsole[39m. Everything
+  environment-specific arrives as an argument. That's what makes it testable in one place and what makes the transport
+  seam real rather than aspirational.
+
+  Its public surface is one factory:
+
+  [33mcreateLogger[39m({ level, sink, clock }) [32m// → { debug, info, warn, error }[39m
+
+  Each method takes [38;5;153m(event, fields)[39m — a short stable event name like [38;5;153m"login.attempt"[39m plus a flat object of data. Event
+  names rather than free-form message strings, because the point of this is grepping production output, and
+  [38;5;153m"login.attempt"[39m survives rewording in a way that [38;5;153m"Logging in: ..."[39m does not.
+
+  The UMD footer is the whole of Approach A:
+
+  [34mif[39m ([34mtypeof[39m module !== [31m"undefined"[39m && module.exports) {
+    module.exports = { createLogger, resolveLevel, LEVELS };
+  } [34melse[39m {
+    window.AppLogger = { createLogger, resolveLevel, LEVELS };
+  }
+
+  [38;5;153mindex.html[39m gains [38;5;153m<script src="src/logger.js"></script>[39m immediately before the existing [38;5;153mapp.js[39m tag. [38;5;153msrc/index.js[39m gains
+  a [38;5;153mrequire('./logger')[39m. Neither [38;5;153msrc/utils.js[39m nor the existing module syntax changes at all.
+
+  [1mThe transport seam, concretely:[0m [38;5;153msink[39m is a function [38;5;153m(record) => void[39m. Shipping logs remotely later means writing a
+  second sink function and passing it in at the two wiring points — no call site in [38;5;153mapp.js[39m or [38;5;153msrc/index.js[39m changes,
+  because they only ever see [38;5;153mlogger.info(...)[39m. That's the property that made "console for now" a safe answer to the
+  destination question.
+
+  Wiring lives at each entry point rather than in separate adapter files: about four lines at the top of [38;5;153mapp.js[39m and
+  three in [38;5;153msrc/index.js[39m. With exactly two consumers, two more files would be ceremony — and the part actually worth
+  testing (level resolution) is in the core, not the wiring.
+
+  Does the structure look right before I go into the record shape and redaction?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 42s · done 4:10 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

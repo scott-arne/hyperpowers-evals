@@ -1,0 +1,40 @@
+  [38;5;153msuccess[39m, …); dropped keys are counted into [38;5;153m_dropped: n[39m so absence is [3mvisible[0m rather than silent. Values must be
+  primitives — objects and arrays are dropped rather than walked, which kills the "logged the whole [38;5;153mformData[39m" class of
+  leak outright. Strings truncate at 512 chars. On top of that, a tripwire: a key matching
+  [38;5;153m/pass|secret|token|auth|cookie|card|ssn/i[39m is dropped and counted separately, so a near-miss is detectable even though
+  the allowlist already covered it. Defense in depth, because this is the failure mode with teeth.
+
+  One accepted risk to state plainly: [38;5;153merr.stack[39m passes through, since it's the entire point of error reporting, and some
+  engines embed values in stack frames. Allowlisting can't reach inside a stack string. Flagging it rather than
+  pretending it's solved.
+
+  [1mThe logger must never become the outage.[0m [38;5;153mtransport.send[39m is wrapped in [38;5;153mtry/catch[39m inside core — a throwing or offline
+  transport never propagates to the call site. Send failures are counted, never logged, because logging about logging
+  recurses. A reentrancy flag enforces that. The browser transport is fire-and-forget: no [38;5;153mawait[39m anywhere in the submit
+  path, so reporting can't add latency to a login. And the global handlers preserve crash semantics rather than papering
+  over them — the browser [38;5;153merror[39m listener doesn't [38;5;153mpreventDefault()[39m, and Node's [38;5;153muncaughtException[39m logs, attempts a
+  [3mbounded[0m flush, then [38;5;153mprocess.exit(1)[39m. A crash handler that swallows the crash trades a visible failure for a zombie
+  process.
+
+  [1mTests[0m ([38;5;153mnode --test[39m, unit only): core (level filtering, event shape, [38;5;153mchild()[39m merge, throwing transport contained);
+  redact (each rule above, with the password-and-tripwire cases as the centerpiece); transport (fan-out, one member
+  throwing doesn't stop others); node adapter (handlers registered against a fake emitter, injected flush/exit).
+
+  [1mGap I want on the record:[0m you declined e2e, so the browser wiring has no automated coverage — and that wiring is the
+  exact thing that fixes "errors vanish silently." Core and redaction will be well tested; whether a real thrown error
+  in a real page actually reaches the service will rest on one manual check. That's a reasonable trade at this size, but
+  it should be a decision, not a surprise.
+
+  Now writing the spec.
+
+[38;5;246m [39m Creating specs directory
+[38;5;246m  ⎿  $ mkdir -p /Users/johnss51/Development/agents/hyperpowers/evals/results/brainstorming-router-escalates-b3-logging-c
+[39m     [38;5;246mlaude-auto-20260917T093757Z-f11a/coding-agent-workdir/docs/hyperpowers/specs[39m
+
+[38;5;174m·[39m [38;5;216mA[38;5;174mrchitecting… [38;5;246m(1m 22s · ↓[39m [38;5;246m4.8k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

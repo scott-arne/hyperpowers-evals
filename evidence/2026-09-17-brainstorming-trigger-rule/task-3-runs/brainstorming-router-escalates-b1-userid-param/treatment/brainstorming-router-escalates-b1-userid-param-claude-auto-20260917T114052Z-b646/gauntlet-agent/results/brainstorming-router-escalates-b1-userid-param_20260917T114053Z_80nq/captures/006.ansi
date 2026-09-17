@@ -1,0 +1,40 @@
+  - [1mCaller passes a client-generated tracking ID[0m ([38;5;153mcrypto.randomUUID()[39m in the submit handler, threaded into [38;5;153mlogin[39m). Buys
+    you a correlation key for this login attempt that works today with no backend. Costs: it identifies the [3mattempt[0m, not
+    the person — it's not a stable user identity, so it won't answer "who logged in" across sessions. Cheap to change
+    later.
+  - [1mCaller passes a real user identifier the app already knows[0m (e.g. a tenant/account ID from elsewhere in the app).
+    Buys you genuine identity in the signature. Costs: nothing in this repo supplies one, so it means adding a form
+    field or another source first — the parameter would be [38;5;153mundefined[39m at the only call site until then. Cheap now,
+    awkward to undo once callers depend on it.
+  - [1mDon't add a parameter — return the id from [38;5;153mlogin[0m (the stub already returns [38;5;153m{ success, user }[39m; add [38;5;153muserId[39m to the
+    result, sourced from the API response in the real app). Buys you the actual "who logged in" answer, since the server
+    is what knows the user's ID after authenticating. Costs: it's not the change you asked for, and it does nothing
+    until the real POST exists. This is the shape that's expensive to walk back later, because it's the one other code
+    would read.
+
+  [1mMy recommendation: the third.[0m A [38;5;153muserId[39m [3mparameter[0m on [38;5;153mlogin[39m asks the client to already know the identity that logging in
+  is supposed to establish — the caller can only ever pass the username it just typed, or a made-up ID. If the goal is
+  tracking who logged in, the identity belongs on the way out, not the way in. That said, if you have a caller in mind
+  that genuinely holds a user ID, the first or second option is real and I'll do it.
+
+  Also worth flagging regardless of choice: line 5 [38;5;153mconsole.log[39ms the username on every attempt, and adding an ID there
+  widens what lands in browser logs.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[2m│[0m [1m[38;5;231mWhere should the userId come from? The form only has username and password today.[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn it, don't pass it (Recommended)[39m
+     [38;5;246mLeave the signature alone; add userId to login's return value, sourced from the API response in the real app. [39m
+     [38;5;246mAnswers 'who logged in' without the caller inventing an identity.[39m
+  [38;5;246m2.[39m Client-generated tracking ID
+     [38;5;246mCaller does crypto.randomUUID() and passes it as login(username, password, userId). Correlates a single login [39m
+     [38;5;246mattempt; not a stable identity.[39m
+  [38;5;246m3.[39m Real ID from elsewhere in the app
+     [38;5;246mAdd the parameter now and pass a real user/account ID. Needs a source that doesn't exist yet — tell me where it [39m
+     [38;5;246mcomes from and I'll wire it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

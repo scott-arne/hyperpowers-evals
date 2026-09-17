@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Section 2 of 3 — [1mdata model and failure behavior[0m.
+
+  The schema is one table at the top of [38;5;153mprefs.js[39m:
+
+  [34mconst[39m SCHEMA = {
+    [36mtheme[39m: { [36mdefault[39m: [31m"light"[39m, [36mvalid[39m: [[31m"light"[39m, [31m"dark"[39m] },
+  };
+
+  All preferences serialize to a single [38;5;153mlocalStorage[39m key, [38;5;153mwebapp.prefs[39m, holding one JSON object ([38;5;153m{"theme":"dark"}[39m). One
+  key rather than one-key-per-preference keeps reads to a single parse and makes the stored shape inspectable in
+  devtools as a unit.
+
+  The rule that does the real work: [1m[38;5;153mget[39m returns the declared default unless storage holds a value that validates.[0m That
+  single rule absorbs every failure mode instead of each one needing its own handling — key absent, JSON that won't
+  parse, a parsed value that isn't an object, a value outside [38;5;153mvalid[39m, a preference removed in a later build. All of them
+  land on the default, none of them throw, and a user with junk in storage sees a working page rather than a broken one.
+
+  Three specifics I want to call out because they're decisions, not details:
+
+  - [1mStorage access is wrapped, not probed.[0m Reading [38;5;153mlocalStorage[39m can throw outright (Safari private browsing, disabled
+    site data), and writes can throw on quota. Rather than a one-time availability probe, each read and write is
+    individually wrapped, with an in-memory object as fallback. Preferences then still work for the current page session
+    even when nothing can be persisted — the feature degrades to "doesn't survive reload," which is the honest failure,
+    instead of breaking the page.
+  - [1mUnknown keys in storage are preserved on write[0m, not dropped. If a user has a newer build's preference sitting in
+    storage, this build shouldn't destroy it on the next [38;5;153mset[39m.
+  - [1mNo version field.[0m Validate-or-default already [3mis[0m the migration mechanism for scalar UI settings — a renamed or
+    retyped preference falls back to its default automatically. A version counter would add a migration ladder with
+    nothing to migrate. Flagging it as deliberately omitted rather than overlooked; if preferences ever grow structured
+    values, that's when it earns its place.
+
+  Does that shape look right before I move to the UI wiring?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 3m 29s · done 3:59 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

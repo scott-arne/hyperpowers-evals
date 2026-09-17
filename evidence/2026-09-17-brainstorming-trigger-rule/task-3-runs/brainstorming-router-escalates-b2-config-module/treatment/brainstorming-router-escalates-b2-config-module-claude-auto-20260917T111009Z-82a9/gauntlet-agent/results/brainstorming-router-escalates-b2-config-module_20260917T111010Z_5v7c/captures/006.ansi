@@ -1,0 +1,40 @@
+  [1mFirst question — how should the environment actually get selected?[0m
+
+  The fork: whether switching from dev to prod is something a [3mperson[0m does by editing a file, something the [3mbrowser[0m
+  decides at runtime from where the page is served, or something a [3mbuild step[0m bakes in. This is the choice that
+  determines everything else, because it dictates whether this project acquires a build pipeline it currently doesn't
+  have.
+
+  - [1mHand-edit one constant[0m — buys the smallest possible change: one new file, one exported value, zero new tooling.
+    Costs a manual edit (and a real risk of committing the wrong endpoint) at every environment switch. Rules out
+    nothing; you can add detection or a build later without changing how [38;5;153mapp.js[39m consumes it.
+  - [1mRuntime detection from hostname[0m — buys automatic switching with still no build step: the settings module maps
+    [38;5;153mlocalhost[39m → dev, everything else → prod. Costs a hostname-to-environment table you have to keep correct, and all
+    endpoints ship in the client bundle (fine here — these are public URLs, not secrets). Cheap to change later.
+  - [1mBuild-time injection[0m — buys the conventional [38;5;153m.env[39m + bundler workflow and the only option where non-prod URLs never
+    reach production. Costs introducing a bundler, a dependency tree, and a build step to a project that today is opened
+    as a static file. Expensive to undo.
+
+  My recommendation is [1mruntime detection from hostname[0m. It delivers the actual goal in your request — "easier to change
+  environments" means not editing code to switch — without dragging a build pipeline into a static three-file webapp.
+  The consuming interface ([38;5;153mapp.js[39m reads a settings object) is identical under all three, so if you later outgrow it,
+  build-time injection replaces the module's internals without touching callers.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Env switch [39m[49m
+
+[1m[38;5;231mHow should the settings module decide which environment's API endpoint to use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHostname detection (Recommended)[39m
+     [38;5;246mModule maps location.hostname to an environment (localhost -> dev, else prod) and exposes the matching endpoint. No
+[39m     [38;5;246mbuild step, no manual edit to switch.[39m
+  [38;5;246m2.[39m Hand-edit one constant
+     [38;5;246mModule holds a single ENVIRONMENT constant you change by hand. Smallest possible change; manual step and [39m
+     [38;5;246mmisconfiguration risk on every switch.[39m
+  [38;5;246m3.[39m Build-time injection
+     [38;5;246mIntroduce a bundler and .env files so the endpoint is baked in at build time. Conventional and keeps non-prod URLs
+[39m     [38;5;246mout of prod, but adds tooling this project has none of.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

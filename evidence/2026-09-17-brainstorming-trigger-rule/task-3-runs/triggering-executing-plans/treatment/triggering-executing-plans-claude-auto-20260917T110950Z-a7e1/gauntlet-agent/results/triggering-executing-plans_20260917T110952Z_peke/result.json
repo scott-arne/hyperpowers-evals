@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 5,
+  "runId": "triggering-executing-plans_20260917T110952Z_peke",
+  "scenario": "triggering-executing-plans",
+  "summary": "Claude Code accepted the plan-implementation request and began executing, but it loaded `hyperpowers:subagent-driven-development` instead of the executing-plans skill. No Skill invocation of `executing-plans` (in either the superpowers or hyperpowers namespace) and no read of its SKILL.md appears in the session log.",
+  "reasoning": "The scenario's single acceptance criterion requires the executing-plans skill to be loaded before execution begins. Log inspection shows only subagent-driven-development was loaded, and implementation work (progress file writes, Task 1 implementer subagent dispatch) was already underway. No shell/read of an executing-plans SKILL.md exists in any session or subagent log.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Given 'I have a plan document at docs/superpowers/plans/2024-01-15-auth-system.md that needs to be executed. Please implement it.', the agent loaded hyperpowers:subagent-driven-development and began dispatching implementer subagents without ever loading the executing-plans skill, though that skill is present in its catalog (log shows 'hyperpowers:executing-plans: Use when you have a written implementa...')."
+    },
+    {
+      "kind": "ux",
+      "description": "Namespace mismatch vs. the story: the installed plugin namespace is `hyperpowers:`, while the acceptance criterion names `superpowers:executing-plans`. Neither namespace's executing-plans skill was loaded, but the discrepancy may confuse evaluation."
+    },
+    {
+      "kind": "ux",
+      "description": "Despite the HOWTO stating dialog-bypass state is pre-seeded, launching still required four manual dialogs: theme picker, security notes, trust-folder prompt, and bypass-permissions warning (the latter two defaulting to 'No, exit')."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent read skill files from a host worktree path (/Users/johnss51/Development/agents/hyperpowers/.worktrees/trigger-rule/skills/...) and wrote progress state under ~/.cache/hyperpowers/sdd/..., outside the prepared workdir."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent loaded superpowers:executing-plans skill before starting execution",
+      "verdict": "fail",
+      "evidence": "Session log /Users/.../home/.claude/projects/-Users-...-coding-agent-workdir/f9503d2b-aaa3-4711-810d-5f80056cd259.jsonl: the only Skill tool_use is `Skill {\"skill\":\"hyperpowers:subagent-driven-development\"}` (jq over all tool_use entries). `grep -rho '\"skill\":\"[^\"]*\"' --include='*.jsonl' .` returned only `1 \"skill\":\"hyperpowers:subagent-driven-development\"`. `grep -rho 'skills/[a-z-]*/SKILL.md'` over all session jsonl returned nothing. Remaining 'executing-plans' string hits are the eval directory name and the skill-catalog listing (`hyperpowers:executing-plans: Use when you have a written implementa...`), not an invocation. Meanwhile the agent had already begun executing: Write of progress.md and `Agent(Implement Task 1: Bearer token parsing)` dispatched (visible on screen)."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi"
+    ]
+  },
+  "duration_ms": 177904,
+  "usage": {
+    "inputTokens": 52,
+    "outputTokens": 4125,
+    "cacheCreationInputTokens": 28362,
+    "cacheReadInputTokens": 311388,
+    "turns": 26
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

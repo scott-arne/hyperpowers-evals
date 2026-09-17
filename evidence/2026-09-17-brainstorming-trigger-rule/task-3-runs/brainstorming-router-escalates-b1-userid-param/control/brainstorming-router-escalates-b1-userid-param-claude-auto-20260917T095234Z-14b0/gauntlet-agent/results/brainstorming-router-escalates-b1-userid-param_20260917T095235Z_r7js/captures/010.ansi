@@ -1,0 +1,40 @@
+
+  [1mThird fork:[0m what "track" actually does with the id. This decides whether the deliverable is [3mone[0m module or [3mtwo[0m — an
+  identity store alone, or an identity store plus a tracking/event path.
+
+  - [1mMake it available, log locally[0m — the store holds the id; [38;5;153mlogin[39m and future forms read it; events go to [38;5;153mconsole.log[39m
+    exactly like the current stub. One module. Honest about the fact that nothing is persisted server-side yet, and a
+    real destination can be added later without touching the readers.
+  - [1mAttach to outbound requests[0m — every call to [38;5;153mAPI_ENDPOINT[39m (and future endpoints) carries the id in a header or body
+    field. Two pieces: the store, plus a thin request wrapper so nobody hand-threads the id into each [38;5;153mfetch[39m. This is
+    what makes the server able to attribute activity, which is closest to "track who logged in."
+  - [1mEmit events to an analytics endpoint[0m — a [38;5;153mtrack(event, payload)[39m function that posts [38;5;153m{userId, event, timestamp}[39m
+    somewhere. This is a genuine new subsystem: a destination, a payload schema, batching/failure behavior, and a
+    privacy decision about what gets recorded. Materially more work than the other two.
+
+  [1mMy recommendation: make it available and log locally, with the store's interface shaped so a request wrapper drops in
+[0m  [1mlater.[0m Your stated need is that the id exists, persists, and is reachable from other forms — that's the store. [38;5;153mlogin[39m
+  doesn't make a network call yet, so a request wrapper would have nothing to wrap, and an analytics pipeline would be
+  building a destination before you've said where events should go. If you want server-side attribution now, the second
+  option is the right scope and I'll design for it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ consumer [39m[49m
+
+[1m[38;5;231mWhat consumes the userId — what does "track who logged in" do?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAvailable + console log (Recommended)[39m
+     [38;5;246mThe store holds it, login and future forms read it, events log locally like the current stub. One module; a real [39m
+     [38;5;246mdestination drops in later.[39m
+  [38;5;246m2.[39m Attach to outbound requests
+     [38;5;246mA thin fetch wrapper adds the id to every API call so the server can attribute activity. Store plus request [39m
+     [38;5;246mwrapper.[39m
+  [38;5;246m3.[39m Send analytics events
+     [38;5;246mA track(event, payload) function posting to an analytics destination. New subsystem: endpoint, schema, failure [39m
+     [38;5;246mhandling, privacy scope.[39m
+  [38;5;246m4.[39m Available now, decide later
+     [38;5;246mBuild only the store; leave every consumer question open until there is a second form that actually needs it.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  Four tables. Supabase's [38;5;153mauth.users[39m handles the magic-link side; I'd add a thin [38;5;153mprofiles[39m row (id, email, display name)
+  so the UI can show "Sam changed this" without touching the auth schema.
+
+  [38;5;153mtasks[39m: id, title, description, status, assignee_id, created_by, created_at, updated_at, deleted_at. Status is a
+  three-value enum — [38;5;153mtodo[39m / [38;5;153mdoing[39m / [38;5;153mdone[39m. Deliberately cut for now: priority, labels, due dates, subtasks, attachments,
+  ordering. Each of those is easy to add later and none of them is needed to prove out notifications. I'd rather A be
+  small enough to finish.
+
+  [38;5;153mtask_events[39m is the important one, and the shape I want is [1mone row per changed field[0m, not one row per save: id,
+  task_id, actor_id, event_type, field_name, old_value, new_value, created_at. Append-only, never updated.
+
+  The reason for field-level granularity is C. "Someone moved this to done" and "someone fixed a typo in the
+  description" are the same event if you log per-save, and you'd be forced to either notify on both or diff the payloads
+  later to tell them apart. Logging per field means C's relevance rules are a filter over [38;5;153mfield_name[39m — cheap, and
+  tunable without touching how the log is written.
+
+  Written by a [1mPostgres trigger[0m on insert/update/delete, taking the actor from [38;5;153mauth.uid()[39m. Not by application code. This
+  is the one piece of the design I'd argue hardest for: if the log is written in the app layer, then the first script,
+  admin fix, or forgotten code path that writes a task directly produces a silent gap in the history, and C's
+  notifications are quietly wrong in a way nobody notices for weeks. In the database, it can't be bypassed.
+
+  Two consequences worth flagging now. [1mDeletes are soft[0m ([38;5;153mdeleted_at[39m), because cascading a hard delete would destroy the
+  event history that C reads, and an event pointing at a vanished task is worse than a tombstone. And [1maccess is [0m
+  [1mall-or-nothing[0m: every authenticated team member can read and write every task. No per-task permissions, no private
+  tasks. That's right for a small team and it keeps the RLS policies to a few lines — but it's an assumption, and if you
+  expect private or team-scoped tasks later it's much cheaper to know now, since it changes both the policies and C's
+  relevance queries.
+
+  ---
+
+  Does that model look right — particularly the field-level event rows, the trigger-not-app-code call, and the
+  everyone-sees-everything assumption? Once you're happy with it I'll move to Section 2, the app structure and data
+  flow.
+
+[38;5;246m✻[39m [38;5;246mCooked for 3m 34s · done 3:01 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

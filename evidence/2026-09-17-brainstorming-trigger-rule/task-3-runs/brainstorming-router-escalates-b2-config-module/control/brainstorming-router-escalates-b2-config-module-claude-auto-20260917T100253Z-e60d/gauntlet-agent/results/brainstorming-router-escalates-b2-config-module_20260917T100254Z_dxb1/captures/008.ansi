@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the app determine which environment it's running in? → Hostname detection (Recommended)[39m
+
+[38;5;231m⏺[39m Hostname detection it is.
+
+  Next fork: [1mhow [38;5;153msettings.js[39m gets into [38;5;153mapp.js[39m.[0m This matters beyond style — it decides whether [38;5;153mindex.html[39m changes,
+  whether you can still open the page as a [38;5;153mfile://[39m URL, and whether the settings module is reachable from the Node side
+  of the repo.
+
+  - [1mPlain global script[0m — [38;5;153m<script src="settings.js">[39m before [38;5;153mapp.js[39m; settings exposes one global (e.g. [38;5;153mAPP_SETTINGS[39m).
+    Matches [38;5;153mapp.js[39m exactly as written today (it's already global-scope script code). Keeps [38;5;153mfile://[39m working. Costs: adds
+    a global, and load order in [38;5;153mindex.html[39m becomes load-bearing.
+  - [1mES modules[0m — [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" src="app.js">[39m and [38;5;153mapp.js[39m does [38;5;153mimport { apiEndpoint } from [39m
+    [38;5;153m'./settings.js'[39m. Properly scoped, explicit dependency, no ordering hazard. Costs: [38;5;153mtype="module"[39m is fetched under
+    CORS rules, so opening [38;5;153mindex.html[39m directly from disk stops working — you'd need a local server for dev.
+
+  [1mMy recommendation: plain global script.[0m It's what the existing file already is, it adds no dev-workflow requirement,
+  and the repo has nothing else pulling it toward modules. The ES-module version is the better long-term shape, but it's
+  a change to how you run the page locally, which is a real cost to pay for one config value. Either way [38;5;153mapp.js[39m ends up
+  reading a named settings value, so switching later is a small, contained edit.
+
+  Note on the CommonJS [38;5;153msrc/[39m half: neither option makes [38;5;153msettings.js[39m usable from [38;5;153msrc/index.js[39m without a bundler. I'm
+  treating the settings module as browser-side only unless you tell me the Node side needs it too.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Module format [38;5;16m[48;5;153m ☐ Scope [39m[49m ✔ Submit  →
+
+[1m[38;5;231mShould the Node side (src/) share this settings module too?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser only (Recommended)[39m
+     [38;5;246mOnly app.js reads settings. src/index.js and src/utils.js have no config today and stay untouched.[39m
+  [38;5;246m2.[39m Shared across both
+     [38;5;246mMake settings reachable from CommonJS src/ as well. Needs a dual-format file or a bundler, for config the Node half
+[39m     [38;5;246mdoesn't currently use.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel
+

@@ -1,0 +1,40 @@
+    "dismiss," since there's nothing to dismiss. Honestly, this is a due-date view wearing a notifications hat.
+  - [1mB — Persisted notification inbox.[0m The evaluator writes [38;5;153mNotification[39m records ([38;5;153mid[39m, [38;5;153mtaskId[39m, [38;5;153mkind[39m, [38;5;153mfiredAt[39m, [38;5;153mreadAt[39m) next
+    to the tasks; the UI is an inbox with an unread badge. Buys history, per-item read/dismiss, and room for other
+    notification kinds later — and it's the shape a server push system would eventually need. Costs: all the real
+    bookkeeping. Dedup so a reload doesn't re-fire everything, cleanup when a task is deleted or its due date moves,
+    pruning so the store doesn't grow forever. That's where the bugs in this kind of feature actually live.
+  - [1mC — Derived state, transient toasts, snooze on the task (recommended).[0m Computed like A, plus a toast when a task
+    crosses into due or overdue while you're watching, plus a [38;5;153msnoozedUntil[39m field on the task so dismissal means
+    something. No notification entity.
+
+  I recommend [1mC[0m. It produces the thing you actually asked for — something that [3mtells[0m you — without buying B's inbox
+  bookkeeping to get history and read-state that nobody has asked for yet. And all three share the same core: a pure
+  [38;5;153mevaluate(tasks, now)[39m function. Keeping that pure and isolated is what makes B reachable later if you ever add push, so
+  choosing C now doesn't paint us in.
+
+  [1mTooling[0m
+
+  There's no tooling in this repo at all, and it's cheapest to set up before any code exists. The reminder evaluator is
+  a pure function of [38;5;153m(tasks, now)[39m — time-dependent logic that's miserable to verify by hand and trivial to unit test
+  with an injected clock. That's the one I'd insist on.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Model [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhich tooling should I set up from the start?[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Unit tests (Recommended)
+  [38;5;246mTest runner plus a first passing fixture. The evaluator takes an injected clock, so due/overdue/snooze logic gets [39m
+  [38;5;246mtested without waiting on real time.[39m
+  [38;5;246m2.[39m [ ] Lint + auto-format
+  [38;5;246mESLint plus Prettier on the stack's defaults. Cheap now, annoying to retrofit over existing code.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+  [38;5;246mPlaywright driving a real browser to confirm toasts actually appear. Heavier; the main thing unit tests can't cover.[39m
+  [38;5;246m4.[39m [ ] None — keep it bare
+  [38;5;246mNo tooling. Fastest to first code, but the time logic then has no automated verification at all.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+[38;5;153m❯[39m    [1m[38;5;153mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

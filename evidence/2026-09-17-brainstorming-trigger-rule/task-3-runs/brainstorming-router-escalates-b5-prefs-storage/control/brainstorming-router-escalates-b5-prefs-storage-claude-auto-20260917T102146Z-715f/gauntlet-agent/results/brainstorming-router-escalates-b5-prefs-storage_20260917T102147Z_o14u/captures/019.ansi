@@ -1,0 +1,40 @@
+  The store draws a hard line between two kinds of failure:
+
+  - [1mEnvironment failures never throw.[0m At construction the store probes [38;5;153mlocalStorage[39m with a sentinel write/read/delete
+    inside a [38;5;153mtry[39m; if that throws or the API is missing, it silently uses the memory adapter and [38;5;153misPersistent()[39m returns
+    [38;5;153mfalse[39m. If a later [38;5;153msave()[39m hits a quota error, the store switches to the memory adapter for the rest of the page,
+    flips [38;5;153misPersistent()[39m to [38;5;153mfalse[39m, and still resolves — the caller's value stays readable, it just won't survive a
+    reload. A document that fails to parse is treated as an empty namespace with a [38;5;153mconsole.warn[39m, rather than propagating
+    a [38;5;153mSyntaxError[39m into a caller that only wanted a theme.
+  - [1mProgrammer errors do throw.[0m [38;5;153mset()[39m with [38;5;153mundefined[39m, a function, or a non-string name rejects. Those are bugs in
+    calling code, and swallowing them would mean a value silently never persists with nothing to debug. Squashing
+    environment noise is a kindness; squashing your own mistakes is a trap.
+
+  Version handling: a document with [38;5;153mv[39m lower than current runs through migrations; a document with an unrecognized or
+  newer [38;5;153mv[39m is treated as empty, and the next write overwrites it. That's the honest behavior for a store with one version
+  — I'd rather state the rule now than leave it to whatever the code happens to do.
+
+  For tests, [38;5;153mnode:test[39m and [38;5;153mnode:assert[39m are built into Node, which fits this repo's zero-dependency [38;5;153mpackage.json[39m — no
+  install step, just [38;5;153m"test": "node --test"[39m. The adapter seam pays off here: the store's real logic (namespacing,
+  fallbacks, read-modify-write, version rules) tests against the memory adapter with no browser at all, and the
+  localStorage adapter tests against a small fake — including a deliberately throwing one to cover the private-mode and
+  quota paths.
+
+  Last thing, and then I'll write the spec. This project has no linter, formatter, or test runner configured at all.
+  Setting these up is cheapest now, before there's code to retrofit:
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which tooling should I set up as part of this work? (No linter, formatter, or test runner exists in the repo [39m
+     [38;5;246mtoday.) → Unit tests only (Recommended)[39m
+
+[38;5;246m⏺[39m Checking for existing .gitignore
+[38;5;246m  ⎿  $ ls -a /Users/johnss51/Development/agents/hyperpowers/evals/results/brainstorming-router-escalates-b5-prefs-storag
+[39m     [38;5;246me-claude-auto-20260917T102146Z-715f/coding-agent-workdir[39m
+
+[38;5;174m✢[39m [38;5;216mG[38;5;174mallivanting… [38;5;246m(2m 11s · ↓[39m [38;5;246m8.4k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

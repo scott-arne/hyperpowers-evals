@@ -1,0 +1,40 @@
+  to code.
+
+  What I found in the repo: two unconnected surfaces. A browser app ([38;5;153mindex.html[39m + [38;5;153mapp.js[39m, a login form with stubbed
+  auth) and a Node module ([38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m, a [38;5;153mgreet[39m hello-world that is [38;5;153mpackage.json[39m's [38;5;153mmain[39m). No tests, no
+  linter, no build step, no dependencies.
+
+  That split drives the first question, and it's a real fork rather than a naming choice:
+
+  [1mThe fork:[0m where preferences live decides the storage mechanism, and the two have almost no shared code — picking wrong
+  means rewriting the storage layer, not renaming it.
+
+  - [1mBrowser ([38;5;153mapp.js[39m)[0m — persistence via [38;5;153mlocalStorage[39m; "across sessions" means across page loads/tab closes, scoped per
+    browser+origin. Buys you the only surface with a real user and a login concept. Costs: no access from Node, and no
+    per-user server-side sync later without a backend that doesn't exist yet.
+  - [1mNode ([38;5;153msrc/[39m)[0m — persistence via a JSON file on disk (e.g. [38;5;153m~/.config/<app>/preferences.json[39m); "across sessions" means
+    across process runs. Buys testability with zero browser tooling. Costs: irrelevant to the login UI, and [38;5;153msrc/[39m
+    currently has no user-facing behavior to configure.
+  - [1mBoth, over a shared core[0m — a pure preferences module with a pluggable storage backend (localStorage adapter + file
+    adapter). Buys reuse; costs a module boundary and roughly double the code for a fixture-sized app. Hardest to walk
+    back from if only one surface ever matters.
+
+  [1mMy recommendation: browser/[38;5;153mlocalStorage[39m.[0m "Settings persist across sessions" most naturally means a user's choices
+  surviving their browser session, and the login form is the only place a user exists here. The abstraction in option 3
+  is cheap to add later if [38;5;153msrc/[39m ever grows a CLI — going the other direction is the expensive one.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Surface [39m[49m
+
+[1m[38;5;231mWhich surface should preferences persist for?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser webapp (Recommended)[39m
+     [38;5;246mStore in localStorage from app.js. Persists across page loads and browser restarts, per browser+origin.[39m
+  [38;5;246m2.[39m Node module (src/)
+     [38;5;246mStore as a JSON file on disk. Persists across process runs. Testable without browser tooling.[39m
+  [38;5;246m3.[39m Both, shared core
+     [38;5;246mPure preferences module with pluggable localStorage and file-system backends. More code, more reuse.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

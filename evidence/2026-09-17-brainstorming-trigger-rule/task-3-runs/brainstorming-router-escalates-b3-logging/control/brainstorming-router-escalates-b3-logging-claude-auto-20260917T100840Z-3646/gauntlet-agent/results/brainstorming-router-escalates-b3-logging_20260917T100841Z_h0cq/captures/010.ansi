@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Destination set: console + local ring buffer with an export hook, behind a sink seam.
+
+  That decision makes the next one load-bearing. Records now [1mpersist[0m on the user's machine and are meant to be [1mpasted [0m
+  [1minto a bug report[0m — so anything the logger touches can end up in a ticket, a Slack thread, or an email. [38;5;153mapp.js[39m today
+  calls [38;5;153mconsole.log("Logging in:", username)[39m and has the password in scope two lines away. The redaction policy is what
+  stops a credential from riding along.
+
+  - [1mAllowlist[0m — the logger serializes only fields a call site explicitly declares safe; anything else becomes
+    [38;5;153m[redacted][39m. Buys: a new field added later is private by default, so the failure mode is a missing log line rather
+    than a leaked password. Costs: every call site names its fields, and you occasionally re-deploy to see something you
+    forgot to include. Hard to loosen later in the sense that call sites encode the policy — but that's the direction
+    you want it stuck in.
+  - [1mKey-name denylist[0m — drop keys matching [38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mauth[39m, etc. Buys: call sites stay casual; pass an
+    object, the logger cleans it. Costs: fails [3mopen[0m — [38;5;153mpwd[39m, [38;5;153mpassphrase[39m, or a whole form object serialized wholesale sails
+    through. One missed name is a leak.
+  - [1mHash/truncate identifiers[0m — layered on either of the above: log [38;5;153musr_9f3a…[39m instead of the username, so you can
+    correlate a user's events across records without the logs naming them.
+
+  My recommendation: [1mallowlist, with identifiers truncated[0m. There are only about four call sites in [38;5;153mapp.js[39m, so the cost
+  of the strict option is close to zero here, and the artifact is something users hand to you — that's exactly where
+  fail-open is the wrong default. The password should never be passed to the logger at any level.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mHow should the logger handle sensitive data?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAllowlist + truncated IDs (Recommended)[39m
+     [38;5;246mOnly explicitly-declared fields are serialized; usernames logged as a short hash. Fails closed.[39m
+  [38;5;246m2.[39m Allowlist, full values
+     [38;5;246mExplicit fields only, but log usernames verbatim. Simpler to read; the dump names real users.[39m
+  [38;5;246m3.[39m Key-name denylist
+     [38;5;246mLog whatever call sites pass, stripping keys like password/token. Convenient, but fails open on unexpected key [39m
+     [38;5;246mnames.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

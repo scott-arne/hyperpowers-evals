@@ -1,0 +1,40 @@
+
+  [1mClassification: architectural.[0m "Preferences storage that persists across sessions" names a subsystem this repo doesn't
+  have — a storage layer, a preferences schema, and a read/write interface other code will depend on. There's no
+  existing settings flow to modify, so this isn't a bounded tweak. That means: clarifying questions, 2-3 approaches, a
+  sectioned design, then a written spec before any code. Say the word if you think that's heavier than it needs to be.
+
+  First question, and it's the one that determines everything downstream.
+
+  [1mThe fork:[0m this repo has two unrelated runtimes, and "session" means a different thing in each. In the browser,
+  persistence means [38;5;153mlocalStorage[39m — per-device, per-origin, synchronous, no dependencies, and the data never leaves the
+  machine. In Node, it means a JSON file on disk (something like [38;5;153m~/.config/drill-test-project/preferences.json[39m) —
+  per-machine, async I/O, needs path/permission/corruption handling. A shared abstraction over both is possible but only
+  pays off if both surfaces actually need preferences.
+
+  - [1mBrowser only[0m — cheapest, matches the only real UI here (the login form). Rules out nothing permanent; a Node backend
+    could be added later against the same schema.
+  - [1mNode only[0m — right if the CLI is the real product and [38;5;153mapp.js[39m is just fixture noise. Means preferences are invisible
+    to the web page.
+  - [1mBoth, behind one interface[0m — one [38;5;153mPreferences[39m API with swappable storage backends. Most flexible, roughly double the
+    work, and the abstraction is guesswork until I know what each side stores.
+
+  [1mMy recommendation: browser only.[0m The only thing in this repo a user interacts with is the login form, and "settings
+  persist across sessions" reads most naturally as that page remembering something. Adding a Node backend later is
+  cheap; building the abstraction now is speculative.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Surface [39m[49m
+
+[1m[38;5;231mWhich surface needs preferences storage?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser only (Recommended)[39m
+     [38;5;246mlocalStorage in app.js. Matches the login form, the only real UI here. No dependencies, no file I/O.[39m
+  [38;5;246m2.[39m Node only
+     [38;5;246mJSON file on disk for the src/index.js CLI. Right if the CLI is the real product.[39m
+  [38;5;246m3.[39m Both, one interface
+     [38;5;246mShared Preferences API with localStorage and file-system backends. Most flexible, ~2x the work.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

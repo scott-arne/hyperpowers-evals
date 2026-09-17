@@ -1,0 +1,40 @@
+  CLIs.
+
+  [1mTwo behavior changes I want you to sign off on explicitly:[0m
+
+  1. [1mThe username stops appearing in logs.[0m [38;5;153mapp.js:5[39m logs it today; [38;5;153mlogin.attempt[39m will carry no fields. Usernames are
+     personal data sitting one field away from a password, and you chose a user-togglable debug level, so debug output
+     is reachable by anyone with devtools. If you need to correlate a user's session when debugging, the right fix is an
+     opaque session id generated per page load and allowlisted — not the username. Say the word and I'll add that
+     instead; it's a small addition.
+  2. [1mThe console output of the login flow changes shape.[0m [38;5;153m"Logging in: alice"[39m becomes a structured record. Anything or
+     anyone currently reading those exact strings — a support runbook, a screenshot in a ticket, a browser test — sees
+     different text afterward.
+
+  [1mTesting.[0m The core is environment-agnostic and takes an injected sink and clock, so all of it tests with an array-push
+  sink and a fixed timestamp — no DOM, no subprocess, no fixtures. Worth covering: level threshold filtering, allowlist
+  drops and the [38;5;153m_dropped[39m list, primitive coercion, truncation, [38;5;153mresolveLevel[39m ordering and fallback, the [38;5;153mlogger.bad_level[39m
+  warning, and sink-throw containment. That last one matters most: it's the test that proves a broken transport can't
+  take down the login form.
+
+  That needs a test runner, and this repo has none — no linter or formatter either. Since it's cheapest to set up before
+  the code exists, one question on tooling:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhich tooling should I set up alongside the logger? (The repo currently has none.)[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Unit tests via node:test (Recommended)
+  [38;5;246mBuilt into Node 18+, zero dependencies, keeps the repo dependency-free. Adds a test/ dir and an npm test script.[39m
+  [38;5;246m2.[39m [ ] Lint + format
+  [38;5;246mESLint + Prettier. Would be this repo's first dependencies and first node_modules.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+  [38;5;246mBrowser automation for the login form. Heavier: a real dependency plus a serving story for index.html.[39m
+  [38;5;246m4.[39m [ ] None for now
+  [38;5;246mShip the logger with no test infrastructure; the testing section above becomes manual verification only.[39m
+[38;5;153m❯[39m [38;5;246m5. [39m[ ] [7mT[0;2mype something[0m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

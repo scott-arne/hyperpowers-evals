@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Both it is — shared module, two sinks.
+
+  Next fork, and it's the expensive one: [1mwhere browser logs actually end up.[0m The Node side is settled by default
+  (structured lines to stdout/stderr, collected by whatever runs the process). The browser has no such default — a log
+  that stays in the user's devtools console is invisible to you in production, so this choice is the difference between
+  "logging exists" and "we can debug production issues."
+
+  - [1mConsole only, structured[0m — zero infrastructure, works today, and gives you consistent structured output you can ask
+    a user to paste. Costs: you cannot see anything proactively. Cheap to change later — adding a transport behind the
+    same logger interface is additive.
+  - [1mPOST to a collect endpoint we define[0m — real remote visibility. Costs: an endpoint that doesn't exist yet
+    (server-side work outside this repo), a batching + retry + failure story, and the payload becomes a contract between
+    the two sides. Expensive to change later.
+  - [1mThird-party service (Sentry and similar)[0m — remote visibility without building the receiving end, plus grouping and
+    stack traces for free. Costs: a dependency and an external account in a repo that currently has zero dependencies,
+    and log contents leave your infrastructure — which matters given the credential surface I flagged.
+
+  [1mMy recommendation: console only, structured, with the transport left as a seam.[0m The logger interface is the thing
+  worth designing carefully now; the destination is genuinely additive afterward. Picking a transport before we know
+  what the production issues look like means building batching and retry for log lines nobody has read yet. If you
+  already have a collector or a Sentry account, though, that changes the calculus and I'd wire to it directly.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mWhere should browser logs end up in production?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mConsole, transport seam (Recommended)[39m
+     [38;5;246mStructured console output now; a documented seam so a remote sink drops in later without changing call sites.[39m
+  [38;5;246m2.[39m POST to our own endpoint
+     [38;5;246mReal remote visibility. Requires an endpoint that doesn't exist yet, plus batching and retry.[39m
+  [38;5;246m3.[39m Third-party service
+     [38;5;246mSentry or similar. Remote visibility without building a receiver, but adds a dependency and sends log data [39m
+     [38;5;246moff-site.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

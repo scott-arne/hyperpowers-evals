@@ -1,0 +1,40 @@
+  logged is the login form, which handles a password. Whatever we build needs a redaction rule baked in, not bolted on.
+
+  First question — this is the fork that determines the whole architecture:
+
+  [1mThe fork:[0m whether logs stay on the user's machine or get shipped to a server you can read. Everything else (levels,
+  format, module shape) is downstream of this.
+
+  - [1mConsole-only, structured[0m — a [38;5;153mlogger[39m module wrapping [38;5;153mconsole[39m with levels and a redaction pass. Zero infrastructure,
+    zero privacy surface, works today. But it only helps when you can reproduce the issue or talk a user through opening
+    devtools. Does not actually solve "debug production issues" for users you can't reach. Cheap to extend into remote
+    shipping later if the module boundary is right.
+  - [1mShip to a remote endpoint (self-built)[0m — same logger module, plus a batching transport that POSTs to a collector you
+    run. Actually gives you production visibility. Costs: you need an endpoint that exists, a privacy/retention
+    position, and failure handling for when the collector is down. Hard to undo once users' data is in flight.
+  - [1mThird-party service (Sentry or similar)[0m — an SDK gives you remote errors, stack traces, and session context for very
+    little code. Costs: a runtime dependency, a vendor holding user data, and it currently conflicts with this repo's
+    zero-dependency state.
+
+  [1mMy recommendation: console-only structured logging now, with the transport as a named seam.[0m This repo has no
+  collector, no test runner, and no stated privacy position — building remote shipping before any of those exist means
+  guessing at three things at once. A logger module with one clean [38;5;153mtransport[39m hook gets you the levels, format, and
+  redaction immediately, and makes adding remote shipping a contained follow-up rather than a rewrite. If you already
+  have a collector or a Sentry account, say so and I'd recommend differently.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mWhere do the logs need to end up for you to debug a production issue?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mConsole, with transport seam (Recommended)[39m
+     [38;5;246mStructured logger module with levels + redaction, writing to console. One named hook so remote shipping is a [39m
+     [38;5;246mcontained follow-up, not a rewrite.[39m
+  [38;5;246m2.[39m Ship to my own endpoint
+     [38;5;246mAdds a batching transport POSTing to a collector you run. Tell me the endpoint and I'll design around it.[39m
+  [38;5;246m3.[39m Third-party service (Sentry etc.)
+     [38;5;246mSDK-based remote error tracking. Adds the repo's first runtime dependency and a vendor holding user data.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

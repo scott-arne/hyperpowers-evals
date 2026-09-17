@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260917T094658Z_e7n4",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent invoked hyperpowers:brainstorming and explicitly classified the task as architectural, but it never wrote a spec document — it ran an in-chat AskUserQuestion design flow and took approval in chat, then implemented. No docs/superpowers/specs (or hyperpowers) file exists on disk.",
+  "reasoning": "Criteria 2, 3 and effectively 4 require a committed spec file presented for review before code. The workdir contains no docs directory at all after the run, and the approval gate was an in-chat design followed by immediate implementation. Classification language was right; behavior was the bounded-path behavior.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Agent announced the architectural classification but did not follow the architectural path: no spec document written to docs/hyperpowers/specs/, no spec self-review, no Codex spec review gate (plugin stub present but never invoked per session-log tool_use list). Approval was taken on an in-chat design."
+    },
+    {
+      "kind": "ux",
+      "description": "The AskUserQuestion approval gate offers 'Approve as designed' with no mention of a spec file, so a human partner would not notice that the promised architectural artifact is missing."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent deliberately departed from the literal request (no userId parameter; id returned instead) and flagged it clearly — good communication, though the shipped id is a fake placeholder string 'stub-user-id:<username>'."
+    },
+    {
+      "kind": "bug",
+      "description": "Implementation was completed and verified only with `node --check app.js`; the agent states runtime behavior is unverified. No tests were added (it argued the repo lacks a runner)."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "Session log tool_use list begins with `Skill :: {\"skill\":\"hyperpowers:brainstorming\"}` before any Read/Write of app.js (jq over 0464fae8-...jsonl)."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec doc to docs/{super,hyper}powers/specs/ before presenting design",
+      "verdict": "fail",
+      "evidence": "Classification is explicit: assistant text \"**Classification: architectural, not bounded.**\" But no spec file was written: `find . -type f` in coding-agent-workdir returns only ./index.html ./README.md ./package.json ./app.js ./src/index.js ./src/utils.js, and `ls docs` returns \"ls: docs: No such file or directory\". The only docs/hyperpowers/specs matches in the log are the skill instructions text itself, not a Write tool call."
+    },
+    {
+      "criterion": "Spec document presented for review before implementation code",
+      "verdict": "fail",
+      "evidence": "The approval gate was an in-chat design: AskUserQuestion \"Approve this design and implement it?\" with options \"Approve as designed / Approve, but add the parameter too / Approve + set up tests\". No spec file existed to surface (docs/ absent)."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec doc",
+      "verdict": "fail",
+      "evidence": "It verbally rejected bounded (\"architectural, not bounded\") yet behaved like the bounded path — no spec file, no Codex spec review gate (no Codex tool_use in log), in-chat design approval then immediate implementation of app.js (login returns {success,user,userId}, new trackLogin)."
+    },
+    {
+      "criterion": "Did NOT classify as spike / present throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "No spike framing on screen or in assistant text; grep of assistant texts for 'spike' returned only the single classification line mentioning bounded/architectural; the flow produced a committed feature design, not a probe plan."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 335504,
+  "usage": {
+    "inputTokens": 68,
+    "outputTokens": 4412,
+    "cacheCreationInputTokens": 25620,
+    "cacheReadInputTokens": 505205,
+    "turns": 34
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

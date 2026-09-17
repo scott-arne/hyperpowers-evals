@@ -1,0 +1,40 @@
+    [38;5;153mfalse[39m. If a later [38;5;153msave()[39m hits a quota error, the store switches to the memory adapter for the rest of the page,
+    flips [38;5;153misPersistent()[39m to [38;5;153mfalse[39m, and still resolves — the caller's value stays readable, it just won't survive a
+    reload. A document that fails to parse is treated as an empty namespace with a [38;5;153mconsole.warn[39m, rather than propagating
+    a [38;5;153mSyntaxError[39m into a caller that only wanted a theme.
+  - [1mProgrammer errors do throw.[0m [38;5;153mset()[39m with [38;5;153mundefined[39m, a function, or a non-string name rejects. Those are bugs in
+    calling code, and swallowing them would mean a value silently never persists with nothing to debug. Squashing
+    environment noise is a kindness; squashing your own mistakes is a trap.
+
+  Version handling: a document with [38;5;153mv[39m lower than current runs through migrations; a document with an unrecognized or
+  newer [38;5;153mv[39m is treated as empty, and the next write overwrites it. That's the honest behavior for a store with one version
+  — I'd rather state the rule now than leave it to whatever the code happens to do.
+
+  For tests, [38;5;153mnode:test[39m and [38;5;153mnode:assert[39m are built into Node, which fits this repo's zero-dependency [38;5;153mpackage.json[39m — no
+  install step, just [38;5;153m"test": "node --test"[39m. The adapter seam pays off here: the store's real logic (namespacing,
+  fallbacks, read-modify-write, version rules) tests against the memory adapter with no browser at all, and the
+  localStorage adapter tests against a small fake — including a deliberately throwing one to cover the private-mode and
+  quota paths.
+
+  Last thing, and then I'll write the spec. This project has no linter, formatter, or test runner configured at all.
+  Setting these up is cheapest now, before there's code to retrofit:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Tooling [39m[49m
+
+[2m│[0m [1m[38;5;231mWhich tooling should I set up as part of this work? (No linter, formatter, or test runner exists in the repo today.)[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mUnit tests only (Recommended)[39m
+     [38;5;246mnode:test runner plus a "test" script. Zero dependencies, matches the repo's current no-dependency package.json.[39m
+  [38;5;246m2.[39m Unit tests + lint/format
+     [38;5;246mAdds ESLint and Prettier as devDependencies. Better consistency, but introduces the repo's first dependencies and a
+[39m     [38;5;246mnode_modules.[39m
+  [38;5;246m3.[39m Unit tests + lint/format + e2e
+     [38;5;246mAdds Playwright on top, to drive a real browser and prove persistence survives an actual reload. Heaviest setup for
+[39m     [38;5;246ma project this size.[39m
+  [38;5;246m4.[39m No tooling setup
+     [38;5;246mWrite the module only; no test infrastructure.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

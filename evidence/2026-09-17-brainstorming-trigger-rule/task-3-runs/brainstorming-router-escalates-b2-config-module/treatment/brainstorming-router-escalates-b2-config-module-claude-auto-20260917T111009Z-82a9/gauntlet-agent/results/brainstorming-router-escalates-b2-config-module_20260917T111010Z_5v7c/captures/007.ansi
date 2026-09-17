@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Answer noted: hostname detection.
+
+  [1mSecond question — how should [38;5;153mapp.js[39m get at the settings?[0m
+
+  The fork: whether the settings module is a second plain [38;5;153m<script>[39m that sets a global, or a real ES module that [38;5;153mapp.js[39m
+  imports. This matters beyond style because it changes how you open the page. Today [38;5;153mindex.html[39m works by double-clicking
+  it ([38;5;153mfile://[39m); ES modules are blocked by CORS over [38;5;153mfile://[39m, so that path would require serving the directory over a
+  local HTTP server from then on.
+
+  - [1mPlain script + global[0m — buys an exact match with the current pattern: add [38;5;153m<script src="settings.js">[39m before [38;5;153mapp.js[39m,
+    and [38;5;153mapp.js[39m reads a global. Nothing about how you open or run the page changes. Costs a global variable and
+    load-order coupling (settings must come first or you get a runtime error). Cheap to convert to ESM later — it's one
+    import line and two script tags.
+  - [1mES modules[0m — buys a genuine module boundary: an explicit [38;5;153mimport[39m, no globals, no load-order trap, and the direction
+    the rest of the ecosystem assumes. Costs the [38;5;153mfile://[39m workflow — you'd need [38;5;153mpython3 -m http.server[39m or similar to open
+    the app from then on — and [38;5;153mindex.html[39m changes to [38;5;153mtype="module"[39m.
+
+  I recommend [1mplain script + global[0m. The repo's existing convention is plain scripts with no tooling, and the load-order
+  risk is contained at two adjacent lines in one HTML file. Trading away the double-click workflow to remove one global
+  isn't a good deal at this size — and since both options expose the same settings object shape, switching later
+  touches three lines.
+
+  I'm also assuming the Node side ([38;5;153msrc/index.js[39m, [38;5;153msrc/utils.js[39m) stays untouched — it's CommonJS, disconnected from the
+  webapp, and has no API endpoint of its own. Say so if you'd rather the settings module serve both.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should app.js consume the new settings module?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mPlain script + global (Recommended)[39m
+     [38;5;246msettings.js loaded by its own <script> tag before app.js, exposing a global settings object. Matches the current [39m
+     [38;5;246mno-tooling pattern; file:// double-click still works.[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246msettings.js uses export, app.js uses import, index.html switches to type="module". Cleaner boundary, no globals, [39m
+     [38;5;246mbut the app must then be served over HTTP instead of opened as a file.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

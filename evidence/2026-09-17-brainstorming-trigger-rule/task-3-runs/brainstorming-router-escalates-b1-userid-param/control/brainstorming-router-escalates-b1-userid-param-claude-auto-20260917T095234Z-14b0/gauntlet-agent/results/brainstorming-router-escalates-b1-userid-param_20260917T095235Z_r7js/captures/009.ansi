@@ -1,0 +1,40 @@
+    default for identity: closing the tab is an implicit logout, and a shared/kiosk machine doesn't leak the last user
+    to the next one. The cost is that reopening the app always requires logging in again.
+  - [1m[38;5;153mlocalStorage[0m — survives browser restarts and is shared across tabs on the origin. This is what people usually mean
+    by "stays logged in." The cost is real: the id outlives logout unless you explicitly clear it, it's readable by any
+    script on the origin, and a second user on the same browser inherits the first one's id until they log in.
+  - [1mCookie[0m — the only option the browser sends to your backend automatically, which matters if the server wants to
+    attribute requests without the client passing the id. If your backend sets it [38;5;153mHttpOnly[39m, JavaScript can't read it —
+    which means it can't serve as the shared value your other forms read, so you'd likely need both.
+  - [1mIn-memory only[0m — a module-level variable, gone on reload. You said persist, so I'm listing it only for contrast.
+
+  [1mMy recommendation: [38;5;153msessionStorage[39m.[0m It satisfies "persists and works across the app" for the case that actually matters
+  — the user moving between forms in a session — without the logout-leakage and cross-user bleed that [38;5;153mlocalStorage[39m
+  brings. If you later decide you want "remember me across restarts," swapping the backing store is a one-line change
+  [3minside[0m the module, precisely because the module hides it. Going the other direction means auditing every reader for
+  stale-id assumptions.
+
+  One flag regardless of choice: a user id in web storage is readable by any script on the origin. It's a low-value
+  identifier on its own, so this is a note rather than an objection — but don't let a session [3mtoken[0m follow the same path
+  later without a separate conversation.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ lifetime [39m[49m
+
+[1m[38;5;231mHow long should the userId persist?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mPer tab / sessionStorage (Recommended)[39m
+     [38;5;246mSurvives reloads and navigation, cleared when the tab closes. No cross-user bleed on shared machines; easy to widen
+[39m     [38;5;246mlater.[39m
+  [38;5;246m2.[39m Across restarts / localStorage
+     [38;5;246mClassic "stay logged in". Shared across tabs, survives browser restart. Requires explicit clearing on logout and [39m
+     [38;5;246mtolerates stale ids.[39m
+  [38;5;246m3.[39m Cookie
+     [38;5;246mAutomatically sent to the backend with each request. Needed if the server attributes requests itself; HttpOnly [39m
+     [38;5;246mwould make it unreadable by the app.[39m
+  [38;5;246m4.[39m In-memory only
+     [38;5;246mA module variable, cleared on every reload. Simplest and safest, but does not meet the persistence you described.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

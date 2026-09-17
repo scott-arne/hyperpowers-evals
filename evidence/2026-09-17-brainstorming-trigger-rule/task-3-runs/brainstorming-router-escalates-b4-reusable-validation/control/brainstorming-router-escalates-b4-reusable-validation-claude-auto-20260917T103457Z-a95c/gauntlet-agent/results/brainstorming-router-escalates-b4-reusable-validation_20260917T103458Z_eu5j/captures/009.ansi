@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Third question — module format. This one's also hard to reverse, since it determines how every form file loads the
+  validator.
+
+  [1mThe fork:[0m the repo is split today. [38;5;153mapp.js[39m loads as a classic [38;5;153m<script>[39m (no modules, no build), while [38;5;153msrc/*.js[39m uses
+  CommonJS [38;5;153mrequire[39m. A shared validator has to pick one, and that choice propagates to every form page and to how tests
+  import it.
+
+  - [1mES modules[0m — [38;5;153mexport[39m/[38;5;153mimport[39m, loaded via [38;5;153m<script type="module">[39m in the browser and natively importable in Node (needs
+    [38;5;153m"type": "module"[39m in [38;5;153mpackage.json[39m or [38;5;153m.mjs[39m). Buys one format for both browser and tests, no build step, and it's where
+    the platform has landed. Costs: [38;5;153mindex.html[39m needs [38;5;153mtype="module"[39m, and [38;5;153msrc/index.js[39m's [38;5;153mrequire[39m would either stay as-is
+    (mixed repo) or get converted.
+  - [1mCommonJS + global fallback[0m — module exports for tests, plus a [38;5;153mwindow.FormValidation[39m assignment for the browser. Buys
+    consistency with the existing [38;5;153msrc/[39m files and no HTML change. Costs: the dual-export dance is boilerplate in every
+    file, and it's the format you'd migrate away from later anyway.
+  - [1mAdd a bundler[0m — esbuild/Vite, write whatever, ship a bundle. Buys real dependency management if this grows. Costs: a
+    build step, a config, and a [38;5;153mnode_modules[39m for a project that currently has zero dependencies. Clearly premature
+    here.
+
+  [1mMy recommendation: ES modules.[0m No build, works natively in both places, and the only migration cost is one
+  [38;5;153mtype="module"[39m attribute. I'd leave [38;5;153msrc/index.js[39m's CommonJS alone — it's unrelated to this work, and converting it is
+  the kind of drive-by refactor that doesn't serve the goal.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Modules [39m[49m
+
+[1m[38;5;231mWhat module format should the shared validation use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mimport/export, <script type="module"> in HTML, natively importable by Node tests. No build step. Leaves src/ [39m
+     [38;5;246mCommonJS untouched.[39m
+  [38;5;246m2.[39m CommonJS + window global
+     [38;5;246mMatches existing src/ files, no HTML change, but every file carries dual-export boilerplate.[39m
+  [38;5;246m3.[39m Add a bundler (esbuild/Vite)
+     [38;5;246mFull build pipeline and real dependency management, at the cost of config and node_modules in a zero-dependency [39m
+     [38;5;246mrepo.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  No schema version field — YAGNI. Corrupted or unrecognized data is handled by the defaults fallback below, which
+  covers the same ground for a two-key preference set.
+
+  [1m3. Error handling[0m
+
+  This is most of the actual work, and the reason the module is worth having:
+
+  - [1m[38;5;153mlocalStorage[39m throws on access[0m (private mode, disabled cookies, sandboxed iframe) — caught at init; falls back to an
+    in-memory object so the page still works for the current session, just without persistence.
+  - [1mCorrupted JSON[0m in the key — [38;5;153mJSON.parse[39m failure resets to defaults instead of throwing.
+  - [1mQuota exceeded on write[0m — caught; [38;5;153mset[39m returns [38;5;153mfalse[39m and the value stays in memory. A failed preference write must
+    never break the login flow.
+
+  [1m4. Consumer — [38;5;153mapp.js[39m + [38;5;153mindex.html[0m
+
+  [38;5;153mindex.html[39m gets a "Remember me" checkbox and a [38;5;153m<script src="preferences.js">[39m before [38;5;153mapp.js[39m. On load, if
+  [38;5;153mrememberUsername[39m is set, prefill [38;5;153m#username[39m and check the box. On submit, save the username if checked, remove it if
+  not. [1mThe password is never touched by this code.[0m
+
+  [1m5. Testing[0m
+
+  [38;5;153mtest/preferences.test.js[39m, run by [38;5;153mnode --test[39m via a new [38;5;153mnpm test[39m script. A Map-backed [38;5;153mlocalStorage[39m stub on [38;5;153mglobalThis[39m
+  that can be told to throw, covering: defaults when empty, set/get round-trip, remove, corrupted-JSON fallback,
+  quota-error containment, and storage-unavailable fallback.
+
+  [1mHonest gap:[0m the DOM wiring in [38;5;153mapp.js[39m gets no automated test — that's the cost of skipping jsdom. I'll verify it by
+  hand in a browser and tell you what I saw.
+
+  [1mFiles:[0m new [38;5;153mpreferences.js[39m, new [38;5;153mtest/preferences.test.js[39m; modified [38;5;153mapp.js[39m, [38;5;153mindex.html[39m, [38;5;153mpackage.json[39m. Nothing in [38;5;153msrc/[39m is
+  touched.
+
+  Does this look right — and do you agree on dual export over ES modules? Once you're happy I'll write it up as a spec
+  in [38;5;153mdocs/hyperpowers/specs/[39m (uncommitted) for a final read before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 2m 12s · done 3:14 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

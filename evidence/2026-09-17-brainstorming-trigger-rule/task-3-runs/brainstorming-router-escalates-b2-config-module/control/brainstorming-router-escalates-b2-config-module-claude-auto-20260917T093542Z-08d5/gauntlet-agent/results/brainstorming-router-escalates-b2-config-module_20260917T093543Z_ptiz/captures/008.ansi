@@ -1,0 +1,40 @@
+
+  My recommendation is the browser global script. It's the smallest change that matches existing code, and [38;5;153mapp.js[39m and
+  [38;5;153msrc/[39m share nothing today, so designing for reuse between them would be inventing a requirement.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What module shape should the settings module use? → Browser global (Recommended)[39m
+
+[38;5;231m⏺[39m Noted.
+
+  [1mThird question: what does settings actually store — the full login URL, or a base URL the app builds paths from?[0m
+
+  Right now [38;5;153mAPI_ENDPOINT[39m is the complete URL [38;5;153mhttps://api.example.com/login[39m. That works while there's exactly one call,
+  but [38;5;153mlogin()[39m is a stub and any second endpoint forces a decision then instead of now.
+
+  - [1mBase URL per environment[0m — settings holds [38;5;153mapiBaseUrl[39m, and callers compose [38;5;153m${apiBaseUrl}/login[39m. Buys: a second
+    endpoint costs nothing later; environment switching stays one value per environment. Costs: one small indirection at
+    each call site, and a trailing-slash convention to keep straight.
+  - [1mFull endpoint URLs per environment[0m — settings holds a named map like [38;5;153mendpoints.login[39m. Buys: call sites read
+    literally, no string building; endpoints can diverge across hosts. Costs: every new endpoint must be added for every
+    environment, so the table grows N×M.
+
+  I recommend the base URL. It's the smaller table, it's what "easier to change environments" actually asks for — one
+  value to point at a different backend — and a named-endpoints layer can be added on top later without changing how
+  environments are selected.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Config shape [39m[49m
+
+[1m[38;5;231mWhat should settings store per environment?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBase URL (Recommended)[39m
+     [38;5;246msettings holds apiBaseUrl; callers compose `${apiBaseUrl}/login`. One value per environment, scales to new [39m
+     [38;5;246mendpoints for free.[39m
+  [38;5;246m2.[39m Full endpoint URLs
+     [38;5;246msettings holds a named map like endpoints.login. Call sites read literally, but the table grows with every endpoint
+[39m     [38;5;246m× environment.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

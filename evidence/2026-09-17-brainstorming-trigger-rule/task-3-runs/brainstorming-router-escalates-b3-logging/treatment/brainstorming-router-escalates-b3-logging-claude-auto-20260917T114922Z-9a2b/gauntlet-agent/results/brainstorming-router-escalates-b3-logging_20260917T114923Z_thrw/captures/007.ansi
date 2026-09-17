@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which part of the app should the logging cover? → Both, shared module[39m
+
+[38;5;231m⏺[39m Both, shared module — so the logger has to work in a browser and in Node without branching at its call sites.
+
+  Next question: how browser logs actually reach you. This is the decision that's expensive to reverse.
+
+  [1mThe fork:[0m whether logs leave the user's machine, and if so, to what.
+
+  - [1mConsole only, with levels + a level switch[0m — the logger formats and filters; output stays in devtools. Buys you
+    consistency and the ability to turn debug on in production without a redeploy (via a [38;5;153mlocalStorage[39m or query-param
+    flag). Costs: you only see logs when you can ask the user to open devtools and copy them. No new endpoint, no
+    privacy surface, nothing to undo.
+  - [1mConsole + in-memory ring buffer[0m — same, plus the last N entries retained and dumped on demand ([38;5;153mwindow.__logs()[39m, or
+    attached to an error report). Buys you the history leading up to a failure, which is usually the thing you actually
+    need. Still no network, still nothing to undo. Small extra cost: buffer size and memory bound.
+  - [1mConsole + POST to a collector[0m — logs ship to an endpoint automatically. Buys you real remote debugging. Costs the
+    most: you need an endpoint that doesn't exist yet, a batching/retry policy, a failure mode when the collector is
+    down, and a privacy review — this app handles passwords. This is the one that's hard to undo, because the endpoint
+    becomes an interface and the shipped data becomes a retention question.
+
+  [1mMy recommendation: console + ring buffer.[0m It gives you the pre-failure history that makes production bugs debuggable,
+  needs no backend this repo doesn't have, and the buffer is exactly the seam a collector would plug into later if you
+  decide you want one.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Transport [39m[49m
+
+[1m[38;5;231mWhere should browser logs go?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mConsole + ring buffer (Recommended)[39m
+     [38;5;246mFormatted console output plus last N entries retained in memory, dumpable on demand. No backend needed.[39m
+  [38;5;246m2.[39m Console only
+     [38;5;246mLevels and runtime level switching, output stays in devtools. Simplest.[39m
+  [38;5;246m3.[39m Console + POST to collector
+     [38;5;246mShip logs to a remote endpoint. Needs an endpoint, batching/retry, and a privacy review.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

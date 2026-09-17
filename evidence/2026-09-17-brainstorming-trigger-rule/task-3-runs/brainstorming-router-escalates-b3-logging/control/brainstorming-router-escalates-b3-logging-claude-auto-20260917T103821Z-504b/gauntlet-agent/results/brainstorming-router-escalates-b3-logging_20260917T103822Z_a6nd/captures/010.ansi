@@ -1,0 +1,40 @@
+
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What should the logger capture? → Explicit + global errors (Recommended)[39m
+
+[38;5;231m⏺[39m Last question before I lay out the design. Since logs will now leave the user's browser, redaction stops being hygiene
+  and becomes the thing that decides what lands in your log store forever.
+
+  The fork is fail-closed vs. fail-open. [38;5;153mlogin(username, password)[39m already logs on a code path that holds a credential,
+  so this isn't hypothetical.
+
+  - [1mAllowlist at the remote boundary[0m — console keeps everything (it's the user's own machine and already visible to
+    them), but only explicitly-declared fields serialize into anything shipped remotely. Fails closed: a field nobody
+    thought about is dropped, not transmitted. Costs friction — every new remote-visible field is a deliberate addition.
+  - [1mDenylist scrubbing[0m — recursively redact keys matching [38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mauth[39m, and friends. Low friction,
+    catches the obvious accidents. Fails open: [38;5;153mpwd[39m, [38;5;153mcredentials.pass[39m, or a password interpolated into a message string
+    sails straight through.
+  - [1mDiscipline only[0m — a documented rule plus code review, no mechanism. Zero friction, zero enforcement.
+
+  My recommendation: [1mallowlist at the remote boundary[0m. Redaction is the one part of this design that's genuinely hard to
+  undo — once a secret is in a log store you have a disclosure to handle, not a bug to fix — and the asymmetry
+  justifies the friction. I'd pair it with denylist scrubbing on the console path too, as a cheap backstop.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mHow should sensitive data be kept out of logs?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAllowlist for remote (Recommended)[39m
+     [38;5;246mOnly declared fields ship off-device; console keeps full detail with denylist scrubbing as a backstop. Fails closed
+[39m     [38;5;246m— unknown fields are dropped.[39m
+  [38;5;246m2.[39m Denylist scrubbing
+     [38;5;246mScrub keys matching password/token/secret/auth everywhere. Low friction, but unexpected key names and interpolated
+[39m     [38;5;246mstrings get through.[39m
+  [38;5;246m3.[39m Discipline only
+     [38;5;246mDocumented rule plus code review, no enforcement in code. Lowest friction, no safety net.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

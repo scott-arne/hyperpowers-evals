@@ -1,0 +1,40 @@
+  src/forms/validation.js    pure core + rule library, no DOM
+  src/forms/bind-form.js     DOM binder, imports the core
+  app.js                     login() + schema + one bindForm() call
+  index.html                 <script type="module" src="app.js">
+  test/validation.test.mjs   node:test
+  package.json               + "scripts": { "test": "node --test" }
+
+  The nested [38;5;153mpackage.json[39m makes Node treat [38;5;153msrc/forms/*.js[39m as ES modules while [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m stay
+  CommonJS, untouched. Browsers ignore it entirely. Tests use [38;5;153m.mjs[39m so they're unambiguous to Node and never served to a
+  browser.
+
+  Dependency direction is one-way: [38;5;153mvalidation.js[39m knows nothing about the DOM or about [38;5;153mbind-form.js[39m; [38;5;153mbind-form.js[39m imports
+  the core; [38;5;153mapp.js[39m imports both. That's what keeps the core testable in plain Node.
+
+  [1mDesign — Section 2: The validation core[0m
+
+  [33mvalidate[39m(values, schema) → { [36mvalid[39m: boolean, [36merrors[39m: { [field]: message } }
+
+  A rule is [38;5;153m(value) => string | null[39m — message on failure, [38;5;153mnull[39m on pass. Rules run in array order and [1mthe first failure
+[0m  [1mper field wins[0m, so [38;5;153m[required(), minLength(8)][39m on an empty field says "required", not "too short".
+
+  Built-in factories, each taking an optional custom message: [38;5;153mrequired()[39m, [38;5;153mminLength(n)[39m, [38;5;153mmaxLength(n)[39m, [38;5;153memail()[39m,
+  [38;5;153mpattern(regex, msg)[39m, [38;5;153mrange(min, max)[39m.
+
+  One invariant worth deciding out loud: [1mevery rule except [38;5;153mrequired()[39m passes on an empty value.[0m That's what makes an
+  optional field work — [38;5;153mage: [range(13, 120)][39m shouldn't complain when left blank. A field is mandatory only if
+  [38;5;153mrequired()[39m is in its list.
+
+  Two smaller calls: [38;5;153memail()[39m uses a deliberately permissive pattern (there's a well-known rabbit hole in strict RFC
+  email regexes, and the server is the real authority); [38;5;153mrange()[39m coerces the string value with [38;5;153mNumber[39m and reports a "must
+  be a number" failure on [38;5;153mNaN[39m rather than silently passing.
+
+  Does this section look right before I go on to the binder and testing?
+
+[38;5;246m✻[39m [38;5;246mCooked for 3m 36s · done 3:27 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m [1mDesign — Section 1: architecture and module boundaries[0m
+
+  Three new files under [38;5;153msrc/validation/[39m, layered so each has one job:
+
+  [1m[38;5;153mrules.js[0m — pure, DOM-free rule factories. Each returns a validator [38;5;153m(value) => string | null[39m (the message on failure,
+  [38;5;153mnull[39m on pass):
+  required(message?)        minLength(n, message?)
+  email(message?)           maxLength(n, message?)
+                            range(min, max, message?)
+  Each takes an optional message override; otherwise a sensible default ("This field is required", "Enter a valid email
+  address"). Depends on nothing.
+
+  [1m[38;5;153mvalidate.js[0m — [38;5;153mvalidate(values, schema) → { valid, errors }[39m. A schema is a plain object mapping field name to an array
+  of rules: [38;5;153m{ username: [required()], email: [required(), email()] }[39m. It runs each field's rules in order and keeps the
+  [1mfirst[0m failure per field, so [38;5;153merrors[39m is [38;5;153m{ fieldName: message }[39m for failing fields only and [38;5;153mvalid[39m is
+  [38;5;153mObject.keys(errors).length === 0[39m. Fields present in [38;5;153mvalues[39m but absent from the schema are ignored; a schema field
+  missing from [38;5;153mvalues[39m is validated as [38;5;153m""[39m. Depends only on [38;5;153mrules.js[39m conventions — not on [38;5;153mrules.js[39m itself, so custom
+  one-off validators are just functions.
+
+  [1m[38;5;153mform.js[0m — [38;5;153mattachValidation(formEl, schema, onValid)[39m. The only file that touches the DOM. On submit: prevent default,
+  collect values from [38;5;153mformEl.elements[39m by name, call [38;5;153mvalidate[39m, then either render errors or call [38;5;153monValid(values)[39m.
+
+  [38;5;153mapp.js[39m becomes the login form's wiring only: import the pieces, declare the login schema, and pass a callback that
+  calls [38;5;153mlogin()[39m. [38;5;153mvalidateForm()[39m goes away. [38;5;153mindex.html[39m gets [38;5;153mtype="module"[39m on the script tag and [38;5;153mname[39m attributes on the
+  two inputs. [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are untouched — they're unrelated CommonJS and stay that way.
+
+  [1mData flow:[0m submit event → [38;5;153mform.elements[39m → [38;5;153mvalues[39m object → [38;5;153mvalidate(values, schema)[39m → [38;5;153m{valid, errors}[39m → either DOM
+  error rendering or [38;5;153monValid(values)[39m → [38;5;153mlogin()[39m.
+
+  The key property: [38;5;153mrules.js[39m and [38;5;153mvalidate.js[39m never import a DOM API, so they're testable in plain Node and reusable
+  outside a browser form if it ever comes up. [38;5;153mform.js[39m is the only thing that would need a DOM to test.
+
+  Does this structure look right before I go on to the DOM contract and error handling?
+
+[38;5;246m✻[39m [38;5;246mCogitated for 2m 44s · done 3:12 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

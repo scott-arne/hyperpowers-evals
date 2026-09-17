@@ -1,0 +1,40 @@
+  a preference is shaped by it.
+
+  [1mA. Declared-schema store[0m [3m(recommended)[0m — A [38;5;153mprefs.js[39m script declares every preference in one table: key, default value,
+  and what counts as a valid value. [38;5;153mPrefs.get("theme")[39m returns the stored value if it passes validation and the
+  declared default otherwise; [38;5;153mPrefs.set("theme", v)[39m validates before writing. All preferences live in a single JSON
+  object under one storage key. Buys you: one place that answers "what settings exist and what are their defaults," and
+  corrupt or hand-edited storage degrades to defaults instead of propagating junk into the UI. Costs: ~40 lines instead
+  of ~10, and adding a preference means a schema entry. Rules out nothing later.
+
+  [1mB. Thin key-value wrapper[0m — [38;5;153mPrefs.get(key, fallback)[39m / [38;5;153mPrefs.set(key, value)[39m straight over [38;5;153mlocalStorage[39m, one storage
+  key per preference, no schema. Buys you the smallest possible diff. Costs: the default for each preference gets
+  restated at every call site, so they drift the moment two places read the same setting; nothing validates what comes
+  back, so a stale value from an older build reaches the UI as-is. Cheap now, and the cleanup later is a change to every
+  caller — this is the option that's [3mnot[0m cheap to change.
+
+  [1mC. Observable store[0m — Schema store plus [38;5;153mPrefs.subscribe(key, cb)[39m, so consumers re-render on change, with cross-tab
+  sync via the [38;5;153mstorage[39m event. Buys you reactivity and multi-tab consistency. Costs: a subscription lifecycle to get
+  right, for one preference and one consumer. This is A plus machinery you don't have a second consumer for yet — and if
+  you ever do, A extends into C without the callers changing.
+
+  I recommend [1mA[0m. B's savings are about thirty lines and it puts the drift in the one place that's awkward to fix; C is
+  real but premature, and A is the honest subset of it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA — Declared-schema store (Recommended)[39m
+     [38;5;246mOne table declaring key/default/valid-values; get() falls back to the default on missing, invalid, or corrupt data.
+[39m     [38;5;246mSingle JSON object in localStorage.[39m
+  [38;5;246m2.[39m B — Thin key-value wrapper
+     [38;5;246mget(key, fallback) / set(key, value) with no schema. Smallest diff; defaults restated per call site.[39m
+  [38;5;246m3.[39m C — Observable store
+     [38;5;246mSchema store plus subscriptions and cross-tab sync via the storage event. Reactive, but more machinery than one [39m
+     [38;5;246mconsumer needs.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  One [38;5;153mlocalStorage[39m key, [38;5;153mapp.identity.v1[39m, holding JSON:
+
+  { [36muserId[39m: [31m"stub:7f3a9c2b"[39m, [36musername[39m: [31m"alice"[39m, [36mloggedInAt[39m: [31m"2026-09-17T11:40:52.000Z"[39m, [36msource[39m: [31m"stub"[39m }
+
+  [38;5;153msource[39m is [38;5;153m"stub"[39m today and [38;5;153m"server"[39m once the backend lands, so you can tell real IDs from invented ones in stored data
+  and in analytics — including for records written before the cutover. The [38;5;153mv1[39m in the key gives you a clean break if the
+  shape ever changes.
+
+  [1m3. The invented user ID[0m
+
+  With no backend, [38;5;153mlogin[39m must mint the ID. It derives it deterministically from the lowercased username via a small
+  hash, prefixed [38;5;153mstub:[39m — so the same person gets the same ID across logins (which is what makes it usable for
+  attribution), and no one can mistake it for a server-issued value in a log or a database. When the real endpoint
+  exists, [38;5;153mauth.js[39m returns the server's [38;5;153muserId[39m with [38;5;153msource: "server"[39m and nothing else in the codebase changes.
+
+  [3mAssumption: the future backend will return a stable per-user string ID; validate when the endpoint is specified.[0m
+
+  [1m4. Data flow[0m
+
+  Login: submit → [38;5;153mvalidateForm[39m → [38;5;153mauth.login[39m → on success, [38;5;153midentity.setIdentity(record)[39m → one attribution log line
+  carrying [38;5;153muserId[39m and [38;5;153musername[39m. Any other form imports [38;5;153midentity.js[39m and calls [38;5;153mgetUserId()[39m; it never touches [38;5;153mlocalStorage[39m
+  directly.
+
+  Logout: button → [38;5;153midentity.clearIdentity()[39m → storage key removed. This is the shared-machine escape hatch I flagged
+  earlier.
+
+  [1m5. Error handling[0m
+
+  [38;5;153mlocalStorage[39m throws in Safari private mode, when quota is exhausted, and when site data is disabled. Since this is
+  attribution-only, [1ma storage failure must never break logging in[0m: reads and writes are wrapped, a failure falls back to
+  an in-memory store for the page's lifetime, and it warns once. Corrupt JSON under the key is treated as "no identity"
+  and the key is cleared. A failed login writes nothing and leaves any existing identity untouched.
+
+  [1m6. Testing[0m
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

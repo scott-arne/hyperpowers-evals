@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Scope set: browser app only ([38;5;153mapp.js[39m).
+
+  Next fork, and it's the one that decides the whole shape: [1mwhere the logs end up.[0m In a browser, [38;5;153mconsole.log[39m in
+  production runs on the user's machine and you never see it — so "debug production issues" only works if the records
+  leave the page somehow.
+
+  - [1mConsole only (structured)[0m — levels, timestamps, consistent record shape, stays in devtools. Buys: clean, zero
+    infrastructure, no privacy surface, works today. Costs: you still can't see a stranger's logs; it only helps when
+    you can reproduce it yourself or walk a user through devtools. Cheap to change later — a sink-based logger can gain
+    a remote sink without touching call sites.
+  - [1mLocal ring buffer + export[0m — console plus the last N records kept in [38;5;153mlocalStorage[39m/memory, with a way to dump them
+    (copy-to-clipboard or a [38;5;153mwindow.__logs()[39m hook). Buys: logs survive a reload and a user can hand you the dump from a
+    real failure, with no backend. Costs: a retention/size decision and a redaction pass, since records now persist on
+    disk. Reversible.
+  - [1mRemote log shipping[0m — batched POST of records to a collector. Buys: real production visibility, unattended. Costs:
+    you need an endpoint that exists ([38;5;153mAPI_ENDPOINT[39m is currently a stub, so there's no server here yet), plus consent/PII
+    handling, batching, retry, and failure-when-offline behavior. This is the hard-to-reverse one: it creates an
+    interface and starts sending user data off-device.
+
+  My recommendation: [1mlocal ring buffer + export[0m, built on a small logger core with pluggable sinks. It gives you
+  something genuinely useful for production reports without inventing a backend that doesn't exist, and the sink seam
+  means adding remote shipping later is a new sink, not a rewrite of every call site.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mWhere should log records go?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mRing buffer + export (Recommended)[39m
+     [38;5;246mConsole plus last N records retained locally, with an export hook so users can send you a dump. No backend needed.[39m
+  [38;5;246m2.[39m Console only
+     [38;5;246mStructured levels to devtools, nothing retained or shipped. Smallest change; only helps when you can reproduce it.[39m
+  [38;5;246m3.[39m Ship to a remote collector
+     [38;5;246mBatched POST to a log endpoint. Real production visibility, but needs a real endpoint plus consent/PII handling.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

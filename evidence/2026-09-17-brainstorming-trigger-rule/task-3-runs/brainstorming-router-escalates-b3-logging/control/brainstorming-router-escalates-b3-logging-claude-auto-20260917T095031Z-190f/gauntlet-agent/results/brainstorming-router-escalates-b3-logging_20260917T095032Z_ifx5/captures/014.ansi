@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Should Sentry receive an account identifier for correlation? → Hashed username (Recommended)[39m
+
+[38;5;231m⏺[39m [1mDesign — Section 3: Failure handling and degradation[0m
+
+  [1mFirst, an honest caveat on the hashing choice.[0m A hash of an email is [3mpseudonymous, not anonymous[0m. Since the hashing
+  happens in client-side JavaScript, the salt ships to the browser, so anyone who reads your JS can hash a list of
+  suspected addresses and match them. It defeats casual rainbow-table lookup and means Sentry isn't holding a directly
+  usable identifier — it does not make the data non-personal, and if you're under GDPR you should still treat it as
+  pseudonymized personal data. Implementation notes: [38;5;153mcrypto.subtle.digest[39m needs a secure context, so on plain HTTP or
+  [38;5;153mfile:[39m it's unavailable and the façade simply sets no user context; and it's async, so the digest resolves a tick after
+  [38;5;153msetUser()[39m is called — the very first event of a session may land without it. Both are acceptable; neither is silent.
+
+  [1mThe governing rule: logging must never break the app.[0m A login form that fails because telemetry failed is a worse
+  outcome than no telemetry. Concretely:
+
+  - [1mCDN blocked.[0m Ad blockers block Sentry for a meaningful share of real users. [38;5;153mlogger.js[39m checks for [38;5;153mwindow.Sentry[39m and,
+    if absent, every [38;5;153mlog.*[39m becomes a no-op that does nothing in production and falls back to [38;5;153mconsole.*[39m in development.
+    No exceptions, no broken handlers.
+  - [1mInit throws.[0m Wrapped in [38;5;153mtry/catch[39m; a failure degrades to the same no-op path.
+  - [1mEvery [38;5;153mlog.*[39m call is internally guarded.[0m A throw inside the logger is swallowed rather than propagated to the caller,
+    so an instrumented [38;5;153mtry/catch[39m can't be poisoned by its own instrumentation.
+  - [1mRecursion guard.[0m The global [38;5;153merror[39m handler must not report errors originating inside Sentry itself — otherwise one
+    SDK failure becomes a loop. A re-entrancy flag handles it.
+  - [1mTransport failures[0m are Sentry's problem: it buffers and retries, and drops on overflow. No custom queueing —
+    building one would be reimplementing the thing we're paying for.
+
+  [1mVolume control.[0m [38;5;153mtracesSampleRate: 0[39m — we're not buying performance monitoring, and leaving it at a nonzero default is
+  the usual way these bills surprise people. Errors sample at 100%, which is right at this app's traffic; if volume ever
+  becomes an issue, that's a config change. [38;5;153mmaxBreadcrumbs[39m stays at the default 100, and Sentry's built-in
+  deduplication handles a single error firing repeatedly.
+
+  Does the failure-handling approach look right?
+
+[38;5;246m✻[39m [38;5;246mWorked for 1m 15s · done 3:00 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

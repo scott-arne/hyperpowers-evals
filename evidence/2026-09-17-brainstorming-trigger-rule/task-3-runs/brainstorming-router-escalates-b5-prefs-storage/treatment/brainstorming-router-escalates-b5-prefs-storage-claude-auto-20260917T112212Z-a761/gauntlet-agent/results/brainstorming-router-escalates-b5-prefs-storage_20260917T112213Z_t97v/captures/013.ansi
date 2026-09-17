@@ -1,0 +1,40 @@
+  want one atomic thing to version and migrate.
+
+  [1mB. One localStorage key per preference[0m
+  [38;5;153mwebapp.pref.rememberedUsername[39m and so on, one key each. Writes touch only their own key, so concurrent tabs writing
+  different preferences never conflict, and the [38;5;153mstorage[39m event tells you precisely which key changed.
+  [3mTrades:[0m no single place to version, so migrating the set later means enumerating keys and a per-key migration; there's
+  no atomic "all preferences" read or clear; and stray keys from removed features linger in storage invisibly. [3mWins [0m
+  [3mwhen[0m preferences are numerous, written independently and frequently, or large enough that reserializing everything
+  matters.
+
+  [1mC. Blob plus a declared schema registry[0m
+  Approach A, but each preference is declared up front with a default and a validator, and reads drop values failing
+  validation. Guarantees callers never see a malformed value even if something else wrote to the key.
+  [3mTrades:[0m a declaration layer and validator per preference — real ceremony for a module that starts with one string
+  preference. [3mWins when[0m preferences are set by multiple writers, come from untrusted input, or feed code that breaks
+  badly on a bad type.
+
+  I recommend [1mA[0m. The preference set here is one string with an obvious default, and A's weakness — whole-blob writes and
+  cross-tab clobbering — only bites at a scale this app is nowhere near, while its strength, one versioned object to
+  migrate, is exactly what you want before the schema has been decided by accident. B's per-key independence buys
+  nothing today and makes versioning harder later. C's validation is worth adding [3minside[0m A the day a preference has a
+  type that can break a caller; paying for it now is speculative. A also doesn't foreclose the others: the
+  [38;5;153mget[39m/[38;5;153mset[39m/[38;5;153msubscribe[39m interface is identical in all three, so the storage layout can change behind it later.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich storage approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Versioned JSON blob (Recommended)[39m
+     [38;5;246mOne versioned key holding all preferences, with a defaults layer and storage-event cross-tab sync. Simplest to [39m
+     [38;5;246mversion and migrate.[39m
+  [38;5;246m2.[39m B: One key per preference
+     [38;5;246mIndependent keys per preference. No write conflicts between tabs, but harder to version and clear as a set.[39m
+  [38;5;246m3.[39m C: Blob + schema registry
+     [38;5;246mApproach A plus per-preference declared defaults and validators. Strongest guarantees, most ceremony.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

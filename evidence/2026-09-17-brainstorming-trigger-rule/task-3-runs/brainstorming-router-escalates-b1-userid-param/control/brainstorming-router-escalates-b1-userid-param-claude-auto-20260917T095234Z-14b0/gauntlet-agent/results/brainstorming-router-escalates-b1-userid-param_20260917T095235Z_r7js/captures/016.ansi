@@ -1,0 +1,40 @@
+  [1m[38;5;153mlogin[39m stays synchronous.[0m Real authentication is async, so this signature changes when the actual [38;5;153mfetch[39m lands. I'm not
+  building a Promise API around a stub — there's exactly one caller, and converting it later is a one-line change at the
+  call site. Flagging it so it's a known, chosen deferral rather than a surprise.
+
+  [1m3. Error handling[0m
+
+  [38;5;153msessionStorage[39m throws in Safari private mode and when storage is disabled — an unguarded write here would break [3mlogin
+[0m  [3mitself[0m, which is strictly worse than the tracking not working.
+
+  - Every storage access is wrapped; on failure the module falls back to an in-memory value, so the id still works for
+    the page's lifetime.
+  - [38;5;153msetUserId[39m returns [38;5;153mfalse[39m rather than throwing. The login flow ignores the result and proceeds.
+  - [38;5;153mgetUserId[39m returns [38;5;153mnull[39m when absent or unreadable. Callers handle [38;5;153mnull[39m.
+  - [38;5;153msetUserId[39m rejects empty/null/undefined and returns [38;5;153mfalse[39m, so the string [38;5;153m"undefined"[39m can never be written.
+
+  [1m4. Testing[0m
+
+  [38;5;153mnode --test[39m (built into Node, keeps [38;5;153mpackage.json[39m dependency-free). [38;5;153msession.js[39m attaches to [38;5;153mwindow[39m when present and
+  [38;5;153mmodule.exports[39m when present, so the same file loads in both.
+
+  Covers: set/get round-trip; [38;5;153mclear[39m; get with nothing stored; rejects an empty id; falls back to memory when storage
+  throws; never throws on an unavailable store.
+
+  [1m5. Files touched[0m
+
+  [38;5;153msession.js[39m (new), [38;5;153mtest/session.test.js[39m (new), [38;5;153mindex.html[39m (one script tag), [38;5;153mapp.js[39m (return field + one store call),
+  [38;5;153mpackage.json[39m (test script).
+
+  [1mOut of scope:[0m logout UI, a fetch wrapper, any analytics destination, [38;5;153mlocalStorage[39m, the other forms themselves, and the
+  real API call. [38;5;153mclear()[39m ships unused by design — it's the eviction path, ready for whenever logout arrives.
+
+  Does this look right — including any individual section? Once you approve, I'll write it up as a spec for your review,
+  then move to an implementation plan. No code until then.
+
+[38;5;246m✻[39m [38;5;246mWorked for 4m 24s · done 3:00 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

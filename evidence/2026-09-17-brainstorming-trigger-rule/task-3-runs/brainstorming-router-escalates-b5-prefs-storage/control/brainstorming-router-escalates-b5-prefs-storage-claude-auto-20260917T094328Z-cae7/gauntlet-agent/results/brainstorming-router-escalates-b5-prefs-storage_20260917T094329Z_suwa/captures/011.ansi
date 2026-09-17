@@ -1,0 +1,40 @@
+  shape exactly the [38;5;153mDEFAULTS[39m shape, and it's the conservative choice for a v1 with no forward-compat requirement.
+
+  [1mThe API[0m, deliberately narrow so the observable version stays additive: [38;5;153mget(key)[39m, [38;5;153mset(key, value)[39m, [38;5;153mreset()[39m. [38;5;153mget[39m on a
+  key not in [38;5;153mDEFAULTS[39m is a programming error, not a runtime fallback — it throws, because silently returning [38;5;153mundefined[39m
+  for a typo'd key is exactly the bug that survives to production.
+
+  [1mOne fork worth your call: how [38;5;153mpreferences.js[39m gets loaded.[0m This decides whether the module is testable in Node without
+  pulling in a DOM emulator, and it's awkward to reverse once [38;5;153mapp.js[39m is written against it.
+
+  - [1mFactory + global (recommended)[0m — [38;5;153mpreferences.js[39m exports a [38;5;153mcreatePreferences(storage)[39m factory that takes any object
+    with [38;5;153mgetItem[39m/[38;5;153msetItem[39m/[38;5;153mremoveItem[39m, defaulting to [38;5;153mwindow.localStorage[39m. The file ends with a small dual-export shim:
+    attach to [38;5;153mwindow[39m in a browser, [38;5;153mmodule.exports[39m under Node. [3mBuys:[0m the page keeps working when opened directly by
+    double-clicking the file, no build step, and tests inject a plain [38;5;153mMap[39m-backed fake with zero dependencies. [3mCosts:[0m the
+    shim is four lines of mild ugliness.
+  - [1mES modules[0m — [38;5;153mindex.html[39m uses [38;5;153m<script type="module">[39m, [38;5;153mapp.js[39m does [38;5;153mimport { createPreferences } from [39m
+    [38;5;153m'./preferences.js'[39m. Cleaner and standard, still no bundler. [3mCosts:[0m [38;5;153mfile://[39m loading breaks under module CORS rules,
+    so the page then requires a local HTTP server to open at all.
+  - [1mPlain global, no factory[0m — [38;5;153mpreferences.js[39m just assigns [38;5;153mwindow.Preferences[39m and talks to [38;5;153mlocalStorage[39m directly.
+    Simplest to read, but it can only be tested through a DOM emulator like jsdom, which is a real dependency added to a
+    zero-dependency repo.
+
+  I recommend the [1mfactory + global[0m: dependency injection is what makes this thing testable cheaply, and it's the
+  difference between tests that need no [38;5;153mnode_modules[39m at all and tests that need a DOM.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module format [39m[49m
+
+[1m[38;5;231mHow should preferences.js be loaded and exposed?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFactory + global (Recommended)[39m
+     [38;5;246mcreatePreferences(storage) with injectable storage, dual browser/Node export shim. Keeps file:// working, testable
+[39m     [38;5;246mwith no deps.[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246mtype="module" script and import/export. Cleaner and standard, but the page then needs a local HTTP server.[39m
+  [38;5;246m3.[39m Plain global, no factory
+     [38;5;246mwindow.Preferences talking to localStorage directly. Simplest, but only testable via a jsdom dependency.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+    under CORS rules, so opening [38;5;153mindex.html[39m by double-clicking it ([38;5;153mfile://[39m) stops working — you'd need any static server
+    ([38;5;153mnpx serve .[39m, [38;5;153mpython3 -m http.server[39m).
+  - [1mClassic scripts with a global[0m — add [38;5;153m<script src="src/prefs/store.js">[39m before [38;5;153mapp.js[39m and hang [38;5;153mwindow.Preferences[39m off
+    it. Keeps [38;5;153mfile://[39m working. Costs: a global, an implicit load-order dependency, and test setup needs shims because
+    Node can't cleanly import a file written for the global pattern.
+
+  One wrinkle with ES modules: [38;5;153mpackage.json[39m has no [38;5;153m"type"[39m field, so Node treats [38;5;153m.js[39m as CommonJS and would choke on
+  [38;5;153mexport[39m syntax. Adding [38;5;153m"type": "module"[39m at the top level would break the existing [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m, which
+  I don't want to touch. The contained fix is a one-line [38;5;153msrc/prefs/package.json[39m containing [38;5;153m{"type": "module"}[39m, which
+  scopes ESM to that directory and leaves the rest of the repo alone. It's a slightly obscure Node idiom, but it beats
+  renaming files to [38;5;153m.mjs[39m (some static servers don't serve [38;5;153m.mjs[39m with a JavaScript MIME type, which breaks module loading
+  in the browser) and it beats touching unrelated files.
+
+  [1mI recommend ES modules with the scoped [38;5;153mpackage.json[39m.[0m The [38;5;153mfile://[39m loss is real but cheap to work around, and the
+  alternative pushes cost into every test you write.
+
+  The second thing I want to settle: you chose a generic store with no fixed schema, which means nothing in the app
+  reads or writes a preference yet. That's a coherent choice, but it makes "settings persist across sessions" impossible
+  to verify by using the app — only by tests. One small real consumer would close that loop.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the store be loaded in the browser? → ES modules (Recommended)[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ First consumer [39m[49m
+
+[2m│[0m [1m[38;5;231mShould this change include one real consumer of the store, so persistence is observable in the running app?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mRemember last username (Recommended)[39m
+     [38;5;246mOn successful login, store the username in the anonymous namespace; pre-fill the field on page load. Exercises the
+[39m     [38;5;246mwhole path end to end and is useful on its own.[39m
+  [38;5;246m2.[39m Store and tests only
+     [38;5;246mShip the module with no callers. Smallest diff, honors the generic-store scope exactly; persistence verified only [39m
+     [38;5;246mby tests.[39m
+  [38;5;246m3.[39m A different consumer
+     [38;5;246mYou have a specific setting in mind that should be the first one wired up.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

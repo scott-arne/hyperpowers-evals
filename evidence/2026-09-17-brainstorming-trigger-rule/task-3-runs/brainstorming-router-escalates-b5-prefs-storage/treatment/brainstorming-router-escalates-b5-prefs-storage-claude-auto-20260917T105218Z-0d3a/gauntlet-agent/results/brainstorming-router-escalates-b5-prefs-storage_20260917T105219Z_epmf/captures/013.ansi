@@ -1,0 +1,40 @@
+  [38;5;153mprefs.js[39m sits at the repo root next to [38;5;153mapp.js[39m (it's browser code; [38;5;153msrc/[39m is the unrelated Node stub and stays
+  untouched). [38;5;153mindex.html[39m gains one [38;5;153m<script src="prefs.js"></script>[39m before [38;5;153mapp.js[39m, so [38;5;153mPrefs[39m exists by the time [38;5;153mapp.js[39m
+  runs. No build step, no bundler, no module system — that matches what's there.
+
+  The one wrinkle worth designing rather than stumbling into: a plain global reading [38;5;153mlocalStorage[39m directly is untestable
+  outside a browser. So the file defines a factory and a default instance:
+
+  [34mfunction[39m [33mcreatePrefs[39m(storage) { [32m/* ... */[39m }
+  [34mconst[39m [34mPrefs[39m = [33mcreatePrefs[39m(globalThis.localStorage);
+
+  with a CommonJS export guarded by [38;5;153mtypeof module !== "undefined"[39m at the bottom. In the browser that line is inert and
+  [38;5;153mPrefs[39m is a global, exactly like [38;5;153mlogin[39m and [38;5;153mvalidateForm[39m are today. Under Node, tests [38;5;153mrequire[39m the file and call
+  [38;5;153mcreatePrefs(fakeStorage)[39m with a ~10-line in-memory stand-in. That's the whole testability story: no jsdom, no
+  dependencies, and the browser path stays as dumb as the rest of the page.
+
+  Alongside that, the tooling question — this repo has no [38;5;153mscripts[39m block, no test runner, no linter, nothing. Setting
+  tooling up is never cheaper than right now, before there's code to retrofit:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhich tooling should the design set up, given the repo currently has none?[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Unit tests via node:test (Recommended)
+  [38;5;246mBuilt into Node, zero dependencies, keeps package.json dependency-free. Adds a "test": "node --test" script and a [39m
+  [38;5;246mfirst passing test for the prefs module.[39m
+  [38;5;246m2.[39m [ ] Linter + formatter
+  [38;5;246mESLint + Prettier. Real value, but it's the first devDependencies this repo would take on, and it will want to [39m
+  [38;5;246mreformat the existing files.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+  [38;5;246mPlaywright driving the real page to confirm the preference survives a reload. Strongest proof the feature works; [39m
+  [38;5;246mheaviest dependency by far.[39m
+  [38;5;246m4.[39m [ ] None — no tooling
+  [38;5;246mShip the module with no automated tests. I'd push back on this one: the validate-or-default behavior is exactly the [39m
+  [38;5;246mkind of logic that's easy to get subtly wrong and invisible when it breaks.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+[38;5;153m❯[39m    [1m[38;5;153mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

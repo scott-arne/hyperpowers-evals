@@ -1,0 +1,40 @@
+
+  [1mA. Single dual-export module[0m — one [38;5;153msrc/logger.js[39m holding levels, redaction, ring buffer, and console output, ending in
+  a runtime-detection footer that attaches to [38;5;153mmodule.exports[39m in Node and to [38;5;153mwindow.AppLog[39m in the browser. Level comes
+  from [38;5;153mprocess.env.LOG_LEVEL[39m in Node and [38;5;153mlocalStorage.logLevel[39m in the browser. One file, nothing to wire, no build. The
+  cost is that the file mixes pure logic with two runtimes' I/O, so testing the redaction rules means loading the whole
+  thing and faking a global.
+
+  [1mB. Pure core plus two thin adapters[0m — [38;5;153msrc/logger-core.js[39m holds only the logic (level filtering, redaction, ring
+  buffer, record formatting) with no globals and no I/O; [38;5;153msrc/logger-node.js[39m and [38;5;153msrc/logger-browser.js[39m each supply that
+  runtime's config source and sink, and the browser one owns the export-to-file path. Three small files instead of one.
+  The payoff is that redaction — the part where a bug means a password in a text file — becomes a pure function you can
+  test with plain inputs, no DOM and no env juggling.
+
+  [1mC. Real ES modules[0m — write the logger as [38;5;153m.mjs[39m, load it with [38;5;153m<script type="module">[39m in the browser and native import in
+  Node. Cleanest module semantics, no dual-export footer. But it forces [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m off CommonJS,
+  makes [38;5;153mapp.js[39m a module (which changes its top-level function scoping), and breaks [38;5;153mindex.html[39m when opened directly from
+  disk via [38;5;153mfile://[39m, since module loading is blocked there. That's a lot of blast radius on working files for a project
+  with no build step.
+
+  [1mMy recommendation is B.[0m You picked the strict redaction option, which tells me correctness there matters more than
+  file count — and a pure core is what makes that rule testable and keeps the "never accept a raw password" guarantee in
+  one reviewable place. C's costs land on files that have nothing to do with logging, which is the opposite of what I'd
+  want from a subsystem addition.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich architecture should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: core + adapters (Recommended)[39m
+     [38;5;246mPure logger-core.js plus thin node/browser adapters. Redaction testable as a pure function; three small files.[39m
+  [38;5;246m2.[39m A: single dual-export module
+     [38;5;246mOne src/logger.js with a runtime-detection footer. Fewest files, but logic and I/O are mixed and harder to test.[39m
+  [38;5;246m3.[39m C: real ES modules
+     [38;5;246mNative .mjs modules. Cleanest semantics, but converts existing CommonJS files and breaks file:// loading of [39m
+     [38;5;246mindex.html.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

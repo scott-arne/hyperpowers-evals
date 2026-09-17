@@ -1,0 +1,40 @@
+
+  So the approaches below are mine. The open architectural question is the one your "both, shared module" answer
+  created: [38;5;153mapp.js[39m is a classic global-scope script tag, [38;5;153msrc/[39m is CommonJS. Those two cannot consume the same file today,
+  and there's no bundler, no transpiler, and no dependencies in this repo. How we bridge that is the decision that
+  shapes the rest.
+
+  [1mApproach A — UMD-style shim in the logger core.[0m [38;5;153msrc/logger.js[39m ends with a ~4-line footer: assign to [38;5;153mmodule.exports[39m if
+  it exists, otherwise hang the factory off [38;5;153mwindow[39m. [38;5;153mindex.html[39m gains a second script tag before [38;5;153mapp.js[39m; [38;5;153msrc/index.js[39m
+  keeps its [38;5;153mrequire[39m. Nothing about the existing module syntax changes.
+  [3mTrade-offs:[0m genuinely one shared file, zero dependencies, zero build step, works over [38;5;153mfile://[39m. The shim is a dated
+  idiom and the browser side gets a global. Complexity: trivial.
+
+  [1mApproach B — convert the project to ESM.[0m [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" src="app.js">[39m, [38;5;153mpackage.json[39m gains
+  [38;5;153m"type": "module"[39m, and [38;5;153msrc/index.js[39m / [38;5;153msrc/utils.js[39m convert from [38;5;153mrequire[39m/[38;5;153mmodule.exports[39m to [38;5;153mimport[39m/[38;5;153mexport[39m. Then one
+  [38;5;153mlogger.js[39m is imported natively by both.
+  [3mTrade-offs:[0m the modern, clean answer, and it sets the project up properly for later. But it touches three existing
+  files that have nothing to do with logging, and module scripts are blocked by CORS over [38;5;153mfile://[39m — if this page is ever
+  opened directly rather than served, the app breaks entirely and the failure looks nothing like a module-system
+  problem. Complexity: moderate, and the risk is concentrated in an unknown (how the page is served) rather than in the
+  code.
+
+  [1mApproach C — parallel implementations, shared contract.[0m Two small files with an identical interface and no shared
+  code; the allowlist and record shape are specified in the spec rather than in a module.
+  [3mTrade-offs:[0m no shim, no conversion, no changes to existing files. But it duplicates the redaction logic — the one
+  piece where drift between two copies means a password reaching a log line. Complexity: trivial, and it's the approach
+  that most directly contradicts what you asked for. Listing it for completeness; I don't recommend it.
+
+  [1mRecommendation: A.[0m It delivers the shared module you asked for at the lowest risk, and it's reversible — if you later
+  add a bundler or move to ESM, deleting a four-line footer is the entire migration. B is the better end state but pays
+  for it now with unrelated file churn and a [38;5;153mfile://[39m failure mode I can't rule out from here. If you know the page is
+  always served over HTTP, B becomes reasonable and I'd be happy to take it.
+
+  Which do you want before I present the detailed design?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 2m 48s · done 4:08 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

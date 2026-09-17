@@ -1,0 +1,40 @@
+
+  Concretely, "add a userId parameter to [38;5;153mlogin[39m" is now probably the wrong shape for what you want. A parameter is
+  something the caller already knows; a real user id is something the [3msystem learns[0m at login and then hands to
+  everything downstream. So the design work is mostly about where that id is born, where it lives, and how later forms
+  read it.
+
+  First question — and it's the one everything else depends on. [38;5;153mlogin[39m at [38;5;153mapp.js:4[39m is a stub with a hardcoded
+  [38;5;153mAPI_ENDPOINT[39m it never calls, so right now there is no source of a real user id anywhere in this codebase.
+
+  - [1mKeep the stub, build the real seam[0m — [38;5;153mlogin[39m stays fake but becomes async and returns a [38;5;153m{ userId, ... }[39m shape from a
+    fake backend. You get the whole identity layer, testable, with one clearly-marked place to drop in the real [38;5;153mfetch[39m
+    later. Cheap now; the swap later is small and localized.
+  - [1mBuild the real API call now[0m — [38;5;153mlogin[39m actually POSTs to [38;5;153mAPI_ENDPOINT[39m and parses the response. Honest end-to-end, but
+    it needs a real endpoint and a real response contract to code against, plus network error handling, and it can't be
+    verified without a server.
+  - [1mSource the id outside login entirely[0m — a separate "who am I" call after authentication. More flexible, but more
+    moving parts than this app has any use for yet.
+
+  I recommend the first: the persistence and consumption design is identical either way, and the stub keeps the work
+  verifiable today without inventing a response contract I'd only have to redo.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Id origin [39m[49m
+
+[2m│[0m [1m[38;5;231mWhere should the real user id originate, given login() is currently a stub that never calls API_ENDPOINT?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mStub returns it (Recommended)[39m
+     [38;5;246mlogin() becomes async and returns a { userId, ... } shape from a fake backend, with one marked seam for the real [39m
+     [38;5;246mfetch later. Full identity layer, verifiable now, no invented API contract.[39m
+  [38;5;246m2.[39m Build the real API call
+     [38;5;246mlogin() actually POSTs to API_ENDPOINT and reads the user id from the response. Needs a real endpoint and an agreed
+[39m     [38;5;246mresponse shape, plus network error handling.[39m
+  [38;5;246m3.[39m Separate identity call
+     [38;5;246mAuthenticate first, then a distinct call fetches the current user's profile/id. More flexible, more moving parts.[39m
+  [38;5;246m4.[39m I have a backend spec
+     [38;5;246mThere's an existing API contract I should code against — I'll ask you for it before designing.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

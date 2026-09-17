@@ -1,0 +1,40 @@
+  rather than a signature tweak.
+
+  First question, and it's the load-bearing one: everything about persistence and sharing depends on who mints the
+  identifier.
+
+  Right now [38;5;153mAPI_ENDPOINT[39m ([38;5;153mapp.js:2[39m) is a stub with a comment saying a real app would POST to it, and [38;5;153mlogin()[39m fabricates
+  [38;5;153m{ success: true, user: username }[39m locally. So there is no server handing back an ID today.
+
+  - [1mServer-issued[0m — the real backend authenticates and returns the canonical user ID. The only version that's
+    trustworthy as identity, and the only one that can be the same ID your database uses. But it means the design
+    depends on an endpoint that doesn't exist yet, so I'd build against a defined response contract and keep the stub
+    until the backend lands.
+  - [1mClient-generated[0m — mint an ID in the browser at login. Works today with no backend, but it identifies a browser, not
+    a person: it can be forged, and it won't match any server-side record. Fine for analytics, wrong for anything
+    authorization-shaped.
+  - [1mDerived from the username[0m — deterministic, no backend, stable across devices. But usernames change, and it leaks the
+    username into every place the ID travels.
+
+  This choice is expensive to reverse: once other forms are reading the stored ID, changing what it [3mis[0m means touching
+  all of them and invalidating whatever you've already recorded. My recommendation is server-issued, designed against a
+  contract now even though the endpoint is a stub — it's the only option that survives contact with a real backend.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID origin [39m[49m
+
+[1m[38;5;231mWhere does the persistent user identifier come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer-issued (Recommended)[39m
+     [38;5;246mBackend returns the canonical user ID on successful login. Trustworthy and matches server records; requires [39m
+     [38;5;246mdefining the response contract while the endpoint is still a stub.[39m
+  [38;5;246m2.[39m Client-generated
+     [38;5;246mBrowser mints an ID at login. Works with no backend, but identifies a browser rather than a person and can be [39m
+     [38;5;246mforged.[39m
+  [38;5;246m3.[39m Derived from username
+     [38;5;246mDeterministic ID computed from the username. No backend needed, but breaks if usernames change and leaks the [39m
+     [38;5;246musername downstream.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+  - [1mES modules + [38;5;153mnode:test[0m — [38;5;153mpreferences.js[39m exports a store; [38;5;153mindex.html[39m switches to [38;5;153m<script type="module">[39m. Node's
+    built-in test runner (zero dependencies, already on your machine) imports the module directly and tests it against
+    an in-memory [38;5;153mlocalStorage[39m fake. Cost: ES modules don't load over [38;5;153mfile://[39m, so opening [38;5;153mindex.html[39m by double-clicking
+    stops working — you'd need [38;5;153mnpx serve[39m or similar.
+  - [1mKeep script globals, no tests[0m — add a second [38;5;153m<script src="preferences.js">[39m before [38;5;153mapp.js[39m, exposing a global. Matches
+    the current style exactly and keeps [38;5;153mfile://[39m working. Cost: nothing verifies the store except loading the page by
+    hand.
+  - [1mKeep script globals + [38;5;153mnode:test[0m — same loading, but the file needs a dual export shim (global in the browser,
+    [38;5;153mmodule.exports[39m in Node) so tests can reach it. Works, but the shim is boilerplate that exists purely for the test
+    runner.
+
+  I recommend ES modules + [38;5;153mnode:test[39m: it's still zero-dependency, and a storage layer is exactly the kind of code where
+  an unnoticed serialization bug survives manual clicking. The [38;5;153mfile://[39m tradeoff is real though — if you open this page
+  straight from disk, say so and I'll take the third option.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the module load, and do we add tests? → ES modules + node:test (Recommended)[39m
+
+[38;5;231m⏺[39m Skipping the Codex approach gate — the three material forks are now settled by your answers, and what's left is
+  mechanical.
+
+  One interface decision I want to flag before the design, because it's the one thing that decides whether the seam you
+  picked actually pays off:
+
+  [1mSync or async store API?[0m A server-backed store is inherently async. If [38;5;153mPreferencesStore[39m is synchronous now, swapping
+  in a server implementation later changes the signature at every call site — which is exactly the migration the seam is
+  supposed to absorb. Making [38;5;153mload[39m/[38;5;153msave[39m Promise-returning today costs two [38;5;153mawait[39ms in [38;5;153mapp.js[39m and nothing else. There's a
+  real YAGNI tension here (we're shaping an interface around a backend that may never exist), but a seam that doesn't
+  survive the swap isn't a seam. [1mI recommend async.[0m
+
+  ---
+
+  [1mDesign[0m
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

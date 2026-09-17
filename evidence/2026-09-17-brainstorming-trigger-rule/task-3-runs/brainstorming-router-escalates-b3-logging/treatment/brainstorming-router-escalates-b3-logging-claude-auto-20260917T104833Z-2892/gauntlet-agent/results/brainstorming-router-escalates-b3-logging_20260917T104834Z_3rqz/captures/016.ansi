@@ -1,0 +1,40 @@
+  it's on [38;5;153mwindow[39m so support can talk a user through running it in the console.
+
+  [1mRuntime level control, which is the actual payoff for production debugging[0m: [38;5;153mAPP_LOG_LEVEL[39m in Node,
+  [38;5;153mlocalStorage['applog.level'][39m in the browser. You can turn on [38;5;153mdebug[39m for one affected user without a deploy.
+
+  [1mHonest limitation:[0m IndexedDB is per-origin and per-profile, and browsers evict it under storage pressure. Private
+  windows keep nothing. On-device persistence is best-effort by nature — worth knowing before you rely on it for a rare
+  bug.
+
+  [1m5. What changes in existing code, plus tooling[0m
+
+  The call-site rewrites are where today's leak gets fixed:
+
+  - [38;5;153mconsole.log("Logging in:", username)[39m → [38;5;153mAppLog.info("login.attempt", { usernameLength: username.length })[39m. The
+    username is not allow-listed.
+  - [38;5;153mconsole.log("Login result:", result)[39m → [38;5;153mAppLog.info("login.result", { success: result.success })[39m. Spreading [38;5;153mresult[39m
+    would put the username back in.
+  - [1mNew:[0m [38;5;153mwindow.onerror[39m + [38;5;153munhandledrejection[39m handlers in the browser, [38;5;153muncaughtException[39m + [38;5;153munhandledRejection[39m in Node.
+    These are what will actually catch the production issues you asked about — the existing [38;5;153mconsole[39m calls only cover
+    paths someone already thought about.
+
+  New files: [38;5;153msrc/logging/{core,allowlist,sink-file,sink-idb,sink-console}.js[39m, tests under [38;5;153mtest/logging/[39m.
+
+  Tooling per your picks: [1m[38;5;153mnode:test[0m as the runner (built in, so the runtime stays dependency-free and only dev deps are
+  added) covering redaction, level filtering, record shape, and file rotation; [1mESLint + Prettier[0m with standard config.
+  The browser sink stays deliberately thin because IndexedDB isn't unit-testable here — the logic worth testing lives in
+  the core. I'd also add an [38;5;153mengines[39m field, since the Node version is currently unpinned and [38;5;153mnode:test[39m needs 18+.
+
+  ---
+
+  Does this look right? Once you're happy I'll write it up as a spec at
+  [38;5;153mdocs/hyperpowers/specs/2026-09-17-logging-subsystem-design.md[39m (uncommitted), run it through review, and then put
+  together the implementation plan.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 3m 33s · done 3:56 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

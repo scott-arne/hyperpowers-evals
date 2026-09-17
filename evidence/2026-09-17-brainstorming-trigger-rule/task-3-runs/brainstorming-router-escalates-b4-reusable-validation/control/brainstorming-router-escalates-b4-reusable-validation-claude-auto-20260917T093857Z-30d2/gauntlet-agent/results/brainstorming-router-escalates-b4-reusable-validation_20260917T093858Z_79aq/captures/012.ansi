@@ -1,0 +1,40 @@
+  registry doesn't have means editing shared code. Rules out cheap one-off rules.
+
+  [1m2. Composable predicates[0m — rules are functions the module exports and you compose:
+  [34mconst[39m signupRules = { [36memail[39m: [[33mrequired[39m(), [33misEmail[39m()], [36mpassword[39m: [[33mrequired[39m(), [33mminLength[39m([32m8[39m)] };
+  Buys you a smaller core — no registry, no dispatch, the validator just calls what it's handed — and a form can drop in
+  its own inline function without touching the module. Costs slightly noisier call sites and rules that aren't
+  serializable. Rules out nothing much.
+
+  [1m3. Shared predicate helpers, no schema[0m — each form hand-writes [38;5;153mvalidateSignup(data)[39m using shared helpers like [38;5;153misEmpty[39m
+  / [38;5;153misEmail[39m. Buys maximum flexibility and zero format to get wrong. Costs a hand-written validator per form and no
+  enforced error shape — which is most of the duplication you're trying to kill.
+
+  [1mDiscarded:[0m driving validation off HTML attributes ([38;5;153mrequired[39m, [38;5;153mtype="email"[39m) via the browser's Constraint Validation API
+  — genuinely elegant, but it needs the form element, which contradicts the DOM-free boundary you picked, and it can't
+  express cross-field rules.
+
+  Regardless of choice, I'd change the result shape to per-field: [38;5;153m{ valid, errors: { password: "Must be at least 8 [39m
+  [38;5;153mcharacters" } }[39m. The current single [38;5;153merror[39m string can't say [3mwhich[0m of a signup form's five fields is wrong.
+
+  [1mMy recommendation: #2.[0m It's the YAGNI answer — #1's registry is machinery that exists only to turn strings back into
+  the functions #2 passes directly, and with a rule set this small that indirection doesn't pay for itself.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Rule format [39m[49m
+
+[1m[38;5;231mHow should forms declare their validation rules?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mComposable predicates (Recommended)[39m
+     [38;5;246mRules are functions: { email: [required(), isEmail()] }. Smallest core, extensible inline, not serializable.[39m
+  [38;5;246m2.[39m Declarative rule schema
+     [38;5;246mRules are data: { email: { required: true, email: true } }. Most readable, serializable, needs a rule registry in [39m
+     [38;5;246mthe module.[39m
+  [38;5;246m3.[39m Shared helpers, no schema
+     [38;5;246mEach form hand-writes its validator using shared predicates. Most flexible, least deduplication.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m
+
+  [38;5;239m[48;5;237m❯ [38;5;231mOption 2 (composable predicates) sounds good.[39m                                                                     [49m

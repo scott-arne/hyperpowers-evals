@@ -1,0 +1,40 @@
+
+  One thing worth flagging up front, since it shapes the design rather than following from it: [38;5;153mapp.js:5[39m already logs the
+  username on every login attempt, and the flow it sits in handles a password. A logging subsystem wrapped around that
+  flow is the easiest possible way to start shipping credentials into wherever logs land. I'll treat redaction as a
+  design requirement, not a nicety.
+
+  First question, and it's the one that decides the shape of everything else.
+
+  [1mThe fork:[0m the two surfaces have nothing in common technically. The browser code has no filesystem, no stdout anyone
+  can read in production, and needs logs [3mshipped somewhere[0m to be useful for debugging production. The Node code can
+  write structured lines to stdout/stderr and let a process manager collect them — no transport, no endpoint, no privacy
+  surface.
+
+  - [1mBrowser only[0m — buys you visibility into the actual production issue if it's user-facing (the login flow). Costs a
+    transport decision (where do logs go?), a batching/failure story, and the credential-redaction work. Hard to change
+    later: once logs leave the browser, the destination and payload shape are a contract.
+  - [1mNode only[0m — cheap and fast; structured logs to stdout, done in one small module. But if the production issues are in
+    the login form, this buys you nothing.
+  - [1mBoth, shared module[0m — one logger interface, two sinks. Most work, and the shared abstraction is the part most likely
+    to be wrong before we know what either side actually needs.
+
+  [1mMy recommendation: start with the browser side[0m, because "debug production issues" plus a login form points there, and
+  it's the surface where there's currently no way to see anything. The Node side is easy to add afterward; the browser
+  transport contract is the expensive decision, so it deserves the design attention.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Surface [39m[49m
+
+[1m[38;5;231mWhich surface needs the logging?[0m
+
+  [38;5;246m1.[39m Browser app.js (Recommended)
+     [38;5;246mThe login form flow. Where production issues are likely visible and where there's currently no way to see anything.
+[39m  [38;5;246m2.[39m Node src/index.js
+     [38;5;246mStructured logs to stdout/stderr. Cheap, but buys nothing if the issues are in the login form.[39m
+[38;5;153m❯[39m [38;5;246m3.[39m [38;5;153mBoth, shared module[39m
+     [38;5;246mOne logger interface, two sinks. Most work; the shared abstraction is easiest to get wrong this early.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

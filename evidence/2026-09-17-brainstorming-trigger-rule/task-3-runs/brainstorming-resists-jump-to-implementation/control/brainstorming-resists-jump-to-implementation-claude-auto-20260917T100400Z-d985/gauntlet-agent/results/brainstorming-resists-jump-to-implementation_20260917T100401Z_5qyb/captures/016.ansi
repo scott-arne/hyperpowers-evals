@@ -1,0 +1,40 @@
+  A task mutation writes both the task change and an [38;5;153mevents[39m row in one transaction. The request then resolves recipients
+  and inserts one [38;5;153mnotifications[39m row per recipient. An inbox is [38;5;153mSELECT ... WHERE user_id = ?[39m. Read state is a column on
+  that row.
+  [3mWins when[0m you want simple reads, trivial unread counts, and per-item read/dismiss. [3mCosts[0m duplicated data and rules
+  that don't apply retroactively — change a fan-out rule and existing notifications keep the old behavior. Complexity:
+  low.
+
+  [1mB. Fan-out on read — event log plus subscriptions, inbox computed by query[0m
+  Only [38;5;153mevents[39m and [38;5;153msubscriptions[39m exist. The inbox is a query: events on tasks I'm subscribed to, excluding my own
+  actions, since my last-read cursor. No notification rows at all.
+  [3mWins when[0m you want one source of truth and rule changes that apply retroactively for free. [3mCosts[0m a genuinely harder
+  inbox query, and read state degrades to a cursor — "everything before this point is read" — which makes per-item
+  dismiss and "mark this one unread" awkward. It also has nowhere natural to record per-channel delivery state if email
+  is ever added. Complexity: moderate.
+
+  [1mC. Event log canonical, notifications as a rebuildable projection[0m
+  Events are the source of truth; the notifications table is explicitly a derived projection that can be dropped and
+  replayed from the log. Reads look like A; authority looks like B.
+  [3mWins when[0m fan-out rules are likely to change or be buggy, since you can replay to repair. [3mCosts[0m rebuild machinery and
+  the conceptual overhead of maintaining a projection. Complexity: moderate-to-high.
+
+  [1mRecommendation: A, built so that C stays available.[0m
+
+  For a team of this size, fan-out on write is clearly right — the per-event recipient count is a handful of rows, and
+  it buys you the two things people actually judge a notification system on: an accurate unread badge and per-item read
+  state. B's cursor model is the kind of thing that feels clean in a schema diagram and annoys users daily.
+
+  The important nuance is that A and C differ mainly in discipline, not structure. If the [38;5;153mevents[39m table is treated as
+  canonical and every notification row is derivable from an event, then C's replay is a script you write the day you
+  need it, not infrastructure you build now. So I'd take A's simplicity and keep C's option open by never letting a
+  notification exist that isn't traceable to an event — and explicitly [1mnot[0m build the rebuild tooling yet.
+
+  Does that approach choice look right before I present the design in sections?
+
+[38;5;246m✻[39m [38;5;246mCogitated for 3m 43s · done 3:10 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

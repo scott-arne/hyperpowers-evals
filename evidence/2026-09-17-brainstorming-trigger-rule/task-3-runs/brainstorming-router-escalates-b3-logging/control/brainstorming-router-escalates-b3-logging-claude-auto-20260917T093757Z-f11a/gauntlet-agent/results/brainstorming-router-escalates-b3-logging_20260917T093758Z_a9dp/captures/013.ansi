@@ -1,0 +1,40 @@
+  [3mBuys:[0m npm dependencies work in the browser, and you get source maps — which matter for symbolicating minified stack
+  traces in a hosted service. [3mCosts:[0m a build step, a devDependency, and a [38;5;153mdist/[39m artifact in a repo that currently has
+  zero tooling; deploying now means building first. [3mRules out:[0m nothing, but it's hard to walk back once the deploy path
+  assumes it.
+
+  [1mC. One UMD-style file, zero module conversion[0m — a single [38;5;153mlogger.js[39m with a UMD wrapper that works both as a classic
+  script and under [38;5;153mrequire()[39m, branching on environment internally.
+  [3mBuys:[0m the smallest possible diff — [38;5;153mindex.html[39m and both entry points stay exactly as they are. [3mCosts:[0m runtime branching
+  lives [3minside[0m the module, which is precisely the coupling the transport seam exists to prevent; it's awkward to test,
+  and the browser still needs a vendor script tag anyway. [3mRules out:[0m clean per-runtime testing, mostly.
+
+  [1mMy recommendation: A.[0m Your stated problem is that errors vanish, and the thing that fixes it is global handlers plus a
+  real sink — both of which are runtime-specific. A puts that specificity in two small adapters and keeps the part
+  worth sharing (levels, event shape, redaction) genuinely shared and testable without a network or a DOM. B is the
+  right answer the day you minify or need browser npm deps; buying the build step before then is cost without return. C
+  wins only if the ESM conversion is somehow off-limits — and for three files this size, it isn't.
+
+  Cheap to change later: level names, event fields, which service. Expensive: B's build step, once deploys depend on it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Architecture [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mThis repo has no linting, no tests, and no CI. Which should the design set up alongside the logger? (Cheapest to add [0m
+[2m│[0m [1m[38;5;231mnow.)[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;114m[✔][39m [38;5;153mUnit tests (Recommended)[39m
+  [38;5;246mnode:test runner plus a first passing fixture. The redaction allowlist is security-relevant logic that should not ship
+[39m  [38;5;246muntested.[39m
+  [38;5;246m2.[39m [ ] Lint + format (Recommended)
+  [38;5;246mESLint + Prettier at the stack's defaults, so the new module lands consistent rather than drifting.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+  [38;5;246mBrowser-level test that a thrown error actually reaches the transport. Higher setup cost, catches wiring bugs unit [39m
+  [38;5;246mtests miss.[39m
+  [38;5;246m4.[39m [ ] None — logger only
+  [38;5;246mKeep the change minimal. The redaction rule ships unverified by automated tests.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

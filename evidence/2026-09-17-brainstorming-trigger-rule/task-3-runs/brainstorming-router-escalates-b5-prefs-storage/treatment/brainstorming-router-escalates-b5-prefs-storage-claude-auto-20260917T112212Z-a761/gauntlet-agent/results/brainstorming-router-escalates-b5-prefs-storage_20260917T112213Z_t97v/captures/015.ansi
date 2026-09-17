@@ -1,0 +1,40 @@
+    .[33mgetAll[39m()                      [32m// defaults merged with stored values[39m
+    .[33mset[39m(key, value)               [32m// persist, notify subscribers[39m
+    .[33mclear[39m()                       [32m// remove the key entirely, back to defaults[39m
+    .[33msubscribe[39m(listener)           [32m// returns an unsubscribe function[39m
+
+  Plus a default instance bound to real [38;5;153mlocalStorage[39m, which is what [38;5;153mapp.js[39m imports. The factory exists so tests can
+  inject a fake storage object — that's what makes this testable under [38;5;153mnode --test[39m with no jsdom and no dependencies.
+
+  [1mDefaults:[0m a frozen [38;5;153mDEFAULTS[39m object owned by the module. [38;5;153mget[39m falls back to it, so callers never branch on [38;5;153mundefined[39m or
+  duplicate a default. Starts as [38;5;153m{ rememberedUsername: "" }[39m.
+
+  [1mError handling[0m — the part that matters most, since every one of these is a real browser condition:
+
+  - [38;5;153mlocalStorage[39m missing or throwing on access (Safari private mode, cookies disabled, sandboxed iframe): caught at
+    construction, falls back to an in-memory store. The app keeps working for the session; nothing persists.
+  - Stored value isn't valid JSON, or parses to something that isn't a plain object: discarded, defaults used. No throw.
+  - [38;5;153msetItem[39m throws (quota exceeded): caught, the in-memory value still updates and subscribers still fire, so the UI
+    stays consistent for the session; a [38;5;153mconsole.warn[39m records it.
+
+  The rule throughout: [1ma storage problem degrades to defaults, never to an exception.[0m A preferences layer that can throw
+  turns a minor browser condition into a broken page.
+
+  [1mCross-tab sync:[0m when [38;5;153mwindow[39m exists, a [38;5;153mstorage[39m event listener re-reads the blob and notifies subscribers, so two open
+  tabs don't diverge. Guarded so the module still imports cleanly in Node.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 1 [39m[49m
+
+[1m[38;5;231mDoes the module design look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, continue[39m
+     [38;5;246mApprove the module interface, versioned-blob data model, defaults layer, and degrade-to-defaults error handling.[39m
+  [38;5;246m2.[39m Drop cross-tab sync
+     [38;5;246mSame design without the storage-event listener and subscribe notification across tabs. Smaller surface.[39m
+  [38;5;246m3.[39m Let me adjust something
+     [38;5;246mI have changes to the interface, key naming, defaults, or error behavior before you continue.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  [34mconst[39m HOSTNAME_ENVIRONMENTS = {
+    [31m"localhost"[39m: [31m"local"[39m,
+    [31m"127.0.0.1"[39m: [31m"local"[39m,
+    [31m"staging.example.com"[39m: [31m"staging"[39m,
+  };
+
+  [34mexport[39m [34mfunction[39m [33msettingsFor[39m(hostname) { [32m/* unknown host -> production */[39m }
+
+  [34mexport[39m [34mconst[39m settings = [33msettingsFor[39m(window.location.hostname);
+
+  Three deliberate choices worth your veto:
+
+  1. [1m[38;5;153mapiBaseUrl[39m, not the full login URL.[0m What varies per environment is the host; [38;5;153m/login[39m is the same everywhere. [38;5;153mapp.js[39m
+     builds [38;5;153m`${settings.apiBaseUrl}/login`[39m. This isn't speculative generality — it's separating the part that changes
+     from the part that doesn't, and it's what makes a second endpoint free.
+  2. [1m[38;5;153msettingsFor(hostname)[39m is a pure function[0m, with the [38;5;153mlocation[39m-bound [38;5;153msettings[39m as a one-line convenience on top. The
+     env-resolution logic is then testable without a DOM.
+  3. [1mUnknown hostname falls back to production[0m, silently. The alternative is throwing on an unrecognized host, which
+     catches a misconfigured deploy loudly but takes the whole page down over a config miss. For a login page I'd rather
+     fall back. Cheap to flip.
+
+  [1m[38;5;153mapp.js[39m:[0m delete the [38;5;153mAPI_ENDPOINT[39m const, add [38;5;153mimport { settings } from "./settings.js";[39m, update the stub comment on line
+  6 that names [38;5;153mAPI_ENDPOINT[39m.
+
+  [1m[38;5;153mindex.html[39m:[0m [38;5;153m<script src="app.js">[39m becomes [38;5;153m<script type="module" src="app.js">[39m.
+
+  [1mConsequence to be clear about:[0m after this, opening [38;5;153mindex.html[39m by double-clicking it stops working — ES modules are
+  blocked over [38;5;153mfile://[39m. You'd serve it, e.g. [38;5;153mpython3 -m http.server[39m. That's the cost you accepted in the module-wiring
+  answer; flagging it again because it's the one behavior change a user would actually notice.
+
+  [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are untouched — they don't reference the endpoint.
+
+  Does Section A look right? Section B is testing and tooling, where there's a real snag I need your call on.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 1m 52s · done 3:30 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

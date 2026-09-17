@@ -1,0 +1,40 @@
+  Proceeding with my own approaches. All three assume the same foundation — tasks, users, a watchers relation, and an
+  append-only [38;5;153mtask_events[39m log. They differ in [1mhow a change event becomes a thing in your feed[0m, which is the actual
+  architectural fork.
+
+  [1mA. Fan-out on write + polling[0m [3m(recommended)[0m
+  When a task changes, write one [38;5;153mtask_events[39m row, resolve the watcher set, and insert one [38;5;153mnotifications[39m row per
+  recipient with its own read state. Client polls [38;5;153m/api/notifications?since=[39m.
+  - Wins: dead simple to reason about, per-notification read/dismiss is trivial, the feed query is a single indexed
+    read. Easiest to extend to email later — a mailer just consumes unsent notification rows.
+  - Costs: write amplification (a task with 50 watchers writes 50 rows), poll latency of a few seconds.
+
+  [1mB. Fan-out on write + server-sent events[0m
+  Same data model as A, but the server pushes over an SSE stream instead of the client polling.
+  - Wins: the badge updates instantly; no poll traffic.
+  - Costs: connection lifecycle, reconnect/backfill logic, and a deployment that tolerates long-lived connections. You
+    still need the polling path as a fallback, so it's A plus extra.
+
+  [1mC. Derived feed, no fan-out table[0m
+  Store only events and watchers. Compute each user's feed at read time by joining events against their watch set; track
+  one [38;5;153mlast_read_at[39m watermark per user.
+  - Wins: no write amplification, no stale rows when someone unwatches, smallest schema.
+  - Costs: you lose per-notification state — no dismissing one item, no "mark this read." The watermark model is a real
+    product limitation, not just an implementation detail. The join also degrades as the event log grows.
+
+  [1mMy recommendation: A.[0m B is A with a delivery upgrade you can make later without touching the data model — build the
+  seam, defer the stream. C looks elegant but trades away per-item read state, and "mark all read or nothing" is the
+  kind of thing users complain about immediately.
+
+  [1mStack, since you asked me to pick:[0m Node + TypeScript end to end, SQLite via [38;5;153mbetter-sqlite3[39m, plain server-rendered
+  pages plus a small client bundle for the feed. One language, no build ceremony, and SQLite is genuinely right for a
+  single-instance task app — swappable for Postgres behind a thin data layer if this ever needs to scale out.
+
+  Does this framing look right before I break it into design sections?
+
+[38;5;246m✻[39m [38;5;246mChurned for 2m 19s · done 3:54 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

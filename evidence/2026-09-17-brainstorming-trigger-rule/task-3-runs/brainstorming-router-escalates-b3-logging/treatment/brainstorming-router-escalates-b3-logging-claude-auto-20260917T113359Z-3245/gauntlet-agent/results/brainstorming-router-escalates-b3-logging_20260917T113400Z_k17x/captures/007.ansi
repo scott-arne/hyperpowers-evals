@@ -1,0 +1,40 @@
+  [1mThe fork:[0m what the logger does when sensitive data is passed to it. Today [38;5;153mapp.js:5[39m logs the username on every attempt,
+  and the password sits one variable away from that call. Once a logger makes logging easy, the odds of a credential
+  landing in it go up, so the mechanism matters more than the discipline.
+
+  - [1mDeny-list by key name[0m — the logger walks any metadata object and replaces values under keys like [38;5;153mpassword[39m, [38;5;153mtoken[39m,
+    [38;5;153msecret[39m with [38;5;153m[redacted][39m. Catches the realistic mistake, stays out of the way. Fails open: a sensitive field nobody
+    added to the list gets logged in full.
+  - [1mAllow-list by key name[0m — only explicitly permitted keys survive; everything else is redacted. Fails closed,
+    genuinely safer. Costs a decision at every new log call, and in my experience that's the kind of friction people
+    route around by stuffing data into the message string, which no key-based scheme can see.
+  - [1mNo mechanism, convention only[0m — document "don't log secrets." Zero code. Relies entirely on whoever writes the next
+    log call, including me.
+
+  There's a second, separate question inside this: whether the [1musername[0m counts as sensitive. It's currently logged in
+  cleartext and it's the thing you'd most want for correlating a user's report to their session — but it's also PII, and
+  it's half of a credential pair. I'd suggest logging it under a key the deny-list leaves alone by default, and making
+  that an explicit, visible choice in the spec rather than an accident inherited from the current code.
+
+  [1mMy recommendation: deny-list by key name, plus a rule that the logger never accepts positional extra arguments — only
+[0m  [1ma message and one metadata object.[0m The single-object shape is what makes redaction possible at all; a variadic
+  [38;5;153mconsole.log[39m-alike can't inspect what it's given. Fails-open is the real cost, and I'd rather pay it than build an
+  allow-list people bypass.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Redaction [39m[49m ☐ Username  ✔ Submit  →
+
+[1m[38;5;231mHow should the logger handle sensitive data?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDeny-list by key name (Recommended)[39m
+     [38;5;246mRedact values under password/token/secret-style keys in the metadata object. Logger takes (message, meta) only, so
+[39m     [38;5;246mredaction can actually inspect the payload.[39m
+  [38;5;246m2.[39m Allow-list by key name
+     [38;5;246mOnly explicitly permitted keys are logged, everything else redacted. Fails closed, but adds friction to every log [39m
+     [38;5;246mcall.[39m
+  [38;5;246m3.[39m Convention only, no mechanism
+     [38;5;246mDocument the rule, add no redaction code. Cheapest, relies entirely on discipline.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

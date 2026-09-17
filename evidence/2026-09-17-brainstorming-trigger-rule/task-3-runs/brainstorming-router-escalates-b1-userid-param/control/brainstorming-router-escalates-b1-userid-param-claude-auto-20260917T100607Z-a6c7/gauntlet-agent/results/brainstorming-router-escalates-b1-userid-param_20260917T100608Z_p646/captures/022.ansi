@@ -1,0 +1,40 @@
+  [38;5;153m"type": "module"[39m, so Node treats every [38;5;153m.js[39m file as CommonJS — which is what [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m rely on. A
+  [38;5;153msrc/visitor-id.js[39m containing [38;5;153mexport[39m would therefore be fine in the browser but a syntax error under Node's test
+  runner. Three ways out:
+
+  - [1m[38;5;153msrc/visitor-id.mjs[0m — explicit ESM extension. Browser imports it identically; Node loads it as ESM; the two CommonJS
+    files are untouched. Slight extension inconsistency.
+  - [1mAdd [38;5;153m"type": "module"[0m — then [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m must be renamed to [38;5;153m.cjs[39m (plus a [38;5;153mmain[39m update), which drags
+    unrelated files into this change.
+  - [1mUse Vitest[0m — transpiles regardless of extension, at the cost of a real dependency and a config file.
+
+  I recommend [1m[38;5;153m.mjs[0m. It's the only one that leaves the unrelated Node files alone, and the inconsistency disappears on
+  its own if you later move the whole repo to ESM.
+
+  [1mTest runner: [38;5;153mnode:test[39m + [38;5;153mnode:assert[39m, zero dependencies.[0m [38;5;153m"test": "node --test"[39m, tests in [38;5;153mtest/visitor-id.test.mjs[39m.
+  This is where approach B pays off — every case below is a plain object literal standing in for storage:
+
+  - empty storage → generates a UUID, writes it under [38;5;153mvisitorId[39m
+  - second [38;5;153mget()[39m → same value, no second write
+  - pre-populated storage → returns the stored value, doesn't overwrite
+  - corrupt or empty stored value → replaces it with a fresh UUID
+  - [38;5;153mgetItem[39m throws (private mode) → returns a usable ID, stable within the store
+  - [38;5;153msetItem[39m throws (quota) → still returns a usable ID, doesn't propagate
+  - across all of the above: never throws, never returns null
+
+  [1mLint and format:[0m ESLint 9 flat config in [38;5;153meslint.config.mjs[39m with [38;5;153mjs.configs.recommended[39m, plus Prettier for formatting.
+  Scripts: [38;5;153mlint[39m, [38;5;153mformat[39m. Both as devDependencies.
+
+  [1mStatic server:[0m [38;5;153m"start": "serve ."[39m with [38;5;153mserve[39m as a devDependency, which is what makes the module script load.
+
+  [1mNode version:[0m [38;5;153mcrypto.randomUUID()[39m is global from Node 19 on, so [38;5;153m"engines": { "node": ">=20" }[39m goes in [38;5;153mpackage.json[39m to
+  keep the tests honest about what they need.
+
+  That's the whole design. Anything you want changed before I write it up as a spec?
+
+[38;5;246m✻[39m [38;5;246mChurned for 32s · done 3:18 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

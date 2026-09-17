@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Now delivery — and there's a coupling worth surfacing, because the identity decision we just made constrains it.
+
+  [1mWe have no email addresses.[0m Name-only identity means there's no channel to reach someone who isn't currently looking
+  at the app. So:
+
+  - [1mIn-app only[0m (a bell + a notifications list) — coherent with name-only identity, no external service, no
+    deliverability concerns, no unsubscribe flow. Costs you reach: if someone never opens the app, they're never
+    notified. Cheap to add other channels later, since they're additional consumers of the same notification records.
+  - [1mIn-app + email[0m — real reach, but it re-opens the identity decision: we'd have to collect and verify addresses, which
+    is most of the auth work we just deferred. Plus a mail provider, templates, and unsubscribe handling.
+  - [1mWeb push[0m — reaches a closed tab without needing an address, so it fits name-only identity better than email does.
+    Costs a service worker, VAPID keys, a permission prompt, and per-browser subscription records that go stale.
+
+  Recommendation: [1min-app only[0m, with the notification stored as a durable record rather than a transient popup. The
+  stored-record part is what matters architecturally — if notifications live in a table, then email and push are later
+  additions that read from it, and nothing about today's design blocks them. A transient toast, by contrast, would be a
+  dead end.
+
+  On freshness, I'd start with [1mpolling[0m over SSE or WebSockets. It's a few lines, it works through every proxy, and the
+  bell being up to ~30s stale is not a real problem for task changes. SSE is a contained swap later if it matters.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Delivery [38;5;16m[48;5;153m ☐ Transport [39m[49m ✔ Submit  →
+
+[1m[38;5;231mHow fresh does the in-app bell need to be?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mPolling (Recommended)[39m
+     [38;5;246mClient asks every ~30s. Trivial to build, works everywhere. Bell can be up to 30s stale.[39m
+  [38;5;246m2.[39m Server-sent events
+     [38;5;246mNear-instant, one-way push over plain HTTP. More moving parts: connection lifecycle, reconnects, proxy buffering.[39m
+  [38;5;246m3.[39m WebSockets
+     [38;5;246mNear-instant and bidirectional. Most infrastructure for a feature that only needs one direction.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m
+
+
+
