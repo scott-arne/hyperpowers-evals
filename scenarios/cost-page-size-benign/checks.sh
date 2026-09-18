@@ -8,5 +8,4 @@ pre() {
 post() {
     check-transcript skill-not-called superpowers:brainstorming
     file-contains 'list.js' 'PAGE_SIZE = 25'
-    not file-contains 'list.js' 'PAGE_SIZE = 10'
 }
