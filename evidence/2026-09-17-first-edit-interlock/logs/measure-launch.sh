@@ -10,9 +10,10 @@
 # session). Writes logs/<arm>-<scenario>-<proc>.log (proc is p<n> for a
 # manifest row or r<n> for a rerun) with the pins, the budget, the launch
 # nonce (LAUNCH_NONCE from launch-all.sh, `manual` for a row launched by
-# hand), the time, the exact command, quorum's output, and a `harness void:`
-# line for every run directory quorum named that has no
-# coding-agent-token-usage.json (a void attempt the analysis refuses to count).
+# hand), the time, the exact command, quorum's output, and the `harness void:`
+# lines logs/void-check.sh prints for every run directory quorum named that
+# cannot count as a trial (no readable verdict, no grader block, a grader that
+# exited without a result, no usable coding-agent-token-usage.json).
 # The last line is DONE only when quorum exited 0, 1, or 2 (a pass, a fail, or
 # an indeterminate are measurements); anything else is FAILED <code>. Refuses
 # to launch when the proxy variables the sessions need are not set (validated,
@@ -74,8 +75,8 @@ export SUPERPOWERS_ROOT="$root"
   echo "\$ env -u SLASH_COMMAND_TOOL_CHAR_BUDGET bun run quorum run scenarios/$scen --coding-agent claude-auto --repeat $rep"
   env -u SLASH_COMMAND_TOOL_CHAR_BUDGET bun run quorum run "scenarios/$scen" --coding-agent claude-auto --repeat "$rep"
   code=$?
-  grep -o 'run-dir  *[^[:space:]]*' "$log" | awk '{print $2}' | while read -r d; do
-    [ -f "$d/coding-agent-token-usage.json" ] || echo "harness void: no coding-agent-token-usage.json in $d"
+  grep -oE 'run-dir[[:space:]]+[^[:space:]]+' "$log" | awk '{print $2}' | while read -r d; do
+    bash "$E/logs/void-check.sh" "$d"
   done
   echo "EXIT=$code"; date -u +%Y-%m-%dT%H:%M:%SZ
   case "$code" in 0|1|2) echo "DONE $arm $scen $proc" ;; *) echo "FAILED $code $arm $scen $proc" ;; esac

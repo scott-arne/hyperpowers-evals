@@ -32,7 +32,10 @@ rerun, or control run, and the analysis refuses anything else);
 `launch-all.sh` runs it through `logs/measure-launch.sh`; `analyze.py`
 refuses to report unless the observed runs match the manifest exactly,
 classifies every tool call with the pinned plugin's own
-`hooks/interlock-lib.cjs` (its vector file is copied here as
+`hooks/interlock-lib.cjs`, reads a call as denied only when its single tool
+result is an error ending with the hook's message as pinned in
+`hooks/first-edit-interlock`, requires every transcript to carry the pinned
+Claude Code version (its vector file is copied here as
 `mutation-cases.tsv` and must be byte-identical to the pinned copy), checks
 that every full-arm context was denied at its first attempt and mutated
 only in a later turn, that no other arm saw a denial, and that every change
@@ -49,9 +52,12 @@ analysis reads that directory as the void ledger, requires every entry to
 carry the pins and to be void on its face, refuses a completed attempt set
 aside there, and reports the count. `logs/measure-launch.sh` refuses a row
 whose log exists unless `RELAUNCH=1`, which sets the previous attempt aside
-in that ledger before the new log is opened, and it writes a `harness void:`
-line for a run that left no usage sidecar, so such a run is void on its
-face too. `launch-all.sh` runs the whole manifest once and cannot resume a
+in that ledger before the new log is opened, and it runs
+`logs/void-check.sh` on every run directory quorum names, which prints a
+`harness void:` line for a run with no readable verdict, no grader block, a
+grader that exited without a result, or no usable usage sidecar; the ledger
+accepts an entry only on its own `FAILED` last line or such a line, never on
+free text, so a graded trial cannot be set aside as a void. `launch-all.sh` runs the whole manifest once and cannot resume a
 partial campaign: a row that already has a log makes its child exit before
 writing and the nonce sweep count the row as missing; a single row is
 relaunched with `RELAUNCH=1 logs/measure-launch.sh <row>`. A relaunch that
