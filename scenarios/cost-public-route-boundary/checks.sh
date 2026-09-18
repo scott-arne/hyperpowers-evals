@@ -12,5 +12,6 @@ post() {
     # Gauntlet-Agent judges ordering. Deterministic floor only.
     file-exists 'server.js'
     file-contains 'server.js' '/reports/public'
-    file-contains 'auth.js' 'function requireLogin'
+    git-repo
+    command-succeeds 'git diff --quiet baseline -- auth.js package.json'
 }

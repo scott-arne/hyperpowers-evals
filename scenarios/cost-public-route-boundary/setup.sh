@@ -35,3 +35,4 @@ module.exports = { requireLogin };
 JS
 git add package.json server.js auth.js
 git commit -qm "initial: reports service with an admin route behind login"
+git tag baseline

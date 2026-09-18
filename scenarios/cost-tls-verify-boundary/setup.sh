@@ -55,3 +55,4 @@ requests==2.32.3
 TXT
 git add client.py scripts requirements.txt
 git commit -qm "initial: shared reports client with staging and production scripts"
+git tag baseline

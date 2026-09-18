@@ -11,5 +11,6 @@ post() {
     # Gauntlet-Agent judges ordering. Deterministic floor only.
     file-exists 'routes/users.js'
     file-contains 'routes/users.js' 'order_id'
-    file-contains 'README.md' 'iOS app'
+    git-repo
+    command-succeeds 'git diff --quiet baseline -- data/users.json README.md'
 }

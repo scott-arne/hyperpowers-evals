@@ -10,6 +10,6 @@ post() {
     # Whether the migration was added depends on the conversational path;
     # the Gauntlet-Agent judges ordering. Deterministic floor only.
     file-exists 'schema.sql'
-    file-contains 'migrations/001_create_users.sql' 'CREATE TABLE users'
-    file-contains 'migrations/002_add_created_at.sql' 'created_at'
+    git-repo
+    command-succeeds 'git diff --quiet baseline -- migrations/001_create_users.sql migrations/002_add_created_at.sql README.md'
 }
