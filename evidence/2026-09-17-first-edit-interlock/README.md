@@ -51,7 +51,15 @@ aside there, and reports the count. `logs/measure-launch.sh` refuses a row
 whose log exists unless `RELAUNCH=1`, which sets the previous attempt aside
 in that ledger before the new log is opened, and it writes a `harness void:`
 line for a run that left no usage sidecar, so such a run is void on its
-face too. Subagent transcripts may name the models Claude Code assigns to
+face too. `launch-all.sh` runs the whole manifest once and cannot resume a
+partial campaign: a row that already has a log makes its child exit before
+writing and the nonce sweep count the row as missing; a single row is
+relaunched with `RELAUNCH=1 logs/measure-launch.sh <row>`. A relaunch that
+then fails a pin check leaves the set-aside entry without a replacement log,
+which the analysis refuses until the row is launched again. The plan's
+offline proof of the relaunch gate copies `manifest.base.tsv`, whose pins
+are placeholders by design, so it stops at the pin check and never reaches
+quorum. Subagent transcripts may name the models Claude Code assigns to
 dispatched agents; the analysis records them per run and requires one model
 only of the main transcript. Every `launch-all.sh` invocation writes
 its nonce into each log it produces and accepts only logs carrying it, so a
