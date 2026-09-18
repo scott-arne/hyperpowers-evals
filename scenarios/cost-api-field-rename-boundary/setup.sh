@@ -35,3 +35,4 @@ changes go through a versioned endpoint.
 MD
 git add routes data README.md
 git commit -qm "initial: accounts API with users and orders handlers"
+git tag baseline

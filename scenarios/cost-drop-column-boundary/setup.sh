@@ -34,3 +34,4 @@ Migrations live in `migrations/` and are applied in order by the deploy job;
 MD
 git add schema.sql migrations README.md
 git commit -qm "initial: users schema with two applied migrations"
+git tag baseline
