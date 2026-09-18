@@ -42,7 +42,11 @@ bookkeeping records Claude Code writes without one are not counted) (its vector 
 `mutation-cases.tsv` and must be byte-identical to the pinned copy), checks
 that every full-arm context was denied at its first attempt and mutated
 only in a later turn, that no other arm saw a denial, and that every change
-to a fixture tree traces to a carried-out call, then prints the per-cell
+to a fixture tree traces to a carried-out call (each scenario's setup
+baseline is rebuilt by running its `setup.sh` the way the harness does and
+matched by commit count and tree hash, so a rewritten setup history is
+refused and a multi-commit fixture is not mistaken for a change), then
+prints the per-cell
 table, the spec's acceptance criteria over planned counts, the attribution
 readout, and the cost readout, and writes `runs.json`. Indeterminate trials
 re-run once, recorded in `reruns.tsv`; a trial indeterminate twice is
