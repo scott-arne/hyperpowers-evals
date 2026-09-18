@@ -80,7 +80,7 @@ CLAUDE_RE = re.compile(r"^claude_code=(\S+)$", re.MULTILINE)
 MODEL_HEADER_RE = re.compile(r"^model_pin=(\S+) anthropic_model=(\S+)$", re.MULTILINE)
 FAILED_LOG_RE = re.compile(r"(control|wording|full)-(.+)-([pr]\d+)\.(\d+)\.log")
 LEDGER_VOID_RE = re.compile(
-    r"quorum error|without writing a result|no Gauntlet-Agent verdict|did not complete|no grader block"
+    r"quorum error|without writing a result|no Gauntlet-Agent verdict|did not complete|no grader block|harness void"
 )
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 BRAINSTORMING_LINE = "- hyperpowers:brainstorming"
@@ -213,6 +213,7 @@ class Run:
     replaces: str | None = None
     version: str = ""
     log: str = ""
+    subagent_models: list[str] = field(default_factory=list)
     denials: int = 0
     attempts: int = 0
     carried_out: int = 0
@@ -669,11 +670,12 @@ def context(transcript: str) -> tuple[str, list[str], str, str, str]:
 def models_of(transcript: str) -> set[str]:
     """Every model an assistant record in the transcript names."""
 
-    return {
+    models = {
         (rec.get("message") or {}).get("model") or ""
         for rec in iter_records(transcript)
         if rec.get("type") == "assistant"
     }
+    return {model for model in models if model}
 
 
 def result_text(content: object) -> str:
@@ -842,14 +844,11 @@ def token_total(run_dir: str, name: str) -> int:
     """The run's token total from the harness's usage sidecar; a missing or unreadable total is a refusal."""
 
     path = os.path.join(run_dir, "coding-agent-token-usage.json")
-    if not os.path.exists(path):
-        raise DesignError(
-            f"{name}: no coding-agent-token-usage.json; the cost readout needs every run's tokens"
-        )
-    total = load_json(path).get("total_tokens")
+    total = load_json(path).get("total_tokens") if os.path.exists(path) else None
     if type(total) is not int or total < 0:
         raise DesignError(
-            f"{name}: coding-agent-token-usage.json has no integer total_tokens"
+            f"{name}: void attempt left in the logs (the harness wrote no usable coding-agent-token-usage.json); "
+            "move its log to logs/failed/<log name>.<attempt>.log and relaunch the row"
         )
     return total
 
@@ -954,6 +953,11 @@ def read_void_ledger(manifest: dict) -> list[Void]:
         claude = CLAUDE_RE.search(text)
         if not claude or claude.group(1) != manifest["claude_code"]:
             raise DesignError(f"{path}: claude_code pin missing or not the manifest's")
+        models = MODEL_HEADER_RE.findall(text)
+        if len(models) != 1 or models[0] != (manifest["model"], manifest["model"]):
+            raise DesignError(
+                f"{path}: model header missing, repeated, or not the manifest's model"
+            )
         if not proc.startswith("r") and (arm, scenario, proc) not in manifest["rows"]:
             raise DesignError(f"{path}: not a manifest row")
         last_line = text.rstrip("\n").rsplit("\n", 1)[-1]
@@ -1116,12 +1120,12 @@ def build_runs(manifest: dict, classifier: Classifier) -> list[Run]:
             raise DesignError(
                 f"{name}: transcript versions {sorted(versions)} are not the pinned {manifest['claude_code']!r}"
             )
+        # Claude Code assigns dispatched agents their own models; they are
+        # recorded per run, and only the main transcript must hold one model.
+        subagent_models: set[str] = set()
         for transcript in transcripts[1:]:
-            foreign = models_of(transcript) - {model}
-            if foreign:
-                raise DesignError(
-                    f"{name}: a subagent transcript ran {sorted(foreign)}, the session model is {model!r}"
-                )
+            subagent_models |= models_of(transcript)
+        run.subagent_models = sorted(subagent_models)
         run.version = manifest["claude_code"]
         run.log = log_name
         run.tree_changed = tree_changed(run_dir, name)
@@ -2711,6 +2715,14 @@ def self_test() -> int:
     def void_without_relaunch(root: str) -> None:
         _fixture_void_log(root, "full", "r7", 1, "void")
 
+    def void_without_model_header(root: str) -> None:
+        _fixture_void_log(root, "full", "p1", 1, "void")
+        _rewrite(
+            os.path.join(root, "logs", "failed", "full-scenario-x-p1.1.log"),
+            "model_pin=model-x anthropic_model=model-x\n",
+            "",
+        )
+
     def void_bad_name(root: str) -> None:
         os.makedirs(os.path.join(root, "logs", "failed"), exist_ok=True)
         with open(
@@ -2766,7 +2778,7 @@ def self_test() -> int:
             two_passes,
             None,
             sidecar_missing,
-            "no coding-agent-token-usage.json",
+            "void attempt left in the logs",
             "plain",
             None,
         ),
@@ -2775,7 +2787,7 @@ def self_test() -> int:
             two_passes,
             None,
             sidecar_without_total,
-            "no integer total_tokens",
+            "void attempt left in the logs",
             "plain",
             None,
         ),
@@ -2798,11 +2810,20 @@ def self_test() -> int:
             None,
         ),
         (
-            "a subagent transcript on another model",
+            "a subagent transcript on another model, recorded and accepted",
             two_passes,
             None,
             subagent_other_model,
-            "a subagent transcript ran",
+            None,
+            "plain",
+            None,
+        ),
+        (
+            "a void ledger entry without the model header",
+            two_passes,
+            None,
+            void_without_model_header,
+            "model header missing, repeated, or not the manifest's model",
             "plain",
             None,
         ),
@@ -3575,9 +3596,10 @@ def main() -> int:
         "one hash per arm, one listing, the hook registered only at the full pin, one main "
         "transcript per run, every full-arm context denied at its first attempt with every "
         "carried-out mutation in a later turn, no denial elsewhere, every fixture tree "
-        "compared and every change explained, one model in every transcript, one Claude Code "
-        "version, every run's tokens, every void attempt retained with its relaunch, expected "
-        "counts" + (" (archives only)" if ARCHIVES_ONLY else "")
+        "compared and every change explained, one model in every main transcript with the "
+        "models of dispatched agents recorded, one Claude Code version, every run's tokens, "
+        "every void attempt retained with its relaunch, expected counts"
+        + (" (archives only)" if ARCHIVES_ONLY else "")
     )
     return 0
 
