@@ -47,7 +47,13 @@ without a verdict, or a launch that did not end in DONE) is relaunched and
 its log is kept as `logs/failed/<arm>-<scenario>-<proc>.<attempt>.log`; the
 analysis reads that directory as the void ledger, requires every entry to
 carry the pins and to be void on its face, refuses a completed attempt set
-aside there, and reports the count. Every `launch-all.sh` invocation writes
+aside there, and reports the count. `logs/measure-launch.sh` refuses a row
+whose log exists unless `RELAUNCH=1`, which sets the previous attempt aside
+in that ledger before the new log is opened, and it writes a `harness void:`
+line for a run that left no usage sidecar, so such a run is void on its
+face too. Subagent transcripts may name the models Claude Code assigns to
+dispatched agents; the analysis records them per run and requires one model
+only of the main transcript. Every `launch-all.sh` invocation writes
 its nonce into each log it produces and accepts only logs carrying it, so a
 launcher that failed before opening its log cannot hide behind a stale one. Logs
 under `logs/`, run copies under `task-6-runs/<scenario>/<arm>/`, the live

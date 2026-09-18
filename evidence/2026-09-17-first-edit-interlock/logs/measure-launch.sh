@@ -10,17 +10,23 @@
 # session). Writes logs/<arm>-<scenario>-<proc>.log (proc is p<n> for a
 # manifest row or r<n> for a rerun) with the pins, the budget, the launch
 # nonce (LAUNCH_NONCE from launch-all.sh, `manual` for a row launched by
-# hand), the time, the exact command, and quorum's output. The last line is DONE only when quorum
-# exited 0, 1, or 2 (a pass, a fail, or an indeterminate are measurements);
-# anything else is FAILED <code>. Refuses to launch when the proxy variables
-# the sessions need are not set (validated, never re-exported), when
-# ANTHROPIC_MODEL differs from the manifest's model row, when `claude
-# --version` differs from the manifest's claude_code row, or when a git
-# status check fails.
+# hand), the time, the exact command, quorum's output, and a `harness void:`
+# line for every run directory quorum named that has no
+# coding-agent-token-usage.json (a void attempt the analysis refuses to count).
+# The last line is DONE only when quorum exited 0, 1, or 2 (a pass, a fail, or
+# an indeterminate are measurements); anything else is FAILED <code>. Refuses
+# to launch when the proxy variables the sessions need are not set (validated,
+# never re-exported), when ANTHROPIC_MODEL differs from the manifest's model
+# row, when `claude --version` differs from the manifest's claude_code row, or
+# when a git status check fails. A row whose log already exists is refused
+# unless RELAUNCH=1, which first sets the previous attempt aside as
+# logs/failed/<arm>-<scenario>-<proc>.<attempt>.log, the void ledger the
+# analysis reads. MEASURE_E overrides the evidence directory for the offline
+# proof in the plan only.
 set -uo pipefail
 arm="$1"; scen="$2"; rep="$3"; proc="$4"; budget="$5"
 EV=/Users/johnss51/Development/agents/hyperpowers/evals
-E="$EV/evidence/2026-09-17-first-edit-interlock"
+E="${MEASURE_E:-$EV/evidence/2026-09-17-first-edit-interlock}"
 HARNESS_PATHS="src scenarios coding-agents package.json bun.lock"
 case "$arm" in
   control) root=/Users/johnss51/Development/agents/hyperpowers/.worktrees/external-workflow-adoption ;;
@@ -30,6 +36,14 @@ case "$arm" in
 esac
 case "$proc" in p[0-9]|p[0-9][0-9]|p[0-9][0-9][0-9]|r[0-9]|r[0-9][0-9]|r[0-9][0-9][0-9]) ;; *) echo "proc must be p<n> or r<n>" >&2; exit 2 ;; esac
 case "$budget" in default) ;; *) echo "budget must be default" >&2; exit 2 ;; esac
+log="$E/logs/$arm-$scen-$proc.log"
+if [ -e "$log" ]; then
+  [ "${RELAUNCH:-}" = "1" ] || { echo "$log exists; a row is relaunched only with RELAUNCH=1, which sets the previous attempt aside in logs/failed/" >&2; exit 1; }
+  mkdir -p "$E/logs/failed" || exit 1
+  n=1; while [ -e "$E/logs/failed/$arm-$scen-$proc.$n.log" ]; do n=$((n + 1)); done
+  mv "$log" "$E/logs/failed/$arm-$scen-$proc.$n.log" || exit 1
+  echo "previous attempt set aside as logs/failed/$arm-$scen-$proc.$n.log"
+fi
 for v in HTTP_PROXY HTTPS_PROXY NO_PROXY; do [ -n "${!v:-}" ] || { echo "$v is not set in the launch environment; the live session needs the proxy configuration" >&2; exit 1; }; done
 pin() { awk -F '\t' -v key="$1" 'NF == 2 && $1 == key { print $2 }' "$E/manifest.tsv"; }
 root_pin=$(pin "$arm"); harness_pin=$(pin harness); model_pin=$(pin model); claude_pin=$(pin claude_code)
@@ -49,7 +63,6 @@ git diff --quiet "$harness_pin" HEAD -- $HARNESS_PATHS || { echo "harness paths 
 harness_status=$(git status --short -- $HARNESS_PATHS) || { echo "git status failed in $EV" >&2; exit 1; }
 [ -z "$harness_status" ] || { echo "harness paths have uncommitted changes" >&2; exit 1; }
 export SUPERPOWERS_ROOT="$root"
-log="$E/logs/$arm-$scen-$proc.log"
 {
   echo "arm=$arm scenario=$scen repeat=$rep proc=$proc budget=$budget"
   echo "nonce=${LAUNCH_NONCE:-manual}"
@@ -61,6 +74,9 @@ log="$E/logs/$arm-$scen-$proc.log"
   echo "\$ env -u SLASH_COMMAND_TOOL_CHAR_BUDGET bun run quorum run scenarios/$scen --coding-agent claude-auto --repeat $rep"
   env -u SLASH_COMMAND_TOOL_CHAR_BUDGET bun run quorum run "scenarios/$scen" --coding-agent claude-auto --repeat "$rep"
   code=$?
+  grep -o 'run-dir  *[^[:space:]]*' "$log" | awk '{print $2}' | while read -r d; do
+    [ -f "$d/coding-agent-token-usage.json" ] || echo "harness void: no coding-agent-token-usage.json in $d"
+  done
   echo "EXIT=$code"; date -u +%Y-%m-%dT%H:%M:%SZ
   case "$code" in 0|1|2) echo "DONE $arm $scen $proc" ;; *) echo "FAILED $code $arm $scen $proc" ;; esac
 } > "$log" 2>&1
