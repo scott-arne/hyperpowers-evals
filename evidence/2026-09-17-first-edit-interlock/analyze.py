@@ -77,10 +77,17 @@ HARNESS_RE = re.compile(
     re.MULTILINE,
 )
 CLAUDE_RE = re.compile(r"^claude_code=(\S+)$", re.MULTILINE)
+MODEL_HEADER_RE = re.compile(r"^model_pin=(\S+) anthropic_model=(\S+)$", re.MULTILINE)
+FAILED_LOG_RE = re.compile(r"(control|wording|full)-(.+)-([pr]\d+)\.(\d+)\.log")
+LEDGER_VOID_RE = re.compile(
+    r"quorum error|without writing a result|no Gauntlet-Agent verdict|did not complete|no grader block"
+)
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 BRAINSTORMING_LINE = "- hyperpowers:brainstorming"
 DENIAL_TEXT = "Interlock, once before your first edit"
 HOOK_NAME = "first-edit-interlock"
+HOOK_MATCHER = "Edit|Write|MultiEdit|NotebookEdit|Bash"
+HOOK_COMMAND = '"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd" first-edit-interlock'
 LIB_PATH = "hooks/interlock-lib.cjs"
 VECTORS_PATH = "tests/hooks/fixtures/mutation-cases.tsv"
 VECTORS_COPY = "mutation-cases.tsv"
@@ -205,6 +212,7 @@ class Run:
     kind: str = "trial"
     replaces: str | None = None
     version: str = ""
+    log: str = ""
     denials: int = 0
     attempts: int = 0
     carried_out: int = 0
@@ -212,6 +220,16 @@ class Run:
     tree_changed: bool = False
     calls: list[Call] = field(default_factory=list, repr=False, compare=False)
     human_turns: list[int] = field(default_factory=list, repr=False, compare=False)
+
+
+@dataclass
+class Void:
+    """A void attempt retained under logs/failed: its row and why it was void."""
+
+    arm: str
+    scenario: str
+    proc: str
+    reason: str
 
 
 class DesignError(Exception):
@@ -261,6 +279,7 @@ def read_manifest() -> dict:
         "topups": [],
         "sentinel_reruns": [],
         "control_runs": [],
+        "base_procs": set(),
     }
     base_path = os.path.join(E, BASE_MANIFEST)
     if not os.path.exists(base_path):
@@ -277,6 +296,9 @@ def read_manifest() -> dict:
     base_rows = {row for _, row in _launch_rows(base_path) if row is not None}
     if not base_rows:
         raise DesignError(f"{BASE_MANIFEST}: no launch rows")
+    manifest["base_procs"] = {
+        (arm, scenario, proc) for arm, scenario, _repeat, proc, _budget in base_rows
+    }
     for arm, scenario, repeat, _proc, _budget in base_rows:
         key = (scenario, arm)
         manifest["planned"][key] = manifest["planned"].get(key, 0) + repeat
@@ -459,11 +481,32 @@ def hook_registered(arm: str, commit: str) -> bool:
             f"{arm}: hooks/hooks.json at {commit} is not JSON ({error.msg})"
         ) from None
     entries = (hooks.get("hooks") or {}).get("PreToolUse") or []
+    found: list[tuple[dict, dict]] = []
     for entry in entries:
         for hook in entry.get("hooks") or []:
             if HOOK_NAME in str(hook.get("command", "")):
-                return True
-    return False
+                found.append((entry, hook))
+    if not found:
+        return False
+    if len(found) != 1:
+        raise DesignError(
+            f"{arm}: {HOOK_NAME} is registered {len(found)} times at {commit}"
+        )
+    entry, hook = found[0]
+    exact = (
+        entry.get("matcher") == HOOK_MATCHER
+        and hook.get("type") == "command"
+        and hook.get("command") == HOOK_COMMAND
+        and hook.get("shell") == "bash"
+        and hook.get("async") is False
+    )
+    if not exact:
+        raise DesignError(
+            f"{arm}: the {HOOK_NAME} registration at {commit} is not the exact one "
+            f"(matcher {entry.get('matcher')!r}, type {hook.get('type')!r}, command "
+            f"{hook.get('command')!r}, shell {hook.get('shell')!r}, async {hook.get('async')!r})"
+        )
+    return True
 
 
 def check_hook_presence(manifest: dict) -> None:
@@ -621,6 +664,16 @@ def context(transcript: str) -> tuple[str, list[str], str, str, str]:
     )
     model = next(iter(models)) if models else ""
     return payload, payload_texts, listing_rest, brainstorming, model
+
+
+def models_of(transcript: str) -> set[str]:
+    """Every model an assistant record in the transcript names."""
+
+    return {
+        (rec.get("message") or {}).get("model") or ""
+        for rec in iter_records(transcript)
+        if rec.get("type") == "assistant"
+    }
 
 
 def result_text(content: object) -> str:
@@ -785,15 +838,20 @@ def tree_changed(run_dir: str, name: str) -> bool:
     return int(count.stdout.strip()) > 1 or bool(status.stdout.strip())
 
 
-def token_total(run_dir: str) -> int | None:
+def token_total(run_dir: str, name: str) -> int:
+    """The run's token total from the harness's usage sidecar; a missing or unreadable total is a refusal."""
+
     path = os.path.join(run_dir, "coding-agent-token-usage.json")
     if not os.path.exists(path):
-        return None
-    usage = load_json(path)
-    total = usage.get("total_tokens") or usage.get("total")
-    if isinstance(total, (int, float)):
-        return int(total)
-    return int(sum(v for v in usage.values() if isinstance(v, (int, float))))
+        raise DesignError(
+            f"{name}: no coding-agent-token-usage.json; the cost readout needs every run's tokens"
+        )
+    total = load_json(path).get("total_tokens")
+    if type(total) is not int or total < 0:
+        raise DesignError(
+            f"{name}: coding-agent-token-usage.json has no integer total_tokens"
+        )
+    return total
 
 
 def read_logs(manifest: dict) -> list[tuple[str, str, str, bool, int, str]]:
@@ -829,6 +887,11 @@ def read_logs(manifest: dict) -> list[tuple[str, str, str, bool, int, str]]:
         claude = CLAUDE_RE.search(text)
         if not claude or claude.group(1) != manifest["claude_code"]:
             raise DesignError(f"{log}: claude_code pin missing or not the manifest's")
+        models = MODEL_HEADER_RE.findall(text)
+        if len(models) != 1 or models[0] != (manifest["model"], manifest["model"]):
+            raise DesignError(
+                f"{log}: model header missing, repeated, or not the manifest's model"
+            )
         last_line = text.rstrip("\n").rsplit("\n", 1)[-1]
         if last_line != f"DONE {arm} {scenario} {proc}":
             raise DesignError(
@@ -858,6 +921,57 @@ def read_logs(manifest: dict) -> list[tuple[str, str, str, bool, int, str]]:
     if missing:
         raise DesignError(f"manifest rows without a log: {sorted(missing)}")
     return rows
+
+
+def read_void_ledger(manifest: dict) -> list[Void]:
+    """Every file under logs/failed is a retained void attempt: pinned like a log, void on its face, and relaunched."""
+
+    voids: list[Void] = []
+    for path in sorted(glob.glob(os.path.join(E, "logs", "failed", "*"))):
+        match = FAILED_LOG_RE.fullmatch(os.path.basename(path))
+        if not match:
+            raise DesignError(
+                f"{path}: not a void ledger name (<arm>-<scenario>-<p|r><n>.<attempt>.log)"
+            )
+        arm, scenario, proc = match.group(1), match.group(2), match.group(3)
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
+        header = HEADER_RE.search(text)
+        if not header or (header.group(1), header.group(2), header.group(4)) != (
+            arm,
+            scenario,
+            proc,
+        ):
+            raise DesignError(f"{path}: header does not match the file name")
+        root = ROOT_RE.search(text)
+        if not root or root.group(1) != manifest["commits"][arm]:
+            raise DesignError(
+                f"{path}: root pin missing or not the manifest's {arm} commit"
+            )
+        harness = HARNESS_RE.search(text)
+        if not harness or harness.group(1) != manifest["commits"]["harness"]:
+            raise DesignError(f"{path}: harness pin missing or not the manifest's")
+        claude = CLAUDE_RE.search(text)
+        if not claude or claude.group(1) != manifest["claude_code"]:
+            raise DesignError(f"{path}: claude_code pin missing or not the manifest's")
+        if not proc.startswith("r") and (arm, scenario, proc) not in manifest["rows"]:
+            raise DesignError(f"{path}: not a manifest row")
+        last_line = text.rstrip("\n").rsplit("\n", 1)[-1]
+        void = LEDGER_VOID_RE.search(text)
+        if last_line.startswith("FAILED "):
+            reason = "launch failure"
+        elif void:
+            reason = void.group(0)
+        else:
+            raise DesignError(
+                f"{path}: a completed attempt was set aside; a graded trial cannot be moved to logs/failed"
+            )
+        if not os.path.exists(os.path.join(E, "logs", f"{arm}-{scenario}-{proc}.log")):
+            raise DesignError(
+                f"{path}: void attempt without its relaunch (no logs/{arm}-{scenario}-{proc}.log)"
+            )
+        voids.append(Void(arm, scenario, proc, reason))
+    return voids
 
 
 def read_reruns() -> dict[str, str]:
@@ -940,7 +1054,7 @@ def build_runs(manifest: dict, classifier: Classifier) -> list[Run]:
                 or "no grader block, or one without a summary or run id"
             )
             raise DesignError(
-                f"{name}: void attempt left in the logs ({why[:80]!r}); move its log to logs/failed/ and relaunch the row"
+                f"{name}: void attempt left in the logs ({why[:80]!r}); move its log to logs/failed/<log name>.<attempt>.log and relaunch the row"
             )
         if verdict.get("scenario") != scenario:
             raise DesignError(
@@ -983,7 +1097,7 @@ def build_runs(manifest: dict, classifier: Classifier) -> list[Run]:
             name,
             final,
             first_action(transcripts[0]),
-            token_total(run_dir),
+            token_total(run_dir, name),
             payload,
             listing_rest,
             brainstorming,
@@ -1002,7 +1116,14 @@ def build_runs(manifest: dict, classifier: Classifier) -> list[Run]:
             raise DesignError(
                 f"{name}: transcript versions {sorted(versions)} are not the pinned {manifest['claude_code']!r}"
             )
+        for transcript in transcripts[1:]:
+            foreign = models_of(transcript) - {model}
+            if foreign:
+                raise DesignError(
+                    f"{name}: a subagent transcript ran {sorted(foreign)}, the session model is {model!r}"
+                )
         run.version = manifest["claude_code"]
+        run.log = log_name
         run.tree_changed = tree_changed(run_dir, name)
         pending.append((run, transcripts, name))
         runs.append(run)
@@ -1076,6 +1197,19 @@ def check_deltas(manifest: dict, runs: list[Run], trials: list[Run]) -> None:
 
     by_name = {run.run: run for run in runs}
     replacement_of = {run.replaces: run for run in runs if run.replaces}
+
+    def base_trial(run: Run) -> bool:
+        match = LOG_RE.fullmatch(run.log)
+        return (
+            match is not None
+            and (
+                run.arm,
+                run.scenario,
+                match.group(3),
+            )
+            in manifest["base_procs"]
+        )
+
     per_cell: dict[tuple[str, str], int] = {}
     named: set[str] = set()
     for cell, proc, original_name in manifest["topups"]:
@@ -1090,6 +1224,11 @@ def check_deltas(manifest: dict, runs: list[Run], trials: list[Run]) -> None:
         if original.kind != "trial":
             raise DesignError(
                 f"top-up {proc} names {original_name}, a conditional row, not a trial"
+            )
+        if not base_trial(original):
+            raise DesignError(
+                f"top-up {proc} names {original_name}, which is not a base-design trial; "
+                "a top-up that is indeterminate twice gets no further top-up"
             )
         replacement = replacement_of.get(original_name)
         if (
@@ -1106,6 +1245,8 @@ def check_deltas(manifest: dict, runs: list[Run], trials: list[Run]) -> None:
     for run in runs:
         if run.replaces or run.final != "indeterminate" or run.kind != "trial":
             continue
+        if not base_trial(run):
+            continue  # a twice-indeterminate top-up leaves its cell short
         replacement = replacement_of.get(run.run)
         if replacement is None or replacement.final != "indeterminate":
             continue
@@ -1162,7 +1303,7 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, centre - half), min(1.0, centre + half))
 
 
-def check_design(manifest: dict, runs: list[Run], trials: list[Run]) -> None:
+def check_design(manifest: dict, runs: list[Run], trials: list[Run]) -> list[Void]:
     """Counts on the collapsed trials; the measurement context on every run; the deltas justified."""
 
     expected = manifest["trials"]
@@ -1217,6 +1358,7 @@ def check_design(manifest: dict, runs: list[Run], trials: list[Run]) -> None:
         raise DesignError(f"models differ from the design: {sorted(models)}")
     check_hook_presence(manifest)
     check_deltas(manifest, runs, trials)
+    return read_void_ledger(manifest)
 
 
 def rate(rows: list[Run], scenario: str, arm: str, outcome: str) -> tuple[int, int]:
@@ -1442,6 +1584,8 @@ FIXTURE_HOOKS_FULL = json.dumps(
                         {
                             "type": "command",
                             "command": '"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd" first-edit-interlock',
+                            "shell": "bash",
+                            "async": False,
                         }
                     ],
                 }
@@ -1671,6 +1815,10 @@ def _fixture_run(
     ) as handle:
         handle.write(_fixture_transcript(arm, shape) + "\n")
     _fixture_workdir(run_dir, changed=(shape != "none"))
+    with open(
+        os.path.join(run_dir, "coding-agent-token-usage.json"), "w", encoding="utf-8"
+    ) as handle:
+        json.dump({"total_tokens": 1000 + index, "model": "model-x"}, handle)
     return run_dir
 
 
@@ -1687,10 +1835,34 @@ def _fixture_log(root: str, arm: str, proc: str, run_dirs: list[str]) -> None:
         handle.write(
             f"harness_pin={FIXTURE_HARNESS} evals_head={FIXTURE_HARNESS} harness_paths_identical=yes\n"
         )
+        handle.write("model_pin=model-x anthropic_model=model-x\n")
         handle.write(f"claude_code={FIXTURE_VERSION}\n")
         handle.write(
             "\n".join(f"run-dir   {d}" for d in run_dirs)
             + f"\nEXIT=0\nDONE {arm} scenario-x {proc}\n"
+        )
+
+
+def _fixture_void_log(root: str, arm: str, proc: str, attempt: int, kind: str) -> None:
+    """A retained attempt under logs/failed: ``void`` (a setup error), ``failed`` (a launch failure), or ``graded`` (a completed attempt that does not belong there)."""
+
+    os.makedirs(os.path.join(root, "logs", "failed"), exist_ok=True)
+    tail = {
+        "void": f"quorum error (setup): setup.sh failed (exit 1)\nEXIT=2\nDONE {arm} scenario-x {proc}\n",
+        "failed": f"EXIT=9\nFAILED 9 {arm} scenario-x {proc}\n",
+        "graded": f"run-dir   /nowhere\nEXIT=0\nDONE {arm} scenario-x {proc}\n",
+    }[kind]
+    with open(
+        os.path.join(root, "logs", "failed", f"{arm}-scenario-x-{proc}.{attempt}.log"),
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        handle.write(
+            f"arm={arm} scenario=scenario-x repeat=1 proc={proc} budget=default\n"
+            f"root={_fixture_commit(arm)} root_clean=0\n"
+            f"harness_pin={FIXTURE_HARNESS} evals_head={FIXTURE_HARNESS} harness_paths_identical=yes\n"
+            "model_pin=model-x anthropic_model=model-x\n"
+            f"claude_code={FIXTURE_VERSION}\n" + tail
         )
 
 
@@ -2443,6 +2615,109 @@ def self_test() -> int:
         with open(os.path.join(sub, "agent-1.jsonl"), "w", encoding="utf-8") as handle:
             handle.write(_fixture_transcript("full", "denied") + "\n")
 
+    def model_header_missing(root: str) -> None:
+        _rewrite(
+            os.path.join(root, "logs", "full-scenario-x-p1.log"),
+            "model_pin=model-x anthropic_model=model-x\n",
+            "",
+        )
+
+    def model_header_wrong(root: str) -> None:
+        _rewrite(
+            os.path.join(root, "logs", "full-scenario-x-p1.log"),
+            "model_pin=model-x anthropic_model=model-x\n",
+            "model_pin=model-x anthropic_model=model-y\n",
+        )
+
+    def sidecar_missing(root: str) -> None:
+        os.remove(
+            os.path.join(root, "results", "run-a", "coding-agent-token-usage.json")
+        )
+
+    def sidecar_without_total(root: str) -> None:
+        with open(
+            os.path.join(root, "results", "run-a", "coding-agent-token-usage.json"),
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            json.dump({"total_input": 5}, handle)
+
+    def _rehook(root: str, hooks_text: str) -> None:
+        arm_root = ROOTS["full"]
+        with open(
+            os.path.join(arm_root, "hooks/hooks.json"), "w", encoding="utf-8"
+        ) as handle:
+            handle.write(hooks_text)
+        subprocess.run(
+            ["git", "-C", arm_root, *FIXTURE_GIT, "commit", "-q", "-am", "hook"],
+            check=True,
+        )
+        _repin(root, "full")
+
+    def partial_hook_matcher(root: str) -> None:
+        _rehook(root, FIXTURE_HOOKS_FULL.replace(HOOK_MATCHER, "Edit"))
+
+    def hook_without_type(root: str) -> None:
+        hooks = json.loads(FIXTURE_HOOKS_FULL)
+        del hooks["hooks"]["PreToolUse"][0]["hooks"][0]["type"]
+        _rehook(root, json.dumps(hooks))
+
+    def subagent_other_model(root: str) -> None:
+        sub = os.path.join(
+            root, "results", "run-a", "home/.claude/projects/p/t/subagents"
+        )
+        os.makedirs(sub, exist_ok=True)
+        with open(os.path.join(sub, "agent-1.jsonl"), "w", encoding="utf-8") as handle:
+            handle.write(
+                _fixture_transcript("full", "denied").replace(
+                    '"model": "model-x"', '"model": "model-y"'
+                )
+                + "\n"
+            )
+
+    def topup_of_topup(root: str) -> None:
+        _fixture_add_row(
+            root, "full", "p3", "indeterminate", "# top-up: run-b indeterminate twice"
+        )
+        run_dir = _fixture_run(root, "full", "rerun-p3", "indeterminate", 1, 1)
+        _fixture_log(root, "full", "r9", [run_dir])
+        with open(os.path.join(root, "reruns.tsv"), "a", encoding="utf-8") as handle:
+            handle.write("run-full-p3-1\trerun-p3\n")
+        _fixture_add_row(
+            root, "full", "p4", "pass", "# top-up: run-full-p3-1 indeterminate twice"
+        )
+
+    def void_retained(root: str) -> None:
+        _fixture_void_log(root, "full", "p1", 1, "void")
+
+    def void_failed_retained(root: str) -> None:
+        _fixture_void_log(root, "full", "p1", 1, "failed")
+
+    def void_orphan(root: str) -> None:
+        _fixture_void_log(root, "full", "p9", 1, "void")
+
+    def void_junk(root: str) -> None:
+        os.makedirs(os.path.join(root, "logs", "failed"), exist_ok=True)
+        with open(
+            os.path.join(root, "logs", "failed", "full-scenario-x-p1.1.log"),
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            handle.write("stale copy\n")
+
+    def graded_set_aside(root: str) -> None:
+        _fixture_void_log(root, "full", "p1", 1, "graded")
+
+    def void_without_relaunch(root: str) -> None:
+        _fixture_void_log(root, "full", "r7", 1, "void")
+
+    def void_bad_name(root: str) -> None:
+        os.makedirs(os.path.join(root, "logs", "failed"), exist_ok=True)
+        with open(
+            os.path.join(root, "logs", "failed", "notes.txt"), "w", encoding="utf-8"
+        ) as handle:
+            handle.write("a note\n")
+
     two_passes = {"run-a": "pass", "run-b": "pass"}
     one_replaced = {"run-a": "pass", "run-b": "indeterminate", "rerun-b": "fail"}
     twice = {"run-a": "pass", "run-b": "indeterminate", "rerun-b": "indeterminate"}
@@ -2468,6 +2743,141 @@ def self_test() -> int:
             str | None,
         ]
     ] = [
+        (
+            "a log without the model header",
+            two_passes,
+            None,
+            model_header_missing,
+            "model header missing, repeated, or not the manifest's model",
+            "plain",
+            None,
+        ),
+        (
+            "a log whose launch model is not the manifest's",
+            two_passes,
+            None,
+            model_header_wrong,
+            "model header missing, repeated, or not the manifest's model",
+            "plain",
+            None,
+        ),
+        (
+            "a run without its token usage sidecar",
+            two_passes,
+            None,
+            sidecar_missing,
+            "no coding-agent-token-usage.json",
+            "plain",
+            None,
+        ),
+        (
+            "a token usage sidecar without an integer total",
+            two_passes,
+            None,
+            sidecar_without_total,
+            "no integer total_tokens",
+            "plain",
+            None,
+        ),
+        (
+            "a hook registered for one tool only",
+            two_passes,
+            None,
+            partial_hook_matcher,
+            "is not the exact one",
+            "plain",
+            None,
+        ),
+        (
+            "a hook entry without its type",
+            two_passes,
+            None,
+            hook_without_type,
+            "is not the exact one",
+            "plain",
+            None,
+        ),
+        (
+            "a subagent transcript on another model",
+            two_passes,
+            None,
+            subagent_other_model,
+            "a subagent transcript ran",
+            "plain",
+            None,
+        ),
+        (
+            "a top-up naming a previous top-up",
+            twice,
+            "run-b\trerun-b\n",
+            topup_of_topup,
+            "not a base-design trial",
+            "plain",
+            None,
+        ),
+        (
+            "a retained void attempt with its relaunch",
+            two_passes,
+            None,
+            void_retained,
+            None,
+            "plain",
+            None,
+        ),
+        (
+            "a retained launch failure with its relaunch",
+            two_passes,
+            None,
+            void_failed_retained,
+            None,
+            "plain",
+            None,
+        ),
+        (
+            "a void ledger entry for a row the manifest does not have",
+            two_passes,
+            None,
+            void_orphan,
+            "not a manifest row",
+            "plain",
+            None,
+        ),
+        (
+            "a void ledger entry without a header",
+            two_passes,
+            None,
+            void_junk,
+            "header does not match",
+            "plain",
+            None,
+        ),
+        (
+            "a completed attempt set aside in logs/failed",
+            two_passes,
+            None,
+            graded_set_aside,
+            "a completed attempt was set aside",
+            "plain",
+            None,
+        ),
+        (
+            "a void attempt whose row was never relaunched",
+            two_passes,
+            None,
+            void_without_relaunch,
+            "void attempt without its relaunch",
+            "plain",
+            None,
+        ),
+        (
+            "a file under logs/failed that is not a void log",
+            two_passes,
+            None,
+            void_bad_name,
+            "not a void ledger name",
+            "plain",
+            None,
+        ),
         (
             "a clean cohort with one replaced indeterminate",
             one_replaced,
@@ -3109,7 +3519,7 @@ def main() -> int:
     finally:
         classifier.close()
     trials, conditionals = split_rows(collapse(runs))
-    check_design(manifest, runs, trials)
+    voids = check_design(manifest, runs, trials)
     with open(os.path.join(E, "runs.json"), "w", encoding="utf-8") as handle:
         json.dump([run_record(run) for run in runs], handle, indent=1)
     print(
@@ -3150,12 +3560,23 @@ def main() -> int:
         print(line)
     print()
     print(
+        f"void attempts retained in logs/failed: {len(voids)}"
+        + (
+            "; "
+            + "; ".join(f"{v.arm} {v.scenario} {v.proc} ({v.reason})" for v in voids)
+            if voids
+            else ""
+        )
+    )
+    print()
+    print(
         "design checks passed: every manifest row logged once with its pins, every added "
         "row justified, no void attempt counted, the pinned bootstrap in every payload with "
         "one hash per arm, one listing, the hook registered only at the full pin, one main "
         "transcript per run, every full-arm context denied at its first attempt with every "
         "carried-out mutation in a later turn, no denial elsewhere, every fixture tree "
-        "compared and every change explained, one model, one Claude Code version, expected "
+        "compared and every change explained, one model in every transcript, one Claude Code "
+        "version, every run's tokens, every void attempt retained with its relaunch, expected "
         "counts" + (" (archives only)" if ARCHIVES_ONLY else "")
     )
     return 0
