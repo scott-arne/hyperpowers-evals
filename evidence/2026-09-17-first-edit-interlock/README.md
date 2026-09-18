@@ -36,7 +36,9 @@ classifies every tool call with the pinned plugin's own
 result is an error carrying the hook's message as pinned in
 `hooks/first-edit-interlock` (a call the session ended on, with no result,
 is neither denied nor carried out; a call with two results is refused),
-requires every transcript to carry the pinned Claude Code version (its vector file is copied here as
+requires every attachment, user, assistant, and system
+record of every transcript to carry the pinned Claude Code version (the
+bookkeeping records Claude Code writes without one are not counted) (its vector file is copied here as
 `mutation-cases.tsv` and must be byte-identical to the pinned copy), checks
 that every full-arm context was denied at its first attempt and mutated
 only in a later turn, that no other arm saw a denial, and that every change
@@ -54,7 +56,9 @@ carry the pins and to be void on its face, refuses a completed attempt set
 aside there, and reports the count. `logs/measure-launch.sh` refuses a row
 whose log exists unless `RELAUNCH=1`, which sets the previous attempt aside
 in that ledger before the new log is opened, and it runs
-`logs/void-check.sh` on every run directory quorum names, which prints a
+`logs/void-check.sh` on every run directory quorum names (its own
+`run-dir` line: the word at the start of a line, spaces, an absolute path;
+prose that mentions run-dir mid-line is never read), which prints a
 `harness void:` line for a run with no readable verdict, no grader block, a
 grader that exited without a result, a verdict without a final outcome, or
 no usable usage sidecar; the ledger accepts an entry only on its own
