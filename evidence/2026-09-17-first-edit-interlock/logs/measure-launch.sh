@@ -8,8 +8,9 @@
 # Claude Code version the launching host runs. budget must be `default` (the
 # production listing budget; SLASH_COMMAND_TOOL_CHAR_BUDGET is unset for the
 # session). Writes logs/<arm>-<scenario>-<proc>.log (proc is p<n> for a
-# manifest row or r<n> for a rerun) with the pins, the budget, the time, the
-# exact command, and quorum's output. The last line is DONE only when quorum
+# manifest row or r<n> for a rerun) with the pins, the budget, the launch
+# nonce (LAUNCH_NONCE from launch-all.sh, `manual` for a row launched by
+# hand), the time, the exact command, and quorum's output. The last line is DONE only when quorum
 # exited 0, 1, or 2 (a pass, a fail, or an indeterminate are measurements);
 # anything else is FAILED <code>. Refuses to launch when the proxy variables
 # the sessions need are not set (validated, never re-exported), when
@@ -51,6 +52,7 @@ export SUPERPOWERS_ROOT="$root"
 log="$E/logs/$arm-$scen-$proc.log"
 {
   echo "arm=$arm scenario=$scen repeat=$rep proc=$proc budget=$budget"
+  echo "nonce=${LAUNCH_NONCE:-manual}"
   echo "root=$root_pin root_clean=0"
   echo "harness_pin=$harness_pin evals_head=$(git rev-parse HEAD) harness_paths_identical=yes"
   echo "model_pin=$model_pin anthropic_model=$ANTHROPIC_MODEL"

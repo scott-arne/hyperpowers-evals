@@ -40,7 +40,16 @@ to a fixture tree traces to a carried-out call, then prints the per-cell
 table, the spec's acceptance criteria over planned counts, the attribution
 readout, and the cost readout, and writes `runs.json`. Indeterminate trials
 re-run once, recorded in `reruns.tsv`; a trial indeterminate twice is
-replaced by a fresh manifest row, recorded as a comment beside it. Logs
+replaced by a fresh manifest row, recorded as a comment beside it; a top-up
+that is itself indeterminate twice gets no further top-up and leaves its
+cell short. A void attempt (a harness setup failure, a grader that exited
+without a verdict, or a launch that did not end in DONE) is relaunched and
+its log is kept as `logs/failed/<arm>-<scenario>-<proc>.<attempt>.log`; the
+analysis reads that directory as the void ledger, requires every entry to
+carry the pins and to be void on its face, refuses a completed attempt set
+aside there, and reports the count. Every `launch-all.sh` invocation writes
+its nonce into each log it produces and accepts only logs carrying it, so a
+launcher that failed before opening its log cannot hide behind a stale one. Logs
 under `logs/`, run copies under `task-6-runs/<scenario>/<arm>/`, the live
 probe's transcripts and hook log under `probe/`, the analysis in
 `analysis.md` and `analysis-table.txt`, and the campaign's entry in the

@@ -5,9 +5,11 @@
 # time (default 8), waits for every child, and fails closed: a malformed row
 # (wrong field count, an empty field, a misspelled arm, a bad proc, repeat, or
 # budget) or a duplicate row stops the campaign before anything is launched;
-# a manifest row whose log is missing or does not end with DONE makes the
-# exit status 1 and the closing line say so. The exit status follows that
-# DONE-log sweep alone: `wait` on a child the job-control throttle has
+# a manifest row whose log is missing, was written by an earlier launch (its
+# nonce line is not this launch's), or does not end with its own DONE line
+# makes the exit status 1 and the closing line say so, so a launcher that
+# fails before it opens its log can never hide behind a stale log. The exit
+# status follows that DONE-log sweep alone: `wait` on a child the job-control throttle has
 # already reaped reports "not a child of this shell", which is bookkeeping,
 # not a failed launch, so it is counted and printed but never decides the
 # status. LAUNCHER overrides the launcher path (the stub test uses it); the
@@ -44,10 +46,12 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < "$manifest"
 [ "$bad" -eq 0 ] || { echo "manifest has malformed rows; nothing was launched" >&2; exit 1; }
 [ "${#arms[@]}" -gt 0 ] || { echo "manifest has no launch rows" >&2; exit 1; }
-rows=(); pids=(); labels=()
+LAUNCH_NONCE="$(date -u +%Y%m%dT%H%M%SZ)-$$"; export LAUNCH_NONCE
+echo "launch nonce $LAUNCH_NONCE"
+rows=(); dones=(); pids=(); labels=()
 for i in "${!arms[@]}"; do
   arm="${arms[$i]}"; scen="${scens[$i]}"; rep="${reps[$i]}"; proc="${procs[$i]}"; budget="${budgets[$i]}"
-  rows+=("$arm-$scen-$proc")
+  rows+=("$arm-$scen-$proc"); dones+=("DONE $arm $scen $proc")
   while [ "$(jobs -rp | wc -l | tr -d ' ')" -ge "$max" ]; do sleep 15; done
   bash "$launcher" "$arm" "$scen" "$rep" "$proc" "$budget" &
   pids+=("$!"); labels+=("$arm $scen x$rep $proc $budget"); echo "started $arm $scen x$rep $proc $budget ($(date -u +%H:%M:%SZ))"
@@ -57,10 +61,11 @@ for i in "${!pids[@]}"; do
   if ! wait "${pids[$i]}" 2>/dev/null; then echo "wait reported non-zero for: ${labels[$i]} (bookkeeping; the DONE sweep decides)" >&2; wait_notes=$((wait_notes + 1)); fi
 done
 missing=0
-for row in "${rows[@]}"; do
-  log="$E/logs/$row.log"
+for i in "${!rows[@]}"; do
+  row="${rows[$i]}"; log="$E/logs/$row.log"
   if [ ! -f "$log" ]; then echo "no log for $row" >&2; missing=$((missing + 1)); continue; fi
-  tail -n 1 "$log" | grep -q "^DONE " || { echo "log for $row does not end with DONE" >&2; missing=$((missing + 1)); }
+  if ! grep -q -x -F "nonce=$LAUNCH_NONCE" "$log"; then echo "log for $row is from an earlier launch (nonce mismatch)" >&2; missing=$((missing + 1)); continue; fi
+  [ "$(tail -n 1 "$log")" = "${dones[$i]}" ] || { echo "log for $row does not end with DONE" >&2; missing=$((missing + 1)); }
 done
 echo "all launches finished; wait notes: $wait_notes; manifest rows without a DONE log: $missing"
 [ "$missing" -eq 0 ]
