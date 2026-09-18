@@ -3,8 +3,8 @@
 # Prints one `harness void: <why> in <run-dir>` line for every reason the run
 # cannot count as a trial: no readable verdict.json; no grader block; a grader
 # block without a summary or run id; a grader that exited without a result
-# (its reason or summary says so); no usable coding-agent-token-usage.json (one
-# with an integer total_tokens). Prints nothing for a run the analysis can
+# (its reason or summary says so); a verdict without a final outcome; no usable
+# coding-agent-token-usage.json (one with an integer total_tokens). Prints nothing for a run the analysis can
 # grade. logs/measure-launch.sh runs it for every run directory quorum names,
 # so a void attempt is on the face of its log and the analysis accepts that log
 # in the logs/failed ledger; the plan's offline proof runs it on synthetic run
@@ -23,6 +23,7 @@ const verdict = read("verdict.json");
 if (verdict === undefined || verdict === null || typeof verdict !== "object") {
   reasons.push("no readable verdict.json");
 } else {
+  if (!["pass", "fail", "indeterminate"].includes(verdict.final)) reasons.push("verdict without a final outcome");
   const grader = verdict.gauntlet;
   if (!grader || typeof grader !== "object") {
     reasons.push("no grader block");
