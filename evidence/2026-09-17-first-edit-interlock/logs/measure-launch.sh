@@ -75,7 +75,7 @@ export SUPERPOWERS_ROOT="$root"
   echo "\$ env -u SLASH_COMMAND_TOOL_CHAR_BUDGET bun run quorum run scenarios/$scen --coding-agent claude-auto --repeat $rep"
   env -u SLASH_COMMAND_TOOL_CHAR_BUDGET bun run quorum run "scenarios/$scen" --coding-agent claude-auto --repeat "$rep"
   code=$?
-  grep -oE 'run-dir[[:space:]]+[^[:space:]]+' "$log" | awk '{print $2}' | while read -r d; do
+  grep -E '^run-dir[[:space:]]+/[^[:space:]]+[[:space:]]*$' "$log" | awk '{print $2}' | while read -r d; do
     bash "$E/logs/void-check.sh" "$d"
   done
   echo "EXIT=$code"; date -u +%Y-%m-%dT%H:%M:%SZ
