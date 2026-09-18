@@ -79,13 +79,12 @@ HARNESS_RE = re.compile(
 CLAUDE_RE = re.compile(r"^claude_code=(\S+)$", re.MULTILINE)
 MODEL_HEADER_RE = re.compile(r"^model_pin=(\S+) anthropic_model=(\S+)$", re.MULTILINE)
 FAILED_LOG_RE = re.compile(r"(control|wording|full)-(.+)-([pr]\d+)\.(\d+)\.log")
-LEDGER_VOID_RE = re.compile(
-    r"quorum error|without writing a result|no Gauntlet-Agent verdict|did not complete|no grader block|harness void"
-)
+LEDGER_VOID_RE = re.compile(r"^harness void: (.+)$", re.MULTILINE)
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 BRAINSTORMING_LINE = "- hyperpowers:brainstorming"
-DENIAL_TEXT = "Interlock, once before your first edit"
 HOOK_NAME = "first-edit-interlock"
+HOOK_SCRIPT_PATH = "hooks/first-edit-interlock"
+MESSAGE_RE = re.compile(r"^MESSAGE='([^']+)'$", re.MULTILINE)
 HOOK_MATCHER = "Edit|Write|MultiEdit|NotebookEdit|Bash"
 HOOK_COMMAND = '"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd" first-edit-interlock'
 LIB_PATH = "hooks/interlock-lib.cjs"
@@ -187,11 +186,15 @@ class Call:
     tool_input: dict
     message_id: str
     result_text: str = ""
+    result_count: int = 0
+    denial_result: bool = False
     attempt: bool = False
 
     @property
     def denied(self) -> bool:
-        return self.attempt and DENIAL_TEXT in self.result_text
+        """A mutation attempt whose one tool result is an error ending with the pinned hook's message."""
+
+        return self.attempt and self.denial_result
 
 
 @dataclass
@@ -510,6 +513,17 @@ def hook_registered(arm: str, commit: str) -> bool:
     return True
 
 
+def hook_message(commit: str) -> str:
+    """The denial message the full arm's hook script carries at the pin (its MESSAGE line)."""
+
+    if not git_has("full", commit, HOOK_SCRIPT_PATH):
+        raise DesignError(f"full: no {HOOK_SCRIPT_PATH} at {commit}")
+    match = MESSAGE_RE.search(git_show("full", commit, HOOK_SCRIPT_PATH))
+    if not match:
+        raise DesignError(f"full: {HOOK_SCRIPT_PATH} at {commit} has no MESSAGE line")
+    return match.group(1)
+
+
 def check_hook_presence(manifest: dict) -> None:
     for arm in ARMS:
         present = hook_registered(arm, manifest["commits"][arm])
@@ -696,8 +710,16 @@ def _dict_or_empty(value: object) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-def read_calls(transcript: str) -> tuple[list[Call], list[int], set[str]]:
-    """(tool calls in order with their results, indexes of human turns, versions seen) for one transcript."""
+def read_calls(
+    transcript: str, denial_message: str
+) -> tuple[list[Call], list[int], set[str]]:
+    """(tool calls in order with their results, indexes of human turns, versions seen) for one transcript.
+
+    A call is denied when its single tool result is an error whose text ends
+    with ``denial_message``, the pinned hook's denial text; a call with no
+    result or more than one is a refusal, because a call that never returned
+    cannot be read either way.
+    """
 
     calls: list[Call] = []
     by_id: dict[str, Call] = {}
@@ -735,11 +757,21 @@ def read_calls(transcript: str) -> tuple[list[Call], list[int], set[str]]:
                         had_result = True
                         matched = by_id.get(str(part.get("tool_use_id") or ""))
                         if matched is not None:
+                            matched.result_count += 1
                             matched.result_text = result_text(part.get("content"))
+                            matched.denial_result = bool(
+                                part.get("is_error")
+                            ) and matched.result_text.rstrip().endswith(denial_message)
                 if not had_result and not rec.get("isMeta"):
                     humans.append(index)
             elif isinstance(content, str) and not rec.get("isMeta"):
                 humans.append(index)
+    for call in calls:
+        if call.result_count != 1:
+            raise DesignError(
+                f"{os.path.basename(transcript)}: tool call {call.tool_use_id or call.index} has "
+                f"{call.result_count} tool results, expected exactly one"
+            )
     return calls, humans, versions
 
 
@@ -961,14 +993,18 @@ def read_void_ledger(manifest: dict) -> list[Void]:
         if not proc.startswith("r") and (arm, scenario, proc) not in manifest["rows"]:
             raise DesignError(f"{path}: not a manifest row")
         last_line = text.rstrip("\n").rsplit("\n", 1)[-1]
-        void = LEDGER_VOID_RE.search(text)
-        if last_line.startswith("FAILED "):
+        marker = LEDGER_VOID_RE.search(text)
+        if re.fullmatch(
+            rf"FAILED \d+ {re.escape(arm)} {re.escape(scenario)} {re.escape(proc)}",
+            last_line,
+        ):
             reason = "launch failure"
-        elif void:
-            reason = void.group(0)
+        elif marker:
+            reason = marker.group(1)
         else:
             raise DesignError(
-                f"{path}: a completed attempt was set aside; a graded trial cannot be moved to logs/failed"
+                f"{path}: a completed attempt was set aside; a graded trial cannot be moved to "
+                "logs/failed (no FAILED line of its own and no harness void line)"
             )
         if not os.path.exists(os.path.join(E, "logs", f"{arm}-{scenario}-{proc}.log")):
             raise DesignError(
@@ -1013,6 +1049,7 @@ def transcripts_of(run_dir: str, name: str) -> list[str]:
 def build_runs(manifest: dict, classifier: Classifier) -> list[Run]:
     replaced = read_reruns()
     boots = {arm: expected_bootstrap(arm, manifest["commits"][arm]) for arm in ARMS}
+    message = hook_message(manifest["commits"]["full"])
     runs: list[Run] = []
     seen: set[str] = set()
     indexes: dict[str, list[int]] = {}
@@ -1109,17 +1146,16 @@ def build_runs(manifest: dict, classifier: Classifier) -> list[Run]:
             kind,
             replaced.get(name),
         )
-        versions: set[str] = set()
         for transcript in transcripts:
-            calls, humans, seen_versions = read_calls(transcript)
+            calls, humans, seen_versions = read_calls(transcript, message)
             run.calls.extend(calls)
             if transcript == transcripts[0]:
                 run.human_turns = humans
-            versions |= seen_versions
-        if versions != {manifest["claude_code"]}:
-            raise DesignError(
-                f"{name}: transcript versions {sorted(versions)} are not the pinned {manifest['claude_code']!r}"
-            )
+            if seen_versions != {manifest["claude_code"]}:
+                raise DesignError(
+                    f"{name}: {os.path.basename(transcript)} transcript versions "
+                    f"{sorted(seen_versions)} are not the pinned {manifest['claude_code']!r}"
+                )
         # Claude Code assigns dispatched agents their own models; they are
         # recorded per run, and only the main transcript must hold one model.
         subagent_models: set[str] = set()
@@ -1577,6 +1613,8 @@ if (mode === '--batch') {
 process.exit(2);
 """
 FIXTURE_VECTORS = "ls\tread-only\nrm -rf x\tmutation\n"
+FIXTURE_MESSAGE = "Interlock, once before your first edit: the fixture ladder."
+FIXTURE_HOOK_SCRIPT = f"#!/usr/bin/env bash\nMESSAGE='{FIXTURE_MESSAGE}'\n"
 FIXTURE_HOOKS_FULL = json.dumps(
     {
         "hooks": {
@@ -1704,7 +1742,7 @@ def _fixture_transcript(arm: str, shape: str) -> str:
                             "type": "tool_result",
                             "tool_use_id": "t2",
                             "is_error": True,
-                            "content": f"Permission denied: {DENIAL_TEXT}: run the ladder.",
+                            "content": f"Permission denied: {FIXTURE_MESSAGE}",
                         }
                     ],
                 },
@@ -1848,13 +1886,14 @@ def _fixture_log(root: str, arm: str, proc: str, run_dirs: list[str]) -> None:
 
 
 def _fixture_void_log(root: str, arm: str, proc: str, attempt: int, kind: str) -> None:
-    """A retained attempt under logs/failed: ``void`` (a setup error), ``failed`` (a launch failure), or ``graded`` (a completed attempt that does not belong there)."""
+    """A retained attempt under logs/failed: ``void`` (a harness void line), ``failed`` (a launch failure), ``graded`` (a completed attempt that does not belong there), or ``prose`` (a completed attempt whose text merely mentions void phrases)."""
 
     os.makedirs(os.path.join(root, "logs", "failed"), exist_ok=True)
     tail = {
-        "void": f"quorum error (setup): setup.sh failed (exit 1)\nEXIT=2\nDONE {arm} scenario-x {proc}\n",
+        "void": f"run-dir   /nowhere\nharness void: grader exited without a result in /nowhere\nEXIT=2\nDONE {arm} scenario-x {proc}\n",
         "failed": f"EXIT=9\nFAILED 9 {arm} scenario-x {proc}\n",
         "graded": f"run-dir   /nowhere\nEXIT=0\nDONE {arm} scenario-x {proc}\n",
+        "prose": f"run-dir   /nowhere\nthe grader wrote: the agent did not complete the task, quorum error text quoted\nEXIT=0\nDONE {arm} scenario-x {proc}\n",
     }[kind]
     with open(
         os.path.join(root, "logs", "failed", f"{arm}-scenario-x-{proc}.{attempt}.log"),
@@ -1916,6 +1955,11 @@ def _write_root(arm: str, with_hook: bool) -> None:
         os.path.join(arm_root, "hooks/hooks.json"), "w", encoding="utf-8"
     ) as handle:
         handle.write(FIXTURE_HOOKS_FULL if with_hook else FIXTURE_HOOKS_PLAIN)
+    if with_hook:
+        with open(
+            os.path.join(arm_root, HOOK_SCRIPT_PATH), "w", encoding="utf-8"
+        ) as handle:
+            handle.write(FIXTURE_HOOK_SCRIPT)
     with open(os.path.join(arm_root, LIB_PATH), "w", encoding="utf-8") as handle:
         handle.write(FIXTURE_LIB)
     with open(os.path.join(arm_root, VECTORS_PATH), "w", encoding="utf-8") as handle:
@@ -2016,6 +2060,29 @@ def _write_fixture(
             handle.write(reruns)
     if mutate is not None:
         mutate(root)
+
+
+def _edit_transcript(
+    root: str, name: str, edit: Callable[[list[dict]], list[dict]]
+) -> None:
+    """Load a run's main transcript records, apply ``edit``, write them back."""
+
+    path = _transcript_path(root, name)
+    with open(path, encoding="utf-8") as handle:
+        records = [json.loads(line) for line in handle if line.strip()]
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.writelines(json.dumps(record) + "\n" for record in edit(records))
+
+
+def _result_parts(record: dict) -> list[dict]:
+    content = (record.get("message") or {}).get("content")
+    if not isinstance(content, list):
+        return []
+    return [
+        part
+        for part in content
+        if isinstance(part, dict) and part.get("type") == "tool_result"
+    ]
 
 
 def _rewrite(path: str, old: str, new: str) -> None:
@@ -2572,7 +2639,8 @@ def self_test() -> int:
                         {
                             "type": "tool_result",
                             "tool_use_id": "t4",
-                            "content": f"Permission denied: {DENIAL_TEXT}",
+                            "is_error": True,
+                            "content": f"Permission denied: {FIXTURE_MESSAGE}",
                         }
                     ],
                 },
@@ -2722,6 +2790,63 @@ def self_test() -> int:
             "model_pin=model-x anthropic_model=model-x\n",
             "",
         )
+
+    def unversioned_subagent(root: str) -> None:
+        sub = os.path.join(
+            root, "results", "run-a", "home/.claude/projects/p/t/subagents"
+        )
+        os.makedirs(sub, exist_ok=True)
+        with open(os.path.join(sub, "agent-1.jsonl"), "w", encoding="utf-8") as handle:
+            handle.write(
+                _fixture_transcript("full", "denied").replace(
+                    f', "version": "{FIXTURE_VERSION}"', ""
+                )
+                + "\n"
+            )
+
+    def denial_without_error(root: str) -> None:
+        def edit(records: list[dict]) -> list[dict]:
+            for record in records:
+                for part in _result_parts(record):
+                    if part.get("tool_use_id") == "t2":
+                        part["is_error"] = False
+            return records
+
+        _edit_transcript(root, "run-a", edit)
+
+    def denial_not_last(root: str) -> None:
+        def edit(records: list[dict]) -> list[dict]:
+            for record in records:
+                for part in _result_parts(record):
+                    if part.get("tool_use_id") == "t2":
+                        part["content"] = str(part["content"]) + " Retry later."
+            return records
+
+        _edit_transcript(root, "run-a", edit)
+
+    def duplicate_result(root: str) -> None:
+        def edit(records: list[dict]) -> list[dict]:
+            out: list[dict] = []
+            for record in records:
+                out.append(record)
+                if any(p.get("tool_use_id") == "t2" for p in _result_parts(record)):
+                    out.append(json.loads(json.dumps(record)))
+            return out
+
+        _edit_transcript(root, "run-a", edit)
+
+    def missing_result(root: str) -> None:
+        def edit(records: list[dict]) -> list[dict]:
+            for record in records:
+                for part in _result_parts(record):
+                    if part.get("tool_use_id") == "t2":
+                        part["tool_use_id"] = "t2-lost"
+            return records
+
+        _edit_transcript(root, "run-a", edit)
+
+    def graded_prose_set_aside(root: str) -> None:
+        _fixture_void_log(root, "full", "p1", 1, "prose")
 
     def void_bad_name(root: str) -> None:
         os.makedirs(os.path.join(root, "logs", "failed"), exist_ok=True)
@@ -2896,6 +3021,60 @@ def self_test() -> int:
             None,
             void_bad_name,
             "not a void ledger name",
+            "plain",
+            None,
+        ),
+        (
+            "a subagent transcript without the pinned version",
+            two_passes,
+            None,
+            unversioned_subagent,
+            "not the pinned",
+            "plain",
+            None,
+        ),
+        (
+            "a denial message in a result that is not an error",
+            two_passes,
+            None,
+            denial_without_error,
+            "carried out, not denied",
+            "plain",
+            None,
+        ),
+        (
+            "a denial message that is not the end of its result",
+            two_passes,
+            None,
+            denial_not_last,
+            "carried out, not denied",
+            "plain",
+            None,
+        ),
+        (
+            "a tool call with two tool results",
+            two_passes,
+            None,
+            duplicate_result,
+            "has 2 tool results",
+            "plain",
+            None,
+        ),
+        (
+            "a tool call without a tool result",
+            two_passes,
+            None,
+            missing_result,
+            "has 0 tool results",
+            "plain",
+            None,
+        ),
+        (
+            "a completed attempt set aside on the strength of void phrases in prose",
+            two_passes,
+            None,
+            graded_prose_set_aside,
+            "a completed attempt was set aside",
             "plain",
             None,
         ),
