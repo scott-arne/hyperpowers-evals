@@ -79,7 +79,7 @@ HARNESS_RE = re.compile(
 CLAUDE_RE = re.compile(r"^claude_code=(\S+)$", re.MULTILINE)
 MODEL_HEADER_RE = re.compile(r"^model_pin=(\S+) anthropic_model=(\S+)$", re.MULTILINE)
 FAILED_LOG_RE = re.compile(r"(control|wording|full)-(.+)-([pr]\d+)\.(\d+)\.log")
-LEDGER_VOID_RE = re.compile(r"^harness void: (.+)$", re.MULTILINE)
+LEDGER_VOID_RE = re.compile(r"^harness void: (.+) in (\S+)$", re.MULTILINE)
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 BRAINSTORMING_LINE = "- hyperpowers:brainstorming"
 HOOK_NAME = "first-edit-interlock"
@@ -191,10 +191,16 @@ class Call:
     attempt: bool = False
 
     @property
-    def denied(self) -> bool:
-        """A mutation attempt whose one tool result is an error ending with the pinned hook's message."""
+    def resolved(self) -> bool:
+        """The call has its one tool result; a call the session ended on has none and is read neither way."""
 
-        return self.attempt and self.denial_result
+        return self.result_count == 1
+
+    @property
+    def denied(self) -> bool:
+        """A resolved mutation attempt whose tool result is an error carrying the pinned hook's message."""
+
+        return self.attempt and self.resolved and self.denial_result
 
 
 @dataclass
@@ -715,10 +721,11 @@ def read_calls(
 ) -> tuple[list[Call], list[int], set[str]]:
     """(tool calls in order with their results, indexes of human turns, versions seen) for one transcript.
 
-    A call is denied when its single tool result is an error whose text ends
-    with ``denial_message``, the pinned hook's denial text; a call with no
-    result or more than one is a refusal, because a call that never returned
-    cannot be read either way.
+    A call is denied when its one tool result is an error carrying
+    ``denial_message``, the pinned hook's denial text, and is not a command's
+    own output (which begins with its exit code); a call with more than one
+    result is a refusal, and a call with none, the call a session ended on,
+    is resolved neither way.
     """
 
     calls: list[Call] = []
@@ -759,18 +766,20 @@ def read_calls(
                         if matched is not None:
                             matched.result_count += 1
                             matched.result_text = result_text(part.get("content"))
-                            matched.denial_result = bool(
-                                part.get("is_error")
-                            ) and matched.result_text.rstrip().endswith(denial_message)
+                            matched.denial_result = (
+                                bool(part.get("is_error"))
+                                and denial_message in matched.result_text
+                                and not matched.result_text.startswith("Exit code ")
+                            )
                 if not had_result and not rec.get("isMeta"):
                     humans.append(index)
             elif isinstance(content, str) and not rec.get("isMeta"):
                 humans.append(index)
     for call in calls:
-        if call.result_count != 1:
+        if call.result_count > 1:
             raise DesignError(
                 f"{os.path.basename(transcript)}: tool call {call.tool_use_id or call.index} has "
-                f"{call.result_count} tool results, expected exactly one"
+                f"{call.result_count} tool results, expected at most one"
             )
     return calls, humans, versions
 
@@ -784,7 +793,7 @@ def check_interlock(run: Run, transcripts: list[str]) -> None:
     asked: bool | None = None
     for transcript in transcripts:
         calls = [c for c in run.calls if c.transcript == transcript]
-        attempts = [c for c in calls if c.attempt]
+        attempts = [c for c in calls if c.attempt and c.resolved]
         denials = [c for c in attempts if c.denied]
         total_attempts += len(attempts)
         total_denials += len(denials)
@@ -877,12 +886,17 @@ def token_total(run_dir: str, name: str) -> int:
 
     path = os.path.join(run_dir, "coding-agent-token-usage.json")
     total = load_json(path).get("total_tokens") if os.path.exists(path) else None
-    if type(total) is not int or total < 0:
+    if (
+        isinstance(total, bool)
+        or not isinstance(total, (int, float))
+        or total < 0
+        or float(total) != int(total)
+    ):
         raise DesignError(
             f"{name}: void attempt left in the logs (the harness wrote no usable coding-agent-token-usage.json); "
             "move its log to logs/failed/<log name>.<attempt>.log and relaunch the row"
         )
-    return total
+    return int(total)
 
 
 def read_logs(manifest: dict) -> list[tuple[str, str, str, bool, int, str]]:
@@ -1000,6 +1014,11 @@ def read_void_ledger(manifest: dict) -> list[Void]:
         ):
             reason = "launch failure"
         elif marker:
+            launched = {m.group(1).rstrip("/") for m in RUN_DIR_RE.finditer(text)}
+            if marker.group(2).rstrip("/") not in launched:
+                raise DesignError(
+                    f"{path}: the harness void line names {marker.group(2)}, a run directory this log did not launch"
+                )
             reason = marker.group(1)
         else:
             raise DesignError(
@@ -1081,7 +1100,10 @@ def build_runs(manifest: dict, classifier: Classifier) -> list[Run]:
         verdict = load_json(verdict_path)
         final = str(verdict.get("final"))
         if final not in ("pass", "fail", "indeterminate"):
-            raise DesignError(f"{name}: unexpected final verdict {final!r}")
+            raise DesignError(
+                f"{name}: void attempt left in the logs (verdict.json has no final outcome, {final!r}); "
+                "move its log to logs/failed/<log name>.<attempt>.log and relaunch the row"
+            )
         reason = str(verdict.get("final_reason") or "")
         grader = verdict.get("gauntlet")
         summary = str(grader.get("summary") or "") if isinstance(grader, dict) else ""
@@ -1886,7 +1908,7 @@ def _fixture_log(root: str, arm: str, proc: str, run_dirs: list[str]) -> None:
 
 
 def _fixture_void_log(root: str, arm: str, proc: str, attempt: int, kind: str) -> None:
-    """A retained attempt under logs/failed: ``void`` (a harness void line), ``failed`` (a launch failure), ``graded`` (a completed attempt that does not belong there), or ``prose`` (a completed attempt whose text merely mentions void phrases)."""
+    """A retained attempt under logs/failed: ``void`` (a harness void line), ``failed`` (a launch failure), ``graded`` (a completed attempt that does not belong there), or ``prose`` (a completed attempt whose text merely mentions void phrases), or ``foreign`` (a marker naming a run directory the log did not launch)."""
 
     os.makedirs(os.path.join(root, "logs", "failed"), exist_ok=True)
     tail = {
@@ -1894,6 +1916,7 @@ def _fixture_void_log(root: str, arm: str, proc: str, attempt: int, kind: str) -
         "failed": f"EXIT=9\nFAILED 9 {arm} scenario-x {proc}\n",
         "graded": f"run-dir   /nowhere\nEXIT=0\nDONE {arm} scenario-x {proc}\n",
         "prose": f"run-dir   /nowhere\nthe grader wrote: the agent did not complete the task, quorum error text quoted\nEXIT=0\nDONE {arm} scenario-x {proc}\n",
+        "foreign": f"run-dir   /nowhere\nharness void: grader exited without a result in /elsewhere\nEXIT=2\nDONE {arm} scenario-x {proc}\n",
     }[kind]
     with open(
         os.path.join(root, "logs", "failed", f"{arm}-scenario-x-{proc}.{attempt}.log"),
@@ -2848,6 +2871,40 @@ def self_test() -> int:
     def graded_prose_set_aside(root: str) -> None:
         _fixture_void_log(root, "full", "p1", 1, "prose")
 
+    def marker_for_foreign_dir(root: str) -> None:
+        _fixture_void_log(root, "full", "p1", 1, "foreign")
+
+    def dangling_readonly_call(root: str) -> None:
+        _append_record(
+            root,
+            "run-a",
+            {
+                "type": "assistant",
+                "version": FIXTURE_VERSION,
+                "uuid": "a9",
+                "message": {
+                    "id": "msg_9",
+                    "model": "model-x",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "t9",
+                            "name": "Bash",
+                            "input": {"command": "ls"},
+                        }
+                    ],
+                },
+            },
+        )
+
+    def integral_float_total(root: str) -> None:
+        with open(
+            os.path.join(root, "results", "run-a", "coding-agent-token-usage.json"),
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            json.dump({"total_tokens": 1001.0, "model": "model-x"}, handle)
+
     def void_bad_name(root: str) -> None:
         os.makedirs(os.path.join(root, "logs", "failed"), exist_ok=True)
         with open(
@@ -3043,11 +3100,11 @@ def self_test() -> int:
             None,
         ),
         (
-            "a denial message that is not the end of its result",
+            "a denial message followed by more text in its result, still a denial",
             two_passes,
             None,
             denial_not_last,
-            "carried out, not denied",
+            None,
             "plain",
             None,
         ),
@@ -3061,11 +3118,38 @@ def self_test() -> int:
             None,
         ),
         (
-            "a tool call without a tool result",
+            "a first mutation attempt whose result never arrived",
             two_passes,
             None,
             missing_result,
-            "has 0 tool results",
+            "carried out, not denied",
+            "plain",
+            None,
+        ),
+        (
+            "a dangling read-only call at the end of a session",
+            two_passes,
+            None,
+            dangling_readonly_call,
+            None,
+            "plain",
+            None,
+        ),
+        (
+            "a harness void line naming a run directory the log did not launch",
+            two_passes,
+            None,
+            marker_for_foreign_dir,
+            "a run directory this log did not launch",
+            "plain",
+            None,
+        ),
+        (
+            "a token total written as an integral float",
+            two_passes,
+            None,
+            integral_float_total,
+            None,
             "plain",
             None,
         ),
