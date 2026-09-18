@@ -45,7 +45,8 @@ only in a later turn, that no other arm saw a denial, and that every change
 to a fixture tree traces to a carried-out call (each scenario's setup
 baseline is rebuilt by running its `setup.sh` the way the harness does and
 matched by commit count and tree hash, so a rewritten setup history is
-refused and a multi-commit fixture is not mistaken for a change), then
+refused, a multi-commit fixture is not mistaken for a change, and the
+untracked files setup itself leaves are not read as one), then
 prints the per-cell
 table, the spec's acceptance criteria over planned counts, the attribution
 readout, and the cost readout, and writes `runs.json`. Indeterminate trials
