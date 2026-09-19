@@ -36,8 +36,9 @@ classifies every tool call with the pinned plugin's own
 result is an error carrying the hook's message as pinned in
 `hooks/first-edit-interlock` (only the call a session ended on may lack its
 result, and it is then neither denied nor carried out; a call the session
-went on after without a result, a result matching no call, a duplicated
-call id, or a call with two results is refused),
+went on after without a result, where a later human turn proves the session
+went on just as a later assistant record does, a result matching no call, a
+duplicated call id, or a call with two results is refused),
 requires every attachment, user, assistant, and system
 record of every transcript to carry the pinned Claude Code version (the
 bookkeeping records Claude Code writes without one are not counted) (its vector file is copied here as
@@ -51,9 +52,18 @@ refused, a multi-commit fixture is not mistaken for a change, and the
 untracked or ignored files setup itself leaves are compared by content,
 walking ignored directories and reading symlink targets, with the work
 tree's own path inside a file normalised, so editing or deleting one, or
-adding another, is a change; each baseline is rebuilt twice and a file
-whose content the two rebuilds do not agree on, such as a package's RECORD
-file, is compared by presence alone; the archive keeps the whole work
+adding another, is a change; a work tree git cannot list completely, such
+as one holding an unreadable directory, is refused rather than read as
+unchanged; each baseline is rebuilt twice and a file whose content the two
+rebuilds do not agree on, such as a package's RECORD file, is compared by
+its kind alone, so a symlink or a directory where the setup left a regular
+file is still a change and two rebuilds that disagree on an entry's kind are
+refused; every fixture setup resolves its packages from one pinned index
+instant (`UV_EXCLUDE_NEWER`, the analyzer's own constant, exported by the
+launcher and set by every rebuild), so a package release during the campaign
+cannot split the runs into two package sets; a tree that changed with no
+carried-out mutation is refused with what differs, the paths added, removed,
+or altered; the archive keeps the whole work
 directory, so the replay compares what the live analysis compared), then
 prints the per-cell
 table, the spec's acceptance criteria over planned counts, the attribution
@@ -66,10 +76,15 @@ without a verdict, or a launch that did not end in DONE) is relaunched and
 its log is kept as `logs/failed/<arm>-<scenario>-<proc>.<attempt>.log`; the
 analysis reads that directory as the void ledger, requires every entry to
 carry the pins and to be void on its face, refuses a completed attempt set
-aside there, and reports the count. `logs/measure-launch.sh` refuses a row
-whose log exists unless `RELAUNCH=1`, which sets the previous attempt aside
-in that ledger before the new log is opened, and it runs
-`logs/void-check.sh` on every run directory quorum names (its own
+aside there, and reports the count together with, for each void, how many of
+the run directories its log named a grader had already returned a verdict
+for, so a void that throws away finished sessions is visible in the report
+rather than folded into a total. `logs/measure-launch.sh` exports
+the analyzer's `UV_EXCLUDE_NEWER` before launching quorum and refuses the
+row if it cannot read it, refuses a row whose log exists unless
+`RELAUNCH=1`, which sets the previous attempt aside in that ledger before
+the new log is opened, and it runs `logs/void-check.sh` on every run
+directory quorum names (its own
 `run-dir` line: the word at the start of a line, spaces, an absolute path;
 prose that mentions run-dir mid-line is never read), which prints a
 `harness void:` line for a run with no readable verdict, no grader block, a
