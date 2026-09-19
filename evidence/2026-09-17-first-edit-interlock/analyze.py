@@ -741,6 +741,7 @@ def read_calls(
     by_id: dict[str, Call] = {}
     humans: list[int] = []
     versions: set[str] = set()
+    last_assistant = -1
     for index, rec in enumerate(iter_records(transcript)):
         kind = rec.get("type")
         if kind in VERSIONED_RECORD_TYPES:
@@ -749,6 +750,7 @@ def read_calls(
         message = rec.get("message") or {}
         content = message.get("content")
         if kind == "assistant":
+            last_assistant = index
             message_id = str(
                 message.get("id") or rec.get("requestId") or rec.get("uuid") or ""
             )
@@ -763,6 +765,10 @@ def read_calls(
                         message_id,
                     )
                     calls.append(call)
+                    if call.tool_use_id in by_id:
+                        raise DesignError(
+                            f"{os.path.basename(transcript)}: tool call id {call.tool_use_id} appears twice"
+                        )
                     if call.tool_use_id:
                         by_id[call.tool_use_id] = call
         elif kind == "user":
@@ -772,6 +778,10 @@ def read_calls(
                     if isinstance(part, dict) and part.get("type") == "tool_result":
                         had_result = True
                         matched = by_id.get(str(part.get("tool_use_id") or ""))
+                        if matched is None:
+                            raise DesignError(
+                                f"{os.path.basename(transcript)}: tool result {part.get('tool_use_id')!r} matches no tool call"
+                            )
                         if matched is not None:
                             matched.result_count += 1
                             matched.result_text = result_text(part.get("content"))
@@ -789,6 +799,14 @@ def read_calls(
             raise DesignError(
                 f"{os.path.basename(transcript)}: tool call {call.tool_use_id or call.index} has "
                 f"{call.result_count} tool results, expected at most one"
+            )
+        # Only the call a session ended on may lack its result; a call the
+        # session went on after was answered, and a transcript without that
+        # answer cannot be read.
+        if call.result_count == 0 and call.index < last_assistant:
+            raise DesignError(
+                f"{os.path.basename(transcript)}: tool call {call.tool_use_id or call.index} has no tool result "
+                f"but the session went on (record {call.index}, later activity at record {last_assistant})"
             )
     return calls, humans, versions
 
@@ -847,21 +865,84 @@ def check_interlock(run: Run, transcripts: list[str]) -> None:
     run.stopped_to_ask = asked if run.arm == "full" and total_attempts else None
 
 
-_BASELINES: dict[str, tuple[int, str, frozenset[str]]] = {}
+_BASELINES: dict[str, tuple[int, str, dict[str, str]]] = {}
 
 
-def scenario_baseline(scenario: str) -> tuple[int, str, frozenset[str]]:
-    """(setup commit count, tree hash of the setup HEAD, status lines setup itself leaves) for a scenario.
+def _loose_files(
+    git: list[str], workdir: str, pathspec: list[str], name: str, aliases: list[str]
+) -> tuple[dict[str, str], list[str]]:
+    """(untracked and ignored files by path with a content hash, other status entries) of a work tree.
+
+    Untracked and ignored files are compared by content later, so an edit or
+    a deletion of a file setup left is seen; any other status entry (a tracked
+    file modified, staged, or deleted) is a change on its own. Every path in
+    ``aliases`` (the work tree's own path, where it ran and where it lives now)
+    is normalised before hashing, because a setup that records where it ran
+    (the launch-cwd sentinel) writes a different path in every run and in the
+    rebuild.
+    """
+
+    aliases = sorted({a.rstrip("/") for a in aliases if a}, key=len, reverse=True)
+
+    status = subprocess.run(
+        git
+        + [
+            "--no-optional-locks",
+            "status",
+            "--porcelain",
+            "-z",
+            "--untracked-files=all",
+            "--ignored=matching",
+            *pathspec,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if status.returncode != 0:
+        raise DesignError(
+            f"{name}: the fixture repository cannot be compared with its setup "
+            f"(status failed: {status.stderr.strip()[:120]})"
+        )
+    loose: dict[str, str] = {}
+    others: list[str] = []
+    entries = [e for e in status.stdout.split("\0") if e]
+    skip = False
+    for entry in entries:
+        if skip:
+            skip = False
+            continue
+        code, path = entry[:2], entry[3:]
+        if code[0] in "RC":
+            skip = True  # a rename carries its source in the next entry
+        if code in ("??", "!!"):
+            full = os.path.join(workdir, path)
+            if os.path.isfile(full) and not os.path.islink(full):
+                with open(full, "rb") as handle:
+                    data = handle.read()
+                for alias in aliases:
+                    data = data.replace(alias.encode(), b"<workdir>")
+                loose[path] = hashlib.sha256(data).hexdigest()
+            else:
+                loose[path] = "not a regular file"
+        else:
+            others.append(entry)
+    return loose, others
+
+
+def scenario_baseline(scenario: str) -> tuple[int, str, dict[str, str]]:
+    """(setup commit count, tree hash of the setup HEAD, untracked and ignored files setup itself leaves with their content hashes) for a scenario.
 
     Rebuilt once per analysis by running the scenario's setup.sh the way the
     harness does (cwd and QUORUM_WORKDIR a fresh directory, QUORUM_REPO_ROOT the
     evals clone, BASH_ENV the check prelude), so the comparison is with what
     setup produced, not with a commit count. Setup content is fixed, so the
     tree hash is the same in every run of the scenario. A setup that leaves
-    an untracked file (the launch-cwd sentinel, for one) leaves it in every
-    run, so those status lines are recorded and not read as a change. The
-    working directory sits under a scratch run directory, as it does in the
-    harness, because some setups write beside it.
+    an untracked or ignored file (the launch-cwd sentinel, for one) leaves it
+    in every run, so those files are recorded with their content and a run
+    counts as changed when one is edited, deleted, or joined by another. The
+    working directory sits under a scratch run directory beside a home
+    directory, as in the harness, because some setups write beside it.
     """
 
     if scenario in _BASELINES:
@@ -872,6 +953,7 @@ def scenario_baseline(scenario: str) -> tuple[int, str, frozenset[str]]:
     scratch = tempfile.mkdtemp(prefix="baseline-")
     workdir = os.path.join(scratch, "coding-agent-workdir")
     os.makedirs(workdir)
+    os.makedirs(os.path.join(scratch, "home"))
     try:
         env = dict(os.environ)
         env.update({"QUORUM_REPO_ROOT": EV, "QUORUM_WORKDIR": workdir})
@@ -912,22 +994,14 @@ def scenario_baseline(scenario: str) -> tuple[int, str, frozenset[str]]:
                 f"{scenario}: setup.sh left no committed repository to compare with "
                 f"({(count.stderr or tree.stderr).strip()[:120]})"
             )
-        left = subprocess.run(
-            git
-            + ["--no-optional-locks", "status", "--porcelain", "--untracked-files=all"],
-            capture_output=True,
-            text=True,
-            check=False,
+        loose, others = _loose_files(
+            git, workdir, [], scenario, [workdir, os.path.realpath(workdir)]
         )
-        if left.returncode != 0:
+        if others:
             raise DesignError(
-                f"{scenario}: the rebuilt setup cannot be read (status failed: {left.stderr.strip()[:120]})"
+                f"{scenario}: the rebuilt setup leaves tracked files modified ({others[0][:60]!r})"
             )
-        _BASELINES[scenario] = (
-            int(count.stdout.strip()),
-            tree.stdout.strip(),
-            frozenset(left.stdout.splitlines()),
-        )
+        _BASELINES[scenario] = (int(count.stdout.strip()), tree.stdout.strip(), loose)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     return _BASELINES[scenario]
@@ -939,8 +1013,8 @@ def tree_changed(run_dir: str, name: str, scenario: str) -> bool:
     The run's history must begin with the setup commits (same count, same tree
     hash at the last of them); a rewritten or amended setup, or one the
     scenario has changed since the run, is a refusal. The tree is changed when
-    commits follow the setup or the working tree holds a status line setup
-    itself did not leave.
+    commits follow the setup, a tracked file is modified, or the untracked and
+    ignored files differ from the ones setup left (added, edited, or deleted).
     """
 
     workdir = os.path.join(run_dir, "coding-agent-workdir")
@@ -970,7 +1044,7 @@ def tree_changed(run_dir: str, name: str, scenario: str) -> bool:
             f"(rev-list failed: {history.stderr.strip()[:120]})"
         )
     commits = history.stdout.split()
-    setup_count, setup_tree, setup_status = scenario_baseline(scenario)
+    setup_count, setup_tree, setup_files = scenario_baseline(scenario)
     if len(commits) < setup_count:
         raise DesignError(
             f"{name}: the fixture has {len(commits)} commits, fewer than the {setup_count} its setup makes"
@@ -988,28 +1062,22 @@ def tree_changed(run_dir: str, name: str, scenario: str) -> bool:
         )
     # The harness keeps the repository's own directory inside the work tree as
     # git-dir, which git would list as untracked; exclude it from the status.
-    status = subprocess.run(
-        base
-        + [
-            "--no-optional-locks",
-            "status",
-            "--porcelain",
-            "--untracked-files=all",
-            "--",
-            ":(top)",
-            f":(top,exclude){os.path.basename(git_dir)}",
+    # The run's files may name the work tree where the harness ran it (under
+    # results/) as well as where the archive holds it now.
+    loose, others = _loose_files(
+        base,
+        workdir,
+        ["--", ":(top)", f":(top,exclude){os.path.basename(git_dir)}"],
+        name,
+        [
+            workdir,
+            os.path.realpath(workdir),
+            os.path.join(
+                EV, "results", os.path.basename(run_dir), "coding-agent-workdir"
+            ),
         ],
-        capture_output=True,
-        text=True,
-        check=False,
     )
-    if status.returncode != 0:
-        raise DesignError(
-            f"{name}: the fixture repository cannot be compared with its initial commit "
-            f"(status failed: {status.stderr.strip()[:120]})"
-        )
-    left_by_run = set(status.stdout.splitlines()) - setup_status
-    return len(commits) > setup_count or bool(left_by_run)
+    return len(commits) > setup_count or bool(others) or loose != setup_files
 
 
 def token_total(run_dir: str, name: str) -> int:
@@ -1973,7 +2041,8 @@ printf 'a\\n' > a.txt
 git add a.txt
 git commit -q -m initial
 printf 'b\\n' > b.txt
-git add b.txt
+printf 'scratch/\\n' > .gitignore
+git add b.txt .gitignore
 git commit -q -m second
 printf 'x\\n' > .setup-sentinel
 """
@@ -3020,13 +3089,87 @@ def self_test() -> int:
 
     def missing_result(root: str) -> None:
         def edit(records: list[dict]) -> list[dict]:
+            return [
+                record
+                for record in records
+                if not any(p.get("tool_use_id") == "t2" for p in _result_parts(record))
+            ]
+
+        _edit_transcript(root, "run-a", edit)
+
+    def unmatched_result(root: str) -> None:
+        def edit(records: list[dict]) -> list[dict]:
             for record in records:
                 for part in _result_parts(record):
-                    if part.get("tool_use_id") == "t2":
-                        part["tool_use_id"] = "t2-lost"
+                    if part.get("tool_use_id") == "t1":
+                        part["tool_use_id"] = "t1-nobody"
             return records
 
         _edit_transcript(root, "run-a", edit)
+
+    def duplicate_call_id(root: str) -> None:
+        def edit(records: list[dict]) -> list[dict]:
+            for record in records:
+                for part in (record.get("message") or {}).get("content") or []:
+                    if isinstance(part, dict) and part.get("id") == "t3":
+                        part["id"] = "t2"
+            return records
+
+        _edit_transcript(root, "run-a", edit)
+
+    def unresolved_then_denied(root: str) -> None:
+        def edit(records: list[dict]) -> list[dict]:
+            out: list[dict] = []
+            for record in records:
+                out.append(record)
+                if any(p.get("tool_use_id") == "t1" for p in _result_parts(record)):
+                    out.append(
+                        {
+                            "type": "assistant",
+                            "version": FIXTURE_VERSION,
+                            "uuid": "a0",
+                            "message": {
+                                "id": "msg_0",
+                                "model": "model-x",
+                                "content": [
+                                    {
+                                        "type": "tool_use",
+                                        "id": "t0",
+                                        "name": "Edit",
+                                        "input": {"file_path": "a.txt"},
+                                    }
+                                ],
+                            },
+                        }
+                    )
+            return out
+
+        _edit_transcript(root, "run-a", edit)
+
+    def sentinel_edited(root: str) -> None:
+        unchanged_two_commit_fixture(root)
+        workdir = os.path.join(root, "results", "run-a", "coding-agent-workdir")
+        with open(
+            os.path.join(workdir, ".setup-sentinel"), "a", encoding="utf-8"
+        ) as handle:
+            handle.write("edited\n")
+
+    def sentinel_deleted(root: str) -> None:
+        unchanged_two_commit_fixture(root)
+        os.remove(
+            os.path.join(
+                root, "results", "run-a", "coding-agent-workdir", ".setup-sentinel"
+            )
+        )
+
+    def ignored_file_added(root: str) -> None:
+        unchanged_two_commit_fixture(root)
+        scratch = os.path.join(
+            root, "results", "run-a", "coding-agent-workdir", "scratch"
+        )
+        os.makedirs(scratch, exist_ok=True)
+        with open(os.path.join(scratch, "x.txt"), "w", encoding="utf-8") as handle:
+            handle.write("x\n")
 
     def graded_prose_set_aside(root: str) -> None:
         _fixture_void_log(root, "full", "p1", 1, "prose")
@@ -3341,11 +3484,65 @@ def self_test() -> int:
             None,
         ),
         (
-            "a first mutation attempt whose result never arrived",
+            "a mutation attempt whose result never arrived while the session went on",
             two_passes,
             None,
             missing_result,
-            "carried out, not denied",
+            "no tool result but the session went on",
+            "plain",
+            None,
+        ),
+        (
+            "a tool result that matches no tool call",
+            two_passes,
+            None,
+            unmatched_result,
+            "matches no tool call",
+            "plain",
+            None,
+        ),
+        (
+            "two tool calls with the same id",
+            two_passes,
+            None,
+            duplicate_call_id,
+            "appears twice",
+            "plain",
+            None,
+        ),
+        (
+            "an unresolved mutation before a denied one and a carried-out retry",
+            two_passes,
+            None,
+            unresolved_then_denied,
+            "no tool result but the session went on",
+            "plain",
+            None,
+        ),
+        (
+            "a setup-left file edited during a run with no mutation attempt",
+            two_passes,
+            None,
+            sentinel_edited,
+            "no transcript holds a carried-out mutation",
+            "plain",
+            None,
+        ),
+        (
+            "a setup-left file deleted during a run with no mutation attempt",
+            two_passes,
+            None,
+            sentinel_deleted,
+            "no transcript holds a carried-out mutation",
+            "plain",
+            None,
+        ),
+        (
+            "an ignored file added during a run with no mutation attempt",
+            two_passes,
+            None,
+            ignored_file_added,
+            "no transcript holds a carried-out mutation",
             "plain",
             None,
         ),

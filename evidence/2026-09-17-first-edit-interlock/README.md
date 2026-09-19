@@ -34,8 +34,10 @@ refuses to report unless the observed runs match the manifest exactly,
 classifies every tool call with the pinned plugin's own
 `hooks/interlock-lib.cjs`, reads a call as denied only when its one tool
 result is an error carrying the hook's message as pinned in
-`hooks/first-edit-interlock` (a call the session ended on, with no result,
-is neither denied nor carried out; a call with two results is refused),
+`hooks/first-edit-interlock` (only the call a session ended on may lack its
+result, and it is then neither denied nor carried out; a call the session
+went on after without a result, a result matching no call, a duplicated
+call id, or a call with two results is refused),
 requires every attachment, user, assistant, and system
 record of every transcript to carry the pinned Claude Code version (the
 bookkeeping records Claude Code writes without one are not counted) (its vector file is copied here as
@@ -46,7 +48,9 @@ to a fixture tree traces to a carried-out call (each scenario's setup
 baseline is rebuilt by running its `setup.sh` the way the harness does and
 matched by commit count and tree hash, so a rewritten setup history is
 refused, a multi-commit fixture is not mistaken for a change, and the
-untracked files setup itself leaves are not read as one), then
+untracked or ignored files setup itself leaves are compared by content,
+with the work tree's own path inside a file normalised, so editing or
+deleting one, or adding another, is a change), then
 prints the per-cell
 table, the spec's acceptance criteria over planned counts, the attribution
 readout, and the cost readout, and writes `runs.json`. Indeterminate trials
