@@ -22,8 +22,15 @@
 # when a git status check fails. A row whose log already exists is refused
 # unless RELAUNCH=1, which first sets the previous attempt aside as
 # logs/failed/<arm>-<scenario>-<proc>.<attempt>.log, the void ledger the
-# analysis reads. MEASURE_E overrides the evidence directory for the offline
-# proof in the plan only.
+# analysis reads. Before launching quorum it exports UV_EXCLUDE_NEWER, read
+# from the analyzer's own constant so the campaign and the analysis have one
+# source of truth: the fixture setups install their packages with uv, which
+# honours that variable, so a package release during the campaign cannot leave
+# one row's fixture resolved from a different index than another's, and each
+# baseline rebuild resolves the same instant. A launcher that cannot read the
+# constant refuses rather than launching an unpinned row. MEASURE_E overrides
+# the evidence directory for the offline proof in the plan only; the analyzer
+# is read from its real path under $EV, which MEASURE_E does not redirect.
 set -uo pipefail
 arm="$1"; scen="$2"; rep="$3"; proc="$4"; budget="$5"
 EV=/Users/johnss51/Development/agents/hyperpowers/evals
@@ -63,6 +70,10 @@ git diff --quiet "$harness_pin" HEAD -- $HARNESS_PATHS || { echo "harness paths 
 # shellcheck disable=SC2086
 harness_status=$(git status --short -- $HARNESS_PATHS) || { echo "git status failed in $EV" >&2; exit 1; }
 [ -z "$harness_status" ] || { echo "harness paths have uncommitted changes" >&2; exit 1; }
+analyzer="$EV/evidence/2026-09-17-first-edit-interlock/analyze.py"
+uv_cutoff=$("$analyzer" --uv-exclude-newer) || { echo "$analyzer --uv-exclude-newer failed; the package index instant the fixture setups resolve from is unknown" >&2; exit 1; }
+[ -n "$uv_cutoff" ] || { echo "$analyzer --uv-exclude-newer printed nothing; the package index instant the fixture setups resolve from is unknown" >&2; exit 1; }
+export UV_EXCLUDE_NEWER="$uv_cutoff"
 export SUPERPOWERS_ROOT="$root"
 {
   echo "arm=$arm scenario=$scen repeat=$rep proc=$proc budget=$budget"
