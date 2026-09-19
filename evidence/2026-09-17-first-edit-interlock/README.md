@@ -49,8 +49,11 @@ baseline is rebuilt by running its `setup.sh` the way the harness does and
 matched by commit count and tree hash, so a rewritten setup history is
 refused, a multi-commit fixture is not mistaken for a change, and the
 untracked or ignored files setup itself leaves are compared by content,
-with the work tree's own path inside a file normalised, so editing or
-deleting one, or adding another, is a change), then
+walking ignored directories and reading symlink targets, with the work
+tree's own path inside a file normalised, so editing or deleting one, or
+adding another, is a change; the archives-only replay leaves out the
+paths this repository's ignore rules keep out of the archive, such as
+`.venv/`, because the archive cannot hold them), then
 prints the per-cell
 table, the spec's acceptance criteria over planned counts, the attribution
 readout, and the cost readout, and writes `runs.json`. Indeterminate trials
