@@ -51,9 +51,10 @@ refused, a multi-commit fixture is not mistaken for a change, and the
 untracked or ignored files setup itself leaves are compared by content,
 walking ignored directories and reading symlink targets, with the work
 tree's own path inside a file normalised, so editing or deleting one, or
-adding another, is a change; the archives-only replay leaves out the
-paths this repository's ignore rules keep out of the archive, such as
-`.venv/`, because the archive cannot hold them), then
+adding another, is a change; each baseline is rebuilt twice and a file
+whose content the two rebuilds do not agree on, such as a package's RECORD
+file, is compared by presence alone; the archive keeps the whole work
+directory, so the replay compares what the live analysis compared), then
 prints the per-cell
 table, the spec's acceptance criteria over planned counts, the attribution
 readout, and the cost readout, and writes `runs.json`. Indeterminate trials
