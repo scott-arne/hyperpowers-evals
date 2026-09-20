@@ -763,9 +763,14 @@ def read_calls(
         content = message.get("content")
         if kind == "assistant":
             last_assistant = index
-            message_id = str(
-                message.get("id") or rec.get("requestId") or rec.get("uuid") or ""
-            )
+            # The wave identifier, derived exactly as the hook derives it.
+            # The fallback stops at requestId: both it and message.id are one
+            # value per assistant turn, while a record's uuid is one per
+            # content block. A uuid here would give each block of a turn its
+            # own wave, so a sibling mutation carried out during the denied
+            # turn would compare unequal to the denial and pass the check
+            # below that exists to catch it.
+            message_id = str(message.get("id") or rec.get("requestId") or "")
             for part in content or []:
                 if isinstance(part, dict) and part.get("type") == "tool_use":
                     call = Call(
