@@ -44,7 +44,12 @@ record of every transcript to carry the pinned Claude Code version (the
 bookkeeping records Claude Code writes without one are not counted) (its vector file is copied here as
 `mutation-cases.tsv` and must be byte-identical to the pinned copy), checks
 that every full-arm context was denied at its first attempt and mutated
-only in a later turn, that no other arm saw a denial, and that every change
+only in a later turn, that every later denial in a context belongs either to
+the first denial's own assistant turn (a sibling the wave rule caught) or to
+the turn immediately after it (the 2026-09-20 amendment's known residue, a
+retry whose own turn had not been flushed when its hook read), never to a
+third turn or a turn further on, reporting the second-turn rate as a number
+rather than folding it into a total, that no other arm saw a denial, and that every change
 to a fixture tree traces to a carried-out call (each scenario's setup
 baseline is rebuilt by running its `setup.sh` the way the harness does and
 matched by commit count and tree hash, so a rewritten setup history is
