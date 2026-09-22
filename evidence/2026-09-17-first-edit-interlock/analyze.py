@@ -3490,6 +3490,49 @@ def self_test() -> int:
             },
         )
 
+    def turn_resumes_after_a_later_turn(root: str) -> None:
+        # An assistant turn identifier that appears again once a later turn has
+        # been recorded. Claude Code writes a turn's records together and gives
+        # each turn one identifier, so no agent behaviour produces this shape:
+        # the transcript was reordered, concatenated, or rewritten. The
+        # adjacency the residue rule reads would then be fiction -- "the turn
+        # after the first denial" would name two different turns -- so the
+        # analysis refuses the transcript instead of measuring it.
+        _append_record(
+            root,
+            "run-a",
+            {
+                "type": "assistant",
+                "version": FIXTURE_VERSION,
+                "message": {
+                    "id": "msg_2",
+                    "model": "model-x",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "t4",
+                            "name": "Edit",
+                            "input": {"file_path": "a.txt"},
+                        }
+                    ],
+                },
+            },
+        )
+        _append_record(
+            root,
+            "run-a",
+            {
+                "type": "user",
+                "version": FIXTURE_VERSION,
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "t4", "content": "ok"}
+                    ],
+                },
+            },
+        )
+
     def vectors_copy_differs(root: str) -> None:
         with open(os.path.join(root, VECTORS_COPY), "a", encoding="utf-8") as handle:
             handle.write("touch f\tmutation\n")
@@ -4921,6 +4964,15 @@ def self_test() -> int:
             None,
         ),
         (
+            "an assistant turn that resumes after a later turn",
+            two_passes,
+            None,
+            turn_resumes_after_a_later_turn,
+            "resumes after a later turn",
+            "plain",
+            None,
+        ),
+        (
             "a denial two turns after the first denial",
             two_passes,
             None,
@@ -5003,6 +5055,21 @@ def self_test() -> int:
         ),
         "a void attempt whose log mentions a run directory only in prose": (
             "(grader exited without a result, 1 discarded)"
+        ),
+    }
+    # The residue readouts these cases must print, as the line's prefix and the
+    # substring it has to carry. The counts come from the cohort itself -- two
+    # full-arm denied contexts, one of them the shape the case mutates -- so an
+    # increment that stopped working would print `0 of 2` here and fail the
+    # case, instead of reaching the campaign's report as a silent zero.
+    readout_expect = {
+        "a retry denied a second time in the turn after the first denial": (
+            "R second-turn denials:",
+            "1 of 2 full-arm denied contexts (50.0%)",
+        ),
+        "a denied call in a record that names no turn": (
+            "R degraded contexts:",
+            "1 of 2 full-arm denied contexts held a denied call in a record naming no turn",
         ),
     }
     for title, verdicts, reruns, mutate, expect, role, criteria_expect in cases:
@@ -5095,6 +5162,26 @@ def self_test() -> int:
                     detail = f": the void line is {printed!r}"
                 else:
                     title = f"{title}, reported as {void_report_expect[title]}"
+            if accepted and title in readout_expect:
+                prefix, wanted = readout_expect[title]
+                captured = io.StringIO()
+                argv = sys.argv
+                sys.argv = ["analyze.py"]
+                try:
+                    with contextlib.redirect_stdout(captured):
+                        main()
+                finally:
+                    sys.argv = argv
+                printed = "".join(
+                    line
+                    for line in captured.getvalue().splitlines()
+                    if line.startswith(prefix)
+                )
+                if wanted not in printed:
+                    accepted = False
+                    detail = f": the readout line is {printed!r}"
+                else:
+                    title = f"{title}, reported as {printed}"
             while locked_dirs:
                 with contextlib.suppress(OSError):
                     os.chmod(locked_dirs.pop(), 0o700)
