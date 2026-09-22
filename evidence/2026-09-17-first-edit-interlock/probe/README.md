@@ -10,8 +10,10 @@ may start.
 
 ## Pins
 
-    full_root=9e9d66542f7e0ebf35a4bc4b776ec7dff76dbdef
-    claude_code=2.1.276
+```
+full_root=9e9d66542f7e0ebf35a4bc4b776ec7dff76dbdef
+claude_code=2.1.276
+```
 
 Model `claude-opus-5` throughout, `permission_mode=bypassPermissions`.
 
