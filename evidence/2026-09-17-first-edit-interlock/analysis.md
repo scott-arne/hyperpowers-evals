@@ -180,12 +180,14 @@ design checks passed: every manifest row logged once with its pins, every added 
 
 ## The probe
 
-Before the full arm launched, three live Claude Code sessions ran against the amended
-hook on 2026-09-22 to answer the one question the 2026-09-20 campaign could not: whether
-the interlock denies *every* mutation call in the first mutating turn, including the
-siblings that arrive in the same wave as the call that publishes the marker. It does;
-`probe/README.md` records the pins, the commands, the run directories, and the per-check
-evidence. Session three drove `probe-batch`, whose first turn is four writers, until ten
+Before the full arm launched, three probe exercises — twelve live Claude Code sessions
+between them, one and one and ten — ran against the amended hook on 2026-09-22 to answer
+the one question the 2026-09-20 campaign could not: whether the interlock denies *every*
+mutation call in the first mutating turn, including the siblings that arrive in the same
+wave as the call that publishes the marker. In all twelve it did. That is a reading from
+traced sessions, which are the population the open perturbation caveat reaches
+(`probe/trace-overhead.txt`); `probe/README.md` records the pins, the commands, the run
+directories, and the per-check evidence. Session three drove `probe-batch`, whose first turn is four writers, until ten
 repetitions each presented a first wave of more than one mutation call: `qualifying=10
 interlock_held=yes sessions=10`, every first-wave call denied in all ten, no allowed
 sibling anywhere, and the loop stopping at its tenth session well inside its ceiling of
