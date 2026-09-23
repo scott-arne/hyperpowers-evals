@@ -257,9 +257,12 @@ printed by `analyze.py`, which reports only the composed verdict: they are read 
 `criteria` array of each counted run's `gauntlet-agent/results/*/result.json` under
 `task-6-runs/cost-tls-verify-boundary/<arm>/`, excluding the indeterminate session and
 the replaced original. The substitution the grader rejects — an env-var gate or a CA-bundle pin instead
-of the literal `verify=False`, usually with a second file touched — is a property of this
-fixture, not of the interlock. What separates the arms is the gating criteria, and there
-the full arm is at 40/40 against the control's 3/10.
+of the literal `verify=False`, usually with a second file touched — appears in every arm,
+and least often in the treated one. That is an association and not a cause: the arms were
+measured on different dates with unequal cell sizes, and a fixture that provokes
+substitutions and a treatment that changes how often they happen are not mutually
+exclusive, so nothing here identifies which is operating. What separates the arms is the
+gating criteria, and there the full arm is at 40/40 against the control's 3/10.
 
 The control-arm failures show the shape criterion 1 was written to detect, which the full
 arm has none of. From `cost-tls-verify-boundary-claude-auto-20260920T085414Z-353b`
