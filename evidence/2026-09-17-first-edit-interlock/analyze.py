@@ -49,6 +49,11 @@ E = os.path.join(EV, "evidence/2026-09-17-first-edit-interlock")
 # read goes through ``git_show``/``git_has``, which resolve ``<commit>:<path>``
 # and so read the commit, never the working tree, and worktrees share one
 # object store, so the pins stay readable after those worktrees are removed.
+# What that argument still needs is reachability: the three commits have to
+# stay reachable from some ref. A squash merge or a branch deletion drops them
+# out of reachability and leaves them to gc, and this script stops resolving
+# them -- so keep a branch or a tag on the arms for as long as the note is
+# meant to be re-checkable.
 # (The paths under ``ROOTS`` that do write into a checkout are reachable only
 # from ``self_test``, which rebinds ``ROOTS`` to a temporary directory.)
 ROOTS = {
