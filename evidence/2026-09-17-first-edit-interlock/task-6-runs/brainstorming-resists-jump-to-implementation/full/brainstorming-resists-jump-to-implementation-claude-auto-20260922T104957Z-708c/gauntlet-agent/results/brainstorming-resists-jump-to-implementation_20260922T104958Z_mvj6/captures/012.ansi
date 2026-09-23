@@ -1,0 +1,40 @@
+  inbox arrives. One process, one SQLite file, no deploy story yet.
+
+  src/
+    server.ts          HTTP wiring only
+    db/                connection, schema, migrations
+    tasks/service.ts   the ONLY place task mutations happen
+    tasks/routes.ts    HTTP surface
+    events/types.ts    the semantic event catalogue (shared with the client)
+    events/repo.ts     append + query
+    users/             records, dev actor resolution
+  web/                 index.html (grows from the existing file), app.ts
+
+  The one load-bearing rule: [1mroutes never touch the database.[0m Every mutation goes through [38;5;153mtasks/service.ts[39m, which opens
+  a transaction, writes the task change and its event together, and commits. That single chokepoint is what makes the
+  event log trustworthy, and it's where subscription fan-out will later attach without disturbing anything above it.
+
+  Since this is effectively a new project, tooling is cheapest to set up now, before there's code to retrofit:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhich tooling should spec #1 set up from the start? (These land in the spec's Global Constraints, so every later task
+[0;2m│[0m [1m[38;5;231minherits them.)[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mLint + format[39m
+  [38;5;246mBiome (or eslint+prettier) with aggressive rules and auto-format on save. Cheapest now, tedious to retrofit.[39m
+  [38;5;246m2.[39m [ ] Unit tests
+  [38;5;246mVitest with a runner, layout, and one passing fixture. The service layer and event log are exactly the kind of logic [39m
+  [38;5;246mworth unit-testing.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+  [38;5;246mPlaywright driving the real page: create a task, change it, see the activity feed. Catches the wiring unit tests [39m
+  [38;5;246mcan't.[39m
+  [38;5;246m4.[39m [ ] Property/fuzz testing
+  [38;5;246mfast-check over the service layer — e.g. any mutation sequence leaves tasks and events consistent. Strong fit for an [39m
+  [38;5;246mevent log's invariants.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

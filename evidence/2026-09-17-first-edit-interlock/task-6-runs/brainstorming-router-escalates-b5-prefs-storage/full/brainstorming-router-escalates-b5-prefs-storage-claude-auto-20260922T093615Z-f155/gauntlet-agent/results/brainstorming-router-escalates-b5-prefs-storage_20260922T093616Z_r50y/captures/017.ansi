@@ -1,0 +1,40 @@
+  and validator; a [38;5;153mstorage backend[39m with a 3-method interface ([38;5;153mread[39m/[38;5;153mwrite[39m/[38;5;153mremove[39m) whose only implementation today is
+  [38;5;153mlocalStorageBackend[39m; and a [38;5;153mpreferences[39m store that composes them and exposes typed [38;5;153mget(key)[39m / [38;5;153mset(key, value)[39m /
+  [38;5;153mreset()[39m.
+  [3mBuys:[0m the seam is one 3-method object, so a future server backend is a new file, not a rewrite. Defaults and
+  validation live in one declarative place, so adding a third pref is one schema entry, not four new functions. Tests
+  inject an in-memory backend — no DOM, no [38;5;153mlocalStorage[39m shim. [3mCosts:[0m three files instead of one; a little indirection
+  for two prefs. [3mRules out:[0m nothing. [1mComplexity: moderate.[0m
+
+  [1mC. B plus a versioned, migrating payload[0m — everything in B, and the stored JSON carries [38;5;153m{version, data}[39m with a
+  migration chain run on read.
+  [3mBuys:[0m renaming or retyping a pref later can't strand users on old data. [3mCosts:[0m real machinery — migration functions,
+  version constants, tests for each hop — to protect two prefs whose shape you control and that cost nothing to discard.
+  [3mRules out:[0m nothing. [1mComplexity: high.[0m
+
+  [1mI recommend B.[0m It's the approach that actually delivers the seam you picked, and the indirection pays for itself
+  immediately in testability — with the backend injectable, the whole store is testable in plain Node with no browser.
+  I'd skip C's versioning: YAGNI. B already degrades safely on unrecognized stored data by falling back to defaults,
+  which is the same user-visible outcome a migration would produce for prefs this simple, at a fraction of the cost. If
+  the pref set grows into something users would be upset to lose, versioning is a clean addition on top of B later.
+
+  On the two rung-1 consequences I flagged: under B, [38;5;153mrememberedUsername[39m is opt-in-shaped — I'll have it written only
+  when the login succeeds, and I'll add a [38;5;153mreset()[39m so it can be cleared. Still plaintext [38;5;153mlocalStorage[39m; that property
+  doesn't go away.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Approach [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mWhich approach should I design in detail?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: schema + pluggable backend (Recommended)[39m
+     [38;5;246mDeclarative schema with defaults/validation, 3-method backend interface, injectable for tests. Delivers the sync [39m
+     [38;5;246mseam.[39m
+  [38;5;246m2.[39m A: typed module, direct localStorage
+     [38;5;246mOne file, four functions, no seam. Smallest thing that works, but drops the sync seam you picked.[39m
+  [38;5;246m3.[39m C: B plus versioned migrations
+     [38;5;246mAdds {version,data} payload and a migration chain. Maximum future-proofing, real ongoing cost.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

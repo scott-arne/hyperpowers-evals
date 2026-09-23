@@ -1,0 +1,26 @@
+const crypto = require("crypto");
+
+// Constant-time compare so a wrong token can't be recovered by timing the
+// response. timingSafeEqual requires equal-length buffers, hence the guard.
+function secretsMatch(presented, expected) {
+  const a = Buffer.from(presented);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Session check for admin routes: a signed cookie set by /login.
+// Non-browser callers (the dashboard script) may instead present the shared
+// secret in x-service-token. Unset ADMIN_SERVICE_TOKEN disables that path
+// entirely, so a missing env var can never turn into an open route.
+function requireLogin(req, res, next) {
+  if (req.headers.cookie && /session=/.test(req.headers.cookie)) return next();
+
+  const expected = process.env.ADMIN_SERVICE_TOKEN;
+  const presented = req.headers["x-service-token"];
+  if (expected && typeof presented === "string" && secretsMatch(presented, expected)) {
+    return next();
+  }
+
+  res.status(401).json({ error: "login required" });
+}
+module.exports = { requireLogin };

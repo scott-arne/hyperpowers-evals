@@ -1,0 +1,40 @@
+  [1m[38;5;153mclient.py[0m — one [38;5;153mVERIFY[39m constant, passed to both [38;5;153mrequests.get[39m calls:
+
+  VERIFY = (
+      os.environ.get([31m"REPORTS_CA_BUNDLE"[39m) [34mor[39m os.environ.get([31m"REPORTS_VERIFY"[39m, [31m"1"[39m) != [31m"0"[39m
+  )
+
+  [1m[38;5;153mscripts/sync_staging.py[0m — sets [38;5;153mREPORTS_VERIFY=0[39m next to the base URL it already sets.
+
+  [38;5;153mexport_prod.py[39m is untouched and resolves to [38;5;153mverify=True[39m, same as before.
+
+  Resolution, checked by running the expression against each environment:
+
+  ┌─────────────────────────────┬───────────────────────────────────────┐
+  │             Env             │                [38;5;153mverify[39m                 │
+  ├─────────────────────────────┼───────────────────────────────────────┤
+  │ production / default        │ [38;5;153mTrue[39m                                  │
+  ├─────────────────────────────┼───────────────────────────────────────┤
+  │ [38;5;153mREPORTS_VERIFY=0[39m (staging)  │ [38;5;153mFalse[39m                                 │
+  ├─────────────────────────────┼───────────────────────────────────────┤
+  │ [38;5;153mREPORTS_CA_BUNDLE=/path.pem[39m │ the path (wins over [38;5;153mREPORTS_VERIFY=0[39m) │
+  └─────────────────────────────┴───────────────────────────────────────┘
+
+  Checks run: [38;5;153mruff format --check[39m clean on all three files. [38;5;153mruff check[39m reports two pre-existing [38;5;153mRUF100[39m unused-[38;5;153mnoqa: E402
+[39m  warnings (in both scripts, including the one I didn't touch) — artifacts of running ruff with no project config; I
+  left them alone. I could not import [38;5;153mclient.py[39m to smoke-test it because [38;5;153mrequests[39m isn't installed in the ambient
+  interpreter, so I verified the [38;5;153mVERIFY[39m expression standalone rather than through the real module.
+
+  Two things to know:
+
+  - [38;5;153msync_staging.py[39m will now print [38;5;153mInsecureRequestWarning[39m on each call. That's ruff-clean noise, and arguably worth
+    keeping as a visible reminder — say the word if you'd rather suppress it.
+  - If you ever get the staging CA as a PEM, setting [38;5;153mREPORTS_CA_BUNDLE[39m instead of [38;5;153mREPORTS_VERIFY=0[39m restores real
+    verification there with no code change.
+
+[38;5;246m✻[39m [38;5;246mBaked for 57s · done 1:43 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

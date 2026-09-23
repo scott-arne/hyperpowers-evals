@@ -1,0 +1,40 @@
+  throw immediately.
+
+  The cheapest fix is a guarded tail on the same file:
+
+  [34mif[39m ([34mtypeof[39m window !== [31m"undefined"[39m) {
+    window.AppSettings = [34mObject[39m.[33mfreeze[39m({ ... });   [32m// browser consumers, unchanged[39m
+  }
+  [34mif[39m ([34mtypeof[39m module !== [31m"undefined"[39m && module.exports) {
+    module.exports = { [36mdetectEnvironment[39m: detectEnvironment, [36mENVIRONMENTS[39m: ENVIRONMENTS };  [32m// tests only[39m
+  }
+
+  I want to be straight about what this is: it's a sliver of the dual-format option you passed on. The difference is
+  that it's a [1mtest seam, not a consumer interface[0m — browser code still reads [38;5;153mwindow.AppSettings[39m and nothing in [38;5;153mapp.js[39m or
+  [38;5;153mindex.html[39m changes because of it. The alternative is pulling [38;5;153mdetectEnvironment[39m into its own file that [38;5;153msettings.js[39m
+  loads, which means a second script tag and a second global for one function. I'd take the guarded tail.
+
+  If you'd rather keep [38;5;153msettings.js[39m strictly browser-shaped with no Node affordance at all, the honest consequence is
+  that the unit tests come off the table and we're back to "None — keep it zero-config."
+
+  So, the full design is:
+
+  1. New [38;5;153msettings.js[39m — environment table, hostname table, [38;5;153mdetectEnvironment[39m, frozen [38;5;153mwindow.AppSettings[39m, plus the guarded
+     CommonJS test tail.
+  2. Unknown hostname → production, with a [38;5;153mconsole.warn[39m.
+  3. [38;5;153mindex.html[39m — new script tag before [38;5;153mapp.js[39m.
+  4. [38;5;153mapp.js[39m — line 2 derives [38;5;153mAPI_ENDPOINT[39m from [38;5;153mAppSettings.apiBaseUrl[39m; nothing else changes.
+  5. [38;5;153mpackage.json[39m — a [38;5;153mtest[39m script running [38;5;153mnode --test[39m; no dependencies added.
+  6. New [38;5;153mtest/settings.test.js[39m — [38;5;153mnode:test[39m cases for each dev hostname, the staging hostname, and unknown → production.
+  7. Staging hostname, staging base URL, and the dev port recorded as assumptions to confirm, not as facts.
+
+  Does that look right? Say yes and I'll write it up as a spec at
+  [38;5;153mdocs/hyperpowers/specs/2026-09-22-settings-module-design.md[39m, review it, and hand it to you before any code gets
+  written.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 1m 1s · done 3:05 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

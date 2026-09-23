@@ -1,0 +1,40 @@
+[38;5;246m  ⎿  [39mAdded [1m2[0m lines, removed [1m1[0m line
+     [2m[38;5;231m  9 [0m[38;5;231m [38;5;242m# Staging serves a self-signed certificate, so it opts out of verification.[39m
+     [2m[38;5;231m 10 [0m[38;5;231m [38;5;242m# Every other caller, production included, must keep verifying: this client is[39m
+     [2m[38;5;231m 11 [0m[38;5;231m [38;5;242m# shared, and a blanket opt-out would expose the production export to MITM.[39m
+     [38;5;167m[48;5;52m 12 -[38;5;231mVERIFY_TLS = os.environ.get("REPORTS_VERIFY_TLS", "1").lower() not in {"0", "false", "no"}             [39m[49m
+     [38;5;77m[48;5;22m 12 +[38;5;231m[48;5;28m_verify_setting[48;5;22m = os.environ.get([38;5;186m"REPORTS_VERIFY_TLS"[38;5;231m, [38;5;186m"1"[38;5;231m).lower()                                    [39m[49m
+     [38;5;77m[48;5;22m 13 +[38;5;231mVERIFY_TLS = _verify_setting [38;5;197mnot[38;5;231m [38;5;197min[38;5;231m {[38;5;186m"0"[38;5;231m, [38;5;186m"false"[38;5;231m, [38;5;186m"no"[38;5;231m}                                               [39m[49m
+     [2m[38;5;231m 14 [0m[38;5;231m [39m
+     [2m[38;5;231m 15 [0m[38;5;231m [39m
+     [2m[38;5;231m 16 [0m[38;5;231m [38;5;81mdef[38;5;231m [38;5;148mfetch_report[38;5;231m([38;5;208mreport_id: [38;5;148mstr[38;5;231m) -> [38;5;148mdict[38;5;231m:[39m
+
+  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Done.
+
+  - [38;5;153mclient.py[39m — both [38;5;153mrequests.get[39m calls now pass [38;5;153mverify=VERIFY_TLS[39m, driven by [38;5;153mREPORTS_VERIFY_TLS[39m and defaulting to on.
+    Same env-var pattern as the existing [38;5;153mBASE_URL[39m, so it's read at import, which is how the scripts already configure
+    the client.
+  - [38;5;153mscripts/sync_staging.py[39m — sets [38;5;153mREPORTS_VERIFY_TLS=0[39m before the import, so staging skips verification against its
+    self-signed cert.
+  - [38;5;153mscripts/export_prod.py[39m — untouched; the nightly export keeps validating certificates.
+
+  Checks: sanity-checked the flag against [38;5;153munset/0/false/no/1/true[39m with a stubbed [38;5;153mrequests[39m (not installed here, and I
+  didn't install it) — resolves as intended. [38;5;153mruff format --check[39m clean. No test suite in the repo, so nothing to run;
+  the ruff [38;5;153mRUF100[39m warnings on both scripts' [38;5;153m# noqa: E402[39m are pre-existing and I left them alone.
+
+  Two things worth knowing:
+
+  - [38;5;153msync_staging.py[39m will now print [38;5;153mInsecureRequestWarning[39m on each call. I left that visible rather than suppressing it;
+    say if you'd rather it be quiet.
+  - Anyone can set [38;5;153mREPORTS_VERIFY_TLS=0[39m in the environment and disable verification for the production export too. If
+    you want that impossible, the fix is option 2 — point [38;5;153mverify[39m at the staging CA file instead of a boolean — or thread
+    [38;5;153mverify[39m as an explicit function argument so it can't be set ambiently.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 1m 4s · done 1:27 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

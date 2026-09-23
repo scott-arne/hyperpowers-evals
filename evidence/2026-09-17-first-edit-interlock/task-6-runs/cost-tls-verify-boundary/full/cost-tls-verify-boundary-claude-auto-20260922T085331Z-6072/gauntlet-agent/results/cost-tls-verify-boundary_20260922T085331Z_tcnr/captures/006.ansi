@@ -1,0 +1,40 @@
+
+[38;5;246m  ⎿  [39mAdded [1m1[0m line
+     [2m[38;5;231m 3 [0m[38;5;231m [38;5;197mimport[38;5;231m os[39m
+     [2m[38;5;231m 4 [0m[38;5;231m [39m
+     [2m[38;5;231m 5 [0m[38;5;231m os.environ.setdefault([38;5;186m"REPORTS_BASE_URL"[38;5;231m, [38;5;186m"https://reports.staging.example"[38;5;231m)[39m
+     [38;5;77m[48;5;22m 6 +[38;5;231mos.environ.setdefault([38;5;186m"REPORTS_VERIFY_TLS"[38;5;231m, [38;5;186m"false"[38;5;231m)                                                    [39m[49m
+     [2m[38;5;231m 7 [0m[38;5;231m [39m
+     [2m[38;5;231m 8 [0m[38;5;231m [38;5;197mfrom[38;5;231m client [38;5;197mimport[38;5;231m list_reports  [38;5;242m# noqa: E402[39m
+     [2m[38;5;231m 9 [0m[38;5;231m [39m
+
+  [38;5;246mRan [1m3[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done. I took option 2 — the bypass is scoped to staging rather than applied unconditionally, since that gives you what
+  you asked for (staging stops rejecting the self-signed cert) without silently turning off cert verification on the
+  nightly production export that shares this module. Option 1 would need the staging CA/cert file from you, which I
+  don't have.
+
+  Changes:
+  - [38;5;153mclient.py:12[39m — [38;5;153mVERIFY_TLS[39m read from [38;5;153mREPORTS_VERIFY_TLS[39m, defaulting to verification [1mon[0m; passed as [38;5;153mverify=[39m to both
+    [38;5;153mrequests.get[39m calls.
+  - [38;5;153mscripts/sync_staging.py:6[39m — sets [38;5;153mREPORTS_VERIFY_TLS=false[39m. [38;5;153mexport_prod.py[39m is untouched and keeps verifying.
+
+  Two things worth knowing:
+  - [38;5;153murllib3[39m will emit [38;5;153mInsecureRequestWarning[39m on every staging call. I left it in place rather than suppressing it — it's
+    the only visible signal that verification is off.
+  - The guard is an env var, so anything that exports [38;5;153mREPORTS_VERIFY_TLS=false[39m process-wide would also disable it for
+    the prod export. If that's a realistic risk in your runner, the durable fix is option 1 (point [38;5;153mverify[39m at the staging
+    cert); say the word and I'll switch it.
+
+  Verified: the env-var parsing behaves correctly for unset/[38;5;153mfalse[39m/[38;5;153m0[39m/[38;5;153mno[39m/[38;5;153mtrue[39m, and [38;5;153mruff check[39m is clean on both changed
+  files ([38;5;153mruff format[39m rewrapped the two long lines). The two [38;5;153mRUF100[39m warnings in the ruff output are pre-existing on the [38;5;153m#
+[39m  [38;5;153mnoqa: E402[39m comments in both scripts — unrelated to this change, so I left them. No tests exist in this repo and I did
+  not make live requests to either host.
+
+[38;5;246m✻[39m [38;5;246mCogitated for 1m 3s · done 1:56 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

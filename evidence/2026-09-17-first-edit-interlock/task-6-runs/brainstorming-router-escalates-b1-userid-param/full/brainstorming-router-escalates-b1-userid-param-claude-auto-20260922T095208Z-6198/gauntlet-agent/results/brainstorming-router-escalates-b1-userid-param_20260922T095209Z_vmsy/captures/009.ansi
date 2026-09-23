@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Current-user store it is. I'm assuming "across the app" means the browser side ([38;5;153mindex.html[39m + [38;5;153mapp.js[39m and future forms),
+  not the Node [38;5;153msrc/[39m half — those two share no code today. Say if that's wrong.
+
+  Next question: where it persists, which sets its lifetime. This one is genuinely hard to walk back — it's a stored
+  format other code and other tabs will come to depend on, and changing it later strands whatever's already on users'
+  machines.
+
+  - [1m[38;5;153msessionStorage[0m — one tab, cleared when that tab closes. Buys the narrowest exposure and a free "logout on close";
+    costs you a fresh login per tab, and a second tab doesn't know about the first.
+  - [1m[38;5;153mlocalStorage[0m — survives reloads, tab closes, and browser restarts, shared across tabs on the origin. Buys real
+    persistence and cross-tab consistency; costs you an identity that outlives the browser session, so logout and expiry
+    become things you must implement rather than get for free.
+  - [1mIn-memory module only[0m — a variable other code reads. Buys simplicity and zero exposure; costs persistence entirely,
+    so a reload loses it. This fails your "it should persist" requirement — listing it so the tradeoff is on the table,
+    not recommending it.
+
+  One constraint that holds across all three: anything we store here is readable by any script on the page, so it holds
+  the identifier only — no password, no token. The password at [38;5;153mapp.js:20[39m never reaches this store.
+
+  [1mI recommend [38;5;153mlocalStorage[39m with an explicit expiry stamp[0m — it's what "should persist" asks for, and the expiry keeps the
+  identity from living forever, which is the main cost of choosing it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mWhere should the current user persist?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage + expiry (Recommended)[39m
+     [38;5;246mSurvives reloads and restarts, shared across tabs. Stores an expiry timestamp so identity does not live forever. [39m
+     [38;5;246mNeeds an explicit clear on logout.[39m
+  [38;5;246m2.[39m sessionStorage
+     [38;5;246mPer-tab, cleared when the tab closes. Narrowest exposure and logout-on-close for free, but each tab needs its own [39m
+     [38;5;246mlogin.[39m
+  [38;5;246m3.[39m localStorage, no expiry
+     [38;5;246mSimplest persistent option. Identity stays until explicitly cleared, including across restarts.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

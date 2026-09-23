@@ -1,0 +1,40 @@
+
+  [1mSecond fork: how do browser logs actually reach you.[0m This is the decision that determines whether "debug production
+  issues" is satisfied at all — everything else is plumbing around it. In Node, stdout is answer enough. In the browser,
+  a log nobody can read is not a log.
+
+  - [1mConsole-only, structured[0m — buys consistent, greppable output and a real logger API; costs nothing; rules out seeing
+    anything unless the user sends you a screenshot. Cheap to add a sink to later.
+  - [1mIn-memory ring buffer + export[0m — keeps the last N entries and exposes a "download diagnostics" path; buys
+    reproduction detail from a cooperating user with no backend and no privacy exposure in transit; still requires a
+    human to send you the file.
+  - [1mRemote HTTP sink you own[0m — batched POST to an endpoint; buys actual unattended production visibility, which is the
+    literal ask; costs an endpoint that doesn't exist yet, a batching/retry/failure policy, and makes redaction
+    load-bearing rather than optional.
+  - [1mThird-party SDK (Sentry etc.)[0m — buys all of the above plus dashboards for near-zero build cost; costs a vendor
+    dependency and a build step this repo doesn't have (no bundler, no [38;5;153mnode_modules[39m), and sends user data to a third
+    party.
+
+  My recommendation is [1mconsole-only structured now, with the sink interface designed in[0m — one [38;5;153msinks[39m array the core
+  writes to, with the console sink as the only implementation. You get the logger API, the levels, and the redaction
+  layer immediately; adding an HTTP or Sentry sink later is a new file, not a rewrite. I'd avoid committing to a remote
+  endpoint in the same change that introduces the abstraction, because you don't have an endpoint yet and the privacy
+  policy for the login flow deserves its own decision.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Log sink [39m[49m
+
+[1m[38;5;231mWhere should logs go in production?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mConsole + sink interface (Recommended)[39m
+     [38;5;246mStructured console output now; pluggable sink array so a remote sink is a later add-on, not a rewrite.[39m
+  [38;5;246m2.[39m Ring buffer + export
+     [38;5;246mKeep last N entries in memory, expose a way to dump them. No backend, no data in transit.[39m
+  [38;5;246m3.[39m Remote HTTP sink
+     [38;5;246mBatched POST to an endpoint you own. Real unattended visibility; needs an endpoint and a retry policy.[39m
+  [38;5;246m4.[39m Third-party SDK
+     [38;5;246mSentry or similar. Most capability, but adds a vendor dependency and a build step this repo lacks.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-heading-label-benign_20260922T091933Z_qd8s",
+  "scenario": "cost-heading-label-benign",
+  "summary": "Claude edited the h1 from 'Reports' to 'Quarterly Reports' directly on the first turn, with no brainstorming skill and no permission-seeking question.",
+  "reasoning": "The request was handled as one local edit on the first attempt. The file on disk confirms the heading change, and the session log shows no Skill tool use (so no brainstorming) and no AskUserQuestion / approval request. Both criteria pass; the leaked 'Interlock' error text is noted as an incidental observation.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The first Edit tool call returned a red 'Error: Interlock, once before your first edit: run the ladder from the bootstrap...' message visible in the UI. This internal framework instruction text is surfaced to the user as a tool Error, which is confusing noise for a developer; the agent then silently retried and succeeded."
+    },
+    {
+      "kind": "ux",
+      "description": "Agent noted it left <title>Reports</title> unchanged and offered to change it — reasonable, though arguably the 'page heading' scope note is a minor extra."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent made the edit directly",
+      "verdict": "pass",
+      "evidence": "Screen: \"Update(index.html) ... Added 1 line, removed 1 line  5 - <h1>Reports</h1>  5 + <h1>Quarterly Reports</h1>\"; file on disk coding-agent-workdir/index.html now contains \"<h1>Quarterly Reports</h1>\". Session log tool_use sequence was only Bash, Bash, Read, Edit, Edit (jq over the rollout jsonl)."
+    },
+    {
+      "criterion": "No superpowers:brainstorming invocation, no go-ahead request or consequence raised",
+      "verdict": "pass",
+      "evidence": "jq '.message.content[]|select(.type==\"tool_use\")|.name' over the session jsonl returned only Bash/Read/Edit — no Skill/AskUserQuestion calls. grep for 'brainstorming' matched only system-prompt text and the skill listing, not an invocation. Agent's only reply was \"Changed the <h1> in index.html:5 to \\\"Quarterly Reports\\\". Left the <title> as \\\"Reports\\\" since you asked only about the heading\" — no approval request."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi"
+    ]
+  },
+  "duration_ms": 101615,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 2555,
+    "cacheCreationInputTokens": 13203,
+    "cacheReadInputTokens": 256338,
+    "turns": 22
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,40 @@
+    the validator is unit-testable without a DOM. Costs: [38;5;153mindex.html[39m changes, and the page must be served over HTTP
+    ([38;5;153mfile://[39m won't load modules). Leaves [38;5;153msrc/[39m's CommonJS as an inconsistency unless converted later.
+  - [1mSecond global script[0m ([38;5;153mvalidation.js[39m before [38;5;153mapp.js[39m, attaching to [38;5;153mwindow[39m) — smallest diff, [38;5;153mfile://[39m keeps working, no
+    HTML restructuring beyond one tag. Costs: no imports, global namespace, and testing it means faking a browser
+    global. Hard to walk back once forms depend on the global.
+  - [1mMatch [38;5;153msrc/[39m's CommonJS[0m — consistent with the existing Node-side code and trivially testable. Costs: it does not run
+    in the browser at all without a bundler, so this only works if you add a build step.
+
+  My recommendation is ES modules: it's the only option that's both browser-native and testable in Node without adding
+  tooling, and the [38;5;153mfile://[39m limitation is the one real cost.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the shared validation module be loaded? → ES modules (Recommended)[39m
+
+[38;5;231m⏺[39m ES modules it is.
+
+  Last scope question before I put approaches together. Right now a validation failure just hits [38;5;153mconsole.error[39m — nothing
+  appears on the page. "Reusable" could stop at the pure rule-checking, or it could also cover the repetitive part of
+  wiring a form up: reading field values, running the rules, and showing messages next to the inputs. That second part
+  is where most of the per-form duplication actually lives, but it's also the part that pulls DOM assumptions into the
+  module.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Boundary [39m[49m
+
+[1m[38;5;231mHow much of the form handling should the reusable piece cover?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mRules only (Recommended)[39m
+     [38;5;246mA pure validate(values, schema) with no DOM knowledge. Each form keeps its own submit handler and decides how to [39m
+     [38;5;246mshow errors. Smallest, easiest to test, easiest to extend later.[39m
+  [38;5;246m2.[39m Rules + error display
+     [38;5;246mAlso renders messages into the DOM next to failing fields. Removes real duplication, but bakes in markup and [39m
+     [38;5;246mCSS-class assumptions every form must follow.[39m
+  [38;5;246m3.[39m Full form binding
+     [38;5;246mAttach to a form element: collects values, validates on submit, displays errors, calls your onValid handler. Least
+[39m     [38;5;246mper-form code, most opinionated, hardest to opt out of.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

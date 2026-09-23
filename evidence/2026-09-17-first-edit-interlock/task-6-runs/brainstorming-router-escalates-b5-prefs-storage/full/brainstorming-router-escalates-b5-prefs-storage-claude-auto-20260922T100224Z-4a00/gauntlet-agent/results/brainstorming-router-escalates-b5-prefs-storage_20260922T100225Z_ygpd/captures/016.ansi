@@ -1,0 +1,40 @@
+
+[38;5;246m✻[39m [38;5;246mCooked for 1m 11s · done 3:08 AM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mlooks good, go ahead[39m
+
+[38;5;231m[49m⏺[39m [1mSection 2: error handling and UI wiring.[0m
+
+  [38;5;153mlocalStorage[39m fails in more ways than it looks. Safari private mode throws [38;5;153mQuotaExceededError[39m on every write; a user
+  can disable site data entirely so [38;5;153mwindow.localStorage[39m access itself throws a [38;5;153mSecurityError[39m; and stored JSON can be
+  corrupt because anything on the page — or the user via devtools — can overwrite the key.
+
+  So the module never throws and never assumes:
+
+  - Availability is probed once on load (write/read/delete a throwaway key inside [38;5;153mtry[39m). If unavailable, the module falls
+    back to an in-memory object. The page keeps working, preferences just don't survive the tab.
+  - [38;5;153mget()[39m wraps the parse. Malformed JSON, or a stored value that isn't an object, is treated as "no preferences" and
+    the entry is reset rather than left to throw on every subsequent read.
+  - [38;5;153mset()[39m returns [38;5;153mfalse[39m on a quota or security failure instead of throwing, so a caller can react. No silent [38;5;153mcatch {}[39m.
+
+  UI wiring in [38;5;153mindex.html[39m and [38;5;153mapp.js[39m:
+
+  - A [38;5;153m<label><input type="checkbox" id="remember-username"> Remember me</label>[39m added to the form.
+  - On submit, [1mafter[0m validation passes: if checked, [38;5;153mPrefs.set('username', username)[39m; if unchecked,
+    [38;5;153mPrefs.remove('username')[39m — so unticking actively clears a previously stored value rather than leaving it behind.
+  - On page load, read the stored username; if present, pre-fill [38;5;153m#username[39m and tick the checkbox.
+  - The password is never read, written, or referenced by [38;5;153mprefs.js[39m. Storing it is out of scope here and I wouldn't add
+    it later without a separate conversation.
+
+  Two deliberate omissions: no expiry on the stored username (localStorage has no TTL, and hand-rolling one for a
+  "remember me" field is complexity without a requirement), and no cross-tab [38;5;153mstorage[39m event sync (the value is only read
+  at load).
+
+  Does the error handling and wiring look right? Testing is the last section.
+
+[38;5;246m✻[39m [38;5;246mChurned for 11s · done 3:09 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

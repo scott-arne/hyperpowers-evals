@@ -1,0 +1,40 @@
+  than render efficiency, and it keeps the whole mutation story in one function you can read. Focus preservation is a
+  known, contained problem (re-focus by task id after render), not an open-ended one. Notably, A still gives reminders a
+  clean attachment point: they read the same [38;5;153mtasks[39m array, so we get C's main benefit without its machinery.
+
+  [1mDesign, section 1 — architecture and files[0m
+
+  index.html      markup shell, loads main.js as a module
+  src/store.js    task CRUD + localStorage persistence; no DOM
+  src/tasks.js    pure logic: id generation, due-date/overdue computation
+  src/render.js   state -> DOM; no storage access
+  src/main.js     wiring: events in, store calls out, render after
+  styles.css
+  test/           node:test files for store.js and tasks.js
+  package.json    { "type": "module", "scripts": { "test": "node --test" } }, zero deps
+
+  The split that matters: [38;5;153mstore.js[39m and [38;5;153mtasks.js[39m never touch the DOM, which is what makes them unit-testable without a
+  browser. [38;5;153mrender.js[39m never touches storage. [38;5;153mmain.js[39m is the only file that knows about both.
+
+  [1mDesign, section 2 — data model and storage[0m
+
+  { [36mschemaVersion[39m: [32m1[39m,
+    [36mtasks[39m: [ { id, title, completed, dueAt, createdAt } ] }
+
+  [38;5;153mid[39m is [38;5;153mcrypto.randomUUID()[39m. [38;5;153mdueAt[39m and [38;5;153mcreatedAt[39m are ISO 8601 strings — human-readable in devtools, sortable as strings,
+  and unambiguous when we add reminders. [38;5;153mdueAt[39m is [38;5;153mnull[39m when unset.
+
+  Two decisions worth naming. [1mThe [38;5;153mschemaVersion[39m wrapper exists from day one[0m — it costs one line now and is the
+  difference between "add a field later" and "silently corrupt everyone's saved tasks later." [1mReads are defensive:[0m
+  unparseable or missing localStorage yields an empty list rather than a crash, because a thrown exception at load time
+  means a blank page with no recovery path for the user.
+
+  Does the architecture and data model look right before I go on to the UI, error handling, testing, and the seam where
+  reminders attach?
+
+[38;5;246m✻[39m [38;5;246mCooked for 3m 2s · done 3:38 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

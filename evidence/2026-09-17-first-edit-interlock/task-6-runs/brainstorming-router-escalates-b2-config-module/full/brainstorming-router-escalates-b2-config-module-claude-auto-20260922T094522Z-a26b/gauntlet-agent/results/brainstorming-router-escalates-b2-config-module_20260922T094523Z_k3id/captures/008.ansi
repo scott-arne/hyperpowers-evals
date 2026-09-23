@@ -1,0 +1,40 @@
+
+  My recommendation is [1mruntime detection by hostname[0m: you have no build step and no server, the endpoint is a public API
+  URL rather than a secret, and if you later add a pipeline you can swap to deploy-time without touching [38;5;153mapp.js[39m at all
+  — the settings module's interface stays the same either way.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the settings module decide which environment it's running in? → Hostname detection (Recommended)[39m
+
+[38;5;231m⏺[39m Recorded: hostname detection.
+
+  [1mNext fork — how [38;5;153mapp.js[39m gets at the settings.[0m This one decides whether [38;5;153mindex.html[39m changes and whether the webapp
+  becomes ES-module-based:
+
+  - [1mGlobal script[0m — add [38;5;153m<script src="settings.js">[39m before [38;5;153mapp.js[39m; settings.js sets [38;5;153mwindow.APP_SETTINGS[39m. Buys: matches
+    exactly how the page works today, nothing else changes. Costs: one more global, and load order in [38;5;153mindex.html[39m becomes
+    load-bearing. Cheap to change later.
+  - [1mES modules[0m — [38;5;153msettings.js[39m does [38;5;153mexport const settings[39m, [38;5;153mapp.js[39m does [38;5;153mimport[39m, and [38;5;153mindex.html[39m becomes [38;5;153m<script [39m
+    [38;5;153mtype="module" src="app.js">[39m. Buys: explicit dependency, no globals, the direction you'd want if this grows. Costs:
+    [38;5;153mtype="module"[39m is deferred and CORS-restricted, so opening [38;5;153mindex.html[39m via [38;5;153mfile://[39m stops working — you'd need a local
+    server to test. That restriction is the part that's annoying to discover later.
+
+  I recommend [1mglobal script[0m: it's a two-line change that preserves how you currently run the page, and the module's
+  interface ([38;5;153mAPP_SETTINGS.apiBaseUrl[39m) is identical under either, so moving to ES modules later is a mechanical edit
+  rather than a redesign.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should app.js consume the new settings module?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mGlobal script (Recommended)[39m
+     [38;5;246msettings.js sets window.APP_SETTINGS, loaded before app.js in index.html. Matches the page's current plain-script [39m
+     [38;5;246msetup; file:// still works.[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246mexport/import with <script type="module">. Cleaner dependencies, but the page then needs a local HTTP server to [39m
+     [38;5;246mrun.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

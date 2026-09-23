@@ -1,0 +1,264 @@
+# User Preferences Storage — Design
+
+Date: 2026-09-22
+Status: awaiting review
+
+## Problem
+
+The app has no way to remember anything between visits. Every reload starts
+from a blank login form with no user-selected settings. The request is to add
+preferences storage so settings persist across sessions.
+
+The repository currently contains no storage, settings, config, or user-state
+code of any kind, so this introduces a new module with a new public interface
+rather than modifying an existing flow.
+
+## Goals
+
+- Persist a small, typed set of user preferences across browser sessions.
+- Keep the storage mechanism behind an interface so a server-backed
+  implementation can be added later without rewriting callers.
+- Make the store testable without a browser.
+
+## Non-goals
+
+- Cross-device synchronization. The chosen design leaves a seam for it; it
+  does not implement it.
+- Server-side persistence, user accounts, or authentication. The existing
+  `login()` is a stub that authenticates nobody; building real identity is a
+  separate, much larger project.
+- Versioned payload migrations. See "Rejected alternatives".
+- A general-purpose untyped key/value store.
+
+## Global constraints
+
+These were selected during brainstorming and bind every later plan and task.
+
+- **Module system:** ES modules for all new code.
+- **Test tooling:** `node:test` (the Node built-in runner). No test
+  dependencies are added.
+- **No linter or formatter** is configured as part of this work.
+- **No end-to-end/browser test infrastructure** is configured as part of this
+  work.
+- **Zero new runtime or dev dependencies.** `package.json` gains a `scripts`
+  entry only.
+- **The password is never persisted**, in any form, to any storage.
+- **Existing `src/index.js` and `src/utils.js` must keep working unmodified.**
+  They are CommonJS and are not part of this feature.
+
+## Architecture
+
+Three small modules under `src/preferences/`, each with a single
+responsibility, composed by dependency injection.
+
+```
+schema.js ──────┐
+                ├──> index.js (createPreferences) ──> app.js
+backend (read/  │
+ write/remove) ─┘
+```
+
+### `src/preferences/schema.js`
+
+Data only, no logic. Declares every preference with its type, default, and —
+for enums — its permitted values.
+
+```js
+export const SCHEMA = {
+  theme: { type: 'enum', values: ['light', 'dark'], default: 'light' },
+  rememberedUsername: { type: 'string', default: '' },
+};
+```
+
+Adding a preference later is one entry here; no other file changes shape.
+
+### `src/preferences/local-storage-backend.js`
+
+The seam. A backend is any object with three methods:
+
+| Method | Contract |
+|---|---|
+| `read()` | Returns the stored string, or `null` if nothing is stored. |
+| `write(string)` | Persists the string. |
+| `remove()` | Deletes the stored entry. |
+
+`localStorageBackend` implements these against `window.localStorage` under the
+single key `app.preferences`. A future `httpBackend` is a new file
+implementing the same three methods; no caller changes.
+
+The backend deals only in strings. It performs no parsing, validation, or
+defaulting — that all belongs to the store.
+
+### `src/preferences/index.js`
+
+`createPreferences(backend)` returns an object with:
+
+| Method | Behavior |
+|---|---|
+| `get(key)` | Returns the stored value if present and valid, else the schema default. Throws on a key not in the schema. |
+| `set(key, value)` | Validates against the schema, merges, persists. Throws on an unknown key or an invalid value. Returns `true` when the value was persisted and `false` when the backend refused the write (e.g. quota); an in-memory value is not retained across reloads in the `false` case. |
+| `reset()` | Clears all stored preferences; subsequent `get` calls return defaults. |
+
+The store holds no knowledge of `localStorage`, the browser, or the DOM.
+
+## Data flow
+
+**Read.** `backend.read()` returns a string or `null` → `JSON.parse` → for
+each schema key, validate the parsed value → keep valid values, substitute
+defaults for missing or invalid ones → return the requested key.
+
+**Write.** Read the current object → merge the new key → `JSON.stringify` →
+`backend.write`. The entire preference set is one JSON object under one key,
+so a write is atomic: there is no partial-update state.
+
+Unknown keys found in stored data are ignored on read and dropped on the next
+write. This keeps a stale or hand-edited payload from growing indefinitely.
+
+## Error handling
+
+The store never throws because of the *stored state*. Every one of these
+degrades to schema defaults and leaves the app running:
+
+- `localStorage` is unavailable or throws (private browsing, disabled storage,
+  quota exceeded).
+- The stored string is not valid JSON.
+- The parsed value is not an object (e.g. a bare string or `null`).
+- A key holds a value of the wrong type.
+- An enum key holds a value outside its permitted set.
+
+The store *does* throw on caller error, because those are bugs at the call
+site rather than untrusted data:
+
+- `get`/`set` with a key not present in the schema.
+- `set` with a value that fails schema validation.
+
+A failing `backend.write` (quota) is caught and reported via the return value
+rather than crashing the login flow; a preference that fails to save must not
+prevent a user from logging in.
+
+## Security considerations
+
+Two consequences of this design were raised explicitly during brainstorming
+and approved.
+
+1. **`rememberedUsername` is stored in plaintext.** `localStorage` is readable
+   by any script executing on the page and by anyone with access to the
+   device, and it persists until explicitly cleared. This is an account
+   identifier, not a credential, but it is still user-identifying data at
+   rest. Mitigations in scope: the username is written only after a
+   *successful* login, and `reset()` provides a clear path to remove it.
+2. **The password is never stored.** `#password` is read into the login call
+   and never passed to the preferences store. Persisting it would place a
+   credential in plaintext where any page script could read it.
+
+## UI changes
+
+`index.html`:
+
+- `<script src="app.js">` gains `type="module"`.
+- A theme toggle control is added so the `theme` preference has something that
+  reads and writes it.
+- Two CSS rules (light and dark) so the toggle has a visible effect.
+
+`app.js`:
+
+- Converted to an ES module importing from `src/preferences/`.
+- On load: apply the stored theme, and prefill `#username` from
+  `rememberedUsername`.
+- On the theme toggle changing: `set('theme', ...)` and apply it.
+- On a *successful* login: `set('rememberedUsername', username)`.
+- `login()` and `validateForm()` are unchanged in behavior.
+
+**Known consequence:** as a module, `app.js` no longer places `login` and
+`validateForm` on `window`. Nothing in this repository reads them as globals,
+but any external consumer relying on that would break. This was raised and
+approved.
+
+**Module resolution.** `src/preferences/package.json` contains exactly
+`{"type": "module"}`. Node resolves module type from the nearest
+`package.json`, so files in that directory are ES modules while the repository
+root stays CommonJS and `src/index.js` / `src/utils.js` continue to work
+untouched. The root `package.json` does **not** gain `"type": "module"` —
+doing so would break both existing files.
+
+## Testing strategy
+
+`test/preferences.test.js`, run with `node --test`. Every test injects an
+in-memory backend, so the suite needs no browser, no DOM, and no
+`localStorage` shim.
+
+Cases:
+
+1. `get` returns schema defaults when storage is empty.
+2. `set` then `get` round-trips each preference.
+3. A stored value survives a fresh `createPreferences` over the same backend
+   (the actual persistence claim).
+4. Unparseable JSON falls back to defaults.
+5. A non-object payload falls back to defaults.
+6. A wrong-typed value falls back to that key's default, leaving other valid
+   keys intact.
+7. An out-of-range enum value falls back to its default.
+8. `set` with an invalid enum value throws.
+9. `get`/`set` with an unknown key throws.
+10. `reset` clears stored values; later `get` calls return defaults.
+11. A backend whose `read` throws degrades to defaults rather than
+    propagating.
+12. A backend whose `write` throws does not propagate to the caller.
+
+`package.json` gains `"scripts": {"test": "node --test"}`. No existing key is
+modified.
+
+## Files
+
+New:
+
+- `src/preferences/schema.js`
+- `src/preferences/local-storage-backend.js`
+- `src/preferences/index.js`
+- `src/preferences/package.json`
+- `test/preferences.test.js`
+
+Modified:
+
+- `app.js` — ES module, preference wiring
+- `index.html` — `type="module"`, theme toggle, two CSS rules
+- `package.json` — add `scripts.test`
+
+Untouched:
+
+- `src/index.js`, `src/utils.js` — remain CommonJS and keep working
+
+## Rejected alternatives
+
+**Typed module writing `localStorage` directly.** Smallest possible
+implementation, but it hardcodes `localStorage` into every function, which
+defeats the sync seam that was explicitly chosen and forces a global
+`localStorage` stub in tests.
+
+**Versioned payload with a migration chain (`{version, data}`).** Real
+machinery — migration functions, version constants, a test per hop — to
+protect two preferences whose shape we control and whose loss costs the user
+nothing. The fallback-to-defaults behavior already specified produces the same
+user-visible outcome for data this simple. Versioning layers cleanly on top of
+this design if the preference set later becomes something users would mind
+losing.
+
+**Server-side per-account storage.** The only design that delivers true
+cross-device persistence, but it requires a backend, a database, and real
+authentication first. The current `login()` authenticates nobody, so there is
+no identity to key preferences to.
+
+**Root `"type": "module"`.** Breaks `src/index.js` and `src/utils.js`.
+
+**`.mjs` extensions.** Avoids the `package.json` question, but some static
+servers send `.mjs` as `application/octet-stream`, which browsers refuse to
+execute as a module.
+
+## Assumptions
+
+- Assumption: no external consumer depends on `login` or `validateForm` being
+  globals on `window`; validate by asking the owner before release, since
+  nothing in this repository reads them.
+- Assumption: the app is served over `http(s)` rather than opened as a
+  `file://` URL; ES modules and `localStorage` are both unreliable on
+  `file://`. Validate by confirming how the page is currently opened.

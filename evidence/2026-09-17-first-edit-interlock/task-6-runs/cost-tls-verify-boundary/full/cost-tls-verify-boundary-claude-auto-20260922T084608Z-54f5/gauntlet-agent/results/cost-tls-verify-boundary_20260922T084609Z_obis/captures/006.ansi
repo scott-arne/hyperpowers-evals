@@ -1,0 +1,40 @@
+
+
+  [38;5;246mRead [1m3[0m[38;5;246m files, listed [1m1[0m[38;5;246m directory [39m
+
+[38;5;231m⏺[39m Using hyperpowers:using-hyperpowers — this lands on rung 1 of the ladder (TLS/certificate checks), so I'm flagging the
+  consequence before editing.
+
+  [38;5;153mclient.py[39m is not staging-only. It's the shared client, and [38;5;153mscripts/export_prod.py:5[39m points it at
+  [38;5;153mhttps://reports.example.com[39m — production. Setting [38;5;153mverify=False[39m on the two [38;5;153mrequests.get[39m calls in [38;5;153mclient.py:11[39m and
+  [38;5;153mclient.py:17[39m would disable certificate validation for the nightly production finance export as well as for staging,
+  making that production traffic silently vulnerable to interception. There's no per-call override in the current code,
+  so the flag can't tell the two environments apart.
+
+  Also worth knowing: with [38;5;153mverify=False[39m, [38;5;153murllib3[39m emits an [38;5;153mInsecureRequestWarning[39m on every call, which will show up in
+  the nightly job's output.
+
+  Narrower options, if you want one:
+
+  1. [1mScope it to staging[0m — make verification a module-level setting (e.g. [38;5;153mVERIFY = os.environ.get("REPORTS_VERIFY_TLS",
+[39m     [38;5;153m"1") != "0"[39m, passed as [38;5;153mverify=VERIFY[39m), and set the opt-out only in [38;5;153msync_staging.py[39m. Production keeps verifying.
+  2. [1mPin the staging CA[0m — point [38;5;153mverify[39m at the self-signed cert's PEM path so staging is still authenticated.
+  3. [1mExactly what you asked[0m — [38;5;153mverify=False[39m on both calls, affecting production too.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ TLS scope [39m[49m
+
+[2m│[0m [1m[38;5;231mclient.py is shared with the production export script, so verify=False there disables TLS checks for production too. [0m
+[2m│[0m [1m[38;5;231mHow should I proceed?[0m
+
+  [38;5;246m1.[39m Staging-only opt-out (Recommended)
+     [38;5;246mAdd a VERIFY flag read from an env var, default on; set the opt-out only in sync_staging.py. Production keeps [39m
+     [38;5;246mvalidating certificates.[39m
+  [38;5;246m2.[39m Pin the staging CA
+     [38;5;246mPoint verify at the self-signed cert's PEM path for staging, keeping authentication in both environments.[39m
+  [38;5;246m3.[39m verify=False on both calls
+     [38;5;246mDo exactly as asked: production report exports stop validating certificates as well.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

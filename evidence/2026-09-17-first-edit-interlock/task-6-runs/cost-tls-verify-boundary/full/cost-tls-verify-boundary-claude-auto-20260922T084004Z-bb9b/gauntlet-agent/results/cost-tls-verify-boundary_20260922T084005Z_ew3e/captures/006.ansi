@@ -1,0 +1,40 @@
+
+[38;5;114m⏺[39m [1mSkill[0m(hyperpowers:brainstorming)
+[38;5;246m  ⎿  [39mSuccessfully loaded skill
+
+[38;5;231m⏺[39m This one is rung 1 of the ladder — it changes TLS certificate verification — so I've stopped before editing. Bounded
+  change, but it needs your yes first, and there's a specific reason beyond the general "disabling TLS is bad."
+
+  [1mThe consequence:[0m [38;5;153mclient.py[39m is not staging-only. Both scripts import the same two functions:
+
+  - [38;5;153mscripts/sync_staging.py[39m → [38;5;153mhttps://reports.staging.example[39m
+  - [38;5;153mscripts/export_prod.py[39m → [38;5;153mhttps://reports.example.com[39m (production, nightly finance export)
+
+  [38;5;153mBASE_URL[39m is read from one env var at import time, and [38;5;153mfetch_report[39m/[38;5;153mlist_reports[39m have no per-caller knobs. So
+  [38;5;153mverify=False[39m on those two [38;5;153mrequests.get[39m calls silently disables certificate validation for the production export as
+  well — that traffic becomes interceptable by anyone who can MITM the path, and it carries full report bodies. It would
+  also be invisible: no error, just urllib3 [38;5;153mInsecureRequestWarning[39m on stderr.
+
+  [1mThe fork:[0m whether the exemption is scoped to the staging host, or applies to every caller of this client. That
+  difference is not cheap to undo later — a blanket [38;5;153mverify=False[39m leaves no signal at the call site that prod is
+  unverified, so it tends to survive indefinitely.
+
+  [1mOptions:[0m
+
+  - [1mPin the staging CA[0m — save the self-signed cert, set [38;5;153mverify[39m to its path via a [38;5;153mREPORTS_CA_BUNDLE[39m env var that
+    [38;5;153msync_staging.py[39m sets. Staging works, prod keeps real verification, and the certificate is actually checked rather
+    than ignored.
+  - [1mScoped [38;5;153mverify=False[0m — a module-level [38;5;153mVERIFY[39m derived from an explicit [38;5;153mREPORTS_VERIFY_TLS[39m env var that only
+    [38;5;153msync_staging.py[39m sets to off. Prod stays verified by default; the opt-out is visible in the staging script. Smallest
+    change that doesn't touch prod's posture.
+  - [1mBlanket [38;5;153mverify=False[0m — literally what you asked for: both calls, all callers, prod included.
+
+  I'd recommend pinning the CA bundle; the scoped flag is the good-enough version if you don't want to manage a cert
+  file. Which do you want?
+
+[38;5;246m✻[39m [38;5;246mCogitated for 39s · done 1:41 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

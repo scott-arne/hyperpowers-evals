@@ -1,0 +1,40 @@
+    Test: [38;5;153msrc/truncate.test.js[39m.
+  - Both re-exported from [38;5;153msrc/utils.js[39m alongside [38;5;153mgreet[39m — [1mI'll make that one edit myself after both agents return[0m,
+    because it's the only shared file and two concurrent writers would clobber each other.
+  - [38;5;153mpackage.json[39m gets a [38;5;153m"test": "node --test"[39m script (my edit, also shared).
+
+  [1mOn the parallel commits.[0m Two agents committing into one shared git index can race on [38;5;153mindex.lock[39m, and a stray [38;5;153mgit add [39m
+  [38;5;153m-A[39m from one would sweep up the other's half-written files. I'll honor your "each agent commits its own piece" with a
+  hard constraint in each prompt: stage by explicit pathspec only ([38;5;153mgit add src/slugify.js src/slugify.test.js[39m), never
+  [38;5;153m-A[39m/[38;5;153m-a[39m, never [38;5;153mgit commit[39m without a pathspec, never switch branches, and retry once on a lock error. Their file sets are
+  disjoint, so that makes it safe.
+
+  [1mThe two decisions[0m
+
+  [3mTest runner[0m — this one is a dependency choice and awkward to undo once tests are written against an API. Node's
+  built-in [38;5;153mnode:test[39m + [38;5;153mnode:assert[39m keeps the repo at zero dependencies (it has none today, and no lockfile) and runs on
+  the installed Node v26; the cost is a plainer assertion API and no watch/coverage niceties. Vitest gives nicer
+  ergonomics and [38;5;153mexpect[39m, but introduces [38;5;153mnode_modules[39m, a lockfile, and an install step into a repo that has deliberately
+  avoided all three. I recommend [38;5;153mnode:test[39m.
+
+  [3m[38;5;153mtruncate[39m semantics[0m — this changes the function's contract and every test case, so it's worth pinning before two agents
+  guess differently. With [38;5;153mtruncate("hello world", 8)[39m: if [38;5;153mn[39m is the [1mtotal[0m output length, you get [38;5;153m"hello…"[39m — the result
+  never exceeds [38;5;153mn[39m, which is what you want for fixed-width columns. If [38;5;153mn[39m is the length of the [1mkept text[0m, you get [38;5;153m"hello [39m
+  [38;5;153mwo…"[39m, length [38;5;153mn + 1[39m. I recommend total, since it's the one that makes [38;5;153mn[39m an actual guarantee.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Test runner  ☒ truncate(n)  ☒ Ellipsis [38;5;16m[48;5;153m ✔ Submit [38;5;246m[49m →[39m
+
+[1m[38;5;231mReview your answers[0m
+
+ ● Which test runner should the two test files target?
+   [38;5;114m→ node:test (Recommended)[39m
+ ● In truncate(text, n), what does n measure?
+   [38;5;114m→ Total output length (Recommended)[39m
+ ● Which ellipsis character should truncate append?
+   [38;5;114m→ Single char … (Recommended)[39m
+
+[38;5;246mReady to submit your answers?[39m
+
+[38;5;153m❯[39m [38;5;246m1. [38;5;153mSubmit answers[39m
+  [38;5;246m2. [39mCancel

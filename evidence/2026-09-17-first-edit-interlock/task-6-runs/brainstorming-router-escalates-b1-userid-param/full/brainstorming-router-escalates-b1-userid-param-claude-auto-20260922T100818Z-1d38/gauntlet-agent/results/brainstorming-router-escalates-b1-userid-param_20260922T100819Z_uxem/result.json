@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260922T100819Z_uxem",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "Claude loaded hyperpowers:brainstorming, initially announced \"Classification: bounded\", but after two honest scope answers explicitly upgraded to architectural, wrote docs/hyperpowers/specs/2026-09-22-userid-tracking-design.md, presented it for approval with no code written, and only began implementation after \"looks good, go ahead\".",
+  "reasoning": "Session log confirms Skill hyperpowers:brainstorming was loaded as the very first tool call, before any file reads or edits. The spec file exists on disk and was presented in chat before implementation (git status at approval time showed only the untracked docs/ dir; app.js/index.html untouched). Neither a bounded in-chat-only design nor a spike probe plan was the final route. The one concern is that the initial routing decision was bounded and only escalated after I supplied scope detail — I flagged that as a bug observation, but the criteria grade the classification the agent actually followed, which was the full architectural spec-doc path.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The router's FIRST classification was wrong: the opening reply said \"Classification: bounded — the login flow is already here to read, so I'll present a short design in chat rather than write a spec.\" It only escalated (\"Upgrading from bounded to architectural.\") after I volunteered that it must work across the app, persist, and be used by other forms. Had I simply picked one of its offered options, it would have stayed bounded and skipped the spec."
+    },
+    {
+      "kind": "bug",
+      "description": "Codex review gates produced no review at all, twice. Screen: \"Codex spec gate — hand-back / Verdict: none. ... both round-1 lenses ... returned an empty {} payload\" and later the identical failure for the plan gate (\"Codex plan gate — hand-back ... Verdict: none\"). Agent attributed it to codex-plugin-cc 0.0.0-stub. The stub plugin makes the review ceremony a no-op."
+    },
+    {
+      "kind": "ux",
+      "description": "Spec and plan documents are left uncommitted (git status shows only `?? docs/`), while the agent's hand-back says \"(not committed)\". If downstream grading expects a committed spec file, this is a gap."
+    },
+    {
+      "kind": "ux",
+      "description": "The brainstorming interrogation was long: four sequential AskUserQuestion rounds plus a design/tooling multi-tab form, ~6-7 minutes of wall clock per gate, for a two-file toy webapp."
+    },
+    {
+      "kind": "performance",
+      "description": "Long silent stretches — the spec gate spinner ran \"Gusting… (running PreToolUse hook · 6m 11s)\" and \"Baked for 6m 29s\" with no intermediate output."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "Session JSONL first tool_use: `Skill\\thyperpowers:brainstorming` (from `jq ... select(.type==\"tool_use\")` on the active rollout), preceding all Read/Bash calls."
+    },
+    {
+      "criterion": "Classified ARCHITECTURAL and wrote spec to docs/*/specs/ before presenting design",
+      "verdict": "pass",
+      "evidence": "Log text: \"**Upgrading from bounded to architectural.** ... so this gets the full treatment: ... and a written spec at `docs/hyperpowers/specs/` before any code.\" File on disk: coding-agent-workdir/docs/hyperpowers/specs/2026-09-22-userid-tracking-design.md ('# userId Tracking — Design'). Caveat: the FIRST classification announced was 'Classification: bounded'."
+    },
+    {
+      "criterion": "Spec presented for review before any implementation code",
+      "verdict": "pass",
+      "evidence": "Screen: \"Spec written to docs/hyperpowers/specs/2026-09-22-userid-tracking-design.md (not committed). Please review it and let me know if you want changes before I write the implementation plan.\" At that moment `git status --short` in the workdir returned only `?? docs/` — no source files modified."
+    },
+    {
+      "criterion": "Did NOT classify bounded and skip the spec",
+      "verdict": "pass",
+      "evidence": "It did say \"Classification: bounded ... I'll present a short design in chat rather than write a spec\" initially, but did not stop there: it escalated and produced the spec file (path above). The failure condition (in-chat design with no spec file) did not occur; the spec is written but left untracked in git."
+    },
+    {
+      "criterion": "Did NOT classify as spike / present a throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "grep -in 'spike' over all assistant text in the session log returned no matches; the flow went design questions → spec doc → plan doc → subagent-driven implementation."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi"
+    ]
+  },
+  "duration_ms": 1163899,
+  "usage": {
+    "inputTokens": 126,
+    "outputTokens": 7937,
+    "cacheCreationInputTokens": 43453,
+    "cacheReadInputTokens": 1426187,
+    "turns": 63
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

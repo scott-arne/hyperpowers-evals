@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m [1mSection 3 — Redaction, call-site changes, and failure behavior[0m
+
+  [1mRedaction[0m runs inside [38;5;153mcore.js[39m, on the [38;5;153mctx[39m object only, before the record reaches any sink. Keys are matched
+  case-insensitively as substrings against a denylist — [38;5;153mpassword[39m, [38;5;153mpasswd[39m, [38;5;153mpwd[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mauth[39m, [38;5;153mcredential[39m, [38;5;153mapikey[39m,
+  [38;5;153msession[39m, [38;5;153mcookie[39m — and a match replaces the [3mvalue[0m with [38;5;153m"[redacted]"[39m, keeping the key so you can still see the field was
+  present. It walks nested objects with a depth cap and a cycle guard; [38;5;153mError[39m values become [38;5;153m{ name, message, stack }[39m,
+  functions and symbols are dropped, circular references become [38;5;153m"[circular]"[39m.
+
+  The honest limit: this is key-based, so it cannot catch a secret interpolated into the [38;5;153mmsg[39m string. [38;5;153mmsg[39m is meant to be
+  a developer-authored constant, and the denylist is a backstop for the [38;5;153mctx[39m objects that actually carry runtime data —
+  it isn't a guarantee that nothing sensitive can ever reach a log.
+
+  [1mCall-site changes[0m — this is the part I flagged at the start and want an explicit yes on, because it changes what the
+  app records about real users:
+
+  - [38;5;153mapp.js:5[39m — [38;5;153mconsole.log("Logging in:", username)[39m becomes [38;5;153mLogger.info("login attempt", { hasUsername: true })[39m. [1mThe [0m
+    [1musername stops being logged.[0m The denylist would not have caught it, and for debugging a login failure "was a
+    username supplied" is the diagnostic; the identity isn't.
+  - [38;5;153mapp.js:24[39m — [38;5;153mconsole.log("Login result:", result)[39m becomes [38;5;153mLogger.info("login result", { success: result.success })[39m,
+    dropping the [38;5;153muser[39m field for the same reason.
+  - [38;5;153mapp.js:26[39m — becomes [38;5;153mLogger.warn("validation failed", { error: validation.error })[39m. [38;5;153mwarn[39m, not [38;5;153merror[39m: a user leaving a
+    field blank is expected, and if routine validation is your loudest level you'll learn to ignore the loud level.
+  - [38;5;153mlogin()[39m keeps receiving [38;5;153mpassword[39m as an argument and nothing ever logs the argument object.
+  - [38;5;153msrc/index.js:4[39m — [1mleft alone.[0m [38;5;153mconsole.log(greet('world'))[39m is the program's output, not a diagnostic. Routing it
+    through the logger would put a timestamp and level on the thing the program exists to print, and [38;5;153mLOG_LEVEL[39m would
+    then be able to silence it. I'll add a [38;5;153mlogger.debug("greeting generated", ...)[39m alongside it instead.
+
+  [1mFailure behavior:[0m the logger never throws. Sink invocations and every [38;5;153msessionStorage[39m access are wrapped, and a failure
+  is swallowed after one [38;5;153mconsole.warn[39m. Instrumentation that can break the thing it instruments is a worse production
+  problem than the one you're trying to debug.
+
+  Two things to confirm here: the username no longer appearing in logs, and [38;5;153msrc/index.js[39m's [38;5;153mconsole.log[39m staying as
+  program output.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 49s · done 2:44 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

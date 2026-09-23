@@ -1,0 +1,40 @@
+    [38;5;153mindex.html[39m still opens by double-clicking from disk. Costs a name on [38;5;153mwindow[39m.
+  - [1mES modules[0m — [38;5;153mindex.html[39m gets [38;5;153m<script type="module">[39m, [38;5;153msession.js[39m uses [38;5;153mexport[39m, [38;5;153mapp.js[39m uses [38;5;153mimport[39m. Buys real
+    encapsulation and the modern default. The cost is concrete: module scripts are blocked under the [38;5;153mfile://[39m protocol,
+    so the page would only work served over HTTP from then on. If you're already serving it, that cost is zero; if you
+    open the file directly, this breaks that.
+  - [1mA bundler[0m — rejecting this one outright. It adds dependencies and a build step to a project that has neither, for
+    one small module. YAGNI.
+
+  [1mI recommend the namespaced global.[0m It matches the existing pattern, keeps the zero-dependency setup, and doesn't risk
+  the [38;5;153mfile://[39m regression. And it's the cheap one to reverse — moving one small file from a global to an [38;5;153mexport[39m later is
+  a few lines, whereas the storage format we just picked is the part that would actually be expensive to change.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should other code consume the session module? → Namespaced global (Recommended)[39m
+
+[38;5;231m⏺[39m Last question before I lay out the design. Session lifetime is the one remaining piece with a security consequence, so
+  I don't want to just pick a number and bury it in the spec.
+
+  The expiry controls how long a stored identity stays valid on a shared or unattended machine, and since this store is
+  what future forms will trust to answer "who is this", its lifetime becomes their lifetime too. Shorter means users
+  re-authenticate more often; longer means an abandoned browser keeps claiming an identity. There's no logout control
+  anywhere in [38;5;153mindex.html[39m today, so expiry is currently the [3monly[0m thing that would ever clear it — I'll include a [38;5;153mclear()[39m
+  function in the design regardless, but nothing calls it until there's a logout button.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Expiry [39m[49m
+
+[1m[38;5;231mHow long should a stored session stay valid?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153m24 hours (Recommended)[39m
+     [38;5;246mRe-login roughly daily. Common default: long enough not to annoy, short enough that an abandoned browser goes stale
+[39m     [38;5;246mwithin a day.[39m
+  [38;5;246m2.[39m 8 hours
+     [38;5;246mRoughly a working day. Tighter exposure on shared machines, at the cost of more frequent re-login.[39m
+  [38;5;246m3.[39m 30 days
+     [38;5;246mLong-lived convenience. An unattended browser keeps a valid identity for a month unless explicitly cleared.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

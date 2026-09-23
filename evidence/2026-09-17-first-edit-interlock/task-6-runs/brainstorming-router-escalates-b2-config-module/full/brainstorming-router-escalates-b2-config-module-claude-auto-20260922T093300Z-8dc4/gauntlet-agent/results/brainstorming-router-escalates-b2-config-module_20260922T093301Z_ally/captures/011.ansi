@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Should this change also set up test infrastructure? → Node built-in test runner (Recommended)[39m
+
+[38;5;231m⏺[39m Node's built-in runner — good, keeps the repo dependency-free. That choice surfaces two details I owe you before I
+  write the spec.
+
+  [1mMaking [38;5;153msettings.js[39m loadable by [38;5;153mnode:test[39m.[0m The test needs [38;5;153mresolveEnvironment[39m without a browser. Rather than adding
+  CommonJS export boilerplate (the dual-mode pattern you already rejected), the IIFE takes [38;5;153mglobalThis[39m instead of [38;5;153mwindow[39m,
+  and the test does:
+
+  [36mrequire[39m([31m"../settings.js"[39m);                          [32m// side effect: sets globalThis.AppSettings[39m
+  [34mconst[39m { resolveEnvironment } = globalThis.AppSettings;
+
+  The global [3mis[0m the interface, and the test consumes the same interface the browser does. No export tail, no environment
+  sniffing. The one adjustment: eager resolution of [38;5;153mcurrent[39m is guarded by whether [38;5;153mlocation[39m exists, so requiring the
+  file in Node doesn't throw.
+
+  [1mThe [38;5;153mfile://[39m case — I need your call.[0m When [38;5;153mindex.html[39m is opened by double-click, [38;5;153mlocation.hostname[39m is the empty string,
+  not [38;5;153mlocalhost[39m. Under fail-loudly as specified, that's an unmapped host: the page renders, but the login submit
+  refuses and logs the error. You picked the classic-script form partly to keep double-click loading working, so I don't
+  want to quietly break half of it.
+
+  The clean fix is one more line in the hostname table — [38;5;153m"": "development"[39m — making "opened from disk" an explicit
+  environment mapping rather than an accident. It preserves fail-loudly for every [3mreal[0m unknown host, because an empty
+  hostname can only mean a local file.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ file:// case [39m[49m
+
+[2m│[0m [1m[38;5;231mHow should opening index.html directly from disk (file://, empty hostname) be treated?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mMap "" to development (Recommended)[39m
+     [38;5;246mOne explicit line in the hostname table. Double-click loading keeps working; real unknown hosts still fail loudly.[39m
+  [38;5;246m2.[39m Leave it unmapped
+     [38;5;246mfile:// hits the throw like any other unknown host. Strictest reading of fail-loudly; double-click users get a dead
+[39m     [38;5;246mlogin form.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

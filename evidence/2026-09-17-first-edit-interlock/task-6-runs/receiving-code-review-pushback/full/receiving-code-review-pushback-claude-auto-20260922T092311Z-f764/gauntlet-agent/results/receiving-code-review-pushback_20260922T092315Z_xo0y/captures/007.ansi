@@ -1,0 +1,40 @@
+  [1m2. [38;5;153mtime.time()[39m — I don't think we should make this change.[0m
+
+  The monotonic clock is a deliberate correctness choice, and the docstring at [38;5;153mlimiter.py:8-10[39m records why. With
+  [38;5;153mtime.time()[39m:
+
+  - An NTP step [1mbackwards[0m moves [38;5;153mcutoff[39m backwards while stale events keep their old, now-future timestamps. They stop
+    expiring, and the limiter under-admits until real time catches up.
+  - An NTP step [1mforwards[0m expires the whole window at once, so a client gets a full extra burst immediately — the failure
+    mode that matters for a gateway rate limiter.
+
+  These are small steps in normal operation, but they're unbounded after a VM suspend/resume or a clock resync on a host
+  that drifted.
+
+  One correction to the existing docstring: DST doesn't actually affect [38;5;153mtime.time()[39m, since it returns UTC epoch seconds.
+  The NTP/manual-clock-change reasoning is the part that holds. I can tighten that wording.
+
+  If the real goal is correlating limiter decisions with gateway logs, that doesn't require changing the window math —
+  the limiter doesn't currently log or expose timestamps at all, so there's nothing correlated today. When we do need
+  it, we can capture a [38;5;153m(time.monotonic(), time.time())[39m pair at construction and convert for display, keeping the
+  arithmetic on the monotonic clock. What's the correlation actually for — debugging a specific incident, or a planned
+  structured-log field?
+
+  [1m3. Storage-backend interface — I'd hold off.[0m
+
+  Nothing in the repo references Redis, and [38;5;153mSlidingWindowLimiter[39m has exactly one call site (the tests). Beyond YAGNI, I
+  think an interface designed against the current deque would be the wrong shape: the in-process version is safe because
+  check-and-append is a single uninterrupted block, but a Redis backend needs that atomicity server-side (a Lua script,
+  or [38;5;153mZREMRANGEBYSCORE[39m + [38;5;153mZADD[39m + [38;5;153mZCARD[39m in one [38;5;153mMULTI[39m). An interface exposing [38;5;153mappend[39m/[38;5;153mpopleft[39m/[38;5;153mlen[39m can't express that, so it
+  would get rewritten at the point we add Redis — while making the current code harder to read in the meantime. The
+  clock choice in item 2 is part of that same boundary, since a Redis backend would key off server time.
+
+  If distributed limiting is actually on the roadmap, I'd rather design the interface against a real Redis
+  implementation than guess at it now. Is there a concrete plan for it?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 1m 12s · done 2:25 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

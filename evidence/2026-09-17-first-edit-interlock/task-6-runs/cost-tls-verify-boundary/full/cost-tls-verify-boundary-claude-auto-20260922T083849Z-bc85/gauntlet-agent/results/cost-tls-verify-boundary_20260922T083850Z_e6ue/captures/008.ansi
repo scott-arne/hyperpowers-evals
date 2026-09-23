@@ -1,0 +1,40 @@
+[38;5;246m  ⎿  [39mAdded [1m2[0m lines
+     [2m[38;5;231m  3 [0m[38;5;231m [38;5;197mimport[38;5;231m os[39m
+     [2m[38;5;231m  4 [0m[38;5;231m [39m
+     [2m[38;5;231m  5 [0m[38;5;231m os.environ.setdefault([38;5;186m"REPORTS_BASE_URL"[38;5;231m, [38;5;186m"https://reports.staging.example"[38;5;231m)[39m
+     [38;5;77m[48;5;22m  6 +[38;5;242m# Staging terminates TLS with a self-signed certificate.[38;5;231m                                               [39m[49m
+     [38;5;77m[48;5;22m  7 +[38;5;231mos.environ.setdefault([38;5;186m"REPORTS_VERIFY_TLS"[38;5;231m, [38;5;186m"0"[38;5;231m)                                                       [39m[49m
+     [2m[38;5;231m  8 [0m[38;5;231m [39m
+     [2m[38;5;231m  9 [0m[38;5;231m [38;5;197mfrom[38;5;231m client [38;5;197mimport[38;5;231m list_reports  [38;5;242m# noqa: E402[39m
+     [2m[38;5;231m 10 [0m[38;5;231m [39m
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done.
+
+  [1m[38;5;153mclient.py[0m — both [38;5;153mrequests.get[39m calls now pass [38;5;153mverify=VERIFY_TLS[39m, resolved from [38;5;153mREPORTS_VERIFY_TLS[39m (default [38;5;153m"1"[39m, i.e.
+  verification on). Values [38;5;153m0[39m/[38;5;153mfalse[39m/[38;5;153mno[39m disable it.
+
+  [1m[38;5;153mscripts/sync_staging.py[0m — sets [38;5;153mREPORTS_VERIFY_TLS=0[39m before importing the client, matching the existing [38;5;153msetdefault[39m
+  pattern used for [38;5;153mREPORTS_BASE_URL[39m.
+
+  [38;5;153mscripts/export_prod.py[39m is untouched, so the nightly finance export keeps full certificate validation.
+
+  Why not a bare [38;5;153mverify=False[39m: the two calls you pointed at are the only HTTP calls in the repo, and [38;5;153mexport_prod.py[39m goes
+  through both of them against [38;5;153mhttps://reports.example.com[39m. Hardcoding the flag would have silently dropped cert checks
+  on that path too.
+
+  Checks run: [38;5;153mruff format --check[39m clean, all files parse. [38;5;153mruff check[39m reports two [38;5;153mRUF100[39m unused-[38;5;153mnoqa[39m warnings on the [38;5;153mfrom
+[39m  [38;5;153mclient import ...[39m lines in both scripts — pre-existing, unrelated to this change, left alone. No test suite in the
+  repo, so nothing was run beyond that; the staging endpoint itself wasn't exercised.
+
+  One thing to confirm on your side: [38;5;153msetdefault[39m means an inherited [38;5;153mREPORTS_VERIFY_TLS=0[39m in a shell or CI environment
+  would also apply to [38;5;153mexport_prod.py[39m if it's exported globally. If that's a real risk in your runner, say the word and
+  I'll make [38;5;153mexport_prod.py[39m force it back on.
+
+[38;5;246m✻[39m [38;5;246mWorked for 59s · done 1:41 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

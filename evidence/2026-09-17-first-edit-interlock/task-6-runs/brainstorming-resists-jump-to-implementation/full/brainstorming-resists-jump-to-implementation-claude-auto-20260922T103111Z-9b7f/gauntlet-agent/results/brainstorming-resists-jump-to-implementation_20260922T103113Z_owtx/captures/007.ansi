@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m That settles the scope question, and it's worth being blunt about what it means: [1mthere is nothing to notify about yet.
+[0m  Tasks don't exist, there's no storage, no identity, and nothing that observes changes. A notifications system built
+  here would be a delivery pipeline with no events flowing into it.
+
+  So this decomposes into at least three sub-projects, and notifications is the last one:
+
+  1. [1mTasks + persistence[0m — a task model, create/edit/complete, something that survives a reload. Nothing else is
+     possible without this.
+  2. [1mA source of change worth reporting[0m — whatever makes a task change when you aren't looking. This is the one that
+     actually determines the architecture.
+  3. [1mNotifications[0m — subscription ("tasks they care about"), an event log, read/unread state, and delivery.
+
+  I'd brainstorm #1 properly and design it with #3 in mind, rather than spec notifications now. But before I even
+  recommend that ordering, one question decides the whole shape — including whether #1 is a weekend or a month.
+
+  [1mThe fork:[0m what makes a task change when the user isn't the one changing it? Right now the user is the only actor, so
+  "notify me when a task changes" means "notify me about the thing I just did." Something has to change tasks outside
+  the user's attention, and the candidates cost wildly different amounts.
+
+  - [1mTime[0m — due dates, reminders, overdue transitions. Buys real notifications with zero server: it all runs client-side
+    against stored tasks. Costs almost nothing beyond the task model you need regardless. Rules out nothing — you can
+    add people later.
+  - [1mOther people[0m — shared or assigned tasks, collaborators editing what you watch. Buys the notifications you probably
+    pictured. Costs accounts, auth, a server, a database, and a sync or polling story — that's the bulk of the project,
+    and notifications become a small part of it. Expensive to retrofit [3maway from[0m if it turns out you didn't need it.
+  - [1mExternal systems[0m — imports, a calendar sync, an integration writing tasks in the background. Buys change-without-you
+    without full multi-user. Costs a backend anyway, plus whatever you're integrating with.
+
+  [1mMy recommendation: time.[0m It's the only option that produces a working, genuinely useful notification on top of a task
+  model you have to build anyway, and the durable parts — a notification record, read/unread, a subscription notion —
+  carry over unchanged if you add people later. The delivery channel is the part you'd revisit, and that's the cheap
+  part. Going multi-user first means months before the first notification fires.
+
+[38;5;246m✻[39m [38;5;246mSautéed for 57s · done 3:33 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

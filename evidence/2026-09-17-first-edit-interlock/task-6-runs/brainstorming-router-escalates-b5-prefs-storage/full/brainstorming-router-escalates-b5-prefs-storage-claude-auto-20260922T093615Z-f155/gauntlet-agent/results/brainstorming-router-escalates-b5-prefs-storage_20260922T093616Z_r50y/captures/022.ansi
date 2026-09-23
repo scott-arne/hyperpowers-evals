@@ -1,0 +1,40 @@
+    [38;5;153m{type:'string', default:''} }[39m. Adding a fourth pref is one entry here.
+  - [38;5;153mlocal-storage-backend.js[39m — the seam. An object with [38;5;153mread()[39m, [38;5;153mwrite(str)[39m, [38;5;153mremove()[39m, wrapping [38;5;153mlocalStorage[39m under the
+    single key [38;5;153mapp.preferences[39m. A future server backend is a new file implementing these three methods.
+  - [38;5;153mindex.js[39m — [38;5;153mcreatePreferences(backend)[39m returning [38;5;153mget(key)[39m, [38;5;153mset(key, value)[39m, [38;5;153mreset()[39m. Holds no storage knowledge;
+    validates against the schema.
+
+  [1mData flow[0m — read: backend returns a string → [38;5;153mJSON.parse[39m → per-key validation against schema → valid values kept,
+  invalid/missing replaced by defaults. Write: merge into current object → serialize → [38;5;153mbackend.write[39m. The whole pref
+  object is one JSON value under one key, so a write is atomic.
+
+  [1mError handling[0m — the store never throws on bad stored state: unparseable JSON, a wrong-typed value, an unknown key,
+  and [38;5;153mlocalStorage[39m throwing (private mode, quota) all degrade to defaults and keep the app running. [38;5;153mset()[39m [3mdoes[0m throw on
+  an invalid value, because that's a programming error at the call site, not corrupt user data.
+
+  [1mWiring in [38;5;153mapp.js[0m — on load, apply the stored theme and prefill [38;5;153m#username[39m from [38;5;153mrememberedUsername[39m. On [3msuccessful[0m login,
+  store the username. [38;5;153m#password[39m is never read into preferences.
+
+  [1mTesting[0m — [38;5;153mnode --test[39m. Tests inject an in-memory backend, so no browser and no [38;5;153mlocalStorage[39m shim: defaults on empty
+  storage, round-trip of each pref, corrupt-JSON falls back to defaults, wrong-typed value falls back to default, [38;5;153mset()[39m
+  rejects an invalid enum, [38;5;153mreset()[39m clears, and a backend that throws doesn't take the app down. Adds a [38;5;153m"scripts": [39m
+  [38;5;153m{"test": "node --test"}[39m entry — an addition to [38;5;153mpackage.json[39m, not a change to existing keys.
+
+  [1mFiles:[0m new [38;5;153msrc/preferences/{schema,local-storage-backend,index}.js[39m + [38;5;153mpackage.json[39m; new [38;5;153mtest/preferences.test.js[39m;
+  modified [38;5;153mapp.js[39m, [38;5;153mindex.html[39m ([38;5;153mtype="module"[39m), [38;5;153mpackage.json[39m (test script).
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Module type [38;5;16m[48;5;153m ☐ Theme UI [39m[49m ✔ Submit  →
+
+[1m[38;5;231mThe theme pref has nothing to set it. What should I include?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mMinimal toggle + CSS (Recommended)[39m
+     [38;5;246mA checkbox/button in index.html and two CSS rules, so theme persistence is actually demonstrable end to end.[39m
+  [38;5;246m2.[39m Storage layer only
+     [38;5;246mtheme stays in the schema with no UI. Only rememberedUsername is observably working; theme wired up later.[39m
+  [38;5;246m3.[39m Drop theme for now
+     [38;5;246mShip with rememberedUsername alone. Add theme when there's a real UI that needs it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

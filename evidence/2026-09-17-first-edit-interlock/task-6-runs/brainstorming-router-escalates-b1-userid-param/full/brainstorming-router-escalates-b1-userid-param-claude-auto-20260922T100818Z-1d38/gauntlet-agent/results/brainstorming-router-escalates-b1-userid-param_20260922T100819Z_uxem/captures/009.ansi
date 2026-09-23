@@ -1,0 +1,40 @@
+  [1mFirst question — where does a userId value originate?[0m This is upstream of both persistence and sharing: we can't store
+  or pass an ID that nothing produces. The three sources differ in what the ID actually [3mmeans[0m, and that's not
+  reversible later.
+
+  - [1mServer assigns it, client stores it after a successful login.[0m The ID means "an authenticated account." It's the only
+    option where "who logged in" is a verified claim. The catch: it doesn't exist during the [3mfirst[0m login, so it can't
+    be a parameter to that call — [38;5;153mlogin[39m would return it, and it'd be a parameter only on subsequent calls and other
+    forms.
+  - [1mClient generates it on first visit[0m ([38;5;153mcrypto.randomUUID()[39m) and persists it. Always available, so it can be a parameter
+    everywhere from day one. But it identifies a [3mbrowser[0m, not a person — two people on one machine share it, one person
+    on two machines has two. Calling that "who logged in" would be misleading.
+  - [1mIt arrives from outside the app[0m — a URL parameter, an SSO redirect, an existing auth system you already run. Fits
+    cleanly into a parameter, but I'd need to know what that upstream system is before designing against it.
+
+  A constraint that applies to the last two: if a client-supplied userId is ever sent to the server and trusted, anyone
+  can edit it and act as another user. Whatever we choose, the server has to treat a client-sent ID as a hint, never as
+  proof of identity.
+
+  My recommendation is the first. You asked to track [3mwho logged in[0m, and only a server-assigned ID actually answers that.
+  It does mean the shape changes — [38;5;153mlogin[39m returns the ID rather than receiving it on the initial call — but the
+  persistence and cross-form sharing you asked for are unaffected, and those are the parts with real design weight.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID origin [39m[49m
+
+[1m[38;5;231mWhere does a userId value originate?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer assigns on login (Recommended)[39m
+     [38;5;246mlogin returns the ID; we persist it and pass it from other forms. Only option where the ID is a verified identity.
+[39m     [38;5;246mNot available during the first login call.[39m
+  [38;5;246m2.[39m Client generates on first visit
+     [38;5;246mcrypto.randomUUID() persisted locally. Available everywhere immediately, can be a parameter from day one, but [39m
+     [38;5;246midentifies a browser rather than a person.[39m
+  [38;5;246m3.[39m Comes from an upstream system
+     [38;5;246mURL param, SSO, or an auth system you already run. Fits a parameter cleanly — tell me which system and I'll design
+[39m     [38;5;246magainst it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

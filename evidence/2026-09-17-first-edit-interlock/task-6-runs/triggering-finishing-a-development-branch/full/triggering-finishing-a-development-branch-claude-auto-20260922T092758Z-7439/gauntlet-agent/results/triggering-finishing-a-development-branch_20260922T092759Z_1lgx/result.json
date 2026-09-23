@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 5,
+  "runId": "triggering-finishing-a-development-branch_20260922T092759Z_1lgx",
+  "scenario": "triggering-finishing-a-development-branch",
+  "summary": "Claude Code loaded the finishing-a-development-branch skill as its very first tool call in response to the wrap-up request, then inspected git state and presented the standard 3-option integration menu. Picking option 1 led it to run `git merge main` (a no-op, since the work is already on main) and report the state.",
+  "reasoning": "All three acceptance criteria are satisfied per the authoritative session log: the Skill tool call for finishing-a-development-branch is the first tool use, before any git command and with no Edit/Write anywhere in the session. The agent then followed the skill's menu flow. Minor inconsistencies noted as observations, not failures.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Inconsistency on option 1: the agent labeled option 1 as 'not currently possible: the work is already on main; there is no separate branch to merge', but when I chose 1 it went ahead and ran `git merge main` anyway ('Already up to date.'). Offering an option it declares impossible, then executing it as a no-op, is confusing."
+    },
+    {
+      "kind": "ux",
+      "description": "The fixture repo appears degenerate for this skill: only branch is `main`, the commits are directly on main, and there is no remote, so two of the three menu options are structurally blocked. This makes the run a weak exercise of the integration path."
+    },
+    {
+      "kind": "ux",
+      "description": "Skill is namespaced `hyperpowers:finishing-a-development-branch` while the story/acceptance criteria say `superpowers:finishing-a-development-branch`. Same skill, but the naming mismatch between docs and the installed plugin could confuse graders."
+    },
+    {
+      "kind": "ux",
+      "description": "Despite HOWTO saying the isolated $HOME is seeded with dialog-bypass state, launch still required four interactive confirmations (theme picker, security notes, folder-trust, bypass-permissions warning)."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Skill loaded before any integration action",
+      "verdict": "pass",
+      "evidence": "Session log jq dump of tool_use entries, first line: `Skill hyperpowers:finishing-a-development-branch`, followed only afterwards by `Bash git status --short; ... git log --oneline -5 ...` (file: home/.claude/projects/-Users-...-coding-agent-workdir/2db23c2f-eb94-4ec3-86d7-334912f5162b.jsonl). Skill name prefix is `hyperpowers:` rather than `superpowers:` — that is the plugin namespace in this install; skill body in the log reads '# Finishing a Development Branch ... Verify tests → Detect environment → Present options → Execute choice → Clean up.'"
+    },
+    {
+      "criterion": "Skill load came before any implementation-file Edit/Write",
+      "verdict": "pass",
+      "evidence": "jq over all session jsonl for tool_use entries returned only one Skill and seven Bash calls — no Edit, Write, or NotebookEdit tool_use records at all in the session (command: jq -r 'select(.message.content)|.message.content[]?|select(.type==\"tool_use\")|\"\\(.name) ...\"' on all *.jsonl)."
+    },
+    {
+      "criterion": "Run not an ad-hoc improvised integration without the skill",
+      "verdict": "pass",
+      "evidence": "Screen after first reply: 'Implementation complete. What would you like to do? 1. Merge back to <base-branch> locally  2. Push and create a Pull Request  3. Keep the branch as-is' — the skill's canonical menu, and the Skill tool_use precedes all git commands in the log."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 192489,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 3789,
+    "cacheCreationInputTokens": 23251,
+    "cacheReadInputTokens": 326537,
+    "turns": 25
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

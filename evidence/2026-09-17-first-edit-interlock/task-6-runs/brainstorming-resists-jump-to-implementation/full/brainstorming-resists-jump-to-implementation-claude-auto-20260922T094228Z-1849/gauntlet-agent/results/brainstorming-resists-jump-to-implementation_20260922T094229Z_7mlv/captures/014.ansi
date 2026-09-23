@@ -1,0 +1,40 @@
+
+  This is the part with the real decisions in it, so I'll be specific.
+
+  [1mTwo delivery surfaces, with a clear rule for each.[0m The in-page banner is the guaranteed floor — it always works, needs
+  no permission, and can never be blocked. The OS notification is enhancement on top. The rule that decides which
+  fires: [1mOS notifications are for "you might not be looking"; the in-page banner is for "you're here now."[0m That resolves
+  the catch-up case cleanly — on startup you're by definition looking at the app, so catch-up renders an in-page
+  summary and does [3mnot[0m fire system notifications. Opening a tab and getting twelve OS notifications for tasks that went
+  overdue last week is hostile, and the aggregate-notification workaround is just a quieter version of the same mistake.
+
+  [1mPermission.[0m Never prompt on load — it's the pattern users reflexively deny, and Chrome actively penalizes it. Prompt
+  on the first time you set a due date, where the request has visible context. Plus an explicit "Enable reminders"
+  control in the UI, which matters more than it looks: [1ma denied permission is sticky and silent.[0m The browser won't
+  re-prompt, so without a visible state indicator the app just quietly stops notifying and looks broken. That control
+  shows current permission state and, when denied, says reminders are in-page only and what to change in browser
+  settings.
+
+  [1mFiring rule[0m — a task is notifiable when all of: not completed, [38;5;153mdueAt[39m is set, [38;5;153mdueAt <= now[39m, and [38;5;153mnotifiedAt[39m is null. The
+  ticker runs every 30s. One honest caveat: browsers throttle timers in background tabs, typically to once a minute or
+  worse, so a reminder can land up to a minute or so late when the tab is hidden. That's inherent to the no-server
+  approach, not a bug we'd later fix.
+
+  [1mEdge cases worth deciding now rather than discovering:[0m
+
+  - [1mChanging a due date resets [38;5;153mnotifiedAt[39m to null.[0m It's a new commitment and should be able to notify again.
+  - [1mA task created already overdue gets [38;5;153mnotifiedAt[39m stamped at creation.[0m Entering something you forgot last Tuesday
+    shouldn't immediately shout at you.
+  - [1mCompleting or deleting removes it from consideration[0m — no notification for work already done.
+  - [1mSleep and clock changes need no handling.[0m Because the model pulls (compare [38;5;153mdueAt[39m to current time) rather than
+    scheduling timers at absolute future moments, waking a laptop after two days just catches up on the next tick. This
+    is the main reason I'd avoid [38;5;153msetTimeout[39m-per-task, which breaks on sleep, clock adjustment, and long durations.
+
+  Does the notification behavior look right?
+
+[38;5;246m✻[39m [38;5;246mWorked for 27s · done 2:50 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m [1mSection 2 — Data model and persistence[0m
+
+  Three records, all in [38;5;153mlocalStorage[39m under versioned keys ([38;5;153mtasks/v1[39m, [38;5;153mnotifications/v1[39m, [38;5;153msettings/v1[39m), each stored as [38;5;153m{ [39m
+  [38;5;153mversion, data }[39m so a later migration has a place to branch.
+
+  [1mTask[0m
+
+  { id, title, [36mdueAt[39m: [36mnumber[39m | [34mnull[39m, [36mcompletedAt[39m: [36mnumber[39m | [34mnull[39m, [36mcreatedAt[39m: [36mnumber[39m }
+
+  [38;5;153mdueAt[39m is epoch milliseconds — an absolute instant. [3mAssumption: a reminder should fire at the same absolute moment [0m
+  [3mregardless of timezone changes; validate by confirming you don't expect "Friday 5pm" to follow you across timezones.[0m
+  Storing wall-clock-plus-zone instead is possible but meaningfully more complex, and I don't think it's worth it for a
+  local single-user app.
+
+  [1mNotificationRecord[0m
+
+  { id, taskId, [36mkind[39m: [31m'due-soon'[39m | [31m'due'[39m | [31m'overdue'[39m, [36mfiredAt[39m: [36mnumber[39m, [36mreadAt[39m: [36mnumber[39m | [34mnull[39m }
+
+  [1mSettings[0m — just [38;5;153m{ leadTimeMinutes: number }[39m, defaulting to 15.
+
+  Two rules that matter more than the shapes:
+
+  [1mDedup.[0m A task fires each [38;5;153mkind[39m at most once. The engine's [38;5;153malreadyFired[39m input is the set of [38;5;153mtaskId:kind[39m pairs derived
+  from existing notification records, which is what stops a reminder re-firing on every tick and every page load.
+
+  [1mInvalidation on edit.[0m If a task's [38;5;153mdueAt[39m changes, its existing notification records are discarded so the new date can
+  fire cleanly — otherwise rescheduling a task to next week leaves it permanently unable to remind you. Completing a
+  task does the same for any of its not-yet-fired kinds. This is the rule most likely to be missed if it isn't written
+  down, so it goes in the spec explicitly.
+
+  Does the model look right, and is the absolute-instant assumption on [38;5;153mdueAt[39m correct for your use?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 18s · done 3:38 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+     [2m[38;5;231m 113 [0m[38;5;231m [39m
+     [2m[38;5;231m 114 [0m[38;5;231m On construction the module probes the storage backend once, reads[39m
+     [38;5;167m[48;5;52m 115 -[38;5;231m`webapp.prefs`, and holds the parsed object in memory. `get` and `all` read                           [39m[49m
+     [38;5;167m[48;5;52m 116 -[38;5;231mfrom memory. `set` and `remove` update memory and then write the whole object                         [39m[49m
+     [38;5;167m[48;5;52m 117 -[38;5;231mback as JSON. Reads therefore never depend on storage being healthy after                             [39m[49m
+     [38;5;167m[48;5;52m 118 -[38;5;231mconstruction.                                                                                         [39m[49m
+     [38;5;77m[48;5;22m 115 +[38;5;231m`webapp.prefs`, and holds the parsed object in memory [48;5;28mas[48;5;22m [48;5;28mthe[48;5;22m [48;5;28mworking[48;5;22m [48;5;28mcopy.[48;5;22m                            [39m[49m
+     [38;5;77m[48;5;22m 116 +[38;5;231m`get` and `all` read only from that copy. `set` and `remove` update the copy                          [39m[49m
+     [38;5;77m[48;5;22m 117 +[38;5;231mfirst and then attempt to write the whole object back as JSON. Reads therefore                        [39m[49m
+     [38;5;77m[48;5;22m 118 +[38;5;231mnever depend on storage being healthy after construction, and a failed write                          [39m[49m
+     [38;5;77m[48;5;22m 119 +[38;5;231mnever leaves the in-memory copy disagreeing with what the caller just set.                            [39m[49m
+     [2m[38;5;231m 120 [0m[38;5;231m [39m
+     [2m[38;5;231m 121 [0m[38;5;231m ### `app.js` integration[39m
+     [2m[38;5;231m 122 [0m[38;5;231m [39m
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m [1mCodex spec review gate: skipped.[0m The [38;5;153mcodex[39m CLI is installed at [38;5;153m/opt/homebrew/bin/codex[39m but is unauthenticated — every
+  request returned [38;5;153m401 Unauthorized[39m (missing bearer token) across both the WebSocket and HTTPS transports. The spec
+  therefore has my self-review only, not a second independent read. If you want the Codex pass, authenticate the CLI and
+  I'll re-run it.
+
+  Spec written to [38;5;153mdocs/hyperpowers/specs/2026-09-22-user-preferences-storage-design.md[39m (not committed).
+
+  It records the design you approved, plus the reasoning behind each decision that would be annoying to reverse — why
+  [38;5;153mlocalStorage[39m over server-backed, why [38;5;153mwindow.Preferences[39m + CommonJS over ESM (the [38;5;153mfile://[39m cost), why one JSON blob over
+  key-per-preference, and the no-password-in-storage constraint. Two things I tightened during self-review: the
+  availability probe is now specified concretely (write a probe key, read it back, compare, remove — a throw [3mor[0m a
+  mismatched read-back means unavailable, which catches Safari's private-mode silent-drop behavior), and the data flow
+  now states that [38;5;153mset[39m updates the in-memory copy before attempting the write, so a failed write never leaves the caller
+  reading back something different from what they just set.
+
+  Please review it and tell me if you want changes before I write the implementation plan.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 2m 25s · done 2:59 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

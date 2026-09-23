@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 5,
+  "runId": "triggering-executing-plans_20260922T104214Z_g2sa",
+  "scenario": "triggering-executing-plans",
+  "summary": "Asked the agent to implement a referenced plan document. It loaded `hyperpowers:subagent-driven-development` and `hyperpowers:using-git-worktrees` and began executing in a worktree, but never loaded `executing-plans` (no Skill call, no SKILL.md read).",
+  "reasoning": "The only acceptance criterion requires an executing-plans skill load before execution. The authoritative session log shows only two Skill invocations, neither of them executing-plans, and no shell read of an executing-plans SKILL.md, while implementation work (gitignore commit, ledger write, npm test) had already begun.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Agent chose the subagent-driven-development path instead of executing-plans. A CLAUDE.md-level preference present in the run context explicitly says: '[redacted: quoted from host CLAUDE.md]' (found via grep in the session log). This fixture instruction appears to steer the agent away from the skill the story expects."
+    },
+    {
+      "kind": "bug",
+      "description": "Namespace mismatch: the story/criterion names the skill `superpowers:executing-plans`, but all skills in this build are namespaced `hyperpowers:` (e.g. hyperpowers:subagent-driven-development). If the criterion is literal, no `superpowers:`-prefixed skill can ever be loaded here."
+    },
+    {
+      "kind": "ux",
+      "description": "HOWTO claims the isolated $HOME is seeded with dialog-bypass state, but launching still required four interactive dialogs: theme picker, security notes, folder-trust prompt, and bypass-permissions warning."
+    },
+    {
+      "kind": "ux",
+      "description": "Despite 'never stall to ask permission' guidance, the agent stalled twice with AskUserQuestion prompts (worktree location, CommonJS vs ESM) before implementing anything."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent loaded superpowers:executing-plans skill before executing the plan",
+      "verdict": "fail",
+      "evidence": "grep over the session logs at $HOME/.claude/projects: `grep -rho '\"skill\":\"[^\"]*\"' .` returned only `1 \"skill\":\"hyperpowers:subagent-driven-development\"` and `1 \"skill\":\"hyperpowers:using-git-worktrees\"`. `grep -rho 'skills/executing-plans/SKILL.md' . | wc -l` returned 0. Screen confirms: '⏺ Skill(hyperpowers:subagent-driven-development)' and '⏺ Skill(hyperpowers:using-git-worktrees)' with 'Executing with Subagent-Driven Development...', and the agent had already written files (Write of progress.md, .gitignore commit, npm test run) without any executing-plans load."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 296592,
+  "usage": {
+    "inputTokens": 66,
+    "outputTokens": 5540,
+    "cacheCreationInputTokens": 30561,
+    "cacheReadInputTokens": 464816,
+    "turns": 33
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

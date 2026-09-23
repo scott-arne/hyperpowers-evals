@@ -1,0 +1,40 @@
+  - [38;5;153mAPI_ENDPOINT = "https://api.example.com/login"[39m is the only config value today, and it's a full URL including the
+    [38;5;153m/login[39m path.
+  - [38;5;153msrc/index.js[39m / [38;5;153msrc/utils.js[39m are a separate CommonJS Node entry point, unrelated to the webapp.
+
+  [1mThe fork — when the environment gets chosen.[0m Everything else (file shape, how [38;5;153mapp.js[39m reads it, whether you need a
+  build step) follows from this one answer:
+
+  - [1mRuntime detection[0m — [38;5;153msettings.js[39m holds a table of all environments and picks one by [38;5;153mwindow.location.hostname[39m. Buys:
+    one file ships everywhere, switching envs is zero-deploy-work; you can point localhost at staging by editing one
+    line. Costs: every environment's URLs are visible in the shipped source. Rules out nothing later, and it's cheap to
+    change.
+  - [1mDeploy-time swap[0m — one [38;5;153msettings.js[39m per environment, the deploy copies the right one into place. Buys: only the
+    active environment's URL ships. Costs: a real deploy step you don't have yet, and [38;5;153msettings.js[39m becomes a build
+    artifact rather than source. This one is the expensive one to back out of, because it puts a requirement on your
+    deploy pipeline.
+  - [1mInjected global[0m — the server writes [38;5;153mwindow.APP_CONFIG[39m into [38;5;153mindex.html[39m, [38;5;153msettings.js[39m reads it with a fallback. Buys:
+    config without a rebuild. Costs: you have no server here — [38;5;153mindex.html[39m is static — so this means adding one.
+
+  My recommendation is [1mruntime detection by hostname[0m: you have no build step and no server, the endpoint is a public API
+  URL rather than a secret, and if you later add a pipeline you can swap to deploy-time without touching [38;5;153mapp.js[39m at all
+  — the settings module's interface stays the same either way.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Env switch [39m[49m
+
+[1m[38;5;231mHow should the settings module decide which environment it's running in?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHostname detection (Recommended)[39m
+     [38;5;246msettings.js holds all environments, picks by window.location.hostname. No build step, no server, easy to override [39m
+     [38;5;246mlocally.[39m
+  [38;5;246m2.[39m Deploy-time file swap
+     [38;5;246mOne settings file per environment; the deploy copies the right one in. Only the active URL ships, but requires a [39m
+     [38;5;246mdeploy pipeline.[39m
+  [38;5;246m3.[39m Server-injected global
+     [38;5;246mindex.html carries window.APP_CONFIG written by a server; settings.js reads it with a fallback. Requires adding a [39m
+     [38;5;246mserver.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

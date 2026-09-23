@@ -1,0 +1,40 @@
+     [38;5;77m[48;5;22m  8 +[38;5;242m# the shared client.[38;5;231m                                                                                   [39m[49m
+     [38;5;77m[48;5;22m  9 +[38;5;231mSTAGING_CA = Path(__file__).resolve().parent.parent / [38;5;186m"certs"[38;5;231m / [38;5;186m"staging-ca.pem"[38;5;231m                       [39m[49m
+     [38;5;77m[48;5;22m 10 +[38;5;231m                                                                                                       [39m[49m
+     [2m[38;5;231m 11 [0m[38;5;231m os.environ.setdefault([38;5;186m"REPORTS_BASE_URL"[38;5;231m, [38;5;186m"https://reports.staging.example"[38;5;231m)[39m
+     [38;5;77m[48;5;22m 12 +[38;5;231mos.environ.setdefault([38;5;186m"REPORTS_CA_BUNDLE"[38;5;231m, [38;5;148mstr[38;5;231m(STAGING_CA))                                            [39m[49m
+     [2m[38;5;231m 13 [0m[38;5;231m [39m
+     [2m[38;5;231m 14 [0m[38;5;231m [38;5;197mfrom[38;5;231m client [38;5;197mimport[38;5;231m list_reports  [38;5;242m# noqa: E402[39m
+     [2m[38;5;231m 15 [0m[38;5;231m [39m
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done. Production stays verified; staging now trusts its own CA.
+
+  [1m[38;5;153mclient.py[0m — added a [38;5;153mVERIFY[39m module constant read from [38;5;153mREPORTS_CA_BUNDLE[39m, falling back to [38;5;153mTrue[39m, and passed it as [38;5;153mverify=
+[39m  on both [38;5;153mrequests.get[39m calls ([38;5;153mclient.py:11[39m, [38;5;153mclient.py:20[39m). Unset means the system trust store, so
+  [38;5;153mscripts/export_prod.py[39m is unchanged in behavior and still fully validates.
+
+  [1m[38;5;153mscripts/sync_staging.py[0m — sets [38;5;153mREPORTS_CA_BUNDLE[39m (via [38;5;153msetdefault[39m, so you can override) to [38;5;153mcerts/staging-ca.pem[39m
+  resolved relative to the repo root.
+
+  One thing you need to do: [1mthat cert file doesn't exist yet.[0m Export the staging CA and save it to [38;5;153mcerts/staging-ca.pem[39m:
+
+  openssl s_client -showcerts -connect reports.staging.example:443 </dev/null 2>/dev/null \
+    | openssl x509 -outform PEM > certs/staging-ca.pem
+
+  (If staging's cert is signed by a private CA rather than being self-signed, use the CA's PEM, not the leaf.) Until
+  that file is there, [38;5;153msync_staging.py[39m fails immediately with a "Could not find a suitable TLS CA certificate bundle"
+  error — loud rather than silently insecure.
+
+  Checks: [38;5;153mruff format --check[39m clean, both files byte-compile. [38;5;153mruff check[39m reports two RUF100 "unused noqa" on the [38;5;153m# noqa:
+[39m  [38;5;153mE402[39m import comments — pre-existing, fires in the untouched [38;5;153mexport_prod.py[39m too, and only because there's no project
+  ruff config enabling E402; left alone. I could not make a live request to either host, so the handshake itself is
+  unverified.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 1m 14s · done 1:57 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

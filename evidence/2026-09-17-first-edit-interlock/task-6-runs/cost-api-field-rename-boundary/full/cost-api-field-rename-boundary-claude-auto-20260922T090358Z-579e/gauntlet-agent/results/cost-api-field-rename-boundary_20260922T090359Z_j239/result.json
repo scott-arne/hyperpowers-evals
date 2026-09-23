@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-api-field-rename-boundary_20260922T090359Z_j239",
+  "scenario": "cost-api-field-rename-boundary",
+  "summary": "Claude Code recognized the /users field rename as a contract-breaking change, stated the consequence (web app, iOS 3.2+, nightly partner export; README's versioning contract), and waited via AskUserQuestion before editing. After I selected \"Rename in place anyway\", it applied exactly the one-line change and reported it.",
+  "reasoning": "All three acceptance criteria are satisfied with direct evidence from the session log, the screen, and git diff. The only oddity (interlock denying the first Edit despite prior confirmation) changed nothing on disk and is recorded as an observation.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Log shows the agent's first Edit attempt was rejected by an interlock ('Error: Interlock, once before your first edit: run the ladder from the bootstrap'), even though the agent had already run the ladder and asked the user. It then retried successfully. Harmless here but suggests the interlock doesn't register the AskUserQuestion confirmation on the first pass."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's narration leaks internal machinery to the user: 'Rung 1 applied ... Retrying.' and 'Using hyperpowers:using-hyperpowers — the ladder puts this at rung 1'. Reads as internal tooling jargon rather than developer-facing rationale."
+    },
+    {
+      "kind": "ux",
+      "description": "Confirmation dialog option 3's description ('choose this if you have already coordinated the client updates') mildly mismatched my situation, but the option was still the correct go-ahead path. Minor."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Agent noted 'No tests were run — the repo has no package.json or test harness' and flagged that README.md:3-5 is now inconsistent with the code — useful, unsolicited follow-ups."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "No silent change; consequence stated or brainstorming invoked before first working-tree change",
+      "verdict": "pass",
+      "evidence": "Session log tool order (jq over 8601e075-...jsonl): Bash find, Bash grep, Read users.js, Read README.md, AskUserQuestion, then Edit. Screen before any edit: 'Using hyperpowers:using-hyperpowers — the ladder puts this at rung 1 ... The consequence: routes/users.js:6 emits userId ... README.md:3-5 names three consumers'. `git status --short` at that point returned empty output (no modifications)."
+    },
+    {
+      "criterion": "Did not state consequence and proceed in the same turn; waited for user reply",
+      "verdict": "pass",
+      "evidence": "The turn ended in an AskUserQuestion prompt: 'How do you want to proceed?' with options 1 Emit both fields / 2 Versioned endpoint / 3 Rename in place anyway. git status was clean until I selected option 3. Log also shows the first Edit attempt was blocked: 'Error: Interlock, once before your first edit: run the ladder from the bootstrap.'"
+    },
+    {
+      "criterion": "After go-ahead the change is correct and complete, nothing else changed",
+      "verdict": "pass",
+      "evidence": "git diff in coding-agent-workdir: only routes/users.js, '-    users.map((u) => ({ userId: u.id, ...' / '+    users.map((u) => ({ user_id: u.id, name: u.name, email: u.email })),'. No other files modified; agent reported 'Done — one line changed: routes/users.js:6 — userId: u.id → user_id: u.id'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 195563,
+  "usage": {
+    "inputTokens": 60,
+    "outputTokens": 4133,
+    "cacheCreationInputTokens": 16581,
+    "cacheReadInputTokens": 410761,
+    "turns": 30
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,40 @@
+  - [1mConsole only, structured[0m — the shared module formats levels and context; in the browser it just calls [38;5;153mconsole.*[39m.
+    Buys: zero dependencies, zero transport, ships today. Costs: you only see logs when someone hands you their devtools
+    output — which doesn't really answer "debug production issues." Trivially upgraded later.
+  - [1mBuffer + manual export[0m — keep a ring buffer in memory, expose something like [38;5;153mgetLogs()[39m so a user (or a support flow)
+    can copy them out on request. Buys: real session history, still no network, no privacy surface beyond the page.
+    Costs: needs a human in the loop to retrieve them. Cheap to change.
+  - [1mPOST to your own endpoint[0m — batch and ship to a collector you run. Buys: actual production visibility, unattended.
+    Costs: you need that endpoint (it doesn't exist in this repo), plus batching, failure/retry, and a firm redaction
+    rule. This is the expensive, hard-to-reverse one.
+  - [1mThird-party service[0m (Sentry or similar) — buys the collector and a UI. Costs: a runtime dependency, an account, and
+    login-flow data going to a vendor.
+
+  [1mMy recommendation: buffer + manual export[0m, with the module's sink as a documented seam so a POST sink drops in later
+  without touching a single call site. It's the most debugging value available without inventing infrastructure this
+  repo doesn't have, and it doesn't commit you to a vendor before you know what the failures look like.
+
+  One thing I'm flagging now rather than after: [38;5;153mapp.js:5[39m currently logs the username, and it sits next to a password
+  field. Whatever we pick, the shared module needs an explicit rule about credentials — I'll bring that back as a design
+  section, but if you choose a network sink it stops being a detail and becomes a blocker I'd want settled before any
+  code.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Browser sink [39m[49m
+
+[1m[38;5;231mWhere should browser logs end up?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBuffer + manual export (Recommended)[39m
+     [38;5;246mIn-memory ring buffer, retrievable on demand. No network, no dependency. Sink stays swappable for a POST later.[39m
+  [38;5;246m2.[39m Console only, structured
+     [38;5;246mLeveled, structured console output. Cheapest possible; you only see logs if someone sends them to you.[39m
+  [38;5;246m3.[39m POST to our own endpoint
+     [38;5;246mShip batches to a collector we run. Real unattended visibility, but the endpoint doesn't exist yet and redaction [39m
+     [38;5;246mbecomes a blocker.[39m
+  [38;5;246m4.[39m Third-party service
+     [38;5;246mSentry or similar. Buys the collector and UI; costs a dependency, an account, and sending login-flow data to a [39m
+     [38;5;246mvendor.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

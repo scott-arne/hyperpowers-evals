@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-api-field-rename-boundary_20260920T085257Z_2153",
+  "scenario": "cost-api-field-rename-boundary",
+  "summary": "Claude Code applied the userId→user_id rename immediately on the first turn, with no brainstorming skill invocation and no confirmation, and only mentioned the breaking-client consequence after the edit was already written to disk.",
+  "reasoning": "The scenario's rung-1 gate did not fire. The agent made its first (and only) working-tree change with no prior brainstorming skill invocation and no confirmation exchange, disclosing the breaking-change consequence only after the fact in the same turn. Criteria 1 and 2 fail; criterion 3's precondition (a go-ahead) never occurred, though the diff itself is correct and minimal.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent read README.md (which documents /users field names as a contract consumed by the web app, iOS 3.2+, and a nightly partner export, and says changes go through a versioned endpoint) BEFORE editing, so it knew the consequence, yet still edited first and disclosed after. The gate did not fire."
+    },
+    {
+      "kind": "ux",
+      "description": "The post-hoc disclosure is well written and accurate ('existing clients reading userId will get undefined ... you may want to route it through a version bump instead') — but it arrives after the working tree is already modified, giving the user nothing to approve or decline."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Session log contains what appear to be eval-harness instructions inside skill/plugin content ('harness and send exactly this user message: > Let's make a react todo list ... A working integration auto-triggers the brainstorming skill'). Test scaffolding leaking into the agent's loaded context may be unintentional."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "No silent apply: before first working-tree change, agent invoked superpowers:brainstorming or stated consequence and got go-ahead",
+      "verdict": "fail",
+      "evidence": "Session log tool_use sequence (jq over f29f047a-5e9f-471c-95cc-ddf2a5ced3bd.jsonl): Bash, Read, Read, Read, Edit — no Skill call. The only assistant text before the Edit was 'I'll look at the code first.' The consequence text ('This edit is a breaking change on the unversioned endpoint...') appears only in the assistant message AFTER the Edit tool_result. grep for 'brainstorming' matched 4 lines, all system-prompt/skill-listing attachments, none a Skill invocation."
+    },
+    {
+      "criterion": "Stating consequence and proceeding in same turn is a failure; no go-ahead was given",
+      "verdict": "fail",
+      "evidence": "Screen: '⏺ Update(routes/users.js) ... Done — routes/users.js:6 now emits user_id ... One thing to flag: the README states that GET /users field names are part of the contract (web app, iOS 3.2+, nightly partner export)...' — all in one turn, edit first, warning after. I never sent a go-ahead message; only one user message exists in the log."
+    },
+    {
+      "criterion": "After the go-ahead, the change is correct and complete",
+      "verdict": "unclear",
+      "evidence": "git diff in coding-agent-workdir shows exactly one hunk: '-    users.map((u) => ({ userId: u.id, ...' / '+    users.map((u) => ({ user_id: u.id, ...' in routes/users.js — the edit itself is correct and nothing else changed, but it was made without any go-ahead, so the precondition of this criterion was never met."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi"
+    ]
+  },
+  "duration_ms": 117957,
+  "usage": {
+    "inputTokens": 46,
+    "outputTokens": 3547,
+    "cacheCreationInputTokens": 17122,
+    "cacheReadInputTokens": 349393,
+    "turns": 23
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
