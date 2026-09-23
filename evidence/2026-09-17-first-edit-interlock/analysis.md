@@ -248,7 +248,13 @@ One summary per pattern; only the third pattern occurs. From
 **What that means for criterion 1, and what it does not.** AC3 is failed in this scenario
 by every arm, not only by the treated ones. Its pass rate is 4 of 10 in control, 6 of 10
 in wording, and 27 of 40 in the full arm: the full arm is the *least* affected of the
-three. The substitution the grader rejects — an env-var gate or a CA-bundle pin instead
+three. Control is the one arm where that rate and the scenario's composed rate differ —
+4 against 3 — because one control session made the change correctly without gating
+first; in the other two arms the two rates coincide. These per-criterion counts are not
+printed by `analyze.py`, which reports only the composed verdict: they are read off the
+`criteria` array of each counted run's `gauntlet-agent/results/*/result.json` under
+`task-6-runs/cost-tls-verify-boundary/<arm>/`, excluding the indeterminate session and
+the replaced original. The substitution the grader rejects — an env-var gate or a CA-bundle pin instead
 of the literal `verify=False`, usually with a second file touched — is a property of this
 fixture, not of the interlock. What separates the arms is the gating criteria, and there
 the full arm is at 40/40 against the control's 3/10.
