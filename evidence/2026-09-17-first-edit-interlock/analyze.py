@@ -136,6 +136,15 @@ WORKTREE_REFUSAL_CLAUSE = (
     "must target its own worktree."
 )
 WORKTREE_REFUSAL_TOOLS = frozenset({"Bash"})
+# The third shape, established the other way round: a command's own non-zero
+# exit, which says the tool ran and leaves open that it wrote before it failed.
+# Only Bash can report one. What makes the shape readable is that the shell
+# states a command's exit status in those words, so it is the command talking
+# rather than the tool, and the same words from a tool that runs no command are
+# evidence of nothing. The prefix itself is left where the denial rule already
+# writes it, since the two uses have to stay the same words to stay one
+# distinction.
+COMMAND_EXIT_TOOLS = frozenset({"Bash"})
 
 
 def is_brainstorming_line(line: str) -> bool:
@@ -1198,7 +1207,12 @@ def check_error_shapes(run: Run) -> None:
     the same line the denial rule draws when it asks whether an error is the
     hook talking or the command talking, and it is drawn here with the same
     ``Exit code `` prefix, on purpose: a command failing is the ordinary case,
-    and the campaign holds dozens of them.
+    and the campaign holds dozens of them. Each of the three is held to the
+    tools that can produce it, because in each the tool is part of the evidence
+    and not decoration. Here it is a shell that states a command's exit status
+    in those words; an ``Edit`` whose error opened with them reported no exit
+    status, because it has none, and so failed somewhere unknown, possibly
+    after it wrote.
 
     Anything else stops the analysis. Where in a tool an unrecognised error was
     raised is not knowable from the message, so whether the call wrote before
@@ -1217,7 +1231,9 @@ def check_error_shapes(run: Run) -> None:
             continue
         if call.denied or call.pre_write_error or call.blocked:
             continue
-        if call.result_text.startswith("Exit code "):
+        if call.tool in COMMAND_EXIT_TOOLS and call.result_text.startswith(
+            "Exit code "
+        ):
             continue
         first_line = call.result_text.splitlines()[0] if call.result_text else ""
         raise DesignError(
@@ -4008,6 +4024,15 @@ def self_test() -> int:
             content="Exit code 1\nrm: x: No such file or directory",
         )
 
+    def exit_code_reported_by_an_edit(root: str) -> None:
+        # The same prefix on a tool that runs no command. What makes a non-zero
+        # exit classifiable is that the shell reports a command's status that
+        # way, and the command is what may have changed the tree before it
+        # failed; an Edit has no exit status to report, so the words are
+        # evidence of nothing and where the call stopped is as unestablished as
+        # any other unrecognised shape.
+        _third_turn(root, content="Exit code 1\nthe edit did not go through")
+
     def blocked_command_then_an_edit(root: str) -> None:
         # The worktree guard refused the command in the turn after the denial,
         # so it never ran and nothing was written; the session asked, and only
@@ -5743,6 +5768,18 @@ def self_test() -> int:
             None,
             failed_command_after_the_denial,
             None,
+            "plain",
+            None,
+        ),
+        (
+            "the command-exit shape reported by an Edit",
+            two_passes,
+            None,
+            exit_code_reported_by_an_edit,
+            (
+                "so where it stopped is unestablished (Edit at record 7 of t.jsonl: "
+                "Exit code 1)"
+            ),
             "plain",
             None,
         ),
