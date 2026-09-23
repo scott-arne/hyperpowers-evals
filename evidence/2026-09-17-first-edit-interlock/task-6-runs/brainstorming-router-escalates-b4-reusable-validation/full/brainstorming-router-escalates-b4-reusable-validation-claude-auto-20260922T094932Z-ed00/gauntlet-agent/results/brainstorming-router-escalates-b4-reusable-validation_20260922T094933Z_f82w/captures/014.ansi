@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Last question before I present the design. This one is forced by the repo's current state rather than by your
+  preferences, but the answer has a visible consequence for how you run the page.
+
+  [1mThe fork:[0m [38;5;153mapp.js[39m is loaded by a bare [38;5;153m<script src="app.js">[39m — there's no module system in the browser path at all, and
+  the CommonJS files in [38;5;153msrc/[39m are never loaded by the page. A shared file has to be reachable from both the browser and a
+  test runner, so something has to change.
+
+  - [1mES modules[0m — [38;5;153mvalidation.js[39m uses [38;5;153mexport[39m, [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" src="app.js">[39m. No build step,
+    native in every current browser, and Node can import the same file directly for tests. Cost: [38;5;153mtype="module"[39m won't
+    load from a [38;5;153mfile://[39m path, so you'd open the page through a local server ([38;5;153mnpx serve[39m, [38;5;153mpython3 -m http.server[39m) instead
+    of double-clicking [38;5;153mindex.html[39m. If that's how you already run it, this costs nothing.
+  - [1mGlobal script[0m — [38;5;153mvalidation.js[39m assigns to [38;5;153mwindow.Validation[39m, loaded by a second [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m. Keeps
+    [38;5;153mfile://[39m working and needs no build. Cost: a global, implicit load-order coupling between the two tags, and testing
+    it in Node means shimming a fake [38;5;153mwindow[39m.
+  - [1mBundler[0m — Vite or similar. Solves both cleanly and is where a growing app ends up. Cost: the first dependency, a
+    [38;5;153mnode_modules[39m, and a build step, for a project that currently has none of that.
+
+  [1mMy recommendation: ES modules.[0m It's the only option with no dependency [3mand[0m no awkwardness in tests, and the one thing
+  it costs — serving over http — is something you likely already do. I'd skip the bundler until there's a reason beyond
+  this change to want one.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module format [39m[49m
+
+[1m[38;5;231mHow should the shared validation file be loaded in the browser?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mexport/import, <script type="module">. No build step, same file works in Node tests. Requires serving over http [39m
+     [38;5;246mrather than opening the file directly.[39m
+  [38;5;246m2.[39m Global script tag
+     [38;5;246mwindow.Validation, loaded by a second <script> before app.js. Keeps file:// working; costs a global and makes Node
+[39m     [38;5;246mtesting clunkier.[39m
+  [38;5;246m3.[39m Add a bundler (Vite)
+     [38;5;246mCleanest long-term, but introduces the project's first dependency and a build step.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

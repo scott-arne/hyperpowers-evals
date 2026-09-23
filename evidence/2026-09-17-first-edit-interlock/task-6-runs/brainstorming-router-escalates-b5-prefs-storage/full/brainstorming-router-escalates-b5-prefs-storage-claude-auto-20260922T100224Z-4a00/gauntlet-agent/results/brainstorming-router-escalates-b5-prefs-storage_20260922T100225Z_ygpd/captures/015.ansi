@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Good — "remember username" only, no password. Worth flagging: that stores a username in the browser where anyone using
+  that device can read it, so I'd make it an opt-in checkbox rather than silently remembering. I'll put that in the
+  design.
+
+  One more before I write it up — the repo currently has no test runner, no linter, and no build step.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What tooling should this change set up? (Cheapest to add now, before there's much code.) → Unit tests only [39m
+     [38;5;246m(Recommended)[39m
+
+[38;5;231m⏺[39m Here's the design. [1mSection 1: architecture and data model.[0m
+
+  A single new module, [38;5;153mprefs.js[39m, loaded by [38;5;153mindex.html[39m via a second [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m — matching the existing
+  no-build, no-module-system pattern ([38;5;153mapp.js[39m is a plain global script; the CommonJS in [38;5;153msrc/[39m is a separate, unrelated
+  half of the repo and stays untouched).
+
+  It exposes a narrow interface over [38;5;153mlocalStorage[39m:
+
+  Prefs.get(key, fallback)   // parsed value, or fallback
+  Prefs.set(key, value)      // returns true/false; never throws
+  Prefs.remove(key)
+  Prefs.clear()
+
+  All preferences live in [1mone[0m [38;5;153mlocalStorage[39m entry under a single namespaced key ([38;5;153mwebapp.prefs[39m) holding a JSON object,
+  rather than one [38;5;153mlocalStorage[39m key per preference. One key means adding a preference later needs no new storage
+  plumbing, and [38;5;153mclear()[39m can't accidentally wipe unrelated keys the page might use. The cost is that every write
+  re-serializes the whole object — irrelevant at this size.
+
+  The [38;5;153mlocalStorage[39m calls are confined to [38;5;153mprefs.js[39m, so swapping in a server-backed store later is a change to one file
+  rather than to every call site.
+
+  Does that shape look right before I go on to error handling and the UI wiring?
+
+[38;5;246m✻[39m [38;5;246mCooked for 1m 11s · done 3:08 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

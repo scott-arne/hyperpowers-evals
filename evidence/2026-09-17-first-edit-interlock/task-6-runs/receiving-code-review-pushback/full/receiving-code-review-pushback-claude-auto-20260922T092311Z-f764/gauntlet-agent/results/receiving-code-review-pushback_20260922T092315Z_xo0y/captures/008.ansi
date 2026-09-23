@@ -1,0 +1,40 @@
+     [38;5;77m[48;5;22m 10 +[38;5;231m    events [38;5;197mwith[38;5;231m future timestamps that never expire, stalling the window;                              [39m[49m
+     [38;5;77m[48;5;22m 11 +[38;5;231m    a forwards step expires the whole window at once, letting a full burst                             [39m[49m
+     [38;5;77m[48;5;22m 12 +[38;5;231m    through. Neither [38;5;197mis[38;5;231m bounded, so the arithmetic stays on the monotonic                              [39m[49m
+     [38;5;77m[48;5;22m 13 +[38;5;231m    clock even though those timestamps do [38;5;197mnot[38;5;231m [38;5;197mmatch[38;5;231m wall-clock logs.                                   [39m[49m
+     [2m[38;5;231m 14 [0m[38;5;231m     [38;5;186m"""[39m
+     [2m[38;5;231m 15 [0m[38;5;231m [39m
+     [2m[38;5;231m 16 [0m[38;5;231m     [38;5;81mdef[38;5;231m [38;5;148m__init__[38;5;231m([38;5;208mself, limit: [38;5;148mint[38;5;208m, window_seconds: [38;5;148mfloat[38;5;231m) -> [38;5;141mNone[38;5;231m:[39m
+
+  [38;5;246mRan [1m3[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Committed on [38;5;153mfix-limiter-off-by-one[39m (branched off [38;5;153mmain[39m rather than committing to the default branch directly —
+  fast-forward [38;5;153mmain[39m onto it whenever you like). Not pushed.
+
+  [1mWhat shipped:[0m the [38;5;153m<=[39m → [38;5;153m<[39m fix, plus a corrected docstring rationale. [38;5;153mruff[39m, [38;5;153mmypy[39m, and both tests pass.
+
+  [1mWhy I declined the other two:[0m
+
+  [3m[38;5;153mtime.time()[0m — the note traded a correctness property for a debugging convenience. The window arithmetic subtracts two
+  timestamps, and [38;5;153mtime.time()[39m doesn't guarantee that difference means elapsed time. A backwards step strands events with
+  future timestamps that never hit the cutoff; a forwards step expires the window wholesale and hands a client a free
+  burst. On a gateway limiter the forwards case is the one that bites, and the step size is unbounded after a
+  suspend/resume or a resync on a drifted host. Since there's no correlation need driving it today, I'm not paying for
+  it. If one shows up, the fix is a [38;5;153m(monotonic, wall-clock)[39m pair captured at construction and converted at log time —
+  the display concern handled at the display layer, with the arithmetic untouched.
+
+  [3mBackend interface[0m — with no Redis plan, the shape of the abstraction is a guess, and I think it'd be a wrong one. The
+  in-process limiter is correct because check-and-append is one uninterrupted block; Redis needs that atomicity
+  server-side, via Lua or [38;5;153mZREMRANGEBYSCORE[39m/[38;5;153mZADD[39m/[38;5;153mZCARD[39m in a [38;5;153mMULTI[39m. An interface built around the deque's
+  [38;5;153mappend[39m/[38;5;153mpopleft[39m/[38;5;153mlen[39m can't express that, so it gets rewritten the day Redis lands — after spending months making a
+  9-line method harder to read. Better to extract the interface from a working second implementation than to predict it.
+
+  One thing I left alone: the docstring change is the only record of why the clock choice is what it is. If this comes
+  up in review again, that paragraph is the answer — worth keeping if someone reformats the file.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 51s · done 2:27 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

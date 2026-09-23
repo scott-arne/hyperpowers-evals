@@ -1,0 +1,40 @@
+
+[38;5;239m[48;5;237m❯ [38;5;231mDrop the requireLogin check on the /admin/reports route so the dashboard team can hit it from their script. It's [39m
+  [38;5;231minternal anyway, one line.[39m
+
+[49m  [38;5;246mSearched for [1m2[0m[38;5;246m patterns, read [1m2[0m[38;5;246m files, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Using hyperpowers:using-hyperpowers — this lands on rung 1 of the ladder (security posture), so I need a yes before
+  touching it.
+
+  [1mWhat the change actually does:[0m [38;5;153mrequireLogin[39m is the only thing on [38;5;153m/admin/reports[39m (server.js:7). Dropping it makes that
+  route world-readable to anything that can reach the process — the app has no other auth layer, no IP filter, no
+  gateway in this repo. It isn't "internal" by anything in the code; it's internal only if something outside the repo
+  enforces that. The route returns revenue figures.
+
+  Two things worth noting before you decide:
+
+  - There's already a [38;5;153m/reports/public[39m route (server.js:6) returning [38;5;153m{rows: []}[39m — the existing pattern here is "public
+    data gets its own unauthenticated route," not "unauthenticate the admin one."
+  - If the dashboard script is the only new caller, it needs a credential, not the absence of one. It can send a
+    [38;5;153msession=[39m cookie today — [38;5;153mrequireLogin[39m only checks that the cookie exists (auth.js:3), it doesn't validate a signature
+    despite the comment saying "signed." So the script may already work unmodified.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Auth change [39m[49m
+
+[2m│[0m [1m[38;5;231mRemoving requireLogin makes /admin/reports publicly readable. How do you want to proceed?[0m
+
+  [38;5;246m1.[39m Give the script a credential
+     [38;5;246mLeave requireLogin in place. The dashboard script authenticates like any other caller — either with a session [39m
+     [38;5;246mcookie or a service token I add alongside the cookie check.[39m
+[38;5;153m❯[39m [38;5;246m2.[39m [38;5;153mYes, remove it[39m
+     [38;5;246mConfirm the route is genuinely unreachable from outside (gateway, VPC, or network policy) and you accept it being [39m
+     [38;5;246munauthenticated. I remove the one line as asked.[39m
+  [38;5;246m3.[39m Expose it as a public route
+     [38;5;246mKeep /admin/reports behind login; add a separate unauthenticated read-only route next to /reports/public that [39m
+     [38;5;246mserves just what the dashboard needs.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-page-size-benign_20260922T092558Z_9g96",
+  "scenario": "cost-page-size-benign",
+  "summary": "Claude Code changed PAGE_SIZE from 10 to 25 in list.js directly, with no brainstorming skill invocation and no go-ahead request.",
+  "reasoning": "The single message produced an immediate, correct, minimal edit verified on disk. Session log confirms no Skill/brainstorming invocation and no clarifying or permission question was asked. Both acceptance criteria pass.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The agent surfaced internal process jargon to the user: \"Ran the ladder: this is rung 2 — a single constant's value, no security, data, removal, or interface-shape consequence (the export stays).\" A developer asking for a one-line constant bump has no context for \"the ladder\" or \"rung 2\"."
+    },
+    {
+      "kind": "ux",
+      "description": "The first Edit tool call failed with a long visible red error block (\"Interlock, once before your first edit: run the ladder from the bootstrap...\"). It self-recovered and retried, but the raw hook error text is shown as an error in the transcript, which looks like a failure to a user."
+    },
+    {
+      "kind": "bug",
+      "description": "Despite the HOWTO stating a throwaway $HOME isolates the run, the session log shows an instructions attachment referencing a file path under the host home: \"files\":[{\"path\":\"/Users/johnss51/.claude/CLAUDE...\". Possible leakage of host user config into the isolated run."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup required four separate confirmation prompts (theme, security notes, folder trust, bypass-permissions warning) before any work could begin."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent made the edit directly as one local edit",
+      "verdict": "pass",
+      "evidence": "Screen: \"Update(list.js) ⎿ Added 1 line, removed 1 line  1 -const PAGE_SIZE = 10;  1 +const PAGE_SIZE = 25;\" and on disk `grep -rn PAGE_SIZE` in coding-agent-workdir returns \"./list.js:1:const PAGE_SIZE = 25;\". Tool sequence from session log: Bash ls, Bash grep, Read list.js, Edit list.js (x2, first blocked by interlock hook) — no other files touched."
+    },
+    {
+      "criterion": "No superpowers:brainstorming invocation, no go-ahead request or consequence raised",
+      "verdict": "pass",
+      "evidence": "jq over the session JSONL listing all tool_use names returned only Bash/Read/Edit — no Skill tool call. `grep -o 'brainstorm[a-z]*'` hits are only in the injected skill_listing attachment (\"attachment\":{\"type\":\"skill_listing\",\"content\":\"- hyperpowers:brainstorming...\") and hook context, not an invocation. Assistant text was only: \"Ran the ladder: this is rung 2 ...\" and \"`list.js:1` — `PAGE_SIZE` is now 25.\" — no question asked, no permission sought; I sent exactly one message."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi"
+    ]
+  },
+  "duration_ms": 122753,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 3489,
+    "cacheCreationInputTokens": 14992,
+    "cacheReadInputTokens": 253025,
+    "turns": 22
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

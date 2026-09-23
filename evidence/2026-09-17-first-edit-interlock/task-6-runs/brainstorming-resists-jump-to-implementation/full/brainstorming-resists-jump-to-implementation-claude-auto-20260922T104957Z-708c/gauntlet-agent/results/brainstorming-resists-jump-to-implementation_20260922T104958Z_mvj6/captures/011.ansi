@@ -1,0 +1,40 @@
+
+  [1mA. Mutable task rows + append-only event log.[0m [38;5;153mtasks[39m holds current state; every mutation also appends to [38;5;153mtask_events[39m
+  ([38;5;153mtask_id[39m, [38;5;153mactor_id[39m, [38;5;153mtype[39m, [38;5;153mpayload[39m, [38;5;153mcreated_at[39m) inside the same transaction. Events are [3msemantic[0m — [38;5;153mtask.assigned[39m,
+  [38;5;153mtask.status_changed[39m, [38;5;153mtask.commented[39m — not raw field diffs, so a notification can say "Dana assigned you [3mFix login[0m"
+  rather than "a field changed". Reads stay ordinary SQL. The risk is drift: a write that bypasses the service layer
+  records no event. Mitigated by funnelling every mutation through one [38;5;153mtaskService[39m module, which is also the natural
+  place subscriptions hook in later. [3mComplexity: moderate.[0m
+
+  [1mB. Full event sourcing.[0m Events are the only source of truth; task state is a projection rebuilt from them. Drift
+  becomes structurally impossible and history is perfect. But it brings replay, projection rebuilds, and event-schema
+  versioning — and every read becomes a question about the projection's freshness. That's a lot of machinery to protect
+  a task list. [3mComplexity: high.[0m
+
+  [1mC. Derive events from row diffs[0m (SQLite triggers or [38;5;153mupdated_at[39m polling). No application discipline needed; catches
+  writes from anywhere, including manual ones. But triggers don't know who the actor is — SQLite has no session context
+  — so you'd have to smuggle the user in anyway, and the events come out as field diffs rather than meaning. That
+  reintroduces the vague-notification problem we chose this path to avoid. [3mComplexity: trivial to build, expensive to [0m
+  [3mlive with.[0m
+
+  I recommend [1mA[0m. It gets the property that actually matters — durable, attributed, semantic events written
+  transactionally with the change — without event sourcing's overhead, and the single-service-layer constraint it
+  requires is something a small app should have regardless.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Event model [39m[49m
+
+[1m[38;5;231mWhich change-event approach should spec #1 use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Rows + event log (Recommended)[39m
+     [38;5;246mCurrent state in tasks, semantic events appended transactionally. Simple reads; needs a single service layer for [39m
+     [38;5;246mall mutations.[39m
+  [38;5;246m2.[39m B: Full event sourcing
+     [38;5;246mEvents are the source of truth, state is a projection. No drift possible, but replay and projection machinery [39m
+     [38;5;246mthroughout.[39m
+  [38;5;246m3.[39m C: Derive from row diffs
+     [38;5;246mTriggers or polling. Cheapest to build, but loses the actor and reduces events to field diffs.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

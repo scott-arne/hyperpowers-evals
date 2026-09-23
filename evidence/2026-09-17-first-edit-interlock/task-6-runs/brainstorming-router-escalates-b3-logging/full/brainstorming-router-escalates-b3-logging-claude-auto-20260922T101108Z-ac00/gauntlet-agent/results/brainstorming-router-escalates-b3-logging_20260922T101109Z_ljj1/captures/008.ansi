@@ -1,0 +1,40 @@
+  - [38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m — a separate Node entry point ([38;5;153mmain[39m in package.json) with one [38;5;153mconsole.log[39m
+  - No dependencies, no test setup, no build step, no linter
+
+  One flag before questions: [38;5;153mapp.js:5[39m already logs the username on every login attempt, and the submit handler reads a
+  password into scope. "Debug production issues" usually means shipping logs somewhere. The moment logs leave the
+  browser, that line becomes credential-adjacent PII in a remote store. Redaction needs to be a designed-in part of
+  this, not an afterthought — I'll carry it through the design.
+
+  [1mThe fork, first question:[0m "the app" could be either of two surfaces, and they need genuinely different machinery.
+  Browser logs are useless for production debugging unless they're transmitted somewhere (you can't read a user's
+  devtools), so that path implies a transport, a batching/failure policy, and a privacy posture. Node logs go to stdout
+  and are collected by whatever runs the process — no transport, no privacy surface, far cheaper. Picking both means
+  building the shared core so it can serve two sinks.
+
+  - [1mBrowser only[0m — buys real production visibility into the flow that actually has users; costs a transport + redaction
+    design; rules out "just print it" simplicity.
+  - [1mNode only[0m — cheapest by a wide margin, structured JSON to stdout, done; rules out seeing anything that happens in
+    the user's browser, which is where your login bug would live.
+  - [1mBoth, shared core[0m — one logger API, two sinks; costs an abstraction boundary up front, but avoids rewriting the
+    browser side later if you start with Node.
+
+  My recommendation is [1mbrowser only[0m. [38;5;153msrc/index.js[39m is a three-line greeter with nothing to debug; the login flow is the
+  only thing here that could plausibly have a production issue. Starting browser-first also forces the redaction
+  question immediately, which is the part that's expensive to retrofit.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Surface [39m[49m
+
+[1m[38;5;231mWhich surface should the logging cover?[0m
+
+  [38;5;246m1.[39m Browser app only (Recommended)
+     [38;5;246mInstrument app.js / the login flow. Requires deciding how logs reach you in production.[39m
+  [38;5;246m2.[39m Node entry only
+     [38;5;246mInstrument src/index.js. Structured output to stdout, collected by the process runner.[39m
+[38;5;153m❯[39m [38;5;246m3.[39m [38;5;153mBoth, shared core[39m
+     [38;5;246mOne logger module with pluggable sinks, used by app.js and src/index.js.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

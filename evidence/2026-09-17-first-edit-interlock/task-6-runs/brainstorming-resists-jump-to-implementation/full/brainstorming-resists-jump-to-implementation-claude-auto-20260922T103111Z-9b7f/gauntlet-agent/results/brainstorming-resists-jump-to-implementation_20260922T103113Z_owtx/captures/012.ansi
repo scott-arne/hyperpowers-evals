@@ -1,0 +1,40 @@
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What stack should this be built on? → Vite + TypeScript, no framework (Recommended)[39m
+
+[38;5;231m⏺[39m Design, in sections. I'll pause after each.
+
+  ---
+
+  [1mSection 1 — Scope and module architecture[0m
+
+  [1mScope.[0m Because the repo is empty, this spec necessarily covers three things, in dependency order: a task model with
+  persistence, due dates on tasks, and the notification system on top. I want to name that explicitly so the spec isn't
+  read as "notifications only" — roughly half the work is the substrate.
+
+  [1mArchitecture.[0m Seven modules, organized so the time logic is isolated from everything that makes it hard to test:
+
+  - [38;5;153mmodel/task.ts[39m — the [38;5;153mTask[39m type and pure helpers (create, complete, set due date). No I/O.
+  - [38;5;153mstore/tasks.ts[39m — load/save to [38;5;153mlocalStorage[39m, with a schema version field so a future format change has somewhere to
+    hook.
+  - [38;5;153mnotifications/engine.ts[39m — [1mpure[0m. Signature is roughly [38;5;153m(tasks, now, leadTime, alreadyFired) => NotificationEvent[][39m. No
+    timers, no storage, no DOM. This is where "due soon", "now due", and "overdue" are decided.
+  - [38;5;153mnotifications/scheduler.ts[39m — the only module that owns a timer and reads the real clock. Wakes up, calls the engine,
+    hands results to the store. Impure by design and deliberately thin.
+  - [38;5;153mnotifications/store.ts[39m — notification records with read/unread state, persisted.
+  - [38;5;153mui/[39m — task list, notification panel with unread badge, and a thin adapter to the browser Notification API.
+  - [38;5;153mmain.ts[39m — wiring only.
+
+  The load-bearing boundary is engine vs. scheduler. Every interesting rule lives in a pure function that takes [38;5;153mnow[39m as
+  an argument, so the whole test suite runs on a fake clock with no waiting. The scheduler, which is the part that's
+  genuinely awkward to test, ends up with almost no logic in it.
+
+  Does that split look right, and are you comfortable with the spec covering the task substrate as well as
+  notifications?
+
+[38;5;246m✻[39m [38;5;246mChurned for 1m 42s · done 3:37 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

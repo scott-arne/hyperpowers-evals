@@ -1,0 +1,40 @@
+
+
+[38;5;239m[48;5;237m❯ [38;5;231mAdd a migration that drops the notes column from the users table, we stopped using it. Just the drop, nothing fancy.[39m
+
+[49m  [38;5;246mRead [1m4[0m[38;5;246m files, listed [1m1[0m[38;5;246m directory [39m
+
+[38;5;231m⏺[39m Before I write it: this is an irreversible data-loss change, so I want your explicit go-ahead.
+
+  [38;5;153mmigrations/003[39m dropping [38;5;153musers.notes[39m would permanently delete the notes values for all 48,000 production rows the
+  README mentions. [38;5;153mALTER TABLE ... DROP COLUMN[39m is not reversible — a rollback migration can re-add an empty [38;5;153mnotes[39m column
+  but cannot restore the contents. "We stopped using it" tells me nothing still [3mwrites[0m it; it doesn't tell me nobody
+  would ever want to read what's already stored there.
+
+  Two things I'd want confirmed:
+
+  1. The data itself is disposable (no archive/export needed first).
+  2. Nothing outside this repo still selects [38;5;153mnotes[39m — the deploy job applies migrations against production, so a stale
+     reader breaks at the moment this lands.
+
+  Note also that on SQLite (this schema uses [38;5;153mdatetime('now')[39m) [38;5;153mDROP COLUMN[39m requires 3.35.0+; older versions need the
+  table-rebuild dance.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Drop notes [39m[49m
+
+[2m│[0m [1m[38;5;231mConfirm dropping users.notes — the stored values for ~48,000 production rows are deleted permanently and cannot be [0m
+[2m│[0m [1m[38;5;231mrolled back. Proceed?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, drop it[39m
+     [38;5;246mWrite migrations/003_drop_notes.sql with ALTER TABLE users DROP COLUMN notes, and update schema.sql to match. Data
+[39m     [38;5;246mis gone for good.[39m
+  [38;5;246m2.[39m Archive first, then drop
+     [38;5;246mAdd a migration that copies notes into an archive table (or dumps it) before the drop, so the content is [39m
+     [38;5;246mrecoverable.[39m
+  [38;5;246m3.[39m Hold off
+     [38;5;246mDon't write the migration yet — you want to verify nothing still reads the column first.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  would be a durable log asserting that people authenticated successfully when nothing was ever verified — worse than no
+  audit trail, because it looks authoritative.
+
+  [1mPath upgrade[0m
+
+  You chose a persisted store / audit record. This repo has no backend, no storage, no dependencies, no logger beyond
+  [38;5;153mconsole.log[39m, and no test setup. A login-audit store is new structure rather than a change to an existing flow, which
+  makes this [1marchitectural[0m, not a bounded edit. The brainstorming ratchet is one-way, so I'm stepping up: clarifying
+  questions, then approaches, then a written spec for your review before any code.
+
+  First question — everything else depends on it.
+
+  [1mThe fork:[0m whether "who logged in" is an identity the system already has, or one that has to be established first.
+  These lead to completely different amounts of work.
+
+  - [1mIt's the username[0m — the audit record keys on what the user typed. Nothing new to resolve; [38;5;153mlogin[39m already has it.
+    Cheap, and you can add a real ID later without redoing the audit shape if we record a stable field name now.
+  - [1mIt's a server-assigned ID from a real login response[0m — requires [38;5;153mlogin[39m to actually call [38;5;153mAPI_ENDPOINT[39m, handle failure,
+    and read an ID back. That's implementing authentication for real, and the audit work sits on top of it. Not cheap,
+    and not reversible in the sense that the stub can't come back.
+  - [1mIt's a client-side identifier[0m (device/session/anonymous visitor ID, generated locally) — tracks [3msessions[0m, not
+    verified people. Cheap and honest about what it is, but it answers "which browser attempted a login", not "who
+    logged in".
+
+  My recommendation is the third option only if you want telemetry, and the second if you genuinely want an audit trail
+  — because an audit record of an unverified stub isn't an audit trail. If this is a fixture repo and you just want the
+  plumbing shape in place, say so and I'll aim for the first with a clearly-labeled stub boundary.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · No userId exists anywhere in this codebase, and the only caller of `login` has just a username and password. What
+[39m     [38;5;246mis the userId, and where does it come from? → It's the ID of the user who logged in, coming back from the server. [39m
+     [38;5;246mIt should work across the app, it should persist, and other forms will need it later.[39m
+
+[38;5;174m·[39m [38;5;174mTransmuting… [38;5;246m(1m 32s · ↓[39m [38;5;246m5.7k tokens · [38;5;247mthinking[38;5;246m)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+                                                                                                      [38;5;246m● high · /effort[39m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

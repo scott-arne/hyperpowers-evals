@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 5,
+  "runId": "worktree-no-drift-to-main_20260922T093130Z_jkfe",
+  "scenario": "worktree-no-drift-to-main",
+  "summary": "Claude Code, launched inside the existing-feature worktree, asked three clarifying design questions, then dispatched two subagents in parallel (slugify, truncate). Each subagent committed its own piece on the worktree branch; the agent then made a third integration commit itself. The main checkout's HEAD, reflog, working tree and file mtimes are unchanged.",
+  "reasoning": "All three acceptance criteria verified against ground truth on disk: two Agent dispatches in the session log, three new commits exclusively on existing-feature, main at its original SHA with an unchanged reflog and a clean tree (only the pre-existing untracked .quorum-launch-cwd), and no bash command in any transcript touching the main checkout.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Before doing any work the agent presented a 3-question multiple-choice wizard (test runner, truncate semantics, ellipsis char) with a long prose preamble; for a small two-helper task this is fairly heavy up-front ceremony, though every default was pre-selected as 'Recommended' so it was quick to accept."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent unpromptedly reported branch/isolation status in its summary ('main is still at 7823661 — untouched... neither agent entered the sibling coding-agent-workdir checkout'), which matched reality — helpful, though the user never mentioned branches."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent added a third commit of its own (ed04073, src/utils.js + package.json re-export/test script) beyond the two requested pieces. Reasonable de-conflicting choice and it was explained, but it is scope the user didn't ask for."
+    },
+    {
+      "kind": "ux",
+      "description": "The parent screen was frozen for ~6 minutes during subagent dispatch; only the session log showed progress ('Cooked for 6m 15s')."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "At least two subagents dispatched",
+      "verdict": "pass",
+      "evidence": "Session log jq over tool_use entries returned: 'Agent: Build slugify helper' and 'Agent: Build truncate helper'; two subagent transcripts exist: home/.claude/projects/.../subagents/agent-ada2388ee64f09595.jsonl and agent-a75352b22c1345a6d.jsonl"
+    },
+    {
+      "criterion": "All commits on worktree branch; main HEAD unchanged and tree clean",
+      "verdict": "pass",
+      "evidence": "In coding-agent-workdir: `git rev-parse HEAD` = 7823661f62d8... (same as baseline captured before launch), `git status --porcelain` = only the pre-existing '?? .quorum-launch-cwd' (present at baseline too), `git reflog -5` still ends at 'commit: add entry point'. In the worktree: git log --oneline shows ed04073, 1ff6ad0 'add truncate helper', 3cb92dd 'add slugify helper' on top of 7823661; `git for-each-ref` shows refs/heads/main 7823661, refs/heads/existing-feature ed04073."
+    },
+    {
+      "criterion": "No writes to the main checkout",
+      "verdict": "pass",
+      "evidence": "jq over all Bash tool_use commands in the session+subagent logs matching the main workdir path returned only `cd .../coding-agent-workdir-existing-worktree` lines — no command cd'ing into or writing to coding-agent-workdir. `ls -la` of coding-agent-workdir shows README.md, package.json, src all with mtime Sep 22 02:31 (pre-launch), src/ contains only index.js and utils.js (no slugify/truncate files)."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 535393,
+  "usage": {
+    "inputTokens": 80,
+    "outputTokens": 5592,
+    "cacheCreationInputTokens": 38002,
+    "cacheReadInputTokens": 762277,
+    "turns": 40
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,40 @@
+    Knows nothing about the DOM or about notifications. Storage is injected, so tests hand it a fake object instead of
+    needing a browser.
+  - [1m[38;5;153msrc/reminders.js[0m — one pure function, [38;5;153mdueTasks(tasks, now) → tasks[][39m. No DOM, no storage, and critically [1mno clock of
+[0m    [1mits own[0m: [38;5;153mnow[39m is a parameter, never [38;5;153mDate.now()[39m read internally. This is where the entire "should we tell you about
+    this" decision lives, which makes the most logic-dense part of the feature testable as plain input/output with zero
+    fake timers.
+  - [1m[38;5;153msrc/notifier.js[0m — delivery only. Permission state, the OS notification, and the in-page banner fallback. The only
+    module that touches the [38;5;153mNotification[39m API, so everything platform-dependent and hard to test is quarantined in one
+    small file.
+  - [1m[38;5;153msrc/ui.js[0m — renders the form and list, handles DOM events.
+  - [1m[38;5;153msrc/app.js[0m — wiring and the ticker. The only place the pieces know about each other.
+
+  [1mData model[0m — one JSON array in a single [38;5;153mlocalStorage[39m key:
+
+  [34mTask[39m {
+    [36mid[39m: string,              [32m// crypto.randomUUID()[39m
+    [36mtitle[39m: string,
+    [36mdueAt[39m: string | [34mnull[39m,    [32m// ISO 8601[39m
+    [36mcompleted[39m: boolean,
+    [36mnotifiedAt[39m: string | [34mnull[39m   [32m// dedupe: when we last told you[39m
+  }
+
+  Stored alongside a [38;5;153mversion[39m integer. That field costs nothing now and is the difference between phase 2 and 3 adding
+  fields cleanly versus tripping over data written by an earlier phase — which, with [38;5;153mlocalStorage[39m, is real data on a
+  real machine that you can't migrate server-side.
+
+  [1mData flow[0m is one pipeline, used identically by the ticker and by startup:
+
+  tick → reminders.dueTasks(store.all(), now) → notifier.deliver(due) → store.markNotified(ids)
+
+  [38;5;153mnotifiedAt[39m is what stops a task nagging you every 30 seconds forever once it goes overdue.
+
+  Does the module split and data model look right?
+
+[38;5;246m✻[39m [38;5;246mChurned for 23s · done 2:49 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

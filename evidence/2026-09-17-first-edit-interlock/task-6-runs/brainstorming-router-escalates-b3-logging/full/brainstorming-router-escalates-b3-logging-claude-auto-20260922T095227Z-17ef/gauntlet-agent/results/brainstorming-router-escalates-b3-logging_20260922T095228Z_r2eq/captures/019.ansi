@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which tooling should we set up alongside the build step? → Unit tests (vitest), Lint + format (eslint + prettier)
+
+[38;5;231m⏺[39m [1mSection 4 — Error handling, volume control, and testing[0m
+
+  Three failure modes matter here, and they're all "the logger hurts the app it's supposed to be observing":
+
+  - [1mThe logger must never break the page.[0m Every public logger method wraps its body in [38;5;153mtry/catch[39m and swallows. A logging
+    subsystem that throws during a login is strictly worse than no logging. In dev builds the swallowed error goes to
+    [38;5;153mconsole.error[39m so it isn't invisible during development.
+  - [1mRecursion guard.[0m [38;5;153mcapture.js[39m installs a global error handler, and the logger can itself throw — that's a loop that
+    fills a quota in seconds. A module-level [38;5;153minFlight[39m flag makes a logger-originated error never re-enter the logger.
+  - [1mVolume cap.[0m A client-side counter caps events per page load (I'd start at 100) and drops the rest with a single
+    [38;5;153mlogger.rate_limited[39m event. This protects your Sentry quota against a render loop or a retry storm, which is the
+    usual way a first logging rollout produces a surprise bill.
+
+  Delivery itself — batching, retry, offline queueing — is Sentry's job and we don't reimplement it. That was the main
+  reason for picking a service over a hand-rolled endpoint.
+
+  Testing, matching what you selected:
+
+  - [38;5;153mredact.test.js[39m is the important one: a password-shaped key is dropped, an unknown key is dropped and counted,
+    [38;5;153merrorMessage[39m truncates at 200 chars, an email inside [38;5;153merrorMessage[39m is scrubbed, and [38;5;153muserHash[39m is stable for the same
+    username and different across salts. This is the regression net for the privacy design.
+  - [38;5;153mlogger.test.js[39m against a fake sink: record shape, level filtering, the rate cap, the recursion guard, and that a
+    throwing sink doesn't propagate.
+  - [38;5;153mcapture.test.js[39m: the two global handlers are installed and produce the expected events.
+  - [38;5;153msink-sentry.js[39m gets no unit test — it's a thin adapter and a mock of Sentry would only assert our own mock. It gets
+    one manual verification against a staging DSN, which is the step that proves the whole pipeline actually delivers.
+
+  That closes the design. If Section 4 looks right, I'll write it up as a spec at
+  [38;5;153mdocs/hyperpowers/specs/2026-09-22-browser-logging-design.md[39m (uncommitted), self-review it, run the Codex spec gate,
+  and hand it to you to read before we go anywhere near an implementation plan.
+
+[38;5;246m✻[39m [38;5;246mSautéed for 44s · done 3:05 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

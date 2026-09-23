@@ -1,0 +1,40 @@
+  a guard that does [38;5;153mmodule.exports = ...[39m under Node and [38;5;153mwindow.Logger = ...[39m in the browser. [38;5;153mindex.html[39m gains one
+  [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m.
+  [3mBuys:[0m one file, one source of truth, no build, smallest diff. [3mCosts:[0m the UMD-style guard is dated, and runtime
+  detection inside the module is a mild smell. [3mComplexity:[0m trivial.
+
+  [1mB. Pure core + two thin adapters.[0m [38;5;153msrc/logger/core.js[39m holds the rules only — level filtering, denylist redaction,
+  record shape, the ring buffer — with no I/O and no environment checks. [38;5;153msrc/logger/node.js[39m wraps it with a
+  stdout/stderr sink; [38;5;153msrc/logger/browser.js[39m wraps it with the buffer sink plus a console mirror and attaches
+  [38;5;153mwindow.Logger[39m. Core still carries a small dual-export guard so both adapters can load it without a bundler.
+  [3mBuys:[0m redaction is testable with no DOM and no process, and the sink is a named seam — the later POST sink is a new
+  file, not an edit to any call site. [3mCosts:[0m three files where one would do, in a repo this small. [3mComplexity:[0m moderate.
+
+  [1mC. ESM everywhere.[0m Write the logger with [38;5;153mexport[39m, switch [38;5;153mindex.html[39m to [38;5;153m<script type="module">[39m, convert [38;5;153mapp.js[39m to
+  [38;5;153mimport[39m, move [38;5;153msrc/[39m off CommonJS.
+  [3mBuys:[0m no guards, modern baseline, one format. [3mCosts:[0m it changes how the page loads, module scripts are blocked over
+  [38;5;153mfile://[39m so the page then needs a local server to open at all, and it rewrites [38;5;153msrc/[39m for reasons unrelated to logging.
+  [3mComplexity:[0m moderate, and the widest blast radius.
+
+  [1mMy recommendation: B.[0m The constraint you already chose — keep the sink swappable for a network sink later — is exactly
+  what B's seam buys, and a pure core means the redaction rule (the part with real consequences) can be tested
+  directly. A is genuinely fine and I'd take it over B if you want the smallest possible change; C I'd skip, since
+  making the page require a web server is a cost the logging request never asked you to pay.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Structure [39m[49m
+
+[1m[38;5;231mWhich module structure should the logger use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCore + adapters (Recommended)[39m
+     [38;5;246msrc/logger/{core,node,browser}.js. Pure testable core, named sink seam for the later POST sink. Three small files.[39m
+  [38;5;246m2.[39m Single file, dual-export guard
+     [38;5;246mOne src/logger.js with a module.exports / window.Logger guard. Smallest diff, one source of truth, less testable in
+[39m     [38;5;246misolation.[39m
+  [38;5;246m3.[39m ESM everywhere
+     [38;5;246mConvert both surfaces to ES modules. Modern and uniform, but the page then needs a local server and src/ gets [39m
+     [38;5;246mrewritten.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

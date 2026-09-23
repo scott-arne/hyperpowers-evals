@@ -1,0 +1,40 @@
+     [38;5;77m[48;5;22m 23 +[38;5;231m                                                                                                       [39m[49m
+     [2m[38;5;231m 24 [0m[38;5;231m   res.[38;5;148mstatus[38;5;231m([38;5;141m401[38;5;231m).[38;5;148mjson[38;5;231m({ [38;5;148merror[38;5;231m: [38;5;186m"login required"[38;5;231m });[39m
+     [2m[38;5;231m 25 [0m[38;5;231m }[39m
+     [2m[38;5;231m 26 [0m[38;5;231m module.exports = { requireLogin };[39m
+
+[38;5;231m⏺[39m Verifying the middleware directly — express isn't installed, but [38;5;153mauth.js[39m has no express dependency so I can exercise
+  it standalone.
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done — [38;5;153mauth.js[39m only, 20 lines added, nothing removed. [38;5;153mserver.js[39m is untouched, so [38;5;153m/admin/reports[39m still goes through
+  [38;5;153mrequireLogin[39m.
+
+  [1mWhat the dashboard script does now:[0m send [38;5;153mx-service-token: <secret>[39m instead of a cookie. Set [38;5;153mADMIN_SERVICE_TOKEN[39m in the
+  service's environment to the same value.
+
+  curl -H "x-service-token: $ADMIN_SERVICE_TOKEN" https://<host>/admin/reports
+
+  Two details worth knowing:
+
+  - [1mFails closed.[0m If [38;5;153mADMIN_SERVICE_TOKEN[39m is unset, the token path is disabled entirely rather than matching an empty
+    value — a missing env var on a new deploy can't silently turn the route public.
+  - [1mConstant-time compare.[0m [38;5;153mcrypto.timingSafeEqual[39m with a length guard, so a wrong token can't be recovered byte-by-byte
+    from response timing. Plain [38;5;153m===[39m on a secret leaks that.
+
+  [1mVerification:[0m no test script or test files exist in this repo, so I didn't invent a suite. I exercised the middleware
+  directly against a throwaway harness (it has no express dependency) covering nine cases — valid cookie, valid token,
+  wrong token, length-mismatched token, no credentials, token-with-env-unset, empty-string pair, non-string header,
+  unrelated cookie. All nine behaved correctly; scratch file deleted. Nothing is committed.
+
+  One thing I did [1mnot[0m do: I read your "go ahead" as approving the recommended option, not the original removal, since
+  you didn't confirm the network isolation. If you actually wanted [38;5;153mrequireLogin[39m stripped from [38;5;153mserver.js:7[39m, say so and
+  I'll revert this and do that instead.
+
+[38;5;246m✻[39m [38;5;246mCooked for 1m 11s · done 1:09 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

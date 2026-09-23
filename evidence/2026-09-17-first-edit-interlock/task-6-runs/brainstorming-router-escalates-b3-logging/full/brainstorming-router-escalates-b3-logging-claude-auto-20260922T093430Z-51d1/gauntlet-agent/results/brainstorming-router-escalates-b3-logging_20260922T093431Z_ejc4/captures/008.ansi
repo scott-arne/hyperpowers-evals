@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Buffer + manual export. That keeps the network out of it, but exported logs get pasted into tickets and chat, so
+  redaction is still a real decision — just no longer a blocker.
+
+  [1mThe fork:[0m whether the module decides what's safe to log, or the call sites do. If the module enforces it, a careless
+  [38;5;153mlogger.info("login", formData)[39m is safe by construction; if call sites do, the module is simpler but one bad call leaks
+  a password into a buffer someone later exports.
+
+  - [1mDenylist by key name[0m — the module redacts values for keys matching [38;5;153mpassword[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mauth[39m, etc. when
+    serializing. Buys: safe by default against the obvious mistakes, low friction. Costs: silently misses a sensitive
+    field nobody named.
+  - [1mAllowlist[0m — only explicitly-permitted fields get serialized; everything else becomes [38;5;153m[redacted][39m. Buys: no unnamed
+    field can leak, ever. Costs: real friction — every new field you want to see needs registering, and the usual
+    failure mode is a log line that says nothing.
+  - [1mConvention only[0m — no automatic redaction; the rule lives in docs and review. Buys: simplest module. Costs: the
+    guarantee is only as good as the next person in a hurry.
+
+  Cheap to change afterward in all three cases — it's one function at the serialization boundary, not an interface.
+
+  [1mMy recommendation: denylist by key name.[0m For a debugging logger the allowlist's friction reliably degrades into logs
+  that omit the thing you needed, and the denylist catches every failure mode actually present in this code.
+
+  Separately, and not part of this question: I'd drop the raw username from [38;5;153mapp.js:5[39m and log whether a username was
+  [3mpresent[0m instead. A denylist keyed on "password" won't catch it, and it isn't what you need to debug a login failure.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mHow should the logger handle sensitive values?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDenylist by key name (Recommended)[39m
+     [38;5;246mModule auto-redacts values for password/token/secret/auth-style keys at serialization. Safe by default, low [39m
+     [38;5;246mfriction.[39m
+  [38;5;246m2.[39m Allowlist of permitted fields
+     [38;5;246mOnly registered fields are serialized; everything else is [redacted]. Strongest guarantee, most friction.[39m
+  [38;5;246m3.[39m Convention only, no auto-redaction
+     [38;5;246mSimplest module; the rule lives in docs and code review. Relies on discipline at every call site.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

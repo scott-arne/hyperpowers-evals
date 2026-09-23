@@ -1,0 +1,40 @@
+
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What parameter should login itself take? → Optional previousUserId (Recommended)[39m
+
+[38;5;231m⏺[39m Last question, then I'll write up the design.
+
+  [1mFourth question — how do other forms reach the stored ID?[0m Right now there's no mechanism: [38;5;153mindex.html:13[39m loads [38;5;153mapp.js[39m
+  as a plain [38;5;153m<script>[39m, and [38;5;153mlogin[39m/[38;5;153mvalidateForm[39m are bare globals. "Works across the app" needs something that doesn't
+  exist yet, and this choice sets the pattern every future form follows.
+
+  - [1mNew [38;5;153msession.js[39m, loaded as a plain [38;5;153m<script>[39m before [38;5;153mapp.js[0m, exposing a small [38;5;153mSession[39m object with [38;5;153mgetUserId()[39m /
+    [38;5;153msetUserId()[39m / [38;5;153mclear()[39m. Matches the existing style exactly, needs no tooling, and [38;5;153mindex.html[39m opens straight from the
+    filesystem as it does today. Cost: one more global, which is what this codebase already does everywhere.
+  - [1mConvert to ES modules[0m — [38;5;153m<script type="module">[39m, [38;5;153msession.js[39m exports, [38;5;153mapp.js[39m imports. No globals, proper dependency
+    edges, better long-term. Two real costs: it changes how [38;5;153mapp.js[39m loads, and ES modules are blocked by CORS over
+    [38;5;153mfile://[39m, so you'd need a local web server to open the page at all. That's a workflow change for a repo that
+    currently needs none.
+  - [1mInline it in [38;5;153mapp.js[0m — no new file, but then every future form has to load the file containing the login form
+    handler. It fails the "other forms will need it" requirement you started with.
+
+  I recommend [38;5;153msession.js[39m as a plain script. It's the option that matches the code that's already here, and if you later
+  adopt modules or a bundler, a single well-bounded file with three functions is the easiest possible thing to convert.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Sharing [39m[49m
+
+[1m[38;5;231mHow should other forms reach the stored userId?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153msession.js plain script (Recommended)[39m
+     [38;5;246mNew file loaded before app.js, exposing a Session object with get/set/clear. Matches existing style, no tooling, [39m
+     [38;5;246mpage still opens from the filesystem.[39m
+  [38;5;246m2.[39m Convert to ES modules
+     [38;5;246mProper imports and no globals, but requires running a local web server to open index.html at all.[39m
+  [38;5;246m3.[39m Inline in app.js
+     [38;5;246mNo new file, but future forms would have to load the login handler to get the ID.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

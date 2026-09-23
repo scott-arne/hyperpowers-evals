@@ -1,0 +1,40 @@
+  [38;5;153m(recipient_id, event_id, read_at, delivered_channels)[39m. Inbox is an indexed lookup on [38;5;153mrecipient_id[39m.
+  - Buys: trivial fast reads; per-recipient read state is natural; [1mthe notification row is the delivery unit[0m, so the
+    email/push channel we agreed to leave room for becomes "find rows where [38;5;153mdelivered_channels[39m lacks email" rather than
+    new machinery.
+  - Costs: write amplification (20 participants = 20 rows — irrelevant at this app's scale), and widening the notifiable
+    set is not retroactive. Fan-out must be in the same transaction as the event write or notifications get lost on
+    crash.
+  - Rules out: nothing we care about.
+
+  [1mC. Local-first, synced client.[0m Tasks and events in IndexedDB, synced via a thin server; notifications computed in the
+  browser. [3mDiscarding this:[0m out-of-band email fundamentally needs a server that holds the state, and shared multi-user
+  tasks add conflict resolution — it pays complexity on an axis we don't need.
+
+  [1mD. Event-sourced with a queue and workers.[0m [3mDiscarding this:[0m it's where B goes if this ever gets big, and B's
+  [38;5;153mnotification[39m table is the seam you'd put the queue behind. Building it now is YAGNI against an app that is currently
+  11 lines of HTML.
+
+  [1mI recommend B.[0m The deciding factor is the commitment we already made — in-app first, email/push later over a channel
+  interface. B's notification row [3mis[0m that interface; A reaches the same place by growing per-recipient tables one at a
+  time. The retroactivity B gives up is a genuine loss, but a small one: the full [38;5;153mevents[39m log is still there, so a
+  one-off backfill can materialize history if you ever widen the notifiable set.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Architecture [39m[49m
+
+[1m[38;5;231mWhich inbox architecture should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: Materialized (Recommended)[39m
+     [38;5;246mOne notification row per recipient per notifiable event. Fast reads, natural per-recipient read state, and the row
+[39m     [38;5;246mdoubles as the delivery unit for email/push later.[39m
+  [38;5;246m2.[39m A: Derived inbox
+     [38;5;246mNo notifications table; inbox is a query over the event log plus a read watermark. Least storage, retroactive rule
+[39m     [38;5;246mchanges, but per-recipient state and email delivery get expensive.[39m
+  [38;5;246m3.[39m Let me see a schema first
+     [38;5;246mHold the decision — I'll sketch the concrete tables for both A and B side by side so you can compare the actual [39m
+     [38;5;246mdata model before choosing.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

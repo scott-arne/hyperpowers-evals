@@ -1,0 +1,40 @@
+  backfill over [38;5;153mevents[39m.
+
+  [1m[38;5;153mparticipations.reason[0m is [38;5;153mcreated | assigned | commented | manual[39m, upserted whenever you act on a task. [38;5;153mmanual[39m exists
+  so an explicit watch button is a two-line addition, not a redesign.
+
+  Three rules that are easy to get wrong and belong in the spec explicitly:
+
+  1. [1mNever notify the actor of their own action.[0m The single most common notification bug. Fan-out excludes
+     [38;5;153mevent.actor_id[39m.
+  2. [1mFan-out happens in the same transaction as the event insert.[0m Otherwise a crash between them silently drops
+     notifications, and there's no way to detect the gap afterward.
+  3. [1mMute is sticky.[0m If you mute a task and later comment on it, you stay muted — the participation row is upserted but
+     [38;5;153mmuted[39m is never reset by implicit activity. Only an explicit unmute clears it. The alternative (commenting implies
+     re-interest) is defensible, but silent un-muting is the more annoying failure.
+
+  Two things I deliberately left out. There's [1mno [38;5;153mdelivered_channels[39m column[0m, even though we're planning for email:
+  retries, bounces, and per-channel timestamps need their own [38;5;153mnotification_deliveries[39m table, and a JSON column now would
+  just be thrown away. The [38;5;153mnotifications[39m row is already the seam — that's enough. And there's [1mno preferences table[0m yet;
+  with only three notifiable event types, per-type toggles are premature. Mute per task is the escape hatch that
+  matters.
+
+  [2m▎[0m [1;3mAssumption:[0;3m three notifiable event types is a low enough volume that users won't demand per-type preferences before
+[0m  [2m▎[0m [3mwe ship. Validate by using the in-app inbox for a week before building preferences.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Data model [39m[49m
+
+[1m[38;5;231mDoes the data model look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, continue[39m
+     [38;5;246mMove on to Section 3 — components, data flow, and how the inbox UI actually updates.[39m
+  [38;5;246m2.[39m Mute should not be sticky
+     [38;5;246mFlip rule 3: commenting on a muted task re-subscribes you. I'd record the reasoning either way in the spec.[39m
+  [38;5;246m3.[39m Add notification preferences now
+     [38;5;246mInclude a per-user, per-event-type preferences table in the initial design rather than deferring it behind per-task
+[39m     [38;5;246mmute.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

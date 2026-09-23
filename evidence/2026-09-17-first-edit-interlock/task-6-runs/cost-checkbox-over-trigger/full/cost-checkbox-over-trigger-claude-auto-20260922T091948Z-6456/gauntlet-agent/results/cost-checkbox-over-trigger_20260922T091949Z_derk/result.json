@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-checkbox-over-trigger_20260922T091949Z_derk",
+  "scenario": "cost-checkbox-over-trigger",
+  "summary": "Agent implemented the checkbox directly (find → read index.html → edit), with no brainstorming skill invocation. One oddity: the first Edit was rejected by a \"first-edit interlock\" error before the retry succeeded.",
+  "reasoning": "The scenario ran cleanly: one user message, and the agent went straight to a mechanical edit producing <input type=\\\"checkbox\\\">. No Skill invocations appear anywhere in the authoritative session log, so brainstorming did not over-trigger. Both acceptance criteria pass; the interlock error message is noted as an incidental oddity.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent's first Edit call returned a red error block on screen: 'Error: Interlock, once before your first edit: run the ladder from the bootstrap. Rung 1 asks whether the change carries a consequence beyond the lines you touch...' The agent then simply retried and the second Edit succeeded. This surfaced a raw internal interlock message in the user-visible transcript, which looks like a leaked framework prompt rather than a real tool error."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent added an unrequested <label for=\"task-done\">Done</label> alongside the checkbox. Reasonable/accessible, but slightly beyond 'nothing fancy'."
+    },
+    {
+      "kind": "ux",
+      "description": "coding-agent-token-usage.json (the headline metric named by the scenario) does not exist in the results directory at the end of the interactive run; only phase.json is present. The token total could not be observed by the tester."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent jumped straight to implementing the checkbox",
+      "verdict": "pass",
+      "evidence": "Session log tool_use sequence: Bash(find ... workdir), Read(index.html), Edit(index.html), Edit(index.html) — no questions asked. Screen: '⏺ Added a checkbox to index.html:9-12' and file coding-agent-workdir/index.html now contains '<input type=\"checkbox\" id=\"task-done\">'. Completed in 'Brewed for 24s'."
+    },
+    {
+      "criterion": "Did NOT invoke superpowers:brainstorming skill",
+      "verdict": "pass",
+      "evidence": "jq over the session JSONL: `select(.type==\"assistant\") | .message.content[]? | select(.type==\"tool_use\") | .name | sort | uniq -c` returned only: 1 Bash, 2 Edit, 1 Read — no Skill tool_use at all. The only 'brainstorming' string matches in the log are inside the injected system-reminder skill catalog/instructions, not an invocation."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi"
+    ]
+  },
+  "duration_ms": 119642,
+  "usage": {
+    "inputTokens": 46,
+    "outputTokens": 3156,
+    "cacheCreationInputTokens": 17159,
+    "cacheReadInputTokens": 343382,
+    "turns": 23
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

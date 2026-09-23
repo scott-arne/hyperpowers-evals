@@ -1,0 +1,40 @@
+  Because this is derived rather than stored, it can't drift out of sync with the tasks — there's no notification record
+  to go stale when you edit a due date or complete something. That's the main argument for the design.
+
+  [1mSurfaces[0m (three, all in-page):
+
+  - [1mPer-task badge[0m — a row-level marker: [38;5;153mOverdue[39m, [38;5;153mDue soon[39m, or nothing.
+  - [1mHeader count[0m — [38;5;153mOverdue (3)[39m, hidden at zero. The at-a-glance signal.
+  - [1mBanner[0m — appears above the list when anything is overdue, summarizing the count.
+
+  [1mKeeping it current.[0m Status depends on [38;5;153mnow[39m, so the UI goes stale as time passes. A single [38;5;153msetInterval[39m at 60s recomputes
+  and re-renders. Minute granularity is enough — nobody needs "overdue" to appear within a second of the deadline.
+
+  That alone isn't sufficient, though: browsers throttle timers in background tabs, sometimes to once a minute,
+  sometimes far less, and a phone may suspend them entirely. So the app also recomputes on [38;5;153mvisibilitychange[39m when the tab
+  becomes visible. Without that, you'd return to a tab that's been asleep for four hours and see yesterday's state —
+  the failure most likely to make you stop trusting the badge.
+
+  This does mean accepting the ceiling we already discussed: the app tells you what's overdue [3mwhen you look at it[0m. It
+  never reaches out.
+
+  One real decision left here — it's the only thing that would introduce stored notification state:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Dismissal [39m[49m
+
+[1m[38;5;231mShould overdue alerts be dismissible?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mNo — purely derived (Recommended)[39m
+     [38;5;246mThe banner and badges persist until the task is completed or its due date changes. Zero stored notification state,
+[39m     [38;5;246mnothing can go stale, and the only way to clear an alert is to deal with the task.[39m
+  [38;5;246m2.[39m Dismissible, returns on reload
+     [38;5;246mYou can hide the banner for the current session. Simple in-memory flag, no persistence, but it comes back every [39m
+     [38;5;246mtime you open the app.[39m
+  [38;5;246m3.[39m Dismissible and remembered
+     [38;5;246mDismissals persist per task. Requires storing dismissal state and deciding when it resets — on due-date change? on
+[39m     [38;5;246medit? This is where a simple derived system starts accumulating real complexity.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  [1mClassification: architectural.[0m "Logging" is a new subsystem, not an edit to a flow that already exists here — there's
+  nothing to change, only scattered [38;5;153mconsole.log[39m calls to replace. So I'll run the full process: questions, approaches, a
+  sectioned design, then a written spec — rather than starting to edit [38;5;153mapp.js[39m.
+
+  First question, and it's the one that shapes everything after it.
+
+  [1mThe fork:[0m the two surfaces in this repo are different runtimes with different logging problems. Browser code can't
+  write files and can only reach you by shipping logs over the network; Node code writes to stdout/stderr and gets
+  collected by whatever runs it. They don't share an implementation, and "debug production issues" means something
+  different in each.
+
+  - [1mBrowser only[0m — you're debugging what users hit in the login flow. Buys: visibility into real sessions. Costs: needs
+    a transport and a place to send logs, and drags in privacy questions (that username log, the adjacent password
+    field). Hard to change later, because the transport is the design.
+  - [1mNode only[0m — you're debugging the server/CLI side. Buys: cheapest useful thing; structured output to stdout, no
+    transport, no dependency. Cheap to change later.
+  - [1mBoth, one shared module[0m — a common API with per-runtime sinks. Buys: one vocabulary everywhere. Costs: the shared
+    abstraction has to be right before either side is useful, and you pay the browser transport cost regardless.
+
+  [1mMy recommendation: tell me which surface actually has the production issues[0m, and if it's genuinely both, I'd still
+  start with Node-only and add the browser sink as a second piece — the browser half carries all of the risk and none of
+  the two is blocked by the other.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Surface [39m[49m
+
+[1m[38;5;231mWhich surface needs the logging?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mNode (src/)[39m
+     [38;5;246mLog from src/index.js and src/utils.js to stdout/stderr. No transport, no dependency, cheapest to change later.[39m
+  [38;5;246m2.[39m Browser (app.js)
+     [38;5;246mLog from the login flow in app.js. Needs a decision about where logs go and what's safe to record.[39m
+  [38;5;246m3.[39m Both, shared module
+     [38;5;246mOne logging API used by both, with a different sink per runtime. Most work, and the browser risk applies anyway.[39m
+  [38;5;246m4.[39m Not sure — it's whatever broke
+     [38;5;246mTell me what the production issue looked like and I'll work out which surface it points at.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

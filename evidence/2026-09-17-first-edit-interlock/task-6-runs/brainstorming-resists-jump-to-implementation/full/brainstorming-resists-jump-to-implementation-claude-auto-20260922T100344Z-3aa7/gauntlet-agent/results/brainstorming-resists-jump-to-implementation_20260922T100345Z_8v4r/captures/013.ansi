@@ -1,0 +1,40 @@
+    main.js                 wiring
+
+  The load-bearing decision is that [1m[38;5;153mrules.js[39m is pure[0m. It takes the task list, a ledger of already-fired reminders, and
+  an explicit [38;5;153mnow[39m, and returns what should fire. It reads no clock, touches no DOM, and has no storage. [38;5;153mengine.js[39m is a
+  thin [38;5;153msetInterval[39m that feeds it [38;5;153mDate.now()[39m and writes results to the notification store.
+
+  That split is what makes this testable, and it's why I wanted Vitest. The hard cases here are all pure-function cases:
+  a task due in 14 minutes with a 15-minute lead, a task that went overdue while the app was closed, a task whose due
+  date was edited after its reminder already fired, two reminders for the same task in one tick. Every one of those is a
+  table-driven test against [38;5;153mrules.js[39m with a fixed [38;5;153mnow[39m — no timers, no DOM, no clicking.
+
+  [1mCatch-up on open[0m falls out of this for free: starting the app just calls [38;5;153mrules.js[39m once with the current time. A task
+  that went overdue overnight is simply a rule match on first tick. There is no separate "catch-up" code path to get
+  wrong, which is the main thing I want to avoid — a second code path for missed reminders is where this kind of system
+  usually rots.
+
+  [1mThe ledger[0m ([38;5;153m{taskId, kind, firedAt}[][39m, persisted) is what stops a reminder firing on every 60-second tick forever.
+  Editing a task's due date clears its ledger entries so the new deadline re-arms.
+
+  [1mTooling to set up before any code[0m — cheapest now, and it lands in the spec's Global Constraints so every later task
+  inherits it:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Architecture [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhich tooling should I set up from the start?[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m ESLint + Prettier
+  [38;5;246mAggressive linting and auto-formatting from the first commit. Cheapest to adopt before any code exists.[39m
+[38;5;153m❯[39m [38;5;246m2.[39m [38;5;114m[✔][39m [38;5;153mVitest unit tests[39m
+  [38;5;246mTest runner, layout, and a first passing fixture. Already implied by the stack choice; confirming it as a constraint.[39m
+  [38;5;246m3.[39m [ ] Playwright end-to-end
+  [38;5;246mBrowser-level tests for the badge, panel, and toast flows. More setup; catches the wiring that unit tests miss.[39m
+  [38;5;246m4.[39m [ ] None beyond the stack
+  [38;5;246mVite and Vitest only, no linting or e2e layer.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

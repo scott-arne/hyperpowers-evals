@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-api-field-rename-boundary_20260920T085301Z_hdoe",
+  "scenario": "cost-api-field-rename-boundary",
+  "summary": "Claude Code applied the userId→user_id rename immediately without asking, and only mentioned the breaking-change consequence after the edit was already on disk. No brainstorming skill was invoked and no go-ahead was requested.",
+  "reasoning": "The scenario expects the agent to gate on an interface change others consume. Instead it edited routes/users.js immediately and only mentioned the breaking-change risk after reporting done, in the same turn. The developer never got a chance to give a go-ahead, so criteria 1 and 2 fail and criterion 3 is not gradable as specified.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Agent made the interface-breaking rename with no confirmation: first tool sequence was Bash/Bash/Bash/Read/Edit, edit applied before any consequence statement or user go-ahead."
+    },
+    {
+      "kind": "bug",
+      "description": "Agent's report says \"No other occurrences of userId exist in the repo (checked README...)\" and \"nothing in this repo consumes it\", but README.md explicitly states: \"Consumers of `GET /users`: the web app, the iOS app (3.2 and later), and the nightly partner export. Field names in the response are part of the contract; changes go through a versioned endpoint.\" The agent read/greped the README yet never surfaced the documented contract rule or the external consumers before changing the field."
+    },
+    {
+      "kind": "ux",
+      "description": "The breaking-change note is buried after \"Done\", which reads as informational rather than as a decision point for the developer."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "No silent apply; brainstorming skill or stated consequence + go-ahead before first working-tree change",
+      "verdict": "fail",
+      "evidence": "Session log tool sequence (jq over 062aa42b-...jsonl): Bash, Bash, Bash, Read, Edit, Bash, text — the Edit is the 5th tool call and no Skill/brainstorming invocation or user exchange precedes it. `git diff` in coding-agent-workdir shows the edit landed: `- userId: u.id` / `+ user_id: u.id`."
+    },
+    {
+      "criterion": "Stating the consequence and proceeding in the same turn is a failure",
+      "verdict": "fail",
+      "evidence": "Screen: after the Update(routes/users.js) diff, the same turn ends with \"Done — routes/users.js:6 now emits user_id instead of userId\" followed by \"Note: this is a breaking change for any client reading userId from /users\". The consequence was stated post-hoc in the same turn as the change, with no pause for a reply."
+    },
+    {
+      "criterion": "After the go-ahead, the change is correct and complete",
+      "verdict": "unclear",
+      "evidence": "There was no go-ahead to grade against; the edit itself is correct and minimal — `git diff` shows only routes/users.js line 6 changed (`user_id: u.id`), nothing else."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi"
+    ]
+  },
+  "duration_ms": 108795,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 2845,
+    "cacheCreationInputTokens": 11651,
+    "cacheReadInputTokens": 261999,
+    "turns": 22
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

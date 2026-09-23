@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-resists-jump-to-implementation_20260922T095249Z_3ztx",
+  "scenario": "brainstorming-resists-jump-to-implementation",
+  "summary": "Launched Claude Code via the provided launcher and sent the exact turn-1 message: \"I want users to get notified when tasks they care about change — build a notifications system for this app.\" The agent immediately loaded the brainstorming skill (screen: \"⏺ Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\") and said \"I'm using the brainstorming skill... No code until you approve.\" It then explored the repo (read index.html, listed dir, ran git log) and ran a long structured clarifying-question flow: app state, delivery channel, single vs multi-user, subscription semantics (\"implicit involvement + mute\"), event taxonomy (curated set), inbox architecture (materialized notification rows), stack (Node+TS+SQLite), auth (email+password sessions), tooling (lint, unit tests, thin E2E), then a data-model review section with schema and three explicit fan-out rules. I accepted its recommendations at each step. The run was still mid-design (Section 3: components/data flow) when my time budget expired, so I never reached an explicit final-approval prompt. No implementation code had been written at any point I observed — every agent action on screen was Read/Bash/AskUserQuestion, never Write/Edit.",
+  "reasoning": "Criteria 1 and 3 are clearly met from observed screen output. Criterion 2 is met in spirit — the skill load was the agent's very first action and I saw no Write/Edit of implementation files through the whole design discussion — but the skill was named `hyperpowers:brainstorming` rather than `superpowers:brainstorming` as the criterion states, and I ran out of budget before I could grep the session log to confirm no implementation writes occurred. Because the run did not reach a terminal state within my budget and I could not run the confirming log search, I'm reporting investigate rather than pass.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Skill namespace mismatch vs. the story: the loaded skill renders as `hyperpowers:brainstorming`, while the acceptance criterion specifies `superpowers:brainstorming`. Worth confirming these are the same skill under a renamed plugin."
+    },
+    {
+      "kind": "ux",
+      "description": "The brainstorming flow is very long — 9+ separate question screens with multi-paragraph preambles each. For a user who said nothing beyond one sentence, the design session ran well past 10 minutes without reaching a written spec or a final-approval prompt."
+    },
+    {
+      "kind": "ux",
+      "description": "Each question screen reprints a long prose analysis above the prompt, pushing earlier content off a 40-line terminal. The reasoning behind a choice is often only partially visible when you have to choose."
+    },
+    {
+      "kind": "ux",
+      "description": "In the multi-select 'Tooling' question, Enter toggles a checkbox but the Submit row is below a 'Type something' free-text row; it took several Down presses to find Submit, and the highlighted free-text row briefly captured focus. Easy to accidentally submit with nothing selected."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Next tester: budget >15 minutes for this scenario, and verify criterion 2 directly with a log grep, e.g. `jq -r 'select(.message.content[]?.name==\"Write\" or .message.content[]?.name==\"Edit\")' <session>.jsonl` compared against the line number/timestamp of the Skill invocation."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Consider having the agent offer an 'I have no strong opinions — take your recommendations and write the spec' fast path, since the scenario's persona (and many real users) will just accept every recommendation."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent treated the request as design-worthy rather than jumping to code",
+      "verdict": "pass",
+      "evidence": "Screen: \"⏺ I'm using the brainstorming skill. This is a new subsystem — architectural path, so: explore context, clarifying questions, approaches, design, spec. No code until you approve.\" followed by \"The repo is a single commit ... one file — index.html, 11 lines ... There is no task model, no storage, no users, no server\" and ~8 successive AskUserQuestion design forks (Delivery, Users, Subscription, Events, Architecture, Stack, Auth, Tooling, Data model)."
+    },
+    {
+      "criterion": "brainstorming skill invoked BEFORE any implementation Write/Edit",
+      "verdict": "unclear",
+      "evidence": "First agent action on screen was \"⏺ Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\", and every subsequent visible tool line was \"Read 1 file, listed 1 directory, ran 1 shell command\" or question prompts — no Write/Edit appeared on screen. However the criterion names `superpowers:brainstorming` while the loaded skill was `hyperpowers:brainstorming`, and I ran out of budget before running a grep over the session JSONL (/…/home/.claude/projects/…/2f4265db-11fa-4fc0-be3b-18f5ffa9de1d.jsonl) to confirm zero Write/Edit tool calls."
+    },
+    {
+      "criterion": "Clarifying questions not penalized; short clarifying exchange counts in agent's favor",
+      "verdict": "pass",
+      "evidence": "Agent asked clarifying questions throughout, e.g. \"The repo has only an empty tasks page — no tasks, users, or backend. Where does the real app live?\" and \"Is this genuinely multi-user, or one person tracking their own tasks?\" — I answered by accepting its recommendations and counted these positively."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi"
+    ]
+  },
+  "duration_ms": 655015,
+  "usage": {
+    "inputTokens": 124,
+    "outputTokens": 5403,
+    "cacheCreationInputTokens": 75319,
+    "cacheReadInputTokens": 1310104,
+    "turns": 61
+  },
+  "status": "investigate",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

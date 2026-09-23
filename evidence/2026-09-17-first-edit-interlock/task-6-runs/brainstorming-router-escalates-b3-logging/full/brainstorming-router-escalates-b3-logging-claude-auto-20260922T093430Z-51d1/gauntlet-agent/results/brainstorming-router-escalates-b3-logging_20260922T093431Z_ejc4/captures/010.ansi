@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Now the design, in sections. Here's the first.
+
+  [1mSection 1 — Architecture and API[0m
+
+  Three files under [38;5;153msrc/logger/[39m:
+
+  [1m[38;5;153mcore.js[0m — the rules, no I/O. Exposes a [38;5;153mcreateLogger({ level, sink, now })[39m factory returning [38;5;153m{ trace, debug, info, [39m
+  [38;5;153mwarn, error }[39m. Each call builds a record, drops it if below the configured level, runs it through redaction, and hands
+  it to the sink. It never touches [38;5;153mconsole[39m, [38;5;153mprocess[39m, or [38;5;153mwindow[39m. [38;5;153mnow[39m is injected so tests get deterministic timestamps.
+  Ends with the dual-export guard ([38;5;153mmodule.exports[39m under Node, [38;5;153mwindow.LoggerCore[39m in the browser).
+
+  [1m[38;5;153mnode.js[0m — CommonJS. Creates a logger whose sink writes one JSON line per record to [38;5;153mstdout[39m, or [38;5;153mstderr[39m for [38;5;153mwarn[39m/[38;5;153merror[39m so
+  real problems survive a [38;5;153m> /dev/null[39m. Level read from [38;5;153mprocess.env.LOG_LEVEL[39m, defaulting to [38;5;153minfo[39m.
+
+  [1m[38;5;153mbrowser.js[0m — classic script, attaches [38;5;153mwindow.Logger[39m. Its sink pushes into a fixed-size ring buffer (default 500
+  records, oldest dropped) and mirrors to the matching [38;5;153mconsole.*[39m method so devtools still works during development. Adds
+  [38;5;153mLogger.export()[39m returning the buffer as a JSON string, and [38;5;153mLogger.clear()[39m. Level read from [38;5;153mlocalStorage.LOG_LEVEL[39m
+  when present, defaulting to [38;5;153minfo[39m.
+
+  [1mThe call sites[0m import their own runtime's adapter — [38;5;153mapp.js[39m gets two [38;5;153m<script>[39m tags ahead of it in [38;5;153mindex.html[39m,
+  [38;5;153msrc/index.js[39m gets a [38;5;153mrequire[39m. Neither ever touches [38;5;153mcore.js[39m directly.
+
+  [1mThe sink seam:[0m a sink is just [38;5;153m(record) => void[39m. Adding the network sink later means writing one function and passing
+  it to [38;5;153mcreateLogger[39m — no call site changes, which is the property you asked to preserve.
+
+  One thing I want to name rather than bury: the ring buffer means logs are lost on page reload, so a crash that reloads
+  the page takes its own evidence with it. Surviving that needs [38;5;153msessionStorage[39m persistence, which is more moving parts
+  and puts redacted-but-still-real user data on disk. I'd leave it out for now and add it only if reload-loss actually
+  bites you — but say the word and I'll fold it in.
+
+  Does that look right so far?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 3m 35s · done 2:42 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

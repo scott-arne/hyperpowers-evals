@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How much validation capability should ship in this change? → Minimal engine, required only (Recommended)[39m
+
+[38;5;231m⏺[39m Second fork, and the other genuinely hard-to-change one: [1mhow the shared module is loaded.[0m The repo has two
+  incompatible worlds today — [38;5;153mindex.html:13[39m loads [38;5;153mapp.js[39m as a bare [38;5;153m<script>[39m with no build step, while [38;5;153msrc/utils.js[39m and
+  [38;5;153msrc/index.js[39m use CommonJS [38;5;153mrequire[39m/[38;5;153mmodule.exports[39m. A shared validator has to pick one, and that choice also decides
+  whether the engine can be unit-tested in Node.
+
+  - [1mDual export (CommonJS + browser global)[0m — [38;5;153msrc/validation.js[39m sets [38;5;153mmodule.exports[39m when it exists and otherwise
+    attaches to a global; [38;5;153mindex.html[39m loads it with a second [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m. Buys: works in the browser with
+    no build, [3mand[0m [38;5;153mrequire()[39m-able so the engine gets real unit tests. Costs: a small conditional-export preamble, and one
+    global name. Matches both worlds as they actually are.
+  - [1mNative ES modules[0m — [38;5;153mexport[39m/[38;5;153mimport[39m, [38;5;153mindex.html[39m switches to [38;5;153m<script type="module">[39m. Cleanest modern syntax, still no
+    bundler. Costs: [38;5;153mfile://[39m stops working (ES modules need an HTTP origin, so opening [38;5;153mindex.html[39m by double-click
+    breaks), and it's inconsistent with the CommonJS already in [38;5;153msrc/[39m. Testing in Node needs [38;5;153m.mjs[39m or a [38;5;153m"type": "module"[39m
+    flip that would break [38;5;153msrc/index.js[39m.
+  - [1mBrowser global only[0m — simplest possible; no export plumbing. Costs: not loadable in Node, so the validation engine
+    can't be unit-tested without a shim. Given the engine is pure logic and the single most testable thing here, that's
+    a real loss.
+
+  [1mMy recommendation: dual export.[0m It's the only option that keeps the zero-build browser story intact [3mand[0m makes the new
+  engine testable, and the cost is about four lines of export preamble.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module wiring [39m[49m
+
+[1m[38;5;231mHow should the shared validation module be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDual export CJS + global (Recommended)[39m
+     [38;5;246mWorks from file:// in the browser with no build, and require()-able in Node so the engine is unit-testable. Costs a
+[39m     [38;5;246mshort conditional-export preamble.[39m
+  [38;5;246m2.[39m Native ES modules
+     [38;5;246mimport/export with <script type="module">. Cleaner syntax, but breaks file:// opening and clashes with the CommonJS
+[39m     [38;5;246malready in src/.[39m
+  [38;5;246m3.[39m Browser global only
+     [38;5;246mSimplest wiring, no export plumbing. The engine cannot be loaded or unit-tested in Node without a shim.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

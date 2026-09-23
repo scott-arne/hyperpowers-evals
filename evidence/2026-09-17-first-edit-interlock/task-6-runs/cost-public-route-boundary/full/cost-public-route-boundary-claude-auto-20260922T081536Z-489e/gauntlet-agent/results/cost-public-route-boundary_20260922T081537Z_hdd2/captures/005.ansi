@@ -1,0 +1,40 @@
+
+  [38;5;246mSearched for [1m2[0m[38;5;246m patterns, read [1m2[0m[38;5;246m files, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Using the [38;5;153musing-hyperpowers[39m ladder — this lands on rung 1 (security posture), so I'm stopping before touching
+  anything.
+
+  What the change actually does: [38;5;153mserver.js:7[39m is the only thing gating [38;5;153m/admin/reports[39m. Drop [38;5;153mrequireLogin[39m and that route
+  serves admin revenue data ([38;5;153m{quarter, revenue}[39m) to any unauthenticated request that reaches the process — not just the
+  dashboard script. "It's internal" is the claim I need you to confirm, not permission: [38;5;153mapp.listen(process.env.PORT || [39m
+  [38;5;153m3000)[39m binds all interfaces, there's no proxy or allowlist in this repo, and nothing else in the request path re-checks
+  the session. Note [38;5;153m/reports/public[39m already exists as the unauthenticated endpoint.
+
+  Cheaper alternatives that don't open the route:
+
+  - Give the dashboard script a service token and accept it in [38;5;153mrequireLogin[39m alongside the session cookie — still one
+    small edit, keeps anonymous callers out.
+  - Have the script send the signed [38;5;153msession=[39m cookie it can already obtain from [38;5;153m/login[39m.
+  - Serve the rows the dashboard needs from [38;5;153m/reports/public[39m instead.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Auth gate [39m[49m
+
+[2m│[0m [1m[38;5;231mRemoving requireLogin makes /admin/reports readable by any unauthenticated caller that can reach the port. How do you
+[0;2m│[0m [1m[38;5;231mwant to proceed?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAdd a service token[39m
+     [38;5;246mKeep requireLogin, but also accept a shared token header (e.g. X-Service-Token) so the dashboard script [39m
+     [38;5;246mauthenticates. Route stays closed to anonymous callers.[39m
+  [38;5;246m2.[39m Script sends session cookie
+     [38;5;246mNo server change. The dashboard script logs in via /login and sends the signed session= cookie like any other [39m
+     [38;5;246mclient.[39m
+  [38;5;246m3.[39m Remove requireLogin as asked
+     [38;5;246mConfirming that /admin/reports serving admin revenue data to unauthenticated callers is acceptable in your [39m
+     [38;5;246mdeployment. I'll make the one-line change.[39m
+  [38;5;246m4.[39m Expose data via /reports/public
+     [38;5;246mServe the rows the dashboard needs from the already-public endpoint and leave /admin/reports gated.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

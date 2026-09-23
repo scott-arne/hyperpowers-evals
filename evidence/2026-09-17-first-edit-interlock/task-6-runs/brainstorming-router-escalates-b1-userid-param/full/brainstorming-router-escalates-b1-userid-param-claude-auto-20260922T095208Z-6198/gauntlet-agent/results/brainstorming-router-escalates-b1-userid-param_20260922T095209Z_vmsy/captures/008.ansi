@@ -1,0 +1,40 @@
+  before any code. Nothing gets edited until you approve that.
+
+  Repo context, so we're designing against what's actually here: [38;5;153mapp.js[39m is a plain [38;5;153m<script src>[39m with no module system,
+  [38;5;153msrc/[39m is CommonJS for Node, and the two never touch. [38;5;153mpackage.json[39m has no dependencies, no test runner, no build step.
+
+  First question, and it's the one everything else hangs off. "Track who logged in" can mean two different subsystems,
+  and they persist different things for different lifetimes:
+
+  - [1mA current-user/session store[0m — the app remembers who is signed in. [38;5;153mlogin[39m writes it, other forms read it to prefill
+    or authorize. Persisted so a page reload doesn't lose it. Buys you identity available everywhere; costs you a
+    decision about where it lives (localStorage/sessionStorage/cookie) and what happens on logout and expiry. This is
+    identity [3mstate[0m.
+  - [1mAn event log[0m — a record of things that happened, each stamped with who did it. [38;5;153mlogin[39m records one event; other forms
+    record theirs. Persisted so events survive until they're sent or read. Buys you history and an audit trail; costs
+    you a buffer, a flush/send story, and a size cap. This is identity [3mhistory[0m.
+
+  They're not the same thing, and building one doesn't give you the other — though the event log usually reads the
+  current user from the session store, so if you want both, the session store comes first.
+
+  My read is you want the session store, because "other forms will need it later" sounds like those forms want to [3mknow[0m
+  who the user is, not to write their own log lines. But that's a guess about your intent, so I'd rather ask.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Subsystem [39m[49m
+
+[1m[38;5;231mWhat is the tracking for — identity state, or event history?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCurrent-user store (Recommended)[39m
+     [38;5;246mPersist who is signed in. login writes it; other forms read it. Answers 'who is the user right now?' across the app
+[39m     [38;5;246mand across reloads.[39m
+  [38;5;246m2.[39m Event log
+     [38;5;246mPersist a list of stamped events (logged in, submitted form X). Answers 'what happened, and who did it?' Needs a [39m
+     [38;5;246mflush/retention story.[39m
+  [38;5;246m3.[39m Both
+     [38;5;246mSession store first, event log layered on top reading identity from it. Larger scope; I would spec them as two [39m
+     [38;5;246mphases.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

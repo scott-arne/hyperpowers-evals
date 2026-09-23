@@ -1,0 +1,40 @@
+  { event, level, ts, sessionId, userHash?, release, ...fields }
+
+  [38;5;153mevent[39m is a stable dot-delimited string ([38;5;153mlogin.submit[39m, [38;5;153mlogin.validation_failed[39m, [38;5;153mlogin.error[39m, [38;5;153mapp.unhandled_error[39m), not
+  a prose sentence — prose is what makes logs unsearchable a month later. [38;5;153msessionId[39m is a random id minted per page load,
+  which is what actually lets you reconstruct one user's sequence of events.
+
+  The redaction rule is a two-part table in [38;5;153mredact.js[39m:
+
+  - [1mField allowlist[0m — a [38;5;153mSet[39m of permitted key names ([38;5;153mevent[39m, [38;5;153mlevel[39m, [38;5;153mts[39m, [38;5;153msessionId[39m, [38;5;153muserHash[39m, [38;5;153mrelease[39m, [38;5;153merrorName[39m,
+    [38;5;153merrorMessage[39m, [38;5;153mdurationMs[39m, [38;5;153mhttpStatus[39m, [38;5;153mformField[39m). Any key not in the set is dropped, and the logger records a
+    [38;5;153mredact.dropped_field[39m counter with the [3mkey name only[0m so you can tell when a call site is trying to send something it
+    shouldn't.
+  - [1mHard denylist on values[0m — keys matching [38;5;153m/pass|pwd|secret|token|auth|cookie/i[39m are dropped before the allowlist even
+    runs, so a future rename can't accidentally allowlist a credential.
+
+  [38;5;153merrorMessage[39m is the one field I want to flag as a judgement call. Error messages are enormously useful and are also
+  the single most common place user data leaks into logs (a validation error that quotes the input, a server message
+  echoing an email). I'd include it but truncate to 200 characters and run it through a scrubber for anything that looks
+  like an email address or a long digit run. That's mitigation, not a guarantee — if you'd rather, we drop [38;5;153merrorMessage[39m
+  entirely and keep only [38;5;153merrorName[39m, which is leak-proof and substantially less useful.
+
+  On the user hash, written accurately this time: [38;5;153muserHash = sha256(salt + username)[39m truncated to 16 hex chars, where
+  [38;5;153msalt[39m is a per-deployment constant compiled into the bundle. It gives you stable correlation across a session and
+  across reports. It does [1mnot[0m make the value unlinkable — the salt ships in client code, and usernames are guessable —
+  so the spec will describe it as a pseudonymous correlation id, and your privacy documentation should treat the log
+  store as containing pseudonymized personal data rather than anonymous data.
+
+  Two open decisions in this section, both cheap to reverse later:
+
+  1. [38;5;153merrorMessage[39m truncated-and-scrubbed, or [38;5;153merrorName[39m only?
+  2. Does the hashed-username limitation change your mind toward the per-browser random id instead?
+
+  Does the record shape look right, and how do you want those two?
+
+[38;5;246m✻[39m [38;5;246mCogitated for 1m 17s · done 3:01 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

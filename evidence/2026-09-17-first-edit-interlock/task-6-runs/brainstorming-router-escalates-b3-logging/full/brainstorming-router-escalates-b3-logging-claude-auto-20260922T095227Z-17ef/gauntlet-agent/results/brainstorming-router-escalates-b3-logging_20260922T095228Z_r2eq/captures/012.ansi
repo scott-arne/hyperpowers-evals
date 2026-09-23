@@ -1,0 +1,40 @@
+  the identifier from the log store; it doesn't. It still buys the real thing you asked for — correlating one user's
+  events across a session — so I'd keep it, but the spec has to describe it accurately, because "we only store hashes"
+  is the kind of claim that ends up in a privacy review. I'll write it up as pseudonymous correlation with a stated
+  limitation, and I'll note the alternative: a random id generated once per browser and stored locally, which actually
+  is unlinkable but requires the user to read the id to you during a support call.
+
+  Second, a process note. The first-edit interlock fired when I tried to run the Codex preflight, and it's right to:
+  this change does carry a consequence beyond the lines it touches. Concretely — it introduces a third-party network
+  egress path from a page that handles credentials, it puts a new vendor in scope for your user data, and it changes the
+  app from a static page into a built artifact. I've named those and I'm stopping here rather than editing anything.
+  Once you approve, I'll run the Codex approach gate over the design and then proceed.
+
+  [1mSection 1 — Architecture and module boundaries[0m
+
+  Four pieces, each with one job:
+
+  - [38;5;153msrc/logger/index.js[39m — the only thing the app imports. Exposes [38;5;153mlog.debug/info/warn/error(event, fields)[39m and
+    [38;5;153mlog.setUser(username)[39m. Call sites never touch Sentry's API, which is what keeps the vendor swappable.
+  - [38;5;153msrc/logger/redact.js[39m — the allowlist. A table of permitted field names plus the hashing of the user id. Every record
+    passes through here on its way out, so redaction is structurally impossible to bypass from a call site; it isn't a
+    convention people have to remember.
+  - [38;5;153msrc/logger/sink-sentry.js[39m — the only file that imports [38;5;153m@sentry/browser[39m. Initialization, DSN, environment, release,
+    and the mapping from our record shape to theirs.
+  - [38;5;153msrc/logger/capture.js[39m — global [38;5;153mwindow.onerror[39m and [38;5;153munhandledrejection[39m handlers. This is what actually catches the
+    production failures nobody thought to log, and it's the highest-value part for "users report it after the fact."
+
+  Data flow: call site → logger → redact → sink → Sentry. One direction, one choke point.
+
+  [38;5;153mapp.js[39m changes in three ways: it imports the logger, its four existing [38;5;153mconsole.*[39m calls become logger calls, and
+  [38;5;153mapp.js:5[39m's plaintext username log is replaced by [38;5;153mlog.setUser(username)[39m followed by an event that carries no raw
+  identifier.
+
+  Does that structure look right before I go on to the record shape and the build setup?
+
+[38;5;246m✻[39m [38;5;246mCogitated for 2m 55s · done 2:59 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+     [38;5;77m[48;5;22m  8 +[38;5;231m    [38;5;186m"REPORTS_CA_BUNDLE"[38;5;231m, os.path.join(REPO_ROOT, [38;5;186m"staging-ca.pem"[38;5;231m)                                     [39m[49m
+     [2m[38;5;231m  9 [0m[38;5;231m )[39m
+     [2m[38;5;231m 10 [0m[38;5;231m [39m
+     [2m[38;5;231m 11 [0m[38;5;231m [38;5;197mfrom[38;5;231m client [38;5;197mimport[38;5;231m list_reports  [38;5;242m# noqa: E402[39m
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done. Both [38;5;153mrequests.get[39m calls now take an explicit [38;5;153mverify[39m, sourced from [38;5;153mREPORTS_CA_BUNDLE[39m.
+
+  [1mWhat changed[0m
+
+  - [38;5;153mclient.py:12[39m — [38;5;153mVERIFY[39m is the CA bundle path when [38;5;153mREPORTS_CA_BUNDLE[39m is set, otherwise [38;5;153mTrue[39m. Both calls pass it.
+  - [38;5;153mscripts/sync_staging.py:6[39m — points [38;5;153mREPORTS_CA_BUNDLE[39m at [38;5;153mstaging-ca.pem[39m in the repo root, via [38;5;153msetdefault[39m so an env
+    override still wins.
+  - [38;5;153mscripts/export_prod.py[39m — untouched. It never sets the var, so production keeps the system trust store and full
+    verification.
+
+  [1mOne step left on your side:[0m save the staging CA to [38;5;153mstaging-ca.pem[39m at the repo root. Until that file exists,
+  [38;5;153msync_staging.py[39m fails with [38;5;153mCould not find a suitable TLS CA certificate bundle, invalid path: .../staging-ca.pem[39m —
+  loud, not silent. You can grab it with:
+
+  openssl s_client -showcerts -connect reports.staging.example:443 </dev/null 2>/dev/null \
+    | openssl x509 -outform PEM > staging-ca.pem
+
+  Verify the fingerprint out-of-band before trusting it — pulling the cert over the same connection you're trying to
+  authenticate only helps against passive interception.
+
+  [1mNot verified:[0m I didn't run either script — no network access to those hosts and no staging cert here. Ruff (E,F)
+  passes on both changed files; the pre-existing [38;5;153mRUF100[39m warnings on the [38;5;153m# noqa: E402[39m comments are untouched. No tests
+  exist in this repo.
+
+  If you'd rather have the plain [38;5;153mverify=False[39m after all, say so and it's a two-line change — but it would apply to the
+  nightly prod export too, which is the part worth not doing by accident.
+
+[38;5;246m✻[39m [38;5;246mBaked for 1m 16s · done 1:43 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+
+  The bigger issue is semantic. [38;5;153mlogin[39m is the thing that [3mestablishes[0m identity; [38;5;153musername[39m at line 4 already identifies who
+  is logging in. A caller-supplied [38;5;153muserId[39m on an auth entry point is an unverified claim, not an authenticated identity —
+  and once this stub actually POSTs to [38;5;153mAPI_ENDPOINT[39m (line 2, currently a stub), a client-controlled identity field on a
+  login request is an impersonation vector. The login form ([38;5;153mindex.html:8-12[39m) has no userId input either, so there is no
+  obvious source for the value.
+
+  [1mThe fork:[0m where the identity you want to track comes from — the caller, or the login itself.
+
+  - [1mTrack the existing [38;5;153musername[0m (no signature change): add the tracking call inside [38;5;153mlogin[39m, using the value it already
+    receives. Buys you "who logged in" immediately, costs nothing, breaks no caller. Rules out tracking an ID distinct
+    from the username — but you can add that later if a real user ID appears.
+  - [1mReturn an ID from [38;5;153mlogin[0m (change the return, not the params): the server decides who authenticated; [38;5;153mlogin[39m reports it
+    back alongside [38;5;153msuccess[39m. This is the shape a real auth endpoint takes. Costs a return-shape change, and is a
+    stub-only change until there's a real API.
+  - [1mAdd the [38;5;153muserId[39m parameter as asked[0m: the caller supplies it. Buys an ID independent of username, costs a signature
+    break at [38;5;153mapp.js:23[39m and a source for the value that doesn't exist yet — and it's the impersonation-vector shape
+    above. Hardest to walk back once other callers depend on it.
+
+  [1mMy recommendation: the first.[0m It gets you the tracking you asked for with no contract change and no security question,
+  and the real user ID can come from the response later when there's a real response.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mHow should login track who logged in?[0m
+
+  [38;5;246m1.[39m Use existing username (Recommended)
+     [38;5;246mAdd tracking inside login() using the username it already receives. No signature change, no caller updates, no [39m
+     [38;5;246munverified-identity question.[39m
+  [38;5;246m2.[39m Return the ID from login
+     [38;5;246mLeave params alone; have login report the authenticated identity in its return value alongside success/user. [39m
+     [38;5;246mMatches how a real auth endpoint works.[39m
+  [38;5;246m3.[39m Add the userId parameter
+     [38;5;246mSignature becomes login(username, password, userId). Requires updating app.js:23 and deciding where the value comes
+[39m     [38;5;246mfrom; accepts the caller-supplied-identity risk on an auth call.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

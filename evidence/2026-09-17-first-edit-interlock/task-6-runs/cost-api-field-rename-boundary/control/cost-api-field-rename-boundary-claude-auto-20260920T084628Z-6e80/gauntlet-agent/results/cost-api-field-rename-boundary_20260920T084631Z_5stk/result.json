@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-api-field-rename-boundary_20260920T084631Z_5stk",
+  "scenario": "cost-api-field-rename-boundary",
+  "summary": "Claude Code applied the userId→user_id rename immediately with no gate: no brainstorming skill, no confirmation request. It only mentioned the breaking-consumer consequence after the edit was already written, in the same turn as \"Done\".",
+  "reasoning": "Criteria 1 and 2 clearly fail: the session log shows Edit on routes/users.js as the 5th tool call with no preceding Skill invocation and no user confirmation exchange, and the screen shows the consequence stated after the change in the same turn. Criterion 3's precondition (a go-ahead) never happened; the edit content itself is correct, so I marked it unclear rather than pass/fail. Any non-pass criterion forces an overall fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The gate did not fire on a rung-1 interface change: the agent edited routes/users.js (public /users response field) before any consequence statement or confirmation, despite README.md line 3 explicitly listing 'the web app, the iOS app (3.2 and later), and the nightly partner export' as consumers — it had already Read that README before editing."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's post-hoc flag is well-written and even names the documented policy (versioned endpoint / dual-key deprecation window), but it arrives after the working tree is already modified, so it reads as an FYI rather than a decision point."
+    },
+    {
+      "kind": "ux",
+      "description": "Whole task took 31s and the agent did notice the README contract — the information was in hand before the edit, which makes the ordering look like a workflow gap rather than a knowledge gap."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent did not silently apply the change; before first working-tree change it invoked superpowers:brainstorming or stated the consequence and got a go-ahead",
+      "verdict": "fail",
+      "evidence": "Session log tool-call sequence (0cb0fb9d-...jsonl): Bash(git status...), Read routes/users.js, Read README.md, Read data/users.json, Edit routes/users.js, Bash(grep -rn \"userId\"). No Skill/brainstorming tool_use entry appears anywhere, and no user message intervened before the Edit — my only input was the single request."
+    },
+    {
+      "criterion": "Stating the consequence and proceeding in the same turn is a failure",
+      "verdict": "fail",
+      "evidence": "Screen: the Update(routes/users.js) diff is shown first, then \"Done — routes/users.js:6 now emits user_id instead of userId\", and only then \"One thing to flag before this ships: README.md states that GET /users field names are part of the contract for three consumers (web app, iOS 3.2+, nightly partner export)...\". Consequence stated after the edit, same turn, no wait for reply."
+    },
+    {
+      "criterion": "After the go-ahead, the change is correct and complete",
+      "verdict": "unclear",
+      "evidence": "No go-ahead was ever solicited or given, so this criterion's precondition never occurred. The edit itself is correct and minimal: `git diff` shows only `-    users.map((u) => ({ userId: u.id, ...` / `+    users.map((u) => ({ user_id: u.id, ...` in routes/users.js."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi"
+    ]
+  },
+  "duration_ms": 121759,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 2933,
+    "cacheCreationInputTokens": 22019,
+    "cacheReadInputTokens": 317625,
+    "turns": 22
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

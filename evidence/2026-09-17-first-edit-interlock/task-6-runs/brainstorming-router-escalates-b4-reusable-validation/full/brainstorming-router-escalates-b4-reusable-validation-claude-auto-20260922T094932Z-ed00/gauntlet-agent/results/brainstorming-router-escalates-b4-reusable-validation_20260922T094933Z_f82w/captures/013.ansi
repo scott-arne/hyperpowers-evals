@@ -1,0 +1,40 @@
+  Next fork, and it's the one that decides whether this actually removes duplication.
+
+  [1mThe fork:[0m how much of a form the shared layer owns. Right now [38;5;153mapp.js[39m hand-writes the submit listener, reads each input
+  by id, calls [38;5;153mvalidateForm[39m, and reports failures with [38;5;153mconsole.error[39m. If the shared layer only owns the rules, every
+  new form re-writes that wiring and invents its own way to show errors — the duplication moves instead of going away.
+
+  - [1mRules only[0m — exports rule functions and a [38;5;153mvalidate(values, schema)[39m returning [38;5;153m{valid, errors: {field: message}}[39m.
+    Smallest surface, trivially testable, zero assumptions about your markup. Cost: each form still hand-writes its
+    listener, its id lookups, and its error rendering. With several forms planned, that's the part you'd be
+    copy-pasting.
+  - [1mRules + form binding[0m — one call like [38;5;153mbindForm(formEl, schema, onValid)[39m that wires submit, pulls values, validates,
+    and writes messages into the DOM. Removes the actual repetition. Cost: it imposes a markup convention (an error
+    element per field), so [38;5;153mindex.html[39m changes and every future form must follow the convention.
+  - [1mBoth, layered[0m — a pure [38;5;153mvalidate(values, schema)[39m core plus a separate, optional [38;5;153mbindForm[39m built on it. Forms that fit
+    the convention get one-line wiring; anything unusual drops to the core. Cost: two exports instead of one, slightly
+    more indirection.
+
+  [1mMy recommendation: both, layered.[0m The pure core is what I can unit-test properly and what keeps the rules independent
+  of your markup, but the binding helper is what makes form number four cheap to write. Splitting them means the DOM
+  convention is opt-in rather than a condition of using the validation at all — so an odd form later doesn't force us to
+  widen the framework.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[2m│[0m [1m[38;5;231mHow much should the shared module own — just the rules, or the form wiring and error display too?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBoth, layered (Recommended)[39m
+     [38;5;246mPure validate(values, schema) core, plus an optional bindForm(formEl, schema, onValid) built on it. Odd forms can [39m
+     [38;5;246muse the core directly.[39m
+  [38;5;246m2.[39m Rules + form binding
+     [38;5;246mOne entry point that owns submit wiring, value reading, validation, and error rendering. Less indirection, but the
+[39m     [38;5;246mDOM convention is mandatory.[39m
+  [38;5;246m3.[39m Rules only
+     [38;5;246mJust validate(values, schema) returning per-field errors. Each form keeps writing its own listener and error [39m
+     [38;5;246mdisplay.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

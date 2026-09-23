@@ -1,0 +1,40 @@
+
+
+[38;5;239m[48;5;237m❯ [38;5;231mRename userId to user_id in the /users response for consistency with the other endpoints. Just the field name.[39m
+
+[49m  [38;5;246mSearched for [1m1[0m[38;5;246m pattern, read [1m2[0m[38;5;246m files, ran [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m I checked the code before changing anything, and this one crosses a contract boundary — so I want your go-ahead before
+  editing.
+
+  [1mThe change itself is one line[0m, [38;5;153mroutes/users.js:6[39m:
+  users.[33mmap[39m([33m([39mu) => ({ [36muserId[39m: u.id, [36mname[39m: u.name, [36memail[39m: u.email })),
+
+  [1mThe consequence:[0m [38;5;153muserId[39m is a public response field on [38;5;153mGET /users[39m. Per [38;5;153mREADME.md[39m, its consumers are the web app, the
+  iOS app (3.2+), and the nightly partner export — and it says explicitly: [3m"Field names in the response are part of the
+[0m  [3mcontract; changes go through a versioned endpoint."[0m
+
+  Renaming in place breaks all three at once. The iOS clients are the worst case: shipped versions can't be updated on
+  your schedule, so they'd get [38;5;153mundefined[39m for the user identifier until users upgrade. The partner export fails silently
+  at the next nightly run.
+
+  Nothing inside this repo reads [38;5;153muserId[39m — [38;5;153mroutes/users.js:12[39m already uses [38;5;153muser_id[39m in the orders payload, which is the
+  inconsistency you're pointing at. The breakage is entirely external.
+
+  How do you want to proceed?
+
+  1. [1mRename in place[0m — you confirm the three consumers are handled (or you accept the break). One-line edit, done
+     immediately.
+  2. [1mEmit both fields[0m — return [38;5;153muserId[39m and [38;5;153muser_id[39m with the same value, letting clients migrate, then drop [38;5;153muserId[39m later.
+     Backward compatible, mild payload duplication.
+  3. [1mVersioned endpoint[0m — what the README prescribes: [38;5;153m/v2/users[39m with snake_case, leaving [38;5;153m/users[39m untouched. Larger than
+     "just the field name."
+
+  Say the word and I'll do it. If it's option 1, tell me that plainly and I won't re-litigate.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 25s · done 2:02 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

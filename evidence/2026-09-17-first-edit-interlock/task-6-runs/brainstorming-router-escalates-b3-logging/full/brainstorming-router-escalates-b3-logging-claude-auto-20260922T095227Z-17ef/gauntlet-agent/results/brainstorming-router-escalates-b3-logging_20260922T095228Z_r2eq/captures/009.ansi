@@ -1,0 +1,40 @@
+
+  Relevant constraint I found: this app has no build step and no dependencies. [38;5;153mindex.html:13[39m loads [38;5;153mapp.js[39m with a plain
+  [38;5;153m<script>[39m tag, and [38;5;153mpackage.json[39m has no [38;5;153mdependencies[39m and no scripts. A third-party SDK means adding npm plus a bundler
+  (or a CDN tag and a vendor on their availability); a hand-rolled sink means no new tooling but you own batching,
+  retry, and the receiving endpoint.
+
+  - [1mExisting error/log service (Sentry, Datadog, LogRocket, etc.)[0m — buys batching, retry, source maps, grouping,
+    dashboards, and release tracking on day one. Costs a vendor dependency, a build step or CDN tag, and their
+    pricing/data-residency terms. Hardest to reverse: their SDK shape leaks into call sites unless you wrap it.
+  - [1mOwn endpoint on your backend[0m — buys full control over retention and redaction, no vendor, no build step (plain
+    [38;5;153mfetch[39m). Costs you writing batching, retry/offline handling, and the server side that receives and stores the logs —
+    the server side is real work that isn't in this repo.
+  - [1mConsole-structured now, sink behind an interface[0m — defers the choice without blocking the logger work. Costs a round
+    trip: you still can't see production failures until a sink is wired.
+
+  Cheap to change later either way, if we do it right: the call sites, as long as the logger is our own module and the
+  sink sits behind a one-function interface. That wrapper is the thing that makes this decision reversible, so I'd build
+  it regardless of your answer.
+
+  My recommendation is an existing service. Batching, retry, and offline buffering are where hand-rolled browser logging
+  quietly fails, and "users report it after the fact" is precisely the case that depends on delivery actually being
+  reliable.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mWhere should the shipped logs land?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mExisting service (Recommended)[39m
+     [38;5;246mSentry/Datadog/similar behind our own wrapper. Reliable delivery on day one; adds a vendor and a build step or CDN
+[39m     [38;5;246mtag.[39m
+  [38;5;246m2.[39m Own backend endpoint
+     [38;5;246mPOST batches to an endpoint you control. No vendor, no build step, but you own batching, retry, and the receiving [39m
+     [38;5;246mserver.[39m
+  [38;5;246m3.[39m Decide later, sink interface now
+     [38;5;246mBuild the logger and redaction now against a pluggable sink; wire the real destination in a follow-up.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

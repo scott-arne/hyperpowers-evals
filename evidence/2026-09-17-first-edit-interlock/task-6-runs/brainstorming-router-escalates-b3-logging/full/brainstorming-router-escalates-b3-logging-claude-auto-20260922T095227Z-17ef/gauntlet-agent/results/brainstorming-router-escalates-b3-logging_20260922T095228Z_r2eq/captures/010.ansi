@@ -1,0 +1,40 @@
+  on the code.
+
+  [38;5;153mapp.js:5[39m currently logs the username on every login attempt, and [38;5;153mlogin()[39m receives the raw password. Once logs ship to
+  a third party, anything we log is retained on someone else's infrastructure — so what we send becomes a
+  data-protection question, not a debugging convenience. The password never goes, on any option; that isn't a choice.
+  The fork is the username and anything else user-identifying.
+
+  - [1mStrict allowlist[0m — the logger sends only fields explicitly marked safe (event name, level, error type, timing, a
+    random session id). Anything not on the list is dropped, including by accident. Buys the strongest guarantee and
+    makes a leak require a deliberate code change. Costs some debugging power: you can see [3mthat[0m a login failed and
+    correlate it to a session, but not [3mwhose[0m.
+  - [1mAllowlist plus a hashed user id[0m — same, but the username goes through a one-way hash so you can group a single
+    user's events and match them to a support report without storing the identifier itself.
+  - [1mSend usernames in the clear[0m — most convenient for matching a report to a log line; puts user identifiers in a
+    vendor's store and pulls the whole system into your GDPR/DPA scope.
+
+  Hard to reverse: whatever reaches the vendor is already retained, and deleting it later means a vendor deletion
+  request rather than a code change. Cheap to reverse: tightening the allowlist afterward, since it's one table in our
+  wrapper.
+
+  My recommendation is the allowlist plus hashed user id. It answers the actual support question — "is this one user or
+  everyone, and which session" — without ever putting an identifier in the log store, and it means [38;5;153mapp.js:5[39m's current
+  plaintext username log goes away as part of this work rather than getting shipped to a vendor.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mWhat user data may leave the browser in a log record?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAllowlist + hashed user id (Recommended)[39m
+     [38;5;246mOnly explicitly-safe fields, plus a one-way hash of the username for correlation. No raw identifiers ever stored.[39m
+  [38;5;246m2.[39m Strict allowlist, no user id
+     [38;5;246mSafe fields and a random session id only. Strongest guarantee; you can't tie a log line to a specific reported [39m
+     [38;5;246muser.[39m
+  [38;5;246m3.[39m Allowlist + plaintext username
+     [38;5;246mEasiest support matching, but stores user identifiers with the vendor and widens your data-protection scope.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

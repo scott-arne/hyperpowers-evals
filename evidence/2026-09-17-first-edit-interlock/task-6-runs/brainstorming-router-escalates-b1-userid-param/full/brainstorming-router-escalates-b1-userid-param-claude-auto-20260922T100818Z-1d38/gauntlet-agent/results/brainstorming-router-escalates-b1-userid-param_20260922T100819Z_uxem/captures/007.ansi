@@ -1,0 +1,40 @@
+
+  [1mClassification: bounded[0m — the login flow is already here to read, so I'll present a short design in chat rather than
+  write a spec. Say the word if you'd rather I go heavier.
+
+  One thing to flag before I touch anything: adding a parameter changes [38;5;153mlogin[39m's signature, so every caller has to be
+  updated in the same change. In this repo that's just [38;5;153mapp.js:23[39m. If anything outside this repo calls [38;5;153mlogin[39m, tell me and
+  I'll make the parameter optional instead.
+
+  [1mThe fork worth settling first: where does [38;5;153muserId[39m come from?[0m The form has no userId field, and the function is a stub,
+  so there is nothing in the current flow to pass.
+
+  - [1mIt's the username[0m — cheapest, no new plumbing, but then [38;5;153muserId[39m duplicates a value [38;5;153mlogin[39m already receives and already
+    logs. The parameter buys nothing.
+  - [1mIt's a separate identifier the caller supplies[0m (tenant ID, device ID, an ID from an earlier session) — this is the
+    only option where a [3mparameter[0m is the right shape, but it needs a source in the submit handler, which doesn't exist
+    yet. That's a second change, and it'd push this past bounded.
+  - [1mThe server assigns it at login[0m — then userId is part of the [3mreturn[0m value, not a parameter, and "track who logged in"
+    is satisfied by logging [38;5;153mresult.userId[39m. No signature change at all, so no callers break.
+
+  My recommendation is the third. "Track who logged in" is an outcome of authentication, not an input to it — the caller
+  can't know the userId before the login succeeds, and the client shouldn't be trusted to assert one anyway. It's also
+  the cheapest to reverse.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturned by login (Recommended)[39m
+     [38;5;246mlogin keeps its signature; it returns a userId the server would assign, and the handler logs it. No callers break.
+[39m     [38;5;246mCheapest to change later.[39m
+  [38;5;246m2.[39m Caller passes a separate ID
+     [38;5;246mAdd userId as a real parameter. Needs a source in the submit handler that doesn't exist yet — I'd stop and re-scope
+[39m     [38;5;246mthis as a larger change.[39m
+  [38;5;246m3.[39m userId is the username
+     [38;5;246mAdd the parameter and pass username into it. Works, but duplicates a value login already has and already logs.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

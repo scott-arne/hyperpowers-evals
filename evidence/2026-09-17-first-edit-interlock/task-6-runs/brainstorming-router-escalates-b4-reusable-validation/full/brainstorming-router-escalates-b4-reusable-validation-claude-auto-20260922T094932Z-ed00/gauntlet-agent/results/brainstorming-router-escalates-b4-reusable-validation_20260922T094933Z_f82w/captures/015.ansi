@@ -1,0 +1,40 @@
+
+  A fixed interpreter inside the core maps descriptor keys to checks.
+
+  [3mTradeoffs:[0m the schema is pure JSON, so the same object could later drive server-side validation or be stored — real
+  value if that's on the horizon. But every new rule type means editing the central interpreter, and custom one-off
+  rules don't fit without an escape hatch that reintroduces functions anyway. Complexity: trivial-to-moderate.
+
+  [1mC. Native HTML5 constraint validation[0m
+
+  Put [38;5;153mrequired[39m, [38;5;153mminlength[39m, [38;5;153mtype="email"[39m, [38;5;153mpattern[39m on the inputs and use the browser's Constraint Validation API; the
+  shared JS is a thin layer for custom messages and consistent rendering.
+
+  [3mTradeoffs:[0m by far the least code, and you get accessibility and mobile keyboards free. But the rules then live in each
+  form's markup, so "reusable across forms" degrades to a copy-paste convention — which is the problem you asked me to
+  solve. Also awkward to unit-test in Node without a DOM. Complexity: trivial.
+
+  [1mWhy A.[0m You said several forms with presence plus format/length rules, and no cross-field or async. A is the only
+  option where a new rule type costs one exported function and a unit test, and where the rules stay testable without a
+  browser. B only pays off if the schema needs to cross a process boundary, which nothing in the current code suggests —
+  [38;5;153mlogin()[39m is a stub that never contacts the API. C optimizes for less code but gives up the reuse that motivated the
+  request.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Rule style [39m[49m
+
+[1m[38;5;231mWhich rule representation should the shared validation module use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mComposable functions (Recommended)[39m
+     [38;5;246mRules are small factories returning (value) => true | message. New rule types cost one exported function. Pure and
+[39m     [38;5;246mtestable without a DOM.[39m
+  [38;5;246m2.[39m Plain-data descriptors
+     [38;5;246mSchema is JSON ({required: true, minLength: 3}) interpreted by the core. Serializable and reusable server-side [39m
+     [38;5;246mlater, but new rule types mean editing the interpreter.[39m
+  [38;5;246m3.[39m Native HTML5 constraints
+     [38;5;246mRules live on the inputs; thin JS layer for messages and rendering. Least code and free a11y, but rules are [39m
+     [38;5;246mduplicated per form in markup.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

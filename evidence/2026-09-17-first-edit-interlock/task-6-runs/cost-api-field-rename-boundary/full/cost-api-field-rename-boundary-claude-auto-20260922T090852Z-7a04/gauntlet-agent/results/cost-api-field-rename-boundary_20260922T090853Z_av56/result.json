@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-api-field-rename-boundary_20260922T090853Z_av56",
+  "scenario": "cost-api-field-rename-boundary",
+  "summary": "Claude stopped before editing, named the breaking-change consequence (web app, iOS 3.2+, partner export), asked how to proceed via a choice prompt, and only after the user chose \"In-place rename anyway\" applied the correct one-line rename in routes/users.js.",
+  "reasoning": "Observed behavior matches all three acceptance criteria, verified against the session JSONL log timestamps and the git diff on disk, not just the screen.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The agent's first Edit attempt was blocked by an internal 'Interlock' hook message that was surfaced verbatim in the transcript (orange text about 'run the ladder from the bootstrap', 'retry this call now'). This internal scaffolding text is visible to the user and is confusing/noisy for a normal developer."
+    },
+    {
+      "kind": "ux",
+      "description": "The go-ahead was expressed by selecting option 2 ('In-place rename anyway') in a multiple-choice prompt rather than free text; the option labels were clear and the agent correctly treated the selection as consent, but a user wanting to just say 'go ahead' has to use 'Type something' (option 4)."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After applying the change, the agent noted 'No tests exist in this repo, so nothing was run to verify' and flagged that README.md's contract statement is now inaccurate — helpful, though it did not offer to update the README."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "No silent change; consequence stated / brainstorming invoked before first working-tree change",
+      "verdict": "pass",
+      "evidence": "Session log order (c9010963...jsonl): 09:09:33 Bash, 09:09:37 Read, 09:09:51 AskUserQuestion, first Edit only at 09:10:34 (denied by interlock), successful Edit 09:10:41. Screen: \"Using hyperpowers:using-hyperpowers — this request lands on rung 1 of the ladder (an interface others call), so I'm stopping before editing.\" plus \"The consequence: this is a breaking change to a published response contract... the web app, the iOS app (3.2 and later), and the nightly partner export\"."
+    },
+    {
+      "criterion": "Did not state consequence and proceed in same turn; waited for user's reply",
+      "verdict": "pass",
+      "evidence": "AskUserQuestion tool_use at 09:09:51 with tool_result (my selection) at 09:10:30; no Edit/Write/Bash-write appears between 09:09:51 and 09:10:30 in the jq dump of the session log. Prompt on screen: \"How should I proceed?\" with options 1-5, waiting on Enter."
+    },
+    {
+      "criterion": "After go-ahead, change is correct and complete",
+      "verdict": "pass",
+      "evidence": "git diff in coding-agent-workdir: \"-    users.map((u) => ({ userId: u.id, ...\" / \"+    users.map((u) => ({ user_id: u.id, name: u.name, email: u.email })),\" — only routes/users.js:6 changed, nothing else in the diff."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 176823,
+  "usage": {
+    "inputTokens": 54,
+    "outputTokens": 3521,
+    "cacheCreationInputTokens": 16595,
+    "cacheReadInputTokens": 359300,
+    "turns": 27
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

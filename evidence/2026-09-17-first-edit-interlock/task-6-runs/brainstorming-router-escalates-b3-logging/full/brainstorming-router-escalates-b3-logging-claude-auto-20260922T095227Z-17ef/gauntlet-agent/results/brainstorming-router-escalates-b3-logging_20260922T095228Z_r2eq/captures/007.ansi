@@ -1,0 +1,40 @@
+  designed-in part of this, not a later cleanup — I'll build that into the design rather than treat it as optional.
+
+  First question, and it forks the whole design:
+
+  The repo contains two unrelated programs — a browser app ([38;5;153mindex.html[39m + [38;5;153mapp.js[39m, the login form) and a Node CLI
+  ([38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m). They share no code and [38;5;153mpackage.json[39m points [38;5;153mmain[39m at the Node side. Where the logs need
+  to end up differs completely between them: browser logs have to be shipped over the network to be readable in
+  production at all (transport, batching, failure handling, user privacy), while Node logs can go to stdout and be
+  picked up by whatever runs the process (no transport, structured JSON, far cheaper). Picking both means one logger
+  abstraction with two backends — more design, and the browser constraints dominate.
+
+  - [1mBrowser app only[0m — buys real visibility into the thing that has actual users and failures; costs a log-shipping
+    decision (endpoint, batching, what happens offline) and a hard privacy story around the login form.
+  - [1mNode CLI only[0m — cheapest by a wide margin: structured lines to stdout, no transport, no privacy exposure. But
+    [38;5;153msrc/index.js[39m is a [38;5;153mgreet('world')[39m stub, so there's little to debug.
+  - [1mBoth, shared logger[0m — one API across the two, worth it only if these programs are meant to converge; otherwise it's
+    an abstraction serving one real consumer.
+
+  Which is expensive to change later: the transport choice and the log record shape (field names, level set), since
+  anything consuming the logs depends on them. Which is cheap: log levels at individual call sites, and what's logged
+  where.
+
+  My recommendation is the browser app only. It's the code with real production failure modes, and scoping to it keeps
+  the privacy work focused where the sensitive data actually is.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[1m[38;5;231mWhich program does "the app" mean for this logging work?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser app only (Recommended)[39m
+     [38;5;246mindex.html + app.js, the login form. Real users, real failures, and where the sensitive data is.[39m
+  [38;5;246m2.[39m Node CLI only
+     [38;5;246msrc/index.js + src/utils.js. Cheapest to build, but it's currently a greet() stub with little to debug.[39m
+  [38;5;246m3.[39m Both, shared logger
+     [38;5;246mOne logging API with a browser backend and a Node backend. Most design work; worth it only if these converge.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

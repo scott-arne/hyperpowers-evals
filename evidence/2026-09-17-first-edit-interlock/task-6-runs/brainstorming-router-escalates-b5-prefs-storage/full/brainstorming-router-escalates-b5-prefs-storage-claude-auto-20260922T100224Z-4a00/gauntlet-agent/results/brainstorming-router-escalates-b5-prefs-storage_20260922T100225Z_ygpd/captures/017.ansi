@@ -1,0 +1,40 @@
+
+  Runner: Node's built-in [38;5;153mnode:test[39m with [38;5;153mnode:assert[39m, via [38;5;153m"test": "node --test"[39m in [38;5;153mpackage.json[39m. Zero dependencies,
+  which keeps the repo's dependency-free character intact, and it matches the CommonJS already in [38;5;153msrc/[39m.
+
+  That requires one accommodation in [38;5;153mprefs.js[39m: a footer that exports for CommonJS when [38;5;153mmodule[39m exists, so the same file
+  works as a browser global and as a [38;5;153mrequire()[39m-able module. And the storage backend needs a seam — the availability
+  probe runs once at load, so the module reads [38;5;153mglobalThis.localStorage[39m through an internal [38;5;153minit(store)[39m that tests can
+  call again with a fake. That seam is the only thing in the design that exists for testability rather than for the
+  feature; I think it earns its place, since the interesting failures are exactly the ones a real browser won't
+  reproduce on demand.
+
+  Tests in [38;5;153mtest/prefs.test.js[39m, against a fake store (a [38;5;153mMap[39m wrapper) that can be told to throw:
+
+  - round-trip: [38;5;153mset[39m then [38;5;153mget[39m returns the value; [38;5;153mget[39m on a missing key returns the fallback
+  - [38;5;153mremove[39m deletes one preference and leaves the others
+  - [38;5;153mclear[39m empties the namespace
+  - corrupt JSON in the entry → [38;5;153mget[39m returns the fallback instead of throwing, and the entry is reset
+  - a non-object stored under the key (e.g. [38;5;153m"null"[39m, [38;5;153m"[]"[39m) → same treatment
+  - backend throws on write (quota) → [38;5;153mset[39m returns [38;5;153mfalse[39m, no throw
+  - backend throws on read (security) → module falls back to in-memory, [38;5;153mget[39m/[38;5;153mset[39m still work
+  - values survive as types: a boolean stays a boolean, not [38;5;153m"true"[39m
+
+  [1mNot covered by tests:[0m the DOM wiring in [38;5;153mapp.js[39m and [38;5;153mindex.html[39m — the checkbox, the pre-fill, the clear-on-untick.
+  Unit-testing that needs jsdom, which is the dependency we just declined. I'll verify it by hand in a browser and tell
+  you exactly what I checked. If you'd rather have it covered automatically, that's a jsdom dependency and I'd want your
+  yes on it first.
+
+  [1mFiles touched:[0m new [38;5;153mprefs.js[39m, new [38;5;153mtest/prefs.test.js[39m, edits to [38;5;153mindex.html[39m (script tag + checkbox), [38;5;153mapp.js[39m (load/save
+  wiring), [38;5;153mpackage.json[39m (test script). [38;5;153msrc/[39m and [38;5;153mREADME.md[39m untouched.
+
+  If this looks right, I'll write it up as a spec at
+  [38;5;153mdocs/hyperpowers/specs/2026-09-22-user-preferences-storage-design.md[39m (uncommitted) for you to review before we move to
+  an implementation plan.
+
+[38;5;246m✻[39m [38;5;246mSautéed for 20s · done 3:10 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m
