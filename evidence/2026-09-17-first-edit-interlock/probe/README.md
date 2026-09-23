@@ -197,11 +197,14 @@ Summed across the ten qualifying repetitions, over 103 mutation attempts:
 | Calls that fell through to the step-8 fallback | 31 |
 | Contexts denied in two turns | 10 |
 
-Observation, no target: 20 of 103 attempts (19.4%) had to poll on their read of the
-*denied* call's record -- the wave race the 2026-09-20 amendment closes, now visible
-from inside the hook. The pre-amendment campaign measured it after the fact at 55 of
-346 contexts, about 15.9%. 19.4% is close to that benchmark rather than far above
-it, and the amendment means a poll now costs a retry rather than a leak.
+Observation, no target: 20 of the 93 attempts that performed that read (21.5%) had to
+poll on their read of the *denied* call's record -- the wave race the 2026-09-20
+amendment closes, now visible from inside the hook. The denominator is 93 rather than
+the 103 above because the ten publishers make no such read (`wave_first=-`). The
+pre-amendment campaign measured the race after the fact at 55 of 346 contexts, about
+15.9%, but that is a rate per context over a different population, so it is not a
+benchmark this number can be held against: per context, this probe polled in 10 of 10.
+Either way the amendment means a poll now costs a retry rather than a leak.
 
 The two-turn number is 10 of 10 contexts: every batch session paid a second denial.
 This is the documented residue of the amendment -- a retry denied again in the turn
