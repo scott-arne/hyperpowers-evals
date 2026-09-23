@@ -348,8 +348,14 @@ sessions stopped to ask, 291 retried without a question. The 9 are concentrated 
 scenarios stopped to ask in none.
 
 **Second-turn denials: 32 of 331 full-arm denied contexts, 9.7%.** This is the amendment's
-known residue — a retry composed before the agent could read the first denial, denied
-again. The pre-amendment race measured the same quantity at 55 of 346, 15.9%, and the
+known residue — a retry in the assistant message immediately following the denial, denied
+a second time by step 8 because the retry's own turn had not been flushed when its hook
+read. The agent had the denial in hand when it composed the retry; the race is in
+transcript persistence, not in what the agent knew, so each of these is a redundant
+rejection of an informed retry rather than a call the interlock needed to stop. The calls
+composed before the denial could be read are a different population, the wave siblings,
+which share the denied call's assistant message and are held by the wave rule.
+The pre-amendment race measured the same quantity at 55 of 346, 15.9%, and the
 probe's worst-case batch shape measured 10 of 10. The campaign's 9.7% is the rate in
 ordinary one-writer work, and it errs in the safe direction: a second denial costs a
 retry, where the pre-amendment failure cost a silent write.

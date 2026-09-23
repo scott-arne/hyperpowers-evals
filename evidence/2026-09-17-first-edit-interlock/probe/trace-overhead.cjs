@@ -69,9 +69,14 @@ console.log('');
 console.log(`trace enabled   ${onMs.toFixed(1)} ms total   ${per(onMs).toFixed(2)} us/call`);
 console.log(`trace inert     ${offMs.toFixed(1)} ms total   ${per(offMs).toFixed(4)} us/call`);
 console.log('');
-console.log(
-  `per invocation at 2 trace records: ${((per(onMs) * 2) / 1000).toFixed(3)} ms`,
-);
+// The committed probe logs emit 0, 1, 2, or 3 trace records per invocation
+// (14/17/50/31 across probe/**/*.log), so the per-invocation cost is a range,
+// not a single figure.
+for (const k of [1, 2, 3]) {
+  console.log(
+    `per invocation at ${k} trace record${k > 1 ? 's' : ''}: ${((per(onMs) * k) / 1000).toFixed(3)} ms`,
+  );
+}
 console.log(`file size after ${fs.statSync(target).size} bytes`);
 
 fs.rmSync(path.dirname(target), { recursive: true, force: true });
