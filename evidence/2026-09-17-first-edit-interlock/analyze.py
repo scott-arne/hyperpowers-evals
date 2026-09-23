@@ -44,10 +44,17 @@ from dataclasses import asdict, dataclass, field
 
 EV = "/Users/johnss51/Development/agents/hyperpowers/evals"
 E = os.path.join(EV, "evidence/2026-09-17-first-edit-interlock")
+# The repository each arm's pinned commit is read from. All three are the main
+# checkout rather than the per-arm worktrees the campaign ran in: every live
+# read goes through ``git_show``/``git_has``, which resolve ``<commit>:<path>``
+# and so read the commit, never the working tree, and worktrees share one
+# object store, so the pins stay readable after those worktrees are removed.
+# (The paths under ``ROOTS`` that do write into a checkout are reachable only
+# from ``self_test``, which rebinds ``ROOTS`` to a temporary directory.)
 ROOTS = {
-    "control": "/Users/johnss51/Development/agents/hyperpowers/.worktrees/external-workflow-adoption",
-    "wording": "/Users/johnss51/Development/agents/hyperpowers/.worktrees/first-edit-interlock-wording",
-    "full": "/Users/johnss51/Development/agents/hyperpowers/.worktrees/first-edit-interlock",
+    "control": "/Users/johnss51/Development/agents/hyperpowers",
+    "wording": "/Users/johnss51/Development/agents/hyperpowers",
+    "full": "/Users/johnss51/Development/agents/hyperpowers",
 }
 ARMS = ("control", "wording", "full")
 ARCHIVES = "task-6-runs"
