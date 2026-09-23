@@ -1,12 +1,15 @@
 # Live probe of the first-edit interlock
 
-Three live Claude Code sessions run against the amended hook, on 2026-09-22, to
-answer the one question the 2026-09-20 campaign could not: does the interlock deny
-*every* mutation call in the first mutating turn, in a real session, including the
-siblings that arrive in the same wave as the call that published the marker?
+Three exercises — twelve live Claude Code sessions between them, one and one and
+ten — run against the amended hook, on 2026-09-22, to answer the one question the
+2026-09-20 campaign could not: does the interlock deny *every* mutation call in
+the first mutating turn, in a real session, including the siblings that arrive in
+the same wave as the call that published the marker?
 
-It does. All three sessions passed every check the plan names, and the campaign
-may start.
+In all twelve it did, and all three exercises passed every check the plan names,
+so the campaign may start. Every session here ran under the tracing shim
+described below, which perturbs what it measures; `trace-overhead.txt` bounds the
+perturbation and records what that bound does and does not establish.
 
 ## Pins
 

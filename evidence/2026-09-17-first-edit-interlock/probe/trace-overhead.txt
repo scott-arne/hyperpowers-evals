@@ -61,9 +61,22 @@ about 0.013 us per call, which is the branch and nothing else.
 
 WHAT THIS ESTABLISHES, AND WHAT IT DOES NOT.
 
-It bounds the magnitude. Against the per-invocation hook runtimes the committed
-logs record — 220-240 ms with no trace records, 300-325 ms with two — the trace
-adds well under 0.1%.
+It bounds the magnitude, but only when each trace cost is set against the
+invocations that actually carry that many records. Over the 112 committed
+invocations the runtimes are:
+
+    trace records   n    hook runtime      trace cost      share
+    0              14    217-249 ms        0 ms            0
+    1              17    700-758 ms        0.063-0.090 ms  up to 0.013%
+    2              50    277-709 ms        0.126-0.179 ms  up to 0.065%
+    3              31    792-872 ms        0.190-0.269 ms  up to 0.034%
+
+The largest share is 0.179 ms of 277 ms, under 0.07%. Pooling instead of
+pairing gets this wrong in both directions: the full runtime range is 217-872
+ms, not the 220-325 ms an earlier draft of this file and of the evidence note
+both quoted, and dividing the largest trace cost by the smallest runtime of any
+stratum (0.27/220) yields 0.123%, a comparison between an invocation's
+three-record cost and a different invocation's no-record runtime.
 
 It does NOT establish that the probe's counts are counterfactually unchanged,
 and the note must not be read as claiming so. This is a warmed, sequential
@@ -79,16 +92,30 @@ not performed.
 
 Those same committed logs cannot isolate the trace cost by themselves either:
 the invocations that emit no trace records are also the ones doing less work, so
-the ~70 ms gap between the traced=0 and traced=2 groups is the hook's own
-transcript reads, not the instrument.
+the ~76 ms gap between the traced=0 and traced=2 medians (237 against 313) is
+the hook's own transcript reads, not the instrument. The stratum table above is
+a comparison of measured trace cost against observed runtime, not a measurement
+of the difference between the strata.
 
-SCOPE. This caveat reaches the three probe sessions and nothing else.
-INTERLOCK_PROBE_TRACE appears only in the probe's own files; it is set in no
-campaign run, and `grep -rl INTERLOCK_PROBE_TRACE task-6-runs` returns nothing.
-All 494 campaign sessions ran the inert path. The interlock readout in the
-evidence note — the 331 denied contexts, the 32 second-turn denials, the 0
-degraded contexts, the 55-of-56 wave-sibling result — is untraced and untouched
-by any of this.
+SCOPE, AND WHY IT IS NOT ESTABLISHED. The probe is three exercises comprising
+twelve live sessions: one probe-create run, one probe-subagent run, and ten
+probe-batch runs. Those twelve are the sessions known to be traced.
+
+Whether anything else was traced is not established by retained evidence, and an
+earlier draft of this file asserted that it was. README.md records that the
+tracing came from a shim in the probe tree, reached only through the probe's own
+SUPERPOWERS_ROOT, while the campaign's launcher points SUPERPOWERS_ROOT at the
+three branch worktrees and their shipped hook; INTERLOCK_PROBE_TRACE appears in
+no archived run, and `grep -rl INTERLOCK_PROBE_TRACE task-6-runs` returns
+nothing. None of that is a record of a launch environment. The grep reads
+archived file contents; measure-launch.sh unsets SLASH_COMMAND_TOOL_CHAR_BUDGET
+and nothing else, so an exported value would have been inherited; the shim was
+not retained; and no launch log or run directory captures the environment. So
+the campaign's trace state is unverified, not verified-clean, and the interlock
+readout in the evidence note — the 331 denied contexts, the 32 second-turn
+denials, the 0 degraded contexts, the 55-of-56 wave-sibling result — is reported
+without a proof that it is untraced. Owed before the next measured arm: a
+launcher that runs `env -u INTERLOCK_PROBE_TRACE` and logs having done so.
 
 WITHDRAWN. An earlier draft of the note attributed a 2-16 ms observation to the
 Bash sandbox's per-open-for-write interposition. Nothing committed substantiates
