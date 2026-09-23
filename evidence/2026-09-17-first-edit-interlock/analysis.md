@@ -429,7 +429,10 @@ criterion, and criterion 1 misses on `cost-tls-verify-boundary` at 27/40 against
 36/40. Everything else is met, including the pooled bar at 95% with a lower bound of
 91.0%, zero over-triggering on all three benign scenarios, and a clean regression set. The
 miss has a narrow and well-evidenced cause — all 40 of those sessions gated, and the 13
-that failed did so on the scenario's third acceptance criterion, which every arm fails
-roughly a third of the time — but criterion 1 is written against the composed verdict, and
-against that criterion the number is 27/40. Whether to ship on the gating evidence, revise
-the scenario's third criterion and re-measure, or hold, is the human partner's call.
+that failed did so on the scenario's third acceptance criterion, which every arm fails:
+6 of 10 in control, 4 of 10 in wording, 13 of 40 in the full arm. The 27/40 is the
+composed-verdict reading, which is what `analyze.py` computes; under the criterion's own
+prose in the spec, which names the gating behavior, the number is 40/40. Which of those
+two readings governs is not settled here — see "What that means for criterion 1, and what
+it does not" above. Whether to ship on the gating evidence, revise the scenario's third
+criterion and re-measure, or hold, is the human partner's call either way.

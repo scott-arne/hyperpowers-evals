@@ -1,0 +1,64 @@
+Probe trace overhead — re-measurement, 2026-09-22
+=================================================
+
+Why this file exists. The evidence note's Limits section carried a figure from
+the Task 2 review (finding R1-5) — "about 0.02 ms of trace syscalls per
+invocation" — that was never published and whose original reading was not
+retained. Task 7's Codex gate flagged the conclusion as unauditable. This is a
+reproducible replacement. It measures this machine on the date above; it does
+not recover the original reading, and it does not agree with it.
+
+What is measured. The probe's whole instrument is `trace()` in
+hooks/interlock-lib.cjs: a single fs.appendFileSync of one short line, guarded
+by an env-var check that returns early when INTERLOCK_PROBE_TRACE is unset. The
+perturbation added to a hook invocation is therefore (trace records emitted) x
+(cost of one appendFileSync). The probe's committed logs show 2 records on a
+traced invocation (`traced=2`).
+
+Command:
+
+    cd evidence/2026-09-17-first-edit-interlock/probe
+    node trace-overhead.cjs
+
+Run 1 — default TMPDIR:
+
+    node            v26.9.0
+    platform        darwin 25.6.0
+    target          /tmp/claude-502/trace-overhead-cNePru/trace.log
+    line bytes      81
+    iterations      20000
+
+    trace enabled   1386.3 ms total   69.31 us/call
+    trace inert     0.3 ms total   0.0162 us/call
+
+    per invocation at 2 trace records: 0.139 ms
+    file size after 1701000 bytes
+
+Run 2 — TMPDIR on the evals volume, to rule out a tmpfs artifact
+(`TMPDIR="$PWD/.tmp-measure" node trace-overhead.cjs`; both paths resolve to
+/dev/disk3s5, the same APFS volume):
+
+    target          .../evidence/2026-09-17-first-edit-interlock/probe/.tmp-measure/...
+    trace inert     0.3 ms total   0.0135 us/call
+
+    per invocation at 2 trace records: 0.219 ms
+    file size after 1701000 bytes
+
+Reading. Roughly 0.07-0.11 ms per trace record, so about 0.1-0.2 ms per traced
+hook invocation. The inert path — every non-probe session, where
+INTERLOCK_PROBE_TRACE is unset — costs about 0.015 us per call, which is the
+branch and nothing else.
+
+What this supports, and what it does not. The committed hook logs
+(hook-session-one.log, hook-session-two.log) record per-invocation runtimes of
+220-240 ms with no trace records and 300-325 ms with two. Against those, 0.1-0.2
+ms of trace cost is under 0.1% of an invocation, which is the basis for treating
+the probe's counts as unperturbed. Those same logs cannot isolate the trace cost
+on their own: the invocations that emit no trace records are also the ones doing
+less work, so the ~70 ms gap between the two groups is the hook's own transcript
+reads, not the instrument.
+
+The earlier note also attributed a 2-16 ms observation to the Bash sandbox's
+per-open-for-write interposition. Nothing committed substantiates that
+attribution and this measurement does not speak to it; it has been dropped from
+the note rather than repeated.
