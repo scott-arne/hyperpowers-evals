@@ -61,22 +61,30 @@ about 0.013 us per call, which is the branch and nothing else.
 
 WHAT THIS ESTABLISHES, AND WHAT IT DOES NOT.
 
-It bounds the magnitude, but only when each trace cost is set against the
+It gives a typical magnitude, and only when each trace cost is set against the
 invocations that actually carry that many records. Over the 112 committed
 invocations the runtimes are:
 
-    trace records   n    hook runtime      trace cost      share
-    0              14    217-249 ms        0 ms            0
-    1              17    700-758 ms        0.063-0.090 ms  up to 0.013%
-    2              50    277-709 ms        0.126-0.179 ms  up to 0.065%
-    3              31    792-872 ms        0.190-0.269 ms  up to 0.034%
+    trace records   n    hook runtime      mean trace cost   mean share
+    0              14    217-249 ms        0 ms              0
+    1              17    700-758 ms        0.063-0.090 ms    to 0.013%
+    2              50    277-709 ms        0.126-0.179 ms    to 0.065%
+    3              31    792-872 ms        0.190-0.269 ms    to 0.034%
 
-The largest share is 0.179 ms of 277 ms, under 0.07%. Pooling instead of
-pairing gets this wrong in both directions: the full runtime range is 217-872
+The largest of those shares is 0.179 ms of 277 ms, under 0.07%. Pooling instead
+of pairing gets this wrong in both directions: the full runtime range is 217-872
 ms, not the 220-325 ms an earlier draft of this file and of the evidence note
 both quoted, and dividing the largest trace cost by the smallest runtime of any
 stratum (0.27/220) yields 0.123%, a comparison between an invocation's
 three-record cost and a different invocation's no-record runtime.
+
+Every trace cost in that table is an average, not a ceiling. The benchmark
+divides one total by 20000 and reports the quotient; it retains no per-append
+timings, so it says nothing about the distribution's tail, and it appends from a
+single warmed loop, so it says nothing about what an append costs when several
+of the probe's writers are appending at once. Read the table as what a traced
+invocation typically paid, and not as a limit on what any one of them could have
+paid.
 
 It does NOT establish that the probe's counts are counterfactually unchanged,
 and the note must not be read as claiming so. This is a warmed, sequential
@@ -85,10 +93,11 @@ calls whose own record the hook did not find on its first read, the 31 that fell
 through to the step-8 fallback, the 10 contexts denied in two turns — are
 statements about what a transcript read saw at a particular moment. A trace
 append sits between resolution steps, so it can in principle delay a later read
-past the arrival of a record. Bounding the delay at a fraction of a millisecond
-makes a changed outcome unlikely; it does not exclude it. The test that would
-exclude it is a paired traced/untraced run under the same concurrency, which was
-not performed.
+past the arrival of a record. A mean of a fraction of a millisecond does not
+speak to that: what would move one of those counts is a slow append, and the
+mean is silent about how slow the slowest ones were. The test that would settle
+it is a paired traced/untraced run under the same concurrency, which was not
+performed.
 
 Those same committed logs cannot isolate the trace cost by themselves either:
 the invocations that emit no trace records are also the ones doing less work, so

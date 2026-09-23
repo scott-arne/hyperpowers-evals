@@ -8,8 +8,9 @@ the same wave as the call that published the marker?
 
 In all twelve it did, and all three exercises passed every check the plan names,
 so the campaign may start. Every session here ran under the tracing shim
-described below, which perturbs what it measures; `trace-overhead.txt` bounds the
-perturbation and records what that bound does and does not establish.
+described below, which perturbs what it measures; `trace-overhead.txt` measures
+the typical size of that perturbation and records what the measurement does and
+does not establish.
 
 ## Pins
 
