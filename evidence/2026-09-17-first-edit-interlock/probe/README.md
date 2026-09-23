@@ -8,9 +8,11 @@ the same wave as the call that published the marker?
 
 In all twelve it did, and all three exercises passed every check the plan names,
 so the campaign may start. Every session here ran under the tracing shim
-described below, which perturbs what it measures; `trace-overhead.txt` measures
-the typical size of that perturbation and records what the measurement does and
-does not establish.
+described below, which perturbs what it measures. `trace-overhead.txt` measures
+the typical size of ONE component of that perturbation — the appends the hook
+makes from inside itself — and records what the measurement does and does not
+establish. The wrapper's own pre-hook work is not measured anywhere, so the total
+perturbation is unknown rather than small.
 
 ## Pins
 
@@ -24,11 +26,15 @@ Model `claude-opus-5` throughout, `permission_mode=bypassPermissions`.
 ## Commands as run
 
 The probe tree was built under `$TMPDIR/interlock-probe` with the shipped hook
-wrapped by a tracing shim: the wrapper does no work of its own before the hook and
-takes no reading of its own, and `INTERLOCK_PROBE_TRACE` makes the real
+wrapped by a tracing shim. `INTERLOCK_PROBE_TRACE` makes the real
 `interlock-lib.cjs` append one line per transcript read from inside the running
-hook. Every number below the session verdicts is therefore the hook's report of its
-own reads, not a second reader sampled beside it.
+hook, so every read count below the session verdicts is the hook's report of its
+own reads and not a second reader sampled beside it. The wrapper around it is not
+inert: it buffers the hook's stdin through a command substitution and creates a
+temporary directory before starting the hook — work production does not do — and
+it takes one reading of its own, the `ms=` field, which times the inner hook and
+therefore excludes that pre-hook work. `trace-overhead.txt` measures the appends
+and says what remains unmeasured.
 
 ```bash
 P="$TMPDIR/interlock-probe"

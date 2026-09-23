@@ -8,13 +8,24 @@ retained. Task 7's Codex gate flagged the conclusion as unauditable. This is a
 reproducible replacement. It measures this machine on the date above; it does
 not recover the original reading, and it does not agree with it.
 
-What is measured. The probe's whole instrument is `trace()` in
-hooks/interlock-lib.cjs: a single fs.appendFileSync of one short line, guarded
-by an env-var check that returns early when INTERLOCK_PROBE_TRACE is unset. The
-cost added to a hook invocation is therefore (trace records emitted) x (cost of
-one appendFileSync). The committed probe logs emit 0, 1, 2, or 3 records per
-invocation — 14, 17, 50, and 31 invocations respectively across probe/**/*.log —
-so the per-invocation cost is a range, not a single figure.
+What is measured, and what is not. This file measures ONE component of the
+probe's instrument: `trace()` in hooks/interlock-lib.cjs, a single
+fs.appendFileSync of one short line, guarded by an env-var check that returns
+early when INTERLOCK_PROBE_TRACE is unset. That component's cost per invocation
+is (trace records emitted) x (cost of one appendFileSync). The committed probe
+logs emit 0, 1, 2, or 3 records per invocation — 14, 17, 50, and 31 invocations
+respectively across probe/**/*.log — so even this component is a range, not a
+single figure.
+
+The instrument is larger than that component, and the rest of it is NOT measured
+here. The probe wraps the shipped hook in a shell script that buffers the hook's
+stdin through a command substitution and creates a temporary directory before it
+starts the hook. Production pays neither: Claude Code pipes stdin straight to
+the hook. The wrapper's `ms=` field times only the inner hook, so that pre-hook
+cost is absent from the runtimes tabulated below as well as from the benchmark.
+It also lands at the worst place for the question the probe is asked to answer —
+ahead of the hook's first transcript read, which is where the races the probe
+counts are decided.
 
 Command:
 
