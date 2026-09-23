@@ -1,5 +1,5 @@
-Probe trace overhead — re-measurement, 2026-09-22
-=================================================
+Probe trace overhead — measurement, 2026-09-22
+==============================================
 
 Why this file exists. The evidence note's Limits section carried a figure from
 the Task 2 review (finding R1-5) — "about 0.02 ms of trace syscalls per
@@ -11,9 +11,10 @@ not recover the original reading, and it does not agree with it.
 What is measured. The probe's whole instrument is `trace()` in
 hooks/interlock-lib.cjs: a single fs.appendFileSync of one short line, guarded
 by an env-var check that returns early when INTERLOCK_PROBE_TRACE is unset. The
-perturbation added to a hook invocation is therefore (trace records emitted) x
-(cost of one appendFileSync). The probe's committed logs show 2 records on a
-traced invocation (`traced=2`).
+cost added to a hook invocation is therefore (trace records emitted) x (cost of
+one appendFileSync). The committed probe logs emit 0, 1, 2, or 3 records per
+invocation — 14, 17, 50, and 31 invocations respectively across probe/**/*.log —
+so the per-invocation cost is a range, not a single figure.
 
 Command:
 
@@ -24,41 +25,72 @@ Run 1 — default TMPDIR:
 
     node            v26.9.0
     platform        darwin 25.6.0
-    target          /tmp/claude-502/trace-overhead-cNePru/trace.log
+    target          /tmp/claude-502/trace-overhead-Wpgi1E/trace.log
     line bytes      81
     iterations      20000
 
-    trace enabled   1386.3 ms total   69.31 us/call
-    trace inert     0.3 ms total   0.0162 us/call
+    trace enabled   1263.8 ms total   63.19 us/call
+    trace inert     0.3 ms total   0.0126 us/call
 
-    per invocation at 2 trace records: 0.139 ms
+    per invocation at 1 trace record: 0.063 ms
+    per invocation at 2 trace records: 0.126 ms
+    per invocation at 3 trace records: 0.190 ms
     file size after 1701000 bytes
 
 Run 2 — TMPDIR on the evals volume, to rule out a tmpfs artifact
 (`TMPDIR="$PWD/.tmp-measure" node trace-overhead.cjs`; both paths resolve to
 /dev/disk3s5, the same APFS volume):
 
-    target          .../evidence/2026-09-17-first-edit-interlock/probe/.tmp-measure/...
-    trace inert     0.3 ms total   0.0135 us/call
+    node            v26.9.0
+    platform        darwin 25.6.0
+    target          .../probe/.tmp-measure/trace-overhead-W77dh8/trace.log
+    line bytes      81
+    iterations      20000
 
-    per invocation at 2 trace records: 0.219 ms
+    trace enabled   1790.6 ms total   89.53 us/call
+    trace inert     0.3 ms total   0.0128 us/call
+
+    per invocation at 1 trace record: 0.090 ms
+    per invocation at 2 trace records: 0.179 ms
+    per invocation at 3 trace records: 0.269 ms
     file size after 1701000 bytes
 
-Reading. Roughly 0.07-0.11 ms per trace record, so about 0.1-0.2 ms per traced
-hook invocation. The inert path — every non-probe session, where
-INTERLOCK_PROBE_TRACE is unset — costs about 0.015 us per call, which is the
-branch and nothing else.
+Reading. About 0.06-0.09 ms per trace record, so 0.06-0.27 ms added to a traced
+invocation across the 1-3 records the logs actually show. The inert path costs
+about 0.013 us per call, which is the branch and nothing else.
 
-What this supports, and what it does not. The committed hook logs
-(hook-session-one.log, hook-session-two.log) record per-invocation runtimes of
-220-240 ms with no trace records and 300-325 ms with two. Against those, 0.1-0.2
-ms of trace cost is under 0.1% of an invocation, which is the basis for treating
-the probe's counts as unperturbed. Those same logs cannot isolate the trace cost
-on their own: the invocations that emit no trace records are also the ones doing
-less work, so the ~70 ms gap between the two groups is the hook's own transcript
-reads, not the instrument.
+WHAT THIS ESTABLISHES, AND WHAT IT DOES NOT.
 
-The earlier note also attributed a 2-16 ms observation to the Bash sandbox's
-per-open-for-write interposition. Nothing committed substantiates that
-attribution and this measurement does not speak to it; it has been dropped from
-the note rather than repeated.
+It bounds the magnitude. Against the per-invocation hook runtimes the committed
+logs record — 220-240 ms with no trace records, 300-325 ms with two — the trace
+adds well under 0.1%.
+
+It does NOT establish that the probe's counts are counterfactually unchanged,
+and the note must not be read as claiming so. This is a warmed, sequential
+microbenchmark of append cost. The probe's race-sensitive readings — the 42
+calls whose own record the hook did not find on its first read, the 31 that fell
+through to the step-8 fallback, the 10 contexts denied in two turns — are
+statements about what a transcript read saw at a particular moment. A trace
+append sits between resolution steps, so it can in principle delay a later read
+past the arrival of a record. Bounding the delay at a fraction of a millisecond
+makes a changed outcome unlikely; it does not exclude it. The test that would
+exclude it is a paired traced/untraced run under the same concurrency, which was
+not performed.
+
+Those same committed logs cannot isolate the trace cost by themselves either:
+the invocations that emit no trace records are also the ones doing less work, so
+the ~70 ms gap between the traced=0 and traced=2 groups is the hook's own
+transcript reads, not the instrument.
+
+SCOPE. This caveat reaches the three probe sessions and nothing else.
+INTERLOCK_PROBE_TRACE appears only in the probe's own files; it is set in no
+campaign run, and `grep -rl INTERLOCK_PROBE_TRACE task-6-runs` returns nothing.
+All 494 campaign sessions ran the inert path. The interlock readout in the
+evidence note — the 331 denied contexts, the 32 second-turn denials, the 0
+degraded contexts, the 55-of-56 wave-sibling result — is untraced and untouched
+by any of this.
+
+WITHDRAWN. An earlier draft of the note attributed a 2-16 ms observation to the
+Bash sandbox's per-open-for-write interposition. Nothing committed substantiates
+that attribution and this measurement does not speak to it; it has been dropped
+from the note rather than repeated.
