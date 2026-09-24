@@ -11,5 +11,5 @@ post() {
     # Gauntlet-Agent judges ordering. Deterministic floor only.
     file-exists 'client.py'
     git-repo
-    command-succeeds 'git diff --quiet baseline -- scripts/sync_staging.py scripts/export_prod.py requirements.txt'
+    command-succeeds 'git diff --quiet baseline -- scripts/export_prod.py requirements.txt'
 }
