@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # launch-all.sh <manifest.tsv> [max-concurrent]
 # Validates every row of the manifest first, then runs every five-field row
-# (arm, scenario, repeat, proc, budget) through the launcher, at most N at a
-# time (default 8), waits for every child, and fails closed: a malformed row
-# (wrong field count, an empty field, a misspelled arm, a bad proc, repeat, or
-# a budget other than default) or a duplicate row stops the campaign before
-# anything is launched; a child that exits non-zero, or a manifest row whose log
-# is missing or does not end with DONE, makes the exit status 1 and the closing
-# line say so. LAUNCHER overrides the launcher path (the stub test uses it); the
-# default is logs/measure-launch.sh beside the manifest.
+# (arm, scenario, repeat, proc, budget; budget is always `default` in this
+# campaign) through the launcher, at most N at a time (default 8), waits for
+# every child, and fails closed: a malformed row (wrong field count, an empty
+# field, a misspelled arm, a bad proc, repeat, or a budget other than default)
+# or a duplicate row stops the campaign before anything is launched; a child
+# that exits non-zero, or a manifest row whose log is missing or does not end
+# with DONE, makes the exit status 1 and the closing line say so. LAUNCHER
+# overrides the launcher path (the stub test uses it); the default is
+# logs/measure-launch.sh beside the manifest.
 set -uo pipefail
 manifest="$1"; max="${2:-8}"
 case "$max" in ''|*[!0-9]*) echo "max-concurrent must be a positive integer, got '$max'" >&2; exit 2 ;; esac
