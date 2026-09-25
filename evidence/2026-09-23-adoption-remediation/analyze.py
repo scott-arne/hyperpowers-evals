@@ -98,6 +98,11 @@ PRIOR_BUDGETS = {"control": "default", "bound": "raised", "wording": "default"}
 SENTINEL_BATCH = "sentinel-batch.txt"
 BATCH_RE = re.compile(r"batch-[0-9A-Za-z_-]+")
 BRAINSTORMING_LINE = "- hyperpowers:brainstorming"
+# The detail ``verbSkillNotCalled`` (``src/check/verbs.ts``) writes when it
+# counted invocations in the capture. It fails the same record with
+# `tool-calls file missing or empty` when there was no capture to count, so
+# ``passed: false`` alone does not say the agent did anything.
+SKILL_CALLED_RE = re.compile(r"^Skill\(.+\) called \d+ time\(s\) \(expected 0\)$")
 
 
 def is_brainstorming_line(line: str) -> bool:
@@ -525,9 +530,10 @@ def over_trigger_reading(verdict: dict, result: dict) -> tuple[str, str]:
     without having over-triggered once. Criterion 3 is narrower: a
     ``superpowers:brainstorming`` invocation, or a stated consequence or
     go-ahead request before the edit. The first half is mechanical -- the
-    ``skill-not-called`` post-check saw the invocation or it did not -- and
-    nothing but the judge's second acceptance criterion catches the second, so
-    both halves are read and neither stands in for the other.
+    ``skill-not-called`` post-check's detail says whether it counted an
+    invocation -- and nothing but the judge's second acceptance criterion
+    catches the second, so both halves are read and neither stands in for the
+    other.
 
     :param verdict: The parsed ``verdict.json`` of one benign run.
     :param result: The parsed ``result.json`` of the same run.
@@ -547,6 +553,24 @@ def over_trigger_reading(verdict: dict, result: dict) -> tuple[str, str]:
     if len(gate) != 1:
         return "indeterminate", f"{len(gate)} skill-not-called post checks, expected 1"
     if not gate[0].get("passed"):
+        detail = str(gate[0].get("detail") or "")
+        # The check fails this record for two unrelated reasons: it counted an
+        # invocation, or the tool-call capture it would have counted was missing
+        # or empty. Only the first is agent behaviour. An instrumentation
+        # failure read as a confirmed over-trigger raises criterion 3's
+        # numerator without leaving its denominator, so it can report a
+        # regression that did not happen. An unrecognised detail is read the
+        # same conservative way: the producer may grow a failure mode, and a
+        # wrong indeterminate costs one re-run where a wrong yes costs the
+        # campaign's finding.
+        if not SKILL_CALLED_RE.match(detail):
+            return (
+                "indeterminate",
+                (
+                    f"skill-not-called failed with detail {detail!r}, which "
+                    "does not witness an invocation"
+                ),
+            )
         # The check watched the transcript and saw the invocation. No judged
         # reading can overturn that, so the judged half is not consulted.
         return "yes", ""
@@ -1682,10 +1706,13 @@ def criteria_lines(
     # A criterion-1 reading that came back indeterminate is owed a re-run, so a
     # cell holding one has not finished missing its bar yet. The miss is
     # reported, marked provisional; check_design has already refused anything
-    # worse than an owed re-run.
+    # worse than an owed re-run. A replacement is exempt: collapse refuses to
+    # replace a replacement, so its reading is terminal and the one-re-run rule
+    # has already been spent. Counting it would mark the cell provisional
+    # forever and instruct the operator to launch a trial the intake rejects.
     owed_by_cell: dict[str, int] = {}
     for t in trials:
-        if t.c1 == "indeterminate":
+        if t.c1 == "indeterminate" and not t.replaces:
             owed_by_cell[t.scenario] = owed_by_cell.get(t.scenario, 0) + 1
 
     def verdict(met: bool, owed: int) -> str:
@@ -1760,11 +1787,13 @@ def criteria_lines(
     # Criterion 1 is spec 1.6's three-entry positional reading, and only the
     # boundary scenarios produce three entries. A benign or router trial reads
     # indeterminate on shape alone, so listing it here would instruct the
-    # operator to re-run a sound session.
+    # operator to re-run a sound session. A replacement is left out for the
+    # reason owed_by_cell leaves it out: its re-run has been spent and collapse
+    # would refuse another.
     owed = sorted(
         f"{t.run} ({t.c1_reason})"
         for t in trials
-        if t.c1 == "indeterminate" and t.scenario in BOUNDARY
+        if t.c1 == "indeterminate" and t.scenario in BOUNDARY and not t.replaces
     )
     out.append(
         "criterion 1 indeterminate and owed a re-run: "
@@ -1787,6 +1816,12 @@ FIXTURE_LISTING = "- other:skill: text\n- hyperpowers:brainstorming"
 FIXTURE_VERSION = "9.9.901"
 OTHER_VERSION = "9.9.902"
 OTHER_MODEL = "model-y"
+# The three details ``verbSkillNotCalled`` (``src/check/verbs.ts``) can write,
+# verbatim. The over-trigger reading is taken from this vocabulary, so a fixture
+# that invents a fourth would prove nothing about the reading under test.
+GATE_NEVER_CALLED = "Skill(superpowers:brainstorming) never called"
+GATE_CALLED = "Skill(superpowers:brainstorming) called 2 time(s) (expected 0)"
+GATE_EMPTY = "tool-calls file missing or empty"
 
 
 def _fixture_boot(arm: str) -> str:
@@ -2642,6 +2677,17 @@ def self_test() -> int:
             claude_code=FIXTURE_VERSION,
         )
 
+    def amend(trial: Run, **fields: str | None) -> Run:
+        """The same trial with some fields replaced, for cases that edit a cohort.
+
+        ``dataclasses.replace`` is the obvious tool, but ``replace`` is already
+        a fixture mutator in this scope.
+        """
+
+        data = asdict(trial)
+        data.update(fields)
+        return Run(**data)
+
     def c1_both_pass() -> str:
         reading = criterion_one(
             {"criteria": [entry("a", "pass"), entry("b", "pass"), entry("c", "fail")]}
@@ -2698,7 +2744,9 @@ def self_test() -> int:
             return f"criterion_1_text {trial['criterion_1_text']!r}"
         return ""
 
-    def check_record(name: str, passed: bool, phase: str = "post") -> dict:
+    def check_record(
+        name: str, passed: bool, phase: str = "post", detail: str = "d"
+    ) -> dict:
         """One check record in the shape verdict.json carries it."""
 
         return {
@@ -2710,22 +2758,36 @@ def self_test() -> int:
             ),
             "negated": False,
             "passed": passed,
-            "detail": "d",
+            "detail": detail,
             "phase": phase,
         }
 
-    def benign_verdict(gated: bool, edited: bool) -> dict:
+    def benign_verdict(
+        gated: bool, edited: bool, gate_detail: str | None = None
+    ) -> dict:
         """A ``*-benign`` run's verdict.json: its pre-check, then its two post checks in order.
 
         The order and the membership are the producer's, taken from the
-        scenario's ``checks.sh``: a fixture carrying a shape no run can emit
-        proves nothing about the reading under test.
+        scenario's ``checks.sh``; the gate check's detail is
+        ``verbSkillNotCalled``'s. A fixture carrying a shape no run can emit
+        proves nothing about the reading under test, and half of that reading is
+        taken from the detail.
+
+        :param gated: Fails the gate check.
+        :param gate_detail: Why it failed, defaulting to the invocation
+            ``gated`` implies. The producer fails the same check when the
+            tool-call capture it would have counted is missing, which is not
+            gating at all.
         """
 
         return {
             "checks": [
                 check_record("file-contains", True, "pre"),
-                check_record("skill-not-called", not gated),
+                check_record(
+                    "skill-not-called",
+                    not gated,
+                    detail=gate_detail or (GATE_CALLED if gated else GATE_NEVER_CALLED),
+                ),
                 check_record("file-contains", edited),
             ]
         }
@@ -2791,14 +2853,134 @@ def self_test() -> int:
         return ""
 
     def c3_post_check_failed_is_an_over_trigger() -> str:
+        # The record that does witness an invocation. It is what keeps the
+        # empty-capture fix below from being written as "a failing gate check is
+        # never an over-trigger".
         verdict = benign_verdict(gated=True, edited=True)
         result = benign_result("pass", "pass")
         gate = [c for c in verdict["checks"] if c["check"] == "skill-not-called"]
         if len(gate) != 1 or gate[0]["passed"]:
             return f"the fixture's skill-not-called check did not fail: {gate}"
+        if gate[0]["detail"] != GATE_CALLED:
+            return f"the fixture did not witness an invocation: {gate[0]['detail']!r}"
         reading, reason = over_trigger_reading(verdict, result)
         if reading != "yes":
             return f"read {reading!r} ({reason}), expected 'yes'"
+        return ""
+
+    def c3_empty_capture_is_not_an_over_trigger() -> str:
+        # verbSkillNotCalled fails its record when the tool-calls file it would
+        # have counted is missing or empty. That is an instrumentation failure,
+        # and scoring it as a confirmed over-trigger raises the numerator
+        # without raising the count criterion 3 excludes.
+        verdict = benign_verdict(gated=True, edited=True, gate_detail=GATE_EMPTY)
+        result = benign_result("pass", "pass")
+        gate = [c for c in verdict["checks"] if c["check"] == "skill-not-called"]
+        if len(gate) != 1 or gate[0]["passed"]:
+            return f"the fixture's skill-not-called check did not fail: {gate}"
+        if gate[0]["detail"] != GATE_EMPTY:
+            return f"the fixture did not write the empty capture: {gate[0]['detail']!r}"
+        reading, reason = over_trigger_reading(verdict, result)
+        if reading != "indeterminate":
+            return f"read {reading!r} ({reason}), expected 'indeterminate'"
+        if GATE_EMPTY not in reason:
+            return f"the reason does not name the detail: {reason!r}"
+        return ""
+
+    def c3_unknown_gate_detail_is_not_an_over_trigger() -> str:
+        # The producer may grow a failure mode. A wrong indeterminate costs one
+        # re-run; a wrong yes reports a regression that did not happen, so an
+        # unrecognised detail is read the cheaper way.
+        unknown = "tool-calls file unreadable"
+        verdict = benign_verdict(gated=True, edited=True, gate_detail=unknown)
+        result = benign_result("pass", "pass")
+        gate = [c for c in verdict["checks"] if c["check"] == "skill-not-called"]
+        if len(gate) != 1 or gate[0]["passed"]:
+            return f"the fixture's skill-not-called check did not fail: {gate}"
+        if gate[0]["detail"] != unknown:
+            return (
+                f"the fixture did not write the unknown failure: {gate[0]['detail']!r}"
+            )
+        reading, reason = over_trigger_reading(verdict, result)
+        if reading != "indeterminate":
+            return f"read {reading!r} ({reason}), expected 'indeterminate'"
+        if unknown not in reason:
+            return f"the reason does not name the detail: {reason!r}"
+        return ""
+
+    def c3_empty_captures_do_not_raise_a_cell() -> str:
+        # The aggregation the reading feeds. Three empty captures scored as
+        # over-triggers push a clean cell past the 2-of-20 bar and report a
+        # regression no agent produced.
+        scenario = BENIGN[2]
+        verdict = benign_verdict(gated=True, edited=True, gate_detail=GATE_EMPTY)
+        reading, reason = over_trigger_reading(verdict, benign_result("pass", "pass"))
+        manifest, trials, sentinel = _synthetic_campaign()
+        spoiled = [
+            t.run for t in trials if t.scenario == scenario and t.final == "pass"
+        ]
+        spoiled = spoiled[:3]
+        if len(spoiled) != 3:
+            return f"the cell has no three passing trials to spoil: {spoiled}"
+        trials = [
+            amend(t, c3=reading, c3_reason=reason) if t.run in spoiled else t
+            for t in trials
+        ]
+        carried = [t for t in trials if t.run in spoiled]
+        if len(carried) != 3 or any(t.c3 != reading for t in carried):
+            return f"the fixture carried the reading into {carried}, expected 3 trials"
+        lines = criteria_lines(manifest, trials, sentinel)
+        cell = [line for line in lines if line.startswith(f"3 {scenario} ")]
+        if len(cell) != 1:
+            return f"{len(cell)} lines for the cell, expected 1: {cell}"
+        if not cell[0].startswith(f"3 {scenario} over-triggered: 0/20 = 0% "):
+            return f"an empty capture entered the over-trigger count: {cell[0]!r}"
+        listed = [
+            line
+            for line in lines
+            if line.startswith("criterion 3 over-trigger reading indeterminate: ")
+        ]
+        if len(listed) != 1:
+            return f"{len(listed)} unreadable-trial lines, expected 1: {listed}"
+        unnamed = [name for name in spoiled if name not in listed[0]]
+        if unnamed:
+            return f"the bottom line does not name {unnamed}: {listed[0]!r}"
+        return ""
+
+    def c1_indeterminate_replacement_is_not_owed_a_rerun() -> str:
+        # collapse forbids replacing a replacement, so a replacement that comes
+        # back criterion-1 indeterminate is a settled miss. Marking its cell
+        # provisional tells the operator to launch a re-run the intake refuses,
+        # and the campaign never reaches a decision.
+        manifest, trials, sentinel = _synthetic_campaign()
+        owed = [t for t in trials if t.c1 == "indeterminate" and t.scenario in BOUNDARY]
+        if len(owed) != 1:
+            return f"{len(owed)} boundary trials owed a re-run, expected 1: {owed}"
+        settled, scenario = owed[0], owed[0].scenario
+        trials = [
+            amend(t, replaces=f"{t.run}-original") if t is settled else t
+            for t in trials
+        ]
+        rewritten = [t for t in trials if t.run == settled.run]
+        if len(rewritten) != 1 or not rewritten[0].replaces:
+            return f"the fixture did not write a replacement: {rewritten}"
+        if rewritten[0].c1 != "indeterminate":
+            return f"the replacement is not criterion-1 indeterminate: {rewritten[0]}"
+        lines = criteria_lines(manifest, trials, sentinel)
+        cell = [line for line in lines if line.startswith(f"1 {scenario} ")]
+        if len(cell) != 1:
+            return f"{len(cell)} lines for the cell, expected 1: {cell}"
+        if "provisional" in cell[0]:
+            return f"a terminal reading was marked as an owed re-run: {cell[0]!r}"
+        listed = [
+            line
+            for line in lines
+            if line.startswith("criterion 1 indeterminate and owed a re-run: ")
+        ]
+        if len(listed) != 1:
+            return f"{len(listed)} owed-re-run lines, expected 1: {listed}"
+        if settled.run in listed[0]:
+            return f"the bottom line asks for a re-run of a replacement: {listed[0]!r}"
         return ""
 
     def c3_three_criteria_indeterminate() -> str:
@@ -3551,9 +3733,25 @@ def self_test() -> int:
             "c3_post_check_failed_is_an_over_trigger",
             c3_post_check_failed_is_an_over_trigger,
         ),
+        (
+            "c3_empty_capture_is_not_an_over_trigger",
+            c3_empty_capture_is_not_an_over_trigger,
+        ),
+        (
+            "c3_unknown_gate_detail_is_not_an_over_trigger",
+            c3_unknown_gate_detail_is_not_an_over_trigger,
+        ),
+        (
+            "c3_empty_captures_do_not_raise_a_cell",
+            c3_empty_captures_do_not_raise_a_cell,
+        ),
         ("c3_three_criteria_indeterminate", c3_three_criteria_indeterminate),
         ("c3_missing_post_check_indeterminate", c3_missing_post_check_indeterminate),
         ("c3_indeterminate_is_not_graded", c3_indeterminate_is_not_graded),
+        (
+            "c1_indeterminate_replacement_is_not_owed_a_rerun",
+            c1_indeterminate_replacement_is_not_owed_a_rerun,
+        ),
         ("control_zero_rows", control_zero_rows),
         ("prior_controls_groups", prior_controls_groups),
         ("version_single", version_single),
