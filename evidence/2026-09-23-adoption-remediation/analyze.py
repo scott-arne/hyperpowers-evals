@@ -5,8 +5,9 @@ Reads ``manifest.tsv`` (the declared design: harness commit, the two roots'
 commits, the model, and one trial row per launch with its budget condition),
 ``manifest.base.tsv`` (the design as planned, against which every later row
 must justify itself), ``prior-controls.tsv`` (the control cells this campaign
-cites instead of re-running), ``sentinel-batch.txt`` (the pointer to the
-`quorum run-all` batch criterion 4 is judged against), the per-process logs
+cites instead of re-running), ``sentinel-batch.txt`` (the `quorum run-all`
+batch criterion 4 is judged against, and on its second line the treatment
+commit that batch ran at), the per-process logs
 under ``logs/``, and ``reruns.tsv`` (original run -> replacement run). Every
 log must be a manifest row or a declared rerun, carry the pins and the budget
 the launcher wrote, and hold exactly its runs; every run's bootstrap payload
@@ -14,7 +15,8 @@ must contain the pinned bootstrap of its arm; a void attempt (grader exit,
 setup failure) may not stand in for a trial; every trial collapses to one
 outcome; every top-up and control-run row must be the consequence the design
 allows; the sentinel batch must have finished, have run this campaign's coding
-agent, and have produced a result for every declared sentinel scenario. Any
+agent at the declared treatment head on the campaign's Claude Code version, and
+have produced its full repeat of runs for every declared sentinel scenario. Any
 deviation is an error, not a skipped row. Writes ``runs.json`` and
 ``analysis-table.txt``, and prints the same table: the per-cell counts, the
 cited controls, and the spec's acceptance criteria. ``--self-test`` proves the
@@ -158,8 +160,12 @@ POOLED_LOWER_BAR = 0.85
 BENIGN_BAR = (2, 20)
 ROUTER_BAR = (2, 3)
 # docs/scenario-authoring.md section 5, "A single sentinel failure is a sample":
-# the recorded base rate a lone failure is judged against.
-SENTINEL_BASE_RATES = {CHECKBOX: (2, 20)}
+# the recorded base rate a lone failure is judged against, with the hyperpowers
+# head it was measured at. Spec 1.7 step 2 reuses a rate only at that head, so
+# the head travels with the rate rather than being remembered elsewhere.
+SENTINEL_BASE_RATES: dict[str, tuple[tuple[int, int], str]] = {
+    CHECKBOX: ((2, 20), "c6b69d8")
+}
 # Spec 3.3 criterion 5's cited means, (control, wording) per benign session.
 # The checkbox scenario has no matched control cell, only a wording one.
 CITED_BENIGN_TOKENS: dict[str, tuple[int | None, int | None]] = {
@@ -765,8 +771,15 @@ def collapse(runs: list[Run]) -> list[Run]:
                 f"{run.run} replaces {run.replaces}, itself a replacement; "
                 "the rule is one rerun"
             )
-        if original.final != "indeterminate":
-            raise DesignError(f"{run.replaces} was replaced but was not indeterminate")
+        # Criterion 1 is read from the Gauntlet-Agent's own criteria list, so a
+        # trial can be indeterminate there while the composed verdict is pass or
+        # fail. criteria_lines asks for a re-run of exactly that trial; refusing
+        # it here would demand a repair the intake cannot accept.
+        if "indeterminate" not in (original.final, original.c1):
+            raise DesignError(
+                f"{run.replaces} was replaced but was not indeterminate on "
+                "either reading (the composed verdict or criterion 1)"
+            )
         if (original.arm, original.scenario) != (run.arm, run.scenario):
             raise DesignError(f"{run.run} replaces a trial of another arm or scenario")
         if original.budget != run.budget:
@@ -862,11 +875,21 @@ def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, centre - half), min(1.0, centre + half))
 
 
-def check_design(manifest: dict, runs: list[Run], trials: list[Run]) -> None:
+def check_design(
+    manifest: dict, runs: list[Run], trials: list[Run], sentinel_version: str = ""
+) -> None:
     """Counts on the collapsed trials; the measurement context on every run; the deltas justified.
 
     A replaced indeterminate original still ran under the instrument, so its
     payload, listing, brainstorming line, and model must match its cell too.
+
+    :param manifest: The parsed manifest.
+    :param runs: Every run, replaced originals included.
+    :param trials: The collapsed trials, one per planned trial.
+    :param sentinel_version: The Claude Code version the sentinel batch's
+        determinate runs recorded, which spec 3.2 requires to be the campaign's
+        one version. Empty when no determinate sentinel run reported one.
+    :raises DesignError: On any departure from the declared design.
     """
 
     expected = manifest["trials"]
@@ -924,13 +947,24 @@ def check_design(manifest: dict, runs: list[Run], trials: list[Run]) -> None:
                 raise DesignError(
                     f"default: brainstorming lines differ across arms: {sorted(lines)}"
                 )
+            # The default budget means one thing: the listing was over Claude
+            # Code's budget and the skill appears by bare name. Any other form
+            # -- an arm's rendered description, or a third one from some build
+            # that is not either pinned head -- is a different condition, and
+            # runs collected under it are not this measurement's runs.
             line = next(iter(lines))
-            for arm in ("control", "treatment"):
-                if any(r.arm == arm for r in budget_runs) and line == rendered[arm]:
-                    raise DesignError(
-                        f"{arm}/default: default listing rendered the description; "
-                        "the production budget condition did not hold"
-                    )
+            if line != BRAINSTORMING_LINE:
+                for arm in ("control", "treatment"):
+                    if any(r.arm == arm for r in budget_runs) and line == rendered[arm]:
+                        raise DesignError(
+                            f"{arm}/default: default listing rendered the description; "
+                            "the production budget condition did not hold"
+                        )
+                raise DesignError(
+                    f"default: the brainstorming line is {line!r}, expected the bare "
+                    f"{BRAINSTORMING_LINE!r}; the production budget condition did not "
+                    "hold"
+                )
         else:
             # Campaign 2 residue: its design ran a raised-listing arm where the
             # description is rendered. BUDGETS pins this campaign to `default`
@@ -953,6 +987,13 @@ def check_design(manifest: dict, runs: list[Run], trials: list[Run]) -> None:
     if len(versions) > 1:
         raise DesignError(
             f"Claude Code versions differ across the campaign: {sorted(versions)}"
+        )
+    # Spec 3.2 runs the sentinel tier inside this campaign, so its sessions are
+    # under the same instrument as the trials, not merely a batch that exists.
+    if sentinel_version and versions and sentinel_version not in versions:
+        raise DesignError(
+            f"the sentinel batch ran on Claude Code {sentinel_version}, the campaign "
+            f"on {sorted(versions)}"
         )
     check_deltas(manifest, runs, trials)
 
@@ -990,6 +1031,27 @@ def over_triggered(trials: list[Run], scenario: str) -> int:
         1
         for t in trials
         if t.scenario == scenario and t.arm == "treatment" and t.final == "fail"
+    )
+
+
+def graded_count(trials: list[Run], scenario: str) -> int:
+    """Treatment trials of this scenario that reached a pass or fail.
+
+    An ungraded trial lowers an over-trigger numerator without lowering the
+    planned denominator, so it flatters the cell. Both criterion 3's bar and
+    1.7 step 2's head-matched rate are only meaningful over trials that graded.
+
+    :param trials: The collapsed trials.
+    :param scenario: The scenario to count.
+    :returns: How many treatment trials of the scenario graded.
+    """
+
+    return sum(
+        1
+        for t in trials
+        if t.scenario == scenario
+        and t.arm == "treatment"
+        and t.final in ("pass", "fail")
     )
 
 
@@ -1074,8 +1136,37 @@ def prior_control_lines(rows: list[dict]) -> list[str]:
     return out
 
 
-def read_sentinel() -> list[tuple[str, str, str]]:
-    """The sentinel batch's per-run verdicts.
+def transcript_version(path: str) -> str:
+    """The single Claude Code version one session transcript records.
+
+    A version-only reading of the transcript. :func:`context` also requires one
+    skill listing and one model, which eleven different sentinel scenarios have
+    no reason to share.
+
+    :param path: A session transcript (``home/.claude/projects/*/*.jsonl``).
+    :returns: The version every record carrying one agrees on.
+    :raises DesignError: When the transcript records no version, or more than
+        one.
+    """
+
+    versions = sorted(
+        {
+            str(record["version"])
+            for record in iter_records(path)
+            if record.get("version")
+        }
+    )
+    if not versions:
+        raise DesignError(f"{path}: the transcript records no Claude Code version")
+    if len(versions) > 1:
+        raise DesignError(
+            f"{path}: Claude Code versions differ within the session: {versions}"
+        )
+    return versions[0]
+
+
+def read_sentinel(manifest: dict) -> tuple[list[tuple[str, str, str]], str]:
+    """The sentinel batch's per-run verdicts, bound to this campaign.
 
     The batch is named by a pointer file rather than discovered, so a campaign
     cannot quietly be judged against some other batch that happens to be on
@@ -1085,11 +1176,22 @@ def read_sentinel() -> list[tuple[str, str, str]]:
     batch finished and say which coding agent ran it, and every scenario in
     SENTINEL_SCENARIOS must have produced a runnable result.
 
-    :returns: (scenario, run id, final verdict) per runnable record of a
-        declared sentinel scenario.
+    Nor is the pointer enough to make the batch *this campaign's*. Spec 3.2
+    runs the sentinel tier inside the campaign with ``SUPERPOWERS_ROOT`` at the
+    treatment root, but neither ``batch.json`` nor ``verdict.json`` records a
+    head, and single-agent sentinel batches that satisfy every completeness
+    check above are a routine by-product of this repository. So the batch
+    declares the treatment commit it ran at, and its determinate runs must
+    record the campaign's one Claude Code version.
+
+    :param manifest: The parsed manifest, read for the treatment commit the
+        batch has to declare.
+    :returns: ((scenario, run id, final verdict) per runnable record of a
+        declared sentinel scenario, the Claude Code version its determinate
+        runs recorded -- empty when none of them did).
     :raises DesignError: When the pointer, the batch, its header, a record, or
         a run's verdict.json is missing, unreadable, or describes some other
-        batch than the one this campaign declared.
+        batch, head, version or trial than the one this campaign declared.
     """
 
     pointer = os.path.join(E, SENTINEL_BATCH)
@@ -1097,13 +1199,34 @@ def read_sentinel() -> list[tuple[str, str, str]]:
         raise DesignError(
             f"{SENTINEL_BATCH} is missing: write the sentinel batch directory (the "
             "`quorum run-all` batch holding results.jsonl, e.g. "
-            f"results/batches/batch-<stamp>-<nonce>) into {pointer}"
+            f"results/batches/batch-<stamp>-<nonce>) and, on the next line, the "
+            f"treatment commit the batch ran at, into {pointer}"
         )
     with open(pointer, encoding="utf-8") as handle:
-        named = handle.read().strip()
-    if not named:
+        # Line-wise, not whitespace-wise: an out-root path may contain spaces.
+        fields = [
+            line.strip()
+            for line in handle.read().splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+    if not fields:
         raise DesignError(
-            f"{SENTINEL_BATCH} is empty; it must name the batch directory"
+            f"{SENTINEL_BATCH} is empty; it must name the batch directory on its "
+            "first line and the treatment commit the batch ran at on its second"
+        )
+    if len(fields) != 2:
+        raise DesignError(
+            f"{SENTINEL_BATCH} holds {len(fields)} fields {fields}, expected two: the "
+            "batch directory, then the treatment commit the batch ran at"
+        )
+    named, declared_head = fields
+    treatment = str(manifest["commits"]["treatment"])
+    if declared_head != treatment:
+        raise DesignError(
+            f"{SENTINEL_BATCH}: the batch declares treatment commit "
+            f"{declared_head!r}, not this campaign's {treatment!r}; spec 3.2 runs "
+            "the sentinel tier with SUPERPOWERS_ROOT at the treatment root, so a "
+            "batch run at another head is not this campaign's evidence"
         )
     batch = named if os.path.isabs(named) else os.path.join(EV, named)
     if not BATCH_RE.fullmatch(os.path.basename(batch)):
@@ -1134,11 +1257,19 @@ def read_sentinel() -> list[tuple[str, str, str]]:
             f"{SENTINEL_BATCH}: {os.path.basename(batch)} ran coding agents {agents}, "
             f"not this campaign's ['{CODING_AGENT}']"
         )
+    repeat = header.get("repeat")
+    if type(repeat) is not int or repeat < 1:
+        raise DesignError(
+            f"{SENTINEL_BATCH}: batch.json records repeat {repeat!r}, expected an "
+            "integer of at least 1"
+        )
     # run-all writes the batch at <out-root>/batches/<id> and each run at
     # <out-root>/<run_id>, so a run resolves against the batch's grandparent.
     out_root = os.path.dirname(os.path.dirname(batch))
     out: list[tuple[str, str, str]] = []
     skipped: dict[str, str] = {}
+    indexes: dict[str, list[int]] = {}
+    versions: set[str] = set()
     for record in iter_records(records):
         scenario = str(record.get("scenario") or "")
         run_id = str(record.get("run_id") or "")
@@ -1169,10 +1300,65 @@ def read_sentinel() -> list[tuple[str, str, str]]:
             raise DesignError(
                 f"{SENTINEL_BATCH}: no verdict.json for {run_id} under {out_root}"
             )
-        final = str(load_json(verdict_path).get("final"))
+        verdict = load_json(verdict_path)
+        final = str(verdict.get("final"))
         if final not in ("pass", "fail", "indeterminate"):
             raise DesignError(f"{run_id}: unexpected final verdict {final!r}")
+        # The same cross-checks build_runs makes of a campaign run: the record
+        # and the verdict it points at describe one trial, so a run directory
+        # that answers for another cell is a wiring error, not a result.
+        if verdict.get("scenario") != scenario:
+            raise DesignError(
+                f"{SENTINEL_BATCH}: {run_id}: verdict.json names scenario "
+                f"{verdict.get('scenario')!r}, the batch record names {scenario!r}"
+            )
+        if verdict.get("coding_agent") != agent:
+            raise DesignError(
+                f"{SENTINEL_BATCH}: {run_id}: verdict.json names coding agent "
+                f"{verdict.get('coding_agent')!r}, the batch record names {agent!r}"
+            )
+        trial = verdict.get("trial") or {}
+        index = trial.get("index")
+        count = trial.get("count")
+        if repeat == 1 and not trial:
+            # `trial` is omitted at repeat 1 (src/contracts/batch.ts).
+            index = 1
+        elif type(count) is not int or count != repeat or type(index) is not int:
+            raise DesignError(
+                f"{SENTINEL_BATCH}: {run_id}: trial identity {trial!r} does not fit a "
+                f"batch with repeat {repeat}"
+            )
+        indexes.setdefault(scenario, []).append(int(index))
+        if final != "indeterminate":
+            # A pre-check failure legitimately produces no transcript, and it
+            # already fails its own criterion-4 line. A determinate run has no
+            # such excuse: its version is what binds it to this campaign.
+            transcripts = sorted(
+                glob.glob(
+                    os.path.join(out_root, run_id, "home/.claude/projects/*/*.jsonl")
+                )
+            )
+            if not transcripts:
+                raise DesignError(
+                    f"{SENTINEL_BATCH}: {run_id} returned {final} but has no "
+                    "transcript, so its Claude Code version cannot be read"
+                )
+            versions.add(transcript_version(transcripts[0]))
         out.append((scenario, run_id, final))
+    for scenario in SENTINEL_SCENARIOS:
+        found = sorted(indexes.get(scenario, []))
+        # An empty cell is the `absent` report below, which says why.
+        if found and found != list(range(1, repeat + 1)):
+            raise DesignError(
+                f"{SENTINEL_BATCH}: {scenario} produced trial indexes {found}, not "
+                f"1..{repeat}; a cell short of the batch's repeat cannot answer "
+                "criterion 4 over its own planned count"
+            )
+    if len(versions) > 1:
+        raise DesignError(
+            f"{SENTINEL_BATCH}: the sentinel runs record Claude Code versions "
+            f"{sorted(versions)}; the campaign ran one"
+        )
     ran = {scenario for scenario, _, _ in out}
     absent = [s for s in SENTINEL_SCENARIOS if s not in ran]
     if absent:
@@ -1183,20 +1369,120 @@ def read_sentinel() -> list[tuple[str, str, str]]:
             f"{SENTINEL_BATCH}: the batch produced no runnable result for {len(absent)} "
             f"of the {len(SENTINEL_SCENARIOS)} declared sentinel scenarios: {detail}"
         )
-    return out
+    return out, versions.pop() if versions else ""
 
 
-def sentinel_lines(sentinel: list[tuple[str, str, str]]) -> list[str]:
+def tree_ids(commit: str) -> tuple[str, str] | None:
+    """The ``skills/`` and ``hooks/`` tree object ids of a hyperpowers commit.
+
+    Object ids, not file contents: two heads carry the same skills if and only
+    if git gives their trees the same id, and the comparison costs one
+    ``rev-parse`` each. Read live from ``ROOTS["treatment"]`` on every call --
+    that worktree is created and removed around the run, so nothing about it
+    may be cached across one.
+
+    :param commit: A commit-ish to resolve in the treatment worktree.
+    :returns: (skills tree id, hooks tree id), or None when either path cannot
+        be resolved -- a head that answers nothing cannot be shown to match, so
+        the caller must treat None as a mismatch.
+    """
+
+    ids: list[str] = []
+    for path in ("skills", "hooks"):
+        done = subprocess.run(
+            ["git", "-C", ROOTS["treatment"], "rev-parse", f"{commit}:{path}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if done.returncode != 0:
+            return None
+        ids.append(done.stdout.strip())
+    return ids[0], ids[1]
+
+
+def head_matched_rate(
+    manifest: dict, trials: list[Run], scenario: str
+) -> tuple[int, int] | None:
+    """This campaign's own over-trigger rate for a benign scenario, measured at the head under test.
+
+    Spec 1.7 step 2's replacement for a base rate measured elsewhere, and spec
+    line 270 assigns this campaign that measurement: twenty benign sessions at
+    the post-revert head are the rate. Only a cell that graded its whole
+    planned count qualifies; a partly graded one is a smaller sample dressed as
+    the planned denominator.
+
+    :param manifest: The parsed manifest, which supplies the planned count.
+    :param trials: The collapsed trials.
+    :param scenario: The sentinel scenario wanting a rate.
+    :returns: (over-triggers, graded trials), or None when this campaign
+        measured no such rate.
+    """
+
+    if scenario not in BENIGN:
+        return None
+    n = planned(manifest, scenario)
+    graded = graded_count(trials, scenario)
+    if n <= 0 or graded < n:
+        return None
+    return over_triggered(trials, scenario), graded
+
+
+def usable_base_rate(
+    manifest: dict, trials: list[Run], scenario: str
+) -> tuple[tuple[int, int] | None, str]:
+    """The rate spec 1.7 step 2 allows this campaign to judge a sentinel failure against.
+
+    The recorded rate applies only at the head it was measured at. Phase 2 of
+    this campaign is entirely reverts to ``skills/`` and ``hooks/``, so the
+    treatment head's trees are exactly what step 2 was written about; where the
+    recorded rate cannot be used, this campaign's own head-matched measurement
+    is preferred to no rate at all.
+
+    :param manifest: The parsed manifest, read for the treatment commit.
+    :param trials: The collapsed trials, which carry the head-matched rate.
+    :param scenario: The sentinel scenario wanting a rate.
+    :returns: (the rate, a phrase naming it) when one applies, else (None, the
+        reason none does) -- both go into the criterion-4 line.
+    """
+
+    recorded = SENTINEL_BASE_RATES.get(scenario)
+    if recorded is not None:
+        rate, measured_at = recorded
+        at_head = tree_ids(str(manifest["commits"]["treatment"]))
+        if at_head is not None and at_head == tree_ids(measured_at):
+            return rate, f"base rate {pct(*rate)}"
+    own = head_matched_rate(manifest, trials, scenario)
+    if own is not None:
+        return own, f"this campaign's own rate at the head under test {pct(*own)}"
+    if recorded is None:
+        return None, "no recorded base rate"
+    rate, measured_at = recorded
+    return None, (
+        f"the recorded base rate {pct(*rate)} was measured at {measured_at}, whose "
+        "skills/ and hooks/ trees are not the treatment head's, and this campaign "
+        "measured no rate at the head under test"
+    )
+
+
+def sentinel_lines(
+    manifest: dict, trials: list[Run], sentinel: list[tuple[str, str, str]]
+) -> list[str]:
     """Criterion 4's sentinel half, judged under the 1.7 base-rate rule.
 
     A lone failure is one draw from the scenario's own rate, so a regression
-    needs the observed rate's 95% Wilson lower bound above the recorded base
-    rate's 95% Wilson upper bound. A scenario with no recorded base rate has
-    nothing to draw from, so its failure stands.
+    needs the observed rate's 95% Wilson lower bound above the applicable
+    rate's 95% Wilson upper bound. A scenario with no rate that applies at this
+    head has nothing to draw from, so its failure stands.
 
     One line per declared sentinel, in SENTINEL_SCENARIOS order, never per
     scenario the batch happens to name: a batch cannot decide which scenarios
     criterion 4 is about, or a truncated one would read as a clean sweep.
+
+    :param manifest: The parsed manifest, read for the treatment commit.
+    :param trials: The collapsed trials, which may carry a head-matched rate.
+    :param sentinel: The sentinel batch as :func:`read_sentinel` returns it.
+    :returns: One line per declared sentinel scenario.
     """
 
     bar = "[bar no regression under 1.7]"
@@ -1221,10 +1507,10 @@ def sentinel_lines(sentinel: list[tuple[str, str, str]]) -> list[str]:
         if k == 0:
             out.append(f"4 sentinel {scenario}: {n} of {n} passed {bar} -> met")
             continue
-        base = SENTINEL_BASE_RATES.get(scenario)
+        base, source = usable_base_rate(manifest, trials, scenario)
         if base is None:
             out.append(
-                f"4 sentinel {scenario}: {k} of {n} failed; no recorded base rate, so "
+                f"4 sentinel {scenario}: {k} of {n} failed; {source}, so "
                 "the failure stands (1.7 step 2: run 20 at this head and record the "
                 f"rate) {bar} -> not met"
             )
@@ -1233,7 +1519,7 @@ def sentinel_lines(sentinel: list[tuple[str, str, str]]) -> list[str]:
         obs_lo, _ = wilson(k, n)
         regression = obs_lo > base_hi
         out.append(
-            f"4 sentinel {scenario}: {k} of {n} failed; base rate {pct(*base)} "
+            f"4 sentinel {scenario}: {k} of {n} failed; {source} "
             f"(95% Wilson {100 * base_lo:.0f}-{100 * base_hi:.0f}%), observed 95% "
             f"Wilson lower {100 * obs_lo:.0f}% "
             f"{'exceeds' if regression else 'does not exceed'} "
@@ -1345,20 +1631,14 @@ def criteria_lines(
         # k counts over-triggers, so a trial that reached no verdict lowers k
         # without lowering n and flatters the cell. The bar only means anything
         # over trials that graded.
-        graded = sum(
-            1
-            for t in trials
-            if t.scenario == scenario
-            and t.arm == "treatment"
-            and t.final in ("pass", "fail")
-        )
+        graded = graded_count(trials, scenario)
         met = k <= bar_k and n >= bar_n and graded >= bar_n
         out.append(
             f"3 {scenario} over-triggered: {over(k, n)} ({graded} graded) "
             f"[bar <= {bar_k} of {bar_n} and >= {bar_n} graded] "
             f"-> {'met' if met else 'not met'}"
         )
-    out += sentinel_lines(sentinel)
+    out += sentinel_lines(manifest, trials, sentinel)
     bar_k, bar_n = ROUTER_BAR
     routers = sorted(
         {t.scenario for t in trials if t.scenario.startswith(ROUTER_PREFIX)}
@@ -1489,16 +1769,30 @@ def _fixture_run(
     return run_dir
 
 
-def _sentinel_batch(*rows: tuple[str, str]) -> list[tuple[str, str]]:
-    """A complete sentinel batch: one passing run per declared scenario.
+def _sentinel_batch(
+    *rows: tuple[str, str], repeat: int = 1
+) -> tuple[int, list[tuple[str, str]]]:
+    """A complete sentinel batch: ``repeat`` runs of every declared scenario.
 
-    :param rows: Rows that replace the default for their scenario. A scenario
-        may appear more than once, which is how a repeated cell is built.
-    :returns: The (scenario, final) batch ``_fixture_sentinel`` writes.
+    ``repeat`` is a property of the batch, not of a cell, so a shape the
+    producer can emit has the same number of runs for every scenario. The
+    helper returns it beside the records to keep the two from drifting.
+
+    :param rows: Finals that replace the default for their scenario, in order.
+        A scenario may appear up to ``repeat`` times.
+    :returns: (the batch's repeat, the (scenario, final) records
+        ``_fixture_sentinel`` writes).
     """
 
-    named = {scenario for scenario, _ in rows}
-    return [(s, "pass") for s in SENTINEL_SCENARIOS if s not in named] + list(rows)
+    by_scenario: dict[str, list[str]] = {}
+    for scenario, final in rows:
+        by_scenario.setdefault(scenario, []).append(final)
+    batch: list[tuple[str, str]] = []
+    for scenario in SENTINEL_SCENARIOS:
+        finals = by_scenario.get(scenario, [])
+        finals = finals + ["pass"] * (repeat - len(finals))
+        batch += [(scenario, final) for final in finals]
+    return repeat, batch
 
 
 FIXTURE_FINISHED = "2026-09-24T01:00:00.000Z"
@@ -1510,13 +1804,18 @@ def _fixture_batch_dir(root: str) -> str:
     return os.path.join(root, "sentinel", "batches", "batch-fixture-0000")
 
 
-def _fixture_sentinel(root: str, batch: list[tuple[str, str]]) -> None:
+def _fixture_sentinel(root: str, repeat: int, batch: list[tuple[str, str]]) -> None:
     """A quorum batch at <out-root>/batches/<id> with its runs at <out-root>/<run_id>.
 
     :param root: The evidence tree's root.
-    :param batch: (scenario, final) per record. The final ``skipped`` writes a
-        tier-skipped record with no run, which is what run-all records for every
-        cell outside the tier the batch was asked for.
+    :param repeat: The batch's repeat, stamped on the header and on every
+        record's trial count, so the fixture can only describe a shape run-all
+        could have produced.
+    :param batch: (scenario, final) per record, in order. ``skipped`` and
+        ``stopped`` write a record with no run -- what run-all records for a
+        cell outside the tier it was asked for, and for a cell a graceful stop
+        never reached. An ``indeterminate`` run writes no transcript, which is
+        what a run that failed its pre-checks leaves behind.
     """
 
     out_root = os.path.join(root, "sentinel")
@@ -1531,45 +1830,74 @@ def _fixture_sentinel(root: str, batch: list[tuple[str, str]]) -> None:
                 "finished_at": FIXTURE_FINISHED,
                 "coding_agents": [CODING_AGENT],
                 "jobs": 1,
-                "repeat": 1,
+                "repeat": repeat,
             },
             handle,
         )
+    seen: dict[str, int] = {}
     with open(
         os.path.join(batch_dir, "results.jsonl"), "w", encoding="utf-8"
     ) as handle:
         for index, (scenario, final) in enumerate(batch, start=1):
-            if final == "skipped":
+            if final in ("skipped", "stopped"):
                 handle.write(
                     json.dumps(
                         {
                             "scenario": scenario,
                             "coding_agent": CODING_AGENT,
                             "run_id": None,
-                            "skipped": "tier",
+                            "skipped": "tier" if final == "skipped" else "stopped",
                         }
                     )
                     + "\n"
                 )
                 continue
+            seen[scenario] = seen.get(scenario, 0) + 1
+            trial = {"index": seen[scenario], "count": repeat}
             run_id = f"sentinel-run-{index}"
-            os.makedirs(os.path.join(out_root, run_id), exist_ok=True)
+            run_dir = os.path.join(out_root, run_id)
+            os.makedirs(run_dir, exist_ok=True)
             with open(
-                os.path.join(out_root, run_id, "verdict.json"), "w", encoding="utf-8"
+                os.path.join(run_dir, "verdict.json"), "w", encoding="utf-8"
             ) as verdict:
-                json.dump({"final": final}, verdict)
+                json.dump(
+                    {
+                        "final": final,
+                        "scenario": scenario,
+                        "coding_agent": CODING_AGENT,
+                        "trial": trial,
+                    },
+                    verdict,
+                )
+            if final != "indeterminate":
+                project = os.path.join(run_dir, "home/.claude/projects/p")
+                os.makedirs(project, exist_ok=True)
+                with open(
+                    os.path.join(project, "t.jsonl"), "w", encoding="utf-8"
+                ) as transcript:
+                    transcript.write(
+                        json.dumps(
+                            {
+                                "type": "assistant",
+                                "version": FIXTURE_VERSION,
+                                "message": {"model": "model-x", "content": []},
+                            }
+                        )
+                        + "\n"
+                    )
             handle.write(
                 json.dumps(
                     {
                         "scenario": scenario,
                         "coding_agent": CODING_AGENT,
                         "run_id": run_id,
+                        "trial": trial,
                     }
                 )
                 + "\n"
             )
     with open(os.path.join(root, SENTINEL_BATCH), "w", encoding="utf-8") as handle:
-        handle.write(batch_dir + "\n")
+        handle.write(f"{batch_dir}\n{_fixture_commit('treatment')}\n")
 
 
 def _fixture_log(
@@ -1612,7 +1940,7 @@ def _write_fixture(
     reruns: str | None,
     mutate: Callable[[str], None] | None = None,
     control_rows: bool = True,
-    sentinel: list[tuple[str, str]] | None = None,
+    sentinel: tuple[int, list[tuple[str, str]]] | None = None,
 ) -> None:
     """A minimal evidence tree: one log per proc, one run per verdict, one budget.
 
@@ -1625,15 +1953,18 @@ def _write_fixture(
     render the description. Each arm's root is a git repository holding its own
     bootstrap and description; each run's payload contains its arm's bootstrap.
     ``manifest.base.tsv`` equals the manifest as written; ``prior-controls.tsv``
-    carries one row per comparability group; ``sentinel`` is the (scenario,
-    final) batch, defaulting to one passing run per declared sentinel;
-    ``mutate`` runs last and breaks the tree on purpose.
+    carries one row per comparability group; ``sentinel`` is the (repeat,
+    (scenario, final) records) batch, defaulting to one passing run per declared
+    sentinel; ``mutate`` runs last and breaks the tree on purpose.
+
+    Each arm's repository carries a ``hooks/`` tree beside ``skills/`` because
+    spec 1.7's base-rate rule is a comparison of both trees.
     """
 
     os.makedirs(os.path.join(root, "logs"), exist_ok=True)
     for arm in ("control", "treatment"):
         arm_root = ROOTS[arm]
-        for sub in ("skills/brainstorming", "skills/using-hyperpowers"):
+        for sub in ("skills/brainstorming", "skills/using-hyperpowers", "hooks"):
             os.makedirs(os.path.join(arm_root, sub), exist_ok=True)
         with open(
             os.path.join(arm_root, "skills/brainstorming/SKILL.md"),
@@ -1647,6 +1978,10 @@ def _write_fixture(
             encoding="utf-8",
         ) as handle:
             handle.write(f"---\nname: using-hyperpowers\n---\nBOOT-{arm}\n")
+        with open(
+            os.path.join(arm_root, "hooks/session-start.sh"), "w", encoding="utf-8"
+        ) as handle:
+            handle.write("#!/bin/sh\nexit 0\n")
         git = [
             "git",
             "-C",
@@ -1659,7 +1994,7 @@ def _write_fixture(
             "commit.gpgsign=false",
         ]
         subprocess.run(git + ["init", "-q"], check=True)
-        subprocess.run(git + ["add", "skills"], check=True)
+        subprocess.run(git + ["add", "skills", "hooks"], check=True)
         subprocess.run(git + ["commit", "-q", "-m", "fixture"], check=True)
     originals = [name for name in final_by_run if not name.startswith("rerun-")]
     control_lines = (
@@ -1728,7 +2063,8 @@ def _write_fixture(
             for index, (name, final) in enumerate(members, start=1)
         ]
         _fixture_log(root, arm, proc, "default", run_dirs)
-    _fixture_sentinel(root, sentinel or _sentinel_batch())
+    repeat, records = sentinel if sentinel is not None else _sentinel_batch()
+    _fixture_sentinel(root, repeat, records)
     if reruns is not None:
         with open(os.path.join(root, "reruns.tsv"), "w", encoding="utf-8") as handle:
             handle.write(reruns)
@@ -1839,7 +2175,14 @@ def _synthetic_campaign() -> tuple[dict, list[Run], list[tuple[str, str, str]]]:
         for i, scenario in enumerate(SENTINEL_SCENARIOS[:-1])
         if scenario != CHECKBOX
     ]
-    return {"trials": planned_counts}, trials, sentinel
+    # A treatment commit no repository can resolve, so the 1.7 head comparison
+    # is decided the same way wherever the self-test runs: the recorded base
+    # rate's trees cannot be shown to be this head's, so the rate is refused.
+    return (
+        {"trials": planned_counts, "commits": {"treatment": "0" * 40}},
+        trials,
+        sentinel,
+    )
 
 
 def _criteria_check() -> list[str]:
@@ -1875,10 +2218,16 @@ def _criteria_check() -> list[str]:
             f"3 {BENIGN[2]} over-triggered: 0/20 = 0% (20 graded) "
             "[bar <= 2 of 20 and >= 20 graded] -> met"
         ),
+        # The checkbox cell graded 19 of its 20 planned trials, so this campaign
+        # has no head-matched rate to substitute and the recorded one is barred:
+        # 1.7 step 2 reuses a rate only at the head it was measured at.
         (
-            f"4 sentinel {CHECKBOX}: 1 of 20 failed; base rate 2/20 = 10% "
-            "(95% Wilson 3-30%), observed 95% Wilson lower 1% does not exceed 30%, "
-            "not a regression [bar no regression under 1.7] -> met"
+            f"4 sentinel {CHECKBOX}: 1 of 20 failed; the recorded base rate "
+            f"2/20 = 10% was measured at {SENTINEL_BASE_RATES[CHECKBOX][1]}, whose "
+            "skills/ and hooks/ trees are not the treatment head's, and this "
+            "campaign measured no rate at the head under test, so the failure "
+            "stands (1.7 step 2: run 20 at this head and record the rate) "
+            "[bar no regression under 1.7] -> not met"
         ),
         *[
             f"4 sentinel {scenario}: 1 of 1 passed [bar no regression under 1.7] -> met"
@@ -1930,27 +2279,38 @@ def _fixture_tree(
     reruns: str | None = None,
     mutate: Callable[[str], None] | None = None,
     control_rows: bool = True,
-    sentinel: list[tuple[str, str]] | None = None,
+    sentinel: tuple[int, list[tuple[str, str]]] | None = None,
 ):
     """A throwaway evidence tree with the module globals pointed at it.
 
     The constants the analysis reads are design pins, so a synthetic cohort can
     only be analysed by repointing them; they are restored on the way out so no
-    case can leak into the next.
+    case can leak into the next. ``SENTINEL_BASE_RATES`` is saved with them
+    because its recorded head is a pin into a real repository, and a case that
+    exercises the 1.7 head rule has to name a commit of the throwaway one.
 
     :param final_by_run: run name -> final verdict for the cohort's first cell.
     :param reruns: the text of ``reruns.tsv``, or None to leave the file out.
     :param mutate: runs last, to break the tree on purpose.
     :param control_rows: False launches nothing in the control arm.
-    :param sentinel: the (scenario, final) sentinel batch, defaulting to one
-        passing run per declared sentinel scenario.
+    :param sentinel: the (repeat, (scenario, final) records) sentinel batch,
+        defaulting to one passing run per declared sentinel scenario.
     :returns: the tree's root, which is also its evidence directory.
     """
 
     import tempfile
 
     global E, ROOTS, NON_SENTINEL, BASE_MANIFEST_SHA256, CONTROL_COMMIT, MODEL
-    saved = (E, ROOTS, NON_SENTINEL, BASE_MANIFEST_SHA256, CONTROL_COMMIT, MODEL)
+    global SENTINEL_BASE_RATES
+    saved = (
+        E,
+        ROOTS,
+        NON_SENTINEL,
+        BASE_MANIFEST_SHA256,
+        CONTROL_COMMIT,
+        MODEL,
+        dict(SENTINEL_BASE_RATES),
+    )
     with tempfile.TemporaryDirectory() as tmp:
         try:
             E = tmp
@@ -1969,7 +2329,15 @@ def _fixture_tree(
             )
             yield tmp
         finally:
-            E, ROOTS, NON_SENTINEL, BASE_MANIFEST_SHA256, CONTROL_COMMIT, MODEL = saved
+            (
+                E,
+                ROOTS,
+                NON_SENTINEL,
+                BASE_MANIFEST_SHA256,
+                CONTROL_COMMIT,
+                MODEL,
+                SENTINEL_BASE_RATES,
+            ) = saved
 
 
 def _run_main() -> tuple[int | None, str, str]:
@@ -2162,9 +2530,12 @@ def self_test() -> int:
 
     def sentinel_base_rate() -> str:
         batch = _sentinel_batch(
-            *[(CHECKBOX, "fail" if i == 0 else "pass") for i in range(20)]
+            *[(CHECKBOX, "fail" if i == 0 else "pass") for i in range(20)], repeat=20
         )
         with _fixture_tree({"run-a": "pass", "run-b": "pass"}, sentinel=batch):
+            # 1.7 step 2 reuses a recorded rate only at the head it was measured
+            # at, so the fixture's own head is what makes this the match branch.
+            SENTINEL_BASE_RATES[CHECKBOX] = ((2, 20), _fixture_commit("treatment"))
             code, text, error = _run_main()
             if code != 0:
                 return f"main() refused the sentinel batch: {error}"
@@ -2184,7 +2555,8 @@ def self_test() -> int:
 
     def sentinel_truncated() -> str:
         dropped = SENTINEL_SCENARIOS[-1]
-        batch = [row for row in _sentinel_batch() if row[0] != dropped]
+        repeat, rows = _sentinel_batch()
+        batch = (repeat, [row for row in rows if row[0] != dropped])
         with _fixture_tree({"run-a": "pass", "run-b": "pass"}, sentinel=batch) as tmp:
             code, _, error = _run_main()
             if code is not None:
@@ -2247,7 +2619,8 @@ def self_test() -> int:
         # --tier sentinel does not filter the matrix: run-all records every
         # non-sentinel cell as skipped with reason `tier`, roughly 74 of them.
         strangers = (CODEX_ONLY_SENTINEL, BOUNDARY[0], BENIGN[1])
-        batch = _sentinel_batch() + [(s, "skipped") for s in strangers]
+        repeat, rows = _sentinel_batch()
+        batch = (repeat, rows + [(s, "skipped") for s in strangers])
         with _fixture_tree({"run-a": "pass", "run-b": "pass"}, sentinel=batch):
             code, text, error = _run_main()
             if code != 0:
@@ -2262,6 +2635,250 @@ def self_test() -> int:
             if intruders:
                 return f"tier-skipped cells were scored as sentinels: {intruders}"
             return ""
+
+    def rerun_c1_indeterminate() -> str:
+        # criterion_one reads the Gauntlet-Agent's criteria list, which can be
+        # indeterminate while the composer still returns pass or fail. The
+        # report asks for a re-run of exactly that trial, so the intake has to
+        # take one.
+        def two_entries(root: str) -> None:
+            path = os.path.join(
+                root,
+                "results/run-b/gauntlet-agent/results/grader-run-b/result.json",
+            )
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(
+                    {
+                        "criteria": [
+                            {"criterion": "ac1", "verdict": "pass", "evidence": "e"},
+                            {"criterion": "ac2", "verdict": "pass", "evidence": "e"},
+                        ]
+                    },
+                    handle,
+                )
+
+        with _fixture_tree(
+            {"run-a": "pass", "run-b": "pass", "rerun-b": "pass"},
+            "run-b\trerun-b\n",
+            two_entries,
+        ):
+            code, _, error = _run_main()
+            if code != 0:
+                return (
+                    "the re-run of a trial indeterminate on criterion 1 alone was "
+                    f"refused: {error}"
+                )
+            return ""
+
+    def sentinel_head_declared() -> str:
+        other = "e" * 40
+
+        def other_head(root: str) -> None:
+            with open(
+                os.path.join(root, SENTINEL_BATCH), "w", encoding="utf-8"
+            ) as handle:
+                handle.write(f"{_fixture_batch_dir(root)}\n{other}\n")
+
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, mutate=other_head):
+            code, _, error = _run_main()
+            if code is not None:
+                return "a batch declaring another treatment head was accepted"
+            if other not in error or "treatment commit" not in error:
+                return f"refused, but not for the declared head: {error}"
+            return ""
+
+    def sentinel_version_foreign() -> str:
+        def other_version(root: str) -> None:
+            for path in sorted(
+                glob.glob(
+                    os.path.join(
+                        root, "sentinel/sentinel-run-*/home/.claude/projects/p/t.jsonl"
+                    )
+                )
+            ):
+                _rewrite(path, FIXTURE_VERSION, OTHER_VERSION)
+
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, mutate=other_version):
+            code, _, error = _run_main()
+            if code is not None:
+                return "a sentinel batch on another Claude Code version was accepted"
+            if FIXTURE_VERSION not in error or OTHER_VERSION not in error:
+                return f"the error names neither version: {error}"
+            return ""
+
+    def sentinel_version_split() -> str:
+        def one_other(root: str) -> None:
+            _rewrite(
+                os.path.join(
+                    root, "sentinel/sentinel-run-1/home/.claude/projects/p/t.jsonl"
+                ),
+                FIXTURE_VERSION,
+                OTHER_VERSION,
+            )
+
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, mutate=one_other):
+            code, _, error = _run_main()
+            if code is not None:
+                return "sentinel runs on two Claude Code versions were accepted"
+            if FIXTURE_VERSION not in error or OTHER_VERSION not in error:
+                return f"the error names neither version: {error}"
+            return ""
+
+    def sentinel_missing_transcript() -> str:
+        def drop(root: str) -> None:
+            shutil.rmtree(os.path.join(root, "sentinel/sentinel-run-1/home"))
+
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, mutate=drop):
+            code, _, error = _run_main()
+            if code is not None:
+                return "a determinate sentinel run with no transcript was accepted"
+            if "sentinel-run-1" not in error or "has no transcript" not in error:
+                return f"refused, but not for the missing transcript: {error}"
+            return ""
+
+    def sentinel_indeterminate_exempt() -> str:
+        # A pre-check failure produces a verdict and no transcript. It already
+        # fails its own criterion-4 line, so the version binding must exempt it
+        # rather than refuse the whole batch.
+        scenario = SENTINEL_SCENARIOS[0]
+        batch = _sentinel_batch((scenario, "indeterminate"))
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, sentinel=batch):
+            code, text, error = _run_main()
+            if code != 0:
+                return f"an indeterminate sentinel run with no transcript: {error}"
+            line = next(
+                (
+                    ln
+                    for ln in text.splitlines()
+                    if ln.startswith(f"4 sentinel {scenario}:")
+                ),
+                "",
+            )
+            if "indeterminate" not in line or "-> not met" not in line:
+                return f"the line does not report the indeterminate run: {line!r}"
+            return ""
+
+    def sentinel_partial_repeat() -> str:
+        # A graceful stop leaves one result and nineteen `skipped: stopped`
+        # records for a repeat-20 cell. Scoring the survivor as the whole cell
+        # would compute a Wilson interval over n = 1.
+        scenario = SENTINEL_SCENARIOS[0]
+        repeat, rows = _sentinel_batch(repeat=20)
+        seen = 0
+        batch: list[tuple[str, str]] = []
+        for name, final in rows:
+            if name == scenario:
+                seen += 1
+                final = final if seen == 1 else "stopped"
+            batch.append((name, final))
+        with _fixture_tree(
+            {"run-a": "pass", "run-b": "pass"}, sentinel=(repeat, batch)
+        ):
+            code, _, error = _run_main()
+            if code is not None:
+                return f"a cell holding 1 of {repeat} runs was scored as complete"
+            if scenario not in error or "trial indexes" not in error:
+                return f"refused, but not for the partial cell: {error}"
+            return ""
+
+    def sentinel_verdict_scenario() -> str:
+        def rename(root: str) -> None:
+            path = os.path.join(root, "sentinel/sentinel-run-1/verdict.json")
+            verdict = load_json(path)
+            verdict["scenario"] = "some-other-scenario"
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(verdict, handle)
+
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, mutate=rename):
+            code, _, error = _run_main()
+            if code is not None:
+                return "a sentinel run whose verdict names another scenario passed"
+            if "some-other-scenario" not in error:
+                return f"refused, but not for the scenario cross-check: {error}"
+            return ""
+
+    def checkbox_line(text: str) -> str:
+        return next(
+            (
+                ln
+                for ln in text.splitlines()
+                if ln.startswith(f"4 sentinel {CHECKBOX}:")
+            ),
+            "",
+        )
+
+    def base_rate_one_tree_differs() -> str:
+        # This campaign's real shape: phase 2 reverts a skill, so skills/ moves
+        # while hooks/ comes back byte-identical to the head the rate was
+        # measured at. Either tree differing bars the rate.
+        batch = _sentinel_batch((CHECKBOX, "fail"), repeat=20)
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, sentinel=batch):
+            arm_root = ROOTS["treatment"]
+            pinned = _fixture_commit("treatment")
+            git = [
+                "git",
+                "-C",
+                arm_root,
+                "-c",
+                "user.name=fixture",
+                "-c",
+                "user.email=fixture@example.com",
+                "-c",
+                "commit.gpgsign=false",
+            ]
+            with open(
+                os.path.join(arm_root, "skills/brainstorming/SKILL.md"),
+                "w",
+                encoding="utf-8",
+            ) as handle:
+                handle.write("---\nname: brainstorming\ndescription: OTHER\n---\n")
+            subprocess.run(git + ["add", "skills"], check=True)
+            subprocess.run(
+                git + ["commit", "-q", "-m", "another skills tree"], check=True
+            )
+            measured = _fixture_commit("treatment")
+
+            def tree(commit: str, path: str) -> str:
+                return subprocess.run(
+                    ["git", "-C", arm_root, "rev-parse", f"{commit}:{path}"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip()
+
+            if tree(measured, "hooks") != tree(pinned, "hooks"):
+                return "the fixture moved hooks/ too, so it pins nothing"
+            if tree(measured, "skills") == tree(pinned, "skills"):
+                return "the fixture left skills/ unchanged, so it pins nothing"
+            SENTINEL_BASE_RATES[CHECKBOX] = ((2, 20), measured)
+            code, text, error = _run_main()
+            if code != 0:
+                return f"main() refused the sentinel batch: {error}"
+            line = checkbox_line(text)
+            if "was measured at" not in line or "-> not met" not in line:
+                return f"a rate measured at another skills/ tree was reused: {line!r}"
+            return ""
+
+    def base_rate_own_measurement() -> str:
+        # Spec 1.7 step 2's replacement, which spec line 270 assigns to phase 3:
+        # twenty benign sessions at the head under test are a head-matched rate.
+        manifest, trials, sentinel = _synthetic_campaign()
+        for trial in trials:
+            if trial.scenario == CHECKBOX and trial.final == "indeterminate":
+                trial.final = "pass"
+        line = next(
+            (
+                ln
+                for ln in criteria_lines(manifest, trials, sentinel)
+                if ln.startswith(f"4 sentinel {CHECKBOX}:")
+            ),
+            "",
+        )
+        if "this campaign's own rate at the head under test 1/20 = 5%" not in line:
+            return f"the line does not substitute the head-matched rate: {line!r}"
+        if "-> met" not in line:
+            return f"the substituted rate did not decide the line: {line!r}"
+        return ""
 
     def control_prefix_ok() -> str:
         def shorten(root: str) -> None:
@@ -2359,6 +2976,16 @@ def self_test() -> int:
         ("sentinel_wrong_agent", sentinel_wrong_agent),
         ("sentinel_record_agent", sentinel_record_agent),
         ("sentinel_tier_skipped", sentinel_tier_skipped),
+        ("rerun_c1_indeterminate", rerun_c1_indeterminate),
+        ("sentinel_head_declared", sentinel_head_declared),
+        ("sentinel_version_foreign", sentinel_version_foreign),
+        ("sentinel_version_split", sentinel_version_split),
+        ("sentinel_missing_transcript", sentinel_missing_transcript),
+        ("sentinel_indeterminate_exempt", sentinel_indeterminate_exempt),
+        ("sentinel_partial_repeat", sentinel_partial_repeat),
+        ("sentinel_verdict_scenario", sentinel_verdict_scenario),
+        ("base_rate_one_tree_differs", base_rate_one_tree_differs),
+        ("base_rate_own_measurement", base_rate_own_measurement),
         ("control_prefix_ok", control_prefix_ok),
         ("control_prefix_bad", control_prefix_bad),
         ("control_prefix_short", control_prefix_short),
@@ -2423,6 +3050,18 @@ def self_test() -> int:
                 os.path.join(results, name, "home/.claude/projects/p/t.jsonl"),
                 '"- other:skill: text\\n- hyperpowers:brainstorming"',
                 '"- other:skill: text\\n- hyperpowers:brainstorming: DESC"',
+            )
+
+    def default_foreign_description(root: str) -> None:
+        # A third form: neither arm's rendered description, carried uniformly so
+        # the "differ across arms" guard cannot fire. A stale plugin build looks
+        # exactly like this, and its runs are not default-budget runs.
+        results = os.path.join(root, "results")
+        for name in sorted(os.listdir(results)):
+            _rewrite(
+                os.path.join(results, name, "home/.claude/projects/p/t.jsonl"),
+                '"- other:skill: text\\n- hyperpowers:brainstorming"',
+                '"- other:skill: text\\n- hyperpowers:brainstorming: FOREIGN"',
             )
 
     def default_lines_differ(root: str) -> None:
@@ -2697,6 +3336,13 @@ def self_test() -> int:
             "default listing rendered the description",
         ),
         (
+            "a default-budget listing carrying a third, foreign description",
+            two_passes,
+            None,
+            default_foreign_description,
+            "expected the bare",
+        ),
+        (
             "default-budget brainstorming lines that differ across arms",
             two_passes,
             None,
@@ -2849,8 +3495,11 @@ def self_test() -> int:
             detail = ""
             try:
                 manifest = read_manifest()
+                # main()'s order: the declared inputs first, so a cohort case
+                # sees the same refusals in the same sequence it will.
+                _, sentinel_version = read_sentinel(manifest)
                 runs = build_runs(manifest)
-                check_design(manifest, runs, collapse(runs))
+                check_design(manifest, runs, collapse(runs), sentinel_version)
                 accepted = True
             except DesignError as error:
                 accepted = False
@@ -2988,10 +3637,10 @@ def main() -> int:
     # hundred run directories have been parsed.
     manifest = read_manifest()
     prior = read_prior_controls(os.path.join(E, PRIOR_CONTROLS))
-    sentinel = read_sentinel()
+    sentinel, sentinel_version = read_sentinel(manifest)
     runs = build_runs(manifest)
     trials = collapse(runs)
-    check_design(manifest, runs, trials)
+    check_design(manifest, runs, trials, sentinel_version)
     with open(os.path.join(E, "runs.json"), "w", encoding="utf-8") as handle:
         json.dump([asdict(run) for run in runs], handle, indent=1)
     # Rendered once, then emitted twice: a redirect is not part of the contract
