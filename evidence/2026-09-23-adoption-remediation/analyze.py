@@ -1317,16 +1317,22 @@ def read_sentinel(manifest: dict) -> tuple[list[tuple[str, str, str]], str]:
                 f"{SENTINEL_BATCH}: {run_id}: verdict.json names coding agent "
                 f"{verdict.get('coding_agent')!r}, the batch record names {agent!r}"
             )
-        trial = verdict.get("trial") or {}
+        # The batch record carries the trial identity, and verdict.json never
+        # does: run-all spawns each child with no --repeat
+        # (src/run-all/index.ts:161-183) and the runner stamps `trial` onto a
+        # verdict only when it was given one (src/cli/index.ts:179,189). The
+        # record is written for every runnable unit at every repeat, 1 included
+        # (src/run-all/batch-index.ts:116-123), so a runnable record without a
+        # well-formed trial is a wiring error rather than a repeat-1 shape.
+        # (A campaign row is launched as `quorum run ... --repeat N` directly,
+        # which is why build_runs reads the same identity off the verdict.)
+        trial = record.get("trial") or {}
         index = trial.get("index")
         count = trial.get("count")
-        if repeat == 1 and not trial:
-            # `trial` is omitted at repeat 1 (src/contracts/batch.ts).
-            index = 1
-        elif type(count) is not int or count != repeat or type(index) is not int:
+        if type(count) is not int or count != repeat or type(index) is not int:
             raise DesignError(
-                f"{SENTINEL_BATCH}: {run_id}: trial identity {trial!r} does not fit a "
-                f"batch with repeat {repeat}"
+                f"{SENTINEL_BATCH}: {run_id}: the batch record's trial identity "
+                f"{trial!r} does not fit a batch with repeat {repeat}"
             )
         indexes.setdefault(scenario, []).append(int(index))
         if final != "indeterminate":
@@ -1860,12 +1866,14 @@ def _fixture_sentinel(root: str, repeat: int, batch: list[tuple[str, str]]) -> N
             with open(
                 os.path.join(run_dir, "verdict.json"), "w", encoding="utf-8"
             ) as verdict:
+                # No `trial` key: run-all spawns each child without --repeat, and
+                # the runner stamps the identity onto the verdict only when it was
+                # given one. The batch record below is the carrier.
                 json.dump(
                     {
                         "final": final,
                         "scenario": scenario,
                         "coding_agent": CODING_AGENT,
-                        "trial": trial,
                     },
                     verdict,
                 )
@@ -2797,6 +2805,54 @@ def self_test() -> int:
                 return f"refused, but not for the scenario cross-check: {error}"
             return ""
 
+    def sentinel_repeat_from_record() -> str:
+        # The shape a real repeat-N batch has: the trial identity is on the batch
+        # record and nowhere else, because run-all spawns its children without
+        # --repeat. Reading it from verdict.json refuses every such batch.
+        batch = _sentinel_batch(repeat=2)
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, sentinel=batch) as root:
+            stamped = [
+                path
+                for path in sorted(
+                    glob.glob(os.path.join(root, "sentinel/*/verdict.json"))
+                )
+                if "trial" in load_json(path)
+            ]
+            if stamped:
+                return f"the fixture wrote a trial no producer emits: {stamped}"
+            code, text, error = _run_main()
+            if code != 0:
+                return f"a repeat-2 batch carrying its trials on the records: {error}"
+            unscored = [
+                ln
+                for ln in text.splitlines()
+                if ln.startswith("4 sentinel ") and "2 of 2 passed" not in ln
+            ]
+            if unscored:
+                return f"a repeat-2 cell was not scored over both trials: {unscored}"
+            return ""
+
+    def sentinel_record_trial() -> str:
+        # run-all omits `trial` from a record only for a cell it skipped upfront,
+        # so a runnable record without one is a wiring error at repeat 1 too --
+        # and the verdict cannot stand in for it, having never carried one.
+        def drop_trial(root: str) -> None:
+            path = os.path.join(_fixture_batch_dir(root), "results.jsonl")
+            records = list(iter_records(path))
+            for record in records:
+                if record.get("run_id") == "sentinel-run-1":
+                    del record["trial"]
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("".join(json.dumps(r) + "\n" for r in records))
+
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, mutate=drop_trial):
+            code, _, error = _run_main()
+            if code is not None:
+                return "a runnable record carrying no trial identity was accepted"
+            if "sentinel-run-1" not in error or "trial identity" not in error:
+                return f"refused, but not for the missing trial identity: {error}"
+            return ""
+
     def checkbox_line(text: str) -> str:
         return next(
             (
@@ -2984,6 +3040,8 @@ def self_test() -> int:
         ("sentinel_indeterminate_exempt", sentinel_indeterminate_exempt),
         ("sentinel_partial_repeat", sentinel_partial_repeat),
         ("sentinel_verdict_scenario", sentinel_verdict_scenario),
+        ("sentinel_repeat_from_record", sentinel_repeat_from_record),
+        ("sentinel_record_trial", sentinel_record_trial),
         ("base_rate_one_tree_differs", base_rate_one_tree_differs),
         ("base_rate_own_measurement", base_rate_own_measurement),
         ("control_prefix_ok", control_prefix_ok),
