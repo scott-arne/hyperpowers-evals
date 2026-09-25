@@ -602,6 +602,29 @@ logs); and `gauntlet-agent/` (the QA agent's `results/<runId>/run.jsonl` event
 stream plus `result.{json,md}`). Batches live
 under `results/batches/<id>/` (`batch.json` + `results.jsonl`).
 
+### A single sentinel failure is a sample
+
+A sentinel scenario that fails once in a batch is one draw from that
+scenario's failure rate at that head, not evidence that the head changed
+the rate. Before recording a regression:
+
+1. Look up the scenario's recorded base rate in the table below.
+2. If none is recorded, or the head's `skills/` and `hooks/` trees differ
+   from the head the base rate was measured at, run the scenario twenty
+   times at the head under test
+   (`bun run quorum run scenarios/<id> --coding-agent <agent> --repeat 20`)
+   and add the rate to the table with the head, the model, the Claude Code
+   version, and the listing budget.
+3. Call it a regression only when the twenty-run rate's 95% Wilson lower
+   bound exceeds the recorded base rate's 95% Wilson upper bound.
+
+A single failure at a scenario whose recorded base rate is 5% or higher
+never holds a release by itself.
+
+| scenario | model | Claude Code | skills tree | budget | rate (95% Wilson) | evidence |
+|---|---|---|---|---|---|---|
+| `cost-checkbox-over-trigger` | `claude-opus-5` | 2.1.261 | hyperpowers `c6b69d8` (skills identical to `7e8ba23`) | default | 2/20 = 10% (3-30%) | `evidence/2026-09-16-over-trigger-measurement/` |
+
 ---
 
 ## 6. Worked examples
