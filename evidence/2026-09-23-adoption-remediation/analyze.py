@@ -1136,35 +1136,6 @@ def prior_control_lines(rows: list[dict]) -> list[str]:
     return out
 
 
-def transcript_version(path: str) -> str:
-    """The single Claude Code version one session transcript records.
-
-    A version-only reading of the transcript. :func:`context` also requires one
-    skill listing and one model, which eleven different sentinel scenarios have
-    no reason to share.
-
-    :param path: A session transcript (``home/.claude/projects/*/*.jsonl``).
-    :returns: The version every record carrying one agrees on.
-    :raises DesignError: When the transcript records no version, or more than
-        one.
-    """
-
-    versions = sorted(
-        {
-            str(record["version"])
-            for record in iter_records(path)
-            if record.get("version")
-        }
-    )
-    if not versions:
-        raise DesignError(f"{path}: the transcript records no Claude Code version")
-    if len(versions) > 1:
-        raise DesignError(
-            f"{path}: Claude Code versions differ within the session: {versions}"
-        )
-    return versions[0]
-
-
 def read_sentinel(manifest: dict) -> tuple[list[tuple[str, str, str]], str]:
     """The sentinel batch's per-run verdicts, bound to this campaign.
 
@@ -1181,17 +1152,21 @@ def read_sentinel(manifest: dict) -> tuple[list[tuple[str, str, str]], str]:
     treatment root, but neither ``batch.json`` nor ``verdict.json`` records a
     head, and single-agent sentinel batches that satisfy every completeness
     check above are a routine by-product of this repository. So the batch
-    declares the treatment commit it ran at, and its determinate runs must
-    record the campaign's one Claude Code version.
+    declares the treatment commit it ran at -- and because a declaration an
+    operator types is not evidence, every determinate run must carry, in its
+    own transcript, the bootstrap that head injects, the design's model, and
+    the campaign's one Claude Code version. The declaration says which head to
+    hold the batch to; the transcripts are what hold it there.
 
     :param manifest: The parsed manifest, read for the treatment commit the
-        batch has to declare.
+        batch has to declare and for the model its sessions must have run on.
     :returns: ((scenario, run id, final verdict) per runnable record of a
         declared sentinel scenario, the Claude Code version its determinate
         runs recorded -- empty when none of them did).
     :raises DesignError: When the pointer, the batch, its header, a record, or
-        a run's verdict.json is missing, unreadable, or describes some other
-        batch, head, version or trial than the one this campaign declared.
+        a run's verdict.json or transcript is missing, unreadable, or describes
+        some other batch, head, model, version or trial than the one this
+        campaign declared.
     """
 
     pointer = os.path.join(E, SENTINEL_BATCH)
@@ -1266,6 +1241,9 @@ def read_sentinel(manifest: dict) -> tuple[list[tuple[str, str, str]], str]:
     # run-all writes the batch at <out-root>/batches/<id> and each run at
     # <out-root>/<run_id>, so a run resolves against the batch's grandparent.
     out_root = os.path.dirname(os.path.dirname(batch))
+    # What a session at the declared head was injected with. Read once: it is a
+    # git read of one commit, and every sentinel session must carry this text.
+    boot = expected_bootstrap("treatment", treatment)
     out: list[tuple[str, str, str]] = []
     skipped: dict[str, str] = {}
     indexes: dict[str, list[int]] = {}
@@ -1338,7 +1316,7 @@ def read_sentinel(manifest: dict) -> tuple[list[tuple[str, str, str]], str]:
         if final != "indeterminate":
             # A pre-check failure legitimately produces no transcript, and it
             # already fails its own criterion-4 line. A determinate run has no
-            # such excuse: its version is what binds it to this campaign.
+            # such excuse: the session is what binds it to this campaign.
             transcripts = sorted(
                 glob.glob(
                     os.path.join(out_root, run_id, "home/.claude/projects/*/*.jsonl")
@@ -1347,9 +1325,35 @@ def read_sentinel(manifest: dict) -> tuple[list[tuple[str, str, str]], str]:
             if not transcripts:
                 raise DesignError(
                     f"{SENTINEL_BATCH}: {run_id} returned {final} but has no "
-                    "transcript, so its Claude Code version cannot be read"
+                    "transcript, so nothing it ran under can be read"
                 )
-            versions.add(transcript_version(transcripts[0]))
+            # The listing and the brainstorming line are read and dropped: one
+            # session may not mix them, which `context` enforces, but eleven
+            # different sentinel scenarios have no reason to share either.
+            _, payload_texts, _, _, model, version = context(transcripts[0])
+            if not payload_texts:
+                raise DesignError(
+                    f"{SENTINEL_BATCH}: {run_id} recorded no bootstrap payload, so "
+                    "nothing in the run answers for the head it ran at"
+                )
+            for text in payload_texts:
+                if boot not in text:
+                    raise DesignError(
+                        f"{SENTINEL_BATCH}: {run_id}: a hook payload does not contain "
+                        f"the pinned bootstrap of treatment at {treatment}; a batch "
+                        "run at another head was injected another text"
+                    )
+            if model != manifest["model"]:
+                raise DesignError(
+                    f"{SENTINEL_BATCH}: {run_id} ran on model {model!r}, not this "
+                    f"campaign's {manifest['model']!r}"
+                )
+            if not version:
+                raise DesignError(
+                    f"{SENTINEL_BATCH}: {run_id}: the transcript records no Claude "
+                    "Code version"
+                )
+            versions.add(version)
         out.append((scenario, run_id, final))
     for scenario in SENTINEL_SCENARIOS:
         found = sorted(indexes.get(scenario, []))
@@ -1674,6 +1678,7 @@ FIXTURE_HARNESS = "3" * 40
 FIXTURE_LISTING = "- other:skill: text\n- hyperpowers:brainstorming"
 FIXTURE_VERSION = "9.9.901"
 OTHER_VERSION = "9.9.902"
+OTHER_MODEL = "model-y"
 
 
 def _fixture_boot(arm: str) -> str:
@@ -1692,7 +1697,14 @@ def _fixture_commit(arm: str) -> str:
     ).stdout.strip()
 
 
-def _fixture_transcript(arm: str) -> str:
+def _fixture_transcript(arm: str, model: str | None = None) -> str:
+    """One session in the shape a real transcript has: the injected bootstrap, the skill listing, an assistant turn.
+
+    :param arm: The arm whose bootstrap the SessionStart hook injected.
+    :param model: The model every assistant record names, defaulting to the
+        design's.
+    """
+
     return "\n".join(
         [
             json.dumps(
@@ -1720,7 +1732,7 @@ def _fixture_transcript(arm: str) -> str:
                     "type": "assistant",
                     "version": FIXTURE_VERSION,
                     "message": {
-                        "model": "model-x",
+                        "model": model or MODEL,
                         "content": [{"type": "tool_use", "name": "Bash"}],
                     },
                 }
@@ -1810,7 +1822,13 @@ def _fixture_batch_dir(root: str) -> str:
     return os.path.join(root, "sentinel", "batches", "batch-fixture-0000")
 
 
-def _fixture_sentinel(root: str, repeat: int, batch: list[tuple[str, str]]) -> None:
+def _fixture_sentinel(
+    root: str,
+    repeat: int,
+    batch: list[tuple[str, str]],
+    boots: dict[str, str] | None = None,
+    models: dict[str, str] | None = None,
+) -> None:
     """A quorum batch at <out-root>/batches/<id> with its runs at <out-root>/<run_id>.
 
     :param root: The evidence tree's root.
@@ -1822,6 +1840,12 @@ def _fixture_sentinel(root: str, repeat: int, batch: list[tuple[str, str]]) -> N
         cell outside the tier it was asked for, and for a cell a graceful stop
         never reached. An ``indeterminate`` run writes no transcript, which is
         what a run that failed its pre-checks leaves behind.
+    :param boots: run id -> the arm whose bootstrap that run's session was
+        injected with, defaulting to treatment. Spec 3.2 runs the tier with
+        ``SUPERPOWERS_ROOT`` at the treatment root, so another arm's bootstrap
+        is what a batch run at another head leaves in the transcript.
+    :param models: run id -> the model that run's assistant records name,
+        defaulting to the design's.
     """
 
     out_root = os.path.join(root, "sentinel")
@@ -1883,13 +1907,13 @@ def _fixture_sentinel(root: str, repeat: int, batch: list[tuple[str, str]]) -> N
                 with open(
                     os.path.join(project, "t.jsonl"), "w", encoding="utf-8"
                 ) as transcript:
+                    # The same records a campaign run leaves: a sentinel session
+                    # is an ordinary Claude Code session, so it carries the
+                    # injected bootstrap and names its model too.
                     transcript.write(
-                        json.dumps(
-                            {
-                                "type": "assistant",
-                                "version": FIXTURE_VERSION,
-                                "message": {"model": "model-x", "content": []},
-                            }
+                        _fixture_transcript(
+                            (boots or {}).get(run_id, "treatment"),
+                            (models or {}).get(run_id),
                         )
                         + "\n"
                     )
@@ -2853,6 +2877,130 @@ def self_test() -> int:
                 return f"refused, but not for the missing trial identity: {error}"
             return ""
 
+    def sentinel_foreign_bootstrap() -> str:
+        # Neither batch.json nor verdict.json records a head, so the injected
+        # bootstrap is the only artifact that answers for the one the batch ran
+        # at. A session at another head carries that head's text; the control
+        # arm's stands in for it, being a real bootstrap the producer emits.
+        def foreign_boot(root: str) -> None:
+            repeat, rows = _sentinel_batch()
+            _fixture_sentinel(root, repeat, rows, boots={"sentinel-run-1": "control"})
+
+        with _fixture_tree(
+            {"run-a": "pass", "run-b": "pass"}, mutate=foreign_boot
+        ) as root:
+            path = os.path.join(
+                root, "sentinel/sentinel-run-1/home/.claude/projects/p/t.jsonl"
+            )
+            _, texts, _, _, _, _ = context(path)
+            if not any(_fixture_boot("control") in text for text in texts):
+                return "the fixture wrote no foreign bootstrap to refuse"
+            if any(_fixture_boot("treatment") in text for text in texts):
+                return "the fixture left the treatment bootstrap in the payload"
+            code, _, error = _run_main()
+            if code is not None:
+                return "a sentinel session carrying another head's bootstrap passed"
+            if "sentinel-run-1" not in error or "bootstrap" not in error:
+                return f"refused, but not for the foreign bootstrap: {error}"
+            return ""
+
+    def sentinel_no_bootstrap() -> str:
+        # A session the SessionStart hook never reached -- one run outside the
+        # treatment root, say -- carries no payload at all. Iterating an empty
+        # list of payloads proves nothing, so the absence has to be its own
+        # refusal rather than a vacuous pass of the check above.
+        def strip_payload(root: str) -> None:
+            path = os.path.join(
+                root, "sentinel/sentinel-run-1/home/.claude/projects/p/t.jsonl"
+            )
+            kept = [
+                rec
+                for rec in iter_records(path)
+                if (rec.get("attachment") or {}).get("type")
+                != "hook_additional_context"
+            ]
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("".join(json.dumps(rec) + "\n" for rec in kept))
+
+        with _fixture_tree(
+            {"run-a": "pass", "run-b": "pass"}, mutate=strip_payload
+        ) as root:
+            path = os.path.join(
+                root, "sentinel/sentinel-run-1/home/.claude/projects/p/t.jsonl"
+            )
+            _, texts, _, _, model, version = context(path)
+            if texts:
+                return f"the fixture left {len(texts)} payloads in the transcript"
+            if model != MODEL or not version:
+                return "the fixture stripped more than the payload"
+            code, _, error = _run_main()
+            if code is not None:
+                return "a sentinel run carrying no bootstrap payload was accepted"
+            if "sentinel-run-1" not in error or "no bootstrap payload" not in error:
+                return f"refused, but not for the missing payload: {error}"
+            return ""
+
+    def sentinel_foreign_model() -> str:
+        # Campaign trials are model-checked. A sentinel batch produced under
+        # another ANTHROPIC_MODEL answers criterion 4 on another instrument than
+        # the campaign it is reporting for.
+        def foreign_model(root: str) -> None:
+            repeat, rows = _sentinel_batch()
+            _fixture_sentinel(
+                root, repeat, rows, models={"sentinel-run-1": OTHER_MODEL}
+            )
+
+        with _fixture_tree(
+            {"run-a": "pass", "run-b": "pass"}, mutate=foreign_model
+        ) as root:
+            path = os.path.join(
+                root, "sentinel/sentinel-run-1/home/.claude/projects/p/t.jsonl"
+            )
+            _, _, _, _, model, _ = context(path)
+            if model != OTHER_MODEL:
+                return f"the fixture wrote model {model!r}, not the divergent one"
+            code, _, error = _run_main()
+            if code is not None:
+                return "a sentinel run on another model was accepted"
+            if OTHER_MODEL not in error or MODEL not in error:
+                return f"the error names neither model: {error}"
+            return ""
+
+    def sentinel_well_formed() -> str:
+        # The case an over-strict binding fails: eleven scenarios, every
+        # determinate run carrying the treatment bootstrap and the design's
+        # model, and no two sharing a reason to carry one skill listing.
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}) as root:
+            paths = sorted(
+                glob.glob(
+                    os.path.join(
+                        root, "sentinel/sentinel-run-*/home/.claude/projects/p/t.jsonl"
+                    )
+                )
+            )
+            if len(paths) != len(SENTINEL_SCENARIOS):
+                return (
+                    f"the fixture wrote {len(paths)} sentinel transcripts, expected "
+                    f"{len(SENTINEL_SCENARIOS)}"
+                )
+            boot = _fixture_boot("treatment")
+            for path in paths:
+                _, texts, _, _, model, _ = context(path)
+                if not texts or not all(boot in text for text in texts):
+                    return f"{path}: no payload carries the treatment bootstrap"
+                if model != MODEL:
+                    return f"{path}: the fixture wrote model {model!r}"
+            code, text, error = _run_main()
+            if code != 0:
+                return f"a well-formed sentinel batch was refused: {error}"
+            scored = [ln for ln in text.splitlines() if ln.startswith("4 sentinel ")]
+            unmet = [
+                ln for ln in scored if "1 of 1 passed" not in ln or "-> met" not in ln
+            ]
+            if len(scored) != len(SENTINEL_SCENARIOS) or unmet:
+                return f"criterion 4 did not score the batch as before: {scored}"
+            return ""
+
     def checkbox_line(text: str) -> str:
         return next(
             (
@@ -3042,6 +3190,10 @@ def self_test() -> int:
         ("sentinel_verdict_scenario", sentinel_verdict_scenario),
         ("sentinel_repeat_from_record", sentinel_repeat_from_record),
         ("sentinel_record_trial", sentinel_record_trial),
+        ("sentinel_foreign_bootstrap", sentinel_foreign_bootstrap),
+        ("sentinel_no_bootstrap", sentinel_no_bootstrap),
+        ("sentinel_foreign_model", sentinel_foreign_model),
+        ("sentinel_well_formed", sentinel_well_formed),
         ("base_rate_one_tree_differs", base_rate_one_tree_differs),
         ("base_rate_own_measurement", base_rate_own_measurement),
         ("control_prefix_ok", control_prefix_ok),
