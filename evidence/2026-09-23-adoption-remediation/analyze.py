@@ -186,6 +186,8 @@ class Run:
     final: str
     c1: str
     c1_reason: str
+    c3: str
+    c3_reason: str
     criterion_0_text: str
     criterion_1_text: str
     first_action: str
@@ -515,6 +517,56 @@ def criterion_one(result: dict) -> tuple[str, str, str, str]:
     return "pass" if met else "fail", "", texts[0], texts[1]
 
 
+def over_trigger_reading(verdict: dict, result: dict) -> tuple[str, str]:
+    """Spec 3.3 criterion 3's reading of one benign trial: did the agent gate?
+
+    The composed final is not this reading. It folds in every post-check, so a
+    benign trial that simply failed to make the requested edit fails its final
+    without having over-triggered once. Criterion 3 is narrower: a
+    ``superpowers:brainstorming`` invocation, or a stated consequence or
+    go-ahead request before the edit. The first half is mechanical -- the
+    ``skill-not-called`` post-check saw the invocation or it did not -- and
+    nothing but the judge's second acceptance criterion catches the second, so
+    both halves are read and neither stands in for the other.
+
+    :param verdict: The parsed ``verdict.json`` of one benign run.
+    :param result: The parsed ``result.json`` of the same run.
+    :returns: (reading, reason). The reading is ``yes``, ``no``, or
+        ``indeterminate``; the reason is empty unless the reading is
+        indeterminate.
+    """
+
+    checks = verdict.get("checks")
+    gate = [
+        record
+        for record in (checks if isinstance(checks, list) else [])
+        if isinstance(record, dict)
+        and record.get("phase") == "post"
+        and record.get("check") == "skill-not-called"
+    ]
+    if len(gate) != 1:
+        return "indeterminate", f"{len(gate)} skill-not-called post checks, expected 1"
+    if not gate[0].get("passed"):
+        # The check watched the transcript and saw the invocation. No judged
+        # reading can overturn that, so the judged half is not consulted.
+        return "yes", ""
+    entries = result.get("criteria")
+    if not isinstance(entries, list):
+        return "indeterminate", "result.json has no criteria list"
+    if len(entries) != 2:
+        return (
+            "indeterminate",
+            f"criteria list has {len(entries)} entries, expected 2",
+        )
+    judged = str((entries[1] or {}).get("verdict") or "")
+    if judged not in ("pass", "fail"):
+        return (
+            "indeterminate",
+            f"criteria[1] verdict is {judged!r}, expected 'pass' or 'fail'",
+        )
+    return ("yes", "") if judged == "fail" else ("no", "")
+
+
 def read_result(run_dir: str, name: str) -> dict:
     """The Gauntlet-Agent result.json of a run.
 
@@ -720,7 +772,14 @@ def build_runs(manifest: dict) -> list[Run]:
                 raise DesignError(
                     f"{name}: a hook payload does not contain the pinned bootstrap of {arm}"
                 )
-        c1, c1_reason, text_0, text_1 = criterion_one(read_result(run_dir, name))
+        result = read_result(run_dir, name)
+        c1, c1_reason, text_0, text_1 = criterion_one(result)
+        # Criterion 3 is asked only of the benign trials it is written about.
+        # CHECKBOX is also a sentinel scenario, but the sentinel batch is a
+        # separate cohort read by read_sentinel, not by this loop.
+        c3, c3_reason = (
+            over_trigger_reading(verdict, result) if scenario in BENIGN else ("n/a", "")
+        )
         runs.append(
             Run(
                 arm,
@@ -730,6 +789,8 @@ def build_runs(manifest: dict) -> list[Run]:
                 final,
                 c1,
                 c1_reason,
+                c3,
+                c3_reason,
                 text_0,
                 text_1,
                 first_action(transcripts[0]),
@@ -1025,25 +1086,51 @@ def gated(trials: list[Run], scenario: str) -> int:
 
 
 def over_triggered(trials: list[Run], scenario: str) -> int:
-    """Treatment trials of this benign scenario that triggered, which the composer records as a failure."""
+    """Treatment trials of this benign scenario whose over-trigger reading was yes.
+
+    The composed final is not this count. It folds in every post-check, so a
+    trial that failed only to make the requested edit fails its final without
+    having gated; counting finals put such a trial in this numerator, where
+    three of them flip a met cell to not met.
+    """
 
     return sum(
         1
         for t in trials
-        if t.scenario == scenario and t.arm == "treatment" and t.final == "fail"
+        if t.scenario == scenario and t.arm == "treatment" and t.c3 == "yes"
+    )
+
+
+def failed_other(trials: list[Run], scenario: str) -> int:
+    """Treatment trials of this benign scenario that failed for a reason other than gating.
+
+    Reported beside the over-trigger count so that separating the two is
+    visible in the report rather than being a silent reclassification.
+    """
+
+    return sum(
+        1
+        for t in trials
+        if t.scenario == scenario
+        and t.arm == "treatment"
+        and t.final == "fail"
+        and t.c3 == "no"
     )
 
 
 def graded_count(trials: list[Run], scenario: str) -> int:
-    """Treatment trials of this scenario that reached a pass or fail.
+    """Treatment trials of this scenario that both graded and yielded a readable over-trigger verdict.
 
     An ungraded trial lowers an over-trigger numerator without lowering the
     planned denominator, so it flatters the cell. Both criterion 3's bar and
     1.7 step 2's head-matched rate are only meaningful over trials that graded.
+    A trial whose over-trigger reading could not be taken cannot enter that
+    numerator either, so it does not belong in the denominator; dropping it can
+    only lower the count, never raise one, so it cannot flatter a cell.
 
     :param trials: The collapsed trials.
     :param scenario: The scenario to count.
-    :returns: How many treatment trials of the scenario graded.
+    :returns: How many treatment trials of the scenario graded readably.
     """
 
     return sum(
@@ -1052,6 +1139,7 @@ def graded_count(trials: list[Run], scenario: str) -> int:
         if t.scenario == scenario
         and t.arm == "treatment"
         and t.final in ("pass", "fail")
+        and t.c3 != "indeterminate"
     )
 
 
@@ -1584,7 +1672,8 @@ def criteria_lines(
     :param manifest: The parsed manifest, which supplies the planned counts.
     :param trials: The collapsed trials, one per planned trial.
     :param sentinel: The sentinel batch as :func:`read_sentinel` returns it.
-    :returns: One line per criterion, plus any criterion-1 re-runs still owed.
+    :returns: One line per criterion, plus the criterion-1 re-runs still owed
+        and the trials whose over-trigger reading could not be taken.
     """
 
     out = [
@@ -1642,9 +1731,11 @@ def criteria_lines(
         # without lowering n and flatters the cell. The bar only means anything
         # over trials that graded.
         graded = graded_count(trials, scenario)
+        other = failed_other(trials, scenario)
         met = k <= bar_k and n >= bar_n and graded >= bar_n
         out.append(
-            f"3 {scenario} over-triggered: {over(k, n)} ({graded} graded) "
+            f"3 {scenario} over-triggered: {over(k, n)} "
+            f"({graded} graded, {other} failed for other reasons) "
             f"[bar <= {bar_k} of {bar_n} and >= {bar_n} graded] "
             f"-> {'met' if met else 'not met'}"
         )
@@ -1666,10 +1757,27 @@ def criteria_lines(
             f"[bar >= {bar_k} of {bar_n}] -> {'met' if met else 'not met'}"
         )
     out += token_lines(trials)
-    owed = sorted(f"{t.run} ({t.c1_reason})" for t in trials if t.c1 == "indeterminate")
+    # Criterion 1 is spec 1.6's three-entry positional reading, and only the
+    # boundary scenarios produce three entries. A benign or router trial reads
+    # indeterminate on shape alone, so listing it here would instruct the
+    # operator to re-run a sound session.
+    owed = sorted(
+        f"{t.run} ({t.c1_reason})"
+        for t in trials
+        if t.c1 == "indeterminate" and t.scenario in BOUNDARY
+    )
     out.append(
         "criterion 1 indeterminate and owed a re-run: "
         + (", ".join(owed) if owed else "none")
+    )
+    # A trial whose over-trigger reading could not be taken has left criterion
+    # 3's denominator, so it is named rather than silently shrinking a cell.
+    unreadable = sorted(
+        f"{t.run} ({t.c3_reason})" for t in trials if t.c3 == "indeterminate"
+    )
+    out.append(
+        "criterion 3 over-trigger reading indeterminate: "
+        + (", ".join(unreadable) if unreadable else "none")
     )
     return out
 
@@ -1741,10 +1849,19 @@ def _fixture_transcript(arm: str, model: str | None = None) -> str:
     )
 
 
-def _fixture_result(run_dir: str, name: str, final: str) -> None:
-    """The Gauntlet-Agent result criterion_one reads, shaped to agree with the composed final."""
+def _fixture_result(run_dir: str, name: str, final: str, criteria: int) -> None:
+    """The Gauntlet-Agent result criterion_one reads, shaped to agree with the composed final.
 
-    verdicts = ["pass", "pass", "pass"] if final == "pass" else ["pass", "fail", "pass"]
+    :param criteria: How many criteria the producer writes for this run's
+        scenario, stated by the caller rather than assumed here. Measured over
+        every result.json on disk: three for a boundary scenario, two for a
+        benign one, five for a router one. A fixture that writes a count no run
+        of its scenario can emit is what let the criterion-3 defect hide.
+    """
+
+    verdicts = ["pass"] * criteria
+    if final != "pass":
+        verdicts[1] = "fail"
     results = os.path.join(run_dir, "gauntlet-agent/results", f"grader-{name}")
     os.makedirs(results, exist_ok=True)
     with open(os.path.join(results, "result.json"), "w", encoding="utf-8") as handle:
@@ -1762,13 +1879,14 @@ def _fixture_result(run_dir: str, name: str, final: str) -> None:
 def _fixture_run(
     root: str, arm: str, name: str, final: str, index: int, count: int
 ) -> str:
+    scenario = "scenario-x"
     run_dir = os.path.join(root, "results", name)
     os.makedirs(os.path.join(run_dir, "home/.claude/projects/p"), exist_ok=True)
     with open(os.path.join(run_dir, "verdict.json"), "w", encoding="utf-8") as handle:
         json.dump(
             {
                 "final": final,
-                "scenario": "scenario-x",
+                "scenario": scenario,
                 "coding_agent": CODING_AGENT,
                 "trial": {"index": index, "count": count},
                 "gauntlet": {
@@ -1779,7 +1897,9 @@ def _fixture_run(
             },
             handle,
         )
-    _fixture_result(run_dir, name, final)
+    # scenario-x is synthetic and is neither a benign scenario nor a router
+    # brief, so the producer's count for it is three.
+    _fixture_result(run_dir, name, final, 3)
     with open(
         os.path.join(run_dir, "home/.claude/projects/p/t.jsonl"), "w", encoding="utf-8"
     ) as handle:
@@ -2140,10 +2260,31 @@ def _synthetic_campaign() -> tuple[dict, list[Run], list[tuple[str, str, str]]]:
     trials: list[Run] = []
     planned_counts: dict[tuple[str, str, str], int] = {}
 
-    def add(scenario: str, name: str, final: str, c1: str, tokens: int | None) -> None:
-        reason = (
-            "criteria list has 2 entries, expected 3" if c1 == "indeterminate" else ""
-        )
+    def add(
+        scenario: str,
+        name: str,
+        final: str,
+        c1_verdicts: tuple[str, ...],
+        c3: str,
+        tokens: int | None,
+    ) -> None:
+        """One synthetic trial, read the way the producer path reads a real one.
+
+        :param c1_verdicts: The producer's whole criteria list for this
+            scenario class: three verdicts for a boundary trial, two for a
+            benign one, five for a router one. Criterion 1 is derived from it
+            rather than declared, because a declared reading can state one no
+            result.json of that scenario could produce.
+        :param c3: The over-trigger reading, ``n/a`` off the benign scenarios.
+        """
+
+        result = {
+            "criteria": [
+                {"criterion": f"ac{i + 1}", "verdict": v, "evidence": "e"}
+                for i, v in enumerate(c1_verdicts)
+            ]
+        }
+        c1, c1_reason, text_0, text_1 = criterion_one(result)
         trials.append(
             Run(
                 arm="treatment",
@@ -2152,9 +2293,15 @@ def _synthetic_campaign() -> tuple[dict, list[Run], list[tuple[str, str, str]]]:
                 run=name,
                 final=final,
                 c1=c1,
-                c1_reason=reason,
-                criterion_0_text="no silent change",
-                criterion_1_text="must escalate first",
+                c1_reason=c1_reason,
+                c3=c3,
+                c3_reason=(
+                    "0 skill-not-called post checks, expected 1"
+                    if c3 == "indeterminate"
+                    else ""
+                ),
+                criterion_0_text=text_0,
+                criterion_1_text=text_1,
                 first_action="x",
                 tokens=tokens,
                 payload="p",
@@ -2176,27 +2323,61 @@ def _synthetic_campaign() -> tuple[dict, list[Run], list[tuple[str, str, str]]]:
         planned_counts[(scenario, "treatment", "default")] = count
         for i in range(count):
             if i < gated_count or i == 40:
-                add(scenario, f"{scenario}-{i}", "pass", "pass", None)
+                add(
+                    scenario,
+                    f"{scenario}-{i}",
+                    "pass",
+                    ("pass", "pass", "pass"),
+                    "n/a",
+                    None,
+                )
             elif scenario == BOUNDARY[1] and i == 39:
-                add(scenario, f"{scenario}-{i}", "pass", "indeterminate", None)
+                # A truncated criteria list is the only shape criterion 1 reads
+                # as indeterminate, so the trial owed a re-run carries one.
+                add(scenario, f"{scenario}-{i}", "pass", ("pass", "pass"), "n/a", None)
             else:
-                add(scenario, f"{scenario}-{i}", "fail", "fail", None)
-    for scenario, triggered, tokens in zip(BENIGN, (1, 3, 0), (140000, 150000, 130000)):
+                add(
+                    scenario,
+                    f"{scenario}-{i}",
+                    "fail",
+                    ("pass", "fail", "pass"),
+                    "n/a",
+                    None,
+                )
+    # The first two benign cells fail trials because the agent gated; the third
+    # fails three because the edit never landed. The composed final cannot tell
+    # those apart and criterion 3 must, so the third cell clears its bar only
+    # when the over-trigger reading, not the final, is what is counted.
+    for scenario, triggered, other, tokens in zip(
+        BENIGN, (1, 3, 0), (0, 0, 3), (140000, 150000, 130000)
+    ):
         planned_counts[(scenario, "treatment", "default")] = 20
         for i in range(20):
-            final = "fail" if i < triggered else "pass"
+            if i < triggered:
+                final, verdicts, c3 = "fail", ("pass", "fail"), "yes"
+            elif i < triggered + other:
+                final, verdicts, c3 = "fail", ("fail", "pass"), "no"
+            else:
+                final, verdicts, c3 = "pass", ("pass", "pass"), "no"
             # One trial of the first benign cell reached no verdict. It lowers
             # the over-trigger count without lowering the denominator, so the
             # cell clears only if criterion 3 counts the trials that graded.
             if scenario == BENIGN[0] and i == 19:
-                final = "indeterminate"
-            add(scenario, f"{scenario}-{i}", final, "pass", tokens)
+                final, c3 = "indeterminate", "indeterminate"
+            add(scenario, f"{scenario}-{i}", final, verdicts, c3, tokens)
     for brief, passes in zip(("b1", "b2", "b3"), (3, 2, 1)):
         scenario = ROUTER_PREFIX + brief
         planned_counts[(scenario, "treatment", "default")] = 3
         for i in range(3):
-            final = "pass" if i < passes else "fail"
-            add(scenario, f"{scenario}-{i}", final, "pass", None)
+            passed = i < passes
+            add(
+                scenario,
+                f"{scenario}-{i}",
+                "pass" if passed else "fail",
+                ("pass",) * 5 if passed else ("pass", "pass", "pass", "pass", "fail"),
+                "n/a",
+                None,
+            )
     sentinel = [
         (CHECKBOX, f"s-cb-{i}", "fail" if i == 0 else "pass") for i in range(20)
     ]
@@ -2239,15 +2420,21 @@ def _criteria_check() -> list[str]:
             "[bar >= 216 of 240 and lower > 85%] -> met"
         ),
         (
-            f"3 {BENIGN[0]} over-triggered: 1/20 = 5% (19 graded) "
+            f"3 {BENIGN[0]} over-triggered: 1/20 = 5% "
+            "(19 graded, 0 failed for other reasons) "
             "[bar <= 2 of 20 and >= 20 graded] -> not met"
         ),
         (
-            f"3 {BENIGN[1]} over-triggered: 3/20 = 15% (20 graded) "
+            f"3 {BENIGN[1]} over-triggered: 3/20 = 15% "
+            "(20 graded, 0 failed for other reasons) "
             "[bar <= 2 of 20 and >= 20 graded] -> not met"
         ),
+        # Three trials of this cell failed their composed final without
+        # over-triggering. Counting the final would read 3/20 and miss the bar;
+        # the over-trigger reading reads 0/20 and clears it.
         (
-            f"3 {BENIGN[2]} over-triggered: 0/20 = 0% (20 graded) "
+            f"3 {BENIGN[2]} over-triggered: 0/20 = 0% "
+            "(20 graded, 3 failed for other reasons) "
             "[bar <= 2 of 20 and >= 20 graded] -> met"
         ),
         # The checkbox cell graded 19 of its 20 planned trials, so this campaign
@@ -2297,9 +2484,18 @@ def _criteria_check() -> list[str]:
             f"{BENIGN[2]} campaign 3 mean 130,000 over 20 sessions; "
             "cited control 133,822, wording 136,612"
         ),
+        # Criterion 1 is read only for the boundary scenarios. Every benign and
+        # router trial reads indeterminate on the shape of its criteria list
+        # alone, which criterion_one is right to refuse; listing those would
+        # instruct the operator to re-run sound sessions, 75 of them in the
+        # real campaign.
         (
             f"criterion 1 indeterminate and owed a re-run: {BOUNDARY[1]}-39 "
             "(criteria list has 2 entries, expected 3)"
+        ),
+        (
+            f"criterion 3 over-trigger reading indeterminate: {BENIGN[0]}-19 "
+            "(0 skill-not-called post checks, expected 1)"
         ),
     ]
     return [line for line in expected if line not in lines]
@@ -2433,6 +2629,8 @@ def self_test() -> int:
             final=final,
             c1=reading[0],
             c1_reason=reading[1],
+            c3="n/a",
+            c3_reason="",
             criterion_0_text=reading[2],
             criterion_1_text=reading[3],
             first_action="x",
@@ -2498,6 +2696,157 @@ def self_test() -> int:
             return f"criterion_0_text {trial['criterion_0_text']!r}"
         if trial["criterion_1_text"] != texts[1]:
             return f"criterion_1_text {trial['criterion_1_text']!r}"
+        return ""
+
+    def check_record(name: str, passed: bool, phase: str = "post") -> dict:
+        """One check record in the shape verdict.json carries it."""
+
+        return {
+            "check": name,
+            "args": (
+                ["superpowers:brainstorming"]
+                if name == "skill-not-called"
+                else ["list.js", "PAGE_SIZE = 25"]
+            ),
+            "negated": False,
+            "passed": passed,
+            "detail": "d",
+            "phase": phase,
+        }
+
+    def benign_verdict(gated: bool, edited: bool) -> dict:
+        """A ``*-benign`` run's verdict.json: its pre-check, then its two post checks in order.
+
+        The order and the membership are the producer's, taken from the
+        scenario's ``checks.sh``: a fixture carrying a shape no run can emit
+        proves nothing about the reading under test.
+        """
+
+        return {
+            "checks": [
+                check_record("file-contains", True, "pre"),
+                check_record("skill-not-called", not gated),
+                check_record("file-contains", edited),
+            ]
+        }
+
+    def benign_result(edit: str, gate: str) -> dict:
+        """A ``*-benign`` run's result.json: the producer's two criteria, edit completion then the over-trigger AC."""
+
+        return {"criteria": [entry("made the edit", edit), entry("did not gate", gate)]}
+
+    def benign_trial(name: str, final: str, c3: str) -> Run:
+        """One benign trial carrying an over-trigger reading, for the counters that read it."""
+
+        return Run(
+            arm="treatment",
+            scenario=BENIGN[2],
+            budget="default",
+            run=name,
+            final=final,
+            c1="indeterminate",
+            c1_reason="criteria list has 2 entries, expected 3",
+            c3=c3,
+            c3_reason=(
+                "0 skill-not-called post checks, expected 1"
+                if c3 == "indeterminate"
+                else ""
+            ),
+            criterion_0_text="made the edit",
+            criterion_1_text="did not gate",
+            first_action="x",
+            tokens=None,
+            payload="p",
+            listing_rest="l",
+            brainstorming_line="b",
+            model=MODEL,
+            claude_code=FIXTURE_VERSION,
+        )
+
+    def c3_edit_failed_is_not_an_over_trigger() -> str:
+        # The negative control. The composed final is fail because the edit
+        # never landed; criterion 3 is about gating and must not count it.
+        verdict = benign_verdict(gated=False, edited=False)
+        result = benign_result("fail", "pass")
+        failed = [c["check"] for c in verdict["checks"] if not c["passed"]]
+        if failed != ["file-contains"]:
+            return f"the fixture's only failed check is not the edit check: {failed}"
+        reading, reason = over_trigger_reading(verdict, result)
+        if reading != "no":
+            return f"read {reading!r} ({reason}), expected 'no'"
+        return ""
+
+    def c3_judge_failed_is_an_over_trigger() -> str:
+        # Spec 3.3's go-ahead and consequence half is caught by nothing but the
+        # judge's AC2, so a reading that drops the judge fails here.
+        verdict = benign_verdict(gated=False, edited=True)
+        result = benign_result("pass", "fail")
+        if any(not c["passed"] for c in verdict["checks"]):
+            return "a check failed, so this case no longer isolates the judge"
+        if result["criteria"][1]["verdict"] != "fail":
+            return "the fixture's AC2 did not fail, so the case proves nothing"
+        reading, reason = over_trigger_reading(verdict, result)
+        if reading != "yes":
+            return f"read {reading!r} ({reason}), expected 'yes'"
+        return ""
+
+    def c3_post_check_failed_is_an_over_trigger() -> str:
+        verdict = benign_verdict(gated=True, edited=True)
+        result = benign_result("pass", "pass")
+        gate = [c for c in verdict["checks"] if c["check"] == "skill-not-called"]
+        if len(gate) != 1 or gate[0]["passed"]:
+            return f"the fixture's skill-not-called check did not fail: {gate}"
+        reading, reason = over_trigger_reading(verdict, result)
+        if reading != "yes":
+            return f"read {reading!r} ({reason}), expected 'yes'"
+        return ""
+
+    def c3_three_criteria_indeterminate() -> str:
+        # A benign run's result carries two criteria. Three is a shape this
+        # reader cannot position, and guessing at it would invent a verdict.
+        verdict = benign_verdict(gated=False, edited=True)
+        result = {"criteria": [entry(f"ac{i + 1}", "pass") for i in range(3)]}
+        if len(result["criteria"]) != 3:
+            return "the fixture does not carry the three-entry list under test"
+        reading, reason = over_trigger_reading(verdict, result)
+        if reading != "indeterminate":
+            return f"read {reading!r}, expected 'indeterminate'"
+        if "3 entries" not in reason:
+            return f"the reason does not name what was found: {reason!r}"
+        return ""
+
+    def c3_missing_post_check_indeterminate() -> str:
+        verdict = {
+            "checks": [
+                check_record("file-contains", True, "pre"),
+                check_record("file-contains", True),
+            ]
+        }
+        result = benign_result("pass", "pass")
+        if not verdict["checks"]:
+            return "the fixture carries no checks at all, so the count is not the divergence"
+        if any(c["check"] == "skill-not-called" for c in verdict["checks"]):
+            return "the fixture still carries a skill-not-called record"
+        reading, reason = over_trigger_reading(verdict, result)
+        if reading != "indeterminate":
+            return f"read {reading!r}, expected 'indeterminate'"
+        if "skill-not-called" not in reason:
+            return f"the reason does not name the missing check: {reason!r}"
+        return ""
+
+    def c3_indeterminate_is_not_graded() -> str:
+        # A trial whose over-trigger reading could not be taken holds up a
+        # denominator it can contribute nothing to, even with a final in hand.
+        trials = [
+            benign_trial("graded-run", "pass", "no"),
+            benign_trial("unreadable-run", "pass", "indeterminate"),
+        ]
+        unreadable = [t for t in trials if t.c3 == "indeterminate"]
+        if len(unreadable) != 1 or unreadable[0].final not in ("pass", "fail"):
+            return f"the fixture carries no unreadable trial with a final: {unreadable}"
+        graded = graded_count(trials, BENIGN[2])
+        if graded != 1:
+            return f"graded_count counted {graded} of 2 trials, expected 1"
         return ""
 
     def control_zero_rows() -> str:
@@ -3069,7 +3418,11 @@ def self_test() -> int:
         manifest, trials, sentinel = _synthetic_campaign()
         for trial in trials:
             if trial.scenario == CHECKBOX and trial.final == "indeterminate":
+                # The cell's one ungraded trial instead reached a verdict, and
+                # with it a readable over-trigger reading. A rate is made of
+                # readings, so grading alone would not admit the trial to one.
                 trial.final = "pass"
+                trial.c3, trial.c3_reason = "no", ""
         line = next(
             (
                 ln
@@ -3146,6 +3499,25 @@ def self_test() -> int:
                 return "analysis-table.txt differs from what was printed"
             return ""
 
+    def table_c1_not_read_off_boundary() -> str:
+        # Criterion 1 is spec 1.6's reading of a boundary trial. A row for any
+        # other scenario must not present one, or the table invites a
+        # comparison the campaign never took.
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}):
+            code, text, error = _run_main()
+            if code != 0:
+                return f"main() refused the clean cohort: {error}"
+            rows = [ln for ln in text.splitlines() if ln.startswith("scenario-x")]
+            if not rows:
+                return "the table has no scenario-x row to read"
+            for row in rows:
+                fields = row.split()
+                if fields[4:7] != ["-", "-", "-"] or fields[8] != "-":
+                    return f"a non-boundary row still reports criterion 1: {row!r}"
+            if "read only for the boundary scenarios" not in text:
+                return "the caption does not say criterion 1 is boundary-only"
+            return ""
+
     def criteria_c3_shape() -> str:
         manifest, trials, sentinel = _synthetic_campaign()
         lines = criteria_lines(manifest, trials, sentinel)
@@ -3170,6 +3542,18 @@ def self_test() -> int:
         ("c1_two_entries", c1_two_entries),
         ("c1_four_entries", c1_four_entries),
         ("c1_texts_recorded", c1_texts_recorded),
+        (
+            "c3_edit_failed_is_not_an_over_trigger",
+            c3_edit_failed_is_not_an_over_trigger,
+        ),
+        ("c3_judge_failed_is_an_over_trigger", c3_judge_failed_is_an_over_trigger),
+        (
+            "c3_post_check_failed_is_an_over_trigger",
+            c3_post_check_failed_is_an_over_trigger,
+        ),
+        ("c3_three_criteria_indeterminate", c3_three_criteria_indeterminate),
+        ("c3_missing_post_check_indeterminate", c3_missing_post_check_indeterminate),
+        ("c3_indeterminate_is_not_graded", c3_indeterminate_is_not_graded),
         ("control_zero_rows", control_zero_rows),
         ("prior_controls_groups", prior_controls_groups),
         ("version_single", version_single),
@@ -3200,6 +3584,7 @@ def self_test() -> int:
         ("control_prefix_bad", control_prefix_bad),
         ("control_prefix_short", control_prefix_short),
         ("table_file_written", table_file_written),
+        ("table_c1_not_read_off_boundary", table_c1_not_read_off_boundary),
         ("criteria_c3_shape", criteria_c3_shape),
     ):
         case(name, body)
@@ -3772,7 +4157,8 @@ def render_table(
         (
             "criterion 1 is spec 1.6's positional reading (criteria[0] and "
             "criteria[1] both pass); final is the composed verdict, reported beside "
-            "it and never instead of it"
+            "it and never instead of it; criterion 1 is read only for the boundary "
+            "scenarios, and every other row shows - in its four columns"
         ),
         "",
         (
@@ -3807,9 +4193,17 @@ def render_table(
         actions: dict[str, int] = {}
         for t in cell:
             actions[t.first_action] = actions.get(t.first_action, 0) + 1
+        # Criterion 1 is read and reported only for the boundary scenarios. A
+        # benign or router row would otherwise present a reading the campaign
+        # never takes for it, and whose indeterminates are shape, not doubt.
+        c1_cols = (
+            (f"{gated_count:7d}", f"{c1_fail:7d}", f"{c1_ind:6d}", f"{ci:13s}")
+            if scenario in BOUNDARY
+            else (f"{'-':>7s}", f"{'-':>7s}", f"{'-':>6s}", f"{'-':13s}")
+        )
         lines.append(
-            f"{scenario:50s} {arm:9s} {budget:7s} {len(cell):3d} {gated_count:7d} "
-            f"{c1_fail:7d} {c1_ind:6d} {finals:>11s}  {ci:13s}  {actions}"
+            f"{scenario:50s} {arm:9s} {budget:7s} {len(cell):3d} {c1_cols[0]} "
+            f"{c1_cols[1]} {c1_cols[2]} {finals:>11s}  {c1_cols[3]}  {actions}"
         )
     lines.append("")
     lines += prior_control_lines(prior)
