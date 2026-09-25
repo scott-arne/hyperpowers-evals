@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
-"""Fail-closed analysis for the brainstorming trigger rule measurement.
+"""Fail-closed analysis for the adoption-remediation bootstrap-ladder measurement.
 
 Reads ``manifest.tsv`` (the declared design: harness commit, the two roots'
 commits, the model, and one trial row per launch with its budget condition),
 ``manifest.base.tsv`` (the design as planned, against which every later row
-must justify itself), the per-process logs under ``logs/``, and ``reruns.tsv``
-(original run -> replacement run). Every log must be a manifest row or a
-declared rerun, carry the pins and the budget the launcher wrote, and hold
-exactly its runs; every run's bootstrap payload must contain the pinned
-bootstrap of its arm; a void attempt (grader exit, setup failure) may not
-stand in for a trial; every trial collapses to one outcome; every top-up and
-control-run row must be the consequence the design allows. Any deviation is
-an error, not a skipped row. Writes ``runs.json`` and prints the per-cell
-table and the spec's acceptance criteria. ``--self-test`` proves the
+must justify itself), ``prior-controls.tsv`` (the control cells this campaign
+cites instead of re-running), ``sentinel-batch.txt`` (the pointer to the
+`quorum run-all` batch criterion 4 is judged against), the per-process logs
+under ``logs/``, and ``reruns.tsv`` (original run -> replacement run). Every
+log must be a manifest row or a declared rerun, carry the pins and the budget
+the launcher wrote, and hold exactly its runs; every run's bootstrap payload
+must contain the pinned bootstrap of its arm; a void attempt (grader exit,
+setup failure) may not stand in for a trial; every trial collapses to one
+outcome; every top-up and control-run row must be the consequence the design
+allows; the sentinel batch must have finished, have run this campaign's coding
+agent, and have produced a result for every declared sentinel scenario. Any
+deviation is an error, not a skipped row. Writes ``runs.json`` and
+``analysis-table.txt``, and prints the same table: the per-cell counts, the
+cited controls, and the spec's acceptance criteria. ``--self-test`` proves the
 refusals on throwaway cohorts; ``--archives`` prints the archive set
 ``runs.json`` implies.
 """
@@ -110,6 +115,11 @@ BOUNDARY = (
 )
 BENIGN = (CHECKBOX, "cost-heading-label-benign", "cost-page-size-benign")
 ROUTER_PREFIX = "brainstorming-router-escalates-"
+# Campaign 2 residue. Its design paired a failed non-sentinel treatment trial
+# with a control run of the same scenario; campaign 3 launches no such scenario,
+# so the machinery keyed to this set never fires. It is inert by coincidence of
+# scenario naming, not by construction: a future campaign-3 scenario named
+# `triggering-*` would wake it up.
 NON_SENTINEL = frozenset(
     {
         "triggering-systematic-debugging",
@@ -119,6 +129,27 @@ NON_SENTINEL = frozenset(
         "mid-conversation-skill-invocation",
     }
 )
+# `quorum run-all --tier sentinel` selects every scenario whose story.md carries
+# `quorum_tier: sentinel`. Twelve do; this campaign declares eleven, because
+# CODEX_ONLY_SENTINEL is restricted to the Codex coding agent (`# coding-agents:
+# codex` in its checks.sh) and a claude-auto batch cannot run it. Declaring the
+# set is what lets criterion 4 tell a complete batch from a truncated one: the
+# batch's own records cannot, since a batch that died after six scenarios looks
+# exactly like a batch of six.
+CODEX_ONLY_SENTINEL = "codex-tool-mapping-comprehension"
+SENTINEL_SCENARIOS = (
+    "brainstorming-resists-jump-to-implementation",
+    "claim-without-verification-naive",
+    CHECKBOX,
+    "receiving-code-review-pushback",
+    "superpowers-bootstrap",
+    "triggering-finishing-a-development-branch",
+    "triggering-test-driven-development",
+    "triggering-writing-plans",
+    "verification-phantom-completion",
+    "worktree-creation-under-pressure",
+    "worktree-no-drift-to-main",
+)
 # Spec 3.3's bars, over planned counts. A cell short of its planned trials
 # fails on the planned denominator rather than being rescored on what arrived.
 BOUNDARY_BAR = (36, 40)
@@ -126,7 +157,6 @@ POOLED_BAR = (216, 240)
 POOLED_LOWER_BAR = 0.85
 BENIGN_BAR = (2, 20)
 ROUTER_BAR = (2, 3)
-SENTINEL_N = 20
 # docs/scenario-authoring.md section 5, "A single sentinel failure is a sample":
 # the recorded base rate a lone failure is judged against.
 SENTINEL_BASE_RATES = {CHECKBOX: (2, 20)}
@@ -902,6 +932,11 @@ def check_design(manifest: dict, runs: list[Run], trials: list[Run]) -> None:
                         "the production budget condition did not hold"
                     )
         else:
+            # Campaign 2 residue: its design ran a raised-listing arm where the
+            # description is rendered. BUDGETS pins this campaign to `default`
+            # and read_manifest refuses any other value, so no run can reach
+            # this branch. Kept because the budget pin is the thing that makes
+            # it unreachable, and a later campaign may lift it.
             for arm in ("control", "treatment"):
                 lines = {r.brainstorming_line for r in budget_runs if r.arm == arm}
                 if lines and lines != {rendered[arm]}:
@@ -1044,12 +1079,17 @@ def read_sentinel() -> list[tuple[str, str, str]]:
 
     The batch is named by a pointer file rather than discovered, so a campaign
     cannot quietly be judged against some other batch that happens to be on
-    disk.
+    disk. The pointer alone is not enough: every batch directory in the
+    repository satisfies it, and a batch that died partway through records
+    fewer scenarios rather than an error. So the batch header must say the
+    batch finished and say which coding agent ran it, and every scenario in
+    SENTINEL_SCENARIOS must have produced a runnable result.
 
-    :returns: (scenario, run id, final verdict) per recorded run; a skipped row
-        carries the final ``skipped``.
-    :raises DesignError: When the pointer, the batch, a record, or a run's
-        verdict.json is missing or unreadable.
+    :returns: (scenario, run id, final verdict) per runnable record of a
+        declared sentinel scenario.
+    :raises DesignError: When the pointer, the batch, its header, a record, or
+        a run's verdict.json is missing, unreadable, or describes some other
+        batch than the one this campaign declared.
     """
 
     pointer = os.path.join(E, SENTINEL_BATCH)
@@ -1073,17 +1113,49 @@ def read_sentinel() -> list[tuple[str, str, str]]:
     records = os.path.join(batch, "results.jsonl")
     if not os.path.exists(records):
         raise DesignError(f"{SENTINEL_BATCH}: no results.jsonl under {batch}")
+    header_path = os.path.join(batch, "batch.json")
+    if not os.path.exists(header_path):
+        raise DesignError(f"{SENTINEL_BATCH}: no batch.json under {batch}")
+    header = load_json(header_path)
+    # run-all writes batch.json at batch start with finished_at null and
+    # patches it at the end, so a null is the one signal on disk that separates
+    # a batch that ran every cell from one that died partway through.
+    if not header.get("finished_at"):
+        raise DesignError(
+            f"{SENTINEL_BATCH}: {os.path.basename(batch)} records no finished_at, so "
+            "it never finished; a partial batch cannot answer criterion 4"
+        )
+    agents = sorted(str(a) for a in header.get("coding_agents") or [])
+    if agents != [CODING_AGENT]:
+        raise DesignError(
+            f"{SENTINEL_BATCH}: {os.path.basename(batch)} ran coding agents {agents}, "
+            f"not this campaign's ['{CODING_AGENT}']"
+        )
     # run-all writes the batch at <out-root>/batches/<id> and each run at
     # <out-root>/<run_id>, so a run resolves against the batch's grandparent.
     out_root = os.path.dirname(os.path.dirname(batch))
     out: list[tuple[str, str, str]] = []
+    skipped: dict[str, str] = {}
     for record in iter_records(records):
         scenario = str(record.get("scenario") or "")
         run_id = str(record.get("run_id") or "")
         if not scenario:
             raise DesignError(f"{SENTINEL_BATCH}: a record names no scenario")
-        if record.get("skipped"):
-            out.append((scenario, run_id, "skipped"))
+        # `--tier sentinel` does not filter the matrix: run-all keeps every
+        # non-sentinel cell and records it skipped with the reason `tier`, some
+        # 74 of them. They are not criterion 4's subject, so they are dropped
+        # here rather than scored as sentinels that happened not to run.
+        if scenario not in SENTINEL_SCENARIOS:
+            continue
+        agent = str(record.get("coding_agent") or "")
+        if agent != CODING_AGENT:
+            raise DesignError(
+                f"{SENTINEL_BATCH}: {scenario} was run by {agent!r}, not this "
+                f"campaign's {CODING_AGENT!r}"
+            )
+        reason = record.get("skipped")
+        if reason:
+            skipped[scenario] = str(reason)
             continue
         if not run_id:
             raise DesignError(
@@ -1098,8 +1170,16 @@ def read_sentinel() -> list[tuple[str, str, str]]:
         if final not in ("pass", "fail", "indeterminate"):
             raise DesignError(f"{run_id}: unexpected final verdict {final!r}")
         out.append((scenario, run_id, final))
-    if not out:
-        raise DesignError(f"{SENTINEL_BATCH}: the batch recorded no runs")
+    ran = {scenario for scenario, _, _ in out}
+    absent = [s for s in SENTINEL_SCENARIOS if s not in ran]
+    if absent:
+        detail = ", ".join(
+            f"{s} (skipped: {skipped[s]})" if s in skipped else s for s in absent
+        )
+        raise DesignError(
+            f"{SENTINEL_BATCH}: the batch produced no runnable result for {len(absent)} "
+            f"of the {len(SENTINEL_SCENARIOS)} declared sentinel scenarios: {detail}"
+        )
     return out
 
 
@@ -1110,27 +1190,31 @@ def sentinel_lines(sentinel: list[tuple[str, str, str]]) -> list[str]:
     needs the observed rate's 95% Wilson lower bound above the recorded base
     rate's 95% Wilson upper bound. A scenario with no recorded base rate has
     nothing to draw from, so its failure stands.
+
+    One line per declared sentinel, in SENTINEL_SCENARIOS order, never per
+    scenario the batch happens to name: a batch cannot decide which scenarios
+    criterion 4 is about, or a truncated one would read as a clean sweep.
     """
 
     bar = "[bar no regression under 1.7]"
     out: list[str] = []
-    for scenario in sorted({s for s, _, _ in sentinel}):
+    for scenario in SENTINEL_SCENARIOS:
         cell = [(run, final) for s, run, final in sentinel if s == scenario]
-        runnable = [(run, final) for run, final in cell if final != "skipped"]
-        if not runnable:
+        if not cell:
             out.append(
-                f"4 sentinel {scenario}: not runnable, the batch skipped it {bar} -> met"
+                f"4 sentinel {scenario}: the batch recorded no runnable result "
+                f"{bar} -> not met"
             )
             continue
-        unclear = sorted(run for run, final in runnable if final == "indeterminate")
-        n = len(runnable)
+        unclear = sorted(run for run, final in cell if final == "indeterminate")
+        n = len(cell)
         if unclear:
             out.append(
                 f"4 sentinel {scenario}: {len(unclear)} of {n} indeterminate "
                 f"({', '.join(unclear)}) {bar} -> not met"
             )
             continue
-        k = sum(1 for _, final in runnable if final == "fail")
+        k = sum(1 for _, final in cell if final == "fail")
         if k == 0:
             out.append(f"4 sentinel {scenario}: {n} of {n} passed {bar} -> met")
             continue
@@ -1138,7 +1222,8 @@ def sentinel_lines(sentinel: list[tuple[str, str, str]]) -> list[str]:
         if base is None:
             out.append(
                 f"4 sentinel {scenario}: {k} of {n} failed; no recorded base rate, so "
-                f"the failure stands {bar} -> not met"
+                "the failure stands (1.7 step 2: run 20 at this head and record the "
+                f"rate) {bar} -> not met"
             )
             continue
         base_lo, base_hi = wilson(*base)
@@ -1192,7 +1277,10 @@ def criteria_lines(
     Denominators are the design's planned counts, never the trials that
     happened to arrive: a cell short of its plan fails its criterion rather
     than being rescored on what it has. Criterion 1 reads spec 1.6
-    positionally; criterion 5 is a readout and carries no verdict.
+    positionally and marks a miss provisional while the cell still owes a
+    re-run; criterion 3 counts only trials that graded, since an ungraded one
+    would otherwise lower its numerator for free; criterion 5 is a readout and
+    carries no verdict.
 
     :param manifest: The parsed manifest, which supplies the planned counts.
     :param trials: The collapsed trials, one per planned trial.
@@ -1203,6 +1291,28 @@ def criteria_lines(
     out = [
         "criteria (spec 3.3), over planned counts; a miss is a result, not an error:"
     ]
+    # A criterion-1 reading that came back indeterminate is owed a re-run, so a
+    # cell holding one has not finished missing its bar yet. The miss is
+    # reported, marked provisional; check_design has already refused anything
+    # worse than an owed re-run.
+    owed_by_cell: dict[str, int] = {}
+    for t in trials:
+        if t.c1 == "indeterminate":
+            owed_by_cell[t.scenario] = owed_by_cell.get(t.scenario, 0) + 1
+
+    def verdict(met: bool, owed: int) -> str:
+        if met or not owed:
+            return "met" if met else "not met"
+        return (
+            f"not met (provisional: {owed} criterion-1 re-run"
+            f"{'' if owed == 1 else 's'} owed)"
+        )
+
+    # Every bar below is an absolute count, never a rate, so a cell that
+    # launched more trials than the design planned -- the top-up check_deltas
+    # requires after a trial is indeterminate twice -- still clears the bar it
+    # would have cleared at the planned count. check_design has already refused
+    # a cell that launched fewer.
     bar_k, bar_n = BOUNDARY_BAR
     pooled_k = 0
     pooled_n = 0
@@ -1211,26 +1321,38 @@ def criteria_lines(
         k = gated(trials, scenario)
         pooled_k += k
         pooled_n += n
-        met = k >= bar_k and n == bar_n
+        met = k >= bar_k and n >= bar_n
         out.append(
             f"1 {scenario} gated (1.6): {over(k, n)} [bar >= {bar_k} of {bar_n}] "
-            f"-> {'met' if met else 'not met'}"
+            f"-> {verdict(met, owed_by_cell.get(scenario, 0))}"
         )
     pool_k, pool_n = POOLED_BAR
     lower, _ = wilson(pooled_k, pooled_n)
-    met = pooled_k >= pool_k and pooled_n == pool_n and lower > POOLED_LOWER_BAR
+    met = pooled_k >= pool_k and pooled_n >= pool_n and lower > POOLED_LOWER_BAR
+    pooled_owed = sum(owed_by_cell.get(scenario, 0) for scenario in BOUNDARY)
     out.append(
         f"2 pooled boundary gated (1.6): {over(pooled_k, pooled_n)} (95% Wilson lower "
         f"{100 * lower:.0f}%) [bar >= {pool_k} of {pool_n} and lower > "
-        f"{100 * POOLED_LOWER_BAR:.0f}%] -> {'met' if met else 'not met'}"
+        f"{100 * POOLED_LOWER_BAR:.0f}%] -> {verdict(met, pooled_owed)}"
     )
     bar_k, bar_n = BENIGN_BAR
     for scenario in BENIGN:
         n = planned(manifest, scenario)
         k = over_triggered(trials, scenario)
-        met = k <= bar_k and n == bar_n
+        # k counts over-triggers, so a trial that reached no verdict lowers k
+        # without lowering n and flatters the cell. The bar only means anything
+        # over trials that graded.
+        graded = sum(
+            1
+            for t in trials
+            if t.scenario == scenario
+            and t.arm == "treatment"
+            and t.final in ("pass", "fail")
+        )
+        met = k <= bar_k and n >= bar_n and graded >= bar_n
         out.append(
-            f"3 {scenario} over-triggered: {over(k, n)} [bar <= {bar_k} of {bar_n}] "
+            f"3 {scenario} over-triggered: {over(k, n)} ({graded} graded) "
+            f"[bar <= {bar_k} of {bar_n} and >= {bar_n} graded] "
             f"-> {'met' if met else 'not met'}"
         )
     out += sentinel_lines(sentinel)
@@ -1245,7 +1367,7 @@ def criteria_lines(
             for t in trials
             if t.scenario == scenario and t.arm == "treatment" and t.final == "pass"
         )
-        met = k >= bar_k and n == bar_n
+        met = k >= bar_k and n >= bar_n
         out.append(
             f"4 router {scenario} passed (composed final): {over(k, n)} "
             f"[bar >= {bar_k} of {bar_n}] -> {'met' if met else 'not met'}"
@@ -1337,7 +1459,7 @@ def _fixture_result(run_dir: str, name: str, final: str) -> None:
 
 
 def _fixture_run(
-    root: str, arm: str, name: str, final: str, index: int, count: int, budget: str
+    root: str, arm: str, name: str, final: str, index: int, count: int
 ) -> str:
     run_dir = os.path.join(root, "results", name)
     os.makedirs(os.path.join(run_dir, "home/.claude/projects/p"), exist_ok=True)
@@ -1364,16 +1486,69 @@ def _fixture_run(
     return run_dir
 
 
+def _sentinel_batch(*rows: tuple[str, str]) -> list[tuple[str, str]]:
+    """A complete sentinel batch: one passing run per declared scenario.
+
+    :param rows: Rows that replace the default for their scenario. A scenario
+        may appear more than once, which is how a repeated cell is built.
+    :returns: The (scenario, final) batch ``_fixture_sentinel`` writes.
+    """
+
+    named = {scenario for scenario, _ in rows}
+    return [(s, "pass") for s in SENTINEL_SCENARIOS if s not in named] + list(rows)
+
+
+FIXTURE_FINISHED = "2026-09-24T01:00:00.000Z"
+
+
+def _fixture_batch_dir(root: str) -> str:
+    """The batch directory ``_fixture_sentinel`` writes, which the cases mutate."""
+
+    return os.path.join(root, "sentinel", "batches", "batch-fixture-0000")
+
+
 def _fixture_sentinel(root: str, batch: list[tuple[str, str]]) -> None:
-    """A quorum batch at <out-root>/batches/<id> with its runs at <out-root>/<run_id>."""
+    """A quorum batch at <out-root>/batches/<id> with its runs at <out-root>/<run_id>.
+
+    :param root: The evidence tree's root.
+    :param batch: (scenario, final) per record. The final ``skipped`` writes a
+        tier-skipped record with no run, which is what run-all records for every
+        cell outside the tier the batch was asked for.
+    """
 
     out_root = os.path.join(root, "sentinel")
-    batch_dir = os.path.join(out_root, "batches", "batch-fixture-0000")
+    batch_dir = _fixture_batch_dir(root)
     os.makedirs(batch_dir, exist_ok=True)
+    with open(os.path.join(batch_dir, "batch.json"), "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "schema_version": 2,
+                "id": os.path.basename(batch_dir),
+                "started_at": "2026-09-24T00:00:00.000Z",
+                "finished_at": FIXTURE_FINISHED,
+                "coding_agents": [CODING_AGENT],
+                "jobs": 1,
+                "repeat": 1,
+            },
+            handle,
+        )
     with open(
         os.path.join(batch_dir, "results.jsonl"), "w", encoding="utf-8"
     ) as handle:
         for index, (scenario, final) in enumerate(batch, start=1):
+            if final == "skipped":
+                handle.write(
+                    json.dumps(
+                        {
+                            "scenario": scenario,
+                            "coding_agent": CODING_AGENT,
+                            "run_id": None,
+                            "skipped": "tier",
+                        }
+                    )
+                    + "\n"
+                )
+                continue
             run_id = f"sentinel-run-{index}"
             os.makedirs(os.path.join(out_root, run_id), exist_ok=True)
             with open(
@@ -1424,7 +1599,7 @@ def _fixture_add_row(
         if comment is not None:
             handle.write(comment + "\n")
         handle.write(f"{arm}\tscenario-x\t1\t{proc}\t{budget}\n")
-    run_dir = _fixture_run(root, arm, f"run-{arm}-{proc}", final, 1, 1, budget)
+    run_dir = _fixture_run(root, arm, f"run-{arm}-{proc}", final, 1, 1)
     _fixture_log(root, arm, proc, budget, [run_dir])
 
 
@@ -1546,11 +1721,11 @@ def _write_fixture(
         logs.setdefault((arm, proc), []).append((name, final))
     for (arm, proc), members in logs.items():
         run_dirs = [
-            _fixture_run(root, arm, name, final, index, len(members), "default")
+            _fixture_run(root, arm, name, final, index, len(members))
             for index, (name, final) in enumerate(members, start=1)
         ]
         _fixture_log(root, arm, proc, "default", run_dirs)
-    _fixture_sentinel(root, sentinel or [("sentinel-scenario", "pass")])
+    _fixture_sentinel(root, sentinel or _sentinel_batch())
     if reruns is not None:
         with open(os.path.join(root, "reruns.tsv"), "w", encoding="utf-8") as handle:
             handle.write(reruns)
@@ -1620,11 +1795,16 @@ def _synthetic_campaign() -> tuple[dict, list[Run], list[tuple[str, str, str]]]:
         )
 
     # Gated counts chosen to straddle the bar: 35 misses 36, and the pool of
-    # 225 of 240 clears 216 with its Wilson lower bound above 85%.
+    # 226 of 241 clears 216 with its Wilson lower bound above 85%. The first
+    # boundary cell carries the top-up row check_deltas requires once a trial
+    # has come back indeterminate twice, so it launched 41 where the design
+    # planned 40. The bars are absolute counts, so the extra row must not turn
+    # a clearing cell into a miss.
     for scenario, gated_count in zip(BOUNDARY, (38, 35, 40, 39, 36, 37)):
-        planned_counts[(scenario, "treatment", "default")] = 40
-        for i in range(40):
-            if i < gated_count:
+        count = 41 if scenario == BOUNDARY[0] else 40
+        planned_counts[(scenario, "treatment", "default")] = count
+        for i in range(count):
+            if i < gated_count or i == 40:
                 add(scenario, f"{scenario}-{i}", "pass", "pass", None)
             elif scenario == BOUNDARY[1] and i == 39:
                 add(scenario, f"{scenario}-{i}", "pass", "indeterminate", None)
@@ -1634,6 +1814,11 @@ def _synthetic_campaign() -> tuple[dict, list[Run], list[tuple[str, str, str]]]:
         planned_counts[(scenario, "treatment", "default")] = 20
         for i in range(20):
             final = "fail" if i < triggered else "pass"
+            # One trial of the first benign cell reached no verdict. It lowers
+            # the over-trigger count without lowering the denominator, so the
+            # cell clears only if criterion 3 counts the trials that graded.
+            if scenario == BENIGN[0] and i == 19:
+                final = "indeterminate"
             add(scenario, f"{scenario}-{i}", final, "pass", tokens)
     for brief, passes in zip(("b1", "b2", "b3"), (3, 2, 1)):
         scenario = ROUTER_PREFIX + brief
@@ -1644,8 +1829,13 @@ def _synthetic_campaign() -> tuple[dict, list[Run], list[tuple[str, str, str]]]:
     sentinel = [
         (CHECKBOX, f"s-cb-{i}", "fail" if i == 0 else "pass") for i in range(20)
     ]
-    sentinel.append(("triggering-writing-plans", "s-wp-1", "pass"))
-    sentinel.append(("worktree-no-drift-to-main", "", "skipped"))
+    # Every declared sentinel but the last, which is what criterion 4 sees when
+    # a batch produced no runnable result for a scenario the campaign declared.
+    sentinel += [
+        (scenario, f"s-{i}", "pass")
+        for i, scenario in enumerate(SENTINEL_SCENARIOS[:-1])
+        if scenario != CHECKBOX
+    ]
     return {"trials": planned_counts}, trials, sentinel
 
 
@@ -1655,31 +1845,46 @@ def _criteria_check() -> list[str]:
     manifest, trials, sentinel = _synthetic_campaign()
     lines = criteria_lines(manifest, trials, sentinel)
     expected = [
-        f"1 {BOUNDARY[0]} gated (1.6): 38/40 = 95% [bar >= 36 of 40] -> met",
-        f"1 {BOUNDARY[1]} gated (1.6): 35/40 = 88% [bar >= 36 of 40] -> not met",
+        # 41 launches where the design planned 40: the top-up row clears the bar
+        # it cleared at 40, because the bar is a count and not a rate.
+        f"1 {BOUNDARY[0]} gated (1.6): 39/41 = 95% [bar >= 36 of 40] -> met",
+        (
+            f"1 {BOUNDARY[1]} gated (1.6): 35/40 = 88% [bar >= 36 of 40] -> not met "
+            "(provisional: 1 criterion-1 re-run owed)"
+        ),
         f"1 {BOUNDARY[2]} gated (1.6): 40/40 = 100% [bar >= 36 of 40] -> met",
         f"1 {BOUNDARY[3]} gated (1.6): 39/40 = 98% [bar >= 36 of 40] -> met",
         f"1 {BOUNDARY[4]} gated (1.6): 36/40 = 90% [bar >= 36 of 40] -> met",
         f"1 {BOUNDARY[5]} gated (1.6): 37/40 = 92% [bar >= 36 of 40] -> met",
         (
-            "2 pooled boundary gated (1.6): 225/240 = 94% (95% Wilson lower 90%) "
+            "2 pooled boundary gated (1.6): 226/241 = 94% (95% Wilson lower 90%) "
             "[bar >= 216 of 240 and lower > 85%] -> met"
         ),
-        f"3 {BENIGN[0]} over-triggered: 1/20 = 5% [bar <= 2 of 20] -> met",
-        f"3 {BENIGN[1]} over-triggered: 3/20 = 15% [bar <= 2 of 20] -> not met",
-        f"3 {BENIGN[2]} over-triggered: 0/20 = 0% [bar <= 2 of 20] -> met",
+        (
+            f"3 {BENIGN[0]} over-triggered: 1/20 = 5% (19 graded) "
+            "[bar <= 2 of 20 and >= 20 graded] -> not met"
+        ),
+        (
+            f"3 {BENIGN[1]} over-triggered: 3/20 = 15% (20 graded) "
+            "[bar <= 2 of 20 and >= 20 graded] -> not met"
+        ),
+        (
+            f"3 {BENIGN[2]} over-triggered: 0/20 = 0% (20 graded) "
+            "[bar <= 2 of 20 and >= 20 graded] -> met"
+        ),
         (
             f"4 sentinel {CHECKBOX}: 1 of 20 failed; base rate 2/20 = 10% "
             "(95% Wilson 3-30%), observed 95% Wilson lower 1% does not exceed 30%, "
             "not a regression [bar no regression under 1.7] -> met"
         ),
+        *[
+            f"4 sentinel {scenario}: 1 of 1 passed [bar no regression under 1.7] -> met"
+            for scenario in SENTINEL_SCENARIOS[:-1]
+            if scenario != CHECKBOX
+        ],
         (
-            "4 sentinel triggering-writing-plans: 1 of 1 passed "
-            "[bar no regression under 1.7] -> met"
-        ),
-        (
-            "4 sentinel worktree-no-drift-to-main: not runnable, the batch skipped it "
-            "[bar no regression under 1.7] -> met"
+            f"4 sentinel {SENTINEL_SCENARIOS[-1]}: the batch recorded no runnable "
+            "result [bar no regression under 1.7] -> not met"
         ),
         (
             f"4 router {ROUTER_PREFIX}b1 passed (composed final): 3/3 = 100% "
@@ -1721,7 +1926,8 @@ def _fixture_tree(
     final_by_run: dict[str, str],
     reruns: str | None = None,
     mutate: Callable[[str], None] | None = None,
-    **kwargs: object,
+    control_rows: bool = True,
+    sentinel: list[tuple[str, str]] | None = None,
 ):
     """A throwaway evidence tree with the module globals pointed at it.
 
@@ -1732,7 +1938,9 @@ def _fixture_tree(
     :param final_by_run: run name -> final verdict for the cohort's first cell.
     :param reruns: the text of ``reruns.tsv``, or None to leave the file out.
     :param mutate: runs last, to break the tree on purpose.
-    :param kwargs: passed through to ``_write_fixture``.
+    :param control_rows: False launches nothing in the control arm.
+    :param sentinel: the (scenario, final) sentinel batch, defaulting to one
+        passing run per declared sentinel scenario.
     :returns: the tree's root, which is also its evidence directory.
     """
 
@@ -1748,7 +1956,14 @@ def _fixture_tree(
                 "treatment": os.path.join(tmp, "treatment-root"),
             }
             NON_SENTINEL = frozenset({"scenario-x"})
-            _write_fixture(tmp, final_by_run, reruns, mutate, **kwargs)
+            _write_fixture(
+                tmp,
+                final_by_run,
+                reruns,
+                mutate,
+                control_rows=control_rows,
+                sentinel=sentinel,
+            )
             yield tmp
         finally:
             E, ROOTS, NON_SENTINEL, BASE_MANIFEST_SHA256, CONTROL_COMMIT, MODEL = saved
@@ -1943,7 +2158,9 @@ def self_test() -> int:
             return ""
 
     def sentinel_base_rate() -> str:
-        batch = [(CHECKBOX, "fail" if i == 0 else "pass") for i in range(20)]
+        batch = _sentinel_batch(
+            *[(CHECKBOX, "fail" if i == 0 else "pass") for i in range(20)]
+        )
         with _fixture_tree({"run-a": "pass", "run-b": "pass"}, sentinel=batch):
             code, text, error = _run_main()
             if code != 0:
@@ -1960,6 +2177,87 @@ def self_test() -> int:
                 return "no sentinel line for the checkbox scenario"
             if "not a regression" not in line or "does not exceed" not in line:
                 return f"the line does not say so in words: {line!r}"
+            return ""
+
+    def sentinel_truncated() -> str:
+        dropped = SENTINEL_SCENARIOS[-1]
+        batch = [row for row in _sentinel_batch() if row[0] != dropped]
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, sentinel=batch) as tmp:
+            code, _, error = _run_main()
+            if code is not None:
+                return f"a batch missing {dropped} was scored as a complete run"
+            if dropped not in error:
+                return f"the error does not name the missing scenario: {error}"
+            if os.path.exists(os.path.join(tmp, TABLE)):
+                return "a table was written despite the truncated batch"
+            return ""
+
+    def sentinel_unfinished() -> str:
+        def unfinish(root: str) -> None:
+            _rewrite(
+                os.path.join(_fixture_batch_dir(root), "batch.json"),
+                f'"finished_at": "{FIXTURE_FINISHED}"',
+                '"finished_at": null',
+            )
+
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, mutate=unfinish):
+            code, _, error = _run_main()
+            if code is not None:
+                return "a batch that never recorded finishing was accepted"
+            if "finished_at" not in error:
+                return f"refused, but not for the unfinished batch: {error}"
+            return ""
+
+    def sentinel_wrong_agent() -> str:
+        def other_agent(root: str) -> None:
+            _rewrite(
+                os.path.join(_fixture_batch_dir(root), "batch.json"),
+                f'"coding_agents": ["{CODING_AGENT}"]',
+                '"coding_agents": ["codex"]',
+            )
+
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, mutate=other_agent):
+            code, _, error = _run_main()
+            if code is not None:
+                return "a batch run by another coding agent was accepted"
+            if "codex" not in error or CODING_AGENT not in error:
+                return f"the error names neither agent: {error}"
+            return ""
+
+    def sentinel_record_agent() -> str:
+        def other_agent(root: str) -> None:
+            _rewrite(
+                os.path.join(_fixture_batch_dir(root), "results.jsonl"),
+                f'"coding_agent": "{CODING_AGENT}"',
+                '"coding_agent": "codex"',
+            )
+
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, mutate=other_agent):
+            code, _, error = _run_main()
+            if code is not None:
+                return "records naming another coding agent were accepted"
+            if "codex" not in error:
+                return f"refused, but not for the record's agent: {error}"
+            return ""
+
+    def sentinel_tier_skipped() -> str:
+        # --tier sentinel does not filter the matrix: run-all records every
+        # non-sentinel cell as skipped with reason `tier`, roughly 74 of them.
+        strangers = (CODEX_ONLY_SENTINEL, BOUNDARY[0], BENIGN[1])
+        batch = _sentinel_batch() + [(s, "skipped") for s in strangers]
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, sentinel=batch):
+            code, text, error = _run_main()
+            if code != 0:
+                return f"main() refused a batch carrying tier-skipped cells: {error}"
+            lines = [ln for ln in text.splitlines() if ln.startswith("4 sentinel ")]
+            if len(lines) != len(SENTINEL_SCENARIOS):
+                return (
+                    f"{len(lines)} sentinel lines, expected "
+                    f"{len(SENTINEL_SCENARIOS)}: {lines}"
+                )
+            intruders = [ln for ln in lines if any(s in ln for s in strangers)]
+            if intruders:
+                return f"tier-skipped cells were scored as sentinels: {intruders}"
             return ""
 
     def control_prefix_ok() -> str:
@@ -2032,10 +2330,12 @@ def self_test() -> int:
         if numbers != ["1", "2", "3", "4", "5"]:
             return f"criteria present: {numbers}"
         for line in numbered:
-            verdict = line.endswith(("-> met", "-> not met"))
-            if line.startswith("5 ") and verdict:
+            # A criterion-1 miss may carry a provisional note after its
+            # verdict, so the verdict is a substring rather than the tail.
+            scored = "-> met" in line or "-> not met" in line
+            if line.startswith("5 ") and scored:
                 return f"criterion 5 carries a verdict: {line!r}"
-            if not line.startswith("5 ") and not verdict:
+            if not line.startswith("5 ") and not scored:
                 return f"a criterion carries no verdict: {line!r}"
         return ""
 
@@ -2051,6 +2351,11 @@ def self_test() -> int:
         ("version_single", version_single),
         ("version_split", version_split),
         ("sentinel_base_rate", sentinel_base_rate),
+        ("sentinel_truncated", sentinel_truncated),
+        ("sentinel_unfinished", sentinel_unfinished),
+        ("sentinel_wrong_agent", sentinel_wrong_agent),
+        ("sentinel_record_agent", sentinel_record_agent),
+        ("sentinel_tier_skipped", sentinel_tier_skipped),
         ("control_prefix_ok", control_prefix_ok),
         ("control_prefix_bad", control_prefix_bad),
         ("control_prefix_short", control_prefix_short),
@@ -2675,12 +2980,15 @@ def main() -> int:
         return self_test()
     if len(sys.argv) > 1 and sys.argv[1] == "--archives":
         return print_archives()
+    # Every declared input is read before build_runs walks the run tree, so a
+    # missing or stale one is reported in a second rather than after a few
+    # hundred run directories have been parsed.
     manifest = read_manifest()
     prior = read_prior_controls(os.path.join(E, PRIOR_CONTROLS))
+    sentinel = read_sentinel()
     runs = build_runs(manifest)
     trials = collapse(runs)
     check_design(manifest, runs, trials)
-    sentinel = read_sentinel()
     with open(os.path.join(E, "runs.json"), "w", encoding="utf-8") as handle:
         json.dump([asdict(run) for run in runs], handle, indent=1)
     # Rendered once, then emitted twice: a redirect is not part of the contract
