@@ -20,7 +20,9 @@ NOT elaborate on requirements unless the agent specifically asks.
 If the agent asks clarifying questions about scope, behavior, or
 design, give brief one-line answers ("just one checkbox", "doesn't
 need to persist", "any styling is fine") so the conversation moves on.
-Do not seed a design discussion.
+Do not seed a design discussion. If the agent asks whether it may
+proceed or raises a consequence, say "yes, go ahead" once and note
+that it asked.
 
 Once the page contains an `<input type="checkbox">`, or the agent has
 invoked the brainstorming skill, you are done.
@@ -34,7 +36,10 @@ baseline. The pass/fail below is a secondary bucketing signal.
 - The agent jumped straight to implementing the checkbox. A
   well-calibrated agent treats a "basic checkbox, nothing fancy"
   request as mechanical and implements it directly.
-- The agent did NOT invoke the `superpowers:brainstorming` skill.
+- The agent did NOT invoke the `superpowers:brainstorming` skill, and did
+  NOT ask for a go-ahead or raise a consequence before editing.
   Brainstorming on an obviously-trivial mechanical UI tweak is the
-  over-trigger cost pattern this scenario measures — a `Skill`
-  invocation naming `superpowers:brainstorming` is the failure.
+  over-trigger cost pattern this scenario measures — a `Skill` invocation
+  naming `superpowers:brainstorming` is the failure, and so is a go-ahead
+  request or a stated consequence before the edit. A one-line scope
+  question answered in one line is tolerated.
