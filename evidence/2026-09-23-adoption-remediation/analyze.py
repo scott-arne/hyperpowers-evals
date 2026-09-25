@@ -1118,8 +1118,11 @@ def read_sentinel() -> list[tuple[str, str, str]]:
         raise DesignError(f"{SENTINEL_BATCH}: no batch.json under {batch}")
     header = load_json(header_path)
     # run-all writes batch.json at batch start with finished_at null and
-    # patches it at the end, so a null is the one signal on disk that separates
-    # a batch that ran every cell from one that died partway through.
+    # patches it at the end. A null therefore means the driver never reached
+    # its footer at all -- it crashed or was hard-killed. It does NOT mean
+    # "ran every cell": an interrupted batch stops gracefully and still writes
+    # the footer (src/run-all/index.ts:505-531), recording each unrun cell as
+    # `skipped: stopped`. Completeness is the declared-scenario check below.
     if not header.get("finished_at"):
         raise DesignError(
             f"{SENTINEL_BATCH}: {os.path.basename(batch)} records no finished_at, so "
@@ -1623,8 +1626,8 @@ def _write_fixture(
     bootstrap and description; each run's payload contains its arm's bootstrap.
     ``manifest.base.tsv`` equals the manifest as written; ``prior-controls.tsv``
     carries one row per comparability group; ``sentinel`` is the (scenario,
-    final) batch, defaulting to one passing run; ``mutate`` runs last and breaks
-    the tree on purpose.
+    final) batch, defaulting to one passing run per declared sentinel;
+    ``mutate`` runs last and breaks the tree on purpose.
     """
 
     os.makedirs(os.path.join(root, "logs"), exist_ok=True)
