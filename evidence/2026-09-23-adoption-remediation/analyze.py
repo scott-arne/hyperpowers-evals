@@ -72,11 +72,13 @@ HARNESS_RE = re.compile(
     re.MULTILINE,
 )
 SHA_RE = re.compile(r"[0-9a-f]{40}")
-# The campaign cites its control rather than re-running it, so the manifest
-# records a short sha for the reader. Seven hex characters is the floor: fewer
-# is ambiguous across a repository this size, and the value must still be a
-# prefix of CONTROL_COMMIT, so the short form cannot name another commit.
-CONTROL_PREFIX_RE = re.compile(r"[0-9a-f]{7,40}")
+# The floor every abbreviated commit in the manifest is held to. The campaign
+# cites its control rather than re-running it, so the manifest records a short
+# sha for the reader; seven hex characters is the floor, because fewer is
+# ambiguous across a repository this size. A short form must still be a prefix
+# of the full sha it names, so it cannot name another commit. The sentinel
+# batch's recorded head is compared under the same rule.
+HEX_PREFIX_RE = re.compile(r"[0-9a-f]{7,40}")
 TABLE = "analysis-table.txt"
 PRIOR_CONTROLS = "prior-controls.tsv"
 PRIOR_COLUMNS = (
@@ -327,9 +329,7 @@ def read_manifest() -> dict:
         if not SHA_RE.fullmatch(manifest["commits"].get(name, "")):
             raise DesignError(f"manifest.tsv: {name} commit missing or not a full sha")
     control = manifest["commits"].get("control", "")
-    if not CONTROL_PREFIX_RE.fullmatch(control) or not CONTROL_COMMIT.startswith(
-        control
-    ):
+    if not HEX_PREFIX_RE.fullmatch(control) or not CONTROL_COMMIT.startswith(control):
         raise DesignError(
             f"manifest.tsv: control commit {control!r} is not at least seven hex "
             f"characters of the design's {CONTROL_COMMIT}"
@@ -1261,17 +1261,24 @@ def read_sentinel(manifest: dict) -> tuple[list[tuple[str, str, str]], str]:
 
     Nor is the pointer enough to make the batch *this campaign's*. Spec 3.2
     runs the sentinel tier inside the campaign with ``SUPERPOWERS_ROOT`` at the
-    treatment root, but neither ``batch.json`` nor ``verdict.json`` records a
-    head, and single-agent sentinel batches that satisfy every completeness
-    check above are a routine by-product of this repository. So the batch
-    declares the treatment commit it ran at -- and because a declaration an
-    operator types is not evidence, every determinate run must carry, in its
-    own transcript, the bootstrap that head injects, the design's model, and
-    the campaign's one Claude Code version. The declaration says which head to
-    hold the batch to; the transcripts are what hold it there.
+    treatment root, and single-agent sentinel batches that satisfy every
+    completeness check above are a routine by-product of this repository. So
+    the batch declares the treatment commit it ran at -- and because a
+    declaration an operator types is not evidence, the header must carry the
+    provenance its producer resolved at batch start: the head of
+    ``SUPERPOWERS_ROOT``, the object id of its ``skills`` tree, and whether
+    that tree was dirty. The declaration says which head to hold the batch to;
+    the recorded provenance is what holds it there.
+
+    The transcripts are read too, for a failure the header cannot show: a
+    session that was never given the bootstrap payload, or ran on another model
+    or another Claude Code version. They cannot bind the batch to a head by
+    themselves, because this campaign pins the injected text byte-identical
+    across the revert.
 
     :param manifest: The parsed manifest, read for the treatment commit the
-        batch has to declare and for the model its sessions must have run on.
+        batch has to declare and its producer has to have recorded, and for the
+        model its sessions must have run on.
     :returns: ((scenario, run id, final verdict) per runnable record of a
         declared sentinel scenario, the Claude Code version its determinate
         runs recorded -- empty when none of them did).
@@ -1349,6 +1356,54 @@ def read_sentinel(manifest: dict) -> tuple[list[tuple[str, str, str]], str]:
         raise DesignError(
             f"{SENTINEL_BATCH}: batch.json records repeat {repeat!r}, expected an "
             "integer of at least 1"
+        )
+    # The provenance the producer resolves from SUPERPOWERS_ROOT and writes at
+    # batch start (schema_version 3; writeBatchHeader in
+    # src/run-all/batch-index.ts). The injected bootstrap read further down
+    # cannot do this job: this campaign pins
+    # skills/using-hyperpowers/SKILL.md byte-identical across the revert, so
+    # f18dc6d, fb0b4d1 and 3c32ee4 all inject bootstrap blob bbce4233 while
+    # carrying three different skills/ trees (d7425166, c2a8f2f3, 2d9f29ed).
+    # A batch produced at any of them would pass a payload comparison. The
+    # header is the only artifact that names the tree that actually ran.
+    recorded = header.get("superpowers_commit")
+    skills_tree = header.get("superpowers_skills_tree")
+    dirty = header.get("superpowers_dirty")
+    if (
+        not isinstance(recorded, str)
+        or not recorded
+        or not isinstance(skills_tree, str)
+        or not skills_tree
+        or type(dirty) is not bool
+    ):
+        raise DesignError(
+            f"{SENTINEL_BATCH}: {os.path.basename(batch)} records "
+            f"superpowers_commit {recorded!r}, superpowers_skills_tree "
+            f"{skills_tree!r} and superpowers_dirty {dirty!r}; criterion 4 needs "
+            "all three, and a batch written before the producer recorded them "
+            "(schema_version 2) has to be re-run rather than annotated, because "
+            "nothing already on its disk says which tree it ran"
+        )
+    # Prefix semantics, and only one side may be the short form: the producer
+    # writes the resolved `rev-parse HEAD`, always 40 hex characters, while the
+    # manifest may pin an abbreviation. So the RECORDED value is the full sha
+    # being tested and the MANIFEST value is the prefix it must start with --
+    # never the reverse. The seven-character floor is the control pin's.
+    if not HEX_PREFIX_RE.fullmatch(treatment) or not recorded.startswith(treatment):
+        raise DesignError(
+            f"{SENTINEL_BATCH}: {os.path.basename(batch)} was produced at "
+            f"superpowers_commit {recorded!r}, which does not begin with this "
+            f"campaign's treatment head {treatment!r}; line 2 of the pointer is "
+            "an operator's declaration, this field is the producer's record of "
+            "the checkout the batch actually ran against"
+        )
+    if dirty:
+        raise DesignError(
+            f"{SENTINEL_BATCH}: {os.path.basename(batch)} records "
+            "superpowers_dirty true: SUPERPOWERS_ROOT carried uncommitted work "
+            "under skills/ when it ran. The plugin payload is staged from the "
+            f"working tree, not from the commit, so {recorded} does not describe "
+            "what the sessions were given"
         )
     # run-all writes the batch at <out-root>/batches/<id> and each run at
     # <out-root>/<run_id>, so a run resolves against the batch's grandparent.
@@ -1977,6 +2032,34 @@ def _fixture_batch_dir(root: str) -> str:
     return os.path.join(root, "sentinel", "batches", "batch-fixture-0000")
 
 
+def _fixture_skills_tree() -> str:
+    """The ``skills`` tree id of the fixture treatment head, as the producer records it."""
+
+    trees = tree_ids(_fixture_commit("treatment"))
+    if trees is None:
+        raise RuntimeError("the fixture treatment root has no skills tree")
+    return trees[0]
+
+
+def _fixture_rewrite_header(root: str, **fields: object) -> None:
+    """Rewrite the sentinel batch header; a ``None`` value drops the key.
+
+    The provenance cases turn on what the header does and does not record, and
+    the producer writes it once at batch start, so a case edits the file the
+    producer wrote rather than the fixture growing a parameter per field.
+    """
+
+    path = os.path.join(_fixture_batch_dir(root), "batch.json")
+    header = load_json(path)
+    for key, value in fields.items():
+        if value is None:
+            header.pop(key, None)
+        else:
+            header[key] = value
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(header, handle)
+
+
 def _fixture_sentinel(
     root: str,
     repeat: int,
@@ -2009,13 +2092,20 @@ def _fixture_sentinel(
     with open(os.path.join(batch_dir, "batch.json"), "w", encoding="utf-8") as handle:
         json.dump(
             {
-                "schema_version": 2,
+                "schema_version": 3,
                 "id": os.path.basename(batch_dir),
                 "started_at": "2026-09-24T00:00:00.000Z",
                 "finished_at": FIXTURE_FINISHED,
                 "coding_agents": [CODING_AGENT],
                 "jobs": 1,
                 "repeat": repeat,
+                # The provenance writeBatchHeader records at batch start, in
+                # the shape a real generated batch.json carries it: two full
+                # 40-hex object ids and a JSON boolean. A fixture is only worth
+                # reading if the producer could have written it.
+                "superpowers_commit": _fixture_commit("treatment"),
+                "superpowers_skills_tree": _fixture_skills_tree(),
+                "superpowers_dirty": False,
             },
             handle,
         )
@@ -3497,11 +3587,108 @@ def self_test() -> int:
                 return f"the error names neither model: {error}"
             return ""
 
+    def sentinel_recorded_head() -> str:
+        # The attack the payload check cannot see. This campaign pins
+        # skills/using-hyperpowers/SKILL.md byte-identical across the revert,
+        # so f18dc6d, fb0b4d1 and 3c32ee4 all inject bootstrap blob bbce4233
+        # while carrying three different skills/ trees (d7425166, c2a8f2f3,
+        # 2d9f29ed). A batch produced from one of those worktrees therefore
+        # carries the right payload, the right model and the right version;
+        # only the provenance its producer recorded separates it from this
+        # campaign's. A synthetic sha reproduces that without coupling the case
+        # to another repository's history.
+        other = "b" * 40
+
+        def other_commit(root: str) -> None:
+            _fixture_rewrite_header(root, superpowers_commit=other)
+
+        with _fixture_tree(
+            {"run-a": "pass", "run-b": "pass"}, mutate=other_commit
+        ) as root:
+            header = load_json(os.path.join(_fixture_batch_dir(root), "batch.json"))
+            if header.get("superpowers_commit") != other:
+                return "the fixture wrote no divergent commit to refuse"
+            if header.get("superpowers_skills_tree") != _fixture_skills_tree():
+                return "the fixture also disturbed the recorded skills tree"
+            path = os.path.join(
+                root, "sentinel/sentinel-run-1/home/.claude/projects/p/t.jsonl"
+            )
+            _, texts, _, _, model, version = context(path)
+            boot = _fixture_boot("treatment")
+            if not texts or not all(boot in text for text in texts):
+                return "the fixture's payloads are not the treatment bootstrap"
+            if model != MODEL or version != FIXTURE_VERSION:
+                return f"the fixture wrote model {model!r} version {version!r}"
+            code, _, error = _run_main()
+            if code is not None:
+                return "a batch produced at another superpowers head was accepted"
+            if other not in error or "superpowers_commit" not in error:
+                return f"refused, but not for the recorded head: {error}"
+            return ""
+
+    def sentinel_provenance_absent() -> str:
+        # A batch written before the producer recorded provenance. Absence is
+        # not a clean bill: nothing in such a batch answers for the tree it
+        # ran, so it has to be re-run rather than annotated.
+        fields = (
+            "superpowers_commit",
+            "superpowers_skills_tree",
+            "superpowers_dirty",
+        )
+
+        def drop(root: str) -> None:
+            _fixture_rewrite_header(
+                root, schema_version=2, **dict.fromkeys(fields, None)
+            )
+
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, mutate=drop) as root:
+            header = load_json(os.path.join(_fixture_batch_dir(root), "batch.json"))
+            left = [name for name in fields if name in header]
+            if left:
+                return f"the fixture left {left} in the header"
+            code, _, error = _run_main()
+            if code is not None:
+                return "a batch recording no superpowers provenance was accepted"
+            if "superpowers_commit" not in error or "schema_version 2" not in error:
+                return f"refused, but not for the missing provenance: {error}"
+            return ""
+
+    def sentinel_dirty_tree() -> str:
+        # The staged plugin payload is copied from the WORKING TREE, so a batch
+        # run against uncommitted work under skills/ ran something the recorded
+        # commit does not describe -- even when that commit is the right one.
+        def dirty(root: str) -> None:
+            _fixture_rewrite_header(root, superpowers_dirty=True)
+
+        with _fixture_tree({"run-a": "pass", "run-b": "pass"}, mutate=dirty) as root:
+            header = load_json(os.path.join(_fixture_batch_dir(root), "batch.json"))
+            if header.get("superpowers_dirty") is not True:
+                return "the fixture did not mark the batch dirty"
+            if header.get("superpowers_commit") != _fixture_commit("treatment"):
+                return "the fixture also disturbed the recorded commit"
+            code, _, error = _run_main()
+            if code is not None:
+                return "a batch produced from a dirty superpowers tree was accepted"
+            if "superpowers_dirty" not in error:
+                return f"refused, but not for the dirty tree: {error}"
+            return ""
+
     def sentinel_well_formed() -> str:
         # The case an over-strict binding fails: eleven scenarios, every
         # determinate run carrying the treatment bootstrap and the design's
-        # model, and no two sharing a reason to carry one skill listing.
+        # model, and no two sharing a reason to carry one skill listing. The
+        # header records the treatment head, its skills tree and a clean tree,
+        # which is what the batch is now held to.
         with _fixture_tree({"run-a": "pass", "run-b": "pass"}) as root:
+            header = load_json(os.path.join(_fixture_batch_dir(root), "batch.json"))
+            recorded = (
+                header.get("superpowers_commit"),
+                header.get("superpowers_skills_tree"),
+                header.get("superpowers_dirty"),
+            )
+            expected = (_fixture_commit("treatment"), _fixture_skills_tree(), False)
+            if recorded != expected:
+                return f"the fixture recorded provenance {recorded}, not {expected}"
             paths = sorted(
                 glob.glob(
                     os.path.join(
@@ -3775,6 +3962,9 @@ def self_test() -> int:
         ("sentinel_foreign_bootstrap", sentinel_foreign_bootstrap),
         ("sentinel_no_bootstrap", sentinel_no_bootstrap),
         ("sentinel_foreign_model", sentinel_foreign_model),
+        ("sentinel_recorded_head", sentinel_recorded_head),
+        ("sentinel_provenance_absent", sentinel_provenance_absent),
+        ("sentinel_dirty_tree", sentinel_dirty_tree),
         ("sentinel_well_formed", sentinel_well_formed),
         ("base_rate_one_tree_differs", base_rate_one_tree_differs),
         ("base_rate_own_measurement", base_rate_own_measurement),

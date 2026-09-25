@@ -7,7 +7,9 @@ import {
 import { basename, join } from 'node:path';
 import type { BatchHeader, ResultRecord } from '../contracts/batch.ts';
 import { BatchHeaderSchema } from '../contracts/batch.ts';
+import { getEnv } from '../env.ts';
 import { hexNonce, nowStampUtc } from '../paths.ts';
+import { runGit } from '../setup-helpers/git.ts';
 
 // Batch index writers: allocate the batch dir and write batch.json / its footer
 // / results.jsonl records. The on-disk byte shapes are a contract: batch.json is
@@ -60,16 +62,66 @@ export interface WriteBatchHeaderArgs {
   readonly startedAt: string;
 }
 
+// Which superpowers checkout a batch ran against. Recorded because nothing
+// else in a run's artifacts identifies it: the bootstrap text a session is
+// injected with is deliberately held byte-identical across heads, so three
+// commits can share it while carrying three different skills/ trees.
+interface SuperpowersProvenance {
+  readonly superpowers_commit: string;
+  readonly superpowers_skills_tree: string;
+  readonly superpowers_dirty: boolean;
+}
+
+// Resolve SUPERPOWERS_ROOT's head, its skills tree, and whether skills/ has
+// uncommitted work. Resolved HERE rather than passed in by the caller: run-all
+// and the dashboard both write headers, and a parameter is one more thing for
+// the two paths to drift on.
+//
+// Returns undefined when the root is unset or is not a git checkout. The
+// caller then omits the fields entirely — a placeholder or an empty sha would
+// turn "could not record provenance" into something a reader cannot tell apart
+// from "recorded it and it matched".
+function superpowersProvenance(): SuperpowersProvenance | undefined {
+  // Env is read ONLY through the sanctioned module, never process.env.
+  const root = getEnv('SUPERPOWERS_ROOT');
+  if (!root) return undefined;
+  try {
+    const commit = runGit(['rev-parse', 'HEAD'], root).trim();
+    // `HEAD:skills` is the tree object id, resolved before the status read so
+    // a root without a skills/ tree leaves through the catch below.
+    const skillsTree = runGit(['rev-parse', 'HEAD:skills'], root).trim();
+    // --untracked-files=normal on purpose: the staged plugin payload is copied
+    // from the working tree, so an untracked new skill file ships exactly like
+    // a modified tracked one and must count as dirty.
+    const status = runGit(
+      ['status', '--porcelain', '--untracked-files=normal', '--', 'skills'],
+      root,
+    );
+    return {
+      superpowers_commit: commit,
+      superpowers_skills_tree: skillsTree,
+      superpowers_dirty: status.trim() !== '',
+    };
+  } catch {
+    // A missing directory, a non-git root, or a HEAD with no skills/ tree.
+    // Provenance is evidence about the batch, not a precondition for running
+    // one, so nothing throws out of the writer.
+    return undefined;
+  }
+}
+
 // Write batch.json at batch start; finished_at is null.
 export function writeBatchHeader(args: WriteBatchHeaderArgs): void {
+  const provenance = superpowersProvenance();
   const data: BatchHeader = {
-    schema_version: 2,
+    schema_version: 3,
     id: basename(args.batchDir),
     started_at: args.startedAt,
     finished_at: null,
     coding_agents: [...args.codingAgents],
     jobs: args.jobs,
     repeat: args.repeat,
+    ...(provenance ?? {}),
   };
   // indent-2 with NO trailing newline, per the on-disk format.
   writeFileSync(

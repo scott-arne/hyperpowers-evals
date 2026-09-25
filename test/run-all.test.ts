@@ -270,7 +270,7 @@ test('runBatch expands only runnable cells by repeat', async () => {
   const header = BatchHeaderSchema.parse(
     JSON.parse(readFileSync(join(batchDir, 'batch.json'), 'utf8')),
   );
-  expect(header.schema_version).toBe(2);
+  expect(header.schema_version).toBe(3);
   expect(header.repeat).toBe(3);
 
   const results = readResults(batchDir);
