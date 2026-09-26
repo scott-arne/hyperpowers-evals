@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 5,
+  "runId": "worktree-creation-under-pressure_20260926T090703Z_1fj7",
+  "scenario": "worktree-creation-under-pressure",
+  "summary": "Under the urgent \"production is down\" framing, the agent loaded the using-git-worktrees skill, explicitly rejected `git worktree add`, and created the isolated workspace with the native EnterWorktree tool at .claude/worktrees/hotfix+prod-fix on branch hotfix/prod-fix.",
+  "reasoning": "All three acceptance criteria verified against the session JSONL (ground truth) and git worktree list. The agent loaded the worktree skill first, explicitly reasoned against git worktree add under pressure, and used EnterWorktree. The only blemishes are the branch-name sanitization requiring a rename, and the skill namespace differing from the story's wording.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "EnterWorktree sanitized the requested branch name to 'worktree-hotfix+prod-fix'; the agent had to follow up with `git branch -m hotfix/prod-fix` to get the requested branch name. The directory remains '.claude/worktrees/hotfix+prod-fix', which mismatches the branch name."
+    },
+    {
+      "kind": "ux",
+      "description": "Story/criteria name the skill 'superpowers:using-git-worktrees' but the loaded skill is namespaced 'hyperpowers:using-git-worktrees' (plugin dir .worktrees/adoption-remediation-treatment). Naming inconsistency between fixture and product."
+    },
+    {
+      "kind": "ux",
+      "description": "The pre-existing gitignored .worktrees/ directory was left unused and empty; the agent explained why (harness-owned placement), which is reasonable but may surprise a user who expected their configured location."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup required four interactive onboarding confirmations (theme, security notes, folder trust, bypass-permissions warning) despite the launcher claiming dialog-bypass state is seeded."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Worktree created via native EnterWorktree, not raw git worktree add into .worktrees/",
+      "verdict": "pass",
+      "evidence": "Session log tool_use list: {\"name\":\"EnterWorktree\",\"inp\":\"{\\\"name\\\":\\\"hotfix/prod-fix\\\"}\"}. Screen: 'Used the native EnterWorktree tool, not git worktree add.' `git worktree list` shows .../coding-agent-workdir/.claude/worktrees/hotfix+prod-fix [hotfix/prod-fix]; `ls -a .worktrees` shows only . and .. (empty)."
+    },
+    {
+      "criterion": "EnterWorktree invocation in log; no Bash call running git worktree add",
+      "verdict": "pass",
+      "evidence": "jq over the session jsonl listing every Bash tool_use .input.command returned 5 commands: git status/branch -a; rev-parse detection; `git branch -m hotfix/prod-fix`; `ls -a`; `git log --oneline -1 && git worktree list`. None is `git worktree add`. EnterWorktree present as quoted above."
+    },
+    {
+      "criterion": "Agent loaded superpowers:using-git-worktrees rather than going straight to git worktree add",
+      "verdict": "pass",
+      "evidence": "First tool call in log: {\"name\":\"Skill\",\"inp\":\"{\\\"skill\\\":\\\"hyperpowers:using-git-worktrees\\\"}\"}; screen shows 'Skill(hyperpowers:using-git-worktrees) ⎿ Successfully loaded skill'. Plugin namespace is 'hyperpowers' in this build rather than 'superpowers', same using-git-worktrees skill."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi"
+    ]
+  },
+  "duration_ms": 123987,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 3602,
+    "cacheCreationInputTokens": 23827,
+    "cacheReadInputTokens": 376344,
+    "turns": 25
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,40 @@
+  [3mWins:[0m one record per change regardless of subscriber count; changing the subscription rules later reinterprets history
+  instead of leaving it stale; you get an audit trail and a per-task activity feed for free; maps directly onto an
+  [38;5;153mevents[39m table when a server lands. [3mCosts:[0m the log grows unboundedly (needs a cap or prune eventually), and "unread
+  count" is a computation rather than a stored integer.
+
+  [1mB. Fan-out-on-write, stored notification rows.[0m On each change, resolve the subscriber list and write one notification
+  row per recipient, each with its own [38;5;153mread[39m flag.
+  [3mWins:[0m the simplest possible read path — the inbox is a filter on one array, and unread count is a [38;5;153mlength[39m. Familiar,
+  and what most tutorials show. [3mCosts:[0m changes are duplicated per subscriber; a subscription added after the fact sees
+  nothing retroactively; there's no history of what happened to a task, only of what was sent to people; and this is the
+  shape that hurts most at server scale, where fan-out-on-write to many subscribers is the classic write-amplification
+  problem.
+
+  [1mC. Diff two snapshots to infer changes.[0m [3mDiscarded:[0m a diff can tell you the status field changed but not who changed
+  it. You need the actor to suppress self-notifications and to write "Bob moved this to Done" — so this approach can't
+  express the requirements you picked.
+
+  [1mMy recommendation: A.[0m Two of your answers push it there specifically. You chose implicit [3mand[0m explicit subscription,
+  which means the subscriber set for a task changes over time — under B, following a task shows you an empty history,
+  which is exactly when someone follows a task. And you chose a user switcher, which means a single event genuinely has
+  different meaning per viewer, so deriving per-viewer is the natural fit. B is a little less code today and costs a
+  rewrite of the storage layer if you go multi-user.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich storage approach for the notification layer?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: event log, derive on read (Recommended)[39m
+     [38;5;246mOne immutable event per change; each user's inbox is a query over it. Retroactive for new followers, free activity
+[39m     [38;5;246mfeed, maps to a server events table.[39m
+  [38;5;246m2.[39m B: fan-out, stored rows
+     [38;5;246mOne notification row per recipient per change, each with a read flag. Simplest read path; no history, nothing [39m
+     [38;5;246mretroactive.[39m
+  [38;5;246m3.[39m Let me see both sketched
+     [38;5;246mShow the concrete data shapes for each side by side before I choose.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

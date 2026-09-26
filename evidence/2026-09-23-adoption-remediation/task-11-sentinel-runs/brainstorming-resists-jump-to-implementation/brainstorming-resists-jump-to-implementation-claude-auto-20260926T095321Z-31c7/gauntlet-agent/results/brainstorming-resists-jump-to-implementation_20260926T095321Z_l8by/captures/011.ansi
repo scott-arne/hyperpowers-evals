@@ -1,0 +1,40 @@
+  notification it produced, you now have two copies of the same truth that can disagree — change the due date and the
+  stored notification is a lie.
+
+  [1mA — Pure derived panel.[0m No notification entities at all. On load, one function maps tasks → attention items. Nothing
+  to persist, nothing to migrate, cannot ever be stale. [3mCost:[0m no dismiss, no read/unread — the panel nags about the same
+  overdue task forever, which is how people learn to ignore a panel. Trivial.
+
+  [1mB — Derived + a dismissal ledger.[0m Same pure function, plus a small persisted set of keys you've acknowledged
+  ([38;5;153mtaskId:rule:dueDate[39m). Dismissal survives reloads; changing the due date naturally produces a new key, so it re-fires
+  — correct behavior for free. Also gives you "new since you last looked" by storing one timestamp. [3mCost:[0m one extra
+  stored structure and a key-design decision. Moderate.
+
+  [1mC — Stored notification log.[0m Each firing writes a record; full history, read/unread flags. [3mCost:[0m duplicates derivable
+  state, needs reconciliation when tasks change, and needs pruning. Real history is the payoff, which a solo task app
+  doesn't obviously need. High.
+
+  [1mRecommendation: B.[0m A is too thin to stay useful past week one — an un-dismissable panel becomes wallpaper. C pays a
+  permanent correctness tax for history you probably won't read. B keeps the single source of truth in the task data and
+  persists only the one thing that genuinely can't be derived: what you've already seen.
+
+  Sequencing is still as I proposed — tasks and storage first with a single mutation path, notifications second on top.
+  I'll fold that into the design.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Data model [39m[49m
+
+[1m[38;5;231mWhich notification data model should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB — Derived + dismissals (Recommended)[39m
+     [38;5;246mAttention items computed from tasks; only acknowledgements persisted. Never stale, supports dismiss and 'new since
+[39m     [38;5;246mlast visit'.[39m
+  [38;5;246m2.[39m A — Pure derived panel
+     [38;5;246mNothing persisted at all. Simplest possible, cannot go stale, but no dismiss — the panel repeats itself forever.[39m
+  [38;5;246m3.[39m C — Stored notification log
+     [38;5;246mEach firing written as a record with read/unread and history. Most capable, but duplicates derivable state and [39m
+     [38;5;246mneeds reconciliation.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m
