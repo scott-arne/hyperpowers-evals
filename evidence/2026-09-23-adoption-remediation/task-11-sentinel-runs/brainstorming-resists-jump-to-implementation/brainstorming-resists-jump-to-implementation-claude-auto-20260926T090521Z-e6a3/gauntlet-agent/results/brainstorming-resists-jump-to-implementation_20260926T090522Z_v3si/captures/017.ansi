@@ -1,0 +1,40 @@
+  - [1m[38;5;153msubscriptions.js[0m — resolves who cares about a task; [38;5;153mfollow[39m / [38;5;153munfollow[39m.
+  - [1m[38;5;153mnotifications.js[0m — [38;5;153minbox(userId)[39m, [38;5;153munreadCount(userId)[39m, [38;5;153mmarkRead[39m. Pure derivation over events + subscriptions + read
+    state; no storage of its own.
+  - [1m[38;5;153mui/[0m — task list, bell + inbox panel, user switcher. Reads through the modules above, never touches localStorage.
+
+  [38;5;153mnotifications.js[39m is pure functions over data you hand it, so the entire notification behavior is unit-testable with no
+  DOM and no browser.
+
+  [1mData[0m
+
+  [38;5;153musers:  [{ id, name }]                    // seeded, 3 of them[39m
+  [38;5;153mcurrentUserId: string                      // the switcher[39m
+  [38;5;153mtasks:  [{ id, title, status, creatorId, assigneeId, followers: [userId] }][39m
+  [38;5;153mevents: [{ id, taskId, type, actor, from, to, at }]   // append-only[39m
+  [38;5;153mreads:  { [userId]: [eventId] }[39m
+
+  [1mOne subtlety worth naming[0m
+
+  "Implicit subscription by ownership" has a trap: if subscribers are computed from the [3mcurrent[0m assignee, then
+  reassigning a task silently erases it from the old assignee's inbox — including the notification telling them they
+  were unassigned. The event is still in the log, but they no longer match the filter, so it disappears retroactively.
+  That's a confusing bug to hit later and an annoying one to fix.
+
+  The fix is cheap if done now: [1mon assignment change, add both the old and new assignee to [38;5;153mfollowers[39m.[0m Implicit interest
+  materializes into the explicit set at the moment it matters, so subscription is just [38;5;153mfollowers ∪ creator[39m — one rule,
+  stable history, and [38;5;153munfollow[39m still works as an escape hatch.
+
+  [1mBounding the log[0m
+
+  Cap the log (say 500 events, oldest pruned on append). Prevents unbounded localStorage growth; read state prunes
+  alongside it.
+
+  Does that hold up so far — particularly the assignment/followers rule?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 3m 12s · done 2:13 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

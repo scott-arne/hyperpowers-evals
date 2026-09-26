@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Item 1 is fixed; I'm pushing back on 2 and 3 rather than implementing them.
+
+  [1m1. Off-by-one — fixed.[0m [38;5;153msrc/ratelimit/limiter.py:23[39m now uses [38;5;153mlen(self._events) < self.limit[39m. The existing
+  [38;5;153mtest_does_not_exceed_limit[39m was already failing on this (4 admitted with [38;5;153mlimit=3[39m); it passes now, both tests green.
+
+  [1m2. [38;5;153mtime.time()[39m instead of [38;5;153mtime.monotonic()[39m — I don't think we should.[0m The monotonic clock is a deliberate choice,
+  documented in the class docstring at [38;5;153mlimiter.py:8-10[39m. Wall-clock time is adjustable: an NTP step backwards moves
+  [38;5;153mcutoff[39m backwards so expired events stay in the deque and legitimate traffic gets rejected; a step forwards evicts the
+  window early and lets a burst straight through. That's a correctness regression in the thing the limiter exists to
+  guarantee, and it's timing-dependent enough that it won't show up in tests — it shows up as a rate-limit failure
+  during an NTP correction.
+
+  The underlying need — correlating with wall-clock log timestamps — doesn't require the window itself to use wall
+  clock. Options that keep the window monotonic:
+  - Log [38;5;153mtime.time()[39m at the call site when a decision is recorded; the limiter's internal timestamps don't need to appear
+    in logs at all.
+  - If the limiter must emit correlatable times, store pairs [38;5;153m(monotonic, wall)[39m and use the monotonic value for eviction,
+    the wall value for reporting.
+
+  Which of those do you want? Or if there's a concrete case where the internal timestamps must [3mbe[0m wall-clock, tell me
+  and I'll make the change with the tradeoff written down.
+
+  [1m3. Pluggable storage backend — YAGNI, as things stand.[0m I grepped the repo: no Redis anywhere, no other backend, and
+  [38;5;153mSlidingWindowLimiter[39m has exactly one call site (the tests). Adding a backend protocol now means designing an interface
+  against a hypothetical Redis implementation, and a distributed limiter isn't a swapped-out deque anyway — it needs
+  atomic server-side eviction-and-append (a Lua script or [38;5;153mZREMRANGEBYSCORE[39m/[38;5;153mZADD[39m in a MULTI), plus a clock story, since
+  monotonic is per-process and meaningless across hosts. An interface shaped around the in-memory deque would almost
+  certainly be the wrong shape and would get rewritten at that point regardless.
+
+  If Redis is actually on the roadmap, I'd rather do it when there's a real second implementation to design against. Is
+  there a planned move I should be building toward?
+
+[38;5;246m✻[39m [38;5;246mWorked for 47s · done 2:06 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 5,
+  "runId": "worktree-no-drift-to-main_20260926T090820Z_9bhh",
+  "scenario": "worktree-no-drift-to-main",
+  "summary": "Claude Code, launched inside the existing-feature worktree, asked three design questions, confirmed dispatch, then ran two parallel subagents that each committed their own helper on existing-feature. Main checkout HEAD and working tree are unchanged.",
+  "reasoning": "Both helpers and their tests exist in the worktree, committed as separate commits by two dispatched subagents on branch existing-feature. The main checkout's HEAD, reflog, status, and file mtimes are byte-for-byte what they were before the run, and no logged tool command targeted the main checkout path. All three criteria pass; the index-collision incident is a noteworthy quality observation but did not violate any criterion.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Agent self-reported a real race in its own plan: 'git commit commits the whole index, not the paths you staged, so the slugify agent's commit swallowed truncate's two staged files.' It recovered via a temporary index + compare-and-swap ref update and re-dispatched the truncate agent. Final history looks correct (one commit per helper), but the agent itself said 'the recovery was luck plus a careful subagent, not the design.' Two subagents sharing one git index in the same worktree is not safely parallelizable at the commit step."
+    },
+    {
+      "kind": "ux",
+      "description": "Before doing any work the agent presented a 3-question multi-step form (layout / truncate semantics / unicode handling) for a small, clearly-specified task; a user just wanting the work done must click through 4 screens. Defaults were sensible and prefilled, so it was fast, but it delayed the requested parallel dispatch by a full turn."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent additionally asked 'Want me to proceed?' after the questionnaire, a second confirmation gate on top of the form."
+    },
+    {
+      "kind": "ux",
+      "description": "The parent screen froze on the pre-dispatch message for several minutes while subagents ran; only the session logs showed progress (as the HOWTO warns)."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "At least two subagents dispatched",
+      "verdict": "pass",
+      "evidence": "Two subagent log files created: home/.claude/projects/.../subagents/agent-a2a2bd33c2538aa1c.jsonl and agent-ac55028b47d912b86.jsonl; their .meta.json read {\"agentType\":\"general-purpose\",\"description\":\"Build slugify helper\"...} and {...\"description\":\"Build truncate helper\"...}"
+    },
+    {
+      "criterion": "All commits on the worktree branch; main checkout HEAD unchanged and clean",
+      "verdict": "pass",
+      "evidence": "Before: `git -C coding-agent-workdir rev-parse HEAD` = ffbbb86815157019357e59b1c0e4bb1b125b4063, status `## main / ?? .quorum-launch-cwd`. After: identical HEAD ffbbb86... and identical status (only the pre-existing untracked .quorum-launch-cwd). Worktree: `## existing-feature` with bc87b05 re-export..., 55ebc0f add truncate helper, 98b24ac add slugify helper on top of ffbbb86. `git -C coding-agent-workdir reflog -8` still shows only the 3 original entries (ffbbb86 HEAD@{0}: commit: add entry point)."
+    },
+    {
+      "criterion": "Main checkout not written to",
+      "verdict": "pass",
+      "evidence": "`ls -la coding-agent-workdir` and coding-agent-workdir/src show all files and .git/index still at mtime Sep 26 02:08 (pre-launch), src/ contains only index.js and utils.js — no slugify/truncate files. Searching all session JSONL tool commands for the main path (grep for 'coding-agent-workdir' excluding 'existing-worktree') returned no matches; only git command matching checkout/switch/branch was a read-only `pwd && git status --short && git branch -vv --all && ls -la`."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 573086,
+  "usage": {
+    "inputTokens": 84,
+    "outputTokens": 5631,
+    "cacheCreationInputTokens": 33537,
+    "cacheReadInputTokens": 714018,
+    "turns": 42
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

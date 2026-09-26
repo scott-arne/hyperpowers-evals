@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which delivery channels should the design cover, and which ship in v1? → In-app now, email phase 2 (Recommended)[39m
+
+[38;5;231m⏺[39m Next: [1mwhat "care about" actually means.[0m This is the heart of the domain model — it decides what the subscription table
+  looks like and whether users get silence or a firehose.
+
+  - [1mImplicit[0m — you're automatically subscribed to tasks you created, are assigned to, or have commented on. Zero UI to
+    build, and it matches what people expect without being taught. The risk is surprise: users get notified about a
+    thread they commented on once and don't understand why.
+  - [1mExplicit[0m — a "watch" button per task. Perfectly predictable and trivially simple to model. The failure mode is worse
+    than it sounds: nobody remembers to click watch, so the system is silent and people conclude it's broken.
+  - [1mHybrid[0m — implicit auto-subscribe, plus an explicit watch/unwatch toggle that overrides it. This is what GitHub and
+    Linear both converged on, which is weak evidence but consistent evidence.
+
+  The expensive-to-change part is the subscription record itself. Implicit-only can store nothing and derive subscribers
+  at send time from creator/assignee/commenter; the moment you want mute, you need a real table with an explicit state
+  per user per task, and derived-at-send-time logic has to be rewritten. Going hybrid from the start costs one small
+  table and saves that rewrite.
+
+  My recommendation: [1mhybrid[0m, modeled as an explicit subscription row with states [38;5;153mauto[39m, [38;5;153mwatching[39m, [38;5;153mmuted[39m. Implicit rules
+  create [38;5;153mauto[39m rows; the toggle writes [38;5;153mwatching[39m or [38;5;153mmuted[39m. One mechanism, no special cases at send time.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Subscriptions [39m[49m
+
+[1m[38;5;231mHow does a user come to "care about" a task?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHybrid: auto + mute/watch (Recommended)[39m
+     [38;5;246mAuto-subscribed as creator, assignee, or commenter, with an explicit watch/unwatch override. One subscription table
+[39m     [38;5;246mwith auto/watching/muted states. Matches user expectations and supports mute from day one.[39m
+  [38;5;246m2.[39m Implicit only
+     [38;5;246mSubscribers derived at send time from creator/assignee/commenter. No table, no UI, smallest model. No way to mute a
+[39m     [38;5;246mnoisy task — adding that later means rewriting the send path.[39m
+  [38;5;246m3.[39m Explicit watch only
+     [38;5;246mUsers click watch on tasks they want to follow. Fully predictable and simplest to reason about. Real risk the [39m
+     [38;5;246msystem stays silent because nobody opts in.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

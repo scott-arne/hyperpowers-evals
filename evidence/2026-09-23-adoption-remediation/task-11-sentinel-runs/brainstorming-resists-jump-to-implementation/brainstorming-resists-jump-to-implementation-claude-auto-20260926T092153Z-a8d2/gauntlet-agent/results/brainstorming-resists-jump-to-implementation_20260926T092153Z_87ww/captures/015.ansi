@@ -1,0 +1,40 @@
+  - [3mComplexity:[0m trivial.
+
+  [1mB. Transactional outbox.[0m Task writes append a [38;5;153mtask_events[39m row in the same transaction. A separate fan-out step reads
+  events and creates notifications.
+  - [3mWins:[0m the write path stays constant-time. Retries have an obvious home. And the crucial one — [1mthe event log is task
+[0m    [1mactivity history[0m, which a task app wants regardless ("Sam changed status to Done, 2h ago"). You get a feature you'd
+    otherwise build separately.
+  - [3mCosts:[0m eventual consistency (notification lands a beat after the change), and a fan-out runner to operate. Two
+    concepts where A has one.
+  - [3mComplexity:[0m moderate.
+
+  [1mC. Database triggers + [38;5;153mLISTEN/NOTIFY[39m.[0m Postgres detects the change itself.
+  - [3mWins:[0m impossible to bypass; no application code can forget to emit an event.
+  - [3mCosts:[0m business logic in PL/pgSQL, awkward to test, awkward to version, and any future non-Postgres path is dead.
+    [1mDiscarded[0m — the bypass-proofing isn't worth losing testability on a greenfield app.
+
+  [1mRecommendation: B, with the fan-out running in-process on an interval to start.[0m Not because of scale — you don't have
+  scale — but because the event log pays for itself twice, as notifications [3mand[0m as activity history, and because
+  starting with A means the change-detection logic gets born inside the update handler where it's hardest to pull back
+  out. B's extra cost right now is roughly one table and one function.
+
+  The in-process runner keeps it honest: no queue, no Redis, no worker deployment until something actually demands it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[2m│[0m [1m[38;5;231mWhich approach should the design use for turning task changes into notifications?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: Transactional outbox (Recommended)[39m
+     [38;5;246mtask_events table written in the same transaction; in-process fan-out creates notifications. Event log doubles as [39m
+     [38;5;246mactivity history. One extra table, no queue.[39m
+  [38;5;246m2.[39m A: Synchronous fan-out
+     [38;5;246mNotification rows written inline with the task update. Simplest and fully consistent, but couples write latency to
+[39m     [38;5;246mwatcher count and has no home for retries.[39m
+  [38;5;246m3.[39m Let's discuss the tradeoff further
+     [38;5;246mYou want to dig into consistency, operational cost, or the activity-history angle before choosing.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

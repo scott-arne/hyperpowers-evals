@@ -1,0 +1,40 @@
+  subscribers and insert one [38;5;153mnotification[39m row per recipient pointing at that event. The inbox is a single indexed query.
+  Per-notification read state is natural ([38;5;153mread_at[39m on the row). The event log doubles as a per-task activity history —
+  which you'll want anyway in a collaboration app — and is the right thing for phase-2 email to batch over. Cost: two
+  tables, and write amplification proportional to subscriber count (irrelevant at this scale, real at thousands of
+  watchers).
+
+  [1m2. Denormalized notifications only[0m — one table, message text baked into each recipient's row. Simplest possible thing
+  that works. Costs: the same sentence stored N times, no task history for free, and changing how a message reads
+  doesn't apply retroactively. Digesting for email means re-parsing text you already flattened.
+
+  [1m3. Event log + read cursor (fan-out on read)[0m — only events are stored; the inbox is computed by joining events against
+  subscriptions, filtered by a per-user "last read" timestamp. Writes stay O(1) no matter how many subscribers. Costs
+  are real: read state is coarse (everything before the cursor is read — "mark just this one read" doesn't fit), and
+  muting retroactively erases history you'd already been shown, which users read as a bug.
+
+  Reversibility: moving from 2 to 1 later means backfilling an event log you never recorded — the data is simply gone.
+  Moving from 1 to 3 is a query rewrite. So option 1 is the one that keeps the most doors open.
+
+  My recommendation: [1moption 1.[0m Not because fan-out-on-write scales better here — at your size nothing scales differently
+  — but because the event log is the artifact you'd regret not having, and it's the piece that can't be reconstructed
+  after the fact.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Data model [39m[49m
+
+[1m[38;5;231mHow should changes be recorded and turned into notifications?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mEvent log + fan-out (Recommended)[39m
+     [38;5;246mtask_event rows as the audit trail, one notification row per subscriber referencing the event. Indexed inbox query,
+[39m     [38;5;246mper-item read state, free task history, good basis for phase-2 email digests.[39m
+  [38;5;246m2.[39m Denormalized notifications
+     [38;5;246mSingle table, message text per recipient. Smallest schema. No event history, duplicated text, and no way to [39m
+     [38;5;246mbackfill the log later.[39m
+  [38;5;246m3.[39m Event log + read cursor
+     [38;5;246mEvents only; inbox computed by joining subscriptions and a per-user read cursor. O(1) writes, but coarse read state
+[39m     [38;5;246mand muting retroactively rewrites what the user already saw.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m
