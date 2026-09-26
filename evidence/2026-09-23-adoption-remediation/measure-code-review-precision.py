@@ -176,6 +176,8 @@ BUGS: tuple[tuple[str, str, str], ...] = (
 )
 HUNK_KEYS = tuple(entry[0] for entry in HUNKS)
 BUG_KEYS = tuple(entry[0] for entry in BUGS)
+# Every region, bugs before hunks: the order the columns are read in.
+ALL_KEYS = BUG_KEYS + HUNK_KEYS
 # The owning identifiers of each region, for a finding that cites no line this
 # script can place. They are deliberately narrow: an identifier that also names
 # another region would move a finding from one column to another, and an
@@ -195,16 +197,25 @@ BUG_KEYS = tuple(entry[0] for entry in BUGS)
 # The table is in two tiers, and the more specific one decides alone. Every
 # alternative of IDENTIFIERS is a token the fixture itself contains -- an
 # identifier, a filename, or a string literal of the reviewed code -- so a
-# finding matching one is quoting the diff. Every alternative of PROSE is
-# ordinary English a reviewer could write about any code at all. A finding
-# saying "retry count is off by one in `withRetry`" names one region and
-# describes it in words that read like another; the region it names is the one
-# it is about. Reading it the other way scored a clean-hunk finding as a
-# planted bug: recall up, `blocking_on_clean` down, `accepted` flipped in the
-# direction that flatters the treatment.
+# finding matching one is quoting the diff. That is a claim about the pattern
+# as well as about the token: an alternative spelled in ordinary words has to
+# match the quoting rather than the words, or it silently rejoins the tier
+# below. `list failed` is the `log.error` message, but bare it also matches
+# "the list failed to paginate", which placed a correct pagination finding on
+# the `catch` arm -- recall down and blocking_on_clean up from one sentence.
+# `page * size` is a multiplication, but with the spacing left free it also
+# matches the emphasis in "the page *size* is never validated". Every
+# alternative of PROSE is ordinary English a reviewer could write about any
+# code at all. A finding saying "retry count is off by one in `withRetry`"
+# names one region and describes it in words that read like another; the
+# region it names is the one it is about. Reading it the other way scored a
+# clean-hunk finding as a planted bug: recall up, `blocking_on_clean` down,
+# `accepted` flipped in the direction that flatters the treatment.
 IDENTIFIERS: dict[str, re.Pattern[str]] = {
     "offset_bug": re.compile(
-        r"page\s*\*\s*size"
+        # Spaced on both sides or on neither: `page *size*` and `*page* size`
+        # are a reviewer emphasising a word, not quoting the multiplication.
+        r"page(?:\*|\s+\*\s+)size"
         r"|\blistOrdersHandler\b[\s\S]{0,500}?(?i:offset|paginat|1-based|one-based|first page)"
         r"|(?i:offset|paginat|1-based|one-based|first page)[\s\S]{0,500}?\blistOrdersHandler\b",
     ),
@@ -217,9 +228,11 @@ IDENTIFIERS: dict[str, re.Pattern[str]] = {
     "parse_order_id": re.compile(r"\bparseOrderId\b|\bORDER_ID\b"),
     "config_readfile": re.compile(r"\breadFileSync\b|\bconfig\.js\b"),
     "store_slice": re.compile(r"\borders\.slice\b|\blistOrders(?!Handler)\b"),
-    # `list failed` is the message string of the `log.error` call itself, not a
-    # description of one: a finding carrying it is quoting the catch arm.
-    "log_rethrow": re.compile(r"\blog\.error\b|list failed"),
+    # `list failed` is the message string of the `log.error` call itself, and
+    # the quotes are what say so: a finding writing it backticked or quoted is
+    # quoting the catch arm, where one writing "the list failed with a 500" is
+    # describing a symptom of any handler at all.
+    "log_rethrow": re.compile(r"\blog\.error\b|[\"'`]list failed[\"'`]"),
     "test_fixture": re.compile(r"\bCLOCK\b|Date\.UTC|\bseed\(\)|handlers\.test\.js"),
 }
 # The generic-word alternatives, consulted only when no region is named. A
@@ -251,6 +264,13 @@ SEVERITY_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
 # which carries the whole finding's text.
 NUMBERED_RE = re.compile(r"^\s{0,3}(?:\*\*\s*\d+[.)]|\d+[.)]\s+\*\*)")
 BULLET_RE = re.compile(r"^[-*+]\s+\*\*")
+# The bulleted form of a finding: the whole line bolded, title and citation
+# together, which is how the numbered form titles one too. A bullet whose bold
+# run ends and leaves a sentence running on after it is a label -- `- **Fix:**
+# restore the guard`, `- **Input:** a request with page=1` -- and the reports
+# use those to structure a finding, not to open one. Built from BULLET_RE so
+# the column-0 anchor is stated once.
+BULLET_FINDING_RE = re.compile(BULLET_RE.pattern + r".+\*\*\s*$")
 # A section that says it is empty, rather than one this script failed to read.
 EMPTY_SECTION_RE = re.compile(
     r"^[\s*_`\-]*(?:none|n/?a|nothing|no\s+\w+\s+(?:findings|issues))\b[\s*_`.!]*$",
@@ -313,6 +333,10 @@ class Finding:
     # The regions this finding named at one tier, when there was more than one
     # and no citation settled it. The analyst gets the candidates by name.
     contested: tuple[str, ...] = ()
+    # The one region this finding named, when rule 4 put it out of scope for a
+    # finding whose citation landed in no range. Named for the analyst too:
+    # the reviewer did say where to look, and this script declined to follow.
+    blocked: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -648,8 +672,21 @@ def split_findings(severity: str, body: list[str]) -> list[str]:
     write column-0 bullets *inside* a numbered finding -- an ``- **Input:**``
     label, a bolded claim -- and reading those as starts would cut one finding
     into three and separate its citation from its text. In none of them does
-    such a bullet appear before the first numbered start, and in none of them
-    does a section carry content ahead of its first finding.
+    such a bullet appear before the first numbered start.
+
+    A bullet opens a finding only when it is written like one, whichever side
+    of that boundary it falls: bolded end to end, the way every finding of
+    every observed report is titled. A bold label with the sentence trailing
+    after it is the report talking about its own list, and counting one as a
+    finding read ``proof_total`` high and queued a line about nothing for the
+    analyst.
+
+    What a section may carry ahead of its first finding is therefore narrow
+    but not empty: a fence, because reviewers quote the code they are about to
+    fault, and a bullet in that scaffolding shape. Anything else -- a
+    paragraph, an unbolded bullet -- may be a finding written in a form this
+    script does not read, and dropping it silently is the defect the fatal
+    exists for. None of the seven real reports carries any of the three.
 
     :param severity: The section's severity, for the error message.
     :param body: The section's lines.
@@ -660,17 +697,33 @@ def split_findings(severity: str, body: list[str]) -> list[str]:
 
     numbered: list[int] = []
     bulleted: list[int] = []
+    # The lines ahead of a first finding that the section itself accounts for.
+    accounted: set[int] = set()
     fenced = False
+    scaffold = False
     for index, line in enumerate(body):
         if line.lstrip().startswith("```"):
             fenced = not fenced
+            accounted.add(index)
             continue
         if fenced:
+            accounted.add(index)
             continue
         if NUMBERED_RE.match(line):
             numbered.append(index)
-        elif BULLET_RE.match(line):
+            scaffold = False
+        elif BULLET_FINDING_RE.match(line):
             bulleted.append(index)
+            scaffold = False
+        elif BULLET_RE.match(line):
+            accounted.add(index)
+            scaffold = True
+        elif scaffold and (not line.strip() or line.startswith((" ", "\t"))):
+            # A scaffolding bullet wraps; every observed report wraps at about
+            # 80 columns, so its second line is part of it and not new content.
+            accounted.add(index)
+        else:
+            scaffold = False
     opens = numbered[0] if numbered else len(body)
     starts = sorted(numbered + [index for index in bulleted if index < opens])
 
@@ -678,6 +731,10 @@ def split_findings(severity: str, body: list[str]) -> list[str]:
         return [line for line in lines if line.strip() and not EMPTY_SECTION_RE.match(line)]
 
     if not starts:
+        # A section with no finding at all has nothing for a fence to be
+        # quoted for or a label to introduce, so here everything counts: a
+        # report whose findings this script cannot see is not a report of no
+        # findings.
         content = unaccounted(body)
         if content:
             raise RunError(
@@ -685,7 +742,9 @@ def split_findings(severity: str, body: list[str]) -> list[str]:
                 f"the {severity} section has content but no finding: {one_line(content[0], 80)}",
             )
         return []
-    lead = unaccounted(body[: starts[0]])
+    lead = unaccounted(
+        [line for index, line in enumerate(body[: starts[0]]) if index not in accounted]
+    )
     if lead:
         raise RunError(
             "report-unparsed",
@@ -740,7 +799,7 @@ def covered(span: Span, cited: list[tuple[str, int, int]]) -> bool:
     )
 
 
-def name_candidates(text: str, cited: bool) -> tuple[str, ...]:
+def name_candidates(text: str) -> tuple[str, ...]:
     """The regions one finding names, at the most specific tier that names any.
 
     A region named by an identifier of the fixture beats one matched through
@@ -751,19 +810,20 @@ def name_candidates(text: str, cited: bool) -> tuple[str, ...]:
     choosing one would be this script's guess rather than the reviewer's
     statement. :func:`attribute` sends that case to the analyst.
 
+    Both tiers are read against every region, including the ones rule 4 holds
+    out of scope for the finding being placed. Which regions this finding is
+    allowed to land in is the caller's question; which regions it *names* is
+    not, and answering both here let the restriction promote a weaker match:
+    the named clean hunk dropped out of the identifier tier, the tier came up
+    empty, and a prose alternative for a planted bug won uncontested below it.
+
     :param text: The finding's text.
-    :param cited: Whether the finding cites a line this script could read.
-        A finding that cited a line and missed every region may still be
-        placed by a *bug's* name; one that named a clean hunk while citing a
-        line in no region has not said where to look. This is the brief's
-        rule 4, and the asymmetry is deliberate.
     :returns: The named regions, bugs before hunks and hunks in :data:`HUNKS`
         order. More than one means the tier is contested.
     """
 
-    keys = BUG_KEYS if cited else BUG_KEYS + HUNK_KEYS
     for table in (IDENTIFIERS, PROSE):
-        named = tuple(key for key in keys if key in table and table[key].search(text))
+        named = tuple(key for key in ALL_KEYS if key in table and table[key].search(text))
         if named:
             return named
     return ()
@@ -780,7 +840,12 @@ def attribute(text: str, ranges: dict[str, Span]) -> tuple[str, ...]:
     misses the range by a statement or two has still told this script where to
     look, so a bug's name can still finish the job; a nit that names a clean
     hunk while citing a line in none of them (a `config.json` line, an import
-    line) has not, and is reported for adjudication instead.
+    line) has not, and is reported for adjudication instead. The restriction
+    chooses among the regions the finding named; it does not send the reader
+    down to a weaker tier. A cited finding naming a clean hunk in the
+    fixture's own words has named a region this pass may not choose, which is
+    not "named nothing": crediting it to a planted bug on an English phrase
+    is the round-1 defect with one citation added to the text.
 
     A finding whose *citation* reaches a planted bug is attributed to the bug
     alone: reviewers cite the enclosing function or a span around the defect,
@@ -806,8 +871,9 @@ def attribute(text: str, ranges: dict[str, Span]) -> tuple[str, ...]:
         found = by_line(keys)
         if found:
             return found
-    named = name_candidates(text, bool(cited))
-    return named if len(named) == 1 else ()
+    named = name_candidates(text)
+    allowed = BUG_KEYS if cited else ALL_KEYS
+    return named if len(named) == 1 and named[0] in allowed else ()
 
 
 def span_ambiguity(text: str, ranges: dict[str, Span]) -> str:
@@ -866,6 +932,10 @@ def parse_report(report: str, ranges: dict[str, Span] | None = None) -> list[Fin
             continue
         for text in split_findings(severity, body):
             attributions = attribute(text, ranges) if ranges else ()
+            # Only a finding that landed nowhere carries candidates, and a
+            # lone candidate that did not place it is one rule 4 excluded:
+            # :func:`attribute` returns any other single name.
+            candidates = () if attributions or not ranges else name_candidates(text)
             findings.append(
                 Finding(
                     severity=severity,
@@ -875,14 +945,8 @@ def parse_report(report: str, ranges: dict[str, Span] | None = None) -> list[Fin
                     test_coverage=bool(TEST_COVERAGE_RE.search(text)),
                     attributions=attributions,
                     ambiguity=span_ambiguity(text, ranges) if ranges else "",
-                    # Only a finding that landed nowhere can be contested, and
-                    # `name_candidates` returns more than one key only in that
-                    # case, so this is the collision or nothing.
-                    contested=(
-                        ()
-                        if attributions or not ranges
-                        else name_candidates(text, bool(cited_spans(text)))
-                    ),
+                    contested=candidates if len(candidates) > 1 else (),
+                    blocked=candidates if len(candidates) == 1 else (),
                 )
             )
     return findings
@@ -1132,7 +1196,13 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
             run_id,
             "unattributed",
             f"{f.severity} finding {f.key}: {one_line(f.text)}"
-            + (f" [names {' and '.join(f.contested)}, neither settled]" if f.contested else ""),
+            + (f" [names {' and '.join(f.contested)}, neither settled]" if f.contested else "")
+            + (
+                f" [names {f.blocked[0]}; rule 4 does not place a cited finding "
+                "on a clean hunk]"
+                if f.blocked
+                else ""
+            ),
         )
         for f in graded
         if not f.attributions
@@ -1419,8 +1489,12 @@ BULLET_SAVE_FINDING = """- **The write is never awaited - `src/handlers.js:37`**
   - **Input:** a create whose write rejects.
   - **Outcome:** the handler has already answered 201.
 """
+# Its first sub-bullet is bolded end to end, which is the shape of a finding
+# start: only the column-0 anchor keeps it a sub-bullet. A label-shaped
+# sub-bullet would be held out by the bold rule as well, and then the anchor
+# could rot without any case noticing.
 BULLET_COVERAGE_FINDING = """- **No test covers the retry path**
-  - **Input:** a first attempt that rejects - `src/util.js:12`.
+  - **A first attempt that rejects is never exercised - `src/util.js:12`.**
   - **Outcome:** a regression in the backoff is invisible.
 """
 # "Off by one" is ordinary English; `withRetry` and `parseOrderId` are names
@@ -1455,18 +1529,45 @@ MIXED_BULLET_FINDING = """- **Pagination offset skips a whole page - `src/handle
 # A numbered finding whose body carries its own column-0 bullets, one of them
 # not a label. This is the shape 4 of the 7 real reviewer reports use, and a
 # parser that read every column-0 bullet as a finding start would cut this one
-# into three.
+# into three. The last bullet is bolded end to end -- the shape of a finding
+# start -- so that only the numbered start's precedence keeps it inside this
+# finding; with three label bullets the precedence could rot unnoticed.
 GUARD_FINDING = """**1. Pagination offset skips a whole page - `src/handlers.js:18`**
 
 - **Input:** a request with `page=1, size=10`.
 - **No guard catches this.** The handler validates nothing before computing
   the offset, so the caller cannot tell a skipped page from an empty one.
+- **Reject a request whose page is below 1.**
 """
 # A finding in neither recognized form, ahead of one in the numbered form.
 # Dropping it silently is what this must not do.
 UNRECOGNIZED_LEAD_FINDING = """**Pagination offset skips a whole page - `src/handlers.js:18`**
 
 The handler asks the store for rows from 10 on the first page.
+"""
+# The clean-hunk finding above with a citation two lines above the hunk -- an
+# import line, a signature line, the blank line over the function. The citation
+# reaches no region, so the name pass runs restricted to the planted bugs; the
+# region this finding actually names is then out of scope, and reading that as
+# "names nothing" credited it to the planted pagination bug on the words "off
+# by one" alone.
+RETRY_OFF_BY_ONE_CITED_FINDING = """**3. Retry count is off by one in `withRetry` - `src/util.js:3`**
+
+The loop makes one more attempt than the constant names, so a caller that
+budgets for three waits through four.
+"""
+# Reviewers quote the code they are about to fault before listing anything.
+# The quoted lines are not a finding this script failed to read.
+QUOTED_DIFF_LEAD = """```js
+// src/handlers.js
+const offset = page * size;
+```
+"""
+# A note about the list, not about the code, in the report's own bullet form.
+# Counting it as a finding reads `proof_total` one too high and asks the
+# analyst to adjudicate a line that says nothing about the diff.
+SECTION_PREAMBLE = """- **Note:** the findings below are ordered by severity, most
+  serious first.
 """
 # A second subagent that only quotes a report's heading inside a fence. It is
 # not a report, and counting it as one would void the run.
@@ -2378,6 +2479,86 @@ def self_test() -> int:
                     return f"{text!r} attributed to {got}, expected ({key!r},)"
             return ""
 
+        def literal_not_english() -> str:
+            # Every IDENTIFIERS alternative is a token the fixture contains, so
+            # one made of ordinary words has to match the quoting rather than
+            # the words. `list failed` is the `log.error` call's own message;
+            # "the list failed" is a sentence about anything. `page * size` is
+            # a multiplication; `page *size*` is markdown emphasis. Both read
+            # as the region they are not: a correct pagination finding scored
+            # as a block on the `catch` arm moves recall down and
+            # blocking_on_clean up at once.
+            run_dir = run(build_report([OFFSET_FINDING], [SAVE_FINDING]))
+            ranges = resolve_ranges(run_dir)
+            probes: tuple[tuple[str, tuple[str, ...]], ...] = (
+                ("the list failed to paginate on page one", ()),
+                ("the list failed with a 500 when the store is empty", ()),
+                ("Pagination is broken: the list failed to return the first page", ()),
+                ("the catch arm logs `list failed` and rethrows", ("log_rethrow",)),
+                ("the handler's `log.error('list failed', err)` hides the stack", ("log_rethrow",)),
+                ("the page *size* is never validated", ()),
+                ("the *page* size defaults to 20", ()),
+                ("the offset is computed as page * size", ("offset_bug",)),
+                ("the handler computes `page*size`", ("offset_bug",)),
+            )
+            for text, want in probes:
+                got = attribute(text, ranges)
+                if got != want:
+                    return f"{text!r} attributed to {got}, expected {want}"
+            return ""
+
+        def cited_out_of_range_names_a_hunk() -> str:
+            # A citation just outside a hunk -- an import line, a signature
+            # line -- restricts the name pass to the planted bugs. The region
+            # the finding names is then out of scope, and the restriction may
+            # not answer by promoting a weaker match on another region:
+            # scoring this clean-hunk nit as the planted pagination bug reads
+            # recall 2 for a report that found one bug.
+            run_dir = run(build_report([SAVE_FINDING], [RETRY_OFF_BY_ONE_CITED_FINDING]))
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            problem = expect(
+                rows[0],
+                recall=1,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="no",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            # The key, not the finding's own words: `withRetry` is in the
+            # quoted text, `with_retry` only in the candidate it names.
+            named = [
+                note for note in notes if "\tunattributed\t" in note and "with_retry" in note
+            ]
+            if len(named) != 1:
+                return f"the excluded candidate was not named for the analyst: {notes}"
+            ranges = resolve_ranges(run_dir)
+            probes: tuple[tuple[str, tuple[str, ...]], ...] = (
+                ("Retry count is off by one in `withRetry` - `src/util.js:3`", ()),
+                ("Retry count is off by one in `withRetry`", ("with_retry",)),
+                # Decision 1: a citation in no range, rescued by a bug's name.
+                (
+                    (
+                        "The write is never awaited - `src/handlers.js:36`. "
+                        "`saveOrder` is called without `await`."
+                    ),
+                    ("unawaited_save",),
+                ),
+                # Decision 2's own example: a clean hunk named, nothing to
+                # place it with.
+                ("`readFileSync` blocks the event loop - `config.json:4`", ()),
+            )
+            for text, want in probes:
+                got = attribute(text, ranges)
+                if got != want:
+                    return f"{text!r} attributed to {got}, expected {want}"
+            return ""
+
         def mixed_list_markers() -> str:
             # A section that opens in the bullet form and switches to numbers.
             # The bullet finding used to be discarded with no token, and recall
@@ -2429,6 +2610,75 @@ def self_test() -> int:
                 return "exit 0, expected non-zero"
             if not any("\treport-unparsed\t" in note for note in notes):
                 return f"no report-unparsed line in {notes}"
+            return ""
+
+        def fenced_snippet_before_the_first_finding() -> str:
+            # Quoting the offending lines above the list is an ordinary
+            # reviewer habit, and a fence is quoted material rather than a
+            # finding this script failed to read. Voiding the trial over it
+            # costs the campaign a determinate run; unfenced prose in the same
+            # position still does, because that shape can be a finding.
+            run_dir = run(build_report([QUOTED_DIFF_LEAD, OFFSET_FINDING], [SAVE_FINDING]))
+            code, rows, _ = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            finding = OFFSET_FINDING.rstrip("\n").split("\n")
+            prose = ["A summary first: the pagination is wrong.", "", *finding]
+            both = [*QUOTED_DIFF_LEAD.rstrip("\n").split("\n"), "", *prose]
+            for label, body in (("prose", prose), ("a fence and prose", both)):
+                try:
+                    split_findings("Critical", body)
+                except RunError as error:
+                    if error.kind != "report-unparsed":
+                        return f"{label} raised {error.kind}, expected report-unparsed"
+                else:
+                    return f"{label} before the first finding was dropped silently"
+            return ""
+
+        def section_preamble_is_not_a_finding() -> str:
+            # A bulleted line opens a finding when it is written like one: the
+            # whole line bolded, the way every finding of every real report is
+            # titled. A bold label with the sentence trailing after it is the
+            # report talking about itself, and counting it read `proof_total`
+            # one high and queued a line about nothing for the analyst.
+            run_dir = run(build_report([SECTION_PREAMBLE, OFFSET_FINDING], [SAVE_FINDING]))
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if any("\tunattributed\t" in note for note in notes):
+                return f"the preamble was queued for adjudication: {notes}"
+            body = [
+                "- **Note:** ordered by severity.",
+                "",
+                *OFFSET_FINDING.rstrip("\n").split("\n"),
+            ]
+            findings = split_findings("Critical", body)
+            if len(findings) != 1:
+                return f"{len(findings)} findings, expected 1: {findings}"
             return ""
 
         def fixture_ranges_unique() -> str:
@@ -2542,11 +2792,15 @@ def self_test() -> int:
             ("identifier_beats_prose", identifier_beats_prose),
             ("name_collision_unattributed", name_collision_unattributed),
             ("name_alternatives", name_alternatives),
+            ("literal_not_english", literal_not_english),
             ("clean_hunk_named_but_unplaceable", clean_hunk_named_but_unplaceable),
+            ("cited_out_of_range_names_a_hunk", cited_out_of_range_names_a_hunk),
             ("unnumbered_bullets", unnumbered_bullets),
             ("mixed_list_markers", mixed_list_markers),
             ("numbered_finding_keeps_its_bullets", numbered_finding_keeps_its_bullets),
             ("unrecognized_finding_before_the_first", unrecognized_finding_before_the_first),
+            ("fenced_snippet_before_the_first_finding", fenced_snippet_before_the_first_finding),
+            ("section_preamble_is_not_a_finding", section_preamble_is_not_a_finding),
             ("fixture_ranges_unique", fixture_ranges_unique),
             ("two_clean_hunks", two_clean_hunks),
             ("proof_partial", proof_partial),
