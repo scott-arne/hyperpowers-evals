@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Good — that settles the target: a general mechanism, not one fitted to two known forms. That makes YAGNI the main
+  risk, so the next question is where to draw the line on the rule vocabulary.
+
+  The fork: which rules ship in the shared module versus which callers write themselves. This one is somewhat sticky —
+  the rule-expression format becomes an interface every form depends on, so adding rules later is easy, but changing how
+  a rule is [3mwritten[0m means touching every form already using it. What's cheap to change later: the set of built-in
+  rules. What's expensive: the shape callers write them in.
+
+  - [1mMinimal + escape hatch[0m — built-ins: [38;5;153mrequired[39m. Everything else is a plain function you pass in. Almost nothing to
+    design wrong, and the escape hatch means nothing is blocked. Cost: every form re-writes its own email check, which
+    is the duplication you're trying to kill.
+  - [1mCore set + escape hatch[0m — built-ins: [38;5;153mrequired[39m, [38;5;153mminLength[39m/[38;5;153mmaxLength[39m, [38;5;153memail[39m, [38;5;153mpattern[39m, [38;5;153mmatches[39m (confirm-password), plus
+    custom functions. Covers the large majority of web forms without speculating. Cost: a handful of rules that may sit
+    unused for a while.
+  - [1mBroad set[0m — the core set plus numeric ranges and async rules (server-side "is this username taken"). Cost: async
+    validation drags in pending states, race handling, and debouncing — a real chunk of complexity for a need you
+    haven't hit.
+
+  My recommendation: the middle one. The escape hatch is what actually prevents over-building — it means an
+  unanticipated rule is never blocked, so the built-in set doesn't have to be exhaustive to be useful. I'd specifically
+  leave async out; it's the one piece here that changes the module's whole shape, and it's easy to add as a separate
+  concern once a real case exists.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Rule set [39m[49m
+
+[1m[38;5;231mWhich validation rules should ship in the shared module?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCore set + custom (Recommended)[39m
+     [38;5;246mrequired, minLength/maxLength, email, pattern, matches, plus custom functions. No async.[39m
+  [38;5;246m2.[39m Minimal + custom
+     [38;5;246mOnly required, plus custom functions. Callers write everything else themselves.[39m
+  [38;5;246m3.[39m Broad set incl. async
+     [38;5;246mCore set plus numeric ranges and async server-side rules (username availability). Adds pending/race handling.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

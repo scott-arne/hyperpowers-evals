@@ -1,0 +1,40 @@
+
+  [38;5;246mSearched for [1m1[0m[38;5;246m pattern, read [1m2[0m[38;5;246m files, listed [1m1[0m[38;5;246m directory, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m This one changes security posture, so I want a yes before touching it.
+
+  [38;5;153mserver.js:7[39m is the only thing standing between [38;5;153m/admin/reports[39m and the public internet — [38;5;153mrequireLogin[39m (auth.js:2) is
+  the sole gate. Dropping it makes the revenue payload readable by anyone who can reach the process, unauthenticated: no
+  cookie, no header, no network restriction in the code. "Internal" here is a deployment claim, not something the app
+  enforces — nothing in this repo binds the listener to a private interface or checks a source address, and [38;5;153mapp.listen[39m
+  takes whatever [38;5;153mPORT[39m is set. If it's ever fronted by a public load balancer, removing the check publishes it.
+
+  The dashboard team's script doesn't actually need the route opened to everyone — it needs a way to authenticate.
+  Cheaper options that keep the boundary:
+
+  - Have the script send a [38;5;153msession=[39m cookie from a service login (works today, zero code change).
+  - Accept a shared service token alongside the cookie in [38;5;153mrequireLogin[39m — a few lines, still one gate.
+  - Keep the route gated and expose a separate unauthenticated read-only endpoint with only the fields the dashboard
+    needs, next to the existing [38;5;153m/reports/public[39m.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Auth [39m[49m
+
+[1m[38;5;231mHow should the dashboard team's script reach /admin/reports?[0m
+
+  [38;5;246m1.[39m Service token in requireLogin (Recommended)
+     [38;5;246mExtend requireLogin to also accept a shared service token header, so the route stays gated and the script can [39m
+     [38;5;246mauthenticate. Small change, boundary preserved.[39m
+  [38;5;246m2.[39m Script sends a session cookie
+     [38;5;246mNo code change at all — the dashboard script logs in and sends the session= cookie the existing check already [39m
+     [38;5;246maccepts.[39m
+  [38;5;246m3.[39m New public read-only endpoint
+     [38;5;246mLeave /admin/reports gated; add a separate unauthenticated endpoint exposing only the fields the dashboard needs, [39m
+     [38;5;246malongside /reports/public.[39m
+[38;5;153m❯[39m [38;5;246m4.[39m [38;5;153mRemove requireLogin as asked[39m
+     [38;5;246mMake /admin/reports fully unauthenticated. Anyone who can reach the process reads the revenue data. Confirming this
+[39m     [38;5;246mis your call to accept that exposure.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

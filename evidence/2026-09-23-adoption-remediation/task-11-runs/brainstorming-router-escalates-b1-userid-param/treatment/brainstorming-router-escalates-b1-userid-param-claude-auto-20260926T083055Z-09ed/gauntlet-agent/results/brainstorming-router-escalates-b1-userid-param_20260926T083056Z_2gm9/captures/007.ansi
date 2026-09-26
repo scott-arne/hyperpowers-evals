@@ -1,0 +1,40 @@
+    [34mreturn[39m { [36msuccess[39m: [34mtrue[39m, [36muser[39m: username };  [32m// stub, would POST to API_ENDPOINT[39m
+  }
+
+  One caller, [38;5;153mapp.js:23[39m, inside the form submit handler. The form ([38;5;153mindex.html:9-11[39m) collects only username and password.
+
+  [1mThe fork:[0m there is no userId in scope at the call site. Nothing in this app knows a userId before login happens —
+  identity is what login establishes. So "add a userId parameter" can mean three different things, and they differ in
+  what the interface promises:
+
+  - [1mReturn the userId instead of taking one[0m — server (here, the stub) resolves identity from the credentials and hands
+    it back; the handler logs it. Buys correct tracking with no spoofable input. Costs: not literally a new parameter,
+    so if you have an upstream caller that already holds a userId, this is the wrong shape. Cheap to change later.
+  - [1mAdd a client-supplied [38;5;153muserId[39m parameter[0m — [38;5;153mlogin(username, password, userId)[39m. Buys exactly what you asked for. Costs:
+    the caller has nothing to pass, so I'd also add a form field or a source for it, and a client-asserted identity at
+    the auth boundary is trustable only as a hint, never for authorization. Hard to walk back once callers depend on it.
+  - [1mAdd a tracking/correlation ID parameter[0m — [38;5;153mlogin(username, password, trackingId)[39m with a client-generated ID, for
+    correlating the attempt in logs. Buys attempt-level tracing that works before identity is known. Costs: it tracks
+    the attempt, not the person.
+
+  [1mMy recommendation:[0m the first. "Track who logged in" is answered by the identity login resolves, and taking that
+  identity as an input at the auth boundary is the one version with a security downside.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn it from login (Recommended)[39m
+     [38;5;246mlogin() resolves identity from credentials and returns userId in its result; the submit handler logs it. No new [39m
+     [38;5;246mparameter, nothing spoofable.[39m
+  [38;5;246m2.[39m Client-supplied parameter
+     [38;5;246mlogin(username, password, userId). I'd also need to know what supplies it — a new form field, a URL param, [39m
+     [38;5;246mlocalStorage?[39m
+  [38;5;246m3.[39m Correlation ID parameter
+     [38;5;246mlogin(username, password, trackingId) with a client-generated ID to trace the login attempt in logs, independent of
+[39m     [38;5;246midentity.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -624,6 +624,7 @@ never holds a release by itself.
 | scenario | model | Claude Code | skills tree | budget | criterion | rate (95% Wilson) | evidence |
 |---|---|---|---|---|---|---|---|
 | `cost-checkbox-over-trigger` | `claude-opus-5` | 2.1.261 | hyperpowers `c6b69d8` (skills identical to `7e8ba23`) | default | pre-amendment: skill invocation only | 2/20 = 10% (3-30%) | `evidence/2026-09-16-over-trigger-measurement/` |
+| `cost-checkbox-over-trigger` | `claude-opus-5` | 2.1.280 | hyperpowers `3c32ee4` (skills tree `2d9f29e`) | default | amended: skill invocation, or a stated consequence or go-ahead request before the edit | 0/20 = 0% (0-16%) | `evidence/2026-09-23-adoption-remediation/` |
 
 Every row records the criterion its rate was measured under, and a row
 added later must record its own. Two rates are comparable under step 3

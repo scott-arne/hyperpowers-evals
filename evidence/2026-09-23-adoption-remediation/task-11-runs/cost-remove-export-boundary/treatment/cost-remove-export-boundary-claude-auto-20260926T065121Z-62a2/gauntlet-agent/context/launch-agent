@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# quorum-generated launcher for Claude Code (the agent under test).
+#
+# The cd, Claude auth env, throwaway-$HOME pin, plugin-dir, and flags are baked
+# in here so the QA agent launches Claude with ONE token and cannot skip the
+# prepared workdir. quorum substitutes the $… values below at runtime, so the
+# installed copy contains literal absolute paths (no env inheritance needed —
+# tmux strips env from new sessions).
+#
+# No CLAUDE_CONFIG_DIR is set: the launcher pins HOME to the throwaway home via
+# HOME='/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home' XDG_CONFIG_HOME='/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.config' XDG_CACHE_HOME='/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.cache' XDG_DATA_HOME='/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.local/share' XDG_STATE_HOME='/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.local/state' TMPDIR='/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.tmp', and provisioning seeds the config INTO <HOME>/.claude
+# (claude.yaml home_config_subdir: ".claude"). Claude finds its config and
+# writes its transcript under its $HOME/.claude default, so the config dir need
+# not be threaded through the launcher.
+#
+# `env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID` strips the launching Claude Code
+# session's identity. Claude Code (>=2.1.166) skips writing its session
+# transcript when it detects a nested interactive session via those inherited
+# vars; stripping them lets the eval run from inside a Claude Code session while
+# the agent under test still persists its transcript (so capture sees real tool
+# calls). If capture ever comes back empty anyway, claude is a strict-capture
+# target, so the run is a loud indeterminate(stage=capture), never a silent pass.
+#
+# As of claude 2.1.176 the env-strip alone is insufficient: nested detection
+# gained additional signals (e.g. CLAUDE_CODE_CHILD_SESSION) that the strip does
+# not cover. CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 is the authoritative
+# override — it forces transcript persistence regardless of nested-session
+# detection, so capture stays robust across claude versions.
+#
+# Equivalent manual command (for debugging):
+#   cd "/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/coding-agent-workdir" && set -a && source "/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.claude/.claude-env" && set +a && env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID HOME="/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home" CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --dangerously-skip-permissions --plugin-dir "/Users/johnss51/Development/agents/hyperpowers/.worktrees/adoption-remediation-treatment" --model "claude-opus-5"
+#
+# Auth is carried entirely by /Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.claude/.claude-env, which provision() writes per run
+# in one of three modes (pinned by the agent config's required_env, or detected
+# from the host env for claude-auto.yaml):
+#   - API key: `export ANTHROPIC_API_KEY=…` (+ the .claude.json approval block).
+#   - Bedrock: `export CLAUDE_CODE_USE_BEDROCK=1`, `AWS_REGION`, and whichever AWS
+#     auth vars are present (AWS_PROFILE + AWS_CONFIG_FILE/AWS_SHARED_CREDENTIALS_FILE
+#     anchored at the operator's real home, or static AWS keys).
+#   - Vertex: `export CLAUDE_CODE_USE_VERTEX=1`, `CLOUD_ML_REGION`,
+#     `ANTHROPIC_VERTEX_PROJECT_ID`, and GOOGLE_APPLICATION_CREDENTIALS anchored
+#     at the operator's real ADC (the pinned $HOME hides ~/.config/gcloud).
+# The launcher sources that file and lets its exported vars flow into the
+# `exec env … claude` child — it no longer names ANTHROPIC_API_KEY itself, so the
+# same launcher serves the API-key (claude.yaml), Bedrock (claude-bedrock.yaml),
+# Vertex (claude-vertex.yaml), and auto-detected (claude-auto.yaml) agents. The project-trust block provision() writes into
+# .claude.json suppresses the trust prompt. No onboarding skeleton, IS_DEMO, or
+# marketplace-disable is needed — claude boots headless and runs/auto-completes
+# onboarding each run. (IS_DEMO=1 is NOT used: it skips that first-run flow on a
+# never-onboarded config, so claude comes up "Not logged in" — reproduced 2/2.)
+set -euo pipefail
+cd "/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/coding-agent-workdir" || { echo "launch-agent: cannot cd to /Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/coding-agent-workdir" >&2; exit 1; }
+# Auto-export every var the env-file sets (it uses explicit `export`, but `set -a`
+# is belt-and-braces) so the sourced auth reaches the exec'd child.
+set -a
+source "/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.claude/.claude-env"
+set +a
+exec env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID HOME='/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home' XDG_CONFIG_HOME='/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.config' XDG_CACHE_HOME='/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.cache' XDG_DATA_HOME='/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.local/share' XDG_STATE_HOME='/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.local/state' TMPDIR='/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-remove-export-boundary-claude-auto-20260926T065121Z-62a2/home/.tmp' CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --dangerously-skip-permissions --plugin-dir "/Users/johnss51/Development/agents/hyperpowers/.worktrees/adoption-remediation-treatment" --model "claude-opus-5" "$@"

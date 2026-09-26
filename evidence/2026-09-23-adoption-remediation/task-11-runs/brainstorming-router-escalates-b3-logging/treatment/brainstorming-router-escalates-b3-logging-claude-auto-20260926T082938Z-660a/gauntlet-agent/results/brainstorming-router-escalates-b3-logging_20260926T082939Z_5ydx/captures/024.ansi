@@ -1,0 +1,40 @@
+  [38;5;153mwindow.onerror[39m, [38;5;153munhandledrejection[39m, session id in [38;5;153msessionStorage[39m), and a Node adapter (console, [38;5;153mprocess.on[39m handlers,
+  per-process session id). [38;5;153mindex.js[39m detects the runtime and exports a configured logger.
+
+  - [3mBuys:[0m the core is testable in plain Node with no DOM mocking, which matters because the allowlist is a security
+    control and needs real tests. The two runtimes' genuinely different exit semantics ([38;5;153msendBeacon[39m vs. [38;5;153mbeforeExit[39m) live
+    in the adapters where they belong.
+  - [3mCosts:[0m five small files instead of one, and an injection seam that looks like ceremony until you write the first
+    test.
+
+  [1mB. One module, runtime branches inline[0m
+
+  A single [38;5;153mlogger.js[39m with [38;5;153mtypeof window !== 'undefined'[39m branches where behavior differs.
+
+  - [3mBuys:[0m one file, least code, nothing to navigate.
+  - [3mCosts:[0m logic and I/O are tangled, so tests need global mocking; and the allowlist ends up adjacent to the transport
+    call, where a future edit can route around it. Given that you chose the allowlist specifically to survive careless
+    future code, this undercuts the thing you picked.
+
+  [1mC. Event bus with pluggable subscribers[0m
+
+  The logger emits records onto a bus; console and HTTP attach as independent subscribers.
+
+  - [3mBuys:[0m genuine extensibility — a third destination later needs no core change.
+  - [3mCosts:[0m it makes redaction a per-subscriber responsibility. A subscriber added in six months that forgets to project
+    is a silent leak. That's precisely the failure mode the allowlist exists to make structurally impossible.
+    Extensibility you don't need today, bought with the property you said you wanted.
+
+  [1mRecommendation: A[0m, with one specific commitment — the core emits [3mtwo[0m values per event: a full record and an
+  allowlist-projected record. The HTTP sink's function signature only ever receives the projected one, so leaking isn't
+  a rule someone must remember, it's a thing the code cannot express. That single choice is most of why I prefer A over
+  C.
+
+  Does A look right, or would you rather I work up B or C?
+
+[38;5;246m✻[39m [38;5;246mChurned for 4m 3s · done 1:39 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

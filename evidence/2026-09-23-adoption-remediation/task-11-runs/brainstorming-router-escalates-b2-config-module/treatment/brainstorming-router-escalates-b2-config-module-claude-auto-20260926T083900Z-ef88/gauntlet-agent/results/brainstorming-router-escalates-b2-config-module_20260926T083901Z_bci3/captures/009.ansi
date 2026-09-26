@@ -1,0 +1,40 @@
+
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the settings module decide which environment's API endpoint to use? → Runtime hostname detection [39m
+     [38;5;246m(Recommended)[39m
+
+[38;5;231m⏺[39m [1mSecond fork:[0m how [38;5;153mapp.js[39m gets at the settings, given there's no bundler and [38;5;153mindex.html[39m uses a plain [38;5;153m<script>[39m tag.
+
+  - [1mGlobal via a second script tag[0m — [38;5;153msettings.js[39m loads before [38;5;153mapp.js[39m and sets [38;5;153mwindow.APP_SETTINGS[39m. Works exactly like
+    the current setup, still opens straight from the filesystem by double-clicking [38;5;153mindex.html[39m. Costs: a global, and load
+    order in [38;5;153mindex.html[39m becomes load-bearing. Cheap to change later.
+  - [1mES modules[0m — [38;5;153msettings.js[39m does [38;5;153mexport const[39m, [38;5;153mapp.js[39m does [38;5;153mimport[39m, and [38;5;153mindex.html[39m switches to [38;5;153m<script type="module">[39m.
+    Real module boundary, no globals, and it's where the project would want to end up. Costs: [38;5;153mtype="module"[39m files are
+    fetched under CORS rules, so [38;5;153mfile://[39m stops working — you'd need a local server ([38;5;153mnpx serve[39m or similar) to open the
+    page at all. That's the part that isn't cheap to undo if someone's workflow is "double-click the HTML".
+
+  [1mMy recommendation: ES modules[0m, unless opening [38;5;153mindex.html[39m directly matters to you. It gives a genuine module with no
+  global, and the settings module is the natural moment to make that switch while there are only two files to convert.
+  If the file-open workflow matters, the global is the honest choice and costs almost nothing here.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should app.js import the settings module? → ES modules (Recommended)[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Env table [39m[49m
+
+[2m│[0m [1m[38;5;231mWhich environments should the settings table cover, and how should an unknown hostname behave?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocal + staging + prod, default prod[39m
+     [38;5;246mlocalhost/127.0.0.1 -> local API, a staging host -> staging API, everything else -> the current [39m
+     [38;5;246mhttps://api.example.com. Safe for unrecognized hosts; risks a dev machine silently hitting prod.[39m
+  [38;5;246m2.[39m local + staging + prod, default local
+     [38;5;246mSame table, but an unrecognized hostname falls back to the local API. A misconfigured deploy fails loudly instead [39m
+     [38;5;246mof quietly talking to prod.[39m
+  [38;5;246m3.[39m local + prod only
+     [38;5;246mJust localhost vs everything else. Smallest table; add staging when a staging host actually exists.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

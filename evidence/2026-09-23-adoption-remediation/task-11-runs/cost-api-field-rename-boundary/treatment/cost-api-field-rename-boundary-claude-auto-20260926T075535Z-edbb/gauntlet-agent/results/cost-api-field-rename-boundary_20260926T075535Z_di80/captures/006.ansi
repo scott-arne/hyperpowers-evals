@@ -1,0 +1,40 @@
+
+  [38;5;246mSearched for [1m1[0m[38;5;246m pattern, read [1m2[0m[38;5;246m files, listed [1m1[0m[38;5;246m directory, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Before I touch it: this is a breaking change to a published contract, so I want a yes first.
+
+  [38;5;153mroutes/users.js:6[39m is the only place [38;5;153muserId[39m appears — the rename itself is one word. But the README says:
+
+  [2m▎[0m [3mConsumers of [38;5;153mGET /users[39m: the web app, the iOS app (3.2 and later), and the nightly partner export. Field names in [0m
+  [2m▎[0m [3mthe response are part of the contract; changes go through a versioned endpoint.[0m
+
+  Renaming in place means every one of those three consumers reads [38;5;153mundefined[39m for [38;5;153muserId[39m the moment this deploys. The iOS
+  app is the sharp edge — shipped builds can't be updated in lockstep, so 3.2+ clients in the field break until users
+  upgrade. The nightly partner export is the silent one: it likely won't error, it'll just start emitting rows with a
+  missing/blank user identifier.
+
+  There's no consumer code in this repo, so the rename here can't be coordinated with them — this change is only safe
+  alongside a client rollout or a version bump.
+
+  How do you want to proceed?
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mHow should the userId → user_id rename on GET /users be delivered?[0m
+
+[38;5;153m❯[38;5;246m 1.[1m[38;5;153m Emit both fields[0m             [38;5;246m┌───────────────────────────────────────────────────────────────┐[39m
+ [38;5;246m 2.[39m Versioned endpoint           [38;5;246m│ [39musers.map((u) => ({[38;5;246m                                           │[39m
+ [38;5;246m 3.[39m Rename in place anyway       [38;5;246m│ [39m  userId: u.id,   // deprecated: remove after clients migrate[38;5;246m │[39m
+                                  [38;5;246m│ [39m  user_id: u.id,[38;5;246m                                              │[39m
+                                  [38;5;246m│ [39m  name: u.name,[38;5;246m                                               │[39m
+                                  [38;5;246m│ [39m  email: u.email,[38;5;246m                                             │[39m
+                                  [38;5;246m│ [39m}))[38;5;246m                                                           │[39m
+                                  [38;5;246m└───────────────────────────────────────────────────────────────┘[39m
+
+                                  [38;5;153mNotes:[39m [3m[38;5;246mpress n to add notes[0m
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel[39m

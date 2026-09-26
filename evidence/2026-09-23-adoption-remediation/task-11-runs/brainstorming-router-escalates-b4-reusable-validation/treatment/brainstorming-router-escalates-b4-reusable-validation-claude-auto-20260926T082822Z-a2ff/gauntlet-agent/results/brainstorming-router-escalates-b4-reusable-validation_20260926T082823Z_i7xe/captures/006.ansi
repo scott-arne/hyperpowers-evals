@@ -1,0 +1,40 @@
+  First question — and it changes the shape of everything downstream:
+
+  [1mThe fork:[0m how much of "validation" becomes reusable. Right now [38;5;153mvalidateForm[39m does rule-checking, and the submit
+  listener separately does field-reading and error-reporting ([38;5;153mconsole.error[39m). A shared module can take one, two, or all
+  three of those.
+
+  - [1mRules only[0m — a library of predicates ([38;5;153mrequired[39m, [38;5;153mminLength[39m, [38;5;153memail[39m) plus a [38;5;153mvalidate(values, schema)[39m. Cheapest, no DOM
+    opinions, each form keeps its own wiring. Costs: every new form re-writes the same read-fields-and-show-errors
+    boilerplate.
+  - [1mRules + field reading[0m — the above, plus something that pulls values out of a [38;5;153m<form>[39m element for you. Middle ground;
+    ties the module to the DOM but not to any error-display style.
+  - [1mRules + wiring + error display[0m — a [38;5;153mattachValidation(formEl, schema)[39m that owns submit interception, validation, and
+    rendering messages into the page. Most reuse per new form, but it fixes an error-display convention now, and that's
+    the expensive one to change later since it touches markup in every form.
+
+  Cheap to change later: adding rules, renaming them. Expensive: the error-display contract and whether the module
+  touches the DOM at all.
+
+  [1mMy recommendation: rules + field reading.[0m The real repetition across forms is the rule-checking and the
+  get-values-from-inputs loop; error display tends to differ per form (inline vs. banner vs. toast), and the current
+  code doesn't display errors at all — it logs. Committing to a display convention before you have a second form is the
+  guess most likely to be wrong.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[1m[38;5;231mHow much should the shared validation module own?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mRules + field reading (Recommended)[39m
+     [38;5;246mRule library + validate(values, schema) + a helper that reads values from a <form> element. Each form still decides
+[39m     [38;5;246mhow to show errors.[39m
+  [38;5;246m2.[39m Rules only
+     [38;5;246mPure predicates and validate(values, schema). No DOM knowledge at all; every form writes its own read-and-display [39m
+     [38;5;246mwiring.[39m
+  [38;5;246m3.[39m Rules + wiring + display
+     [38;5;246mattachValidation(formEl, schema) owns submit interception, validation, and rendering error messages into the page.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

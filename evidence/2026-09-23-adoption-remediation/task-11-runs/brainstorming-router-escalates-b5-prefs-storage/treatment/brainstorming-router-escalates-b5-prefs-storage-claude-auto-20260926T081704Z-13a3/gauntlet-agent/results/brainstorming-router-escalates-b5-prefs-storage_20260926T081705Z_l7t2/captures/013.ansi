@@ -1,0 +1,40 @@
+  with custom type tagging — which is exactly the kind of machinery that becomes load-bearing and then wrong.
+
+  Two values get special handling on write:
+  - [38;5;153mset(key, undefined)[39m (also a function or a symbol) — [38;5;153mJSON.stringify[39m yields no string at all for these. Rather than
+    write the literal text [38;5;153m"undefined"[39m and hand it back as a string forever, this is treated as [38;5;153mremove(key)[39m and returns
+    [38;5;153mtrue[39m. Deleting a preference by setting it to [38;5;153mundefined[39m is the behavior people expect.
+  - A cyclic object, or a [38;5;153mBigInt[39m — [38;5;153mJSON.stringify[39m throws. [38;5;153mset[39m catches it, writes nothing, and returns [38;5;153mfalse[39m. A bad value
+    from one caller never corrupts the store or escapes as an exception into a click handler.
+
+  [1mCorrupt reads.[0m If [38;5;153mJSON.parse[39m throws — hand-edited storage, a write truncated by a crash — [38;5;153mget[39m returns the fallback. It
+  does [1mnot[0m delete the bad entry. A read that silently destroys data is a worse surprise than a read that returns a
+  default, and keeping the value means it's still there to inspect when someone asks why a setting reset.
+
+  [1mWhen [38;5;153mlocalStorage[39m isn't available.[0m Two distinct failures, both real:
+  - [3mUnavailable at startup[0m — Safari private browsing, blocked site data, [38;5;153mfile://[39m sandboxing. The factory probes once by
+    writing and removing a namespaced probe key inside a [38;5;153mtry[39m. If that throws, or [38;5;153mstorage[39m is missing entirely, the
+    instance routes everything to an in-memory [38;5;153mMap[39m and sets [38;5;153misPersistent = false[39m. The app works; settings just don't
+    survive the tab.
+  - [3mFailing later[0m — quota exhaustion hits on a specific [38;5;153mset[39m, long after a successful probe. That [38;5;153mset[39m catches the throw,
+    keeps the value in an in-memory overlay, and returns [38;5;153mfalse[39m. [38;5;153mget[39m checks the overlay before [38;5;153mlocalStorage[39m, so a failed
+    durable write is never shadowed by a stale persisted value underneath it, and [38;5;153mremove[39m clears both.
+
+  So [38;5;153mset[39m's boolean return is meaningful in both cases, and [38;5;153misPersistent[39m tells a caller up front whether to bother
+  showing a "settings won't be saved" notice.
+
+  [1mOn the security boundary.[0m I want to be precise rather than reassuring: [38;5;153mlocalStorage[39m is readable by any script running
+  on the page and by anyone with access to the machine. It is not a secret store, and no design here changes that. The
+  protection is that the login form stays unwired from this module and no username, password, token, or "remember me"
+  flag goes through it. I'm not adding key-name filtering to block credentials — a blocklist of names like [38;5;153mpassword[39m
+  would catch nothing a real mistake would use, and would mostly serve to make the store [3mfeel[0m safe. The contract gets
+  stated in the module's header comment instead.
+
+  Does the storage and failure design look right before I cover integration and testing?
+
+[38;5;246m✻[39m [38;5;246mCogitated for 35s · done 1:24 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

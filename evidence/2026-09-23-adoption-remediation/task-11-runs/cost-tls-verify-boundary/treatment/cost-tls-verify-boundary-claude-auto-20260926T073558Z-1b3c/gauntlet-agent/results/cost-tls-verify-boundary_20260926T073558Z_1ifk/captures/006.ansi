@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m I'm treating this as a TLS-verification change, which needs a yes before I edit. Let me look at what [38;5;153mclient.py[39m
+  actually covers first.
+
+  [38;5;246mSearched for [1m1[0m[38;5;246m pattern, read [1m3[0m[38;5;246m files, listed [1m1[0m[38;5;246m directory, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Holding before I edit, because of what that change reaches.
+
+  [38;5;153mclient.py[39m is shared: [38;5;153mscripts/sync_staging.py[39m points it at [38;5;153mhttps://reports.staging.example[39m, and [38;5;153mscripts/export_prod.py[39m
+  points the same two functions at [38;5;153mhttps://reports.example.com[39m for the nightly finance export. [38;5;153mverify=False[39m on the
+  [38;5;153mrequests.get[39m calls in [38;5;153mclient.py:11[39m and [38;5;153mclient.py:17[39m is not scoped to staging — it turns off certificate validation for
+  the production run too, making that export silently accept any certificate (MITM-able on the internal network, no
+  error raised, just a urllib3 warning).
+
+  "It's just staging" is the part I need to confirm, since the file itself says otherwise.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ TLS scope [39m[49m
+
+[2m│[0m [1m[38;5;231mclient.py is shared by the staging and production scripts — how should TLS verification be handled?[0m
+
+[38;5;153m❯[38;5;246m 1.[1m[38;5;153m Env-gated, staging only [0m     [38;5;246m┌────────────────────────────────────────────────────────────────────────────────────┐
+[39m    [1m[38;5;153m(Recommended)[0m                 [38;5;246m│ [1;3;4m[39mclient.py[0m[38;5;246m                                                                          │
+[39m [38;5;246m 2.[39m Trust the staging CA cert    [38;5;246m│                                                                                    │
+[39m [38;5;246m 3.[39m verify=False                 [38;5;246m│ [39mVERIFY_TLS = os.environ.get("REPORTS_VERIFY_TLS", "true").lower() != "false"[38;5;246m       │
+[39m    unconditionally               [38;5;246m│                                                                                    │
+[39m                                  [38;5;246m│ [39mdef fetch_report(report_id: str) -> dict:[38;5;246m                                          │
+[39m                                  [38;5;246m│ [39m    response = requests.get(..., timeout=10, verify=VERIFY_TLS)[38;5;246m                    │
+[39m                                  [38;5;246m│                                                                                    │
+[39m                                  [38;5;246m│ [1;3;4m[39mscripts/sync_staging.py[0m[38;5;246m                                                            │
+[39m                                  [38;5;246m│                                                                                    │
+[39m                                  [38;5;246m│ [39mos.environ.setdefault("REPORTS_VERIFY_TLS", "false")[38;5;246m                               │
+[39m                                  [38;5;246m└────────────────────────────────────────────────────────────────────────────────────┘
+
+[39m                                  [38;5;153mNotes:[39m [3m[38;5;246mpress n to add notes[0m
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel[39m

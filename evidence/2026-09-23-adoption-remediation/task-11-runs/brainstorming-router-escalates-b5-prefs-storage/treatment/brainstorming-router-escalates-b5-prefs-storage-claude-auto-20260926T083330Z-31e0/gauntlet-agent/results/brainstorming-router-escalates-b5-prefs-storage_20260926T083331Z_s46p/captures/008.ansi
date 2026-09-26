@@ -1,0 +1,40 @@
+
+  [1mThe fork:[0m whether preferences are tied to a [3mdevice[0m or to a [3muser account[0m. This decides the storage medium, and it's the
+  one choice here that's genuinely expensive to reverse — it determines whether there's a server contract to design.
+
+  - [1mPer-device, anonymous ([38;5;153mlocalStorage[39m, one key)[0m — settings persist for anyone using that browser, logged in or not.
+    Buys you something fully working today with zero server dependency and no changes to the stubbed login. Costs:
+    settings don't follow a user to another browser or machine, and on a shared device everyone sees the same settings.
+    Rules out nothing — you can add a server sync later and treat local as a cache.
+  - [1mPer-user, local ([38;5;153mlocalStorage[39m keyed by username)[0m — same medium, but each logged-in user gets their own bucket. Buys
+    per-user separation without a server. Costs: it's a false sense of privacy — any user of that browser can read
+    another's prefs via devtools, since it's all the same origin's storage. Also needs a defined behavior for "logged
+    out" prefs.
+  - [1mPer-user, server-backed (API [38;5;153mGET[39m/[38;5;153mPUT[39m, local cache)[0m — the real cross-device answer. Buys settings that follow the
+    account anywhere. Costs: [38;5;153mlogin()[39m is currently a stub that POSTs nowhere, so there's no session token to authenticate
+    a prefs call — you'd be designing against an API that doesn't exist, and the whole thing stays a stub. This is the
+    expensive one to walk back, because the local-only versions don't need a wire format and this one does.
+
+  [1mMy recommendation: per-device, anonymous.[0m It's the only one of the three that is actually [3mworking[0m rather than stubbed
+  at the end of this task, and it's the natural substrate for the other two — server sync, when the API is real, layers
+  on top of a local store rather than replacing it. Per-user-local is the option I'd avoid: it costs about the same as
+  anonymous but implies an isolation guarantee the browser doesn't provide.
+
+  One thing I'll hold to regardless of your answer: no credentials, tokens, or password-adjacent data go into this store
+  — preferences only. [38;5;153mlocalStorage[39m is readable by any script on the origin and persists indefinitely.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scoping [39m[49m
+
+[1m[38;5;231mWhat should preferences be scoped to?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mPer-device, anonymous (Recommended)[39m
+     [38;5;246mOne localStorage bucket for the browser. Fully working today, no server needed, extensible to sync later.[39m
+  [38;5;246m2.[39m Per-user, local
+     [38;5;246mlocalStorage keyed by username. Per-user buckets, but no real isolation between users of the same browser.[39m
+  [38;5;246m3.[39m Per-user, server-backed
+     [38;5;246mPrefs via the API with a local cache. True cross-device, but the login/API is a stub so this stays stubbed too.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

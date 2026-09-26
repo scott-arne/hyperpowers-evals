@@ -1,0 +1,40 @@
+
+  [1mNext fork: how much the logger captures on its own.[0m The gap between "we have logging" and "we can actually debug
+  production" is usually whether the unreported crashes get captured, not whether developers remembered to call
+  [38;5;153mlog.info[39m.
+
+  - [1mExplicit calls only[0m — a [38;5;153mlog.debug/info/warn/error[39m API, used where someone writes a call. Lowest volume, zero
+    surprise, and you only ever see what a developer anticipated. An uncaught [38;5;153mTypeError[39m in the submit handler produces
+    nothing.
+  - [1mExplicit + global error handlers[0m — the above, plus [38;5;153mwindow.onerror[39m and [38;5;153munhandledrejection[39m in the browser and
+    [38;5;153muncaughtException[39m/[38;5;153munhandledRejection[39m in Node. This is what catches the failures nobody predicted, which is the
+    actual production-debugging case. Small, well-bounded addition.
+  - [1mExplicit + global handlers + auto-instrumentation[0m — also wraps [38;5;153mfetch[39m/XHR and keeps a breadcrumb trail of recent
+    events leading up to an error. Best forensics, but it multiplies log volume, raises vendor cost, and re-opens the
+    privacy question since request bodies pass through the wrapper — this login form would POST a password through
+    exactly that path.
+
+  Cheap to add later: auto-instrumentation and breadcrumbs, once you know what you're missing. Not cheap: discovering
+  months of crashes were never recorded because nothing was listening.
+
+  My recommendation is explicit plus global handlers. It closes the unknown-unknowns gap, which is the whole point of
+  the request, and it stops short of the fetch wrapper that would put credentials back in the logger's path right after
+  we designed them out.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Capture [39m[49m
+
+[1m[38;5;231mHow much should the logger capture automatically?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mExplicit + global handlers (Recommended)[39m
+     [38;5;246mLogger API plus window.onerror/unhandledrejection (browser) and uncaughtException/unhandledRejection (Node). [39m
+     [38;5;246mCatches unanticipated crashes.[39m
+  [38;5;246m2.[39m Explicit calls only
+     [38;5;246mJust the log.debug/info/warn/error API. Lowest volume and zero surprise, but uncaught errors produce no record.[39m
+  [38;5;246m3.[39m Add auto-instrumentation
+     [38;5;246mAlso wrap fetch/XHR and keep breadcrumbs before each error. Best forensics; higher volume, higher cost, and puts [39m
+     [38;5;246mrequest bodies back in the logger's path.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  - [1mBuild-time injection[0m (a build step substitutes the value) — buys the standard answer for real apps and keeps
+    secrets/URLs out of source. Costs: introduces a toolchain this project doesn't have. Expensive to undo.
+
+  [1mMy recommendation: runtime detection.[0m It's the only one that works with the current zero-build, open-[38;5;153mindex.html[39m setup
+  without inventing deployment machinery, and the endpoint is a public API URL, so exposing the staging/prod hosts isn't
+  a real leak. Build-time injection is the right call later, if this ever grows a bundler — not now.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should the settings module decide which environment's API endpoint to use? → Runtime hostname detection [39m
+     [38;5;246m(Recommended)[39m
+
+[38;5;231m⏺[39m [1mSecond fork:[0m how [38;5;153mapp.js[39m gets at the settings, given there's no bundler and [38;5;153mindex.html[39m uses a plain [38;5;153m<script>[39m tag.
+
+  - [1mGlobal via a second script tag[0m — [38;5;153msettings.js[39m loads before [38;5;153mapp.js[39m and sets [38;5;153mwindow.APP_SETTINGS[39m. Works exactly like
+    the current setup, still opens straight from the filesystem by double-clicking [38;5;153mindex.html[39m. Costs: a global, and load
+    order in [38;5;153mindex.html[39m becomes load-bearing. Cheap to change later.
+  - [1mES modules[0m — [38;5;153msettings.js[39m does [38;5;153mexport const[39m, [38;5;153mapp.js[39m does [38;5;153mimport[39m, and [38;5;153mindex.html[39m switches to [38;5;153m<script type="module">[39m.
+    Real module boundary, no globals, and it's where the project would want to end up. Costs: [38;5;153mtype="module"[39m files are
+    fetched under CORS rules, so [38;5;153mfile://[39m stops working — you'd need a local server ([38;5;153mnpx serve[39m or similar) to open the
+    page at all. That's the part that isn't cheap to undo if someone's workflow is "double-click the HTML".
+
+  [1mMy recommendation: ES modules[0m, unless opening [38;5;153mindex.html[39m directly matters to you. It gives a genuine module with no
+  global, and the settings module is the natural moment to make that switch while there are only two files to convert.
+  If the file-open workflow matters, the global is the honest choice and costs almost nothing here.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module fmt [39m[49m
+
+[1m[38;5;231mHow should app.js import the settings module?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mexport/import with <script type="module">. Clean boundary, no globals. Requires serving the page over http instead
+[39m     [38;5;246mof opening the file directly.[39m
+  [38;5;246m2.[39m Global via script tag
+     [38;5;246msettings.js sets window.APP_SETTINGS, loaded before app.js. Keeps the current double-click-index.html workflow [39m
+     [38;5;246mworking; relies on a global and on script order.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+  [38;5;153mrelease[39m is the one field I'm adding that you didn't ask for, and I'd defend it: without it, "this started breaking on
+  Tuesday" is unanswerable, and it's free since [38;5;153mpackage.json[39m already has a version.
+
+  [1mLevels.[0m Four, with a configurable threshold: [38;5;153mdebug < info < warn < error[39m. Browser defaults to [38;5;153mwarn[39m in production and
+  [38;5;153mdebug[39m in development; Node reads [38;5;153mLOG_LEVEL[39m from the environment with an [38;5;153minfo[39m default. The reason browser defaults
+  higher is cost — every browser record is a network call to a metered vendor, while Node records are free lines on
+  stdout. Dropping happens before the record is built, so a suppressed [38;5;153mdebug[39m costs nothing but a comparison.
+
+  [1mRedaction, the part that needs to be right.[0m Two stages, in order, and neither is skippable:
+
+  1. [1mAllowlist over [38;5;153mfields[39m.[0m A configured [38;5;153mSet[39m of permitted key names; anything not in it is dropped, not redacted — it
+     never enters the record. Nested objects are walked with the same rule. Starting allowlist is deliberately small:
+     [38;5;153mevent[39m, [38;5;153mdurationMs[39m, [38;5;153mstatusCode[39m, [38;5;153mroute[39m, [38;5;153merrorCode[39m, [38;5;153mattemptCount[39m. Note [38;5;153musername[39m is [3mnot[0m on it.
+  2. [1mScrubber over free text[0m — [38;5;153mmessage[39m and [38;5;153merr.message[39m/[38;5;153merr.stack[39m. Pattern-based replacement with [38;5;153m[REDACTED][39m for things
+     that look like secrets: [38;5;153mpassword=…[39m / [38;5;153mtoken=…[39m / [38;5;153mauthorization: …[39m key-value forms, bearer tokens, JWT-shaped strings,
+     and long high-entropy hex/base64 runs. This stage exists because a developer will eventually write
+     [38;5;153mlog.error("failed for " + password)[39m and the allowlist has no opinion about strings.
+
+  The scrubber is heuristic and will both miss things and occasionally over-redact. That's the honest tradeoff of stage
+  2, and it's why stage 1 is default-deny rather than relying on it.
+
+  [1mTwo changes to existing code that fall out of this.[0m [38;5;153mapp.js:5[39m currently does [38;5;153mconsole.log("Logging in:", username)[39m and
+  [38;5;153mapp.js:26[39m logs validation errors. Under the new design the first becomes [38;5;153mlog.info("login attempt", { event: [39m
+  [38;5;153m"login_submit" })[39m — the username is dropped, deliberately, since it's user-supplied PII bound for a vendor. If losing
+  the username makes a real debugging workflow impossible, tell me now, because the fix is [38;5;153msetUser()[39m with an opaque
+  post-login ID, not putting the username back in [38;5;153mfields[39m.
+
+  [1mFailure behavior.[0m The logger never throws into the app. A sink error, a network failure, a malformed record — all
+  swallowed, with at most a single [38;5;153mconsole.warn[39m per session so a broken logger doesn't itself become the outage. Logging
+  is diagnostic infrastructure; it must not be able to take down the login form.
+
+  Does Section 2 look right — especially the starting allowlist and dropping [38;5;153musername[39m?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 18s · done 1:20 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

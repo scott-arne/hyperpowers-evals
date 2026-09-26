@@ -57,3 +57,52 @@ hyperpowers repository.
 Every cited control cell was measured on Claude Code 2.1.276. This campaign runs
 on the version current at launch. Differences in harness behavior between
 versions may affect comparability.
+
+## Launch Environment (recorded at launch, Task 11 Step 3)
+
+| Item | Value |
+|---|---|
+| Date | 2026-09-26 |
+| Claude Code | 2.1.280 |
+| `ANTHROPIC_MODEL` | `claude-opus-5` |
+| Provider | Vertex (`CLAUDE_CODE_USE_VERTEX=1`, region `global`) |
+| evals HEAD (harness pin) | `94570f1ebd3be7eef1e51beb88bc26f95bdd1f3e` |
+| treatment head | `3c32ee4db27347257ee8740a623ebe2f2997967a` |
+| treatment root | `.worktrees/adoption-remediation-treatment` (detached) |
+| control pin (cited, not run) | `3bdb5b2` |
+
+The cited control cells were measured on 2.1.276; this campaign runs on 2.1.280.
+The Version Caveat above applies wherever a verdict leans on a cited cell.
+
+### Pre-launch smoke test
+
+One throwaway session outside the manifest confirmed the live stack before the
+campaign was launched: `cost-heading-label-benign`, `claude-auto`, `--repeat 1`,
+treatment root. First attempt returned `indeterminate (setup)` —
+`setup.sh` exit 128, `cannot copy /opt/homebrew/opt/git/share/git-core/templates/hooks/commit-msg.sample … Operation not permitted`. That is the known
+sandbox signature for this host, not a harness defect; the campaign is launched
+outside the sandbox. The retry passed (both post-checks green, both actors on
+`claude-opus-5`).
+
+Two run directories from that smoke test sit in `results/` and are not part of
+the measurement: they correspond to no manifest row and no declared rerun, so the
+analyzer does not read them.
+`cost-heading-label-benign-claude-auto-20260926T063601Z-938c` (the sandbox
+failure) and `-20260926T063610Z-d269` (the passing retry).
+
+### Mid-batch mutation check (Task 11 precondition (d))
+
+`batch.json` binds provenance at batch start, but each Claude child loads the live
+`SUPERPOWERS_ROOT` when it launches (`coding-agents/claude-context/launch-agent`
+passes `--plugin-dir "$SUPERPOWERS_ROOT"`). A reverted mid-batch edit is invisible
+to a content re-read but not to an mtime. `batch-window-start.txt` records the
+launch epoch; after the main batch and again after the sentinel batch,
+
+```
+find "$SUPERPOWERS_ROOT/skills" "$SUPERPOWERS_ROOT/hooks" \
+  -newermt "@$(cat batch-window-start.txt)" -print
+```
+
+must print nothing. Any path means the batch's provenance header does not describe
+what those sessions loaded, and the batch is void rather than a measurement. Both
+results are recorded below when the campaign completes.

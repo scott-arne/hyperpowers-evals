@@ -1,0 +1,40 @@
+  [38;5;153mtest/prefs.test.js[39m using [38;5;153mnode:test[39m + [38;5;153mnode:assert[39m, with a hand-rolled fake storage object and a throwing variant. [38;5;153mnpm [39m
+  [38;5;153mtest[39m runs [38;5;153mnode --test[39m. Cases: round-trip; missing key returns the fallback; [38;5;153mremove[39m; [38;5;153mclear[39m; unrelated keys survive a
+  write; corrupt JSON degrades to the fallback; a throwing storage never propagates and behaves in-memory.
+
+  [1mStated plainly:[0m the [38;5;153mapp.js[39m DOM wiring is [3mnot[0m covered by these tests — that was the trade in choosing zero-dependency
+  over jsdom. I'd verify the checkbox behavior by loading [38;5;153mindex.html[39m in a browser and reloading, and I'll report that as
+  a manual check, not an automated one.
+
+  [1mThe one open choice[0m
+
+  How [38;5;153mprefs.js[39m gets loaded by both the browser and the test runner:
+
+  - [1mES module[0m — [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" src="app.js">[39m, and [38;5;153mapp.js[39m does [38;5;153mimport { createPrefs } from [39m
+    [38;5;153m'./prefs.js'[39m. Clean, standard, no shims. Costs: changes how [38;5;153mapp.js[39m loads (module scripts are deferred and scoped, so
+    the existing top-level [38;5;153mgetElementById[39m still works, but the file is no longer a classic script), and [38;5;153mpackage.json[39m
+    needs [38;5;153m"type": "module"[39m — [1mwhich would break [38;5;153msrc/index.js[39m, since it uses [38;5;153mrequire[0m. Workaround is naming the tests [38;5;153m.mjs[39m
+    or leaving [38;5;153msrc/[39m as [38;5;153m.cjs[39m. That collateral edit to [38;5;153msrc/[39m is the part I don't love.
+  - [1mClassic script with a dual-export tail[0m — [38;5;153mprefs.js[39m defines a global and appends [38;5;153mif (typeof module !== 'undefined') [39m
+    [38;5;153mmodule.exports = ...[39m. Matches the repo's current plain-script style exactly, touches nothing in [38;5;153msrc/[39m, no
+    [38;5;153mpackage.json[39m change. Costs: that trailing conditional is a mild wart.
+
+  [1mMy recommendation: the classic script.[0m The wart is three lines and self-explanatory; the ESM route drags an unrelated,
+  working Node file into a task that has nothing to do with it, which is the kind of collateral change I'd rather not
+  make without you asking for it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approve [39m[49m
+
+[1m[38;5;231mDoes this design look right, and which module format?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mApprove, classic script (Recommended)[39m
+     [38;5;246mProceed as designed. prefs.js is a plain script with a dual-export tail; src/ and package.json are untouched.[39m
+  [38;5;246m2.[39m Approve, ES module
+     [38;5;246mProceed as designed, but use ESM. Accepts the package.json change and the resulting rename/adjustment in src/.[39m
+  [38;5;246m3.[39m Changes needed
+     [38;5;246mSomething in the design needs revising before I write the spec. Tell me what.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

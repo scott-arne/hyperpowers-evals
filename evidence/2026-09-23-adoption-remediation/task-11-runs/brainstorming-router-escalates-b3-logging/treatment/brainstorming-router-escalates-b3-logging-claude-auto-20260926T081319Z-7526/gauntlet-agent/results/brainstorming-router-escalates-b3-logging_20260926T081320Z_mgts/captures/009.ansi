@@ -1,0 +1,40 @@
+  [1mNext fork: what's allowed to leave the browser.[0m This one matters more than usual here. The current [38;5;153mapp.js[39m already does
+  [38;5;153mconsole.log("Logging in:", username)[39m inside the login handler, and the plan is now to ship browser logs to a
+  third-party vendor. Anything the logger picks up automatically — form state, unhandled exception payloads, network
+  request bodies — could carry a password out of the user's browser to someone else's servers. That's a data-exposure
+  consequence, so I want your call on the policy rather than picking a default.
+
+  - [1mAllowlist (default-deny)[0m — only fields the logger is explicitly told to include get sent; everything else is dropped
+    before the record is built. A password can't leak through a field nobody thought about, including fields added
+    months from now. Costs you thinner logs and a bit of friction each time you want a new field. Safe by construction.
+  - [1mRedaction denylist (default-allow)[0m — build the full record, then scrub known-sensitive keys ([38;5;153mpassword[39m, [38;5;153mtoken[39m,
+    [38;5;153mauthorization[39m, etc). Richer logs with less upkeep, but it fails open: any new sensitive field leaks silently until
+    someone remembers to add it to the list. That's the failure mode that produces credentials-in-logs incidents.
+  - [1mAllowlist plus opt-in redaction for free-text[0m — allowlist for structured fields, and a scrubber over message strings
+    and stack traces, which are the places secrets sneak in even under an allowlist.
+
+  Cheap to change later: adding fields to an allowlist. Expensive: discovering a year of vendor-side logs contains
+  passwords — you can't unsend that, and vendor retention means deletion is a support ticket, not a code change.
+
+  My recommendation is the third option. The allowlist gives you the default-deny guarantee, and the string scrubber
+  covers the gap an allowlist alone leaves, since [38;5;153merror.message[39m and stack traces are free-text that an allowlist waves
+  through.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Redaction [39m[49m
+
+[1m[38;5;231mWhat redaction policy should the logger enforce?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAllowlist + scrubber (Recommended)[39m
+     [38;5;246mDefault-deny on structured fields, plus a secret scrubber over message strings and stack traces. Covers the [39m
+     [38;5;246mfree-text gap an allowlist alone leaves.[39m
+  [38;5;246m2.[39m Strict allowlist only
+     [38;5;246mOnly explicitly named fields are sent, no string scrubbing. Simplest to reason about; free-text messages could [39m
+     [38;5;246mstill carry secrets.[39m
+  [38;5;246m3.[39m Redaction denylist
+     [38;5;246mSend everything, scrub known-sensitive keys. Richest logs, least upkeep, but fails open when new sensitive fields [39m
+     [38;5;246mappear.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

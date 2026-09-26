@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Section 3 of 3 — [1mintegration, tooling, and testing.[0m Two things here need your call rather than my judgment, so I'll
+  lay out the section and then ask.
+
+  [1mThe ESM decision has a consequence in [38;5;153mpackage.json[39m I want to surface.[0m For a Node test to [38;5;153mimport[39m [38;5;153mprefs.js[39m, Node has to
+  treat [38;5;153m.js[39m as ESM, which means [38;5;153m"type": "module"[39m at the root. But that flag is package-wide, and [38;5;153msrc/index.js[39m and
+  [38;5;153msrc/utils.js[39m use CommonJS [38;5;153mrequire[39m — the flag would break that program. The fix is one line: add a nested
+  [38;5;153msrc/package.json[39m containing [38;5;153m{"type": "commonjs"}[39m, which pins the existing Node code to its current semantics and
+  leaves both files untouched. Root goes ESM, [38;5;153msrc/[39m stays as it is. I flag it because "add a preferences module" quietly
+  turning into "edit the unrelated Node program" is exactly the kind of collateral damage worth refusing.
+
+  [1m[38;5;153mindex.html[39m changes[0m from [38;5;153m<script src="app.js">[39m to [38;5;153m<script type="module" src="app.js">[39m. Real consequence, worth
+  repeating: after this, opening [38;5;153mindex.html[39m by double-clicking it stops working — module scripts need an [38;5;153mhttp://[39m origin.
+  You'd run [38;5;153mpython3 -m http.server[39m in the repo and open [38;5;153mlocalhost:8000[39m.
+
+  [1mTesting.[0m Node's built-in runner ([38;5;153mnode --test[39m, Node 18+) fits this repo's zero-dependency posture — no packages, no
+  config, one [38;5;153m"test": "node --test"[39m script. Tests inject a fake storage object into [38;5;153mcreatePreferences[39m, so they cover the
+  round trip, the JSON edge cases ([38;5;153mundefined[39m, cycles, [38;5;153mNaN[39m), corrupt-data reads, the unavailable-at-startup fallback,
+  and the mid-session quota failure with its overlay — all without a browser. I'd skip linters, e2e, and fuzzing here;
+  adding ESLint and Prettier means the first dependencies in a four-file project, and that's your call to make later,
+  not something to slip into this change.
+
+  The open question is how far the wiring goes. Right now the app has no settings at all, so a storage module on its own
+  has no consumer — it'd be tested but never exercised by the actual page, and you couldn't verify "persists across
+  sessions" by reloading.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How far should the integration go? → Module + one demo preference (Recommended)[39m
+     [38;5;246m· Confirm the testing setup? → node --test, no dependencies (Recommended)[39m
+
+[38;5;231m⏺[39m Design approved on all three sections. Writing the spec now.
+
+[38;5;174m✽[39m [38;5;174mC[38;5;216mara[38;5;174mmelizing… [38;5;246m(1m 42s · ↓[39m [38;5;246m6.5k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

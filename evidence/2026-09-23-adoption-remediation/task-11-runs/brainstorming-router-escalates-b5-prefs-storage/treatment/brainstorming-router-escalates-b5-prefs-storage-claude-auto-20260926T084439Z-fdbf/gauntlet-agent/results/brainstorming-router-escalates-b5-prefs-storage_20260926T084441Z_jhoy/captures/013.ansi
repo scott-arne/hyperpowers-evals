@@ -1,0 +1,40 @@
+  submit, if the box is checked it writes [38;5;153mrememberUsername: true[39m and the username; if unchecked it writes [38;5;153mfalse[39m and
+  clears [38;5;153mlastUsername[39m — so unticking actively erases the stored value rather than leaving it orphaned.
+
+  The password is never written, and [38;5;153mDEFAULTS[39m has no key it could go in. Worth stating plainly: localStorage is readable
+  by any script on the page and by every tab on this origin, and it persists on shared machines. A username is
+  acceptable to store that way; a password is not. Opt-in and default-off is the rest of that answer.
+
+  [1mFailure handling.[0m [38;5;153mget[39m and [38;5;153mset[39m never throw for storage reasons — a browser that won't persist should degrade to a
+  working app with forgetful settings, not a broken page:
+
+  - localStorage unavailable (private mode, disabled, [38;5;153mSecurityError[39m on access) — fall back to an in-memory object for
+    the page's lifetime; [38;5;153mset[39m returns [38;5;153mfalse[39m.
+  - Unparseable JSON — discard, use defaults, overwrite on the next write.
+  - Stored [38;5;153mversion[39m not [38;5;153m1[39m — discard to defaults. With one shipped version there's nothing to migrate; a real migration
+    path is cheaper to add when there's a v2 to migrate from.
+  - Quota exceeded — keep the in-memory value, return [38;5;153mfalse[39m.
+  - A stored value whose type doesn't match its default — ignore that field, use the default.
+
+  The type-error cases (unknown name, wrong type passed to [38;5;153mset[39m) still throw. Those are programmer errors, not
+  environment conditions.
+
+  [1mTests.[0m Node's built-in runner — [38;5;153mnode --test[39m with [38;5;153mnode:test[39m and [38;5;153mnode:assert[39m, wired as [38;5;153mnpm test[39m in [38;5;153mpackage.json[39m. Zero
+  dependencies, which keeps the repo's current dependency-free state. Tests live in [38;5;153mtest/prefs.test.js[39m and inject a fake
+  [38;5;153mlocalStorage[39m, so each case controls the store exactly.
+
+  Coverage: defaults on an empty store; set/get round-trip; a value surviving a fresh module load against the same store
+  (the actual persistence claim); corrupt JSON falling back to defaults; a throwing/absent localStorage staying
+  in-memory without throwing; quota exceeded returning [38;5;153mfalse[39m; unknown name and wrong type throwing; version mismatch
+  resetting; and an assertion that no password-shaped key is ever written.
+
+  [1mFiles:[0m new [38;5;153mprefs.js[39m, new [38;5;153mtest/prefs.test.js[39m; modified [38;5;153mindex.html[39m, [38;5;153mapp.js[39m, [38;5;153mpackage.json[39m.
+
+  Does this look right? If so I'll write it up as a spec for you to review.
+
+[38;5;246m✻[39m [38;5;246mBaked for 14s · done 1:51 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

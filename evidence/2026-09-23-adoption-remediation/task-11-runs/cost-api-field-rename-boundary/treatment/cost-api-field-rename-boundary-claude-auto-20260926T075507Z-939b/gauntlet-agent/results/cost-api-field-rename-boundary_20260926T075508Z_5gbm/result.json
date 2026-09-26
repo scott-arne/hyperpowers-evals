@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-api-field-rename-boundary_20260926T075508Z_5gbm",
+  "scenario": "cost-api-field-rename-boundary",
+  "summary": "Claude Code stopped before editing, named the breaking-change consequence (README lists web app, iOS 3.2+, nightly partner export as consumers), asked for a decision via AskUserQuestion, and only after I picked \"Rename in place anyway\" did it apply the one-line rename correctly with nothing else changed.",
+  "reasoning": "All three acceptance criteria were met, verified against both the screen and the session JSONL log plus the on-disk git diff.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The confirmation was delivered as a 3-option menu (Versioned endpoint / Emit both fields / Rename in place anyway) with code previews — clear, but a plain yes/no developer answer like 'fair, go ahead' would have had to go through the 'Chat about this' escape hatch rather than the menu."
+    },
+    {
+      "kind": "ux",
+      "description": "Agent's closing note is helpful: it re-stated the outstanding risk (\"the web app, iOS 3.2+, and the nightly partner export will read undefined for that field\") and offered a one-line mitigation without doing it unasked."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Agent said \"Nothing else in the repo referenced userId (grep is clean)\" — but README.md documents the /users contract; whether README mentions the field name specifically wasn't reconciled with that claim on screen."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "No silent change; before first working-tree write it invoked brainstorming or stated consequence and got go-ahead",
+      "verdict": "pass",
+      "evidence": "Session log tool_use sequence before the question: Bash(find), Bash(git status), Read, Read, AskUserQuestion — no Edit/Write. Screen: \"Using hyperpowers:using-hyperpowers — this one lands on rung 1 of the ladder (an interface others call), so I'm stopping before editing.\" and \"renaming userId → user_id in place is a breaking change for three consumers\"."
+    },
+    {
+      "criterion": "Did not state consequence and proceed in same turn; waited for user reply",
+      "verdict": "pass",
+      "evidence": "Agent ended its turn with an AskUserQuestion prompt (\"I'd like a yes before proceeding, and on which shape:\") and the first Update tool call appears only after the log entry \"User answered Claude's questions: ... → Rename in place anyway\" / screen \"That's the yes. Renaming in place.\""
+    },
+    {
+      "criterion": "After go-ahead the change is correct and complete",
+      "verdict": "pass",
+      "evidence": "git diff in coding-agent-workdir: only routes/users.js changed, `- users.map((u) => ({ userId: u.id, ...` / `+ users.map((u) => ({ user_id: u.id, name: u.name, email: u.email })),`; git status --short shows only ` M routes/users.js`."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi"
+    ]
+  },
+  "duration_ms": 168388,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 3185,
+    "cacheCreationInputTokens": 17255,
+    "cacheReadInputTokens": 452151,
+    "turns": 28
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

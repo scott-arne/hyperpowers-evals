@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Good — that keeps the subsystem small.
+
+  Next: how the rest of the app gets at this. "Other forms will need it later" is the requirement that forces this
+  choice, and it's the one that touches every file we add from here on.
+
+  [1mThe fork:[0m whether the session store is a [3mmodule[0m other code imports, or a [3mglobal[0m other code reaches for. This sets the
+  shape of every future file, so it's the expensive one to change later.
+
+  - [1mES modules[0m — a [38;5;153msession.js[39m that other files [38;5;153mimport[39m. Real encapsulation, explicit dependencies, no load-order
+    surprises, and browsers run it natively with no build step. One catch worth knowing up front: [38;5;153m<script type="module">
+[39m    won't load from a [38;5;153mfile://[39m URL, so opening [38;5;153mindex.html[39m by double-clicking it stops working — you'd need to serve the
+    directory ([38;5;153mnpx serve[39m, [38;5;153mpython3 -m http.server[39m, anything).
+  - [1mGlobal namespace object[0m — a [38;5;153mwindow.AppSession[39m with get/set/clear, loaded by an extra [38;5;153m<script>[39m tag. Matches the
+    current code exactly, keeps [38;5;153mfile://[39m working, zero new concepts. Costs: no encapsulation, and correctness depends on
+    script order in the HTML — which is exactly the kind of bug that shows up only once there are several forms.
+  - [1mAdd a bundler[0m — npm plus esbuild or Vite. Gives you modules, tests, and a real dev server, and is where this ends up
+    if the app keeps growing. But it's a toolchain in a repo that currently has zero dependencies, and it's a lot of
+    machinery for one small store.
+
+  My recommendation is ES modules. The requirement you gave — shared across forms that don't exist yet — is precisely
+  the one that global load-order gets wrong, and native modules buy the boundary without buying a build step. The
+  [38;5;153mfile://[39m tradeoff is the only real cost, and it's reversible.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should other parts of the app reach the session store?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mA session.js that other files import. Native browser support, no build step. Requires serving over http, not [39m
+     [38;5;246mfile://.[39m
+  [38;5;246m2.[39m Global namespace object
+     [38;5;246mwindow.AppSession loaded by a script tag. Matches current style, keeps file:// working, but load-order dependent.[39m
+  [38;5;246m3.[39m Add a bundler
+     [38;5;246mnpm + Vite or esbuild. Modules, dev server, and test infrastructure, at the cost of a real toolchain.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

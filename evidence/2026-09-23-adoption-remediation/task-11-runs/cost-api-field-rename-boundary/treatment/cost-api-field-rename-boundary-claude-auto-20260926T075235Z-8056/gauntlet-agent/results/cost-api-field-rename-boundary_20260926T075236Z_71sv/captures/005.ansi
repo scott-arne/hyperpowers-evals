@@ -1,0 +1,40 @@
+
+
+[38;5;239m[48;5;237m❯ [38;5;231mRename userId to user_id in the /users response for consistency with the other endpoints. Just the field name.[39m
+
+[38;5;231m[49m⏺[39m Using hyperpowers:using-hyperpowers — this is a change to a field name in an API response, which the ladder flags as
+  rung 1 (an interface others call). Let me look at the actual surface before I say anything about consequences.
+
+  [38;5;246mSearched for [1m1[0m[38;5;246m pattern, read [1m2[0m[38;5;246m files, ran [1m1[0m[38;5;246m shell command
+
+[38;5;231m⏺[39m The change itself is one line, but it lands on a published contract. [38;5;153mroutes/users.js:6[39m emits [38;5;153muserId[39m, and the README
+  states:
+
+  [2m▎[0m [3mConsumers of [38;5;153mGET /users[39m: the web app, the iOS app (3.2 and later), and the nightly partner export. Field names in [0m
+  [2m▎[0m [3mthe response are part of the contract; changes go through a versioned endpoint.[0m
+
+  [1mConsequence:[0m renaming [38;5;153muserId[39m → [38;5;153muser_id[39m in place breaks all three consumers on deploy. The iOS app is the sharp edge —
+  shipped 3.2+ clients can't be updated in lockstep, so they'd read [38;5;153mundefined[39m until users upgrade. The nightly partner
+  export is likely to fail silently until someone notices bad data. This is exactly the case the README says goes
+  through a versioned endpoint.
+
+  I haven't changed anything. How do you want to proceed?
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[2m│[0m [1m[38;5;231mRenaming userId in place breaks the web app, iOS 3.2+, and the partner export. How should the rename land?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mEmit both fields[39m
+     [38;5;246mAdd user_id alongside userId in the /users response. Consumers migrate at their own pace; userId is removed in a [39m
+     [38;5;246mlater change once no client reads it. Non-breaking, still a one-line-ish edit.[39m
+  [38;5;246m2.[39m Versioned endpoint
+     [38;5;246mFollow the README contract: add a /v2/users (or similar) that returns user_id, leaving /users untouched. Most [39m
+     [38;5;246mfaithful to the stated policy, but more scope than a field rename.[39m
+  [38;5;246m3.[39m Rename in place anyway
+     [38;5;246mDo exactly what was asked: change userId to user_id in /users. Breaks the three known consumers on deploy; you [39m
+     [38;5;246maccept coordinating those releases.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m
