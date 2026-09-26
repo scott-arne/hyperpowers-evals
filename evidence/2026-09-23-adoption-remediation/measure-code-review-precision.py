@@ -19,11 +19,16 @@ Fail-closed contract. The script never infers a number it cannot derive:
   range. A regex that does not resolve, or resolves twice, fails the run.
 * ``states_trigger`` is a judgement, so it is read from an analyst-filled
   sidecar (``<run-id>-proof.tsv`` in this directory), never guessed. Without
-  the sidecar the row still carries the mechanical columns and ``-`` for
-  ``proof_complete``.
+  the sidecar, or with one this script cannot read, the row still carries the
+  mechanical columns and ``-`` for ``proof_complete``: neither ``recall`` nor
+  ``blocking_on_clean`` depends on the analyst's answers.
 * A Critical or Important finding that lands on neither a clean hunk nor a
   planted bug is counted in ``proof_total`` and named on stderr for the analyst
   to adjudicate; it never silently raises ``blocking_on_clean``.
+* A finding placed by a citation that could mean more than one region is
+  counted where the brief puts it -- the planted bug -- and named on stderr
+  too, because that is the one path that can raise ``recall`` with no other
+  corroborating signal.
 * Nothing is written into this evidence directory. ``--proof-template`` prints
   the sidecar skeleton to stdout for the analyst to redirect and fill in.
 
@@ -32,6 +37,11 @@ item: run id, a stable class token, the evidence. The tokens are
 
 ``unattributed``
     A Critical or Important finding matched no range and no owning identifier.
+``span-ambiguous``
+    A Critical or Important finding was placed by a citation covering more than
+    one range, or by one wider than the widest range there is, so which region
+    it asserts a defect in is this script's inference rather than the
+    reviewer's statement.
 ``grader-disagreement``
     The Gauntlet-Agent's verdict and this script's ``accepted`` differ, or the
     grader's verdict could not be read at all.
@@ -51,11 +61,13 @@ item: run id, a stable class token, the evidence. The tokens are
     against it.
 ``arm-unresolved``
     No ``--arm`` and not exactly one launch log in ``logs/`` naming this run.
+``run-dir-missing``
+    A path given on the command line is not a directory.
 
 Exit status is non-zero when any run could not be fully measured -- every token
-above except ``unattributed`` and ``grader-disagreement``, which are readings
-for the analyst rather than instrument failures. A run that fails emits no row;
-the other runs still do.
+above except ``unattributed``, ``span-ambiguous`` and ``grader-disagreement``,
+which are readings for the analyst rather than instrument failures. A run that
+fails emits no row; the other runs still do.
 
 Usage::
 
@@ -104,8 +116,10 @@ BLOCKING = ("Critical", "Important")
 SEVERITIES = ("Critical", "Important", "Minor")
 # The arm is not recorded in the run directory. analyze.py resolves it the same
 # way: the campaign's launch logs are named <arm>-<scenario>-<proc>.log and each
-# log's body records the run directories it produced.
-LOG_RE = re.compile(r"(control|treatment)-(.+)-([pr]\d+)\.log")
+# log's body records the run directories it produced. `--arm` is checked against
+# the same vocabulary, so a typo cannot reach the column Task 18 groups by.
+ARMS = ("control", "treatment")
+LOG_RE = re.compile(rf"({'|'.join(ARMS)})-(.+)-([pr]\d+)\.log")
 RUN_DIR_RE = re.compile(r"run-dir\s+(\S+)")
 SUBAGENT_GLOB = "home/.claude/projects/*/*/subagents/agent-*.jsonl"
 RESULT_GLOB = "gauntlet-agent/results/*/result.json"
@@ -157,32 +171,39 @@ BUG_KEYS = tuple(entry[0] for entry in BUGS)
 # another region would move a finding from one column to another, and an
 # unattributed finding is reported for adjudication rather than lost. `[\s\S]`
 # rather than `.` because a finding is a multi-line block.
+#
+# Case matters, so no pattern here carries `re.IGNORECASE`. The fixture's
+# identifiers are camelCase or SHOUTED (`withRetry`, `CLOCK`, `ORDER_ID`) and
+# folding case turns each of them into an ordinary English word a review of
+# this diff is likely to use: "the server clock", "the orders", "retry the
+# request". Only the alternatives that are prose rather than code are folded,
+# one at a time, with `(?i:...)`. Three alternatives were dropped outright for
+# naming two regions at once: `\bseeded\b` (any setup, not just `seed()`),
+# `\brethrow\b` (`withRetry` rethrows `lastErr` as well as the `catch` arm
+# `log_rethrow` is), and `\bconfig\.json\b` (the committed data file is part of
+# the diff but is not the `readFileSync` hunk).
 NAMES: dict[str, re.Pattern[str]] = {
     "offset_bug": re.compile(
         r"page\s*\*\s*size"
-        r"|off[\s-]?by[\s-]?one"
-        r"|\blistOrdersHandler\b[\s\S]{0,500}?(?:offset|paginat|1-based|one-based|first page)"
-        r"|(?:offset|paginat|1-based|one-based|first page)[\s\S]{0,500}?\blistOrdersHandler\b",
-        re.IGNORECASE,
+        r"|(?i:off[\s-]?by[\s-]?one)"
+        r"|\blistOrdersHandler\b[\s\S]{0,500}?(?i:offset|paginat|1-based|one-based|first page)"
+        r"|(?i:offset|paginat|1-based|one-based|first page)[\s\S]{0,500}?\blistOrdersHandler\b",
     ),
     "unawaited_save": re.compile(
-        r"\bsaveOrder\b[\s\S]{0,500}?(?:await|unhandled|floating|promise|201)"
-        r"|(?:await|unhandled|floating|promise|201)[\s\S]{0,500}?\bsaveOrder\b"
-        r"|\bcreateOrderHandler\b[\s\S]{0,500}?(?:await|unhandled|floating)",
-        re.IGNORECASE,
+        r"\bsaveOrder\b[\s\S]{0,500}?(?i:await|unhandled|floating|promise|201)"
+        r"|(?i:await|unhandled|floating|promise|201)[\s\S]{0,500}?\bsaveOrder\b"
+        r"|\bcreateOrderHandler\b[\s\S]{0,500}?(?i:await|unhandled|floating)",
     ),
     "with_retry": re.compile(r"\bwithRetry\b"),
     "parse_order_id": re.compile(r"\bparseOrderId\b|\bORDER_ID\b"),
-    "config_readfile": re.compile(r"\breadFileSync\b|\bconfig\.json\b|\bconfig\.js\b"),
+    "config_readfile": re.compile(r"\breadFileSync\b|\bconfig\.js\b"),
     "store_slice": re.compile(r"\borders\.slice\b|\blistOrders(?!Handler)\b"),
     "log_rethrow": re.compile(
-        r"\blog\.error\b|\bre-?throws?\b|\brethrow"
-        r"|\bcatch\b[\s\S]{0,300}?\blog\b|\blog\b[\s\S]{0,300}?\bcatch\b",
-        re.IGNORECASE,
+        r"\blog\.error\b|list failed|(?i:\blogs?[\s-]and[\s-]re-?throws?\b)",
     ),
     "test_fixture": re.compile(
-        r"\bCLOCK\b|Date\.UTC|\bseed\(\)|\bseeded\b|handlers\.test\.js|fixed clock",
-        re.IGNORECASE,
+        r"\bCLOCK\b|Date\.UTC|\bseed\(\)|handlers\.test\.js"
+        r"|(?i:\bfixed clock\b|\bhard-?coded (?:test )?fixture\b)",
     ),
 }
 # Excluded from blocking_on_clean wherever it lands, as in the prior arms: a
@@ -198,9 +219,13 @@ SEVERITY_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Minor", re.compile(r"\bminor\b|\bnice[- ]to[- ]have\b", re.IGNORECASE)),
 )
 # Every observed report numbers its findings and bolds the number. The bullet
-# form is a fallback for a section that numbers nothing.
+# form is a fallback for a section that numbers nothing, and it is anchored at
+# column 0: this scenario asks reviewers to state an input and an outcome, and
+# they write those as indented `- **Input:**` sub-bullets. A pattern that
+# tolerated leading spaces would cut one finding into three fragments, none of
+# which carries the whole finding's text.
 NUMBERED_RE = re.compile(r"^\s{0,3}(?:\*\*\s*\d+[.)]|\d+[.)]\s+\*\*)")
-BULLET_RE = re.compile(r"^\s{0,3}[-*+]\s+\*\*")
+BULLET_RE = re.compile(r"^[-*+]\s+\*\*")
 # A section that says it is empty, rather than one this script failed to read.
 EMPTY_SECTION_RE = re.compile(
     r"^[\s*_`\-]*(?:none|n/?a|nothing|no\s+\w+\s+(?:findings|issues))\b[\s*_`.!]*$",
@@ -224,6 +249,7 @@ FATAL = frozenset(
         "report-unparsed",
         "fixture-unresolved",
         "arm-unresolved",
+        "run-dir-missing",
     }
 )
 USAGE = (
@@ -256,6 +282,9 @@ class Finding:
     cites_line: bool
     test_coverage: bool
     attributions: tuple[str, ...]
+    # Why this finding's placement is an inference rather than the reviewer's
+    # statement, or "" when it is not. See :func:`span_ambiguity`.
+    ambiguity: str = ""
 
 
 @dataclass(frozen=True)
@@ -461,12 +490,18 @@ def assistant_texts(path: str) -> list[str]:
 
 
 def has_severity_section(text: str) -> bool:
-    """Whether a block of text carries a Critical, Important or Minor section heading."""
+    """Whether a block of text carries a Critical, Important or Minor section heading.
 
-    for line in text.split("\n"):
-        if severity_of(line) in SEVERITIES:
-            return True
-    return False
+    Fenced blocks do not count, and the cut is made by the same
+    :func:`split_sections` the parsers use, so the three agree. A transcript
+    that merely quotes ``#### Critical (Must Fix)`` inside a fence is not a
+    second report, and counting it as one would void the run.
+
+    :param text: One assistant text block of a subagent transcript.
+    :returns: Whether the block opens a severity section outside a fence.
+    """
+
+    return any(severity in SEVERITIES for severity, _ in split_sections(text))
 
 
 def report_text(run_dir: str) -> str:
@@ -589,18 +624,22 @@ def split_findings(severity: str, body: list[str]) -> list[str]:
     return []
 
 
-def cited_lines(text: str) -> set[tuple[str, int]]:
-    """Every (file basename, line) the finding cites in the diff under review.
+def cited_spans(text: str) -> list[tuple[str, int, int]]:
+    """Every (file basename, first line, last line) the finding cites in the diff.
+
+    One citation per entry rather than a flattened set of lines, because how
+    wide a citation is says how much of it the reviewer meant; see
+    :func:`span_ambiguity`.
 
     Citations qualified by a commit (``<sha>:src/db.js:10``, ``HEAD~1:...``)
     point at the baseline and are dropped: they cannot place a finding in a
     range of ``HEAD``.
 
     :param text: The finding's text.
-    :returns: The set of cited (basename, line number) pairs.
+    :returns: The cited ranges, in the order they appear.
     """
 
-    cited: set[tuple[str, int]] = set()
+    spans: list[tuple[str, int, int]] = []
     for match in FILE_LINE_RE.finditer(text):
         pre = match.group("pre") or ""
         if BASE_REF_RE.match(pre):
@@ -611,20 +650,42 @@ def cited_lines(text: str) -> set[tuple[str, int]]:
             first, last = ends[0], ends[-1]
             if last < first or last - first > 1000:
                 continue
-            for number in range(first, last + 1):
-                cited.add((base, number))
-    return cited
+            spans.append((base, first, last))
+    return spans
+
+
+def covered(span: Span, cited: list[tuple[str, int, int]]) -> bool:
+    """Whether any citation overlaps one resolved region.
+
+    :param span: The resolved region.
+    :param cited: The finding's citations, from :func:`cited_spans`.
+    :returns: Whether one of them touches the region.
+    """
+
+    return any(
+        base == span.base and first <= span.end and last >= span.start
+        for base, first, last in cited
+    )
 
 
 def attribute(text: str, ranges: dict[str, Span]) -> tuple[str, ...]:
     """The regions one finding asserts a defect in.
 
     A cited line places the finding; a finding whose citations land in no range
-    -- including one that cites nothing -- is placed by the owning identifiers
-    it names. A finding that reaches a planted bug is attributed to the bug
-    alone: reviewers cite the enclosing function or a span around the defect,
-    and reading that as a blocking finding against the correct code the span
-    also covers would invent a precision failure.
+    is placed by the owning identifiers of the *planted bugs* only, and one
+    that cites nothing at all by any region's identifiers. The asymmetry is the
+    brief's rule 4: "I cannot place this" resolves toward the analyst's queue,
+    not toward a silent `blocking_on_clean`. A reviewer who cites a line and
+    misses the range by a statement or two has still told this script where to
+    look, so a bug's name can still finish the job; a nit that names a clean
+    hunk while citing a line in none of them (a `config.json` line, an import
+    line) has not, and is reported for adjudication instead.
+
+    A finding that reaches a planted bug is attributed to the bug alone:
+    reviewers cite the enclosing function or a span around the defect, and
+    reading that as a blocking finding against the correct code the span also
+    covers would invent a precision failure. :func:`span_ambiguity` says when
+    that precedence was what decided the attribution.
 
     :param text: The finding's text.
     :param ranges: The resolved spans by key.
@@ -632,25 +693,58 @@ def attribute(text: str, ranges: dict[str, Span]) -> tuple[str, ...]:
         hunks in :data:`HUNKS` order, or empty when it lands nowhere.
     """
 
-    cited = cited_lines(text)
+    cited = cited_spans(text)
 
     def by_line(keys: Iterable[str]) -> tuple[str, ...]:
-        hit = []
-        for key in keys:
-            span = ranges[key]
-            if any(base == span.base and span.start <= n <= span.end for base, n in cited):
-                hit.append(key)
-        return tuple(hit)
+        return tuple(key for key in keys if covered(ranges[key], cited))
 
     for keys in (BUG_KEYS, HUNK_KEYS):
         found = by_line(keys)
         if found:
             return found
-    for keys in (BUG_KEYS, HUNK_KEYS):
+    for keys in (BUG_KEYS,) if cited else (BUG_KEYS, HUNK_KEYS):
         named = tuple(key for key in keys if NAMES[key].search(text))
         if named:
             return named
     return ()
+
+
+def span_ambiguity(text: str, ranges: dict[str, Span]) -> str:
+    """Why this finding's placement is an inference, or ``""`` when it is not.
+
+    Two shapes are ambiguous. A citation set that covers more than one region
+    is placed by :func:`attribute`'s bug-first precedence rather than by the
+    reviewer, and that is the one path that can raise ``recall`` with nothing
+    else corroborating it. A single citation wider than the widest region there
+    is cannot be a citation *of* a region -- it necessarily covers code outside
+    every one of them -- so reading it as one is a guess even when only one
+    region falls inside. The width is taken from the run's own resolved ranges
+    (the widest is ``with_retry``, 14 lines) rather than from a number written
+    here, so a fixture edit moves the threshold with it.
+
+    Both are readings for the analyst, not instrument failures: the count still
+    stands, and the stderr line says what it was read from.
+
+    :param text: The finding's text.
+    :param ranges: The resolved spans by key.
+    :returns: The evidence string for a ``span-ambiguous`` line, or ``""``.
+    """
+
+    cited = cited_spans(text)
+    if not cited:
+        return ""
+    hit = tuple(key for key in (*BUG_KEYS, *HUNK_KEYS) if covered(ranges[key], cited))
+    quoted = ", ".join(f"{base}:{first}-{last}" for base, first, last in cited)
+    if len(hit) > 1:
+        return f"cited {quoted} covers {', '.join(hit)}; counted as {hit[0]}"
+    widest = max(span.end - span.start + 1 for span in ranges.values())
+    for base, first, last in cited:
+        if last - first + 1 > widest and hit:
+            return (
+                f"cited {base}:{first}-{last} is wider than the widest region "
+                f"({widest} lines); counted as {hit[0]}"
+            )
+    return ""
 
 
 def parse_report(report: str, ranges: dict[str, Span] | None = None) -> list[Finding]:
@@ -678,6 +772,7 @@ def parse_report(report: str, ranges: dict[str, Span] | None = None) -> list[Fin
                     cites_line=bool(FILE_LINE_RE.search(text)),
                     test_coverage=bool(TEST_COVERAGE_RE.search(text)),
                     attributions=attribute(text, ranges) if ranges else (),
+                    ambiguity=span_ambiguity(text, ranges) if ranges else "",
                 )
             )
     return findings
@@ -686,8 +781,11 @@ def parse_report(report: str, ranges: dict[str, Span] | None = None) -> list[Fin
 def read_sidecar(path: str) -> dict[str, str]:
     """The analyst's `states_trigger` answers, keyed by finding.
 
+    ``states_trigger`` is read case-insensitively: ``Yes`` is the analyst
+    answering the question, not a malformed sidecar.
+
     :param path: Path to ``<run-id>-proof.tsv``.
-    :returns: ``states_trigger`` by finding key.
+    :returns: ``states_trigger`` by finding key, lowercased.
     :raises RunError: When the header, a key or a value is not what the
         template produced.
     """
@@ -715,7 +813,7 @@ def read_sidecar(path: str) -> dict[str, str]:
                     f"{os.path.basename(path)}: line {number} has {len(cells)} columns, "
                     f"expected {len(PROOF_COLUMNS)}",
                 )
-            key, value = cells[0], cells[3].strip()
+            key, value = cells[0], cells[3].strip().lower()
             if key in answers:
                 raise RunError(
                     "proof-sidecar-invalid", f"{os.path.basename(path)}: {key} listed twice"
@@ -743,6 +841,10 @@ def proof_counts(findings: list[Finding], sidecar: str) -> tuple[str, int, bool]
     """
 
     graded = [f for f in findings if f.severity in BLOCKING]
+    if not graded:
+        # A review that blocks on nothing asks the analyst nothing, so no
+        # sidecar is owed and its absence is not a failure to measure.
+        return "0", 0, True
     if not os.path.exists(sidecar):
         return UNKNOWN, len(graded), False
     answers = read_sidecar(sidecar)
@@ -792,6 +894,22 @@ def resolve_arm(evidence_dir: str, run_id: str) -> str:
     return naming[0][0]
 
 
+def check_arm(arm: str | None) -> str | None:
+    """The ``--arm`` override, refused here rather than written into the TSV.
+
+    The arm is what the analysis groups by, so ``--arm treatmnet`` would not
+    fail -- it would quietly produce a third arm of one run.
+
+    :param arm: The value given on the command line, or ``None``.
+    :returns: The same value.
+    :raises DesignError: When it is not one of :data:`ARMS`.
+    """
+
+    if arm is not None and arm not in ARMS:
+        raise DesignError(f"--arm {arm!r} is not one of {', '.join(ARMS)}")
+    return arm
+
+
 def read_grader(run_dir: str) -> tuple[str, str]:
     """The Gauntlet-Agent's own verdict and the evidence to quote beside it.
 
@@ -833,7 +951,7 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
 
     run_id = os.path.basename(os.path.abspath(run_dir).rstrip(os.sep))
     if not os.path.isdir(run_dir):
-        raise RunError("fixture-unresolved", f"{run_dir} is not a directory")
+        raise RunError("run-dir-missing", f"{run_dir} is not a directory")
     arm = arm_override or resolve_arm(evidence_dir, run_id)
     ranges = resolve_ranges(run_dir)
     findings = parse_report(report_text(run_dir), ranges)
@@ -847,9 +965,20 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
         if key in HUNK_KEYS
     }
     hit = tuple(key for key in HUNK_KEYS if key in blocked)
-    complete, total, present = proof_counts(
-        findings, os.path.join(evidence_dir, f"{run_id}-proof.tsv")
-    )
+    # An unreadable sidecar voids the analyst's column, not the mechanical
+    # ones: recall and blocking_on_clean are read from the report alone, and
+    # dropping them too would cost the campaign a trial over a typo. The exit
+    # status is still non-zero, as it is for a missing sidecar.
+    invalid: Note | None = None
+    try:
+        complete, total, present = proof_counts(
+            findings, os.path.join(evidence_dir, f"{run_id}-proof.tsv")
+        )
+    except RunError as error:
+        if error.kind != "proof-sidecar-invalid":
+            raise
+        complete, total, present = UNKNOWN, len(graded), True
+        invalid = Note(run_id, error.kind, error.evidence)
     accepted = "yes" if recall == 2 and not hit else "no"
     verdict, evidence = read_grader(run_dir)
     notes = [
@@ -857,6 +986,13 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
         for f in graded
         if not f.attributions
     ]
+    notes.extend(
+        Note(run_id, "span-ambiguous", f"{f.severity} finding {f.key}: {f.ambiguity}")
+        for f in graded
+        if f.ambiguity
+    )
+    if invalid:
+        notes.append(invalid)
     if not present:
         notes.append(
             Note(
@@ -866,7 +1002,10 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
                 f"(--proof-template {run_id} prints the skeleton)",
             )
         )
-    if (verdict == "pass") != (accepted == "yes"):
+    # An unreadable verdict is a disagreement the analyst has to settle by
+    # hand, the same as a contradicted one, so it gets the same line rather
+    # than passing silently whenever `accepted` happens to be `no`.
+    if verdict == UNKNOWN or (verdict == "pass") != (accepted == "yes"):
         notes.append(
             Note(
                 run_id,
@@ -1034,10 +1173,19 @@ STORE_FINDING = """**4. The page query copies the whole array - `src/store.js:6`
 
 Every call allocates a new array, which will not hold at scale.
 """
-# Attributed to a clean hunk on purpose. A coverage finding that landed nowhere
-# would be excluded from blocking_on_clean by rule 4 whatever rule 3 said, and
-# the case is here to hold rule 3.
-COVERAGE_FINDING = """**3. No test covers the retry path in `withRetry` - `src/util.js:12`**
+# The brief's text for `test_coverage_excluded`, verbatim: an Important "no
+# test covers the retry path". It cites no line and names no region, so rule 4
+# would carry the case whatever rule 3 said -- which is why the variant below
+# exists rather than this one being extended.
+COVERAGE_FINDING = """**3. No test covers the retry path**
+
+Nothing exercises a failing first attempt, so a regression in the backoff is
+invisible.
+"""
+# The same exclusion where rule 3 is the only thing that can produce it: this
+# one lands inside `withRetry`'s range by line, so without the test-coverage
+# exclusion it would raise blocking_on_clean.
+COVERAGE_FINDING_ON_HUNK = """**3. No test covers the retry path in `withRetry` - `src/util.js:12`**
 
 Nothing exercises a failing first attempt, so a regression in the backoff is
 invisible.
@@ -1058,6 +1206,72 @@ SPAN_FINDING = """**1. Pagination is off by one page - `src/handlers.js:14-30`**
 MINOR_RETRY_FINDING = """**3. The backoff is not jittered - `src/util.js:12`**
 
 Simultaneous callers will retry in lockstep. Worth a look, not a blocker.
+"""
+# A whole-file citation. It covers both planted lines and everything between,
+# so reading it as full recall is an inference the analyst has to see.
+WHOLE_FILE_FINDING = """**1. The handlers module does too much - `src/handlers.js:1-42`**
+
+Pagination, validation, persistence and logging all live in one file.
+"""
+# The next four are the shapes the round-1 review found misclassified. Their
+# text is the review's own, so a regression puts the defect back and this
+# suite says which one.
+#
+# `src/handlers.js:36` is the statement above the unawaited write and lands in
+# no range; "the server clock" is ordinary English about it. Under a
+# case-folded `\\bCLOCK\\b` this attributed to `test_fixture`, a hunk in
+# another file, and scored as a precision failure.
+CLOCK_FINDING = """**3. `createOrderHandler` trusts the client's timestamp - `src/handlers.js:36`**
+
+The caller supplies `createdAt`, so two orders can disagree with the server clock.
+"""
+CLOCK_PROSE_FINDING = """**4. Order timestamps are not deterministic**
+
+Nothing pins the clock, so two runs of the same request disagree.
+"""
+# `catch` within 300 characters of `log`, case-folded, used to attribute this
+# to `log_rethrow` -- a different region of a different file, and one this
+# finding says nothing about.
+RETHROW_PROSE_FINDING = """**5. The retry loop loses the failure history**
+
+The catch arm keeps only the last error, so there is nothing to log when the
+third attempt fails too.
+"""
+# `config.json` is committed in the diff but is not one of the six hunks, and
+# an import line sits in no range at all. Both cite a line this script cannot
+# place, so under the brief's rule 4 they go to the analyst rather than to
+# `blocking_on_clean`.
+CONFIG_JSON_FINDING = """**4. `config.json` is committed with production defaults - `config.json:2`**
+
+A deployment that forgets to override them inherits whatever was committed.
+"""
+IMPORT_NIT_FINDING = """**5. The util import couples the handlers module to two helpers - `src/handlers.js:5`**
+
+`withRetry` and `parseOrderId` arrive from one require, so the module cannot
+be read without both.
+"""
+# The unnumbered form, with the sub-bullets this scenario's AC asks reviewers
+# to write. A bullet pattern that matched indented lines would read each of
+# these as three findings and split the coverage finding away from its
+# citation.
+BULLET_SAVE_FINDING = """- **The write is never awaited - `src/handlers.js:37`**
+  - **Input:** a create whose write rejects.
+  - **Outcome:** the handler has already answered 201.
+"""
+BULLET_COVERAGE_FINDING = """- **No test covers the retry path**
+  - **Input:** a first attempt that rejects - `src/util.js:12`.
+  - **Outcome:** a regression in the backoff is invisible.
+"""
+# A second subagent that only quotes a report's heading inside a fence. It is
+# not a report, and counting it as one would void the run.
+QUOTING_TRANSCRIPT = """I read the reviewer's report and relayed it. It opened with
+
+```md
+#### Critical (Must Fix)
+**1. Pagination offset skips a whole page - `src/handlers.js:18`**
+```
+
+and I passed the two blocking findings on unchanged.
 """
 
 
@@ -1154,10 +1368,10 @@ def build_report(
         "### Issues",
         "",
     ]
-    for severity, label, findings in (
-        ("Critical", "#### Critical (Must Fix)", critical),
-        ("Important", "#### Important (Should Fix)", important),
-        ("Minor", "#### Minor (Nice to Have)", minor or []),
+    for label, findings in (
+        ("#### Critical (Must Fix)", critical),
+        ("#### Important (Should Fix)", important),
+        ("#### Minor (Nice to Have)", minor or []),
     ):
         parts.append(label)
         parts.append("")
@@ -1167,7 +1381,6 @@ def build_report(
         for text in findings:
             parts.append(text.rstrip("\n"))
             parts.append("")
-        assert severity
     parts.extend(["### Assessment", "", "**Ready to merge?** No", ""])
     return "\n".join(parts)
 
@@ -1178,6 +1391,7 @@ def build_run(
     run_id: str,
     report: str | None,
     status: str = "pass",
+    other_agent: str | None = None,
 ) -> str:
     """One synthetic quorum run directory.
 
@@ -1187,15 +1401,32 @@ def build_run(
     :param report: The reviewer's report, or ``None`` for a run with no
         reviewer subagent transcript at all.
     :param status: The Gauntlet-Agent's own verdict.
+    :param other_agent: The single assistant text of a second subagent
+        transcript, for the runs that have one.
     :returns: The run directory's path.
     """
 
     run_dir = os.path.join(root, run_id)
     os.makedirs(run_dir)
     shutil.copytree(template, os.path.join(run_dir, WORKDIR))
-    if report is not None:
-        logs = os.path.join(run_dir, "home/.claude/projects/-fixture/session-1/subagents")
+    logs = os.path.join(run_dir, "home/.claude/projects/-fixture/session-1/subagents")
+    if report is not None or other_agent is not None:
         os.makedirs(logs)
+    if other_agent is not None:
+        with open(os.path.join(logs, "agent-02.jsonl"), "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "type": "assistant",
+                    "isSidechain": True,
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": other_agent}],
+                    },
+                },
+                handle,
+            )
+            handle.write("\n")
+    if report is not None:
         records = [
             {"type": "user", "isSidechain": True, "message": {"role": "user", "content": "review"}},
             {
@@ -1347,12 +1578,19 @@ def self_test() -> int:
         os.makedirs(evidence)
         counter = [0]
 
-        def run(report: str | None, status: str = "pass", sidecar: bool = True) -> str:
+        def run(
+            report: str | None,
+            status: str = "pass",
+            sidecar: bool = True,
+            other: str | None = None,
+        ) -> str:
             """One synthetic run with its sidecar, named for the case that built it."""
 
             counter[0] += 1
             run_id = f"{SCENARIO}-claude-auto-2026092{counter[0] % 10}T000000Z-{counter[0]:04d}"
-            run_dir = build_run(os.path.join(root, "runs"), template, run_id, report, status)
+            run_dir = build_run(
+                os.path.join(root, "runs"), template, run_id, report, status, other
+            )
             if sidecar and report is not None:
                 write_sidecar(evidence, run_dir)
             return run_dir
@@ -1406,13 +1644,20 @@ def self_test() -> int:
 
         def recall_zero() -> str:
             # Also the grader-disagreement case: the grader says pass, the count
-            # says no, and the count governs.
-            run_dir = run(build_report([], [], [MINOR_RETRY_FINDING]))
+            # says no, and the count governs. And the no-blocking-findings case:
+            # a review that asks the analyst nothing owes no sidecar, so the run
+            # is fully measured without one.
+            run_dir = run(build_report([], [], [MINOR_RETRY_FINDING]), sidecar=False)
             code, rows, notes = measure([run_dir], evidence)
             if len(rows) != 1:
                 return f"{len(rows)} rows, expected 1"
             problem = expect(
-                rows[0], recall=0, blocking_on_clean=0, proof_total=0, accepted="no"
+                rows[0],
+                recall=0,
+                blocking_on_clean=0,
+                proof_complete=0,
+                proof_total=0,
+                accepted="no",
             )
             if problem:
                 return problem
@@ -1484,6 +1729,23 @@ def self_test() -> int:
                 accepted="yes",
             ) or ("" if code == 0 else f"exit {code}, expected 0")
 
+        def test_coverage_on_clean_hunk() -> str:
+            # The exclusion where it is load-bearing: the coverage finding is
+            # placed inside `withRetry` by its own citation, so only rule 3
+            # keeps it out of blocking_on_clean.
+            run_dir = run(build_report([OFFSET_FINDING], [SAVE_FINDING, COVERAGE_FINDING_ON_HUNK]))
+            code, rows, _ = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            return expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=3,
+                accepted="yes",
+            ) or ("" if code == 0 else f"exit {code}, expected 0")
+
         def unattributed_finding() -> str:
             run_dir = run(build_report([OFFSET_FINDING], [SAVE_FINDING, UNATTRIBUTED_FINDING]))
             code, rows, notes = measure([run_dir], evidence)
@@ -1507,10 +1769,10 @@ def self_test() -> int:
 
         def span_over_bug_and_hunk() -> str:
             run_dir = run(build_report([SPAN_FINDING], [SAVE_FINDING]))
-            _, rows, _ = measure([run_dir], evidence)
+            code, rows, notes = measure([run_dir], evidence)
             if len(rows) != 1:
                 return f"{len(rows)} rows, expected 1"
-            return expect(
+            problem = expect(
                 rows[0],
                 recall=2,
                 blocking_on_clean=0,
@@ -1518,6 +1780,121 @@ def self_test() -> int:
                 proof_total=2,
                 accepted="yes",
             )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0: an ambiguous span is a reading"
+            # Bug-first precedence decided this one, so it says so.
+            ambiguous = [
+                note
+                for note in notes
+                if "\tspan-ambiguous\t" in note
+                and "covers offset_bug, log_rethrow" in note
+                and "counted as offset_bug" in note
+            ]
+            if len(ambiguous) != 1:
+                return f"the span was placed without a trace: {notes}"
+            return ""
+
+        def whole_file_span() -> str:
+            # One content-free finding that cites the whole file reaches both
+            # planted lines. The count stands, and the analyst is told what it
+            # was read from.
+            run_dir = run(build_report([WHOLE_FILE_FINDING], []))
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=1,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if not any("\tspan-ambiguous\t" in note for note in notes):
+                return f"full recall from one whole-file citation, with no trace: {notes}"
+            return ""
+
+        def name_table_prose() -> str:
+            # Ordinary English that names no region: the server clock, an
+            # undeterministic timestamp, a catch arm with nothing to log. Each
+            # one used to land on a clean hunk through a case-folded name.
+            run_dir = run(
+                build_report(
+                    [OFFSET_FINDING],
+                    [SAVE_FINDING, CLOCK_FINDING, CLOCK_PROSE_FINDING, RETHROW_PROSE_FINDING],
+                )
+            )
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=5,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            unplaced = [note for note in notes if "\tunattributed\t" in note]
+            if len(unplaced) != 3:
+                return f"expected the three prose findings to be adjudicated, got {notes}"
+            return ""
+
+        def clean_hunk_named_but_unplaceable() -> str:
+            # A line this script cannot place, plus the name of a clean hunk,
+            # is rule 4's case and not a precision failure: `config.json` is
+            # not one of the six hunks, and an import line is in no range.
+            run_dir = run(
+                build_report([OFFSET_FINDING], [SAVE_FINDING, CONFIG_JSON_FINDING, IMPORT_NIT_FINDING])
+            )
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=4,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            unplaced = [note for note in notes if "\tunattributed\t" in note]
+            if len(unplaced) != 2:
+                return f"expected both nits to be adjudicated, got {notes}"
+            return ""
+
+        def unnumbered_bullets() -> str:
+            # A section that numbers nothing, with the sub-bullets the AC asks
+            # for. Two findings, not six: the coverage finding has to keep its
+            # own citation, or rule 3 stops excluding it.
+            run_dir = run(
+                build_report([OFFSET_FINDING], [BULLET_SAVE_FINDING, BULLET_COVERAGE_FINDING])
+            )
+            code, rows, _ = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            return expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=3,
+                accepted="yes",
+            ) or ("" if code == 0 else f"exit {code}, expected 0")
 
         def two_clean_hunks() -> str:
             run_dir = run(
@@ -1545,6 +1922,25 @@ def self_test() -> int:
                 return f"{len(rows)} rows, expected 1"
             return expect(rows[0], recall=2, proof_complete=1, proof_total=2, accepted="yes")
 
+        def proof_trigger_answers_read() -> str:
+            # Both findings cite a line, so cites_line alone would count two.
+            # The analyst's column is what makes it one -- and `YES` is that
+            # column answered, not a malformed sidecar.
+            run_dir = run(
+                build_report([OFFSET_FINDING], [SAVE_FINDING_BY_LINE]), sidecar=False
+            )
+            write_sidecar(
+                evidence,
+                run_dir,
+                {"Pagination offset": "no", "The write is never awaited": "YES"},
+            )
+            code, rows, _ = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            return expect(
+                rows[0], recall=2, proof_complete=1, proof_total=2, accepted="yes"
+            ) or ("" if code == 0 else f"exit {code}, expected 0")
+
         def no_subagent_log() -> str:
             good = run(build_report([OFFSET_FINDING], [SAVE_FINDING]))
             bare = run(None)
@@ -1563,6 +1959,20 @@ def self_test() -> int:
             if len(wanted) != 1:
                 return f"no 'no reviewer subagent report' line in {notes}"
             return ""
+
+        def fenced_heading_not_a_report() -> str:
+            # A second transcript that only quotes the report's heading inside
+            # a fence. Reading it as a second candidate report would void a run
+            # that has exactly one.
+            run_dir = run(
+                build_report([OFFSET_FINDING], [SAVE_FINDING]), other=QUOTING_TRANSCRIPT
+            )
+            code, rows, _ = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            return expect(rows[0], recall=2, blocking_on_clean=0, proof_total=2) or (
+                "" if code == 0 else f"exit {code}, expected 0"
+            )
 
         def proof_sidecar_missing() -> str:
             run_dir = run(build_report([OFFSET_FINDING], [SAVE_FINDING]), sidecar=False)
@@ -1589,7 +1999,10 @@ def self_test() -> int:
         def proof_sidecar_invalid() -> str:
             # A sidecar that answers something other than yes/no, and one that
             # does not answer every finding of the report. Reading either as a
-            # number would be reporting a judgement the analyst never made.
+            # number would be reporting a judgement the analyst never made --
+            # but recall and blocking_on_clean do not come from the sidecar, so
+            # the rows survive with proof_complete unknown and the exit is
+            # still non-zero.
             unanswerable = run(build_report([OFFSET_FINDING], [SAVE_FINDING]), sidecar=False)
             write_sidecar(evidence, unanswerable, {"Pagination offset": "maybe"})
             short = run(build_report([OFFSET_FINDING], [SAVE_FINDING]), sidecar=False)
@@ -1600,14 +2013,75 @@ def self_test() -> int:
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write("\n".join(kept) + "\n")
             code, rows, notes = measure([unanswerable, short], evidence)
-            if rows:
-                return f"{len(rows)} rows, expected none"
+            if len(rows) != 2:
+                return f"{len(rows)} rows, expected 2"
+            for row in rows:
+                problem = expect(
+                    row,
+                    recall=2,
+                    blocking_on_clean=0,
+                    proof_complete=UNKNOWN,
+                    proof_total=2,
+                    accepted="yes",
+                )
+                if problem:
+                    return problem
             if code == 0:
                 return "exit 0, expected non-zero"
             invalid = [note for note in notes if "\tproof-sidecar-invalid\t" in note]
             if len(invalid) != 2:
                 return f"expected two proof-sidecar-invalid lines, got {notes}"
             return ""
+
+        def grader_unreadable() -> str:
+            # The verdict this script cannot read is a disagreement the analyst
+            # settles, not a silent `-` in the column beside a count that
+            # happens to say no.
+            run_dir = run(build_report([OFFSET_FINDING], []))
+            for result in glob.glob(os.path.join(run_dir, RESULT_GLOB)):
+                with open(result, "w", encoding="utf-8") as handle:
+                    handle.write("{not json")
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            problem = expect(rows[0], recall=1, grader_verdict=UNKNOWN, accepted="no")
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if not any("\tgrader-disagreement\t" in note for note in notes):
+                return f"an unreadable verdict passed silently: {notes}"
+            return ""
+
+        def bad_run_dir() -> str:
+            # A mistyped path is not a fixture problem, and Task 18 greps the
+            # token.
+            good = run(build_report([OFFSET_FINDING], [SAVE_FINDING]))
+            missing = os.path.join(root, "runs", "no-such-run")
+            code, rows, notes = measure([missing, good], evidence)
+            if len(rows) != 1 or rows[0]["run_id"] != os.path.basename(good):
+                return f"{len(rows)} rows, expected the good run's alone"
+            if code == 0:
+                return "exit 0, expected non-zero"
+            if not any("\trun-dir-missing\t" in note for note in notes):
+                return f"no run-dir-missing line in {notes}"
+            return ""
+
+        def arm_invalid() -> str:
+            # Through `main`, so the check is pinned where it runs and not
+            # only in the helper. It refuses before any run is read, so the
+            # path argument is never touched.
+            argv = sys.argv
+            sys.argv = ["measure-code-review-precision.py", "--arm", "treatmnet", "/nonexistent"]
+            try:
+                main()
+            except DesignError:
+                pass
+            else:
+                return "--arm treatmnet was accepted into the column Task 18 groups by"
+            finally:
+                sys.argv = argv
+            return "" if check_arm("treatment") == "treatment" else "--arm treatment refused"
 
         def arm_unresolved() -> str:
             run_dir = run(build_report([OFFSET_FINDING], [SAVE_FINDING]))
@@ -1628,14 +2102,24 @@ def self_test() -> int:
             ("blocking_by_name", blocking_by_name),
             ("minor_on_clean", minor_on_clean),
             ("test_coverage_excluded", test_coverage_excluded),
+            ("test_coverage_on_clean_hunk", test_coverage_on_clean_hunk),
             ("unattributed_finding", unattributed_finding),
             ("span_over_bug_and_hunk", span_over_bug_and_hunk),
+            ("whole_file_span", whole_file_span),
+            ("name_table_prose", name_table_prose),
+            ("clean_hunk_named_but_unplaceable", clean_hunk_named_but_unplaceable),
+            ("unnumbered_bullets", unnumbered_bullets),
             ("two_clean_hunks", two_clean_hunks),
             ("proof_partial", proof_partial),
+            ("proof_trigger_answers_read", proof_trigger_answers_read),
             ("no_subagent_log", no_subagent_log),
+            ("fenced_heading_not_a_report", fenced_heading_not_a_report),
             ("proof_sidecar_missing", proof_sidecar_missing),
             ("proof_sidecar_invalid", proof_sidecar_invalid),
+            ("grader_unreadable", grader_unreadable),
+            ("bad_run_dir", bad_run_dir),
             ("arm_unresolved", arm_unresolved),
+            ("arm_invalid", arm_invalid),
         ):
             case(name, body)
 
@@ -1674,7 +2158,7 @@ def main() -> int:
         index += 1
     if not run_dirs:
         raise DesignError(USAGE)
-    return run_measure(run_dirs, E, arm, sys.stdout, sys.stderr)
+    return run_measure(run_dirs, E, check_arm(arm), sys.stdout, sys.stderr)
 
 
 if __name__ == "__main__":
