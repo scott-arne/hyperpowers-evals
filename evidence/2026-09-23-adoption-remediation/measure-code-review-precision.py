@@ -45,6 +45,11 @@ item: run id, a stable class token, the evidence. The tokens are
 ``grader-disagreement``
     The Gauntlet-Agent's verdict and this script's ``accepted`` differ, or the
     grader's verdict could not be read at all.
+``scaffolding-skipped``
+    A column-0 bullet ahead of a severity section's first finding was read as
+    the section's own scaffolding and not counted. A finding titled with a
+    bold clause is written the same way, so the line is quoted for the analyst
+    rather than dropped in silence.
 ``proof-sidecar-missing``
     No ``<run-id>-proof.tsv``. The row is still emitted with ``proof_complete``
     unknown.
@@ -65,9 +70,9 @@ item: run id, a stable class token, the evidence. The tokens are
     A path given on the command line is not a directory.
 
 Exit status is non-zero when any run could not be fully measured -- every token
-above except ``unattributed``, ``span-ambiguous`` and ``grader-disagreement``,
-which are readings for the analyst rather than instrument failures. A run that
-fails emits no row; the other runs still do.
+above except ``unattributed``, ``span-ambiguous``, ``grader-disagreement`` and
+``scaffolding-skipped``, which are readings for the analyst rather than
+instrument failures. A run that fails emits no row; the other runs still do.
 
 Usage::
 
@@ -659,7 +664,7 @@ def split_sections(report: str) -> list[tuple[str, list[str]]]:
     return sections
 
 
-def split_findings(severity: str, body: list[str]) -> list[str]:
+def split_findings(severity: str, body: list[str], skipped: list[str] | None = None) -> list[str]:
     """One text block per finding of a severity section.
 
     Both list forms are read in one pass. Taking the first form that matched
@@ -688,8 +693,18 @@ def split_findings(severity: str, body: list[str]) -> list[str]:
     script does not read, and dropping it silently is the defect the fatal
     exists for. None of the seven real reports carries any of the three.
 
+    A skipped bullet is reported through ``skipped`` because the label shape is
+    also how a reviewer titles a real finding with the sentence trailing after
+    the colon: the two are one line, no rule can keep one and drop the other,
+    and the reading that leaves the real reports right is the one that drops
+    both. Reporting it is what keeps that trade from being a silent wrong
+    number. A fence is not reported -- it is unambiguously quoted code, and a
+    note on every quoted snippet is one the analyst learns to skip.
+
     :param severity: The section's severity, for the error message.
     :param body: The section's lines.
+    :param skipped: Receives each bullet this section skipped ahead of its
+        first finding, when the caller wants them named for the analyst.
     :returns: The findings' raw text blocks.
     :raises RunError: When the section holds content no finding accounts for,
         before the first one or in place of any.
@@ -697,6 +712,8 @@ def split_findings(severity: str, body: list[str]) -> list[str]:
 
     numbered: list[int] = []
     bulleted: list[int] = []
+    # The bullets read as the section's scaffolding rather than as starts.
+    labels: list[int] = []
     # The lines ahead of a first finding that the section itself accounts for.
     accounted: set[int] = set()
     fenced = False
@@ -718,6 +735,7 @@ def split_findings(severity: str, body: list[str]) -> list[str]:
         elif BULLET_RE.match(line):
             accounted.add(index)
             scaffold = True
+            labels.append(index)
         elif scaffold and (not line.strip() or line.startswith((" ", "\t"))):
             # A scaffolding bullet wraps; every observed report wraps at about
             # 80 columns, so its second line is part of it and not new content.
@@ -751,6 +769,8 @@ def split_findings(severity: str, body: list[str]) -> list[str]:
             f"the {severity} section has content before its first finding, in neither "
             f"list form: {one_line(lead[0], 80)}",
         )
+    if skipped is not None:
+        skipped.extend(body[index] for index in labels if index < starts[0])
     bounds = [*starts, len(body)]
     return ["\n".join(body[a:b]) for a, b in itertools.pairwise(bounds)]
 
@@ -914,7 +934,11 @@ def span_ambiguity(text: str, ranges: dict[str, Span]) -> str:
     return ""
 
 
-def parse_report(report: str, ranges: dict[str, Span] | None = None) -> list[Finding]:
+def parse_report(
+    report: str,
+    ranges: dict[str, Span] | None = None,
+    skipped: list[tuple[str, str]] | None = None,
+) -> list[Finding]:
     """Every severity-tagged finding of the report, attributed.
 
     :param report: The reviewer's report.
@@ -922,6 +946,8 @@ def parse_report(report: str, ranges: dict[str, Span] | None = None) -> list[Fin
         The proof template needs each finding's severity, citation and text but
         not where it lands, so it can be printed for a run whose fixture this
         script does not know.
+    :param skipped: Receives ``(severity, line)`` for every bullet a section
+        skipped ahead of its first finding; see :func:`split_findings`.
     :returns: The findings, in report order.
     :raises RunError: When a severity section cannot be read.
     """
@@ -930,7 +956,8 @@ def parse_report(report: str, ranges: dict[str, Span] | None = None) -> list[Fin
     for severity, body in split_sections(report):
         if severity not in SEVERITIES:
             continue
-        for text in split_findings(severity, body):
+        dropped: list[str] = []
+        for text in split_findings(severity, body, dropped):
             attributions = attribute(text, ranges) if ranges else ()
             # Only a finding that landed nowhere carries candidates, and a
             # lone candidate that did not place it is one rule 4 excluded:
@@ -949,6 +976,8 @@ def parse_report(report: str, ranges: dict[str, Span] | None = None) -> list[Fin
                     blocked=candidates if len(candidates) == 1 else (),
                 )
             )
+        if skipped is not None:
+            skipped.extend((severity, line) for line in dropped)
     return findings
 
 
@@ -1164,7 +1193,8 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
         raise RunError("run-dir-missing", f"{run_dir} is not a directory")
     arm = arm_override or resolve_arm(evidence_dir, run_id)
     ranges = resolve_ranges(run_dir)
-    findings = parse_report(report_text(run_dir), ranges)
+    skipped: list[tuple[str, str]] = []
+    findings = parse_report(report_text(run_dir), ranges, skipped)
     graded = [f for f in findings if f.severity in BLOCKING]
     recall = sum(1 for key in BUG_KEYS if any(key in f.attributions for f in graded))
     blocked = {
@@ -1211,6 +1241,17 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
         Note(run_id, "span-ambiguous", f"{f.severity} finding {f.key}: {f.ambiguity}")
         for f in graded
         if f.ambiguity
+    )
+    # The count did not change; what the count did not include is said out
+    # loud, because a finding written as a bold clause reads exactly like the
+    # scaffolding it was skipped as.
+    notes.extend(
+        Note(
+            run_id,
+            "scaffolding-skipped",
+            f"{severity} section, ahead of its first finding: {one_line(line)}",
+        )
+        for severity, line in skipped
     )
     if invalid:
         notes.append(invalid)
@@ -1568,6 +1609,11 @@ const offset = page * size;
 # analyst to adjudicate a line that says nothing about the diff.
 SECTION_PREAMBLE = """- **Note:** the findings below are ordered by severity, most
   serious first.
+"""
+# A real finding written in the preamble's shape: the title bolded, the sentence
+# trailing after the colon. The two are one line to any rule that reads them, so
+# the count skips both -- and says so, because this one is a finding.
+CLAUSE_BULLET_FINDING = """- **Pagination is broken:** the handler skips the first page - `src/handlers.js:18`
 """
 # A second subagent that only quotes a report's heading inside a fence. It is
 # not a report, and counting it as one would void the run.
@@ -2681,6 +2727,77 @@ def self_test() -> int:
                 return f"{len(findings)} findings, expected 1: {findings}"
             return ""
 
+        def scaffolding_bullet_is_reported() -> str:
+            # A finding titled with a bold clause and a note about the list are
+            # the same line to any rule that reads them, so no rule can count
+            # one and skip the other. The count keeps the reading the real
+            # reports need -- the bullet is scaffolding -- and the skip is
+            # named on stderr rather than taken in silence, which is the one
+            # failure mode this instrument must not have.
+            run_dir = run(build_report([CLAUSE_BULLET_FINDING, SAVE_FINDING_BY_LINE], []))
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            problem = expect(
+                rows[0],
+                recall=1,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=1,
+                accepted="no",
+            )
+            if problem:
+                return problem
+            # The note is a reading for the analyst, not an instrument failure:
+            # the row stands and the trial counts.
+            if code != 0:
+                return f"exit {code}, expected 0"
+            reported = [note for note in notes if "\tscaffolding-skipped\t" in note]
+            if len(reported) != 1:
+                return f"{len(reported)} scaffolding-skipped lines, expected 1: {notes}"
+            if "Pagination is broken" not in reported[0]:
+                return f"the skipped line is not quoted: {reported[0]}"
+            # The label bullet is the same shape and reported the same way. A
+            # bullet that wraps is still one bullet: its second line is part of
+            # it, not a second thing skipped.
+            numbered = OFFSET_FINDING.rstrip("\n").split("\n")
+            shapes: tuple[tuple[str, list[str]], ...] = (
+                ("the label bullet", ["- **Note:** ordered by severity.", "", *numbered]),
+                (
+                    "the wrapped preamble",
+                    [*SECTION_PREAMBLE.rstrip("\n").split("\n"), "", *numbered],
+                ),
+            )
+            for label, body in shapes:
+                dropped: list[str] = []
+                findings = split_findings("Critical", body, dropped)
+                if len(findings) != 1:
+                    return f"{label}: {len(findings)} findings, expected 1: {findings}"
+                if len(dropped) != 1:
+                    return f"{label}: {len(dropped)} lines reported, expected 1: {dropped}"
+            return ""
+
+        def scaffolding_note_stays_off_the_real_shape() -> str:
+            # A note on most trials is a note the analyst learns to skip, and
+            # then it says nothing when it matters. Neither shape the real
+            # reports carry is a finding this script failed to count: a
+            # numbered finding's own column-0 bullets (4 of the 7 reports) are
+            # part of the finding above them, and a fence is quoted code.
+            shapes: tuple[tuple[str, list[str], list[str]], ...] = (
+                ("a numbered finding's own bullets", [GUARD_FINDING], []),
+                ("a quoted fence", [QUOTED_DIFF_LEAD, OFFSET_FINDING], [SAVE_FINDING]),
+            )
+            for label, critical, important in shapes:
+                run_dir = run(build_report(critical, important))
+                code, rows, notes = measure([run_dir], evidence)
+                if len(rows) != 1:
+                    return f"{label}: {len(rows)} rows, expected 1"
+                if code != 0:
+                    return f"{label}: exit {code}, expected 0"
+                if any("\tscaffolding-skipped\t" in note for note in notes):
+                    return f"{label}: reported a skip that did not happen: {notes}"
+            return ""
+
         def fixture_ranges_unique() -> str:
             # The eight regions the brief's Step 3 declares, resolved against
             # the real fixture. A start pattern that matches twice is drift the
@@ -2801,6 +2918,11 @@ def self_test() -> int:
             ("unrecognized_finding_before_the_first", unrecognized_finding_before_the_first),
             ("fenced_snippet_before_the_first_finding", fenced_snippet_before_the_first_finding),
             ("section_preamble_is_not_a_finding", section_preamble_is_not_a_finding),
+            ("scaffolding_bullet_is_reported", scaffolding_bullet_is_reported),
+            (
+                "scaffolding_note_stays_off_the_real_shape",
+                scaffolding_note_stays_off_the_real_shape,
+            ),
             ("fixture_ranges_unique", fixture_ranges_unique),
             ("two_clean_hunks", two_clean_hunks),
             ("proof_partial", proof_partial),
