@@ -1564,15 +1564,21 @@ def tree_ids(commit: str) -> tuple[str, str] | None:
     """The ``skills/`` and ``hooks/`` tree object ids of a hyperpowers commit.
 
     Object ids, not file contents: two heads carry the same skills if and only
-    if git gives their trees the same id, and the comparison costs one
-    ``rev-parse`` each. Read live from ``ROOTS["treatment"]`` on every call --
-    that worktree is created and removed around the run, so nothing about it
-    may be cached across one.
+    if git gives their trees the same id, and reading one costs a single
+    ``rev-parse``. Read live from ``ROOTS["treatment"]`` on every call -- that
+    worktree is created and removed around the run, so nothing about it may be
+    cached across one.
+
+    Provenance rather than a gate. Criterion 4's base-rate decision turns on
+    the criterion a rate was measured under, not on whether the head's trees
+    match the head the rate came from, and the sentinel batch's own provenance
+    check compares the tree id the producer recorded in the header. What is
+    left here is the fixture's way of computing the id a producer would write.
 
     :param commit: A commit-ish to resolve in the treatment worktree.
     :returns: (skills tree id, hooks tree id), or None when either path cannot
-        be resolved -- a head that answers nothing cannot be shown to match, so
-        the caller must treat None as a mismatch.
+        be resolved. No caller reads None as a mismatch any more; a fixture
+        head that answers nothing is a broken fixture, and the caller raises.
     """
 
     ids: list[str] = []
