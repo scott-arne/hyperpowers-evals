@@ -24,6 +24,10 @@ import { repoRoot } from '../src/paths.ts';
 // after-the-fact evidence for the two routing edits 6.13.0 shipped; both assert
 // on Claude Code's `Agent` dispatch tool and the second runs through the Codex
 // code gate, so neither measures anything on a harness without them.
+// `code-review-precision-on-realistic-diff` asserts on Claude Code's `Agent`
+// dispatch tool and invocation of superpowers:/hyperpowers:requesting-code-review,
+// so a harness without that skill namespace and dispatch tool would measure
+// nothing and score it as a failure.
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'brainstorming-asks-tooling-question',
   'brainstorming-bounded-fires-approach-gate',
@@ -35,6 +39,7 @@ const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'brainstorming-router-escalates-b5-prefs-storage',
   'brainstorming-router-no-downgrade',
   'code-review-of-a-committed-change',
+  'code-review-precision-on-realistic-diff',
   'codex-approach-gate-fires-on-architecture',
   'codex-doc-gate-foreground-await',
   'codex-gate-backstop-finding-forces-choice',
