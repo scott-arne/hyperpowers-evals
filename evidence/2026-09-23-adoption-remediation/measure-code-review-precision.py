@@ -704,7 +704,9 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
     :param severity: The section's severity, for the error message.
     :param body: The section's lines.
     :param skipped: Receives each bullet this section skipped ahead of its
-        first finding, when the caller wants them named for the analyst.
+        first *numbered* finding -- every one of them where it numbers
+        nothing, because there each is merged into the bullet above it
+        instead. For the caller that wants them named for the analyst.
     :returns: The findings' raw text blocks.
     :raises RunError: When the section holds content no finding accounts for,
         before the first one or in place of any.
@@ -770,7 +772,11 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
             f"list form: {one_line(lead[0], 80)}",
         )
     if skipped is not None:
-        skipped.extend(body[index] for index in labels if index < starts[0])
+        # Against `opens`, not `starts[0]`: where the section numbers nothing,
+        # its first bullet is the first start and every label below is merged
+        # into the bullet above it. Reporting only what precedes the first
+        # start left that merge silent, and `accepted` flipped on it.
+        skipped.extend(body[index] for index in labels if index < opens)
     bounds = [*starts, len(body)]
     return ["\n".join(body[a:b]) for a, b in itertools.pairwise(bounds)]
 
@@ -1244,7 +1250,9 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
     )
     # The count did not change; what the count did not include is said out
     # loud, because a finding written as a bold clause reads exactly like the
-    # scaffolding it was skipped as.
+    # scaffolding it was skipped as. Only where it could have changed, as for
+    # both siblings above: every count is read from `graded`, so a bullet
+    # skipped in a Minor section is a note on a trial nothing moved in.
     notes.extend(
         Note(
             run_id,
@@ -1252,6 +1260,7 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
             f"{severity} section, ahead of its first finding: {one_line(line)}",
         )
         for severity, line in skipped
+        if severity in BLOCKING
     )
     if invalid:
         notes.append(invalid)
@@ -1614,6 +1623,11 @@ SECTION_PREAMBLE = """- **Note:** the findings below are ordered by severity, mo
 # trailing after the colon. The two are one line to any rule that reads them, so
 # the count skips both -- and says so, because this one is a finding.
 CLAUSE_BULLET_FINDING = """- **Pagination is broken:** the handler skips the first page - `src/handlers.js:18`
+"""
+# The same clause shape naming a clean hunk, below a start rather than ahead of
+# one. A section that numbers nothing has no later start for it to precede, so
+# the count folds it into the bullet above and reads the two as one finding.
+CLAUSE_BULLET_RETRY_FINDING = """- **Retry is off by one:** `withRetry` loops once too often - `src/util.js:12`
 """
 # A second subagent that only quotes a report's heading inside a fence. It is
 # not a report, and counting it as one would void the run.
@@ -2798,6 +2812,91 @@ def self_test() -> int:
                     return f"{label}: reported a skip that did not happen: {notes}"
             return ""
 
+        def bullet_only_section_reports_a_later_merge() -> str:
+            # A section that numbers nothing has no start below its first
+            # bullet, so a clause-titled bullet lower down is absorbed into the
+            # bullet above it. Reporting only what precedes the first start
+            # said nothing about that merge: the swallowed bullet faults a
+            # clean hunk, `blocking_on_clean` reads 0 and `accepted` flips to
+            # yes, in the direction that flatters the treatment.
+            run_dir = run(
+                build_report(
+                    [MIXED_BULLET_FINDING, BULLET_SAVE_FINDING, CLAUSE_BULLET_RETRY_FINDING],
+                    [],
+                )
+            )
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            # The count is the one the real reports need and does not move; the
+            # note is what keeps it from being a silent wrong number.
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            reported = [note for note in notes if "\tscaffolding-skipped\t" in note]
+            if len(reported) != 1:
+                return f"{len(reported)} scaffolding-skipped lines, expected 1: {notes}"
+            if "Retry is off by one" not in reported[0]:
+                return f"the merged bullet is not quoted: {reported[0]}"
+            body = [
+                *MIXED_BULLET_FINDING.rstrip("\n").split("\n"),
+                "",
+                *BULLET_SAVE_FINDING.rstrip("\n").split("\n"),
+                "",
+                *CLAUSE_BULLET_RETRY_FINDING.rstrip("\n").split("\n"),
+            ]
+            dropped: list[str] = []
+            findings = split_findings("Critical", body, dropped)
+            if len(findings) != 2:
+                return f"{len(findings)} findings, expected 2: {findings}"
+            if len(dropped) != 1:
+                return f"{len(dropped)} lines reported, expected 1: {dropped}"
+            return ""
+
+        def scaffolding_note_only_where_a_count_could_move() -> str:
+            # Every count is read from the blocking findings, so a bullet a
+            # Minor section skipped cannot have moved one and a note about it
+            # is a note on a trial nothing happened in -- exactly the noise the
+            # analyst learns to read past, and then it says nothing when it
+            # matters. The same bullet in the Critical section still says so.
+            run_dir = run(
+                build_report(
+                    [CLAUSE_BULLET_FINDING, OFFSET_FINDING],
+                    [],
+                    [CLAUSE_BULLET_FINDING, MINOR_RETRY_FINDING],
+                )
+            )
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1"
+            problem = expect(
+                rows[0],
+                recall=1,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=1,
+                accepted="no",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            reported = [note for note in notes if "\tscaffolding-skipped\t" in note]
+            if any("Minor section" in note for note in reported):
+                return f"a Minor skip moves no count and was reported anyway: {reported}"
+            if len(reported) != 1 or "Critical section" not in reported[0]:
+                return f"the Critical skip is not the one line reported: {reported}"
+            return ""
+
         def fixture_ranges_unique() -> str:
             # The eight regions the brief's Step 3 declares, resolved against
             # the real fixture. A start pattern that matches twice is drift the
@@ -2922,6 +3021,14 @@ def self_test() -> int:
             (
                 "scaffolding_note_stays_off_the_real_shape",
                 scaffolding_note_stays_off_the_real_shape,
+            ),
+            (
+                "bullet_only_section_reports_a_later_merge",
+                bullet_only_section_reports_a_later_merge,
+            ),
+            (
+                "scaffolding_note_only_where_a_count_could_move",
+                scaffolding_note_only_where_a_count_could_move,
             ),
             ("fixture_ranges_unique", fixture_ranges_unique),
             ("two_clean_hunks", two_clean_hunks),
