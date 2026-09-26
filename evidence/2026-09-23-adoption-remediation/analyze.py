@@ -1571,9 +1571,13 @@ def tree_ids(commit: str) -> tuple[str, str] | None:
 
     Provenance rather than a gate. Criterion 4's base-rate decision turns on
     the criterion a rate was measured under, not on whether the head's trees
-    match the head the rate came from, and the sentinel batch's own provenance
-    check compares the tree id the producer recorded in the header. What is
-    left here is the fixture's way of computing the id a producer would write.
+    match the head the rate came from. The sentinel batch's own provenance
+    check settles which checkout ran from ``superpowers_commit``, matched as a
+    prefix against the manifest's treatment head; it requires
+    ``superpowers_skills_tree`` to be a non-empty string but compares it to
+    nothing, because the commit already names the checkout and the tree id is
+    there for a reader reconstructing the run. What is left here is the
+    fixture's way of computing the id a producer would write.
 
     :param commit: A commit-ish to resolve in the treatment worktree.
     :returns: (skills tree id, hooks tree id), or None when either path cannot
@@ -2585,9 +2589,12 @@ def _synthetic_campaign() -> tuple[dict, list[Run], list[tuple[str, str, str]]]:
         for i, scenario in enumerate(SENTINEL_SCENARIOS[:-1])
         if scenario != CHECKBOX
     ]
-    # A treatment commit no repository can resolve, so the 1.7 head comparison
-    # is decided the same way wherever the self-test runs: the recorded base
-    # rate's trees cannot be shown to be this head's, so the rate is refused.
+    # A treatment commit no repository can resolve. Criterion 4 no longer
+    # resolves it -- the base-rate decision turns on the criterion a rate was
+    # measured under, and head_matched_rate reads only the planned counts -- so
+    # this is now a tripwire rather than an input: anything that starts
+    # resolving the manifest's head fails here instead of quietly agreeing with
+    # whichever checkout the self-test happens to run on.
     return (
         {"trials": planned_counts, "commits": {"treatment": "0" * 40}},
         trials,
