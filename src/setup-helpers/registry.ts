@@ -1,8 +1,8 @@
-// The dispatch table for `setup-helpers run <helper>`. Holds only the 35
+// The dispatch table for `setup-helpers run <helper>`. Holds only the 36
 // dispatchable (workdir-style) helpers; the two library-only entries
 // addWorktree/detachHead are intentionally absent (no scenario dispatches them).
 // KNOWN_HELPER_NAMES re-adds those two so `quorum check` validates against the
-// full 37-name set.
+// full 38-name set.
 
 import { createBaseRepo, recordHead } from './base.ts';
 import {
@@ -10,6 +10,7 @@ import {
   createClaimWithoutVerification,
   createCodeReviewMixedDiff,
   createCodeReviewPlantedBugs,
+  createCodeReviewRealisticDiff,
   createCodeReviewWeakenedTests,
   createPhantomCompletion,
   createReviewPushback,
@@ -100,8 +101,9 @@ export const REGISTRY: Record<string, RegistryEntry> = {
   add_auth_execution_plan: { fn: addAuthExecutionPlan },
   create_writing_plans_skeleton: { fn: createWritingPlansSkeleton },
   create_code_review_mixed_diff: { fn: createCodeReviewMixedDiff },
-  create_code_review_weakened_tests: { fn: createCodeReviewWeakenedTests },
   create_code_review_planted_bugs: { fn: createCodeReviewPlantedBugs },
+  create_code_review_realistic_diff: { fn: createCodeReviewRealisticDiff },
+  create_code_review_weakened_tests: { fn: createCodeReviewWeakenedTests },
   add_flawed_spec_for_review: { fn: addFlawedSpecForReview },
   add_sdd_auth_plan: { fn: addSddAuthPlan },
   scaffold_sdd_broken_plan: { fn: scaffoldSddBrokenPlan },
