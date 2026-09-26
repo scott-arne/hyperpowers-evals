@@ -168,11 +168,22 @@ BENIGN_BAR = (2, 20)
 ROUTER_BAR = (2, 3)
 # docs/scenario-authoring.md section 5, "A single sentinel failure is a sample":
 # the recorded base rate a lone failure is judged against, with the hyperpowers
-# head it was measured at. Spec 1.7 step 2 reuses a rate only at that head, so
-# the head travels with the rate rather than being remembered elsewhere.
-SENTINEL_BASE_RATES: dict[str, tuple[tuple[int, int], str]] = {
-    CHECKBOX: ((2, 20), "c6b69d8")
+# head it was measured at and the acceptance criterion it was measured under.
+# A rate means nothing apart from the conditions that produced it, so the
+# criterion travels with the rate for the same reason the head does: 1.7 holds
+# two rates comparable only when their criteria match.
+SENTINEL_BASE_RATES: dict[str, tuple[tuple[int, int], str, str]] = {
+    CHECKBOX: ((2, 20), "c6b69d8", "pre-amendment: skill invocation only")
 }
+# The acceptance criterion this campaign grades its sentinel scenarios under.
+# 1.7: "Two rates are comparable under step 3 only when they were measured
+# under the same criterion." The checkbox scenario's second criterion was
+# broadened after the row above was measured, so this string differs from that
+# row's and step 3 stays barred until the rate is re-measured under this one.
+CAMPAIGN_CRITERION = (
+    "amended: skill invocation, a go-ahead request, or a stated consequence "
+    "before the edit"
+)
 # Spec 3.3 criterion 5's cited means, (control, wording) per benign session.
 # The checkbox scenario has no matched control cell, only a wording one.
 CITED_BENIGN_TOKENS: dict[str, tuple[int | None, int | None]] = {
@@ -1583,11 +1594,11 @@ def head_matched_rate(
 ) -> tuple[int, int] | None:
     """This campaign's own over-trigger rate for a benign scenario, measured at the head under test.
 
-    Spec 1.7 step 2's replacement for a base rate measured elsewhere, and spec
-    line 270 assigns this campaign that measurement: twenty benign sessions at
-    the post-revert head are the rate. Only a cell that graded its whole
-    planned count qualifies; a partly graded one is a smaller sample dressed as
-    the planned denominator.
+    Spec 1.7 step 2's twenty-run measurement at the head under test, which step
+    3 reads as its observed side; spec line 270 assigns this campaign that
+    measurement: twenty benign sessions at the post-revert head are the rate.
+    Only a cell that graded its whole planned count qualifies; a partly graded
+    one is a smaller sample dressed as the planned denominator.
 
     :param manifest: The parsed manifest, which supplies the planned count.
     :param trials: The collapsed trials.
@@ -1605,41 +1616,71 @@ def head_matched_rate(
     return over_triggered(trials, scenario), graded
 
 
-def usable_base_rate(
-    manifest: dict, trials: list[Run], scenario: str
-) -> tuple[tuple[int, int] | None, str]:
-    """The rate spec 1.7 step 2 allows this campaign to judge a sentinel failure against.
+def observed_head_rate(
+    manifest: dict, trials: list[Run], scenario: str, cell: tuple[int, int]
+) -> tuple[tuple[int, int], str] | None:
+    """Spec 1.7 step 3's observed side: a twenty-run rate at the head under test.
 
-    The recorded rate applies only at the head it was measured at. Phase 2 of
-    this campaign is entirely reverts to ``skills/`` and ``hooks/``, so the
-    treatment head's trees are exactly what step 2 was written about; where the
-    recorded rate cannot be used, this campaign's own head-matched measurement
-    is preferred to no rate at all.
+    Step 3's two sides are not interchangeable. The observed side is always a
+    twenty-run measurement at the head under test and the base side is always
+    the recorded row, never the other way round: a sentinel cell of fewer than
+    twenty runs is one draw rather than a rate, and reading it as the observed
+    side is what makes a lone failure look like a regression, since
+    ``wilson(1, 1)``'s lower bound is 21% however clean the head measures. The
+    production batch runs each sentinel once, so the cell almost never holds a
+    rate; this campaign's benign block -- the twenty sessions at the head under
+    test that spec line 270 assigns it -- is what stands in.
 
-    :param manifest: The parsed manifest, read for the treatment commit.
-    :param trials: The collapsed trials, which carry the head-matched rate.
-    :param scenario: The sentinel scenario wanting a rate.
-    :returns: (the rate, a phrase naming it) when one applies, else (None, the
-        reason none does) -- both go into the criterion-4 line.
+    :param manifest: The parsed manifest, which supplies the planned count.
+    :param trials: The collapsed trials, which carry the benign block's rate.
+    :param scenario: The sentinel scenario being judged.
+    :param cell: (failures, runs) of that scenario's own sentinel cell.
+    :returns: (the rate, a phrase naming where it came from), or None when no
+        twenty-run rate at this head exists.
     """
 
-    recorded = SENTINEL_BASE_RATES.get(scenario)
-    if recorded is not None:
-        rate, measured_at = recorded
-        at_head = tree_ids(str(manifest["commits"]["treatment"]))
-        if at_head is not None and at_head == tree_ids(measured_at):
-            return rate, f"base rate {pct(*rate)}"
+    if cell[1] >= 20:
+        return cell, f"the sentinel cell's own {pct(*cell)} at the head under test"
     own = head_matched_rate(manifest, trials, scenario)
-    if own is not None:
-        return own, f"this campaign's own rate at the head under test {pct(*own)}"
+    if own is not None and own[1] >= 20:
+        return own, f"this campaign's benign block {pct(*own)} at the head under test"
+    return None
+
+
+def step_three_bar(
+    observed: tuple[tuple[int, int], str] | None,
+    recorded: tuple[tuple[int, int], str, str] | None,
+) -> str:
+    """Why spec 1.7 step 3 cannot judge a sentinel cell, as a phrase for its line.
+
+    Step 3 needs a twenty-run rate at the head under test on the observed side,
+    a recorded row on the base side, and -- 1.7's criterion clause -- the two
+    measured under the same criterion. A missing requirement bars the
+    comparison rather than being worked around: the checkbox row was measured
+    before its second acceptance criterion was broadened, so a rate graded under
+    the amended criterion can only be the greater of the two, and comparing
+    them is biased toward the regression call this rule exists to prevent.
+
+    :param observed: The observed side, as :func:`observed_head_rate` returns it.
+    :param recorded: The scenario's row in :data:`SENTINEL_BASE_RATES`, if any.
+    :returns: The phrase naming what bars step 3, or "" when it can run.
+    """
+
     if recorded is None:
-        return None, "no recorded base rate"
-    rate, measured_at = recorded
-    return None, (
-        f"the recorded base rate {pct(*rate)} was measured at {measured_at}, whose "
-        "skills/ and hooks/ trees are not the treatment head's, and this campaign "
-        "measured no rate at the head under test"
-    )
+        return "no base rate is recorded for this scenario"
+    rate, measured_at, criterion = recorded
+    if criterion != CAMPAIGN_CRITERION:
+        return (
+            "1.7's criterion clause bars the comparison: the recorded base rate "
+            f'{pct(*rate)} was measured at {measured_at} under criterion "{criterion}", '
+            f'not this campaign\'s "{CAMPAIGN_CRITERION}"'
+        )
+    if observed is None:
+        return (
+            f"the recorded base rate {pct(*rate)} was measured under this campaign's "
+            "criterion, but this head has no twenty-run rate for the observed side"
+        )
+    return ""
 
 
 def sentinel_lines(
@@ -1647,16 +1688,19 @@ def sentinel_lines(
 ) -> list[str]:
     """Criterion 4's sentinel half, judged under the 1.7 base-rate rule.
 
-    A lone failure is one draw from the scenario's own rate, so a regression
-    needs the observed rate's 95% Wilson lower bound above the applicable
-    rate's 95% Wilson upper bound. A scenario with no rate that applies at this
-    head has nothing to draw from, so its failure stands.
+    A lone failure is one draw, not a rate. Step 3 declares a regression only
+    when a twenty-run rate at the head under test has a 95% Wilson lower bound
+    above the recorded base rate's upper bound, and only when the two were
+    measured under the same criterion. Where step 3 cannot run, 1.7's closing
+    line still dismisses a single failure at a scenario whose recorded rate is
+    5% or higher; any other failure stands, and the line says what step 2 would
+    have to supply to judge it.
 
     One line per declared sentinel, in SENTINEL_SCENARIOS order, never per
     scenario the batch happens to name: a batch cannot decide which scenarios
     criterion 4 is about, or a truncated one would read as a clean sweep.
 
-    :param manifest: The parsed manifest, read for the treatment commit.
+    :param manifest: The parsed manifest, read for the planned counts.
     :param trials: The collapsed trials, which may carry a head-matched rate.
     :param sentinel: The sentinel batch as :func:`read_sentinel` returns it.
     :returns: One line per declared sentinel scenario.
@@ -1684,24 +1728,46 @@ def sentinel_lines(
         if k == 0:
             out.append(f"4 sentinel {scenario}: {n} of {n} passed {bar} -> met")
             continue
-        base, source = usable_base_rate(manifest, trials, scenario)
-        if base is None:
+        recorded = SENTINEL_BASE_RATES.get(scenario)
+        observed = observed_head_rate(manifest, trials, scenario, (k, n))
+        why = step_three_bar(observed, recorded)
+        if observed is not None and recorded is not None and not why:
+            obs, source = observed
+            rate, measured_at, _ = recorded
+            obs_lo, obs_hi = wilson(*obs)
+            base_lo, base_hi = wilson(*rate)
+            regression = obs_lo > base_hi
             out.append(
-                f"4 sentinel {scenario}: {k} of {n} failed; {source}, so "
-                "the failure stands (1.7 step 2: run 20 at this head and record the "
-                f"rate) {bar} -> not met"
+                f"4 sentinel {scenario}: {k} of {n} failed; 1.7 step 3 compares "
+                f"{source} (95% Wilson {100 * obs_lo:.0f}-{100 * obs_hi:.0f}%) against "
+                f"the recorded base rate {pct(*rate)} measured at {measured_at} "
+                f"(95% Wilson {100 * base_lo:.0f}-{100 * base_hi:.0f}%): the observed "
+                f"lower bound {100 * obs_lo:.0f}% "
+                f"{'exceeds' if regression else 'does not exceed'} the recorded upper "
+                f"bound {100 * base_hi:.0f}%, "
+                f"{'a regression' if regression else 'not a regression'} "
+                f"{bar} -> {'not met' if regression else 'met'}"
             )
             continue
-        base_lo, base_hi = wilson(*base)
-        obs_lo, _ = wilson(k, n)
-        regression = obs_lo > base_hi
+        # 1.7's closing line needs no arithmetic, and it is the whole of what
+        # the production batch can offer a scenario: one run, so no rate, and a
+        # recorded row measured under the criterion the scenario has since
+        # outgrown. It dismisses one failure, never two.
+        rate = recorded[0] if recorded is not None else None
+        if rate is not None and k == 1 and rate[1] > 0 and rate[0] / rate[1] >= 0.05:
+            out.append(
+                f"4 sentinel {scenario}: {k} of {n} failed; step 3 does not run "
+                f"({why}), but that rate, {pct(*rate)}, is 5% or higher, so 1.7's "
+                "closing line dismisses it: a single failure at a scenario whose "
+                "recorded base rate is 5% or higher never holds a release by itself "
+                f"{bar} -> met"
+            )
+            continue
         out.append(
-            f"4 sentinel {scenario}: {k} of {n} failed; {source} "
-            f"(95% Wilson {100 * base_lo:.0f}-{100 * base_hi:.0f}%), observed 95% "
-            f"Wilson lower {100 * obs_lo:.0f}% "
-            f"{'exceeds' if regression else 'does not exceed'} "
-            f"{100 * base_hi:.0f}%, {'a regression' if regression else 'not a regression'} "
-            f"{bar} -> {'not met' if regression else 'met'}"
+            f"4 sentinel {scenario}: {k} of {n} failed; step 3 does not run ({why}), "
+            f"so the failure{'' if k == 1 else 's'} stand{'s' if k == 1 else ''} "
+            "(1.7 step 2: run the scenario 20 times at this head and record the rate "
+            f"with its criterion) {bar} -> not met"
         )
     return out
 
@@ -2562,16 +2628,20 @@ def _criteria_check() -> list[str]:
             "(20 graded, 3 failed for other reasons) "
             "[bar <= 2 of 20 and >= 20 graded] -> met"
         ),
-        # The checkbox cell graded 19 of its 20 planned trials, so this campaign
-        # has no head-matched rate to substitute and the recorded one is barred:
-        # 1.7 step 2 reuses a rate only at the head it was measured at.
+        # The cell's own twenty runs are a rate, so step 3 has an observed side;
+        # what it has no base side for is the criterion, since the only recorded
+        # row was measured under the pre-amendment one. The comparison is barred
+        # and the closing line decides instead, the single failure standing
+        # against a recorded rate of 10%.
         (
-            f"4 sentinel {CHECKBOX}: 1 of 20 failed; the recorded base rate "
-            f"2/20 = 10% was measured at {SENTINEL_BASE_RATES[CHECKBOX][1]}, whose "
-            "skills/ and hooks/ trees are not the treatment head's, and this "
-            "campaign measured no rate at the head under test, so the failure "
-            "stands (1.7 step 2: run 20 at this head and record the rate) "
-            "[bar no regression under 1.7] -> not met"
+            f"4 sentinel {CHECKBOX}: 1 of 20 failed; step 3 does not run (1.7's "
+            "criterion clause bars the comparison: the recorded base rate 2/20 = 10% "
+            f"was measured at {SENTINEL_BASE_RATES[CHECKBOX][1]} under criterion "
+            f'"{SENTINEL_BASE_RATES[CHECKBOX][2]}", not this campaign\'s '
+            f'"{CAMPAIGN_CRITERION}"), but that rate, 2/20 = 10%, is 5% or higher, '
+            "so 1.7's closing line dismisses it: a single failure at a scenario "
+            "whose recorded base rate is 5% or higher never holds a release by "
+            "itself [bar no regression under 1.7] -> met"
         ),
         *[
             f"4 sentinel {scenario}: 1 of 1 passed [bar no regression under 1.7] -> met"
@@ -2691,6 +2761,28 @@ def _fixture_tree(
                 MODEL,
                 SENTINEL_BASE_RATES,
             ) = saved
+
+
+@contextlib.contextmanager
+def _recorded_rate(scenario: str, row: tuple[tuple[int, int], str, str]):
+    """``SENTINEL_BASE_RATES`` with one scenario's row replaced for the duration.
+
+    The recorded rates are design pins, so the cases that exercise 1.7 step 3
+    can only reach it by repointing one: this campaign records no row measured
+    under the criterion it grades under, and step 3 needs one. Restored on the
+    way out so no case can leak into the next.
+
+    :param scenario: The scenario whose row is replaced.
+    :param row: (the rate, the head it was measured at, the criterion).
+    """
+
+    global SENTINEL_BASE_RATES
+    saved = dict(SENTINEL_BASE_RATES)
+    try:
+        SENTINEL_BASE_RATES[scenario] = row
+        yield
+    finally:
+        SENTINEL_BASE_RATES = saved
 
 
 def _run_main() -> tuple[int | None, str, str]:
@@ -3186,9 +3278,14 @@ def self_test() -> int:
             *[(CHECKBOX, "fail" if i == 0 else "pass") for i in range(20)], repeat=20
         )
         with _fixture_tree({"run-a": "pass", "run-b": "pass"}, sentinel=batch):
-            # 1.7 step 2 reuses a recorded rate only at the head it was measured
-            # at, so the fixture's own head is what makes this the match branch.
-            SENTINEL_BASE_RATES[CHECKBOX] = ((2, 20), _fixture_commit("treatment"))
+            # A row measured under the criterion the campaign grades under is
+            # what makes this the comparison branch; the cell's own twenty runs
+            # are the observed side, and the head is recorded as provenance.
+            SENTINEL_BASE_RATES[CHECKBOX] = (
+                (2, 20),
+                _fixture_commit("treatment"),
+                CAMPAIGN_CRITERION,
+            )
             code, text, error = _run_main()
             if code != 0:
                 return f"main() refused the sentinel batch: {error}"
@@ -3729,10 +3826,42 @@ def self_test() -> int:
             "",
         )
 
-    def base_rate_one_tree_differs() -> str:
-        # This campaign's real shape: phase 2 reverts a skill, so skills/ moves
-        # while hooks/ comes back byte-identical to the head the rate was
-        # measured at. Either tree differing bars the rate.
+    def checkbox_cell(finals: list[str], graded_benign: bool) -> str:
+        """The criterion-4 line for a checkbox sentinel cell of exactly ``finals``.
+
+        The synthetic campaign is the whole shape criterion 4 reads, so a case
+        that turns on the cell's size states the cell and leaves the rest of the
+        campaign alone.
+
+        :param finals: The cell's runs, in place of the synthetic campaign's.
+        :param graded_benign: True grades the campaign's whole benign checkbox
+            cell, which is what gives this head a twenty-run rate of its own.
+        """
+
+        manifest, trials, sentinel = _synthetic_campaign()
+        if graded_benign:
+            for trial in trials:
+                if trial.scenario == CHECKBOX:
+                    trial.final, trial.c3, trial.c3_reason = "pass", "no", ""
+        cell = [(CHECKBOX, f"s-cb-{i}", final) for i, final in enumerate(finals)]
+        batch = [row for row in sentinel if row[0] != CHECKBOX] + cell
+        return next(
+            (
+                ln
+                for ln in sentinel_lines(manifest, trials, batch)
+                if ln.startswith(f"4 sentinel {CHECKBOX}:")
+            ),
+            "",
+        )
+
+    def base_rate_other_head_still_compares() -> str:
+        # A base rate is by construction a measurement from an earlier head, so
+        # the head it was measured at cannot bar step 3: the observed side is
+        # twenty runs at the head under test and the recorded row is what they
+        # are compared against. The fixture is this campaign's real shape --
+        # phase 2 reverts a skill, so skills/ moves while hooks/ comes back
+        # byte-identical -- and the comparison still runs, against a row whose
+        # head the line names.
         batch = _sentinel_batch((CHECKBOX, "fail"), repeat=20)
         with _fixture_tree({"run-a": "pass", "run-b": "pass"}, sentinel=batch):
             arm_root = ROOTS["treatment"]
@@ -3772,38 +3901,136 @@ def self_test() -> int:
                 return "the fixture moved hooks/ too, so it pins nothing"
             if tree(measured, "skills") == tree(pinned, "skills"):
                 return "the fixture left skills/ unchanged, so it pins nothing"
-            SENTINEL_BASE_RATES[CHECKBOX] = ((2, 20), measured)
+            SENTINEL_BASE_RATES[CHECKBOX] = ((2, 20), measured, CAMPAIGN_CRITERION)
             code, text, error = _run_main()
             if code != 0:
                 return f"main() refused the sentinel batch: {error}"
             line = checkbox_line(text)
-            if "was measured at" not in line or "-> not met" not in line:
-                return f"a rate measured at another skills/ tree was reused: {line!r}"
+            if "does not exceed" not in line or not line.endswith("-> met"):
+                return f"a rate measured at another skills/ tree was refused: {line!r}"
+            if measured not in line:
+                return f"the line does not name the head the rate came from: {line!r}"
             return ""
 
     def base_rate_own_measurement() -> str:
-        # Spec 1.7 step 2's replacement, which spec line 270 assigns to phase 3:
-        # twenty benign sessions at the head under test are a head-matched rate.
-        manifest, trials, sentinel = _synthetic_campaign()
-        for trial in trials:
-            if trial.scenario == CHECKBOX and trial.final == "indeterminate":
-                # The cell's one ungraded trial instead reached a verdict, and
-                # with it a readable over-trigger reading. A rate is made of
-                # readings, so grading alone would not admit the trial to one.
-                trial.final = "pass"
-                trial.c3, trial.c3_reason = "no", ""
-        line = next(
-            (
-                ln
-                for ln in criteria_lines(manifest, trials, sentinel)
-                if ln.startswith(f"4 sentinel {CHECKBOX}:")
-            ),
-            "",
-        )
-        if "this campaign's own rate at the head under test 1/20 = 5%" not in line:
-            return f"the line does not substitute the head-matched rate: {line!r}"
-        if "-> met" not in line:
-            return f"the substituted rate did not decide the line: {line!r}"
+        # Spec 1.7 step 2's twenty-run measurement, which spec line 270 assigns
+        # to phase 3: twenty benign sessions at the head under test are what
+        # step 3 puts on its observed side when the sentinel cell is too short
+        # to hold a rate. A rate is made of readings, so the cell's one ungraded
+        # trial keeps the block from being one until it reaches a verdict --
+        # grading alone would not admit it.
+        def line(graded_whole: bool) -> str:
+            manifest, trials, sentinel = _synthetic_campaign()
+            for trial in trials:
+                if (
+                    graded_whole
+                    and trial.scenario == CHECKBOX
+                    and trial.final == "indeterminate"
+                ):
+                    trial.final = "pass"
+                    trial.c3, trial.c3_reason = "no", ""
+            batch = [row for row in sentinel if row[0] != CHECKBOX]
+            batch.append((CHECKBOX, "s-cb-0", "fail"))
+            return next(
+                (
+                    ln
+                    for ln in criteria_lines(manifest, trials, batch)
+                    if ln.startswith(f"4 sentinel {CHECKBOX}:")
+                ),
+                "",
+            )
+
+        with _recorded_rate(CHECKBOX, ((2, 20), "c6b69d8", CAMPAIGN_CRITERION)):
+            ungraded, whole = line(False), line(True)
+        if "no twenty-run rate for the observed side" not in ungraded:
+            return f"a partly graded benign cell was read as a rate: {ungraded!r}"
+        if f"benign block {pct(1, 20)}" not in whole:
+            return f"the line does not take the benign block as observed: {whole!r}"
+        if not whole.endswith("-> met"):
+            return f"the benign block did not decide the line: {whole!r}"
+        return ""
+
+    def sentinel_one_run_failure_is_not_a_regression() -> str:
+        # The production shape, and the reason this rule is written down:
+        # `run-all --tier sentinel` runs each scenario once, so a failing cell
+        # is a single draw. wilson(1, 1)'s lower bound is 21%, above the 16%
+        # upper bound of a clean 0/20 benign block, so putting the cell on the
+        # observed side turns the cleanest head this campaign can measure into
+        # a regression -- the cleaner the head, the likelier the false call.
+        line = checkbox_cell(["fail"], graded_benign=True)
+        if not line.endswith("-> met"):
+            return f"one failure in one run was scored a regression: {line!r}"
+        if "step 3 does not run" not in line:
+            return f"a comparison was run against a one-run cell: {line!r}"
+        if "5% or higher" not in line:
+            return f"the line does not cite 1.7's closing clause: {line!r}"
+        return ""
+
+    def sentinel_criterion_mismatch_bars_step_three() -> str:
+        # Twenty runs at this head and a recorded rate, so only 1.7's criterion
+        # clause stands between this cell and a comparison -- and a comparison
+        # against the pre-amendment rate is biased toward declaring a
+        # regression. Two failures are past the closing line's reach, so what
+        # the line has to show is the bar itself.
+        line = checkbox_cell(["fail", "fail"] + ["pass"] * 18, graded_benign=True)
+        if not line.endswith("-> not met"):
+            return f"failures against a barred rate were dismissed: {line!r}"
+        if "criterion clause bars the comparison" not in line:
+            return f"the line does not name the criterion clause: {line!r}"
+        if "95% Wilson" in line:
+            return f"a comparison was run across two criteria: {line!r}"
+        if pct(*SENTINEL_BASE_RATES[CHECKBOX][0]) not in line:
+            return f"the line reads as though no rate were recorded: {line!r}"
+        if (
+            SENTINEL_BASE_RATES[CHECKBOX][2] not in line
+            or CAMPAIGN_CRITERION not in line
+        ):
+            return f"the line does not name both criteria: {line!r}"
+        return ""
+
+    def sentinel_step_three_compares_matched_criteria() -> str:
+        # A row re-measured under the criterion this campaign grades under is
+        # comparable, so step 3 runs and the twenty-run cell decides it. Both
+        # directions, since a rule that can only say "met" decides nothing.
+        with _recorded_rate(CHECKBOX, ((0, 20), "c6b69d8", CAMPAIGN_CRITERION)):
+            worse = checkbox_cell(["fail"] * 10 + ["pass"] * 10, graded_benign=False)
+        with _recorded_rate(CHECKBOX, ((2, 20), "c6b69d8", CAMPAIGN_CRITERION)):
+            same = checkbox_cell(["fail"] + ["pass"] * 19, graded_benign=False)
+        if not worse.endswith("-> not met") or "exceeds" not in worse:
+            return f"a twenty-run rate above the recorded upper bound passed: {worse!r}"
+        if "not a regression" in worse:
+            return f"the regression line does not say so in words: {worse!r}"
+        if not same.endswith("-> met") or "does not exceed" not in same:
+            return f"a twenty-run rate inside the recorded interval failed: {same!r}"
+        return ""
+
+    def sentinel_step_three_takes_the_benign_block() -> str:
+        # A one-run cell holds no rate, so step 3's observed side is the
+        # twenty-session benign block at the head under test. The denominator
+        # is what proves which side ran: wilson(1, 1)'s 21% lower bound can
+        # appear nowhere in a line that compared 0/20.
+        with _recorded_rate(CHECKBOX, ((2, 20), "c6b69d8", CAMPAIGN_CRITERION)):
+            line = checkbox_cell(["fail"], graded_benign=True)
+        if f"benign block {pct(0, 20)}" not in line:
+            return f"the observed side is not the benign block: {line!r}"
+        if f"{100 * wilson(1, 1)[0]:.0f}%" in line:
+            return f"the one-run cell reached the comparison: {line!r}"
+        if not line.endswith("-> met"):
+            return f"a 0/20 observed rate was scored a regression: {line!r}"
+        return ""
+
+    def sentinel_two_failures_are_not_a_single_failure() -> str:
+        # 1.7's closing line dismisses "a single failure", so the same cell
+        # with a second failure is not dismissed. Nothing can judge a cell this
+        # short, so the failures stand and the line says what step 2 would need.
+        one = checkbox_cell(["fail"], graded_benign=False)
+        two = checkbox_cell(["fail", "fail"], graded_benign=False)
+        if not one.endswith("-> met"):
+            return f"the closing line did not dismiss a single failure: {one!r}"
+        if not two.endswith("-> not met"):
+            return f"two failures were dismissed as a single failure: {two!r}"
+        if "run the scenario 20 times at this head" not in two:
+            return f"the line does not name what step 2 would need: {two!r}"
         return ""
 
     def control_prefix_ok() -> str:
@@ -3966,8 +4193,28 @@ def self_test() -> int:
         ("sentinel_provenance_absent", sentinel_provenance_absent),
         ("sentinel_dirty_tree", sentinel_dirty_tree),
         ("sentinel_well_formed", sentinel_well_formed),
-        ("base_rate_one_tree_differs", base_rate_one_tree_differs),
+        ("base_rate_other_head_still_compares", base_rate_other_head_still_compares),
         ("base_rate_own_measurement", base_rate_own_measurement),
+        (
+            "sentinel_one_run_failure_is_not_a_regression",
+            sentinel_one_run_failure_is_not_a_regression,
+        ),
+        (
+            "sentinel_criterion_mismatch_bars_step_three",
+            sentinel_criterion_mismatch_bars_step_three,
+        ),
+        (
+            "sentinel_step_three_compares_matched_criteria",
+            sentinel_step_three_compares_matched_criteria,
+        ),
+        (
+            "sentinel_step_three_takes_the_benign_block",
+            sentinel_step_three_takes_the_benign_block,
+        ),
+        (
+            "sentinel_two_failures_are_not_a_single_failure",
+            sentinel_two_failures_are_not_a_single_failure,
+        ),
         ("control_prefix_ok", control_prefix_ok),
         ("control_prefix_bad", control_prefix_bad),
         ("control_prefix_short", control_prefix_short),
