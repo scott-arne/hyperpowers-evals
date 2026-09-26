@@ -72,8 +72,9 @@ interface SuperpowersProvenance {
   readonly superpowers_dirty: boolean;
 }
 
-// Resolve SUPERPOWERS_ROOT's head, its skills tree, and whether skills/ has
-// uncommitted work. Resolved HERE rather than passed in by the caller: run-all
+// Resolve SUPERPOWERS_ROOT's head, its skills tree, and whether skills/ or
+// hooks/ has uncommitted work. Resolved HERE rather than passed in by the
+// caller: run-all
 // and the dashboard both write headers, and a parameter is one more thing for
 // the two paths to drift on.
 //
@@ -90,11 +91,20 @@ function superpowersProvenance(): SuperpowersProvenance | undefined {
     // `HEAD:skills` is the tree object id, resolved before the status read so
     // a root without a skills/ tree leaves through the catch below.
     const skillsTree = runGit(['rev-parse', 'HEAD:skills'], root).trim();
-    // --untracked-files=normal on purpose: the staged plugin payload is copied
-    // from the working tree, so an untracked new skill file ships exactly like
-    // a modified tracked one and must count as dirty.
+    // Both trees ship in the staged plugin payload, so both can change what a
+    // session loads; the spec's provenance rule names skills/ and hooks/
+    // together. --untracked-files=normal on purpose: the payload is copied from
+    // the working tree, so an untracked new file ships exactly like a modified
+    // tracked one and must count as dirty.
     const status = runGit(
-      ['status', '--porcelain', '--untracked-files=normal', '--', 'skills'],
+      [
+        'status',
+        '--porcelain',
+        '--untracked-files=normal',
+        '--',
+        'skills',
+        'hooks',
+      ],
       root,
     );
     return {

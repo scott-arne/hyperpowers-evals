@@ -29,9 +29,9 @@ export const BatchHeaderSchema = z.object({
   // The object id of the `skills` tree at that HEAD. This is the field that
   // discriminates one head from another; the commit is provenance.
   superpowers_skills_tree: z.string().optional(),
-  // True when skills/ carried uncommitted work, tracked or untracked. The
-  // staged plugin payload is copied from the WORKING TREE, so a dirty tree
-  // means the commit does not describe what ran.
+  // True when skills/ or hooks/ carried uncommitted work, tracked or
+  // untracked. The staged plugin payload is copied from the WORKING TREE, so a
+  // dirty tree means the commit does not describe what ran.
   superpowers_dirty: z.boolean().optional(),
 });
 export type BatchHeader = z.infer<typeof BatchHeaderSchema>;

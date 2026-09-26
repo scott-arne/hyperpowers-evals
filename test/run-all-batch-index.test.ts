@@ -47,7 +47,7 @@ function withSuperpowersRoot(root: string | undefined, body: () => void): void {
   }
 }
 
-// A throwaway superpowers checkout carrying the one directory the provenance
+// A throwaway superpowers checkout carrying the two directories the provenance
 // fields answer for. gpgsign is pinned off so a signing host config cannot
 // fail the fixture commit.
 function tmpSuperpowersRoot(): string {
@@ -57,8 +57,10 @@ function tmpSuperpowersRoot(): string {
     join(root, 'skills', 'using-hyperpowers', 'SKILL.md'),
     'boot\n',
   );
+  mkdirSync(join(root, 'hooks'), { recursive: true });
+  writeFileSync(join(root, 'hooks', 'hooks.json'), '{}\n');
   runGit(['init', '-q', '-b', 'main'], root);
-  runGit(['add', 'skills'], root);
+  runGit(['add', 'skills', 'hooks'], root);
   runGit(['-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'fixture'], root);
   return root;
 }
@@ -312,6 +314,25 @@ test('writeBatchHeader flags an untracked file under skills/ as dirty', () => {
   // untracked skill file ships exactly like a modified one.
   const root = tmpSuperpowersRoot();
   writeFileSync(join(root, 'skills', 'new-skill.md'), 'new\n');
+  expect(headerWithRoot(root)['superpowers_dirty']).toBe(true);
+});
+
+test('writeBatchHeader flags a modified tracked file under hooks/ as dirty', () => {
+  // hooks/ ships in the staged plugin payload exactly like skills/ does, and
+  // a session-start hook changes what the agent under test loads. A header
+  // that called this clean would attribute the run to the pinned commit.
+  const root = tmpSuperpowersRoot();
+  writeFileSync(join(root, 'hooks', 'hooks.json'), '{"edited": true}\n');
+  const header = headerWithRoot(root);
+  expect(header['superpowers_dirty']).toBe(true);
+  expect(header['superpowers_commit']).toBe(
+    runGit(['rev-parse', 'HEAD'], root).trim(),
+  );
+});
+
+test('writeBatchHeader flags an untracked file under hooks/ as dirty', () => {
+  const root = tmpSuperpowersRoot();
+  writeFileSync(join(root, 'hooks', 'session-start'), 'new\n');
   expect(headerWithRoot(root)['superpowers_dirty']).toBe(true);
 });
 
