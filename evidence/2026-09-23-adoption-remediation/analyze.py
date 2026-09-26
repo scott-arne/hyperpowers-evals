@@ -1412,9 +1412,9 @@ def read_sentinel(manifest: dict) -> tuple[list[tuple[str, str, str]], str]:
         raise DesignError(
             f"{SENTINEL_BATCH}: {os.path.basename(batch)} records "
             "superpowers_dirty true: SUPERPOWERS_ROOT carried uncommitted work "
-            "under skills/ when it ran. The plugin payload is staged from the "
-            f"working tree, not from the commit, so {recorded} does not describe "
-            "what the sessions were given"
+            "under skills/ or hooks/ when it ran. The plugin payload is staged "
+            f"from the working tree, not from the commit, so {recorded} does "
+            "not describe what the sessions were given"
         )
     # run-all writes the batch at <out-root>/batches/<id> and each run at
     # <out-root>/<run_id>, so a run resolves against the batch's grandparent.

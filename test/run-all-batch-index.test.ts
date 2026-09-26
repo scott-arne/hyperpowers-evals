@@ -49,7 +49,11 @@ function withSuperpowersRoot(root: string | undefined, body: () => void): void {
 
 // A throwaway superpowers checkout carrying the two directories the provenance
 // fields answer for. gpgsign is pinned off so a signing host config cannot
-// fail the fixture commit.
+// fail the fixture commit, and showUntrackedFiles is pinned OFF so the
+// producer's --untracked-files=normal is the only thing that can surface an
+// untracked file: without this the flag could be deleted as redundant and every
+// test here would stay green, while a host carrying that config shipped an
+// untracked hook or skill under a clean dirty flag.
 function tmpSuperpowersRoot(): string {
   const root = mkdtempSync(join(tmpdir(), 'sp-root-'));
   mkdirSync(join(root, 'skills', 'using-hyperpowers'), { recursive: true });
@@ -60,6 +64,7 @@ function tmpSuperpowersRoot(): string {
   mkdirSync(join(root, 'hooks'), { recursive: true });
   writeFileSync(join(root, 'hooks', 'hooks.json'), '{}\n');
   runGit(['init', '-q', '-b', 'main'], root);
+  runGit(['config', 'status.showUntrackedFiles', 'no'], root);
   runGit(['add', 'skills', 'hooks'], root);
   runGit(['-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'fixture'], root);
   return root;
