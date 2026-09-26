@@ -1,0 +1,40 @@
+  [1mA. Session module owns storage; [38;5;153mlogin()[39m stays pure; the handler wires them.[0m (recommended)
+  [38;5;153msession.js[39m exports [38;5;153msetUser[39m / [38;5;153mgetUser[39m / [38;5;153mclearUser[39m over [38;5;153msessionStorage[39m. [38;5;153mauth.js[39m exports [38;5;153mlogin(username, password)[39m —
+  signature unchanged — returning [38;5;153m{ success, userId, username }[39m. The submit handler imports both and calls
+  [38;5;153msession.setUser()[39m on success. [38;5;153mlogin()[39m never touches storage, so it's testable with no DOM and no browser storage, and
+  the two concerns can change independently. Cost: a future login path must remember to store. There's one call site
+  today, and the fix if that ever bites is approach B. Complexity: low.
+
+  [1mB. [38;5;153mlogin()[39m writes to the session store itself.[0m
+  [38;5;153mauth.js[39m imports [38;5;153msession.js[39m and stores the identity as a side effect of a successful login. Callers can't forget. Cost:
+  [38;5;153mlogin()[39m acquires a hidden side effect, testing it now requires a storage stub, and auth is permanently coupled to
+  storage — a bad trade for saving one line at one call site. Complexity: low.
+
+  [1mC. Observable session store.[0m
+  As A, plus a subscriber list so forms re-render when identity changes. Buys reactivity for the forms you mentioned.
+  But nothing today needs to [3mreact[0m to a login — the forms will read the value when they submit. This is an event system
+  bought for a requirement that hasn't arrived. Complexity: moderate.
+
+  [1mI recommend A.[0m It's the only one that keeps the new module boundary clean in both directions, and it's the cheapest to
+  upgrade to B or C later if the need actually shows up. C is YAGNI today.
+
+  One scope note that comes with any of them: [38;5;153mlogin()[39m is a stub that never calls [38;5;153mAPI_ENDPOINT[39m. I'd keep it a stub and
+  have it return a fake [38;5;153muserId[39m, so this change stays about the identity plumbing. Making the network call real is a
+  separate piece of work.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Approach [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: pure login + store (Recommended)[39m
+     [38;5;246msession.js owns sessionStorage; login() signature unchanged and storage-free; submit handler wires them together.[39m
+  [38;5;246m2.[39m B: login writes to store
+     [38;5;246mlogin() stores the identity itself. Callers cannot forget, at the cost of a hidden side effect and auth/storage [39m
+     [38;5;246mcoupling.[39m
+  [38;5;246m3.[39m C: observable store
+     [38;5;246mA, plus subscribe/notify so forms react to identity changes. Reactivity now, for forms that do not exist yet.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

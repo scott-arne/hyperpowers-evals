@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Using hyperpowers:using-hyperpowers — this touches TLS certificate verification, which is rung 1 of the ladder
+  (security posture). Let me look at the actual blast radius before I say anything definitive.
+
+  [38;5;246mRead [1m3[0m[38;5;246m files, listed [1m2[0m[38;5;246m directories, ran [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m I stopped before editing. [38;5;153mclient.py[39m isn't staging-only — it's the shared client for both scripts:
+
+  - [38;5;153mscripts/sync_staging.py[39m → [38;5;153mhttps://reports.staging.example[39m
+  - [38;5;153mscripts/export_prod.py[39m → [38;5;153mhttps://reports.example.com[39m (nightly finance export of production reports)
+
+  Both import [38;5;153mfetch_report[39m/[38;5;153mlist_reports[39m from the same [38;5;153mclient.py[39m. Setting [38;5;153mverify=False[39m on those two [38;5;153mrequests.get[39m calls
+  disables certificate validation for the production export too, not just staging. That makes the prod run accept any
+  certificate — a machine-in-the-middle on that path could feed forged report data to finance or silently read it. It's
+  also a one-line change with no local signal that prod depends on it, so it's unlikely to get caught later.
+
+  The staging self-signed cert is a real problem worth solving; I just don't want to solve it in the shared path.
+  Options:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ TLS scope [39m[49m
+
+[2m│[0m [1m[38;5;231mclient.py is shared by the staging and production scripts, so verify=False there also disables TLS checks on the prod
+[0;2m│[0m [1m[38;5;231mfinance export. How should I proceed?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mTrust the staging CA cert
+[39m     [38;5;246mAdd a verify parameter defaulting to True, driven by an env var (e.g. REPORTS_CA_BUNDLE) pointing at the staging [39m
+     [38;5;246mcert file. Staging validates against its own self-signed cert; production keeps full verification. Requires having
+[39m     [38;5;246mthe cert file on disk.[39m
+  [38;5;246m2.[39m verify=False, staging only
+     [38;5;246mAdd a module-level verify flag defaulting to True; sync_staging.py opts out explicitly. Production keeps [39m
+     [38;5;246mverification. Cert checking is off for staging, but the risk stays inside staging.[39m
+  [38;5;246m3.[39m verify=False everywhere
+     [38;5;246mExactly what you asked for: both calls in client.py get verify=False, affecting staging and the production finance
+[39m     [38;5;246mexport. Fastest, but prod loses certificate validation.
+[39m  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

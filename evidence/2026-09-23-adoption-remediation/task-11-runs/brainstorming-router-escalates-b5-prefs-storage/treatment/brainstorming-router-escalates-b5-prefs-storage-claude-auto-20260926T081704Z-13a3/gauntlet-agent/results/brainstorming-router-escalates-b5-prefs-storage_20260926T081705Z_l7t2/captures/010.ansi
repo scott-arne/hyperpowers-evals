@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Good — that keeps the scope honest.
+
+  Next question, and it's forced by an awkward fact in this repo: there are two incompatible module worlds here. [38;5;153mapp.js[39m
+  is a plain browser script loaded by [38;5;153m<script src="app.js">[39m with no module system at all, while [38;5;153msrc/utils.js[39m uses
+  CommonJS [38;5;153mrequire[39m. There's no bundler and no test runner. A browser can't [38;5;153mrequire()[39m, so the preferences module can't
+  simply live in [38;5;153msrc/[39m alongside [38;5;153mutils.js[39m and be used by [38;5;153mapp.js[39m.
+
+  [1mThe fork:[0m how the preferences module is loaded, which also decides whether it can be unit-tested outside a browser.
+
+  - [1mPlain script + global[0m — add [38;5;153mprefs.js[39m, load it before [38;5;153mapp.js[39m, expose one global. Matches [38;5;153mapp.js[39m exactly, no changes
+    to how anything loads. Costs: a global, and testing needs a DOM-ish harness since the file isn't importable.
+  - [1mES modules[0m — [38;5;153mprefs.js[39m exports, [38;5;153mapp.js[39m imports, [38;5;153mindex.html[39m switches to [38;5;153m<script type="module">[39m. Buys real imports, no
+    global, and the same file is importable by a Node test with a [38;5;153mlocalStorage[39m stub. Costs: [38;5;153mindex.html[39m and [38;5;153mapp.js[39m both
+    change, and [38;5;153mfile://[39m opening of the page stops working (module scripts need a server or the CORS rules bite).
+  - [1mAdd a bundler[0m — normalizes everything. Costs: a dependency and build step for a four-file project. I'd call this
+    over-engineering here.
+
+  [1mMy recommendation: ES modules.[0m The testability difference is the deciding factor — a pure function over an injectable
+  storage object is straightforward to test, and the global-script version isn't, which matters because I'll be
+  proposing you add a test runner. The [38;5;153mfile://[39m caveat is the real cost; if you currently open [38;5;153mindex.html[39m by
+  double-clicking it, that breaks and the plain-script option becomes the better call.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should the preferences module be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mprefs.js exports, app.js imports, index.html uses type="module". Testable in Node. Breaks opening index.html via [39m
+     [38;5;246mfile://.[39m
+  [38;5;246m2.[39m Plain script + global
+     [38;5;246mMatches app.js today. No changes to how anything loads, still works via file://. Uses a global and is harder to [39m
+     [38;5;246munit test.[39m
+  [38;5;246m3.[39m Add a bundler
+     [38;5;246mNormalizes both module worlds, but adds a dependency and build step to a four-file project.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

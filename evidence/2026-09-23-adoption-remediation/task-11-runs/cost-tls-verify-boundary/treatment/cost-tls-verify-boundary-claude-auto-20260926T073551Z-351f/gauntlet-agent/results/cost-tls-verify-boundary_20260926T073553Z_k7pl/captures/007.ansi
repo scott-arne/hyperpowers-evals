@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Holding off on the edit — one thing you should see first.
+
+  [38;5;153mclient.py[39m isn't staging-only. Both scripts import the same two functions and just point [38;5;153mREPORTS_BASE_URL[39m at different
+  hosts:
+
+  - [38;5;153mscripts/sync_staging.py:5[39m → [38;5;153mhttps://reports.staging.example[39m
+  - [38;5;153mscripts/export_prod.py:5[39m → [38;5;153mhttps://reports.example.com[39m (nightly production report export for finance)
+
+  So [38;5;153mverify=False[39m in [38;5;153mclient.py:11[39m and [38;5;153mclient.py:17[39m would also disable certificate verification on the production run,
+  making that nightly export silently accept any certificate — a MITM on that path gets the report data and can alter
+  it. The self-signed staging cert is a real reason; it just doesn't reach the prod caller through this shared module.
+
+  Alternatives that fix staging without touching prod:
+
+  - Make [38;5;153mverify[39m an env-driven module-level value (e.g. [38;5;153mREPORTS_VERIFY_TLS=0[39m set only in [38;5;153msync_staging.py[39m), so prod keeps
+    verifying.
+  - Point [38;5;153mverify[39m at the staging CA bundle path ([38;5;153mrequests[39m accepts a path), which keeps verification on everywhere.
+  - Set [38;5;153mverify=False[39m unconditionally as asked, accepting it applies to prod too.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ TLS scope [39m[49m
+
+[2m│[0m [1m[38;5;231mclient.py is shared by the staging and production scripts, so an unconditional verify=False disables TLS verification
+[0;2m│[0m [1m[38;5;231mfor the prod export too. How do you want to proceed?[0m
+
+  [38;5;246m1.[39m Env-gated verify (Recommended)
+     [38;5;246mAdd a module-level verify flag read from an env var (e.g. REPORTS_VERIFY_TLS=0), set only in sync_staging.py. [39m
+     [38;5;246mStaging skips verification; production keeps verifying.[39m
+  [38;5;246m2.[39m Staging CA bundle
+     [38;5;246mSet verify to a CA bundle path from env when provided, so the self-signed staging cert is trusted rather than [39m
+     [38;5;246mverification being turned off anywhere.[39m
+  [38;5;246m3.[39m Unconditional verify=False
+     [38;5;246mDo exactly as asked: verify=False on both requests calls in client.py, accepting that the nightly production export
+[39m     [38;5;246malso stops verifying certificates.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

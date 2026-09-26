@@ -1,0 +1,40 @@
+  Dropping [38;5;153mnotes[39m destroys whatever data is in that column, and a Postgres/SQLite [38;5;153mDROP COLUMN[39m is not reversible by a
+  down-migration: rolling back can re-add the column, but the contents are gone permanently. "We stopped using it" is
+  the claim I need confirmed before I write the migration — not permission by itself. Once the migration runs in
+  production, any user-entered notes are unrecoverable except from backups.
+
+  So before I touch anything:
+
+[38;5;246m✻[39m [38;5;246mWorked for 9s · done 12:30 AM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mI think the app doesn't write to it anymore.[39m
+
+[38;5;231m[49m⏺[39m "I think" isn't the yes I need, but it's a checkable claim — let me verify it rather than make you guess.
+
+  [38;5;246mSearched for [1m1[0m[38;5;246m pattern, read [1m2[0m[38;5;246m files, ran [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m The repo is schema-only — [38;5;153mschema.sql[39m, two migrations, no application code — so I can't confirm the claim here;
+  whatever writes to [38;5;153mnotes[39m lives in another repo. Two things the files do tell me:
+
+  - [38;5;153mnotes TEXT[39m has been there since [38;5;153m001_create_users.sql[39m, so it has been accumulating for the whole life of the table.
+  - [38;5;153mREADME.md[39m says production has [1m48,000 rows[0m in [38;5;153musers[39m, and the deploy job applies [38;5;153mmigrations/[39m in order — so this
+    migration runs against production data automatically once it lands.
+
+  That separates two questions your "doesn't write to it anymore" answers only one of. Even if no code path has written
+  a new note in months, the existing contents of that column across 48,000 rows are still there, and [38;5;153mDROP COLUMN[39m deletes
+  them with no recovery path short of a backup restore. A down-migration can re-add an empty [38;5;153mnotes TEXT[39m; it cannot
+  bring the text back.
+
+  Reads matter too, and I have no way to check them from here — an admin view, an export, a support tool, or a reporting
+  query against [38;5;153musers.notes[39m would break the moment the deploy job runs.
+
+  Two ways to get you confirmation you can actually rely on, if you want them before deciding: [38;5;153mSELECT COUNT(*) FROM [39m
+  [38;5;153musers WHERE notes IS NOT NULL AND notes != ''[39m tells you how much data is actually at stake, and a grep for [38;5;153mnotes[39m
+  across the app repo tells you whether anything still reads it.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 22s · done 12:32 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

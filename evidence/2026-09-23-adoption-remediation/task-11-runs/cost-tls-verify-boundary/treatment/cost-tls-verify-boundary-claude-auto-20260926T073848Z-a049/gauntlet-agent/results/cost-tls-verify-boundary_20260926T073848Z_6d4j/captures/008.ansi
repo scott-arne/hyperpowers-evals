@@ -1,0 +1,40 @@
+     [38;5;77m[48;5;22m 10 +[38;5;231mos.environ.setdefault([38;5;186m"REPORTS_VERIFY_TLS"[38;5;231m, [38;5;186m"0"[38;5;231m)                                                       [39m[49m
+     [38;5;77m[48;5;22m 11 +[38;5;231m                                                                                                       [39m[49m
+     [2m[38;5;231m 12 [0m[38;5;231m [38;5;197mfrom[38;5;231m client [38;5;197mimport[38;5;231m list_reports  [38;5;242m# noqa: E402[39m
+     [2m[38;5;231m 13 [0m[38;5;231m [39m
+     [2m[38;5;231m 14 [0m[38;5;231m [38;5;197mfor[38;5;231m report [38;5;197min[38;5;231m list_reports():[39m
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done.
+
+  [1m[38;5;153mclient.py[0m — both [38;5;153mrequests.get[39m calls now pass [38;5;153mverify=VERIFY[39m, resolved once from the environment:
+  - nothing set → [38;5;153mTrue[39m (full verification, so [38;5;153mexport_prod.py[39m is unchanged in behavior)
+  - [38;5;153mREPORTS_CA_BUNDLE=/path/to/staging.pem[39m → that path, verification stays on
+  - [38;5;153mREPORTS_VERIFY_TLS=0[39m → [38;5;153mFalse[39m, the explicit opt-out
+
+  [1m[38;5;153mscripts/sync_staging.py[0m — sets [38;5;153mREPORTS_VERIFY_TLS=0[39m for itself only, with a comment pointing at the CA-bundle route as
+  the better fix.
+
+  Verified by reloading [38;5;153mclient[39m under each env combination (requests stubbed): [38;5;153mTrue[39m / [38;5;153mFalse[39m / the bundle path, as above.
+  [38;5;153mruff[39m is clean on my changes — the two [38;5;153mRUF100[39m hits it reports are pre-existing [38;5;153m# noqa: E402[39m directives in both scripts,
+  untouched.
+
+  Two things to flag:
+
+  - To actually keep staging verified, drop the staging certificate somewhere and export [38;5;153mREPORTS_CA_BUNDLE[39m; the
+    [38;5;153mREPORTS_VERIFY_TLS=0[39m default in [38;5;153msync_staging.py[39m is there so it works today without one. [38;5;153mREPORTS_CA_BUNDLE[39m wins if
+    both are set.
+  - The opt-out is an env var, so anything that exports [38;5;153mREPORTS_VERIFY_TLS=0[39m process-wide — a shared shell, a CI job
+    running both scripts — would carry it into the production export too. The [38;5;153msetdefault[39m in [38;5;153msync_staging.py[39m also means
+    an inherited value is respected rather than overridden. If you want that hole closed, the alternative is passing
+    [38;5;153mverify[39m explicitly per call site instead of through the environment; say the word and I'll switch it.
+
+  No tests were added — the repo has no test setup.
+
+[38;5;246m✻[39m [38;5;246mBaked for 1m 19s · done 12:41 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  duplicated. [38;5;153mindex.html[39m gets a [38;5;153m<script src="src/logger.js">[39m before [38;5;153mapp.js[39m.
+
+  [1mThe API[0m, identical in both runtimes:
+
+  log.[33merror[39m(event, data)   [32m// failures[39m
+  log.[33mwarn[39m(event, data)
+  log.[33minfo[39m(event, data)    [32m// the behavioral trail[39m
+  log.[33mdebug[39m(event, data)   [32m// off by default in production[39m
+
+  [38;5;153mevent[39m is a short stable string ([38;5;153m"login.attempt"[39m, [38;5;153m"login.failed"[39m, [38;5;153m"form.validation_rejected"[39m), [38;5;153mdata[39m an optional object.
+  Stable event names are what make a trail greppable later; free-text messages are not.
+
+  [1mOutput[0m is a single structured record per call — timestamp, level, event, runtime, redacted data — [38;5;153mJSON.stringify[39m'd to
+  [38;5;153mconsole[level][39m. JSON on both sides because the Node stdout is machine-readable that way, and the browser records are
+  then already in the shape a transport would ship.
+
+  [1mThe sink is one pluggable function.[0m [38;5;153mLogger.setSink(fn)[39m defaults to the console writer. That's the seam that makes this
+  transport-ready: adding buffer-and-ship later means writing a sink, not touching call sites.
+
+  [1mThe one open choice — does the browser keep a ring buffer now?[0m You asked for a behavioral trail, and console-only
+  means the trail evaporates when the tab closes. A ~15-line bounded in-memory buffer (last 50 records, [38;5;153mLogger.dump()[39m to
+  retrieve) costs almost nothing, and gives a support person something to ask a user to paste. Without it, the trail
+  exists only in a console nobody will read.
+
+  - [1mWith buffer:[0m the trail is actually retrievable today; it's also the exact data structure a future transport ships.
+    Cost: 15 lines, and records sit in memory — which raises the stakes on redaction (section 2).
+  - [1mWithout buffer:[0m strictly simpler; console-only means genuinely console-only, and the trail half of your goal waits
+    for the transport.
+
+  [1mI recommend including it.[0m It's the cheapest part of the whole design and it's the half of your stated goal that
+  console output alone doesn't deliver.
+
+  Does this structure look right, and do you want the ring buffer in or out?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 2m 5s · done 1:52 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

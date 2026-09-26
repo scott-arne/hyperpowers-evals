@@ -1,0 +1,40 @@
+    (including one that logs the username at submit time)
+  - [38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m — a small Node entry point with a [38;5;153mgreet[39m util
+  - [38;5;153mpackage.json[39m with no dependencies and no test setup
+
+  [1mClassification: architectural.[0m Logging is a new subsystem — there's no logging layer here to modify, just scattered
+  [38;5;153mconsole.*[39m calls, and "debug production issues" implies the logs have to get somewhere you can read them after the
+  fact. That means a spec and a written design rather than me just editing files. I'll ask a few questions one at a
+  time, propose approaches, then write a design doc for your review.
+
+  [1mFirst fork: which app.[0m This repo has two unrelated entry points, and the answer changes nearly everything downstream.
+  Browser-side logging is the hard case — a [38;5;153mconsole.log[39m in a user's browser is invisible to you in production, so useful
+  browser logging needs a transport that ships records to a server you control, plus batching, failure handling, and a
+  privacy review (that login form handles passwords). Node-side logging is the cheap case — structured JSON to stdout,
+  and whatever runs the process collects it; no transport to build. Doing both means one shared core with two different
+  sinks, which is more design but avoids two incompatible log formats later.
+
+  Picking one now is cheap to revisit; picking "both" and building the shared abstraction is the part that's expensive
+  to undo if you only ever needed one.
+
+  My recommendation: the browser app, since that's where the production debugging gap actually is — the Node side
+  already prints to stdout where a process supervisor can capture it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[1m[38;5;231mWhich app needs the logging?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser app (Recommended)[39m
+     [38;5;246mindex.html + app.js. Needs a transport to ship logs off the user's browser to somewhere you can read them, plus a [39m
+     [38;5;246mprivacy pass on the login flow.[39m
+  [38;5;246m2.[39m Node app
+     [38;5;246msrc/index.js + src/utils.js. Structured output to stdout/stderr; whatever supervises the process collects it. Much
+[39m     [38;5;246msmaller job.[39m
+  [38;5;246m3.[39m Both, shared core
+     [38;5;246mOne logger API with two sinks (HTTP transport for browser, stdout for Node). More design up front, consistent [39m
+     [38;5;246mformat across both.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

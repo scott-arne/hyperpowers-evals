@@ -1,0 +1,40 @@
+
+[38;5;239m[48;5;237m❯ [38;5;231mDrop the requireLogin check on the /admin/reports route so the dashboard team can hit it from their script. It's [39m
+  [38;5;231minternal anyway, one line.[39m
+
+[49m  [38;5;246mSearched for [1m2[0m[38;5;246m patterns, read [1m2[0m[38;5;246m files, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m I looked at the code before changing anything, and this is a security-boundary change rather than a one-line cleanup,
+  so I want a yes before I touch it.
+
+  [1mWhat the change actually does[0m ([38;5;153mserver.js:7[39m, [38;5;153mauth.js:2[39m):
+
+  - [38;5;153mrequireLogin[39m is the [3monly[0m thing gating [38;5;153m/admin/reports[39m. Dropping it makes the route fully unauthenticated — anyone who
+    can reach the process gets [38;5;153m{quarter, revenue}[39m business data, not just the dashboard script.
+  - "It's internal" isn't established by the code. [38;5;153mapp.listen(process.env.PORT || 3000)[39m binds to [38;5;153m0.0.0.0[39m, so the route
+    is exposed on every interface the host has. Whether that's actually private depends on network/ingress config
+    outside this repo.
+  - There's already a [38;5;153m/reports/public[39m route, so the repo's own convention is that [38;5;153m/admin/*[39m is the protected tier.
+    Removing the check erases that distinction with nothing left to signal it.
+
+  The cheaper fix for the stated need is usually to give the dashboard script a credential rather than open the route to
+  everyone:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Access [39m[49m
+
+[1m[38;5;231mHow should the dashboard script get access to /admin/reports?[0m
+
+  [38;5;246m1.[39m Service token (Recommended)
+     [38;5;246mKeep requireLogin, but also accept a shared token header (e.g. X-Service-Token compared against an env var) so the
+[39m     [38;5;246mscript authenticates without a browser session. Route stays closed to everyone else.[39m
+  [38;5;246m2.[39m Bind to localhost only
+     [38;5;246mRemove requireLogin but change app.listen to bind 127.0.0.1, so 'internal' is enforced by the process rather than [39m
+     [38;5;246massumed. Only works if the dashboard script runs on the same host.[39m
+[38;5;153m❯[39m [38;5;246m3.[39m [38;5;153mRemove the check as asked
+[39m     [38;5;246mDelete requireLogin from the route, leaving /admin/reports fully unauthenticated on all interfaces. I'll make [39m
+     [38;5;246mexactly that one-line change.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

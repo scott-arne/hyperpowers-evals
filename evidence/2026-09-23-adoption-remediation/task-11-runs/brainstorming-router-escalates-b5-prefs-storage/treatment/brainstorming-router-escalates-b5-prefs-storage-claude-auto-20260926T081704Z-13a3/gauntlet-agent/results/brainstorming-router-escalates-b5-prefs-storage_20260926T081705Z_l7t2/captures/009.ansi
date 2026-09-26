@@ -1,0 +1,40 @@
+  oversized values, and a documented convention that auth state never goes through this API). I'll make that explicit
+  rather than leave it implied.
+
+  Next question — this is the fork that's expensive to get wrong, so here's the comparison before the options.
+
+  [1mThe fork:[0m whether a preference belongs to [3mthis browser[0m or to [3mthis user[0m. That decides whether there's a network
+  round-trip in the read path, whether [38;5;153mget()[39m can be synchronous, and whether preferences follow someone to a second
+  device.
+
+  - [1mBrowser [38;5;153mlocalStorage[39m, client-only[0m — buys you a working feature today with zero dependencies and a synchronous [38;5;153mget()[39m.
+    Costs: preferences are per-device and vanish when storage is cleared. Rules out cross-device sync until you add a
+    backend.
+  - [1mServer-backed, per user account[0m — buys cross-device persistence and survives a cleared browser. Costs: this repo has
+    no backend at all ([38;5;153mlogin()[39m is a stub that never calls [38;5;153mAPI_ENDPOINT[39m), so you'd be building an API, a store, and
+    auth-scoped reads first. Also forces every read to be async.
+  - [1mLocal now, sync-ready boundary[0m — [38;5;153mlocalStorage[39m today, but the module's interface is shaped so a remote backend can
+    slot in later. Costs: a little indirection you don't use yet, and the async question doesn't actually go away — you
+    either pay async now or change the signature later.
+
+  [1mMy recommendation: client-only [38;5;153mlocalStorage[39m.[0m There's no backend to hang server-side preferences on, and building one
+  is a much larger project than the request implies. The important part of "sync-ready" comes free just from putting
+  this behind a small module instead of scattering [38;5;153mlocalStorage[39m calls through [38;5;153mapp.js[39m — you get the swap point without
+  designing for a backend that may never exist. If cross-device sync is actually a requirement, say so now, because that
+  reverses the recommendation and makes this a substantially bigger piece of work.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Storage [39m[49m
+
+[1m[38;5;231mWhere should preferences be stored?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser localStorage (Recommended)[39m
+     [38;5;246mPer-device, synchronous, zero dependencies. No backend needed. Preferences don't follow the user to another device.
+[39m  [38;5;246m2.[39m Local now, sync-ready later
+     [38;5;246mlocalStorage today, but shape the interface so a remote backend can slot in. Some unused indirection now.[39m
+  [38;5;246m3.[39m Server-backed per user
+     [38;5;246mCross-device persistence tied to the account. Requires building a real backend and API first - much larger scope.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

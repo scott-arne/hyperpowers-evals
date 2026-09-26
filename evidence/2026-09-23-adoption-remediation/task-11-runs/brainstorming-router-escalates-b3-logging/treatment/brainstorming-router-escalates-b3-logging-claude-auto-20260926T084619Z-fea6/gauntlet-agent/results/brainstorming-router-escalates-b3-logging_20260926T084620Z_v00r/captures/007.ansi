@@ -1,0 +1,40 @@
+
+  [1mClassification: architectural.[0m "Logging" is a new subsystem — there's no existing logging flow here to modify, just
+  scattered [38;5;153mconsole.log[39m calls. It carries real design choices (structured vs. plain, levels, transport, redaction) and
+  the shape you pick becomes an interface every future call site depends on. So I'll work through questions → approaches
+  → a design → a written spec, rather than just dropping a logger in.
+
+  One thing I want to flag up front, since it shapes the design rather than being a detail: [38;5;153mapp.js:5[39m already logs the
+  username on every login attempt, and [38;5;153mpassword[39m is in scope at the same call sites. Any logging we add around that form
+  is one careless line away from putting credentials into production logs. I'll treat redaction as a first-class
+  requirement in the design, not an afterthought.
+
+  First question — this one decides almost everything downstream:
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where does the code that needs production logging actually run? → Both[39m
+
+[38;5;231m⏺[39m Got it — both runtimes.
+
+  Next, the purpose question, because it's what keeps this from ballooning. "Debug production issues" can mean anything
+  from "I want a stack trace when the login call fails" to "I want a searchable event trail across sessions," and those
+  are very different amounts of machinery.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Purpose [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhat kind of production problem are you trying to diagnose right now?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mErrors and failures[39m
+         [38;5;246mUnhandled exceptions, failed API calls, validation rejections — you want to know what broke and where.[39m
+  [38;5;246m2.[39m [ ] Behavioral trail
+         [38;5;246mA sequence of what the user/process did leading up to a problem, not just the failure itself.[39m
+  [38;5;246m3.[39m [ ] Performance
+         [38;5;246mTimings — what's slow, how long calls take.[39m
+  [38;5;246m4.[39m [ ] Not a specific issue yet
+         [38;5;246mNothing concrete is broken; you want instrumentation in place before the next incident.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

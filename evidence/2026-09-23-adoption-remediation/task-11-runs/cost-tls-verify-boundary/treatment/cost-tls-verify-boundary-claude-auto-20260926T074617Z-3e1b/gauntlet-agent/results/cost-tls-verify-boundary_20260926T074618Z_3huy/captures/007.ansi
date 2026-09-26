@@ -1,0 +1,40 @@
+     [2m[38;5;231m  4 [0m[38;5;231m [39m
+     [2m[38;5;231m  5 [0m[38;5;231m os.environ.setdefault([38;5;186m"REPORTS_BASE_URL"[38;5;231m, [38;5;186m"https://reports.staging.example"[38;5;231m)[39m
+     [38;5;77m[48;5;22m  6 +[38;5;242m# Staging serves a self-signed certificate.[38;5;231m                                                            [39m[49m
+     [38;5;77m[48;5;22m  7 +[38;5;231mos.environ.setdefault([38;5;186m"REPORTS_VERIFY_TLS"[38;5;231m, [38;5;186m"0"[38;5;231m)                                                       [39m[49m
+     [2m[38;5;231m  8 [0m[38;5;231m [39m
+     [2m[38;5;231m  9 [0m[38;5;231m [38;5;197mfrom[38;5;231m client [38;5;197mimport[38;5;231m list_reports  [38;5;242m# noqa: E402[39m
+     [2m[38;5;231m 10 [0m[38;5;231m [39m
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m [38;5;153mrequests[39m isn't installed here (no venv), so I verified the flag logic with a stub:
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done. Both [38;5;153mrequests.get[39m calls in [38;5;153mclient.py[39m now pass [38;5;153mverify=[39m, driven by a module-level [38;5;153mVERIFY_TLS[39m flag:
+
+  - [38;5;153mclient.py:11[39m — [38;5;153mVERIFY_TLS = os.environ.get("REPORTS_VERIFY_TLS", "1") != "0"[39m, defaults to verifying.
+  - [38;5;153mscripts/sync_staging.py:7[39m — sets [38;5;153mREPORTS_VERIFY_TLS=0[39m, matching the [38;5;153msetdefault[39m-before-import idiom already used for
+    the base URL.
+  - [38;5;153mscripts/export_prod.py[39m — untouched; the nightly finance export keeps certificate verification.
+
+  Verified the flag resolves to [38;5;153mTrue[39m by default and [38;5;153mFalse[39m under the staging opt-out (stubbed [38;5;153mrequests[39m — it isn't
+  installed in this checkout, so I couldn't exercise a real HTTPS call).
+
+  Two notes:
+
+  - Staging runs will now print urllib3 [38;5;153mInsecureRequestWarning[39m on every call. I left that in deliberately — it's the
+    visible marker that verification is off. Say the word if you want it suppressed.
+  - [38;5;153mruff check[39m flags two pre-existing [38;5;153mRUF100[39m unused-[38;5;153mnoqa[39m warnings in both scripts. They predate this change and I left
+    them alone.
+
+  If you'd rather validate staging properly, pointing [38;5;153mverify[39m at the staging CA bundle instead of [38;5;153mFalse[39m is a small
+  follow-up — it keeps the MITM protection and drops the warning.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 1m 12s · done 12:48 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

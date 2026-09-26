@@ -1,0 +1,40 @@
+
+  [1mLast fork before I present the design: how logs get correlated back to a user.[0m A pile of independent error records is
+  much harder to debug than a thread of events from one session, but the identifier that makes correlation work is also
+  the part that carries PII to the vendor.
+
+  - [1mAnonymous session ID[0m — a random UUID per browser session ([38;5;153msessionStorage[39m) or per process run in Node, attached to
+    every record. Threads one session's events together with no personal data leaving the browser. You can't connect two
+    visits by the same person, and when a user emails "it broke for me at 3pm" you have to find them by timestamp and
+    symptom.
+  - [1mPersistent anonymous device ID[0m — a UUID in [38;5;153mlocalStorage[39m that survives sessions. Correlates repeat failures from the
+    same browser, which is how you spot "this only breaks for people with a stale cached token." It's durable
+    cross-session tracking of an individual, so it likely needs a consent/privacy review depending on your jurisdiction.
+  - [1mSession ID plus an opt-in [38;5;153msetUser(id)[39m hook[0m — anonymous by default, with an explicit call after successful login that
+    attaches an opaque internal user ID (never the username or email from that form). Direct answer to "what happened
+    to this specific user," and stays off by default until you decide to call it.
+
+  Note on all three: whatever you pick has to pass the allowlist we just agreed on, and [38;5;153musername[39m from the login form
+  should not be the identifier — it's user-supplied PII headed to a third party.
+
+  My recommendation is the third. Anonymous session ID as the default gets you the threading that makes logs debuggable,
+  and the [38;5;153msetUser[39m hook is a single call site you can leave uncalled until the privacy question is settled — you're not
+  committing to sending user IDs by building the hook.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Correlation [39m[49m
+
+[1m[38;5;231mHow should log records be correlated?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mSession ID + setUser hook (Recommended)[39m
+     [38;5;246mAnonymous per-session UUID on every record, plus an opt-in setUser(opaqueId) you can leave uncalled until privacy [39m
+     [38;5;246msign-off.[39m
+  [38;5;246m2.[39m Anonymous session ID only
+     [38;5;246mPer-session UUID, nothing else. No PII at all; cannot link a report to a specific user or across visits.[39m
+  [38;5;246m3.[39m Persistent device ID
+     [38;5;246mUUID in localStorage surviving sessions. Catches repeat failures from one browser; durable individual tracking, [39m
+     [38;5;246mlikely needs consent review.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

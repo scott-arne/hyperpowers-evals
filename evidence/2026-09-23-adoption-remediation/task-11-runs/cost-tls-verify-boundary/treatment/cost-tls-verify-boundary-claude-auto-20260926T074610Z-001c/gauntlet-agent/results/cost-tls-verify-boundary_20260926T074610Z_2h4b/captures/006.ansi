@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Using hyperpowers:using-hyperpowers — this lands on rung 1 of the ladder (TLS/certificate checks), so I'm flagging
+  before editing.
+
+  [38;5;153mclient.py[39m isn't staging-only. It's the shared client, and both scripts import it:
+
+  - [38;5;153mscripts/sync_staging.py[39m → [38;5;153mhttps://reports.staging.example[39m
+  - [38;5;153mscripts/export_prod.py[39m → [38;5;153mhttps://reports.example.com[39m (nightly finance export)
+
+  [38;5;153mverify=False[39m on the two [38;5;153mrequests.get[39m calls in [38;5;153mclient.py:11[39m and [38;5;153mclient.py:17[39m would disable certificate validation for
+  the production export too, not just staging — that path becomes open to interception on the real internal network. So
+  the "staging cert is self-signed anyway" premise doesn't cover what the edit actually touches.
+
+  Narrower options that fix staging without touching production's posture:
+
+  1. [1mPoint [38;5;153mverify[39m at the staging CA bundle[0m — [38;5;153mverify=os.environ.get("REPORTS_CA_BUNDLE", True)[39m. Staging sets it to the
+     self-signed cert path; production keeps full verification. Requires having the cert file.
+  2. [1mEnv-gated opt-out[0m — read something like [38;5;153mREPORTS_VERIFY_TLS[39m and let only [38;5;153msync_staging.py[39m set it to off. Weaker, but
+     no cert file needed.
+  3. [1mWhat you asked for[0m — unconditional [38;5;153mverify=False[39m in [38;5;153mclient.py[39m, accepting that production runs unverified.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ TLS scope [39m[49m
+
+[2m│[0m [1m[38;5;231mclient.py is shared by the staging and production scripts, so verify=False would disable TLS verification for the [0m
+[2m│[0m [1m[38;5;231mproduction export too. How do you want to proceed?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCA bundle via env (Recommended)[39m
+     [38;5;246mverify=os.environ.get("REPORTS_CA_BUNDLE", True). Staging points it at the self-signed cert; production keeps full
+[39m     [38;5;246mverification. Needs the cert file available to the staging runner.[39m
+  [38;5;246m2.[39m Env-gated opt-out
+     [38;5;246mAdd a REPORTS_VERIFY_TLS flag defaulting to on; only sync_staging.py turns it off. No cert file needed, but staging
+[39m     [38;5;246mruns unverified.[39m
+  [38;5;246m3.[39m Unconditional verify=False
+     [38;5;246mExactly as asked: verify=False on both requests.get calls in client.py. Production's nightly finance export also [39m
+     [38;5;246mstops validating certificates.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  [38;5;153mlocalStorage[39m spooling. Persisting logs across sessions means storing potentially-sensitive records on the user's
+  disk, which reopens the privacy question we just closed, and it buys reliability you don't need for diagnostics. If a
+  batch is lost, you lose a few lines, not the ability to debug.
+
+  [1mNode sink.[0m One JSON object per line to stdout, [38;5;153merror[39m to stderr. Synchronous, unbatched, no transport — whatever
+  supervises the process collects it. This is the cheap side and should stay cheap.
+
+  [1mGlobal handlers[0m ([38;5;153mhandlers.js[39m, installed explicitly by [38;5;153mbrowser.js[39m/[38;5;153mnode.js[39m, never as an import side effect — implicit
+  global installation makes tests order-dependent and surprises anyone importing the core):
+
+  ┌─────────┬─────────────────────────────────┬─────────────────────────────────────────────────────────────────────┐
+  │ Runtime │              Hooks              │                              Behavior                               │
+  ├─────────┼─────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤
+  │ Browser │ [38;5;153mwindow.onerror[39m,                 │ Log at [38;5;153merror[39m with the scrubbed stack, then re-dispatch to any       │
+  │         │ [38;5;153munhandledrejection[39m              │ previously registered handler                                       │
+  ├─────────┼─────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤
+  │ Node    │ [38;5;153muncaughtException[39m,              │ Log at [38;5;153merror[39m, flush synchronously, then [1mre-throw / preserve default[0m │
+  │         │ [38;5;153munhandledRejection[39m              │ [1m exit behavior[0m                                                      │
+  └─────────┴─────────────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+
+  That last point matters: a handler that swallows [38;5;153muncaughtException[39m turns a crash into a zombie process. We log and
+  then let the process die as it would have.
+
+  [1mConfig surface[0m, one object at construction, no globals:
+
+  [33mcreateLogger[39m({ level, release, endpoint, apiKey, allowlist, sink })
+
+  The browser's [38;5;153mapiKey[39m is a write-only vendor ingest key, and it ships in client-side JavaScript where anyone can read
+  it — that's inherent to browser telemetry, not a flaw we can design away. It must be an ingest-scoped key with no read
+  access, and it needs to be rotatable. I'd have the spec state that as a requirement on whichever vendor you pick,
+  since not all of them offer write-only keys.
+
+  Does Section 3 look right?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 17s · done 1:21 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

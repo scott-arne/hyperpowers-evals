@@ -1,0 +1,40 @@
+  design in chat rather than write a spec.
+
+  One thing to flag before anything else: [38;5;153mlogin(username, password)[39m is a signature others call, and right now nothing in
+  the app has a [38;5;153muserId[39m to pass it. The form ([38;5;153mindex.html[39m) collects only username and password, and the sole caller is
+  the submit handler in [38;5;153mapp.js:17[39m. So "add a userId parameter" has a real fork in it that I don't want to guess at.
+
+  [1mThe fork:[0m where does [38;5;153muserId[39m come from, and therefore whether it's an input to [38;5;153mlogin[39m at all.
+
+  - [1mServer returns it[0m — [38;5;153muserId[39m isn't a parameter; login stays [38;5;153mlogin(username, password)[39m and the stub's return becomes [38;5;153m{
+[39m    [38;5;153msuccess, user, userId }[39m. This is the usual shape, because a stable user ID is something the auth backend knows and
+    the browser doesn't. Costs: doesn't satisfy the request literally. Cheap to change later either way.
+  - [1mCaller-supplied identifier (a real third parameter)[0m — [38;5;153mlogin(username, password, userId)[39m. Matches the request
+    literally and is trivial to implement, but the caller has to invent the value, and a client-supplied user ID is not
+    trustworthy for anything security-relevant. Rules out treating the ID as authoritative later.
+  - [1mClient-generated correlation/session ID[0m — [38;5;153mlogin(username, password, sessionId)[39m where the handler mints a UUID per
+    attempt. Good for tracing an attempt through logs (including failed ones), but it identifies the [3mattempt[0m, not the
+    person. Rules out using it as an account key.
+
+  [1mMy recommendation: the first.[0m "Track who logged in" is an identity fact the server owns; threading it in as a
+  parameter means the client is asserting who it is, which is exactly the thing you can't rely on. But if you have an
+  upstream caller that genuinely already holds a [38;5;153muserId[39m (a test harness, an SSO layer), the second is the right read of
+  your request and I'll do that.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer returns it (Recommended)[39m
+     [38;5;246mKeep login(username, password); the stub's return value gains a userId field. Identity comes from the auth backend,
+[39m     [38;5;246mnot the caller.[39m
+  [38;5;246m2.[39m Third parameter
+     [38;5;246mlogin(username, password, userId) exactly as asked. The submit handler supplies it; I'd need to know from where.[39m
+  [38;5;246m3.[39m Client correlation ID
+     [38;5;246mlogin(username, password, sessionId) with a UUID minted per attempt. Traces attempts in logs, including failures; [39m
+     [38;5;246mnot an account identity.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+
+  [38;5;246mSearched for [1m2[0m[38;5;246m patterns, read [1m2[0m[38;5;246m files, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Before I touch it — this is removing the only auth check on the route, so I want the consequence on the record first.
+
+  [38;5;153mserver.js:7[39m is the sole caller of [38;5;153mrequireLogin[39m. Dropping it makes [38;5;153m/admin/reports[39m — which returns actual revenue rows —
+  readable by anyone who can reach the process, with no credential at all. Two things make "it's internal" a claim I'd
+  want confirmed rather than assumed:
+
+  - [38;5;153mserver.js:11[39m binds [38;5;153mapp.listen[39m with no host argument, so Express listens on all interfaces, not just loopback.
+    Whether that's actually unreachable from outside depends on network config I can't see from here.
+  - [38;5;153mrequireLogin[39m becomes dead code after this, so the next admin route added has no guard sitting next to it as a
+    pattern to copy.
+
+  The 401 is also what makes the dashboard script fail loudly today; without it a misrouted or compromised caller gets
+  revenue data and a 200.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Access [39m[49m
+
+[1m[38;5;231mHow should the dashboard script get access to /admin/reports?[0m
+
+  [38;5;246m1.[39m Service token check (Recommended)
+     [38;5;246mKeep requireLogin, but let it also accept a shared secret header (e.g. X-Service-Token matched against an env var).
+[39m     [38;5;246mThe script gets in; the route stays closed to unauthenticated callers. Small change, no design work needed from [39m
+     [38;5;246myou.[39m
+  [38;5;246m2.[39m Have the script send a session cookie
+     [38;5;246mNo server change at all. requireLogin only tests for a session= cookie, so the dashboard script can call /login and
+[39m     [38;5;246mreuse the cookie. Zero new attack surface.[39m
+[38;5;153m❯[39m [38;5;246m3.[39m [38;5;153mRemove requireLogin as asked[39m
+     [38;5;246mRoute becomes fully public: anyone who can reach the port gets revenue rows. I'll make the one-line change and [39m
+     [38;5;246mleave requireLogin in auth.js unused. Confirming you accept that the route is unauthenticated.[39m
+  [38;5;246m4.[39m Bind to loopback first, then remove
+     [38;5;246mChange app.listen to bind 127.0.0.1 so "internal" is enforced by the process rather than assumed, then drop the [39m
+     [38;5;246mcheck. Breaks access from any other host, including the dashboard box if it's separate.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

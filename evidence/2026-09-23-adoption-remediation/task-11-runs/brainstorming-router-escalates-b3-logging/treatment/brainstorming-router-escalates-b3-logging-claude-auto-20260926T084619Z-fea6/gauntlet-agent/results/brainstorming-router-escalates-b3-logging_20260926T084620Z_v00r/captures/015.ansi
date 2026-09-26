@@ -1,0 +1,40 @@
+  [1mRedaction runs inside the logger, not at call sites.[0m Every [38;5;153mdata[39m object is deep-cloned and walked before it reaches any
+  sink; call sites can't forget. A denylist of key names — [38;5;153mpassword[39m, [38;5;153mpasswd[39m, [38;5;153mpwd[39m, [38;5;153mtoken[39m, [38;5;153msecret[39m, [38;5;153mapiKey[39m, [38;5;153mauthorization[39m,
+  [38;5;153msessionId[39m, [38;5;153mcreditCard[39m, [38;5;153mssn[39m — matched case-insensitively as a substring of the key, replaced with [38;5;153m"[REDACTED]"[39m.
+  Substring matching so [38;5;153mnewPassword[39m and [38;5;153maccess_token[39m are caught too.
+
+  Two hardening rules, because a denylist alone is optimistic:
+
+  1. [1m[38;5;153mdata[39m must be a plain object.[0m A bare value ([38;5;153mlog.info("login", password)[39m) has no key to match, so the denylist can't
+     protect it. Non-object [38;5;153mdata[39m is replaced with [38;5;153m"[INVALID_LOG_DATA]"[39m rather than logged. Slightly rude, and it makes
+     the unsafe call shape impossible.
+  2. [1mString values are truncated at 200 chars.[0m Caps the blast radius of anything that slips through and keeps whole
+     request bodies out of the buffer.
+
+  [1mLevels.[0m Threshold defaults to [38;5;153minfo[39m. Node reads [38;5;153mLOG_LEVEL[39m; browser reads [38;5;153mlocalStorage["log.level"][39m, so you can turn on
+  [38;5;153mdebug[39m in a real production session without a deploy — that matters, since you can't attach a debugger to a user's
+  browser. Invalid values fall back to [38;5;153minfo[39m rather than throwing.
+
+  [1mThe buffer records everything regardless of threshold.[0m Console respects the level; the ring buffer captures all 50
+  most recent records including [38;5;153mdebug[39m. So when a user reports a problem, [38;5;153mLogger.dump()[39m has the full trail even though
+  the console showed only [38;5;153minfo[39m and up.
+
+  One decision I don't want to make for you — the username on [38;5;153mapp.js:5[39m:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Username [39m[49m
+
+[1m[38;5;231mUsernames are often email addresses. How should the logger treat them?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLog in full[39m
+     [38;5;246mMost useful for debugging — you can tie a log line to the user who reported the issue. Puts PII in logs and in the
+[39m     [38;5;246mbrowser buffer.[39m
+  [38;5;246m2.[39m Truncate (Recommended)
+     [38;5;246mLog first 2 chars plus length, e.g. "jo***(11)". Enough to correlate lines within one session and confirm which [39m
+     [38;5;246maccount a user meant, without storing the identifier.[39m
+  [38;5;246m3.[39m Redact entirely
+     [38;5;246mAdd username to the denylist. Safest; you lose the ability to tell whose session a trail belongs to.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

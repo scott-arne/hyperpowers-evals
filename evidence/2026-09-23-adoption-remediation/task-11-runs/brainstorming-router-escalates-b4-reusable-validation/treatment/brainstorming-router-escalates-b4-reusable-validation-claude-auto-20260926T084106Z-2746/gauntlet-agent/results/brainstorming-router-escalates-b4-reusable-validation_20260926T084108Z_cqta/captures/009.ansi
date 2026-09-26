@@ -1,0 +1,40 @@
+  Next fork, and it's the one that constrains everything after it: [1mhow the shared validator gets loaded.[0m Right now
+  [38;5;153mapp.js[39m is a bare [38;5;153m<script src>[39m with globals, and [38;5;153msrc/[39m is CommonJS — there's no module system connecting them, so the
+  validator's home decides whether it's importable, testable, and usable by pages you add later.
+
+  - [1mES modules[0m ([38;5;153m<script type="module">[39m, [38;5;153msrc/validation.js[39m with real exports) — one source of truth, importable by both
+    the page and a Node test runner. Costs: the page must be served over HTTP (ES modules are blocked on [38;5;153mfile://[39m), and
+    [38;5;153msrc/index.js[39m/[38;5;153mutils.js[39m are CommonJS, so they'd convert too (2 tiny files). Hardest of the three to undo later, and
+    the most standard.
+  - [1mSecond script tag + global[0m ([38;5;153mvalidation.js[39m attaches [38;5;153mwindow.Validation[39m) — zero tooling, still opens by double-clicking
+    [38;5;153mindex.html[39m. Costs: not importable in Node, so unit tests need a DOM harness or a dual-export hack; script ordering
+    becomes load-bearing as pages multiply.
+  - [1mDual export[0m (attaches to [38;5;153mwindow[39m in a browser, [38;5;153mmodule.exports[39m in Node) — testable in Node with no build and no
+    serving change. Costs: a boilerplate wrapper in every shared file, and it's a pattern you'd migrate off later
+    anyway.
+
+  Switching from globals to ESM later means touching every page and script tag; going the other direction is easy. Cheap
+  to change afterward: the rule names and the shape of the result object.
+
+  I recommend [1mES modules[0m. It's the only option where the validator is genuinely reusable "across the app" without each
+  new page re-learning a load-order convention, and it makes plain Node unit tests possible with no harness — which
+  matters because validation rules are exactly the kind of logic worth testing directly.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should the shared validation module be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246msrc/validation.js with real exports; index.html uses <script type="module">. Page must be served over HTTP; [39m
+     [38;5;246msrc/index.js and utils.js convert from CommonJS.[39m
+  [38;5;246m2.[39m Script tag + global
+     [38;5;246mvalidation.js attaches window.Validation, loaded before app.js. No tooling, still works via file://. Not importable
+[39m     [38;5;246min Node.[39m
+  [38;5;246m3.[39m Dual export (window + CommonJS)
+     [38;5;246mOne file works in both browser and Node with no build. Boilerplate wrapper per file; a pattern you'd migrate off [39m
+     [38;5;246mlater.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

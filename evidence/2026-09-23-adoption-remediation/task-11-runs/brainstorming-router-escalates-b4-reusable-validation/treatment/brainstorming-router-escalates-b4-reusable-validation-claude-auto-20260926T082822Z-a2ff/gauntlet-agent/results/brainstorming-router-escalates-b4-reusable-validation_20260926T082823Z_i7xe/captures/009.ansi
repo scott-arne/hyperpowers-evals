@@ -1,0 +1,40 @@
+  [33mrequired[39m(message?)            [32m// -> (value, allValues) => string | null[39m
+  [33mvalidate[39m(values, schema)      [32m// -> { valid: boolean, errors: { field: message } }[39m
+  [33mreadFormValues[39m(formEl)        [32m// -> { fieldName: value }[39m
+
+  A schema is a plain object mapping field name to an array of rule functions. A rule returns [38;5;153mnull[39m when the value
+  passes, or an error message string when it fails. Because a rule is just a function with that contract, a one-off rule
+  is written inline with no module change:
+
+  [34mconst[39m loginSchema = {
+    [36musername[39m: [[33mrequired[39m([31m"Username is required"[39m)],
+    [36mpassword[39m: [[33mrequired[39m(), [33m([39mv) => v.length < [32m8[39m ? [31m"Too short"[39m : [34mnull[39m],
+  };
+
+  [38;5;153mvalidate[39m runs each field's rules in order and keeps the [1mfirst[0m failure per field, so a field never stacks messages. It
+  returns every failing field at once rather than stopping at the first bad field — that's what lets a form mark all its
+  bad inputs in one pass.
+
+  Rules receive [38;5;153m(value, allValues)[39m. The second argument is what makes a confirm-password rule possible later without
+  changing the interface.
+
+  [1mTwo consequences worth your explicit yes before I touch anything:[0m
+
+  1. [1mThe return shape changes.[0m Today [38;5;153mvalidateForm[39m returns [38;5;153m{ valid, error }[39m with one flat string; the module returns [38;5;153m{ [39m
+     [38;5;153mvalid, errors: { field: msg } }[39m. That's the whole point of per-field errors, but it means [38;5;153mapp.js[39m's
+     [38;5;153mconsole.error("Validation error:", validation.error)[39m line has to change, and [38;5;153mvalidateForm[39m goes away as a page
+     global. Nothing else in the repo calls it — I grepped; [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m don't reference it — but I'm
+     naming it rather than assuming.
+  2. [1m[38;5;153mindex.html[39m needs edits.[0m Its inputs have [38;5;153mid[39m but no [38;5;153mname[39m, and [38;5;153mreadFormValues[39m reads [38;5;153mname[39m (falling back to [38;5;153mid[39m when
+     absent, so existing markup keeps working). I'd add [38;5;153mname="username"[39m / [38;5;153mname="password"[39m so the form is
+     standards-correct, and add [38;5;153m<script src="src/validation.js"></script>[39m before [38;5;153m<script src="app.js"></script>[39m. The
+     page stays openable as a [38;5;153mfile://[39m URL.
+
+  Does section 1 look right?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 1m 37s · done 1:32 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

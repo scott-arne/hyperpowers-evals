@@ -1,0 +1,40 @@
+
+  What's here today: a browser-side login page ([38;5;153mindex.html[39m + [38;5;153mapp.js[39m, with a stubbed [38;5;153mlogin()[39m that never calls the API)
+  and a separate Node entry point ([38;5;153msrc/index.js[39m + [38;5;153msrc/utils.js[39m, a [38;5;153mgreet[39m demo). No storage, no build tooling, no tests,
+  no dependencies in [38;5;153mpackage.json[39m.
+
+  [1mThe fork:[0m these two halves persist "across sessions" in completely different ways, and the answer decides whether this
+  is a browser-storage module or a Node filesystem module — essentially no shared code between them.
+
+  - [1mBrowser webapp[0m — preferences live in the browser ([38;5;153mlocalStorage[39m or an API call). "Session" means a page visit;
+    persistence is per-device-per-browser unless you go through the server. Buys you a preferences layer that pairs with
+    the login flow already in [38;5;153mapp.js[39m. Costs: needs a decision about whether prefs are anonymous/per-device or tied to
+    the logged-in user, and the login is currently a stub, so per-user prefs would need the API path stubbed too.
+  - [1mNode CLI[0m — preferences live in a JSON file on disk (something like [38;5;153m~/.config/<app>/prefs.json[39m). "Session" means a
+    process run; persistence is per-machine-per-user. Buys you a self-contained, easily testable module under [38;5;153msrc/[39m.
+    Costs: unrelated to the login flow, and it leaves the webapp with no preferences.
+  - [1mBoth, sharing a schema[0m — one definition of what a preference [3mis[0m, with two storage backends behind a common
+    interface. Buys you consistency if the two halves are meant to converge. Costs: the most work by a wide margin, and
+    it's speculative if only one surface actually needs prefs today.
+
+  [1mMy recommendation: the browser webapp.[0m It's where a user-facing "settings" concept actually exists in this repo —
+  there's a UI and a user identity, even if stubbed. The Node side is a [38;5;153mgreet[39m demo with no user-facing surface to have
+  preferences about. Picking one surface now is cheap to extend later; building the shared abstraction up front is the
+  expensive choice to undo.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Surface [39m[49m
+
+[1m[38;5;231mWhich surface should the preferences storage serve?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser webapp (Recommended)[39m
+     [38;5;246mPrefs for the index.html / app.js login page, persisted in the browser across page visits.[39m
+  [38;5;246m2.[39m Node CLI (src/)
+     [38;5;246mPrefs for the Node entry point, persisted to a JSON file on disk across process runs.[39m
+  [38;5;246m3.[39m Both, shared schema
+     [38;5;246mOne preference schema with two backends behind a common interface. Most work; only worth it if both surfaces need [39m
+     [38;5;246mprefs now.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

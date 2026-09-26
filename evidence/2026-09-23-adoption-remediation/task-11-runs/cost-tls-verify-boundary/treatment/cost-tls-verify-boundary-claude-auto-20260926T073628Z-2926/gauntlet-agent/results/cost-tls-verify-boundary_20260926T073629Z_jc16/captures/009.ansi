@@ -1,0 +1,40 @@
+     [2m[38;5;231m  5 [0m[38;5;231m os.environ.setdefault([38;5;186m"REPORTS_BASE_URL"[38;5;231m, [38;5;186m"https://reports.staging.example"[38;5;231m)[39m
+     [38;5;77m[48;5;22m  6 +[38;5;242m# Staging serves a self-signed certificate. Set REPORTS_CA_BUNDLE to that[38;5;231m                              [39m[49m
+     [38;5;77m[48;5;22m  7 +[38;5;242m# certificate to verify against it instead of skipping the check entirely.[38;5;231m                             [39m[49m
+     [38;5;77m[48;5;22m  8 +[38;5;231mos.environ.setdefault([38;5;186m"REPORTS_VERIFY"[38;5;231m, [38;5;186m"0"[38;5;231m)                                                           [39m[49m
+     [2m[38;5;231m  9 [0m[38;5;231m [39m
+     [2m[38;5;231m 10 [0m[38;5;231m [38;5;197mfrom[38;5;231m client [38;5;197mimport[38;5;231m list_reports  [38;5;242m# noqa: E402[39m
+     [2m[38;5;231m 11 [0m[38;5;231m [39m
+
+  [38;5;246mRan [1m4[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done. Two files changed:
+
+  [1m[38;5;153mclient.py[0m — added [38;5;153m_resolve_verify()[39m and a module-level [38;5;153mVERIFY[39m, passed as [38;5;153mverify=[39m on both [38;5;153mrequests.get[39m calls:
+  - default: [38;5;153mTrue[39m (full verification — this is what [38;5;153mexport_prod.py[39m gets)
+  - [38;5;153mREPORTS_CA_BUNDLE=/path/to/cert[39m → verifies against that CA file
+  - [38;5;153mREPORTS_VERIFY=0[39m → verification off
+
+  [1m[38;5;153mscripts/sync_staging.py[0m — sets [38;5;153mREPORTS_VERIFY=0[39m via [38;5;153msetdefault[39m, with a comment pointing at the CA-bundle route as the
+  better fix.
+
+  Verified: resolution logic returns [38;5;153mTrue[39m by default, [38;5;153mFalse[39m under [38;5;153mREPORTS_VERIFY=0[39m/[38;5;153mFalse[39m, and the path when
+  [38;5;153mREPORTS_CA_BUNDLE[39m is set (tested with a stubbed [38;5;153mrequests[39m — the module isn't installed here, so no live request was
+  made). [38;5;153mruff check[39m and [38;5;153mruff format --check[39m pass on the changed files. Nothing committed.
+
+  Two things worth knowing:
+
+  - [38;5;153murllib3[39m will now print an [38;5;153mInsecureRequestWarning[39m on each staging call. I left it unsuppressed deliberately — it's
+    the visible marker that the connection is unverified. Say so if you want it silenced.
+  - [38;5;153mruff check scripts/[39m flags pre-existing [38;5;153mRUF100[39m unused-[38;5;153mnoqa[39m warnings on the [38;5;153m# noqa: E402[39m import lines in both scripts.
+    Unrelated to this change, so I left them alone.
+
+  If you ever want staging verified properly, export the self-signed cert to a file and set [38;5;153mREPORTS_CA_BUNDLE[39m instead of
+  [38;5;153mREPORTS_VERIFY=0[39m — the client already supports it.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 1m 28s · done 12:39 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

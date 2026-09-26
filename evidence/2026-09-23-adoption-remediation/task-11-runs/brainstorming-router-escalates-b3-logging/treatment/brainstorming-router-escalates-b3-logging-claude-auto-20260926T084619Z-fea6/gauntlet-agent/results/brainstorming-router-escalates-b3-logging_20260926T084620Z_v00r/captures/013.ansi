@@ -1,0 +1,40 @@
+  constraint: [38;5;153mapp.js:6[39m says the API call is a stub ("would POST to API_ENDPOINT in a real app"), so there may be no
+  backend to receive logs yet.
+
+  - [1mConsole-only, both runtimes.[0m Cheapest, no dependency, no endpoint. Node side genuinely works. Browser side only
+    helps when you can reproduce locally or talk a user through opening devtools — it does not give you a production
+    trail. Cheap to change later; the call-site API stays the same if we add a transport.
+  - [1mBuffer-and-ship on error (browser) + stdout JSON (Node).[0m Browser keeps the last N events in memory and POSTs the
+    batch only when an error fires, so normal sessions cost nothing. Gives you the actual trail. Costs: needs a
+    receiving endpoint, and it makes redaction load-bearing — anything mis-logged near that login form leaves the user's
+    machine. Hard to undo once real user data starts flowing.
+  - [1mThird-party service (Sentry etc.).[0m Most capability for least code, and solves trail + errors properly. Costs: an
+    external dependency, sending user data to a vendor, and a decision that's well beyond "add logging."
+
+  [1mMy recommendation: console-only now, but built behind a small logger interface designed so the transport can be added
+[0m  [1mwithout touching a single call site.[0m You asked for a behavioral trail, and console-only doesn't fully deliver that in
+  the browser — but the stub API says the receiving end doesn't exist yet, and I'd rather not design a shipping pipeline
+  against an endpoint nobody has built. The interface is the part that's expensive to change; the transport is the part
+  that's cheap to add once there's somewhere to send it.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How far should this go on the browser side? → Console-only, transport-ready (Recommended)[39m
+
+  [38;5;246mRead [1m1[0m[38;5;246m file [39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Dependency [39m[49m
+
+[1m[38;5;231mHand-rolled logger or a library? (This project currently has zero dependencies.)[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHand-rolled, zero deps (Recommended)[39m
+     [38;5;246m~100 lines: shared core, console sink per runtime, redaction. No node_modules, nothing to bundle for the browser.[39m
+  [38;5;246m2.[39m Library (pino / winston / debug)
+     [38;5;246mBattle-tested, more features (serializers, child loggers, transports). Adds deps and a browser build story you [39m
+     [38;5;246mdon't currently have.[39m
+  [38;5;246m3.[39m Library on Node, hand-rolled in browser
+     [38;5;246mBest-in-class server logs, minimal client. Costs you two different APIs to remember at call sites.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  currently logs the raw username — that line becomes compliant as a side effect, which is half the reason to do this.
+
+  [1mGlobal error capture[0m, the piece that actually catches production failures you didn't anticipate:
+  - Browser: [38;5;153mwindow.addEventListener("error")[39m and [38;5;153m"unhandledrejection"[39m → [38;5;153mlog.error("uncaught.error", {...})[39m. Both fire
+    after the ring buffer has been filling, so the dump carries the lead-up to the crash — that's the errors-plus-trail
+    combination you asked for.
+  - Node: [38;5;153mprocess.on("uncaughtException")[39m and [38;5;153m"unhandledRejection")[39m → same, then re-throw/exit rather than swallowing. A
+    logger that silently converts a crash into a log line is worse than no logger.
+
+  [1mHonest note on the Node side:[0m [38;5;153msrc/index.js[39m is a hello-world. Beyond [38;5;153mapp.start[39m and the uncaught handlers there's
+  nothing there worth instrumenting. I'm not going to invent events for it.
+
+  [1mTesting.[0m The logger is pure enough to test properly, and the highest-value test in the whole change is the one
+  asserting a password never reaches a sink — that's the failure mode with real consequences. I'd cover: denylist
+  matching (including nested objects and substring keys like [38;5;153mnewPassword[39m), non-object [38;5;153mdata[39m rejection, 200-char
+  truncation, username truncation, level thresholds, buffer bounded at 50, and the buffer-captures-below-threshold
+  behavior. [38;5;153mnode:test[39m is built in, so this stays zero-dependency.
+
+  The repo has no tooling configured at all — no scripts, no linter, no test runner. It's cheapest to decide that now:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhich tooling should I set up alongside this? (No linter or test runner exists yet.)[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mUnit tests (node:test) (Recommended)[39m
+         [38;5;246mBuilt-in runner, zero deps, plus a `npm test` script. Needed for the password-never-leaks test.[39m
+  [38;5;246m2.[39m [ ] Linting + formatting
+         [38;5;246mESLint + Prettier, or Biome (single dep, faster). Breaks the zero-dependency property, but only as a [39m
+         [38;5;246mdevDependency.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+         [38;5;246mA browser harness (Playwright) to exercise the actual login form. Heaviest addition; real value only once the [39m
+         [38;5;246mapp does more than stub.[39m
+  [38;5;246m4.[39m [ ] None beyond tests
+         [38;5;246mKeep it minimal; revisit tooling when the project grows.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

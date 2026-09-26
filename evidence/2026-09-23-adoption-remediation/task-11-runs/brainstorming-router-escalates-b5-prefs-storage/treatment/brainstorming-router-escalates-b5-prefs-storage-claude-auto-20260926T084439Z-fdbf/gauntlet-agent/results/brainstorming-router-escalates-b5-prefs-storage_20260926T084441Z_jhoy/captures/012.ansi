@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m One more question before I present the design. The repo has no configured tooling — no linter, no formatter, no test
+  runner — so there's currently no way to test a preferences module beyond loading the page by hand. Setting this up is
+  cheapest now, before the code exists, and whatever you pick lands in the spec's constraints so later work inherits it.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which tooling should the spec set up from the start? → Unit tests (Recommended)[39m
+
+[38;5;231m⏺[39m Here's the design. Section 1 of 2 — module and data model.
+
+  [1mModule.[0m A new [38;5;153mprefs.js[39m at the repo root, loaded by [38;5;153mindex.html[39m before [38;5;153mapp.js[39m. It's a classic script (not ESM) exposing
+  a single [38;5;153mPrefs[39m object, with a CommonJS [38;5;153mmodule.exports[39m tail so tests can require it — that matches the existing
+  [38;5;153msrc/utils.js[39m pattern and avoids converting [38;5;153mindex.html[39m to modules for one file.
+
+  [1mOne key, one object.[0m Everything lives under a single localStorage key, [38;5;153mwebapp.preferences[39m, holding one JSON object:
+
+  { [36m"version"[39m: [32m1[39m, [36m"rememberUsername"[39m: [34mfalse[39m, [36m"lastUsername"[39m: [31m""[39m }
+
+  One key rather than a key per preference: reads and writes stay atomic, defaults merge in one place, the app owns one
+  namespace instead of scattering entries, and [38;5;153mversion[39m gives a migration handle later. The cost is that writing one
+  preference rewrites the object — irrelevant at this size.
+
+  [1mInterface.[0m Four functions, all synchronous:
+
+  - [38;5;153mPrefs.get(name)[39m — stored value, or the default if absent
+  - [38;5;153mPrefs.set(name, value)[39m — persist; returns [38;5;153mtrue[39m if it reached disk, [38;5;153mfalse[39m if only memory
+  - [38;5;153mPrefs.all()[39m — a copy of the merged object
+  - [38;5;153mPrefs.reset()[39m — back to defaults
+
+  A [38;5;153mDEFAULTS[39m constant is the single source of truth for which preferences exist and what type each is. [38;5;153mget[39m/[38;5;153mset[39m on a name
+  not in [38;5;153mDEFAULTS[39m throws — that turns a typo into an immediate error instead of a silently-lost setting. A [38;5;153mset[39m whose
+  value type doesn't match the default's type is rejected the same way.
+
+  Does the module and data model look right before I go on to integration, failure handling, and tests?
+
+[38;5;246m✻[39m [38;5;246mChurned for 1m 34s · done 1:50 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

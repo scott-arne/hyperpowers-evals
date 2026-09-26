@@ -1,0 +1,40 @@
+  from the DOM and renders the error messages. Worth being deliberate, because the duplication across forms isn't only
+  the rule logic; look at [38;5;153mapp.js:17-28[39m and most of what a second form would copy is the submit-handler boilerplate: grab
+  each field by id, call validate, branch, report the error.
+
+  - [1mPure core only[0m — [38;5;153mvalidate(data, schema)[39m returns per-field errors. Each form reads its own inputs and displays its
+    own errors. Trivially testable, no DOM assumptions, works if you ever add a framework. Cost: every form still
+    repeats the read-inputs/show-errors boilerplate, so you've deduplicated half the problem.
+  - [1mPure core + optional DOM binder[0m — same core, plus a thin [38;5;153mattachValidation(formEl, schema, onValid)[39m layered on top
+    that collects field values by [38;5;153mname[39m, renders messages next to the offending inputs, and calls your handler when
+    clean. Forms shrink to a schema and a submit callback. The core stays independently usable, so the binder is opt-in,
+    not a lock-in. Cost: the binder makes assumptions about your markup (field naming, where error text goes) that
+    you'd have to live with or override.
+  - [1mFull form controller[0m — the above plus live revalidation on blur/input, touched-state tracking, submit-button
+    disabling. Best UX, but it's a state machine, and it's the piece most likely to fight whatever framework you adopt
+    later.
+
+  My recommendation: the middle one, built as two separate layers rather than one thing. The core is where correctness
+  lives and it should have no idea the DOM exists; the binder is a convenience over it that you can bypass for any form
+  with unusual markup. That split also means the third option stays available later — a controller would sit on top of
+  the same core without disturbing it.
+
+  One markup assumption to flag now: the binder needs to find fields by [38;5;153mname[39m attributes, and the current login inputs
+  only have [38;5;153mid[39ms ([38;5;153mindex.html:9-10[39m). Adopting the binder means adding [38;5;153mname[39m attributes to those inputs.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Boundary [39m[49m
+
+[1m[38;5;231mHow much should the shared validation own?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCore + DOM binder (Recommended)[39m
+     [38;5;246mPure validate() core, plus an optional thin layer that reads inputs and renders error messages. Two separate [39m
+     [38;5;246mlayers.[39m
+  [38;5;246m2.[39m Pure core only
+     [38;5;246mJust validate(data, schema) returning per-field errors. Each form handles its own DOM reading and error display.[39m
+  [38;5;246m3.[39m Full form controller
+     [38;5;246mCore + binder + live revalidation on blur/input, touched state, submit-button disabling.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

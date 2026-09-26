@@ -1,0 +1,40 @@
+  [38;5;153msrc/utils.js[39m uses CommonJS [38;5;153mmodule.exports[39m and is only ever reached from Node via [38;5;153msrc/index.js[39m. A shared validation
+  module has to be reachable from the browser page, and ideally from Node so it can be tested without a browser. There's
+  no bundler and no dependencies, so whatever we pick, we live with directly.
+
+  - [1mES modules[0m — [38;5;153msrc/validation.js[39m uses [38;5;153mexport[39m, [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" src="app.js">[39m. Cleanest and the
+    direction the ecosystem went. Costs: the page stops working when opened as a [38;5;153mfile://[39m URL (module scripts are
+    CORS-restricted), so you'd need to serve it — [38;5;153mnpx serve[39m, [38;5;153mpython3 -m http.server[39m, anything. Also leaves [38;5;153msrc/utils.js[39m
+    on CommonJS, so the repo has two styles until someone converts it.
+  - [1mClassic global script[0m — [38;5;153msrc/validation.js[39m assigns [38;5;153mwindow.FormValidation[39m, and [38;5;153mindex.html[39m loads it before [38;5;153mapp.js[39m. Zero
+    friction, [38;5;153mfile://[39m keeps working, matches how [38;5;153mapp.js[39m is written today. Costs: not importable from Node, so tests
+    would need a DOM-ish shim or a hand-rolled global harness.
+  - [1mDual CommonJS + global[0m — the file ends with a conditional [38;5;153mmodule.exports[39m / [38;5;153mwindow[39m assignment. Works in the browser
+    as a plain script [3mand[0m imports cleanly in Node for tests. Costs: a few lines of boilerplate at the bottom that look
+    dated.
+
+  Cheap to change later: adding rules, the schema's shape. Expensive: this one — it decides whether [38;5;153mindex.html[39m needs a
+  dev server, and whether tests can import the module at all. Converting later means touching the HTML and every
+  consumer.
+
+  [1mMy recommendation: dual CommonJS + global.[0m It's the only option that gets the module under test in Node without adding
+  tooling, while leaving [38;5;153mindex.html[39m openable as a plain file exactly as it is now. The boilerplate is four lines and it
+  buys the testability that makes a "reusable" module actually safe to reuse.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should the shared validation module be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDual CommonJS + global (Recommended)[39m
+     [38;5;246mConditional module.exports / window assignment. Plain <script> in the browser, importable in Node for tests, no dev
+[39m     [38;5;246mserver needed.[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246mexport / import, index.html switches to type="module". Cleanest, but the page then needs a local server instead of
+[39m     [38;5;246mfile://.[39m
+  [38;5;246m3.[39m Classic global script
+     [38;5;246mAssigns window.FormValidation, loaded before app.js. Matches app.js today; not importable from Node.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

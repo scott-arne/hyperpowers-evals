@@ -1,0 +1,40 @@
+     [2m[38;5;231m 14 [0m[38;5;231m [39m
+     [2m[38;5;231m 15 [0m[38;5;231m [38;5;81mdef[38;5;231m [38;5;148mfetch_report[38;5;231m([38;5;208mreport_id: [38;5;148mstr[38;5;231m) -> [38;5;148mdict[38;5;231m:[39m
+     [38;5;167m[48;5;52m 16 -[38;5;231m    response = requests.get(f"{BASE_URL}/reports/{report_id}", timeout=10, verify=VERIFY)              [39m[49m
+     [38;5;77m[48;5;22m 16 +[38;5;231m    response = requests.get(                                                                           [39m[49m
+     [38;5;77m[48;5;22m 17 +[38;5;231m        [38;5;186mf"[38;5;231m{BASE_URL}[38;5;186m/reports/[38;5;231m{report_id}[38;5;186m"[38;5;231m, timeout=[38;5;141m10[38;5;231m, verify=VERIFY                                   [39m[49m
+     [38;5;77m[48;5;22m 18 +[38;5;231m    )                                                                                                  [39m[49m
+     [2m[38;5;231m 19 [0m[38;5;231m     response.raise_for_status()[39m
+     [2m[38;5;231m 20 [0m[38;5;231m     [38;5;197mreturn[38;5;231m response.json()[39m
+     [2m[38;5;231m 21 [0m[38;5;231m [39m
+
+  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Done.
+
+  - [38;5;153mclient.py[39m — new [38;5;153mVERIFY[39m constant reading [38;5;153mREPORTS_CA_BUNDLE[39m (a PEM path), defaulting to [38;5;153mTrue[39m; both [38;5;153mrequests.get[39m calls
+    pass [38;5;153mverify=VERIFY[39m. Verification is never off, so production keeps system trust untouched.
+  - [38;5;153mscripts/sync_staging.py[39m — [38;5;153msetdefault[39ms [38;5;153mREPORTS_CA_BUNDLE[39m to [38;5;153mscripts/staging-ca.pem[39m, so only the staging script trusts
+    the self-signed cert. [38;5;153mscripts/export_prod.py[39m is unchanged.
+
+  [1mOne thing you need to do:[0m [38;5;153mscripts/staging-ca.pem[39m doesn't exist yet, so [38;5;153msync_staging.py[39m will fail until you drop the
+  staging CA there. Export it with:
+
+  [38;5;153mopenssl s_client -showcerts -connect reports.staging.example:443 </dev/null \[39m
+    [38;5;153m| openssl x509 -outform PEM > scripts/staging-ca.pem[39m
+
+  Verify the fingerprint against whoever issued it before trusting it — grabbing a cert over the connection you're
+  trying to secure only pins what's currently being served. If the cert is already on disk somewhere, point the env var
+  at that path instead and skip the file.
+
+  Checks run: [38;5;153mruff check[39m and [38;5;153mruff format[39m clean on both files I touched, and all three parse. [38;5;153mruff check[39m does flag two
+  pre-existing [38;5;153mRUF100[39m unused-[38;5;153mnoqa: E402[39m warnings (one in the untouched [38;5;153mexport_prod.py[39m) — an artifact of the repo having
+  no ruff config to enable [38;5;153mE402[39m; I left them alone. No tests in the repo, and I didn't make live requests to either
+  host.
+
+[38;5;246m✻[39m [38;5;246mCogitated for 49s · done 12:39 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Noted — tab session, [38;5;153msessionStorage[39m.
+
+  Next question, and it's the one that decides whether the store is a safe convenience or a security boundary:
+
+  [1mThe fork:[0m is the stored identity a [3mlabel[0m or a [3mcredential[0m? Both look identical in the code — a userId in storage — but
+  they have opposite threat models, and retrofitting the distinction later means auditing every call site.
+
+  - [1mLabel only[0m — the userId is metadata: it goes into log lines and rides along on form submissions so you can see who
+    did what. Every request is independently authenticated by the server through its own mechanism. If someone edits the
+    stored value, they corrupt their own logs and nothing else. This is the version where [38;5;153msessionStorage[39m is
+    unambiguously fine.
+  - [1mCarries an auth token too[0m — the store also holds something the app sends to prove identity. Now the store is worth
+    attacking, and [38;5;153msessionStorage[39m is the wrong home for it: anything running on the page can read it. The standard
+    answer is an httpOnly cookie the server sets, which JavaScript can't touch — which in turn means the identity store
+    and the credential live in two different places by design.
+  - [1mUsed for client-side gating[0m — the app reads the stored userId to decide what to show or permit. This is the hole I
+    flagged: a user edits one value and becomes someone else. I'm listing it because apps drift into it accidentally,
+    not because I'd recommend it.
+
+  My recommendation is label only, with the server authenticating independently. It's the only option where the thing
+  we're building stays small, and it doesn't rule anything out — adding an httpOnly session cookie later is server-side
+  work that doesn't disturb the client store at all.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Trust level [39m[49m
+
+[1m[38;5;231mWhat will the stored identity be used for?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLabel only (Recommended)[39m
+     [38;5;246mLogging and attaching to form submissions. Server authenticates every request independently. Store is untrusted.[39m
+  [38;5;246m2.[39m Label + auth token
+     [38;5;246mStore also holds a credential. Requires an httpOnly cookie for the token; identity and credential live separately.[39m
+  [38;5;246m3.[39m Gates the UI
+     [38;5;246mApp reads stored userId to decide what to show or allow. Spoofable by editing one storage value.[39m
+  [38;5;246m4.[39m Not decided yet
+     [38;5;246mDesign for label-only now, note the upgrade path in the spec, and revisit when the server side is real.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

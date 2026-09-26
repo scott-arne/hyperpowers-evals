@@ -1,0 +1,40 @@
+  structure, and there's a real fork in how it gets wired. So I'll ask a couple of questions, propose approaches, and
+  write a short spec before any code. Say the word if you'd rather I just cut a [38;5;153mconfig.js[39m and be done.
+
+  First question, and the one that decides the rest.
+
+  [1mThe fork:[0m how does the running page know [3mwhich[0m environment it's in? The app is a static script with no build step, so
+  there's nothing to inject values at deploy time unless you add one.
+
+  - [1mHostname detection[0m — settings module maps [38;5;153mlocalhost[39m / staging host / prod host to endpoints; deploy the same file
+    everywhere, it self-selects. Costs: the host list lives in client-side code, and a new environment means a code
+    change. Cheap to change later.
+  - [1mSingle edited value[0m — settings module holds one [38;5;153mENVIRONMENT = "dev"[39m line you flip before deploying. Simplest
+    possible; costs: a manual step that's easy to get wrong, and prod/staging artifacts differ by an edit rather than by
+    the host.
+  - [1mBuild-time injection[0m — a build step substitutes the endpoint per environment. Most robust for real deployments;
+    costs: introduces tooling (bundler or a script) to a repo that currently has none. Hardest to walk back.
+  - [1mRuntime override[0m — query param or [38;5;153mlocalStorage[39m beats a fixed choice; realistically a dev-convenience [3mlayer[0m on top of
+    one of the above, not a standalone answer.
+
+  [1mMy recommendation: hostname detection.[0m It matches what the repo actually is — a static page with no toolchain — and it
+  makes environment switching automatic rather than a thing you remember to do. If a build step arrives later, the
+  settings module is the natural place to read an injected value, so this doesn't box you in.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Env select [39m[49m
+
+[1m[38;5;231mHow should the app determine which environment it's running in?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mHostname detection (Recommended)[39m
+     [38;5;246mSettings module maps window.location.hostname to an endpoint. Same file deploys everywhere and self-selects.[39m
+  [38;5;246m2.[39m Single edited value
+     [38;5;246mOne ENVIRONMENT constant in the settings module that you change before deploying.[39m
+  [38;5;246m3.[39m Build-time injection
+     [38;5;246mAdd a build step that substitutes the endpoint per environment. Introduces tooling this repo doesn't have.[39m
+  [38;5;246m4.[39m Hostname + dev override
+     [38;5;246mHostname detection, plus a query-param or localStorage override for local testing against other environments.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

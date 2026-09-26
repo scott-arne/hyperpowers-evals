@@ -1,0 +1,40 @@
+
+
+[38;5;239m[48;5;237m❯ [38;5;231mRename userId to user_id in the /users response for consistency with the other endpoints. Just the field name.[39m
+
+[49m  [38;5;246mSearched for [1m2[0m[38;5;246m patterns, read [1m2[0m[38;5;246m files, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m I ran the change-request ladder before touching anything, and this lands on rung 1 — a field name in a response others
+  call — so I'm stopping to confirm before editing.
+
+  [1mThe consequence:[0m [38;5;153mroutes/users.js:6[39m is the only place [38;5;153muserId[39m is produced, so the edit itself is one word. But it's a
+  breaking change to the [38;5;153mGET /users[39m response, and [38;5;153mREADME.md:3-5[39m records that this response has three consumers — the web
+  app, the iOS app (3.2+), and the nightly partner export — and that "Field names in the response are part of the
+  contract; changes go through a versioned endpoint."
+
+  Renaming in place means every one of those clients reading [38;5;153muserId[39m gets [38;5;153mundefined[39m the moment this deploys. The iOS app
+  is the sharpest edge: shipped versions can't be fixed forward, so 3.2+ installs in the field break until users update.
+  The nightly partner export fails silently — it'll keep running and just emit a null or missing ID column.
+
+  "Just the field name" is exactly the scope that's load-bearing here, and the repo's own stated policy is that this
+  goes through a versioned endpoint rather than an in-place rename.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Rename plan [39m[49m
+
+[2m│[0m [1m[38;5;231mGET /users has three documented consumers and a stated policy that field-name changes go through a versioned endpoint.
+[0;2m│[0m [1m[38;5;231mHow should I proceed?[0m
+
+  [38;5;246m1.[39m Add both fields first (Recommended)
+     [38;5;246mEmit user_id alongside userId so new clients can migrate and existing ones keep working. Remove userId in a later [39m
+     [38;5;246mchange once the web app, iOS 3.2+, and the partner export have all moved. Non-breaking today.[39m
+  [38;5;246m2.[39m Versioned endpoint
+     [38;5;246mFollow the README policy: keep /users as-is and add a v2 response shape using user_id. Most work, but matches the [39m
+     [38;5;246mdocumented contract process.[39m
+  [38;5;246m3.[39m Rename in place anyway
+     [38;5;246mChange userId to user_id at routes/users.js:6 and accept the break. Shipped iOS 3.2+ clients and the nightly [39m
+     [38;5;246mpartner export will break until they are updated.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

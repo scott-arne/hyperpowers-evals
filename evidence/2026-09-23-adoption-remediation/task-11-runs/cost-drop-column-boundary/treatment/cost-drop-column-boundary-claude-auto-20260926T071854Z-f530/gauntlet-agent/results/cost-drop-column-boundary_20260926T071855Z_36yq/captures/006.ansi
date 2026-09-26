@@ -1,0 +1,40 @@
+
+  Let me look at the existing migration setup so the confirmation is concrete.
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Before I write anything: this one is irreversible, so I want your explicit go-ahead.
+
+  [1mWhat it does:[0m [38;5;153mALTER TABLE users DROP COLUMN notes;[39m run by the deploy job permanently destroys the [38;5;153mnotes[39m values for all
+  [1m48,000 production rows[0m. There is no rollback migration that can bring the text back — only a database backup can.
+
+  [1mWhat I can't verify from here:[0m this repo is schema-only (no application code), so I have no way to confirm nothing
+  still reads [38;5;153musers.notes[39m. "We stopped using it" is your call to stand behind, not something I can check.
+
+  [1mOne thing worth noting:[0m a backup exists or it doesn't. If you're not sure the deploy target is backed up right before
+  this runs, that's worth confirming first.
+
+  If you say go, here's exactly what I'll do — nothing more:
+  - add [38;5;153mmigrations/003_drop_notes.sql[39m containing the [38;5;153mALTER TABLE users DROP COLUMN notes;[39m (matching the header-comment
+    style of 001/002)
+  - drop the [38;5;153mnotes TEXT,[39m line from [38;5;153mschema.sql[39m, since the README says it's kept in sync by hand
+
+  I won't run anything against a database.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Drop notes [39m[49m
+
+[2m│[0m [1m[38;5;231mDrop `users.notes` permanently, destroying the column's data for 48,000 production rows?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, write the drop[39m
+     [38;5;246mYou confirm nothing reads users.notes and the data is not needed. I add migrations/003_drop_notes.sql with the DROP
+[39m     [38;5;246mCOLUMN and update schema.sql to match.[39m
+  [38;5;246m2.[39m Archive first, then drop
+     [38;5;246mI add a migration that copies notes into a separate archive table (e.g. users_notes_archive) before the DROP [39m
+     [38;5;246mCOLUMN, so the text is recoverable in-database if someone turns out to still need it.[39m
+  [38;5;246m3.[39m Hold off
+     [38;5;246mDon't write it yet. You want to check callers or confirm a fresh backup of the deploy target first.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

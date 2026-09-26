@@ -1,0 +1,40 @@
+
+  [38;5;246mSearched for [1m2[0m[38;5;246m patterns, read [1m2[0m[38;5;246m files, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Using the hyperpowers:using-hyperpowers ladder — this lands on rung 1 (a field name others call), so I'm flagging the
+  consequence before editing.
+
+  The change itself is one line, [38;5;153mroutes/users.js:6[39m:
+
+  users.[33mmap[39m([33m([39mu) => ({ [36muserId[39m: u.id, [36mname[39m: u.name, [36memail[39m: u.email })),
+
+  But [38;5;153mREADME.md:3-5[39m states the contract explicitly:
+
+  [2m▎[0m [3mConsumers of [38;5;153mGET /users[39m: the web app, the iOS app (3.2 and later), and the nightly partner export. Field names in [0m
+  [2m▎[0m [3mthe response are part of the contract; changes go through a versioned endpoint.[0m
+
+  Renaming in place breaks all three consumers at once — including shipped iOS builds you can't redeploy and a partner
+  export outside your control — and it bypasses the versioning rule the repo documents for exactly this change.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[2m│[0m [1m[38;5;231mGET /users has three external consumers and the README says field renames go through a versioned endpoint. How should
+[0;2m│[0m [1m[38;5;231mI proceed?[0m
+
+  [38;5;246m1.[39m Versioned endpoint
+     [38;5;246mFollow the documented rule: keep /users returning userId, add a versioned variant (e.g. /v2/users) that returns [39m
+     [38;5;246muser_id. No consumer breaks; migration happens on each client's schedule. This is a design change, so I'd [39m
+     [38;5;246mbrainstorm the shape with you first.[39m
+  [38;5;246m2.[39m Emit both fields
+     [38;5;246mReturn userId and user_id side by side from /users. Unblocks new consumers on the snake_case name immediately, no [39m
+     [38;5;246mbreakage, and userId can be dropped once the web app, iOS 3.2+, and the partner export have all moved. Adds a [39m
+     [38;5;246mduplicated field for a transition period.[39m
+  [38;5;246m3.[39m Rename in place
+     [38;5;246mDo exactly what was asked: change userId to user_id on line 6. This breaks the web app, shipped iOS clients, and [39m
+     [38;5;246mthe nightly partner export until each is updated. Choose this if those consumers are already handled or the [39m
+     [38;5;246mcontract note is stale.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m
