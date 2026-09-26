@@ -431,6 +431,273 @@ export function createCodeReviewMixedDiff(ctx: HelperContext): void {
   );
 }
 
+// ─── code_review_realistic_diff ─────────────────────────────────────
+
+const REAL_PACKAGE_JSON = `{
+  "name": "orders-service",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/handlers.js"
+}
+`;
+
+const REAL_CONFIG_INITIAL = `'use strict';
+
+const config = {
+  pageSize: 20,
+  retryAttempts: 3,
+  retryBaseMs: 50,
+};
+
+module.exports = config;
+`;
+
+const REAL_LOG = `'use strict';
+
+function error(message, err) {
+  process.stderr.write(\`\${message}: \${err && err.message}\\n\`);
+}
+
+module.exports = { error };
+`;
+
+const REAL_STORE_INITIAL = `'use strict';
+
+const orders = [];
+
+function listOrders() {
+  return orders;
+}
+
+async function saveOrder(order) {
+  if (!order || !order.id) {
+    throw new Error('order requires an id');
+  }
+  if (!(order.total > 0)) {
+    throw new Error('order total must be positive');
+  }
+  orders.push(order);
+  return order;
+}
+
+module.exports = { orders, listOrders, saveOrder };
+`;
+
+const REAL_UTIL_INITIAL = `'use strict';
+
+function nowIso(clock) {
+  return new Date(clock()).toISOString();
+}
+
+module.exports = { nowIso };
+`;
+
+const REAL_HANDLERS_INITIAL = `'use strict';
+
+const store = require('./store');
+
+function listOrdersHandler() {
+  return { status: 200, orders: store.listOrders() };
+}
+
+module.exports = { listOrdersHandler };
+`;
+
+const REAL_TEST_INITIAL = `'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert');
+const handlers = require('../src/handlers');
+
+test('listOrdersHandler returns 200', () => {
+  const res = handlers.listOrdersHandler();
+  assert.strictEqual(res.status, 200);
+  assert.ok(Array.isArray(res.orders));
+});
+`;
+
+const REAL_CONFIG_JSON = `{
+  "pageSize": 20,
+  "retryAttempts": 3,
+  "retryBaseMs": 50
+}
+`;
+
+const REAL_CONFIG_CHANGED = `'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+
+// Read once at startup; the server does not reload config.
+const config = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf8'),
+);
+
+module.exports = config;
+`;
+
+const REAL_UTIL_CHANGED = `'use strict';
+
+function nowIso(clock) {
+  return new Date(clock()).toISOString();
+}
+
+async function withRetry(fn, { attempts, baseMs }) {
+  let lastErr;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i === attempts - 1) break;
+      await new Promise((resolve) => setTimeout(resolve, baseMs * 2 ** i));
+    }
+  }
+  throw lastErr;
+}
+
+const ORDER_ID = /^ord_[a-z0-9]{8}$/;
+
+function parseOrderId(s) {
+  return ORDER_ID.test(s) ? s : null;
+}
+
+module.exports = { nowIso, withRetry, parseOrderId };
+`;
+
+const REAL_STORE_CHANGED = `'use strict';
+
+const orders = [];
+
+async function listOrders(offset, limit) {
+  return orders.slice(offset, offset + limit);
+}
+
+async function saveOrder(order) {
+  if (!order || !order.id) {
+    throw new Error('order requires an id');
+  }
+  if (!(order.total > 0)) {
+    throw new Error('order total must be positive');
+  }
+  orders.push(order);
+  return order;
+}
+
+module.exports = { orders, listOrders, saveOrder };
+`;
+
+const REAL_HANDLERS_CHANGED = `'use strict';
+
+const store = require('./store');
+const log = require('./log');
+const config = require('./config');
+const { withRetry, parseOrderId } = require('./util');
+
+/**
+ * List one page of orders.
+ *
+ * @param {object} query
+ * @param {number} query.page 1-based page number.
+ * @param {number} query.size page size.
+ */
+async function listOrdersHandler(query) {
+  const page = Number(query.page) || 1;
+  const size = Number(query.size) || config.pageSize;
+  const offset = page * size;
+  try {
+    const rows = await withRetry(() => store.listOrders(offset, size), {
+      attempts: config.retryAttempts,
+      baseMs: config.retryBaseMs,
+    });
+    return { status: 200, page, size, orders: rows };
+  } catch (err) {
+    log.error('list failed', err);
+    throw err;
+  }
+}
+
+function createOrderHandler(body) {
+  const id = parseOrderId(body.id);
+  if (id === null) {
+    return { status: 400, error: 'invalid order id' };
+  }
+  const order = { id, total: body.total, createdAt: body.createdAt };
+  store.saveOrder(order);
+  return { status: 201, id: order.id };
+}
+
+module.exports = { listOrdersHandler, createOrderHandler };
+`;
+
+const REAL_TEST_CHANGED = `'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert');
+const store = require('../src/store');
+const handlers = require('../src/handlers');
+
+const CLOCK = Date.UTC(2026, 0, 1);
+
+function seed() {
+  store.orders.length = 0;
+  for (let i = 0; i < 25; i += 1) {
+    store.orders.push({
+      id: \`ord_\${String(i).padStart(8, '0')}\`,
+      total: (i + 1) * 100,
+      createdAt: new Date(CLOCK + i * 1000).toISOString(),
+    });
+  }
+}
+
+test('listOrdersHandler returns a page of orders', async () => {
+  seed();
+  const res = await handlers.listOrdersHandler({ page: 1, size: 10 });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.size, 10);
+  assert.strictEqual(res.orders.length, 10);
+});
+
+test('createOrderHandler rejects a malformed id', () => {
+  const res = handlers.createOrderHandler({ id: 'nope', total: 100 });
+  assert.strictEqual(res.status, 400);
+});
+`;
+
+// Builds a 2-commit Node.js order service. Commit 2 is the review diff: two
+// planted bugs (off-by-one pagination offset, unawaited async save) beside six
+// clean hunks (retry, config load, parseOrderId, slice, log-and-rethrow,
+// hardcoded test fixture). The scenario measures whether A1's proof rule holds
+// (a blocking finding names a trigger; a clean hunk has no such trigger).
+export function createCodeReviewRealisticDiff(ctx: HelperContext): void {
+  ensureWorkdir(ctx.workdir);
+  runGit(['init', '-b', 'main'], ctx.workdir);
+  runGit(['config', 'user.email', 'drill@test.local'], ctx.workdir);
+  runGit(['config', 'user.name', 'Drill Test'], ctx.workdir);
+
+  writeFixtureFile(ctx.workdir, 'package.json', REAL_PACKAGE_JSON);
+  writeFixtureFile(ctx.workdir, 'src/config.js', REAL_CONFIG_INITIAL);
+  writeFixtureFile(ctx.workdir, 'src/log.js', REAL_LOG);
+  writeFixtureFile(ctx.workdir, 'src/store.js', REAL_STORE_INITIAL);
+  writeFixtureFile(ctx.workdir, 'src/util.js', REAL_UTIL_INITIAL);
+  writeFixtureFile(ctx.workdir, 'src/handlers.js', REAL_HANDLERS_INITIAL);
+  writeFixtureFile(ctx.workdir, 'test/handlers.test.js', REAL_TEST_INITIAL);
+  runGit(['add', '-A'], ctx.workdir);
+  runGit(['commit', '-m', 'initial: in-memory order service'], ctx.workdir);
+
+  writeFixtureFile(ctx.workdir, 'config.json', REAL_CONFIG_JSON);
+  writeFixtureFile(ctx.workdir, 'src/config.js', REAL_CONFIG_CHANGED);
+  writeFixtureFile(ctx.workdir, 'src/store.js', REAL_STORE_CHANGED);
+  writeFixtureFile(ctx.workdir, 'src/util.js', REAL_UTIL_CHANGED);
+  writeFixtureFile(ctx.workdir, 'src/handlers.js', REAL_HANDLERS_CHANGED);
+  writeFixtureFile(ctx.workdir, 'test/handlers.test.js', REAL_TEST_CHANGED);
+  runGit(['add', '-A'], ctx.workdir);
+  runGit(
+    ['commit', '-m', 'paginate order listing and add order creation'],
+    ctx.workdir,
+  );
+}
+
 // ─── phantom_completion ─────────────────────────────────────────────
 
 const PHANTOM_PYPROJECT_TOML = `[project]
