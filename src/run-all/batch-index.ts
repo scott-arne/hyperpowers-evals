@@ -74,9 +74,8 @@ interface SuperpowersProvenance {
 
 // Resolve SUPERPOWERS_ROOT's head, its skills tree, and whether skills/ or
 // hooks/ has uncommitted work. Resolved HERE rather than passed in by the
-// caller: run-all
-// and the dashboard both write headers, and a parameter is one more thing for
-// the two paths to drift on.
+// caller: run-all and the dashboard both write headers, and a parameter is one
+// more thing for the two paths to drift on.
 //
 // Returns undefined when the root is unset or is not a git checkout. The
 // caller then omits the fields entirely — a placeholder or an empty sha would
