@@ -276,6 +276,14 @@ BULLET_RE = re.compile(r"^[-*+]\s+\*\*")
 # use those to structure a finding, not to open one. Built from BULLET_RE so
 # the column-0 anchor is stated once.
 BULLET_FINDING_RE = re.compile(BULLET_RE.pattern + r".+\*\*\s*$")
+# The heading form of a finding title: a heading whose text opens with the
+# number the numbered form carries, bolded or not. Only a numbered heading can
+# title a finding. An unnumbered heading inside a finding list is a subsection
+# -- `#### Suggested test`, `##### Suggested fix` -- and reading one as a title
+# invented a blocking finding on a clean hunk with no note to say so. The number
+# has to end in `.` or `)` and a space, so `#### 1.5x slower` stays prose. Group
+# 1 is the `#` run, as in HEADING_RE, so depth reads the same off either.
+TITLE_HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(?:\*\*\s*)?\d+[.)](?:\*\*)?\s")
 # A section that says it is empty, rather than one this script failed to read.
 EMPTY_SECTION_RE = re.compile(
     r"^[\s*_`\-]*(?:none|n/?a|nothing|no\s+\w+\s+(?:findings|issues))\b[\s*_`.!]*$",
@@ -705,26 +713,37 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
     with a bulleted finding and continuing with numbered ones dropped the
     first outright, and `recall` read low with nothing said about it.
 
-    A heading is the third form, and the least ambiguous of the three:
-    :func:`split_sections` leaves one in a section's body only where it is
-    nested under that section's own heading, and a report that writes
-    ``### Critical`` over ``#### 1. ...`` is titling its findings. It is ranked
-    with the numbered form because that is what it is -- the same numbered
-    title written as a heading -- and because ranking it with the bulleted
-    form would move ``opens``, which is the reading the four real reports that
-    bullet inside a numbered finding depend on.
+    A numbered heading is the third form: :func:`split_sections` leaves a
+    heading in a section's body only where it is nested under that section's
+    own heading, and a report that writes ``### Critical`` over ``#### 1. ...``
+    is titling its findings. It is ranked with the numbered form because that
+    is what it is -- the same numbered title written as a heading -- and
+    because ranking it with the bulleted form would move ``opens``, which is
+    the reading the four real reports that bullet inside a numbered finding
+    depend on.
 
-    A heading starts a sibling finding only at the finding-title depth: the
-    shallowest heading depth in the body, taken in a pre-pass rather than read
-    off the first heading, so a section that writes a deeper aside above its
-    first heading-titled finding still reads that finding as a start. A
-    heading below that depth is the finding's own remediation subsection --
-    ``##### Suggested test``, ``##### Suggested fix`` -- and reading one as a
-    sibling invented a finding out of it. Where the subsection cited a clean
-    hunk of the fixture the invention attributed there, raised
+    A heading starts a finding only when three things hold, and each one
+    closes a shape that invented a finding the reviewer never wrote. It is
+    numbered: an unnumbered heading -- ``#### Suggested test``,
+    ``##### Suggested fix`` -- is a subsection of the finding above it, and
+    where it sits at the titles' own depth nothing but the number tells the
+    two apart. The section opens with one: its first finding-shaped line is a
+    numbered heading, not a bold or bulleted title, because a section titled
+    in bold is not titling with headings and a numbered
+    ``##### 1. Suggested test`` inside it is still a subsection. It sits at
+    the finding-title depth: the shallowest numbered-heading depth in the
+    body, taken in a pre-pass, so a numbered ``##### 1. Reproduce`` under a
+    ``#### 1.`` title stays inside it. Asking only the last of the three, of
+    every heading, made a lone subsection in a bold-titled section the
+    shallowest heading there and so a title. Where such a subsection cited a
+    clean hunk of the fixture the invented finding attributed there, raised
     ``blocking_on_clean`` and flipped ``accepted``; paired with the failing
     grader a report concluding "not ready to merge" comes with, nothing
     disagreed and the wrong number reached the campaign unannounced.
+
+    Every other heading is prose: after a finding opens it folds into that
+    finding with the lines around it, and ahead of the first finding it is
+    content the section refuses, as described below.
 
     The union is asymmetric on purpose: a bulleted line begins a finding only
     while no numbered finding has begun. 4 of the 7 real reviewer reports
@@ -747,11 +766,14 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
     script does not read, and dropping it silently is the defect the fatal
     exists for. None of the seven real reports carries any of the three.
 
-    A heading deeper than the finding-title depth, written before the first
-    start, lands there as well: it titles no finding and sits inside none, so
-    it is content in neither list form. Refusing it rather than dropping it is
-    the same fail-closed reading, arrived at deliberately and not as a side
-    effect of the depth condition.
+    A heading that titles no finding, written before the first start, lands
+    there as well: it sits inside no finding either, so it is content in
+    neither list form. So does a section that titles its findings with
+    unnumbered headings, which is refused rather than guessed at: nothing in
+    such a title tells it from a subsection, and none of the seven real
+    reports titles its findings with headings of any kind. Refusing rather
+    than dropping is the same fail-closed reading, arrived at deliberately and
+    not as a side effect of the rule above.
 
     A skipped bullet is reported through ``skipped`` because the label shape is
     also how a reviewer titles a real finding with the sentence trailing after
@@ -772,21 +794,34 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
         before the first one or in place of any.
     """
 
-    # The finding-title depth, over the whole body rather than off the first
-    # heading: a section may write a deeper aside before its first
-    # heading-titled finding, and that finding is still a start. Fences are
-    # tracked here as they are below, because a quoted diff holds lines that
-    # look like headings.
+    # The finding-title depth, or 0 where headings title nothing here. The
+    # section's first finding-shaped line decides whether it titles findings
+    # with headings at all: one that opens with a bold or bulleted title is
+    # not doing so, and a numbered heading later in it is a subsection, so its
+    # depth is 0, which no heading has. Where it opens with a numbered heading
+    # the depth is the shallowest numbered heading over the whole body, not
+    # the first one's, so a deeper numbered heading written ahead of the first
+    # title cannot set the depth and swallow the titles below it; it is
+    # refused as content before the first finding instead. Fences are tracked
+    # here as they are below, because a quoted diff holds lines that look like
+    # headings and findings.
     depths: list[int] = []
+    headed: bool | None = None
     quoted = False
     for line in body:
         if line.lstrip().startswith("```"):
             quoted = not quoted
             continue
-        title = None if quoted else HEADING_RE.match(line)
+        if quoted:
+            continue
+        title = TITLE_HEADING_RE.match(line)
         if title is not None:
             depths.append(len(title.group(1)))
-    title_depth = min(depths, default=0)
+        if headed is None and (
+            title is not None or NUMBERED_RE.match(line) or BULLET_FINDING_RE.match(line)
+        ):
+            headed = title is not None
+    title_depth = min(depths, default=0) if headed else 0
     numbered: list[int] = []
     bulleted: list[int] = []
     # The bullets read as the section's scaffolding rather than as starts.
@@ -803,15 +838,16 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
         if fenced:
             accounted.add(index)
             continue
-        heading = HEADING_RE.match(line)
+        heading = TITLE_HEADING_RE.match(line)
         if heading is not None and len(heading.group(1)) == title_depth:
-            # A heading this far in is one nested under the section's own,
-            # which is how the reports that write it title a finding. Ranked
-            # with the numbered starts so `opens` and `starts` below keep
-            # their present meaning. Only at the finding-title depth: a deeper
-            # heading is the remediation subsection of the finding above it,
-            # and reading it as a sibling invented a blocking finding on a
-            # clean hunk with no note to say so. That one falls through to the
+            # A numbered heading at the finding-title depth, in a section that
+            # opens with one, is how the reports that write it title a
+            # finding. Ranked with the numbered starts so `opens` and `starts`
+            # below keep their present meaning. Any other heading -- one with
+            # no number, one deeper than the titles, any in a section titled
+            # in bold or by bullets -- is a subsection of the finding above
+            # it, and reading it as a sibling invented a blocking finding on a
+            # clean hunk with no note to say so. It falls through to the
             # branches below and is handled as the prose it sits among.
             numbered.append(index)
             scaffold = False
@@ -1896,6 +1932,162 @@ A note about the review process that is not a finding at all.
 
 The offset is computed from a one-based page number, so `listOrdersHandler`
 never returns the first page of results.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# The remediation subsection of REMEDIATION_SUBHEADING_REPORT under findings
+# titled in bold rather than by headings. The subsection was the only heading in
+# the section, so the shallowest-depth rule made it the title depth and read it
+# as a third finding on the clean hunk -- the shape Codex's round-4 review found.
+BOLD_REMEDIATION_SUBHEADING_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Issues
+
+### Critical
+
+**1. Pagination offset skips a whole page - `src/handlers.js:18`**
+
+The offset is computed from a one-based page number, so `listOrdersHandler`
+never returns the first page of results.
+
+##### Suggested test - `test/handlers.test.js:8`
+
+Add a case asserting that page 1 returns rows starting at offset 0.
+
+**2. The write is never awaited - `src/handlers.js:37`**
+
+`saveOrder` returns a promise the handler drops, so a failed write is
+invisible and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# Heading-titled findings with the remediation subsection written at the
+# titles' own depth. Depth cannot tell the two apart here; only the number can.
+SAME_DEPTH_SUBHEADING_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Issues
+
+### Critical
+
+#### 1. Pagination offset skips a whole page - `src/handlers.js:18`
+
+The offset is computed from a one-based page number, so `listOrdersHandler`
+never returns the first page of results.
+
+#### Suggested test - `test/handlers.test.js:8`
+
+Add a case asserting that page 1 returns rows starting at offset 0.
+
+#### 2. The write is never awaited - `src/handlers.js:37`
+
+`saveOrder` returns a promise the handler drops, so a failed write is
+invisible and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# Bold titles again, with the subsection numbered as the first step of the
+# finding's remediation. The number makes it look like a title, so what keeps it
+# a subsection is that the section never opened with a heading.
+BOLD_NUMBERED_SUBHEADING_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Issues
+
+### Critical
+
+**1. Pagination offset skips a whole page - `src/handlers.js:18`**
+
+The offset is computed from a one-based page number, so `listOrdersHandler`
+never returns the first page of results.
+
+##### 1. Suggested test - `test/handlers.test.js:8`
+
+Add a case asserting that page 1 returns rows starting at offset 0.
+
+**2. The write is never awaited - `src/handlers.js:37`**
+
+`saveOrder` returns a promise the handler drops, so a failed write is
+invisible and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# Findings titled by headings that carry no number. Nothing in the line tells
+# such a title from a subsection, so the section is refused rather than guessed.
+UNNUMBERED_HEADING_TITLES_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Issues
+
+### Critical
+
+#### Pagination offset skips a whole page - `src/handlers.js:18`
+
+The offset is computed from a one-based page number, so `listOrdersHandler`
+never returns the first page of results.
+
+#### The write is never awaited - `src/handlers.js:37`
+
+`saveOrder` returns a promise the handler drops, so a failed write is
+invisible and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# An unnumbered heading ahead of bold-titled findings. It belongs to no finding
+# and titles none, so it is content in neither list form.
+HEADING_AHEAD_OF_BOLD_TITLES_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Issues
+
+### Critical
+
+#### Suggested test - `test/handlers.test.js:8`
+
+Add a case asserting that page 1 returns rows starting at offset 0.
+
+**1. Pagination offset skips a whole page - `src/handlers.js:18`**
+
+The offset is computed from a one-based page number, so `listOrdersHandler`
+never returns the first page of results.
+
+**2. The write is never awaited - `src/handlers.js:37`**
+
+`saveOrder` returns a promise the handler drops, so a failed write is
+invisible and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# Heading-titled findings with a numbered subsection one level deeper. Both
+# headings are numbered and the section opens with a heading, so only the
+# finding-title depth keeps the subsection inside the finding above it.
+NUMBERED_SUBHEADING_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Issues
+
+### Critical
+
+#### 1. Pagination offset skips a whole page - `src/handlers.js:18`
+
+The offset is computed from a one-based page number, so `listOrdersHandler`
+never returns the first page of results.
+
+##### 1. Reproduce - `test/handlers.test.js:8`
+
+Ask for page 1 and assert that the first row returned is at offset 0.
+
+#### 2. The write is never awaited - `src/handlers.js:37`
+
+`saveOrder` returns a promise the handler drops, so a failed write is
+invisible and the request still reports success.
 
 ### Assessment
 
@@ -3194,6 +3386,21 @@ def self_test() -> int:
             # and a rule that kept it would count the report's closing prose as
             # a blocking finding, read `proof_total` high and queue a line
             # about nothing for the analyst.
+            #
+            # Checked on the section itself first, because the row no longer
+            # shows it: `### Assessment` carries no number, so kept inside the
+            # section it would fold into the finding above as prose and every
+            # count would read the same. The section has to close at its own
+            # depth whether or not a count would move.
+            inside = [
+                line
+                for severity, body in split_sections(SHALLOW_HEADING_REPORT)
+                if severity == "Critical"
+                for line in body
+                if line.lstrip().startswith("###")
+            ]
+            if inside:
+                return f"a sibling heading stayed inside the Critical section: {inside}"
             run_dir = run(SHALLOW_HEADING_REPORT, status="fail")
             code, rows, notes = measure([run_dir], evidence)
             if any("\treport-unparsed\t" in note for note in notes):
@@ -3394,6 +3601,204 @@ def self_test() -> int:
                 return f"no report-unparsed line in {notes}"
             return ""
 
+        def a_bold_numbered_section_keeps_its_remediation_subheading() -> str:
+            # The regression Codex's round-4 review asked for. A section that
+            # titles its findings `**1. ...**` and writes one `#####`
+            # remediation subsection had that lone heading as its shallowest,
+            # so the depth rule promoted it to a title: a third finding on the
+            # clean hunk, `blocking_on_clean` raised, `accepted` flipped, and
+            # with the failing grader nothing disagreed. Either half of the
+            # round-9 rule closes this on its own -- the subsection carries no
+            # number, and the section opens with a bold title rather than a
+            # heading -- so no single mutant owns this case. Its evidence is
+            # that it failed against 89a94a0, the build before that rule.
+            body = next(
+                lines
+                for severity, lines in split_sections(BOLD_REMEDIATION_SUBHEADING_REPORT)
+                if severity == "Critical"
+            )
+            skipped: list[str] = []
+            found = split_findings("Critical", body, skipped)
+            if len(found) != 2:
+                return f"the remediation subsection made {len(found)} findings, expected 2"
+            if skipped:
+                return f"a line inside a finding was reported as skipped: {skipped}"
+            run_dir = run(BOLD_REMEDIATION_SUBHEADING_REPORT, status="fail")
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            # As in `a_remediation_subheading_is_not_a_second_finding`: the
+            # finding now carries the subsection's citation beside its own,
+            # which is what `span-ambiguous` says, and nothing else may appear.
+            kinds = sorted({note.split("\t")[1] for note in notes if "\t" in note})
+            if kinds != ["grader-disagreement", "span-ambiguous"]:
+                return f"the disagreements block reads {kinds}: {notes}"
+            return ""
+
+        def a_same_depth_unnumbered_heading_is_not_a_finding() -> str:
+            # Depth cannot help when the subsection sits at the titles' own
+            # level: `#### Suggested test` between `#### 1.` and `#### 2.` was
+            # the shallowest heading like the titles, and became a third
+            # finding on the clean hunk. The number is the only mark that
+            # tells a title from a subsection here.
+            body = next(
+                lines
+                for severity, lines in split_sections(SAME_DEPTH_SUBHEADING_REPORT)
+                if severity == "Critical"
+            )
+            skipped: list[str] = []
+            found = split_findings("Critical", body, skipped)
+            if len(found) != 2:
+                return f"the same-depth subsection made {len(found)} findings, expected 2"
+            if skipped:
+                return f"a line inside a finding was reported as skipped: {skipped}"
+            run_dir = run(SAME_DEPTH_SUBHEADING_REPORT, status="fail")
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            kinds = sorted({note.split("\t")[1] for note in notes if "\t" in note})
+            if kinds != ["grader-disagreement", "span-ambiguous"]:
+                return f"the disagreements block reads {kinds}: {notes}"
+            return ""
+
+        def a_numbered_subheading_under_bold_titles_is_not_a_finding() -> str:
+            # The case the number alone does not settle: `##### 1. Suggested
+            # test` is numbered, so it is title-shaped. What keeps it a
+            # subsection is that the section opened with a bold title, and a
+            # section that does not open with a heading promotes none.
+            # Dropping that dispatch read it as a third finding on the clean
+            # hunk.
+            body = next(
+                lines
+                for severity, lines in split_sections(BOLD_NUMBERED_SUBHEADING_REPORT)
+                if severity == "Critical"
+            )
+            skipped: list[str] = []
+            found = split_findings("Critical", body, skipped)
+            if len(found) != 2:
+                return f"the numbered subsection made {len(found)} findings, expected 2"
+            if skipped:
+                return f"a line inside a finding was reported as skipped: {skipped}"
+            run_dir = run(BOLD_NUMBERED_SUBHEADING_REPORT, status="fail")
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            kinds = sorted({note.split("\t")[1] for note in notes if "\t" in note})
+            if kinds != ["grader-disagreement", "span-ambiguous"]:
+                return f"the disagreements block reads {kinds}: {notes}"
+            return ""
+
+        def unnumbered_heading_titles_fail_closed() -> str:
+            # A decision, not an accident. Findings titled by unnumbered
+            # headings used to count correctly, but such a title has no mark
+            # that tells it from a remediation subsection, and reading the
+            # subsection as a title is the silent clean-hunk blocker this rule
+            # exists to stop. None of the 7 real reviewer reports titles its
+            # findings with headings of any kind, so the section is refused
+            # and the analyst told, rather than guessed at. No sidecar, as for
+            # every report this script cannot read.
+            run_dir = run(UNNUMBERED_HEADING_TITLES_REPORT, sidecar=False)
+            code, rows, notes = measure([run_dir], evidence)
+            if rows:
+                return f"{len(rows)} rows, expected none"
+            if code == 0:
+                return "exit 0, expected non-zero"
+            if not any("\treport-unparsed\t" in note for note in notes):
+                return f"no report-unparsed line in {notes}"
+            return ""
+
+        def a_heading_ahead_of_bold_titles_fails_closed() -> str:
+            # An unnumbered heading before the first bold title was the only
+            # heading in the section, so it became the title depth and a first
+            # finding on the clean hunk. It titles nothing and sits inside
+            # nothing, so it is content in neither list form, and the section
+            # refuses it rather than drop it or count it.
+            run_dir = run(HEADING_AHEAD_OF_BOLD_TITLES_REPORT, sidecar=False)
+            code, rows, notes = measure([run_dir], evidence)
+            if rows:
+                return f"{len(rows)} rows, expected none"
+            if code == 0:
+                return "exit 0, expected non-zero"
+            if not any("\treport-unparsed\t" in note for note in notes):
+                return f"no report-unparsed line in {notes}"
+            return ""
+
+        def a_numbered_subheading_under_heading_titles_is_not_a_finding() -> str:
+            # The depth rule in its own habitat. Every other subsection case
+            # is now settled by the number before depth is consulted, which
+            # left nothing to show that a numbered `##### 1. Reproduce` under
+            # a `#### 1.` title stays inside it. Both are numbered and the
+            # section opens with a heading, so only the finding-title depth
+            # keeps the subsection from becoming a third finding on the clean
+            # hunk. This read correctly before round 9; the case pins it.
+            body = next(
+                lines
+                for severity, lines in split_sections(NUMBERED_SUBHEADING_REPORT)
+                if severity == "Critical"
+            )
+            skipped: list[str] = []
+            found = split_findings("Critical", body, skipped)
+            if len(found) != 2:
+                return f"the numbered subsection made {len(found)} findings, expected 2"
+            if skipped:
+                return f"a line inside a finding was reported as skipped: {skipped}"
+            run_dir = run(NUMBERED_SUBHEADING_REPORT, status="fail")
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            kinds = sorted({note.split("\t")[1] for note in notes if "\t" in note})
+            if kinds != ["grader-disagreement", "span-ambiguous"]:
+                return f"the disagreements block reads {kinds}: {notes}"
+            return ""
+
         def fixture_ranges_unique() -> str:
             # The eight regions the brief's Step 3 declares, resolved against
             # the real fixture. A start pattern that matches twice is drift the
@@ -3551,6 +3956,27 @@ def self_test() -> int:
             (
                 "a_deeper_heading_before_the_first_finding_fails_closed",
                 a_deeper_heading_before_the_first_finding_fails_closed,
+            ),
+            (
+                "a_bold_numbered_section_keeps_its_remediation_subheading",
+                a_bold_numbered_section_keeps_its_remediation_subheading,
+            ),
+            (
+                "a_same_depth_unnumbered_heading_is_not_a_finding",
+                a_same_depth_unnumbered_heading_is_not_a_finding,
+            ),
+            (
+                "a_numbered_subheading_under_bold_titles_is_not_a_finding",
+                a_numbered_subheading_under_bold_titles_is_not_a_finding,
+            ),
+            ("unnumbered_heading_titles_fail_closed", unnumbered_heading_titles_fail_closed),
+            (
+                "a_heading_ahead_of_bold_titles_fails_closed",
+                a_heading_ahead_of_bold_titles_fails_closed,
+            ),
+            (
+                "a_numbered_subheading_under_heading_titles_is_not_a_finding",
+                a_numbered_subheading_under_heading_titles_is_not_a_finding,
             ),
             ("fixture_ranges_unique", fixture_ranges_unique),
             ("two_clean_hunks", two_clean_hunks),
