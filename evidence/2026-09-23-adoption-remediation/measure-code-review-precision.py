@@ -714,6 +714,18 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
     form would move ``opens``, which is the reading the four real reports that
     bullet inside a numbered finding depend on.
 
+    A heading starts a sibling finding only at the finding-title depth: the
+    shallowest heading depth in the body, taken in a pre-pass rather than read
+    off the first heading, so a section that writes a deeper aside above its
+    first heading-titled finding still reads that finding as a start. A
+    heading below that depth is the finding's own remediation subsection --
+    ``##### Suggested test``, ``##### Suggested fix`` -- and reading one as a
+    sibling invented a finding out of it. Where the subsection cited a clean
+    hunk of the fixture the invention attributed there, raised
+    ``blocking_on_clean`` and flipped ``accepted``; paired with the failing
+    grader a report concluding "not ready to merge" comes with, nothing
+    disagreed and the wrong number reached the campaign unannounced.
+
     The union is asymmetric on purpose: a bulleted line begins a finding only
     while no numbered finding has begun. 4 of the 7 real reviewer reports
     write column-0 bullets *inside* a numbered finding -- an ``- **Input:**``
@@ -735,6 +747,12 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
     script does not read, and dropping it silently is the defect the fatal
     exists for. None of the seven real reports carries any of the three.
 
+    A heading deeper than the finding-title depth, written before the first
+    start, lands there as well: it titles no finding and sits inside none, so
+    it is content in neither list form. Refusing it rather than dropping it is
+    the same fail-closed reading, arrived at deliberately and not as a side
+    effect of the depth condition.
+
     A skipped bullet is reported through ``skipped`` because the label shape is
     also how a reviewer titles a real finding with the sentence trailing after
     the colon: the two are one line, no rule can keep one and drop the other,
@@ -754,6 +772,21 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
         before the first one or in place of any.
     """
 
+    # The finding-title depth, over the whole body rather than off the first
+    # heading: a section may write a deeper aside before its first
+    # heading-titled finding, and that finding is still a start. Fences are
+    # tracked here as they are below, because a quoted diff holds lines that
+    # look like headings.
+    depths: list[int] = []
+    quoted = False
+    for line in body:
+        if line.lstrip().startswith("```"):
+            quoted = not quoted
+            continue
+        title = None if quoted else HEADING_RE.match(line)
+        if title is not None:
+            depths.append(len(title.group(1)))
+    title_depth = min(depths, default=0)
     numbered: list[int] = []
     bulleted: list[int] = []
     # The bullets read as the section's scaffolding rather than as starts.
@@ -770,11 +803,16 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
         if fenced:
             accounted.add(index)
             continue
-        if HEADING_RE.match(line):
+        heading = HEADING_RE.match(line)
+        if heading is not None and len(heading.group(1)) == title_depth:
             # A heading this far in is one nested under the section's own,
             # which is how the reports that write it title a finding. Ranked
             # with the numbered starts so `opens` and `starts` below keep
-            # their present meaning.
+            # their present meaning. Only at the finding-title depth: a deeper
+            # heading is the remediation subsection of the finding above it,
+            # and reading it as a sibling invented a blocking finding on a
+            # clean hunk with no note to say so. That one falls through to the
+            # branches below and is handled as the prose it sits among.
             numbered.append(index)
             scaffold = False
         elif NUMBERED_RE.match(line):
@@ -1789,6 +1827,75 @@ So the first ten orders are never returned on the first page.
 
 `saveOrder` returns a promise that is dropped, so a failed write is
 invisible to the handler and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# Two heading-titled findings, the first carrying a `#####` remediation
+# subsection that cites a CLEAN hunk. Reading that subsection as a third
+# finding attributed it to `test_fixture` and invented a blocking-on-clean
+# hit; with the failing grader this report's conclusion pairs with, nothing
+# disagreed and the wrong number reached the campaign unannounced.
+REMEDIATION_SUBHEADING_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Issues
+
+### Critical
+
+#### 1. Pagination offset skips a whole page - `src/handlers.js:18`
+
+The offset is computed from a one-based page number, so `listOrdersHandler`
+never returns the first page of results.
+
+##### Suggested test - `test/handlers.test.js:8`
+
+Add a case asserting that page 1 returns rows starting at offset 0.
+
+#### 2. The write is never awaited - `src/handlers.js:37`
+
+`saveOrder` returns a promise the handler drops, so a failed write is
+invisible and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# The same shape with the subsection citing and naming nothing: the report
+# round 6's disclosure 7 documented, where the phantom finding landed in the
+# disagreements block instead of on a clean hunk. One finding, not two.
+SUGGESTED_FIX_SUBHEADING_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Critical
+
+#### 1. Pagination offset skips a whole page - `src/handlers.js:18`
+
+The offset is computed from a one-based page number, so `listOrdersHandler`
+never returns the first page of results.
+
+##### Suggested fix
+
+Subtract one from the page index before multiplying by the page size.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# A `#####` aside ahead of the section's first `####` finding. It belongs to
+# no finding, so it is content this script cannot read in the one place the
+# section has no finding to hold it.
+DEEPER_HEADING_LEAD_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Critical
+
+##### Aside
+
+A note about the review process that is not a finding at all.
+
+#### 1. Pagination offset skips a whole page - `src/handlers.js:18`
+
+The offset is computed from a one-based page number, so `listOrdersHandler`
+never returns the first page of results.
 
 ### Assessment
 
@@ -3191,6 +3298,102 @@ def self_test() -> int:
                 return f"unexpected disagreements block {notes}"
             return ""
 
+        def a_remediation_subheading_is_not_a_second_finding() -> str:
+            # The defect the depth rule exists for. A `##### Suggested test`
+            # under a `####` finding title was read as a sibling finding, and
+            # because it cites a clean hunk of the fixture it attributed there
+            # and raised `blocking_on_clean`. Paired with the failing grader a
+            # "not ready to merge" report comes with, `accepted` flipped to no,
+            # the grader agreed, and the run said nothing: a wrong number an
+            # adoption decision is read from, with no line to catch it.
+            body = next(
+                lines
+                for severity, lines in split_sections(REMEDIATION_SUBHEADING_REPORT)
+                if severity == "Critical"
+            )
+            skipped: list[str] = []
+            found = split_findings("Critical", body, skipped)
+            if len(found) != 2:
+                return f"the remediation subsection made {len(found)} findings, expected 2"
+            if skipped:
+                return f"a line inside a finding was reported as skipped: {skipped}"
+            run_dir = run(REMEDIATION_SUBHEADING_REPORT, status="fail")
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            # The exact set, because what made this blocking was the silence:
+            # `grader-disagreement` is the line the same report without the
+            # subsection gets, and `span-ambiguous` says the finding's own
+            # citations now reach the test file too. Neither is the phantom's
+            # `unattributed`, and nothing else may appear.
+            kinds = sorted({note.split("\t")[1] for note in notes if "\t" in note})
+            if kinds != ["grader-disagreement", "span-ambiguous"]:
+                return f"the disagreements block reads {kinds}: {notes}"
+            return ""
+
+        def disclosure_sevens_shape_now_reads_as_one_finding() -> str:
+            # Round 6 disclosed this shape as a known consequence and graded it
+            # Minor because the phantom finding names and cites nothing, so it
+            # goes `unattributed` and the analyst is told. It still read
+            # `proof_total` one high, and it is the shape the clean-hunk defect
+            # above is a variant of, so the depth rule retires it too.
+            body = next(
+                lines
+                for severity, lines in split_sections(SUGGESTED_FIX_SUBHEADING_REPORT)
+                if severity == "Critical"
+            )
+            found = split_findings("Critical", body)
+            if len(found) != 1:
+                return f"the suggested fix made {len(found)} findings, expected 1"
+            run_dir = run(SUGGESTED_FIX_SUBHEADING_REPORT, status="fail")
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=1,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=1,
+                accepted="no",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if notes != ["disagreements", "(none)"]:
+                return f"the suggested fix was still queued for the analyst: {notes}"
+            return ""
+
+        def a_deeper_heading_before_the_first_finding_fails_closed() -> str:
+            # The other side of the depth rule, and a decision rather than a
+            # side effect: a heading too deep to start a finding, written where
+            # no finding is open yet, belongs to nothing. That is content in
+            # neither list form, and the section already refuses to drop such a
+            # line silently. No sidecar, as for every report this script cannot
+            # read: the template is built from the same parse.
+            run_dir = run(DEEPER_HEADING_LEAD_REPORT, sidecar=False)
+            code, rows, notes = measure([run_dir], evidence)
+            if rows:
+                return f"{len(rows)} rows, expected none"
+            if code == 0:
+                return "exit 0, expected non-zero"
+            if not any("\treport-unparsed\t" in note for note in notes):
+                return f"no report-unparsed line in {notes}"
+            return ""
+
         def fixture_ranges_unique() -> str:
             # The eight regions the brief's Step 3 declares, resolved against
             # the real fixture. A start pattern that matches twice is drift the
@@ -3336,6 +3539,18 @@ def self_test() -> int:
             (
                 "a_heading_titled_finding_keeps_its_bullets",
                 a_heading_titled_finding_keeps_its_bullets,
+            ),
+            (
+                "a_remediation_subheading_is_not_a_second_finding",
+                a_remediation_subheading_is_not_a_second_finding,
+            ),
+            (
+                "disclosure_sevens_shape_now_reads_as_one_finding",
+                disclosure_sevens_shape_now_reads_as_one_finding,
+            ),
+            (
+                "a_deeper_heading_before_the_first_finding_fails_closed",
+                a_deeper_heading_before_the_first_finding_fails_closed,
             ),
             ("fixture_ranges_unique", fixture_ranges_unique),
             ("two_clean_hunks", two_clean_hunks),
