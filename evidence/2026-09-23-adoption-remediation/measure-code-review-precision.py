@@ -50,6 +50,13 @@ item: run id, a stable class token, the evidence. The tokens are
     the section's own scaffolding and not counted. A finding titled with a
     bold clause is written the same way, so the line is quoted for the analyst
     rather than dropped in silence.
+``heading-folded``
+    A heading inside a Critical or Important finding was read as part of that
+    finding rather than as the start of another. A real finding titled with a
+    heading in a section titled in bold is written the same way as a
+    subsection of the finding above it, and correcting the fold would invent
+    findings out of the subsections, so the count stands and the heading is
+    quoted for the analyst.
 ``proof-sidecar-missing``
     No ``<run-id>-proof.tsv``. The row is still emitted with ``proof_complete``
     unknown.
@@ -70,9 +77,10 @@ item: run id, a stable class token, the evidence. The tokens are
     A path given on the command line is not a directory.
 
 Exit status is non-zero when any run could not be fully measured -- every token
-above except ``unattributed``, ``span-ambiguous``, ``grader-disagreement`` and
-``scaffolding-skipped``, which are readings for the analyst rather than
-instrument failures. A run that fails emits no row; the other runs still do.
+above except ``unattributed``, ``span-ambiguous``, ``grader-disagreement``,
+``scaffolding-skipped`` and ``heading-folded``, which are readings for the
+analyst rather than instrument failures. A run that fails emits no row; the
+other runs still do.
 
 Usage::
 
@@ -350,6 +358,8 @@ class Finding:
     # finding whose citation landed in no range. Named for the analyst too:
     # the reviewer did say where to look, and this script declined to follow.
     blocked: tuple[str, ...] = ()
+    # The headings read as this finding's prose, as written. See :func:`split_findings`.
+    folded: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -705,7 +715,12 @@ def split_sections(report: str) -> list[tuple[str, list[str]]]:
     return sections
 
 
-def split_findings(severity: str, body: list[str], skipped: list[str] | None = None) -> list[str]:
+def split_findings(
+    severity: str,
+    body: list[str],
+    skipped: list[str] | None = None,
+    folded: list[list[str]] | None = None,
+) -> list[str]:
     """One text block per finding of a severity section.
 
     Both list forms are read in one pass. Taking the first form that matched
@@ -743,7 +758,14 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
 
     Every other heading is prose: after a finding opens it folds into that
     finding with the lines around it, and ahead of the first finding it is
-    content the section refuses, as described below.
+    content the section refuses, as described below. A fold is reported
+    through ``folded``, because form alone cannot tell a mixed-in finding from
+    a subsection: a real finding titled ``#### 2. ...`` after a bold
+    ``**1. ...**`` is written exactly as the subsections above are, and folded
+    it can hand the finding above a citation that moves ``recall`` or
+    ``blocking_on_clean``. Correcting the fold would invent findings out of
+    the subsections again, so the count keeps the reading and the analyst is
+    told.
 
     The union is asymmetric on purpose: a bulleted line begins a finding only
     while no numbered finding has begun. 4 of the 7 real reviewer reports
@@ -789,6 +811,10 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
         first *numbered* finding -- every one of them where it numbers
         nothing, because there each is merged into the bullet above it
         instead. For the caller that wants them named for the analyst.
+    :param folded: Receives one list per finding returned, in the same order:
+        the heading lines outside a fence that the finding holds below its
+        first line. A heading title is its finding's first line and is not
+        among them.
     :returns: The findings' raw text blocks.
     :raises RunError: When the section holds content no finding accounts for,
         before the first one or in place of any.
@@ -828,9 +854,14 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
     labels: list[int] = []
     # The lines ahead of a first finding that the section itself accounts for.
     accounted: set[int] = set()
+    # Every heading outside a fence, taken before the branches below because a
+    # heading that titles nothing folds whichever of them reads it.
+    headings: list[int] = []
     fenced = False
     scaffold = False
     for index, line in enumerate(body):
+        if not fenced and HEADING_RE.match(line):
+            headings.append(index)
         if line.lstrip().startswith("```"):
             fenced = not fenced
             accounted.add(index)
@@ -901,6 +932,14 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
         # start left that merge silent, and `accepted` flipped on it.
         skipped.extend(body[index] for index in labels if index < opens)
     bounds = [*starts, len(body)]
+    if folded is not None:
+        # Strictly after the start: a title is where its finding begins, not a
+        # heading the finding absorbed. A heading ahead of the first start
+        # belongs to no finding and is left to the refusal above.
+        folded.extend(
+            [body[index] for index in headings if a < index < b]
+            for a, b in itertools.pairwise(bounds)
+        )
     return ["\n".join(body[a:b]) for a, b in itertools.pairwise(bounds)]
 
 
@@ -1086,7 +1125,9 @@ def parse_report(
         if severity not in SEVERITIES:
             continue
         dropped: list[str] = []
-        for text in split_findings(severity, body, dropped):
+        folds: list[list[str]] = []
+        texts = split_findings(severity, body, dropped, folds)
+        for text, folded in zip(texts, folds, strict=True):
             attributions = attribute(text, ranges) if ranges else ()
             # Only a finding that landed nowhere carries candidates, and a
             # lone candidate that did not place it is one rule 4 excluded:
@@ -1103,6 +1144,7 @@ def parse_report(
                     ambiguity=span_ambiguity(text, ranges) if ranges else "",
                     contested=candidates if len(candidates) > 1 else (),
                     blocked=candidates if len(candidates) == 1 else (),
+                    folded=tuple(folded),
                 )
             )
         if skipped is not None:
@@ -1384,6 +1426,18 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
         )
         for severity, line in skipped
         if severity in BLOCKING
+    )
+    # The count keeps the fold; a heading written as a real finding reads
+    # exactly like the subsection it was folded as, so it is quoted. From
+    # `graded` for the same reason as the siblings above.
+    notes.extend(
+        Note(
+            run_id,
+            "heading-folded",
+            f"{f.severity} finding {f.key}: heading read as part of this finding: {one_line(line)}",
+        )
+        for f in graded
+        for line in f.folded
     )
     if invalid:
         notes.append(invalid)
@@ -2083,6 +2137,64 @@ never returns the first page of results.
 ##### 1. Reproduce - `test/handlers.test.js:8`
 
 Ask for page 1 and assert that the first row returned is at offset 0.
+
+#### 2. The write is never awaited - `src/handlers.js:37`
+
+`saveOrder` returns a promise the handler drops, so a failed write is
+invisible and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# A section that mixes title forms: bold titles with a real second finding
+# titled `#### 2.` between them. The section opens in bold, so the heading folds
+# into finding 1 exactly as a subsection would, and finding 1 -- which names
+# `listOrdersHandler` and cites no line -- is placed by the heading's clean-hunk
+# citation instead. Nothing in the form tells this heading from the subsections
+# that must fold, so the count stands and the fold is quoted for the analyst.
+MIXED_TITLE_FORMS_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Issues
+
+### Critical
+
+**1. Pagination offset skips a whole page in `listOrdersHandler`**
+
+The offset is computed from a one-based page number, so `listOrdersHandler`
+never returns the first page of results.
+
+#### 2. The pagination test pins the wrong offset - `test/handlers.test.js:8`
+
+The test asserts the wrong offset for page 1, so it passes against the bug.
+
+**3. The write is never awaited - `src/handlers.js:37`**
+
+`saveOrder` returns a promise the handler drops, so a failed write is
+invisible and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# Heading-titled findings, the first quoting a shell snippet whose comment line
+# is heading-shaped. The titles open their findings and the comment is quoted
+# code, so neither is a heading this report folded.
+FENCED_HEADING_IN_TITLED_FINDING_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Issues
+
+### Critical
+
+#### 1. Pagination offset skips a whole page - `src/handlers.js:18`
+
+The offset is computed from a one-based page number, so `listOrdersHandler`
+never returns the first page of results.
+
+```sh
+# page 1 should start at the first order
+curl 'localhost:3000/orders?page=1&size=10'
+```
 
 #### 2. The write is never awaited - `src/handlers.js:37`
 
@@ -3543,10 +3655,11 @@ def self_test() -> int:
             # The exact set, because what made this blocking was the silence:
             # `grader-disagreement` is the line the same report without the
             # subsection gets, and `span-ambiguous` says the finding's own
-            # citations now reach the test file too. Neither is the phantom's
+            # citations now reach the test file too. `heading-folded` quotes the
+            # subsection the finding absorbed. None is the phantom's
             # `unattributed`, and nothing else may appear.
             kinds = sorted({note.split("\t")[1] for note in notes if "\t" in note})
-            if kinds != ["grader-disagreement", "span-ambiguous"]:
+            if kinds != ["grader-disagreement", "heading-folded", "span-ambiguous"]:
                 return f"the disagreements block reads {kinds}: {notes}"
             return ""
 
@@ -3580,8 +3693,11 @@ def self_test() -> int:
                 return problem
             if code != 0:
                 return f"exit {code}, expected 0"
-            if notes != ["disagreements", "(none)"]:
-                return f"the suggested fix was still queued for the analyst: {notes}"
+            # The subsection is quoted once as a fold, not queued as a phantom
+            # finding's `unattributed`.
+            kinds = [note.split("\t")[1] for note in notes if "\t" in note]
+            if kinds != ["heading-folded"]:
+                return f"the suggested fix was queued as {kinds}: {notes}"
             return ""
 
         def a_deeper_heading_before_the_first_finding_fails_closed() -> str:
@@ -3641,9 +3757,10 @@ def self_test() -> int:
                 return f"exit {code}, expected 0"
             # As in `a_remediation_subheading_is_not_a_second_finding`: the
             # finding now carries the subsection's citation beside its own,
-            # which is what `span-ambiguous` says, and nothing else may appear.
+            # which is what `span-ambiguous` says, `heading-folded` quotes the
+            # subsection, and nothing else may appear.
             kinds = sorted({note.split("\t")[1] for note in notes if "\t" in note})
-            if kinds != ["grader-disagreement", "span-ambiguous"]:
+            if kinds != ["grader-disagreement", "heading-folded", "span-ambiguous"]:
                 return f"the disagreements block reads {kinds}: {notes}"
             return ""
 
@@ -3681,7 +3798,7 @@ def self_test() -> int:
             if code != 0:
                 return f"exit {code}, expected 0"
             kinds = sorted({note.split("\t")[1] for note in notes if "\t" in note})
-            if kinds != ["grader-disagreement", "span-ambiguous"]:
+            if kinds != ["grader-disagreement", "heading-folded", "span-ambiguous"]:
                 return f"the disagreements block reads {kinds}: {notes}"
             return ""
 
@@ -3720,7 +3837,7 @@ def self_test() -> int:
             if code != 0:
                 return f"exit {code}, expected 0"
             kinds = sorted({note.split("\t")[1] for note in notes if "\t" in note})
-            if kinds != ["grader-disagreement", "span-ambiguous"]:
+            if kinds != ["grader-disagreement", "heading-folded", "span-ambiguous"]:
                 return f"the disagreements block reads {kinds}: {notes}"
             return ""
 
@@ -3795,8 +3912,113 @@ def self_test() -> int:
             if code != 0:
                 return f"exit {code}, expected 0"
             kinds = sorted({note.split("\t")[1] for note in notes if "\t" in note})
-            if kinds != ["grader-disagreement", "span-ambiguous"]:
+            if kinds != ["grader-disagreement", "heading-folded", "span-ambiguous"]:
                 return f"the disagreements block reads {kinds}: {notes}"
+            return ""
+
+        def a_folded_numbered_heading_is_reported() -> str:
+            # The shape the round-9 fold read silently. The `#### 2.` finding
+            # folds into the bold finding above it, hands that finding its
+            # clean-hunk citation, and so keeps finding 1's function name from
+            # placing it: `recall` one low with the grader agreeing and nothing
+            # on stderr. The count is not asserted -- it is the disclosed
+            # misreading, and a later build that reads it correctly must not
+            # fail here. What is asserted is that the analyst is told.
+            run_dir = run(MIXED_TITLE_FORMS_REPORT, status="fail")
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            if code != 0:
+                return f"exit {code}, expected 0: a folded heading is a reading"
+            reported = [note for note in notes if "\theading-folded\t" in note]
+            if len(reported) != 1:
+                return f"{len(reported)} heading-folded lines, expected 1: {notes}"
+            # The key is recomputed from the report rather than taken from the
+            # parse under test, as `perfect` does: finding 1 runs from its title
+            # to the next start, the folded heading included.
+            block = MIXED_TITLE_FORMS_REPORT[
+                MIXED_TITLE_FORMS_REPORT.index("**1. ") : MIXED_TITLE_FORMS_REPORT.index("**3. ")
+            ]
+            key = hashlib.sha256(" ".join(block.split()).encode("utf-8")).hexdigest()[:12]
+            want = (
+                f"Critical finding {key}: heading read as part of this finding: "
+                "#### 2. The pagination test pins the wrong offset - `test/handlers.test.js:8`"
+            )
+            if reported[0].split("\t", 2)[2] != want:
+                return f"the note reads {reported[0]!r}, expected {want!r}"
+            return ""
+
+        def a_folded_unnumbered_heading_is_reported() -> str:
+            # The gate's round-4 shape, where the fold is the right reading: a
+            # remediation subsection under a bold title belongs to that
+            # finding, and the counts say so. It is still quoted, because an
+            # unnumbered heading written as a real finding after bold titles is
+            # the same line, and there the fold moves a count.
+            run_dir = run(BOLD_REMEDIATION_SUBHEADING_REPORT)
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            reported = [note for note in notes if "\theading-folded\t" in note]
+            if len(reported) != 1:
+                return f"{len(reported)} heading-folded lines, expected 1: {notes}"
+            if "##### Suggested test" not in reported[0]:
+                return f"the folded heading is not quoted: {reported[0]}"
+            return ""
+
+        def a_heading_in_a_minor_finding_is_not_reported() -> str:
+            # Every count is read from the blocking findings, so a heading a
+            # Minor finding absorbed moved nothing, and a note about it is one
+            # the analyst learns to read past.
+            minor = MINOR_RETRY_FINDING + "\n##### Suggested fix\n\nAdd jitter to the delay.\n"
+            report = build_report([OFFSET_FINDING], [SAVE_FINDING], [minor])
+            # The heading did fold into the Minor finding. Without this the
+            # case passes on a build that reports no fold anywhere.
+            folds = [f.folded for f in parse_report(report) if f.severity == "Minor"]
+            if folds != [("##### Suggested fix",)]:
+                return f"the Minor finding folded {folds}, expected the suggested fix"
+            run_dir = run(report)
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if any("\theading-folded\t" in note for note in notes):
+                return f"a fold in a Minor finding moves no count and was reported: {notes}"
+            return ""
+
+        def a_title_or_fenced_heading_is_not_reported_as_folded() -> str:
+            # A heading title is its finding's first line, not a heading the
+            # finding absorbed, and a heading-shaped line inside a fence is
+            # quoted code. A note on either would sit on most heading-titled
+            # reports and say nothing.
+            findings = parse_report(FENCED_HEADING_IN_TITLED_FINDING_REPORT)
+            if len(findings) != 2 or "# page 1 should start" not in findings[0].text:
+                return f"expected two findings, the fence inside the first: {findings}"
+            if [f.folded for f in findings] != [(), ()]:
+                return f"the findings folded {[f.folded for f in findings]}, expected none"
+            run_dir = run(FENCED_HEADING_IN_TITLED_FINDING_REPORT)
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(rows[0], recall=2, blocking_on_clean=0, proof_total=2, accepted="yes")
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if any("\theading-folded\t" in note for note in notes):
+                return f"a title or a fenced line was reported as folded: {notes}"
             return ""
 
         def fixture_ranges_unique() -> str:
@@ -3977,6 +4199,16 @@ def self_test() -> int:
             (
                 "a_numbered_subheading_under_heading_titles_is_not_a_finding",
                 a_numbered_subheading_under_heading_titles_is_not_a_finding,
+            ),
+            ("a_folded_numbered_heading_is_reported", a_folded_numbered_heading_is_reported),
+            ("a_folded_unnumbered_heading_is_reported", a_folded_unnumbered_heading_is_reported),
+            (
+                "a_heading_in_a_minor_finding_is_not_reported",
+                a_heading_in_a_minor_finding_is_not_reported,
+            ),
+            (
+                "a_title_or_fenced_heading_is_not_reported_as_folded",
+                a_title_or_fenced_heading_is_not_reported_as_folded,
             ),
             ("fixture_ranges_unique", fixture_ranges_unique),
             ("two_clean_hunks", two_clean_hunks),
