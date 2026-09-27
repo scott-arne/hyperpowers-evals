@@ -636,10 +636,28 @@ def severity_of(line: str) -> str | None:
 
 
 def split_sections(report: str) -> list[tuple[str, list[str]]]:
-    """The report cut into (severity, body lines) at every heading.
+    """The report cut into (severity, body lines) at every heading but a nested one.
 
     Fenced code blocks are passed through untouched: a diff or a snippet inside
     a finding can contain lines that look like headings.
+
+    A heading nested *under* a severity heading is the one exception, and it
+    exists because ending the section there was a silent wrong number. A report
+    that opens ``### Critical`` and titles each finding ``#### 1. ...`` closed
+    the Critical section on an empty body and dropped every finding into a
+    severity-"" section the readers skip: two named, correctly cited findings
+    measured as none, with nothing raised, because the severity sections
+    genuinely existed. So a heading deeper than the one that opened the current
+    severity section stays in its body.
+
+    A heading at the same level or shallower is that section's sibling and
+    still ends it, which is what keeps ``### Assessment`` -- the report talking
+    about the change rather than reporting a defect -- from being read as a
+    finding of the section above it.
+
+    The bold label form (``**Critical**``) carries no heading level, so nothing
+    can be nested under it and every heading ends it, exactly as before.
+    Outside a severity section every heading breaks, also as before.
 
     :param report: The reviewer's report.
     :returns: One entry per section, in order.
@@ -647,6 +665,10 @@ def split_sections(report: str) -> list[tuple[str, list[str]]]:
 
     sections: list[tuple[str, list[str]]] = []
     current = ""
+    # The level of the heading that opened the current severity section, or
+    # ``None`` when no heading did: outside a severity section, or inside one
+    # the label form opened.
+    depth: int | None = None
     body: list[str] = []
     fenced = False
     for line in report.split("\n"):
@@ -655,11 +677,22 @@ def split_sections(report: str) -> list[tuple[str, list[str]]]:
             body.append(line)
             continue
         severity = None if fenced else severity_of(line)
-        if severity is not None:
-            sections.append((current, body))
-            current, body = severity, []
+        if severity is None:
+            body.append(line)
             continue
-        body.append(line)
+        heading = HEADING_RE.match(line)
+        if (
+            not severity
+            and current
+            and depth is not None
+            and heading is not None
+            and len(heading.group(1)) > depth
+        ):
+            body.append(line)
+            continue
+        sections.append((current, body))
+        current, body = severity, []
+        depth = len(heading.group(1)) if severity and heading is not None else None
     sections.append((current, body))
     return sections
 
@@ -671,6 +704,15 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
     anything lost every finding written in the other one -- a section opening
     with a bulleted finding and continuing with numbered ones dropped the
     first outright, and `recall` read low with nothing said about it.
+
+    A heading is the third form, and the least ambiguous of the three:
+    :func:`split_sections` leaves one in a section's body only where it is
+    nested under that section's own heading, and a report that writes
+    ``### Critical`` over ``#### 1. ...`` is titling its findings. It is ranked
+    with the numbered form because that is what it is -- the same numbered
+    title written as a heading -- and because ranking it with the bulleted
+    form would move ``opens``, which is the reading the four real reports that
+    bullet inside a numbered finding depend on.
 
     The union is asymmetric on purpose: a bulleted line begins a finding only
     while no numbered finding has begun. 4 of the 7 real reviewer reports
@@ -728,7 +770,14 @@ def split_findings(severity: str, body: list[str], skipped: list[str] | None = N
         if fenced:
             accounted.add(index)
             continue
-        if NUMBERED_RE.match(line):
+        if HEADING_RE.match(line):
+            # A heading this far in is one nested under the section's own,
+            # which is how the reports that write it title a finding. Ranked
+            # with the numbered starts so `opens` and `starts` below keep
+            # their present meaning.
+            numbered.append(index)
+            scaffold = False
+        elif NUMBERED_RE.match(line):
             numbered.append(index)
             scaffold = False
         elif BULLET_FINDING_RE.match(line):
@@ -1639,6 +1688,82 @@ QUOTING_TRANSCRIPT = """I read the reviewer's report and relayed it. It opened w
 ```
 
 and I passed the two blocking findings on unchanged.
+"""
+# The whole-report shapes, for the cases the finding blocks above cannot build:
+# `build_report` writes one heading level for every severity, and what these
+# three turn on is the level itself.
+#
+# A report that opens each severity with `###` and titles each finding with a
+# deeper `####`. Both planted bugs are found, named and cited correctly; only
+# the Markdown shape differs from the one `build_report` writes.
+NESTED_HEADING_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Strengths
+
+- **`src/util.js:7-20`** - `withRetry` is correct as written: three attempts,
+  exponential backoff, rethrows after the last.
+
+### Issues
+
+### Critical
+
+#### 1. Pagination offset skips a whole page - `src/handlers.js:18`
+
+The offset is `page * limit` with a one-based `page`, so the first page
+is never returned. Callers see records begin at the second page.
+
+### Important
+
+#### 1. The write is never awaited - `src/handlers.js:37`
+
+`saveOrder` returns a promise that is dropped, so a failed write is
+invisible to the handler and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# The same `###` severity heading with its finding numbered rather than
+# titled by a heading, followed by a `###` sibling. The Assessment is the
+# report talking about the change as a whole; it names no file and asks for
+# nothing, so reading it as a finding of the section above would count the
+# report's own closing prose as blocking.
+SHALLOW_HEADING_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Critical
+
+**1. Pagination offset skips a whole page - `src/handlers.js:18`**
+
+- **Input:** a request with `page=1, size=10`.
+- **Outcome:** the handler asks the store for rows from 10, so the first ten
+  orders are never returned on the first page.
+
+### Assessment
+
+The change is close, but the defect above has to be fixed before it can land.
+Nothing else here asks for a change.
+
+**Ready to merge?** No
+"""
+# A severity section opened by the bold label form, which carries no heading
+# level at all. There is no depth for a heading to be deeper than, so every
+# heading ends it -- the reading this form has always had.
+LABEL_SECTION_REPORT = """## Review: "paginate order listing and add order creation"
+
+**Critical**
+
+**1. Pagination offset skips a whole page - `src/handlers.js:18`**
+
+- **Input:** a request with `page=1, size=10`.
+- **Outcome:** the handler asks the store for rows from 10, so the first ten
+  orders are never returned on the first page.
+
+#### Assessment
+
+The label names no level for this heading to be nested under, so it ends the
+section rather than titling a finding in it.
+
+**Ready to merge?** No
 """
 
 
@@ -2897,6 +3022,106 @@ def self_test() -> int:
                 return f"the Critical skip is not the one line reported: {reported}"
             return ""
 
+        def nested_heading_findings_are_counted() -> str:
+            # A report that titles each finding with a heading deeper than the
+            # severity heading above it. Ending the section at that heading
+            # left the section empty and dropped the finding into a
+            # severity-"" section the reader skips, so the reviewer found both
+            # planted bugs and the instrument recorded that it found none --
+            # with no `report-unparsed` to say so, because the sections existed
+            # and were genuinely empty. An adoption decision is read from these
+            # counts, so a wrong one that raises nothing is the worst failure
+            # this instrument has.
+            run_dir = run(NESTED_HEADING_REPORT)
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if notes != ["disagreements", "(none)"]:
+                return f"unexpected disagreements block {notes}"
+            return ""
+
+        def a_shallower_heading_does_not_open_a_finding() -> str:
+            # The other edge of the depth rule. `### Assessment` under a
+            # `### Critical` is that section's sibling, not a finding of it,
+            # and a rule that kept it would count the report's closing prose as
+            # a blocking finding, read `proof_total` high and queue a line
+            # about nothing for the analyst.
+            run_dir = run(SHALLOW_HEADING_REPORT, status="fail")
+            code, rows, notes = measure([run_dir], evidence)
+            if any("\treport-unparsed\t" in note for note in notes):
+                return f"the Assessment prose was read as content of the section: {notes}"
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=1,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=1,
+                accepted="no",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if notes != ["disagreements", "(none)"]:
+                return f"the closing prose was read as a finding: {notes}"
+            return ""
+
+        def a_label_opened_section_still_closes_on_any_heading() -> str:
+            # The bold label form has no `#` level, and the depth rule invents
+            # none for it: every heading ends it, as before. Checked at all six
+            # depths, because an invented level would only show at the ones
+            # deeper than it.
+            for depth in range(1, 7):
+                text = (
+                    "**Critical**\n\n"
+                    "**1. A finding - `src/handlers.js:18`**\n\n"
+                    f"{'#' * depth} Assessment\n\nprose that is not a finding\n"
+                )
+                inside = [
+                    line
+                    for severity, body in split_sections(text)
+                    if severity == "Critical"
+                    for line in body
+                    if line.lstrip().startswith("#")
+                ]
+                if inside:
+                    return f"a depth-{depth} heading stayed inside the label section: {inside}"
+            run_dir = run(LABEL_SECTION_REPORT, status="fail")
+            code, rows, notes = measure([run_dir], evidence)
+            if any("\treport-unparsed\t" in note for note in notes):
+                return f"the label-opened section stopped reading: {notes}"
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=1,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=1,
+                accepted="no",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if notes != ["disagreements", "(none)"]:
+                return f"the heading below the label was read as a finding: {notes}"
+            return ""
+
         def fixture_ranges_unique() -> str:
             # The eight regions the brief's Step 3 declares, resolved against
             # the real fixture. A start pattern that matches twice is drift the
@@ -3029,6 +3254,15 @@ def self_test() -> int:
             (
                 "scaffolding_note_only_where_a_count_could_move",
                 scaffolding_note_only_where_a_count_could_move,
+            ),
+            ("nested_heading_findings_are_counted", nested_heading_findings_are_counted),
+            (
+                "a_shallower_heading_does_not_open_a_finding",
+                a_shallower_heading_does_not_open_a_finding,
+            ),
+            (
+                "a_label_opened_section_still_closes_on_any_heading",
+                a_label_opened_section_still_closes_on_any_heading,
             ),
             ("fixture_ranges_unique", fixture_ranges_unique),
             ("two_clean_hunks", two_clean_hunks),
