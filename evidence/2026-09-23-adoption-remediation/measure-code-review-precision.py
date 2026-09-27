@@ -1765,6 +1765,35 @@ section rather than titling a finding in it.
 
 **Ready to merge?** No
 """
+# A heading-titled finding carrying the two column-0 bullet shapes the real
+# reports write inside their numbered findings: a bold label with the sentence
+# trailing after it, and a claim bolded end to end. Both belong to the finding
+# above them, and what keeps them there is the heading start being ranked with
+# the numbered form rather than the bulleted one.
+NESTED_HEADING_WITH_BULLETS_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Issues
+
+### Critical
+
+#### 1. Pagination offset skips a whole page - `src/handlers.js:18`
+
+- **Input:** a request with `page=1, size=10`.
+- **The handler asks the store for rows from 10**
+
+So the first ten orders are never returned on the first page.
+
+### Important
+
+#### 1. The write is never awaited - `src/handlers.js:37`
+
+`saveOrder` returns a promise that is dropped, so a failed write is
+invisible to the handler and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
+"""
 
 
 def fixture_blobs() -> dict[str, str]:
@@ -3122,6 +3151,46 @@ def self_test() -> int:
                 return f"the heading below the label was read as a finding: {notes}"
             return ""
 
+        def a_heading_titled_finding_keeps_its_bullets() -> str:
+            # `numbered_finding_keeps_its_bullets` for the heading form. The
+            # heading start is ranked with the numbered list, so `opens` still
+            # marks where the section's first finding begins and the column-0
+            # bullets below it stay inside it. Ranking it with the bulleted
+            # list instead leaves `opens` at `len(body)`, which reads the
+            # bolded claim as a second finding and the label as a skip:
+            # `proof_total` high and a note about nothing, on the shape 4 of
+            # the 7 real reports write.
+            body = next(
+                lines
+                for severity, lines in split_sections(NESTED_HEADING_WITH_BULLETS_REPORT)
+                if severity == "Critical"
+            )
+            skipped: list[str] = []
+            found = split_findings("Critical", body, skipped)
+            if len(found) != 1:
+                return f"the finding's own bullets were read as {len(found)} findings, expected 1"
+            if skipped:
+                return f"a bullet inside the finding was reported as skipped: {skipped}"
+            run_dir = run(NESTED_HEADING_WITH_BULLETS_REPORT)
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if notes != ["disagreements", "(none)"]:
+                return f"unexpected disagreements block {notes}"
+            return ""
+
         def fixture_ranges_unique() -> str:
             # The eight regions the brief's Step 3 declares, resolved against
             # the real fixture. A start pattern that matches twice is drift the
@@ -3263,6 +3332,10 @@ def self_test() -> int:
             (
                 "a_label_opened_section_still_closes_on_any_heading",
                 a_label_opened_section_still_closes_on_any_heading,
+            ),
+            (
+                "a_heading_titled_finding_keeps_its_bullets",
+                a_heading_titled_finding_keeps_its_bullets,
             ),
             ("fixture_ranges_unique", fixture_ranges_unique),
             ("two_clean_hunks", two_clean_hunks),
