@@ -1134,6 +1134,14 @@ def citation_conflict(text: str, ranges: dict[str, Span]) -> tuple[str, ...]:
     :func:`span_ambiguity` reports. A finding whose citations land in no range
     was placed by its name, so there is no citation for the name to contradict.
 
+    A citation is where the reviewer points, not a name the reviewer used, so
+    every ``file:line`` citation is blanked before the names are read: read as
+    a name, ``test/handlers.test.js:8`` is a ``test_fixture`` identifier, which
+    outranks a bug named only in English and let the citation agree with
+    itself. The blank is as long as the citation because ``offset_bug`` and
+    ``unawaited_save`` pair a name with a keyword inside a 500-character
+    window, and closing that gap could make a name the reviewer did not write.
+
     :param text: The finding's text.
     :param ranges: The resolved spans by key.
     :returns: The named regions its citations do not cover, in
@@ -1145,7 +1153,7 @@ def citation_conflict(text: str, ranges: dict[str, Span]) -> tuple[str, ...]:
     by_line = tuple(key for key in ALL_KEYS if covered(ranges[key], cited))
     if not by_line:
         return ()
-    named = name_candidates(text)
+    named = name_candidates(FILE_LINE_RE.sub(lambda m: " " * len(m.group()), text))
     return tuple(key for key in named if key not in by_line)
 
 
@@ -2313,6 +2321,32 @@ invisible and the request still reports success.
 CITATION_WIDER_THAN_NAME_FINDING = """**1. Pagination skips the first page - `src/handlers.js:18`**
 
 `listOrdersHandler` computes the offset from a one-based page number; the store call at `src/store.js:6` is fine as written.
+"""
+# Finding 1 names the planted pagination bug only in English ("off by one", the
+# `PROSE` name of `offset_bug`), and the one line it cites is the test its
+# remediation asks for. That citation's path is also a `test_fixture`
+# identifier, and the identifier tier outranks the English one, so read as a
+# name it shadowed the bug: the citation agreed with a name it supplied itself.
+PROSE_NAMED_CITATION_CONFLICT_REPORT = """## Review
+
+### Critical
+
+**1. Pagination offset is off by one**
+
+The handler computes the offset from a one-based page number, so page 1
+starts at row `size` and the first page is never returned.
+
+**Suggested test:** Add a regression at test/handlers.test.js:8 asserting that
+page 1 starts at offset 0.
+
+**2. The write is never awaited - `src/handlers.js:37`**
+
+`saveOrder` returns a promise the handler drops, so a failed write is
+invisible and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
 """
 
 
@@ -4262,6 +4296,40 @@ def self_test() -> int:
                 return f"a finding placed by name was reported as a conflict: {notes}"
             return ""
 
+        def a_citation_path_is_not_read_as_a_name() -> str:
+            # The round-12 shape. Finding 1 names the pagination bug only in
+            # English and cites only the test its remediation asks for. Read as
+            # a name, that citation's path outranked the English one, so the
+            # citation agreed with itself: `recall` one low, a blocking finding
+            # on a clean hunk and nothing on stderr. As in the round-11 case the
+            # count is the disclosed misreading and is not asserted.
+            report = PROSE_NAMED_CITATION_CONFLICT_REPORT
+            block = report[report.index("**1. ") : report.index("**2. ")]
+            # The path does shadow the English name when it is read as one.
+            # Without this the case passes on a shape where it shadows nothing.
+            named = name_candidates(block)
+            if named != ("test_fixture",):
+                return f"finding 1 names {named}; expected test_fixture alone"
+            run_dir = run(report, status="fail")
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            if code != 0:
+                return f"exit {code}, expected 0: a citation conflict is a reading"
+            reported = [note for note in notes if "\tcitation-conflict\t" in note]
+            if len(reported) != 1:
+                return f"{len(reported)} citation-conflict lines, expected 1: {notes}"
+            # The key is recomputed from the report rather than taken from the
+            # parse under test, as `perfect` does.
+            key = hashlib.sha256(" ".join(block.split()).encode("utf-8")).hexdigest()[:12]
+            want = (
+                f"Critical finding {key}: placed by citation on test_fixture "
+                "but names offset_bug"
+            )
+            if reported[0].split("\t", 2)[2] != want:
+                return f"the note reads {reported[0]!r}, expected {want!r}"
+            return ""
+
         def fixture_ranges_unique() -> str:
             # The eight regions the brief's Step 3 declares, resolved against
             # the real fixture. A start pattern that matches twice is drift the
@@ -4470,6 +4538,10 @@ def self_test() -> int:
             (
                 "a_finding_placed_by_name_is_not_a_conflict",
                 a_finding_placed_by_name_is_not_a_conflict,
+            ),
+            (
+                "a_citation_path_is_not_read_as_a_name",
+                a_citation_path_is_not_read_as_a_name,
             ),
             ("fixture_ranges_unique", fixture_ranges_unique),
             ("two_clean_hunks", two_clean_hunks),
