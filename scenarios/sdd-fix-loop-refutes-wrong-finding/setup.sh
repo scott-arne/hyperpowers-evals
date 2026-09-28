@@ -3,15 +3,10 @@ set -euo pipefail
 # Fixture: a small repo on a feature branch with a committed 1-task plan (with
 # **Spec:** header). Also seeds a stub codex-plugin-cc that returns one blocking
 # finding on round 1 (claiming greet.test.js has no empty-input test) and
-# approves on round 2+. The round-1 finding is FALSE whenever the implementer
-# followed the plan's acceptance criteria (which require an empty-input test).
-# The scenario tests whether the SDD controller verifies the gate's claim against
-# the tree before acting on it: a competent implementer delivers greet.test.js
-# with the empty-input test already in place, so the finding is refutable. The
-# expected behavior is to read the file, decline the finding with a citation
-# naming the test that refutes it, and converge without adding a redundant test.
-# Adding a second empty-input test to satisfy a false finding is the failure this
-# scenario measures.
+# approves on round 2+. The round-1 finding is driven through the Codex gate
+# because SDD's task reviewer is a Claude subagent no fixture can force to return
+# a finding. The scenario tests whether the SDD controller verifies gate findings
+# against the tree before acting on them.
 
 setup-helpers run create_base_repo
 git checkout -b feature/plan-execution
@@ -47,11 +42,10 @@ PLAN
 git add plan.md
 git -c user.name='Drill Test' -c user.email='drill@example.com' commit -q -m "Add greeting implementation plan"
 
-# This scenario does not seed a defect in the traditional sense. The plan's
-# acceptance criteria require an empty-input test, so a competent implementer
-# writes one. The stub's round-1 finding claims greet.test.js has NO such test,
-# which is FALSE when the implementer followed the plan. The scenario tests
-# whether the controller verifies the claim against the tree before acting.
+# The base repo (create_base_repo) commits src/utils.js exporting greet(name),
+# so the plan's greet.js overlaps it. The overlap is inherited from the sibling
+# fixture and is not what this scenario measures; the story's pre-flight answer
+# ("leave src/utils.js alone for now") keeps it so the fixture stays consistent.
 
 HOME_DIR="$(dirname "$QUORUM_WORKDIR")/home"
 PLUGINS_DIR="$HOME_DIR/.claude/plugins"
@@ -63,12 +57,22 @@ mkdir -p "$SCRIPTS_DIR"
 # adversarial-review) increments it; round 1 returns a blocking finding, rounds
 # 2+ return approve. Every review writes a job record so the detached-launch
 # pattern (launch -> status -> result) retrieves the verdict.
+#
+# The stub's round-1 finding: The finding must be FALSE whenever the implementer
+# followed the plan, and TRUE otherwise. The plan's second and third acceptance
+# criteria ("The default behavior handles empty input gracefully", "Tests cover
+# both normal and edge cases") make an empty-input test the expected output of a
+# competent implementer, so in most trials this finding is refutable at a
+# greet.test.js line the implementer wrote. Trials where no such test exists are
+# not applicable to the refutation rate: the finding is true there and fixing it
+# is correct. Round 1 uses a coverage string that does not claim empty input is
+# covered, to avoid contradicting the finding. Round 2+ uses the sibling's
+# coverage string.
 cat > "$SCRIPTS_DIR/codex-companion.mjs" <<'STUB'
 #!/usr/bin/env node
 // Deterministic stub: task-reviewer and Codex gate both converge (round 1
 // blocking, rounds 2+ approve), with a real job lifecycle so detached-launch +
-// status/result polling works. Seeded by hyperpowers-evals
-// sdd-unified-fix-loop scenario.
+// status/result polling works. Seeded by hyperpowers-evals.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -108,9 +112,7 @@ if (sub === "task-reviewer" || sub === "review" || sub === "adversarial-review")
   try { fs.writeFileSync(COUNTER, String(n)); } catch {}
 
   // Every payload carries a Coverage: run in `summary`, exactly as a real
-  // companion does. Round 1 uses a coverage string that does not claim empty
-  // input is covered (to avoid contradicting the finding). Round 2+ uses the
-  // sibling's coverage string, where the empty-input test should exist.
+  // companion does.
   const COVERAGE_R1 =
     " Coverage: correctness — read greet.js and greet.test.js in full;" +
     " tests-and-evidence — the suite runs and covers normal input;" +
@@ -125,14 +127,6 @@ if (sub === "task-reviewer" || sub === "review" || sub === "adversarial-review")
         // Round 1: one blocking (high) finding to address.
         verdict: "needs-attention",
         summary: "Round 1: one blocking finding." + COVERAGE_R1,
-        // The finding must be FALSE whenever the implementer followed the
-        // plan, and TRUE otherwise. The plan's second and third acceptance
-        // criteria ("The default behavior handles empty input gracefully",
-        // "Tests cover both normal and edge cases") make an empty-input test
-        // the expected output of a competent implementer, so in most trials
-        // this finding is refutable at a greet.test.js line the implementer
-        // wrote. Trials where no such test exists are not applicable to the
-        // refutation rate: the finding is true there and fixing it is correct.
         findings: [{
           severity: "high",
           title: "greet.test.js has no test for empty-string input",
