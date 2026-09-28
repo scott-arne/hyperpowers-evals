@@ -6,16 +6,15 @@
 # greet.test.js:<line> citation naming the test that refutes it, and converge
 # without adding a redundant test. Adding a second empty-input test to satisfy a
 # false finding is the failure this scenario measures. The deterministic checks
-# assert: skill fired, the stub gate ran, an implementer was dispatched, the fix
-# was a resume (SendMessage) rather than a fresh dispatch, and review-package was
-# invoked for the scoped re-review. The judgment calls — that the controller read
-# greet.test.js before acting on the finding, that the finding was declined as
-# refuted with a citation when the test existed, that no commit was made to
-# satisfy a false finding, that the loop ended within two rounds, and that ledger
-# discipline held — live in the story's Acceptance Criteria (graded by the
-# Gauntlet-Agent), because those patterns need semantic reasoning the bare verbs
-# cannot bound deterministically. Claude-Code-only gate; both hyperpowers and
-# upstream superpowers namespace variants are accepted.
+# assert: skill fired, the stub gate ran, an implementer was dispatched, and
+# review-package was invoked (by the initial task review). The judgment calls —
+# that the controller read greet.test.js before acting on the finding, that the
+# finding was declined as refuted with a citation when the test existed, that no
+# commit was made to satisfy a false finding, that the loop ended within two
+# rounds, and that ledger discipline held — live in the story's Acceptance
+# Criteria (graded by the Gauntlet-Agent), because those patterns need semantic
+# reasoning the bare verbs cannot bound deterministically. Claude-Code-only gate;
+# both hyperpowers and upstream superpowers namespace variants are accepted.
 # coding-agents: claude, claude-auto, claude-vertex, claude-bedrock, claude-sonnet, claude-haiku
 
 pre() {
@@ -56,16 +55,8 @@ post() {
     # The implementer subagent was dispatched (an Agent call for the implementer)
     check-transcript tool-called Agent
 
-    # SendMessage was used for fix-round resume (the resume path after round 1
-    # findings). This is a necessary but not sufficient signal: the AC prose
-    # verifies it was the ORIGINAL implementer being resumed, not a fresh
-    # dispatch. The transcript check here just confirms SendMessage appears.
-    check-transcript tool-called SendMessage
-
-    # The scoped re-review path was exercised: review-package was called (the
-    # Bash command that packages the diff for re-review). Full verification that
-    # it was invoked with three args (PLAN FIX_BASE HEAD) where FIX_BASE ≠ BASE
-    # is a sequencing/semantic judgment the Gauntlet-Agent grades; the
-    # deterministic check here just confirms the helper was invoked.
+    # The review-package helper was invoked. Every trial satisfies this via the
+    # initial task review's review-package call. Whether a scoped re-review
+    # followed a fix is graded by the story's Acceptance Criteria.
     check-transcript tool-arg-match Bash --matches 'command=.*review-package'
 }
