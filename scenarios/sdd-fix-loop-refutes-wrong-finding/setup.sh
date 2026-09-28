@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # Fixture: a small repo on a feature branch with a committed 1-task plan (with
-# **Spec:** header) and a seeded defect. Also seeds a stub codex-plugin-cc that
-# CONVERGES: the first review returns one blocking finding, every later review
-# approves. This exercises the unified fix-loop contract: resume-based scoped
-# re-review for rounds 1-3, fresh takeover at R=4, five-round cap shared across
-# reviewer + Codex sources, and BLOCKED escalation when findings survive it.
-#
-# The round-1 finding is driven through the CODEX GATE, not the task reviewer.
-# SDD's task reviewer is a Claude subagent, so no fixture can force it to
-# return a finding; an earlier revision of this scenario claimed the stub
-# supplied one and the claim was fiction — the stub's task-reviewer subcommand
-# is never invoked by the skill. The Codex arm is the deterministic half of the
-# same shared five-round loop, which is what "unified" names.
+# **Spec:** header). Also seeds a stub codex-plugin-cc that returns one blocking
+# finding on round 1 (claiming greet.test.js has no empty-input test) and
+# approves on round 2+. The round-1 finding is FALSE whenever the implementer
+# followed the plan's acceptance criteria (which require an empty-input test).
+# The scenario tests whether the SDD controller verifies the gate's claim against
+# the tree before acting on it: a competent implementer delivers greet.test.js
+# with the empty-input test already in place, so the finding is refutable. The
+# expected behavior is to read the file, decline the finding with a citation
+# naming the test that refutes it, and converge without adding a redundant test.
+# Adding a second empty-input test to satisfy a false finding is the failure this
+# scenario measures.
 
 setup-helpers run create_base_repo
 git checkout -b feature/plan-execution
@@ -48,11 +47,11 @@ PLAN
 git add plan.md
 git -c user.name='Drill Test' -c user.email='drill@example.com' commit -q -m "Add greeting implementation plan"
 
-# The seeded defect is the DUPLICATION between the greet.js the plan mandates
-# and the src/utils.js that create_base_repo always commits. Nothing extra is
-# written here: the overlap exists the moment the implementer follows the plan.
-# It is surfaced by the stub Codex gate below, not by the task reviewer — SDD's
-# task reviewer is a Claude subagent this harness cannot stub.
+# This scenario does not seed a defect in the traditional sense. The plan's
+# acceptance criteria require an empty-input test, so a competent implementer
+# writes one. The stub's round-1 finding claims greet.test.js has NO such test,
+# which is FALSE when the implementer followed the plan. The scenario tests
+# whether the controller verifies the claim against the tree before acting.
 
 HOME_DIR="$(dirname "$QUORUM_WORKDIR")/home"
 PLUGINS_DIR="$HOME_DIR/.claude/plugins"
@@ -109,13 +108,14 @@ if (sub === "task-reviewer" || sub === "review" || sub === "adversarial-review")
   try { fs.writeFileSync(COUNTER, String(n)); } catch {}
 
   // Every payload carries a Coverage: run in `summary`, exactly as a real
-  // companion does. verdict-normalize --require-coverage applies the coverage
-  // floor only to an `approve` with zero blocking findings, so it is the
-  // rounds-2+ payload that strictly needs it — but a stub that emitted it on
-  // only one branch would not model the companion it stands in for. Without
-  // it, every lens normalizes `incomplete`, the gate never yields a usable
-  // review, and the Codex-gate arm of the shared five-round fix loop is dead.
-  const COVERAGE =
+  // companion does. Round 1 uses a coverage string that does not claim empty
+  // input is covered (to avoid contradicting the finding). Round 2+ uses the
+  // sibling's coverage string, where the empty-input test should exist.
+  const COVERAGE_R1 =
+    " Coverage: correctness — read greet.js and greet.test.js in full;" +
+    " tests-and-evidence — the suite runs and covers normal input;" +
+    " scope — no changes outside the task's two files.";
+  const COVERAGE_R2 =
     " Coverage: correctness — read greet.js and greet.test.js in full;" +
     " tests-and-evidence — the suite runs and covers normal and empty input;" +
     " scope — no changes outside the task's two files.";
@@ -124,7 +124,7 @@ if (sub === "task-reviewer" || sub === "review" || sub === "adversarial-review")
     ? {
         // Round 1: one blocking (high) finding to address.
         verdict: "needs-attention",
-        summary: "Round 1: one blocking finding." + COVERAGE,
+        summary: "Round 1: one blocking finding." + COVERAGE_R1,
         // The finding must be FALSE whenever the implementer followed the
         // plan, and TRUE otherwise. The plan's second and third acceptance
         // criteria ("The default behavior handles empty input gracefully",
@@ -148,7 +148,7 @@ if (sub === "task-reviewer" || sub === "review" || sub === "adversarial-review")
     : {
         // Rounds 2+: converged — approve, no findings.
         verdict: "approve",
-        summary: "Re-review: the prior blocking finding is resolved; no new blocking findings." + COVERAGE,
+        summary: "Re-review: the prior blocking finding is resolved; no new blocking findings." + COVERAGE_R2,
         findings: [],
         next_steps: []
       };
