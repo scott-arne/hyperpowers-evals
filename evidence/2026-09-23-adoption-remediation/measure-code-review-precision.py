@@ -57,6 +57,13 @@ item: run id, a stable class token, the evidence. The tokens are
     subsection of the finding above it, and correcting the fold would invent
     findings out of the subsections, so the count stands and the heading is
     quoted for the analyst.
+``citation-conflict``
+    A Critical or Important finding was placed by its citations in one region
+    while it names a region those citations do not cover. A cited line is the
+    reviewer's own statement of where the defect is, and a remediation line
+    citing the test to write is written the same way as one citing the defect,
+    so the placement stands and the region it contradicts is quoted for the
+    analyst.
 ``proof-sidecar-missing``
     No ``<run-id>-proof.tsv``. The row is still emitted with ``proof_complete``
     unknown.
@@ -78,9 +85,9 @@ item: run id, a stable class token, the evidence. The tokens are
 
 Exit status is non-zero when any run could not be fully measured -- every token
 above except ``unattributed``, ``span-ambiguous``, ``grader-disagreement``,
-``scaffolding-skipped`` and ``heading-folded``, which are readings for the
-analyst rather than instrument failures. A run that fails emits no row; the
-other runs still do.
+``scaffolding-skipped``, ``heading-folded`` and ``citation-conflict``, which are
+readings for the analyst rather than instrument failures. A run that fails
+emits no row; the other runs still do.
 
 Usage::
 
@@ -360,6 +367,8 @@ class Finding:
     blocked: tuple[str, ...] = ()
     # The headings read as this finding's prose, as written. See :func:`split_findings`.
     folded: tuple[str, ...] = ()
+    # The regions it names that the citations placing it miss. See :func:`citation_conflict`.
+    conflict: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1044,6 +1053,10 @@ def attribute(text: str, ranges: dict[str, Span]) -> tuple[str, ...]:
     :func:`name_candidates`, where a contested tier goes to the analyst rather
     than to the bug.
 
+    When a finding's citations and the regions it names disagree, the citation
+    still places it: form cannot tell a remediation line citing the test to
+    write from a line citing the defect. :func:`citation_conflict` says so.
+
     :param text: The finding's text.
     :param ranges: The resolved spans by key.
     :returns: The keys the finding is attributed to, bugs before hunks and
@@ -1102,6 +1115,40 @@ def span_ambiguity(text: str, ranges: dict[str, Span]) -> str:
     return ""
 
 
+def citation_conflict(text: str, ranges: dict[str, Span]) -> tuple[str, ...]:
+    """The regions a finding names that the citations placing it do not cover.
+
+    :func:`attribute` places a finding by its citations before it reads the
+    names the finding uses, and that precedence stands: a cited line is the
+    reviewer's own statement of where the defect is. It misreads a finding
+    whose only in-range citation is not the defect's location. A Critical that
+    names ``listOrdersHandler``, cites no line of it, and asks for a regression
+    test at ``test/handlers.test.js:8`` was placed on ``test_fixture``:
+    ``recall`` one low and ``blocking_on_clean`` one high, at exit 0 with
+    nothing on stderr. Form cannot tell that citation from one that locates
+    the defect, so the count keeps the citation and the name it contradicts is
+    returned for the analyst.
+
+    The test is a subset, not equality. A citation set covering the named
+    region and another besides contradicts nothing, and its breadth is what
+    :func:`span_ambiguity` reports. A finding whose citations land in no range
+    was placed by its name, so there is no citation for the name to contradict.
+
+    :param text: The finding's text.
+    :param ranges: The resolved spans by key.
+    :returns: The named regions its citations do not cover, in
+        :func:`name_candidates` order, or empty when its citations placed
+        nothing or cover every region it names.
+    """
+
+    cited = cited_spans(text)
+    by_line = tuple(key for key in ALL_KEYS if covered(ranges[key], cited))
+    if not by_line:
+        return ()
+    named = name_candidates(text)
+    return tuple(key for key in named if key not in by_line)
+
+
 def parse_report(
     report: str,
     ranges: dict[str, Span] | None = None,
@@ -1145,6 +1192,7 @@ def parse_report(
                     contested=candidates if len(candidates) > 1 else (),
                     blocked=candidates if len(candidates) == 1 else (),
                     folded=tuple(folded),
+                    conflict=citation_conflict(text, ranges) if ranges else (),
                 )
             )
         if skipped is not None:
@@ -1412,6 +1460,20 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
         Note(run_id, "span-ambiguous", f"{f.severity} finding {f.key}: {f.ambiguity}")
         for f in graded
         if f.ambiguity
+    )
+    # The citation's placement stands, because it is the reviewer's own
+    # statement of where to look and a remediation line citing the test to
+    # write reads exactly like a line citing the defect; the name it contradicts
+    # is quoted instead. Only for `graded`, from which every count is read.
+    notes.extend(
+        Note(
+            run_id,
+            "citation-conflict",
+            f"{f.severity} finding {f.key}: placed by citation on "
+            f"{' and '.join(f.attributions)} but names {' and '.join(f.conflict)}",
+        )
+        for f in graded
+        if f.conflict
     )
     # The count did not change; what the count did not include is said out
     # loud, because a finding written as a bold clause reads exactly like the
@@ -2204,6 +2266,53 @@ invisible and the request still reports success.
 ### Assessment
 
 **Ready to merge?** No
+"""
+# Finding 1 names the planted pagination bug and cites no line of it; the one
+# line it does cite is the test its remediation asks for. The citation places
+# it, so it lands on `test_fixture`: `recall` one low and a blocking finding on
+# a clean hunk, with the grader agreeing. A cited line is the reviewer's own
+# statement of where to look, so the placement stands and the name it
+# contradicts is quoted for the analyst.
+CITATION_CONFLICT_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Critical
+
+**1. Pagination skips the first page of results**
+
+`listOrdersHandler` computes the offset from a one-based page number, so page
+1 starts at row `size` and the first page is never returned.
+
+**Suggested test:** Add a regression at test/handlers.test.js:8 asserting that
+page 1 starts at offset 0.
+
+**2. The write is never awaited - `src/handlers.js:37`**
+
+`saveOrder` returns a promise the handler drops, so a failed write is
+invisible and the request still reports success.
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# The same two findings with each citation on the line its name owns, so the
+# citations and the names agree.
+AGREEING_OFFSET_FINDING = """**1. Pagination skips the first page of results - `src/handlers.js:18`**
+
+`listOrdersHandler` computes the offset from a one-based page number, so page
+1 starts at row `size` and the first page is never returned.
+"""
+AGREEING_SAVE_FINDING = """**2. The write is never awaited - `src/handlers.js:37`**
+
+`saveOrder` returns a promise the handler drops, so a failed write is
+invisible and the request still reports success.
+"""
+# Citations wider than the name: they reach the planted bug the finding names
+# and a clean hunk it mentions in passing. The named region is among the cited
+# ones, so nothing is contradicted; which of the two the finding is counted in
+# is `span-ambiguous`'s to say.
+CITATION_WIDER_THAN_NAME_FINDING = """**1. Pagination skips the first page - `src/handlers.js:18`**
+
+`listOrdersHandler` computes the offset from a one-based page number; the store call at `src/store.js:6` is fine as written.
 """
 
 
@@ -4021,6 +4130,138 @@ def self_test() -> int:
                 return f"a title or a fenced line was reported as folded: {notes}"
             return ""
 
+        def a_remediation_citation_that_contradicts_the_named_bug_is_reported() -> str:
+            # The round-11 shape. Finding 1 names `listOrdersHandler` and its
+            # only citation is the test its remediation asks for, so the
+            # citation places it on `test_fixture`: `recall` one low and a
+            # blocking finding on a clean hunk, the grader agreeing, nothing on
+            # stderr. The count is not asserted -- it is the disclosed
+            # misreading, and a later build that reads it correctly must not
+            # fail here. What is asserted is that the analyst is told, on a run
+            # whose sidecar is present so the exit status is this note's alone.
+            run_dir = run(CITATION_CONFLICT_REPORT, status="fail")
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            if code != 0:
+                return f"exit {code}, expected 0: a citation conflict is a reading"
+            reported = [note for note in notes if "\tcitation-conflict\t" in note]
+            if len(reported) != 1:
+                return f"{len(reported)} citation-conflict lines, expected 1: {notes}"
+            # The key is recomputed from the report rather than taken from the
+            # parse under test, as `perfect` does.
+            block = CITATION_CONFLICT_REPORT[
+                CITATION_CONFLICT_REPORT.index("**1. ") : CITATION_CONFLICT_REPORT.index("**2. ")
+            ]
+            key = hashlib.sha256(" ".join(block.split()).encode("utf-8")).hexdigest()[:12]
+            want = (
+                f"Critical finding {key}: placed by citation on test_fixture "
+                "but names offset_bug"
+            )
+            if reported[0].split("\t", 2)[2] != want:
+                return f"the note reads {reported[0]!r}, expected {want!r}"
+            return ""
+
+        def a_citation_that_agrees_with_its_name_is_not_reported() -> str:
+            # Each citation on the line its finding's name owns: the shape of
+            # every well-cited report, where a note would say nothing.
+            report = build_report([AGREEING_OFFSET_FINDING], [AGREEING_SAVE_FINDING])
+            run_dir = run(report)
+            findings = parse_report(report, resolve_ranges(run_dir))
+            if [f.conflict for f in findings] != [(), ()]:
+                return f"the findings conflict on {[f.conflict for f in findings]}, expected none"
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(rows[0], recall=2, blocking_on_clean=0, accepted="yes")
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if any("\tcitation-conflict\t" in note for note in notes):
+                return f"a citation that agrees with its name was reported: {notes}"
+            return ""
+
+        def a_citation_covering_the_named_bug_and_a_hunk_is_not_a_conflict() -> str:
+            # The named region is among the cited ones, so the citations
+            # contradict nothing. That they also reach a hunk is what
+            # `span-ambiguous` already reports; the test is a subset, not
+            # equality, or every finding citing a span would be reported twice.
+            report = build_report([CITATION_WIDER_THAN_NAME_FINDING], [AGREEING_SAVE_FINDING])
+            run_dir = run(report)
+            ranges = resolve_ranges(run_dir)
+            findings = parse_report(report, ranges)
+            # The shape itself, read without the code under test, so the case
+            # cannot pass on a finding whose citations stopped reaching the hunk.
+            cited = cited_spans(findings[0].text)
+            hit = [key for key in ALL_KEYS if covered(ranges[key], cited)]
+            named = name_candidates(findings[0].text)
+            if (hit, named) != (["offset_bug", "store_slice"], ("offset_bug",)):
+                return f"finding 1 covers {hit} and names {named}; expected the bug and a hunk"
+            if findings[0].conflict:
+                return f"finding 1 conflicts on {findings[0].conflict}, expected none"
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if any("\tcitation-conflict\t" in note for note in notes):
+                return f"a citation set covering the named bug was reported: {notes}"
+            return ""
+
+        def a_citation_conflict_in_a_minor_finding_is_not_reported() -> str:
+            # Every count is read from the blocking findings, so a Minor
+            # finding's placement moved nothing, and a note about it is one the
+            # analyst learns to read past.
+            conflicting = CITATION_CONFLICT_REPORT[
+                CITATION_CONFLICT_REPORT.index("**1. ") : CITATION_CONFLICT_REPORT.index("**2. ")
+            ]
+            report = build_report(
+                [AGREEING_OFFSET_FINDING], [AGREEING_SAVE_FINDING], [conflicting]
+            )
+            run_dir = run(report)
+            # The Minor finding does conflict. Without this the case passes on a
+            # build that reports no conflict anywhere.
+            findings = parse_report(report, resolve_ranges(run_dir))
+            conflicts = [f.conflict for f in findings if f.severity == "Minor"]
+            if conflicts != [("offset_bug",)]:
+                return f"the Minor finding conflicts on {conflicts}, expected offset_bug"
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if any("\tcitation-conflict\t" in note for note in notes):
+                return f"a conflict in a Minor finding moves no count and was reported: {notes}"
+            return ""
+
+        def a_finding_placed_by_name_is_not_a_conflict() -> str:
+            # Finding 1 cites `src/handlers.js:36`, the statement above the
+            # unawaited write, which lands in no range; its name places it.
+            # With no citation in a range there is no placement for the name to
+            # contradict, and a name that cannot place it either already goes
+            # to the analyst as `unattributed`.
+            report = build_report([SAVE_FINDING], [AGREEING_OFFSET_FINDING])
+            run_dir = run(report)
+            ranges = resolve_ranges(run_dir)
+            findings = parse_report(report, ranges)
+            cited = cited_spans(findings[0].text)
+            if any(covered(span, cited) for span in ranges.values()):
+                return f"finding 1's citation {cited} lands in a range; expected none"
+            if (findings[0].attributions, findings[0].conflict) != (("unawaited_save",), ()):
+                return (
+                    f"finding 1 is placed on {findings[0].attributions} and conflicts on "
+                    f"{findings[0].conflict}; expected unawaited_save by name and no conflict"
+                )
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if any("\tcitation-conflict\t" in note for note in notes):
+                return f"a finding placed by name was reported as a conflict: {notes}"
+            return ""
+
         def fixture_ranges_unique() -> str:
             # The eight regions the brief's Step 3 declares, resolved against
             # the real fixture. A start pattern that matches twice is drift the
@@ -4209,6 +4450,26 @@ def self_test() -> int:
             (
                 "a_title_or_fenced_heading_is_not_reported_as_folded",
                 a_title_or_fenced_heading_is_not_reported_as_folded,
+            ),
+            (
+                "a_remediation_citation_that_contradicts_the_named_bug_is_reported",
+                a_remediation_citation_that_contradicts_the_named_bug_is_reported,
+            ),
+            (
+                "a_citation_that_agrees_with_its_name_is_not_reported",
+                a_citation_that_agrees_with_its_name_is_not_reported,
+            ),
+            (
+                "a_citation_covering_the_named_bug_and_a_hunk_is_not_a_conflict",
+                a_citation_covering_the_named_bug_and_a_hunk_is_not_a_conflict,
+            ),
+            (
+                "a_citation_conflict_in_a_minor_finding_is_not_reported",
+                a_citation_conflict_in_a_minor_finding_is_not_reported,
+            ),
+            (
+                "a_finding_placed_by_name_is_not_a_conflict",
+                a_finding_placed_by_name_is_not_a_conflict,
             ),
             ("fixture_ranges_unique", fixture_ranges_unique),
             ("two_clean_hunks", two_clean_hunks),
