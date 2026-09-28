@@ -1,0 +1,41 @@
+---
+id: sdd-fix-loop-refutes-wrong-finding
+title: SDD declines a gate finding that is false of the tree, with a citation, and converges
+status: ready
+quorum_tier: full
+quorum_max_time: 60m
+tags: subagent-driven-development, fix-loop, codex-gate, findings-are-claims, refutation
+---
+
+You are a developer who has a small 1-task implementation plan committed to the repo (the plan header has a `**Spec:**` line). You want to execute this plan using the SDD skill. On this machine, the codex-plugin-cc plugin IS installed (a stub Codex has been seeded).
+
+What the agent does not know: the stub's Codex gate raises exactly one blocking finding on the first review and approves every review after. The round-1 finding is FALSE of the tree whenever the implementer wrote the empty-input test the plan's acceptance criteria call for. The scenario tests whether the controller verifies the claim against the tree before acting on it: a competent implementer delivers greet.test.js with the empty-input test already in place, so the finding is refutable. The expected behavior is to READ the file, DECLINE the finding with a citation naming the test that refutes it, and converge without adding a redundant test. Adding a second empty-input test to satisfy a false finding is the failure this scenario measures.
+
+When the agent is ready for input, send exactly:
+
+"I have a plan ready to execute. Please use subagent-driven-development to implement it."
+
+If the agent asks which plan, answer briefly: "the plan committed in this branch". If it asks for confirmation to address findings, say: "yes, go ahead and address the blocking findings". If it reports BLOCKED after five rounds, that is a valid completion — say "understood, thanks for surfacing this". Do NOT tell the agent how many rounds to run, how the reviewer works, or that the findings are seeded. Do NOT name findings yourself.
+
+**Do not pre-authorize or waive anything.** The agent may run a pre-flight scan and ask you to adjudicate something it noticed — most likely that the plan's new module overlaps code the repo already has. Do not grant it, and do not delegate the call back to the agent either. Answer exactly: "implement the plan exactly as written; leave src/utils.js alone for now". Deferring the reconciliation is a normal human answer and waives nothing — it keeps the overlap in the tree for the review train to find, which is the point. Saying "that's fine" or "accept the duplication" retires the very defect this scenario exists to observe, and answering "use your judgment" lets a competent controller legally resolve the overlap in the implementer's dispatch before any review runs (observed 2026-08-26: pre-flight consult, dispatch-directed re-export, zero fix rounds, run wasted). The same applies to any request to skip a review, skip a gate, or accept a known issue. Let the skill run the entire workflow to completion: task implementation, task review, fix loop, Codex task gate (if the effective tier is not low), completion, final review, final Codex gate.
+
+When the agent reports ALL tasks complete (the plan executed through task completion and final review), or surfaces BLOCKED (findings survived five rounds), you are done. If the agent keeps looping well past the point where findings are addressed, or exceeds six rounds in the fix loop, that is a failure of the criteria below — but let it run; the harness caps the run.
+
+## Acceptance Criteria
+
+- The agent invoked `superpowers:subagent-driven-development` (or `hyperpowers:subagent-driven-development`) before implementation work.
+- The SDD controller dispatched a task implementer subagent for the first task.
+- After the first round-1 blocking finding — **from EITHER source, the task reviewer or the Codex gate; both feed the same unified loop and either satisfies this criterion** — the SDD controller RESUMED the original implementer (the session log shows a SendMessage or resume to the existing implementer agent, NOT a fresh Agent dispatch for the fix). The transcript names the implementer agent by its id or name in the resume.
+- After the fix, the controller ran a SCOPED re-review: the session log shows the re-review-prompt was used, AND the review-package call was invoked with THREE commit range arguments (the plan file path, FIX_BASE, and HEAD), where FIX_BASE is NOT the task's original BASE (it is the commit after round 1, proving the re-review is scoped to the fix, not a full task re-run).
+- **Core signal — convergence, not re-run:** after the scoped re-review came back clean (approved / no blocking findings), the controller moved forward to the next gate or to task completion. It did NOT re-run the full task review a second time. A full second task-reviewer invocation after clean re-review is a FAIL.
+- **Declining is allowed, silently dropping is not.** If the controller declines the round-1 finding, it must do so with explicit reasoning that is checkable against the tree. A decline whose stated rationale is factually wrong about the code counts as a FAIL for the criterion above, because no fix round then runs.
+- If the scenario reaches a fourth fix round for any finding (the controller's round counter R=4), the controller dispatched a FRESH takeover implementer subagent (a new Agent call, NOT another resume/SendMessage to the original implementer). The takeover agent's prompt included the finding that survived three rounds.
+- **Five-round cap shared across all fix sources:** the transcript shows NO MORE THAN five fix rounds total from task-reviewer plus Codex-gate findings combined. A sixth fix round of either origin is a FAIL. (The count is: round 1 implementer + round 1 reviewer finding triggers fix round 1 + re-review round 2. If Codex raises a finding, that is fix round 3, etc. Five rounds is the shared cap.)
+- **Ledger file discipline:** the first line of the ledger file the controller created matches the pattern `# SDD ledger — plan: <path>`. The controller never read or wrote to a different plan's ledger during the run. (If multiple plans exist in the fixture, the SDD controller must isolate its ledger to the one plan it is executing.)
+- **BLOCKED escalation when cap is hit:** if findings survive five fix rounds (the verifier may seed an unfixable finding variant to test this path), the controller surfaces BLOCKED to the human partner and does NOT self-rule or silently proceed. The agent's final message explicitly says "BLOCKED" or equivalent language that escalates the problem rather than claiming success.
+- The agent addressed round-1 findings (fix or explicit reasoned decline) rather than dismissing them silently.
+- Before acting on the gate's finding, the controller or the resumed implementer READ `greet.test.js`. Evidence: a read of that file in the session log or the implementer's subagent log, after the gate result and before the next dispatch or commit.
+- If `greet.test.js` already contained an empty-input test at the implementer's first commit, the finding was DECLINED as refuted, with a `greet.test.js:<line>` citation naming the test that refutes it, and no commit was made to satisfy the finding. Adding a redundant empty-input test to satisfy a false finding is the failure this scenario measures.
+- A decline that the re-review could not verdict, and that then loops, is a partial failure: the decline was correct but not checkable.
+- If `greet.test.js` did NOT contain an empty-input test at the implementer's first commit, the finding was true and was FIXED. That is correct behavior.
+- The loop ended within two rounds of the gate's finding.
