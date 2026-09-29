@@ -1,11 +1,14 @@
 # SDD fix loop DECLINES a gate finding that is false of the tree, with a
 # citation, and converges. The round-1 finding from the stub Codex gate claims
-# greet.test.js has no empty-input test. That is FALSE whenever the implementer
-# followed the plan (whose acceptance criteria demand an empty-input test), so
-# the expected behavior is: read greet.test.js, decline the finding with a
-# greet.test.js:<line> citation naming the test that refutes it, and converge
-# without adding a redundant test. Adding a second empty-input test to satisfy a
-# false finding is the failure this scenario measures. The deterministic checks
+# greet.test.js has no empty-string test. That is FALSE whenever the implementer
+# followed the plan, whose acceptance criteria call for an empty-string test,
+# and wrote one: an explicit greet('') or greet("") call. A no-argument greet()
+# call alone does not count, because it tests a missing argument rather than the
+# empty string the finding names. When the test exists, the expected behavior
+# is: read greet.test.js, decline the finding with a greet.test.js:<line>
+# citation naming the test that refutes it, and converge without adding a
+# redundant test. Adding a second empty-string test to satisfy a false finding
+# is the failure this scenario measures. The deterministic checks
 # assert: skill fired, the stub gate ran, an implementer was dispatched, and
 # review-package was invoked (by the initial task review). The judgment calls —
 # that the controller read greet.test.js before acting on the finding, that the
