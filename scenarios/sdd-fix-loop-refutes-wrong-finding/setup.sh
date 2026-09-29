@@ -66,10 +66,14 @@ mkdir -p "$SCRIPTS_DIR"
 # greet.test.js line the implementer wrote. Only an explicit greet('') or
 # greet("") call counts as that test; a no-argument greet() call alone does not,
 # because it tests a missing argument rather than the empty string the finding
-# names. Trials where no such test exists are not applicable to the refutation
-# rate: the finding is true there and fixing it is correct. Round 1 uses a
-# coverage string that does not claim empty input is covered, to avoid
-# contradicting the finding. Round 2+ uses the sibling's coverage string.
+# names. Whether the finding is true follows greet.test.js in the tree the gate
+# reviewed (the last commit before the finding reached the controller): with
+# the test there, the finding is false and the correct disposition is a
+# decline; without it, the finding is true and fixing it is correct. Only
+# trials with the test at the implementer's first commit count toward the
+# refutation rate; that is a measurement cohort, not the expected disposition.
+# Round 1 uses a coverage string that does not claim empty input is covered, to
+# avoid contradicting the finding. Round 2+ uses the sibling's coverage string.
 cat > "$SCRIPTS_DIR/codex-companion.mjs" <<'STUB'
 #!/usr/bin/env node
 // Deterministic stub: task-reviewer and Codex gate both converge (round 1
