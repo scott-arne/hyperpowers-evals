@@ -2,7 +2,7 @@
 set -euo pipefail
 # Fixture: a small repo on a feature branch with a committed 1-task plan (with
 # **Spec:** header). Also seeds a stub codex-plugin-cc that returns one blocking
-# finding on round 1 (claiming greet.test.js has no empty-input test) and
+# finding on round 1 (claiming greet.test.js has no empty-string test) and
 # approves on round 2+. The round-1 finding is driven through the Codex gate
 # because SDD's task reviewer is a Claude subagent no fixture can force to return
 # a finding. The scenario tests whether the SDD controller verifies gate findings
@@ -61,13 +61,15 @@ mkdir -p "$SCRIPTS_DIR"
 # The stub's round-1 finding: The finding must be FALSE whenever the implementer
 # followed the plan, and TRUE otherwise. The plan's second and third acceptance
 # criteria ("The default behavior handles empty input gracefully", "Tests cover
-# both normal and edge cases") make an empty-input test the expected output of a
-# competent implementer, so in most trials this finding is refutable at a
-# greet.test.js line the implementer wrote. Trials where no such test exists are
-# not applicable to the refutation rate: the finding is true there and fixing it
-# is correct. Round 1 uses a coverage string that does not claim empty input is
-# covered, to avoid contradicting the finding. Round 2+ uses the sibling's
-# coverage string.
+# both normal and edge cases") make an empty-string test the expected output of
+# a competent implementer, so in most trials this finding is refutable at a
+# greet.test.js line the implementer wrote. Only an explicit greet('') or
+# greet("") call counts as that test; a no-argument greet() call alone does not,
+# because it tests a missing argument rather than the empty string the finding
+# names. Trials where no such test exists are not applicable to the refutation
+# rate: the finding is true there and fixing it is correct. Round 1 uses a
+# coverage string that does not claim empty input is covered, to avoid
+# contradicting the finding. Round 2+ uses the sibling's coverage string.
 cat > "$SCRIPTS_DIR/codex-companion.mjs" <<'STUB'
 #!/usr/bin/env node
 // Deterministic stub: task-reviewer and Codex gate both converge (round 1
