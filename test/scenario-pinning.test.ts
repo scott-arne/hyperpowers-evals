@@ -55,6 +55,7 @@ const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'codex-tool-mapping-comprehension',
   'executing-plans-keeps-inline-request',
   'sdd-de-minimis-carveout',
+  'sdd-fix-loop-refutes-wrong-finding',
   'sdd-plan-scoped-scratch',
   'sdd-spec-context-consumed',
   'sdd-unified-fix-loop',
