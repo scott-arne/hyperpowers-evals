@@ -2,11 +2,12 @@
 set -euo pipefail
 # Fixture: a small repo on a feature branch with a committed 1-task plan (with
 # **Spec:** header). Also seeds a stub codex-plugin-cc that returns one blocking
-# finding on round 1 (claiming greet.test.js has no empty-string test) and
-# approves on round 2+. The round-1 finding is driven through the Codex gate
-# because SDD's task reviewer is a Claude subagent no fixture can force to return
-# a finding. The scenario tests whether the SDD controller verifies gate findings
-# against the tree before acting on them.
+# finding (claiming greet.test.js has no empty-string test) to every call of the
+# task gate's round 1 and approves re-review rounds and the final gate. The
+# round-1 finding is driven through the Codex gate because SDD's task reviewer
+# is a Claude subagent no fixture can force to return a finding. The scenario
+# tests whether the SDD controller verifies gate findings against the tree
+# before acting on them.
 
 setup-helpers run create_base_repo
 git checkout -b feature/plan-execution
@@ -53,10 +54,18 @@ INSTALL_PATH="$PLUGINS_DIR/cache/openai-codex/codex/stub"
 SCRIPTS_DIR="$INSTALL_PATH/scripts"
 mkdir -p "$SCRIPTS_DIR"
 
-# A call-counter lives next to the stub. Each review (task-reviewer or
-# adversarial-review) increments it; round 1 returns a blocking finding, rounds
-# 2+ return approve. Every review writes a job record so the detached-launch
-# pattern (launch -> status -> result) retrieves the verdict.
+# The stub chooses each review's payload from the gate round its own argv names,
+# not from a call count: the task gate's round 1 is a lens fan-out that makes
+# several calls in one round, so a count cannot tell rounds apart. A call whose
+# text matches "re-review round" (the preamble of rounds 2+) gets approve; any
+# other call containing "Task-scoped review" (the task gate's focus) is round 1
+# and gets the blocking finding; anything else, such as "Final whole-branch
+# review", gets approve. There is deliberately no call-order fallback: a round 1
+# whose calls drop the task focus gets no finding at all, which leaves nothing
+# to measure, rather than a finding its own round's approvals contradict. Each
+# review claims its job id by creating that id's record file exclusively, so
+# concurrent detached launches never share an id or overwrite a record, and the
+# launch -> status -> result pattern retrieves every verdict.
 #
 # The stub's round-1 finding: The finding must be FALSE whenever the implementer
 # followed the plan, and TRUE otherwise. The plan's second and third acceptance
@@ -72,34 +81,48 @@ mkdir -p "$SCRIPTS_DIR"
 # decline; without it, the finding is true and fixing it is correct. Only
 # trials with the test at the implementer's first commit count toward the
 # refutation rate; that is a measurement cohort, not the expected disposition.
-# Round 1 uses a coverage string that does not claim empty input is covered, to
-# avoid contradicting the finding. Round 2+ uses the sibling's coverage string.
+# The finding payload uses a coverage string that does not claim empty input is
+# covered, to avoid contradicting the finding. The approve payload uses the
+# sibling's coverage string.
 cat > "$SCRIPTS_DIR/codex-companion.mjs" <<'STUB'
 #!/usr/bin/env node
-// Deterministic stub: task-reviewer and Codex gate both converge (round 1
-// blocking, rounds 2+ approve), with a real job lifecycle so detached-launch +
-// status/result polling works. Seeded by hyperpowers-evals.
+// Deterministic stub: each review's payload follows the gate round named in
+// its own argv text, never the order of calls, because one round can fan out
+// to several calls. Text matching "re-review round" approves; otherwise text
+// containing "Task-scoped review" gets one blocking finding; anything else,
+// such as "Final whole-branch review", approves. A real job lifecycle lets
+// detached-launch + status/result polling work. Seeded by hyperpowers-evals.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 const argv = process.argv.slice(2);
 const sub = argv[0];
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const COUNTER = path.join(HERE, ".review-count");
 const JOBS = path.join(HERE, ".jobs");
-const readCount = () => {
-  try { return parseInt(fs.readFileSync(COUNTER, "utf8").trim(), 10) || 0; }
-  catch { return 0; }
-};
 const jobId = (n) => `cxc-stub-review-${n}`;
 const jobFile = (id) => path.join(JOBS, `${id}.json`);
 const readJob = (id) => {
   try { return JSON.parse(fs.readFileSync(jobFile(id), "utf8")); }
   catch { return null; }
 };
+// Claimed job numbers, newest first.
+const claimed = () => {
+  let names = [];
+  try { names = fs.readdirSync(JOBS); } catch {}
+  return names
+    .map((name) => /^cxc-stub-review-(\d+)\.json$/.exec(name))
+    .filter(Boolean)
+    .map((m) => Number(m[1]))
+    .sort((a, b) => b - a);
+};
+// A number claimed by a review still writing its record reads as null and is
+// passed over, so the newest job is always a completed one.
 const newestJob = () => {
-  const n = readCount();
-  return n > 0 ? readJob(jobId(n)) : null;
+  for (const n of claimed()) {
+    const rec = readJob(jobId(n));
+    if (rec) return rec;
+  }
+  return null;
 };
 
 if (sub === "setup") {
@@ -114,8 +137,7 @@ if (sub === "setup") {
 }
 
 if (sub === "task-reviewer" || sub === "review" || sub === "adversarial-review") {
-  const n = readCount() + 1;
-  try { fs.writeFileSync(COUNTER, String(n)); } catch {}
+  const text = argv.slice(1).join(" ");
 
   // Every payload carries a Coverage: run in `summary`, exactly as a real
   // companion does.
@@ -128,9 +150,14 @@ if (sub === "task-reviewer" || sub === "review" || sub === "adversarial-review")
     " tests-and-evidence — the suite runs and covers normal and empty input;" +
     " scope — no changes outside the task's two files.";
 
-  const payload = n === 1
+  // A re-review round repeats the task focus after its preamble, so the
+  // re-review marker is tested first.
+  const taskRoundOne =
+    !/re-review round/i.test(text) && text.includes("Task-scoped review");
+
+  const payload = taskRoundOne
     ? {
-        // Round 1: one blocking (high) finding to address.
+        // The task gate's round 1, every lens: one blocking (high) finding.
         verdict: "needs-attention",
         summary: "Round 1: one blocking finding." + COVERAGE_R1,
         findings: [{
@@ -146,20 +173,31 @@ if (sub === "task-reviewer" || sub === "review" || sub === "adversarial-review")
         next_steps: ["Address the blocking finding, then re-review."]
       }
     : {
-        // Rounds 2+: converged — approve, no findings.
+        // Re-review rounds, the final gate, and anything else: approve, no
+        // findings.
         verdict: "approve",
         summary: "Re-review: the prior blocking finding is resolved; no new blocking findings." + COVERAGE_R2,
         findings: [],
         next_steps: []
       };
 
-  const job = { id: jobId(n), jobClass: "review", status: "completed" };
+  // Claim the next job number by creating its record file exclusively ("wx").
+  // A concurrent launch that computed the same number gets EEXIST and moves on
+  // to the next one, so no two calls share an id or overwrite a record.
   try {
     fs.mkdirSync(JOBS, { recursive: true });
-    fs.writeFileSync(jobFile(job.id), JSON.stringify({
-      job,
-      storedJob: { result: { result: payload, rawOutput: JSON.stringify(payload) } }
-    }));
+    for (let n = (claimed()[0] ?? 0) + 1; ; n++) {
+      let fd;
+      try { fd = fs.openSync(jobFile(jobId(n)), "wx"); }
+      catch (e) { if (e.code === "EEXIST") continue; throw e; }
+      const job = { id: jobId(n), jobClass: "review", status: "completed" };
+      fs.writeFileSync(fd, JSON.stringify({
+        job,
+        storedJob: { result: { result: payload, rawOutput: JSON.stringify(payload) } }
+      }));
+      fs.closeSync(fd);
+      break;
+    }
   } catch {}
 
   process.stdout.write(JSON.stringify(payload));
