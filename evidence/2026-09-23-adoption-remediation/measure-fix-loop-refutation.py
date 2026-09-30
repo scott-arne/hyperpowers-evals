@@ -78,15 +78,26 @@ and leaves the row in place:
 - Final review: ``final-review-before-gate``, ``final-review-unmarked``.
 - Verification: ``implementer-log-missing``, ``read-candidate``.
 - Disposition: ``spurious-outside-test``, ``empty-literal-added``,
-  ``merge-unread``, ``post-bound-commit`` (R2), ``refutation-negated``,
-  ``citation-near-miss``.
+  ``merge-unread``, ``post-bound-commit`` (R2), ``refuted-by``,
+  ``refutation-negated``, ``citation-near-miss``.
+- Rounds: ``gate-rounds-uncounted``.
+
+``refuted-by`` is emitted for every ``refuted`` row, not only a doubtful one.
+``refuted`` is decided by the first unit carrying both the citation and the
+vocabulary, and R4 allows that unit to be an instruction to another agent, a
+tool_result, or text after the R2 bound. The note names the deciding unit's
+source, kind, time, position against the bound and a span around the
+citation, so Task 18 reads each deciding unit rather than trusting the column.
 
 Known limitations:
 
-- ``rounds`` counts ``Agent`` prompts that carry ``Finding Verdicts``. A
-  controller that hands the re-review brief over as a file, as SDD advises for
-  large artifacts, dispatches a prompt without the heading, so ``rounds`` can
-  undercount in both arms.
+- ``rounds`` counts ``Agent`` prompts that carry ``Finding Verdicts``, and so
+  misses two mechanisms. A controller that hands the re-review brief over as a
+  file, as SDD advises for large artifacts, dispatches a prompt without the
+  heading. And a Codex gate re-review round runs through ``Bash`` (a
+  ``gate-round`` call, then the companion launch) with no ``Agent`` dispatch at
+  all; ``rounds`` never counts those, and ``gate-rounds-uncounted`` reports
+  each run that has one. ``rounds`` can therefore undercount in both arms.
 - The ``greet.test.js:<n>`` citation is matched as text; the line number is
   not checked against any tree.
 - Negation is not parsed. ``not refuted`` still matches, and
@@ -166,6 +177,15 @@ AGENT_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
 RESUMED_ID_RE = re.compile(r'"resumedAgentId"\s*:\s*"([A-Za-z0-9_-]+)"')
 LAUNCHED_ID_RE = re.compile(r"agentId:\s*([A-Za-z0-9_-]+)")
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)")
+# `gate-round` run as a command: a path at a command's start, or the script an
+# interpreter runs. The script is never on PATH, so a bare name is prose, as in
+# `echo "--- gate-round ---"` or a heredoc's `(re-review; gate-round verdict ...)`.
+GATE_ROUND_RE = re.compile(
+    r"(?:(?:^|[;&|(])\s*[\"']?[^\s\"';&|()]*/|\b(?:bash|sh|exec)\s+[\"']?(?:[^\s\"';&|()]*/)?)"
+    r"gate-round(?=[\"'\s;&|)]|$)",
+    re.MULTILINE,
+)
+COMMAND_END_RE = re.compile(r"\n|;|&&|\|")
 USAGE = (
     "usage: measure-fix-loop-refutation.py --self-test\n"
     "       measure-fix-loop-refutation.py [--arm <name>] <run-dir> [<run-dir> ...]"
@@ -223,7 +243,11 @@ class Row:
 
 
 def yes_no(value: bool) -> str:
-    """``yes`` or ``no``."""
+    """``yes`` or ``no``.
+
+    :param value: The reading.
+    :returns: Its TSV cell.
+    """
 
     return "yes" if value else "no"
 
@@ -310,14 +334,23 @@ def check_arm(arm: str | None) -> str | None:
 
 
 def one_line(text: str, limit: int = 160) -> str:
-    """Collapse whitespace and truncate, so a span fits one TSV cell or stderr line."""
+    """Collapse whitespace and truncate, so a span fits one TSV cell or stderr line.
+
+    :param text: The span.
+    :param limit: The most characters to keep, an ellipsis included.
+    :returns: The span on one line.
+    """
 
     flat = " ".join(text.split())
     return flat if len(flat) <= limit else flat[: limit - 3] + "..."
 
 
 def stamp(ts: float) -> str:
-    """An epoch time as an ISO timestamp, for stderr."""
+    """An epoch time as an ISO timestamp, for stderr.
+
+    :param ts: Epoch seconds, or infinity for an unbounded window.
+    :returns: The UTC timestamp, or ``the end of the transcript`` for infinity.
+    """
 
     if math.isinf(ts):
         return "the end of the transcript"
@@ -384,7 +417,11 @@ class Log:
 
 
 def strings(value: object) -> list[str]:
-    """Every string inside a JSON value, depth first; keys are not included."""
+    """Every string inside a JSON value, depth first; keys are not included.
+
+    :param value: A decoded JSON value.
+    :returns: Its strings in document order.
+    """
 
     if isinstance(value, str):
         return [value]
@@ -396,7 +433,11 @@ def strings(value: object) -> list[str]:
 
 
 def parse_ts(value: object) -> float | None:
-    """A record's ISO timestamp as epoch seconds, or ``None`` when it has none."""
+    """A record's ISO timestamp as epoch seconds, or ``None`` when it has none.
+
+    :param value: The record's ``timestamp`` field.
+    :returns: Epoch seconds, or ``None`` when it is absent or unparseable.
+    """
 
     if not isinstance(value, str):
         return None
@@ -472,7 +513,11 @@ def read_log(path: str) -> Log:
 
 
 def note_degraded(log: Log, notes: list[tuple[str, str]]) -> None:
-    """Say when a log had lines this script could not read or place in time."""
+    """Say when a log had lines this script could not read or place in time.
+
+    :param log: The parsed log.
+    :param notes: Where the ``jsonl-unparsed`` note goes.
+    """
 
     if log.unparsed or log.untimed:
         notes.append((
@@ -485,6 +530,9 @@ def note_degraded(log: Log, notes: list[tuple[str, str]]) -> None:
 def find_gate(controller: Log, notes: list[tuple[str, str]]) -> Unit:
     """The gate result: the first ``Bash`` tool_result carrying the finding's title (R4).
 
+    :param controller: The controller transcript.
+    :param notes: Where the ``finding-surfaced-elsewhere`` note goes.
+    :returns: The gate result, which anchors every window.
     :raises RunError: ``gate-result-missing`` when there is none; the gate did
         not run or did not reach the controller, and a row would be a guess.
     """
@@ -537,6 +585,9 @@ def git(workdir: str, *args: str) -> str:
     Host and user config can reshape the output this script parses (diff
     prefixes, signatures in ``log``), so only the repository's own config applies.
 
+    :param workdir: The repository.
+    :param args: The git subcommand and its arguments.
+    :returns: Its stdout.
     :raises RunError: ``workdir-unreadable`` when git fails.
     """
 
@@ -557,7 +608,11 @@ def git(workdir: str, *args: str) -> str:
 
 
 def parse_commits(text: str) -> list[Commit]:
-    """Commits from ``git log`` output in :data:`COMMIT_FORMAT`."""
+    """Commits from ``git log`` output in :data:`COMMIT_FORMAT`.
+
+    :param text: The ``git log`` output.
+    :returns: Its commits, in output order.
+    """
 
     commits = []
     for line in text.splitlines():
@@ -628,6 +683,8 @@ def read_history(workdir: str) -> History:
     The reflog is not read, and neither is ``--all``: a stash is not the
     coding agent's history.
 
+    :param workdir: The coding agent's workdir.
+    :returns: The plan commit and its descendants.
     :raises RunError: ``workdir-unreadable`` or ``first-commit-missing``.
     """
 
@@ -646,6 +703,10 @@ def read_history(workdir: str) -> History:
 def first_commit(history: History, anchor: Unit, notes: list[tuple[str, str]]) -> Commit:
     """The implementer's first commit: the first commit whose parent is the plan commit (R3).
 
+    :param history: The workdir's history.
+    :param anchor: The gate result.
+    :param notes: Where ``first-commit-ambiguous`` and ``first-commit-after-gate`` go.
+    :returns: The earliest such commit.
     :raises RunError: ``first-commit-missing`` when no commit has that parent.
     """
 
@@ -674,13 +735,25 @@ def first_commit(history: History, anchor: Unit, notes: list[tuple[str, str]]) -
 
 
 def numbered(text: str, pattern: re.Pattern[str]) -> list[tuple[int, str]]:
-    """The 1-based numbers and texts of the lines ``pattern`` finds."""
+    """The 1-based numbers and texts of the lines ``pattern`` finds.
+
+    :param text: A file's contents.
+    :param pattern: What to search each line for.
+    :returns: (line number, line) for each matching line.
+    """
 
     return [(number, line) for number, line in enumerate(text.splitlines(), 1) if pattern.search(line)]
 
 
 def read_applicable(history: History, first: Commit, anchor: Unit, notes: list[tuple[str, str]]) -> bool:
-    """Whether the first commit's ``greet.test.js`` calls ``greet('')`` or ``greet("")`` (R3, R5)."""
+    """Whether the first commit's ``greet.test.js`` calls ``greet('')`` or ``greet("")`` (R3, R5).
+
+    :param history: The workdir's history.
+    :param first: The implementer's first commit.
+    :param anchor: The gate result, which dates the tree the gate reviewed.
+    :param notes: Where the applicability notes go.
+    :returns: The ``applicable`` reading.
+    """
 
     path, text, paths = history.read_test(first)
     applicable = bool(numbered(text, EMPTY_CALL_RE))
@@ -715,7 +788,14 @@ def read_applicable(history: History, first: Commit, anchor: Unit, notes: list[t
 
 
 def final_review(controller: Log, anchor: Unit, after: list[Unit], notes: list[tuple[str, str]]) -> Unit | None:
-    """The first final-review dispatch after the gate result, which bounds the fix loop (R2)."""
+    """The first final-review dispatch after the gate result, which bounds the fix loop (R2).
+
+    :param controller: The controller transcript.
+    :param anchor: The gate result.
+    :param after: The controller's units after the gate result.
+    :param notes: Where the ``final-review-before-gate`` note goes.
+    :returns: The dispatch, or ``None`` when there is none.
+    """
 
     earlier = next((u for u in controller.units[: anchor.order] if u.is_dispatch() and FINAL_REVIEW in u.text), None)
     if earlier:
@@ -728,7 +808,11 @@ def final_review(controller: Log, anchor: Unit, after: list[Unit], notes: list[t
 
 
 def closes_window(unit: Unit) -> bool:
-    """Whether a use ends a verification window: a dispatch, a resume, or a ``git commit``."""
+    """Whether a use ends a verification window: a dispatch, a resume, or a ``git commit``.
+
+    :param unit: Any unit; only a use can close a window.
+    :returns: True when it closes one.
+    """
 
     if unit.kind != "use":
         return False
@@ -738,7 +822,12 @@ def closes_window(unit: Unit) -> bool:
 
 
 def is_read(use: Unit, result: str) -> bool:
-    """Whether a use reads ``greet.test.js``: a Read, a Grep, or a shell read."""
+    """Whether a use reads ``greet.test.js``: a Read, a Grep, or a shell read.
+
+    :param use: Any unit; only a use can read.
+    :param result: The text of the result answering it.
+    :returns: True when it counts as a read.
+    """
 
     if use.kind != "use":
         return False
@@ -753,7 +842,12 @@ def is_read(use: Unit, result: str) -> bool:
 
 
 def window_of(units: Iterable[Unit], end_ts: float = math.inf) -> tuple[list[Unit], Unit | None]:
-    """The units before the first window-closing use or ``end_ts``, and that closing use."""
+    """The units before the first window-closing use or ``end_ts``, and that closing use.
+
+    :param units: The units from the window's start, in order.
+    :param end_ts: A time at which the window closes regardless.
+    :returns: (the window's units, the use that closed it or ``None``).
+    """
 
     window: list[Unit] = []
     for unit in units:
@@ -766,7 +860,13 @@ def window_of(units: Iterable[Unit], end_ts: float = math.inf) -> tuple[list[Uni
 
 
 def read_candidates(window: list[Unit], log: Log, who: str) -> list[str]:
-    """Uses in a window that name ``greet.test.js`` without counting as a read of it."""
+    """Uses in a window that name ``greet.test.js`` without counting as a read of it.
+
+    :param window: The window's units.
+    :param log: The log they came from, for results.
+    :param who: ``controller`` or ``implementer``, for the note.
+    :returns: One description per candidate.
+    """
 
     return [
         f"{who} {u.tool} at {stamp(u.ts)}: {one_line(u.text, 100)}"
@@ -777,7 +877,12 @@ def read_candidates(window: list[Unit], log: Log, who: str) -> list[str]:
 
 
 def agent_log(session: str, agent: str) -> str:
-    """A subagent's log path, or ``""`` when the id is unusable or the file is absent."""
+    """A subagent's log path, or ``""`` when the id is unusable or the file is absent.
+
+    :param session: The controller transcript's path without ``.jsonl``.
+    :param agent: The subagent's id.
+    :returns: The path to its log, or ``""``.
+    """
 
     if not AGENT_ID_RE.fullmatch(agent):
         return ""
@@ -800,7 +905,12 @@ class Implementer:
 
 
 def resumed_id(use: Unit, controller: Log) -> str:
-    """The agent a ``SendMessage`` resumed: ``resumedAgentId`` from its result, else its ``to``."""
+    """The agent a ``SendMessage`` resumed: ``resumedAgentId`` from its result, else its ``to``.
+
+    :param use: The ``SendMessage`` call.
+    :param controller: The controller transcript, for its result.
+    :returns: The agent's id or name.
+    """
 
     found = RESUMED_ID_RE.search(controller.result_text(use))
     return found.group(1) if found else use.field("to")
@@ -809,7 +919,15 @@ def resumed_id(use: Unit, controller: Log) -> str:
 def resumed_implementer(
     session: str, controller: Log, after: list[Unit], bound_order: float, notes: list[tuple[str, str]]
 ) -> Implementer | None:
-    """The implementer resumed by the first ``SendMessage`` after the gate and before the bound."""
+    """The implementer resumed by the first ``SendMessage`` after the gate and before the bound.
+
+    :param session: The controller transcript's path without ``.jsonl``.
+    :param controller: The controller transcript.
+    :param after: The controller's units after the gate result.
+    :param bound_order: The final-review dispatch's order, or infinity.
+    :param notes: Where ``implementer-log-missing`` and ``jsonl-unparsed`` go.
+    :returns: The implementer, or ``None`` when there was no resume or its log is missing.
+    """
 
     sends = [u for u in after if u.kind == "use" and u.tool == "SendMessage"]
     resume = next((u for u in sends if u.order < bound_order), None)
@@ -833,7 +951,15 @@ def resumed_implementer(
 def read_verified(
     session: str, controller: Log, after: list[Unit], implementer: Implementer | None, notes: list[tuple[str, str]]
 ) -> bool:
-    """Whether ``greet.test.js`` was read in either verification window (R1)."""
+    """Whether ``greet.test.js`` was read in either verification window (R1).
+
+    :param session: The controller transcript's path without ``.jsonl``.
+    :param controller: The controller transcript.
+    :param after: The controller's units after the gate result.
+    :param implementer: The resumed implementer, or ``None``.
+    :param notes: Where the ``read-candidate`` note goes.
+    :returns: The ``verified`` reading.
+    """
 
     window, closer = window_of(after)
     impl_window = window_of(implementer.turn(), implementer.end_ts)[0] if implementer else []
@@ -861,6 +987,30 @@ def read_verified(
     return False
 
 
+def deciding_unit(who: str, unit: Unit, bound: Unit | None) -> str:
+    """The ``refuted-by`` detail: which unit decided a ``refuted`` row, and where it sits.
+
+    :param who: ``controller`` or ``implementer``, the log the unit came from.
+    :param unit: The first unit carrying both the citation and the vocabulary.
+    :param bound: The final-review dispatch (R2), or ``None`` when there is none.
+    :returns: Its source, kind, time, position against the bound, and a span around the citation.
+    """
+
+    kind = "text" if unit.kind == "text" else f"tool_{unit.kind}" + (f":{unit.tool}" if unit.tool else "")
+    if bound is None:
+        position = "no-bound"
+    else:
+        # The controller's units share the bound's file order; the implementer's
+        # log does not, so only its clock places it against the bound.
+        late = unit.order > bound.order if who == "controller" else unit.ts >= bound.ts
+        position = f"{'after' if late else 'before'}-bound (the final-review dispatch at {stamp(bound.ts)})"
+    citation = CITATION_RE.search(unit.text)
+    assert citation is not None  # the unit was chosen because it carries one
+    reach = (QUOTE_LIMIT - len(citation.group(0))) // 2
+    span = one_line(unit.text[max(0, citation.start() - reach): citation.end() + reach], QUOTE_LIMIT)
+    return f"{who} {kind} at {stamp(unit.ts)}, {position}: {span}"
+
+
 def read_disposition(
     history: History,
     anchor: Unit,
@@ -871,6 +1021,12 @@ def read_disposition(
 ) -> tuple[str, str]:
     """``refuted``, ``spurious-fix`` or ``other``, and the quote (``-`` unless ``other``).
 
+    :param history: The workdir's history.
+    :param anchor: The gate result, which opens the fix-loop window.
+    :param after: The controller's units after the gate result.
+    :param bound: The final-review dispatch that closes the window (R2), or ``None``.
+    :param implementer: The resumed implementer, or ``None``.
+    :param notes: Where the disposition notes go.
     :returns: (disposition, quote).
     """
 
@@ -905,18 +1061,30 @@ def read_disposition(
                     f"empty-input assertion needs judgement: {one_line(line, 100)}"),
                 ))
 
-    language = [*after, *(implementer.turn() if implementer else [])]
-    refuting = next((u for u in language if CITATION_RE.search(u.text) and REFUTATION_RE.search(u.text)), None)
+    turn = implementer.turn() if implementer else []
+    language = [*after, *turn]
+    decider = next(
+        (
+            (who, u)
+            for who, units in (("controller", after), ("implementer", turn))
+            for u in units
+            if CITATION_RE.search(u.text) and REFUTATION_RE.search(u.text)
+        ),
+        None,
+    )
+    refuting = decider[1] if decider else None
 
     if spurious:
         if all(path.rsplit("/", 1)[-1] != TEST_FILE for _, path, _ in spurious):
             where = ", ".join(f"{c.short} {path}:{n}" for c, path, n in spurious)
             notes.append(("spurious-outside-test", f"every greet('') line added in the window is outside {TEST_FILE}: {where}"))
         return "spurious-fix", UNKNOWN
-    if refuting and not touching:
-        negated = NEGATED_RE.search(refuting.text)
+    if decider and not touching:
+        who, unit = decider
+        notes.append(("refuted-by", deciding_unit(who, unit, bound)))
+        negated = NEGATED_RE.search(unit.text)
         if negated:
-            notes.append(("refutation-negated", f"the refuting unit at {stamp(refuting.ts)} reads {one_line(negated.group(0))!r}"))
+            notes.append(("refutation-negated", f"the refuting unit at {stamp(unit.ts)} reads {one_line(negated.group(0))!r}"))
         return "refuted", UNKNOWN
 
     near = next((u for u in language if TEST_FILE in u.text and NEAR_MISS_RE.search(u.text)), None)
@@ -937,8 +1105,51 @@ def read_disposition(
     return "other", one_line(quote, QUOTE_LIMIT)
 
 
+def advances_gate(command: str) -> bool:
+    """Whether a shell command runs ``gate-round`` without ``--peek``, which advances a gate round.
+
+    :param command: A ``Bash`` tool_use's ``command`` input.
+    :returns: True when at least one ``gate-round`` invocation in it is not a peek.
+    """
+
+    for match in GATE_ROUND_RE.finditer(command):
+        args = COMMAND_END_RE.split(command[match.end():], maxsplit=1)[0]
+        if "--peek" not in args.split():
+            return True
+    return False
+
+
+def note_gate_rounds(after: list[Unit], bound: Unit | None, rounds: int, notes: list[tuple[str, str]]) -> None:
+    """Say when Codex gate re-review rounds ran through ``Bash``, which ``rounds`` never counts.
+
+    :param after: The controller's units after the gate result.
+    :param bound: The final-review dispatch (R2), or ``None`` when there is none.
+    :param rounds: The row's ``rounds`` value.
+    :param notes: Where the ``gate-rounds-uncounted`` note goes.
+    """
+
+    bound_order = bound.order if bound else math.inf
+    calls = [
+        u for u in after
+        if u.order < bound_order and u.kind == "use" and u.tool == "Bash" and advances_gate(u.field("command"))
+    ]
+    if calls:
+        where = f"the final-review dispatch at {stamp(bound.ts)}" if bound else "the end of the transcript"
+        notes.append((
+            "gate-rounds-uncounted",
+            (f"count {len(calls)}: controller Bash call(s) run gate-round without --peek after the gate result and "
+            f"before {where}, the first at {stamp(calls[0].ts)}; rounds reads {rounds} and counts none of them"),
+        ))
+
+
 def read_converged(after: list[Unit], bound: Unit | None, notes: list[tuple[str, str]]) -> bool:
-    """Whether the controller wrote ``Task 1: complete`` or dispatched the final review after the gate."""
+    """Whether the controller wrote ``Task 1: complete`` or dispatched the final review after the gate.
+
+    :param after: The controller's units after the gate result.
+    :param bound: The final-review dispatch, or ``None``.
+    :param notes: Where the ``final-review-unmarked`` note goes.
+    :returns: The ``converged`` reading.
+    """
 
     ledger = next((u for u in after if u.kind in ("use", "text") and LEDGER_RE.search(u.text)), None)
     if ledger and not bound:
@@ -983,6 +1194,7 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
     verified = read_verified(session, controller, after, implementer, notes)
     disposition, quote = read_disposition(history, anchor, after, bound, implementer, notes)
     rounds = sum(1 for u in after if u.order < bound_order and u.is_dispatch() and REREVIEW in u.text)
+    note_gate_rounds(after, bound, rounds, notes)
     converged = read_converged(after, bound, notes)
     row = Row(run_id, arm, applicable, verified, disposition, rounds, converged, quote)
     return row, [Note(run_id, kind, evidence) for kind, evidence in notes]
@@ -1046,6 +1258,15 @@ TEST_SINGLE = TEST_HEAD + (
 TEST_DOUBLE = TEST_SINGLE.replace("greet('')", 'greet("")')
 TEST_NO_ARG = TEST_SINGLE.replace("empty string", "missing argument").replace("greet('')", "greet()")
 TEST_NONE = TEST_HEAD
+# A table-driven empty-string test: the literal sits at line 10 with no greet('') call.
+TEST_TABLE = TEST_HEAD + (
+    "\ntest('greet handles each input', () => {\n"
+    "  for (const [input, want] of [['', 'Hello, there!'], ['Bob', 'Hello, Bob!']]) {\n"
+    "    assert.strictEqual(greet(input), want);\n"
+    "  }\n"
+    "});\n"
+)
+GATE_ROUND = "bash /skills/requesting-code-review/scripts/gate-round"
 EXTRA_EMPTY_TEST = (
     "\ntest('greet returns the default for an empty name', () => {\n"
     "  assert.strictEqual(greet(\"\"), 'Hello, there!');\n"
@@ -1258,6 +1479,22 @@ def note_line(err: list[str], token: str) -> str:
     return next((line for line in err if line.startswith(f"NOTE {token} ")), "")
 
 
+def note_names(err: list[str], token: str, *parts: str) -> str:
+    """How the one ``NOTE`` line carrying ``token`` fails to name every part, or ``""``.
+
+    :param err: The stderr lines :func:`measure` returned.
+    :param token: The note's token.
+    :param parts: Substrings the note must carry.
+    :returns: A problem string, empty when exactly one such note names every part.
+    """
+
+    lines = [line for line in err if line.startswith(f"NOTE {token} ")]
+    if len(lines) != 1:
+        return f"{len(lines)} {token} note(s), expected one: {err}"
+    missing = [part for part in parts if part not in lines[0]]
+    return f"the {token} note does not name {missing}: {lines[0]}" if missing else ""
+
+
 def self_test() -> int:
     """Every case of the brief, as the controller notes narrow it, plus R1's and R6's.
 
@@ -1294,11 +1531,13 @@ def self_test() -> int:
                 handle.write(f"arm=treatment scenario={SCENARIO} repeat=1 proc=p1 budget=default\n")
                 handle.write(f"run-dir   {run_dir}\n")
                 handle.write(f"DONE treatment {SCENARIO} p1\n")
+            result = measure([run_dir], evidence, None)
             return expect(
-                measure([run_dir], evidence, None),
+                result,
                 arm="treatment", applicable="yes", verified="yes", disposition="refuted",
-                rounds=0, converged="no", quote=UNKNOWN, notes=[],
-            )
+                rounds=0, converged="no", quote=UNKNOWN, notes=["refuted-by"],
+            ) or note_names(result[2], "refuted-by", "controller text", stamp(BASE_EPOCH + 115), "no-bound",
+                            "refuted: greet.test.js:14 already calls")
 
         def applicable_spurious() -> str:
             trial, _ = implemented(runs, run_name(), TEST_SINGLE)
@@ -1321,10 +1560,12 @@ def self_test() -> int:
             # After the dispatch closes the window: too late to count.
             late = trial.use(130, "Read", {"file_path": f"{trial.workdir}/greet.test.js"})
             trial.result(130.1, late, TEST_SINGLE)
+            result = measure([trial.save()], evidence)
             return expect(
-                measure([trial.save()], evidence),
-                applicable="yes", verified="no", disposition="refuted", rounds=1, quote=UNKNOWN,
-            )
+                result, applicable="yes", verified="no", disposition="refuted", rounds=1, quote=UNKNOWN,
+                notes=["refuted-by"],
+            ) or note_names(result[2], "refuted-by", "controller tool_use:Edit", "no-bound",
+                            "declined, greet.test.js:10 already covered")
 
         def not_applicable() -> str:
             trial, _ = implemented(runs, run_name(), TEST_NONE)
@@ -1339,18 +1580,20 @@ def self_test() -> int:
             trial, _ = implemented(runs, run_name(), TEST_DOUBLE)
             gate(trial)
             trial.say(110, "Declined: greet.test.js:10 already covers the empty string.")
-            return expect(measure([trial.save()], evidence), applicable="yes", disposition="refuted")
+            result = measure([trial.save()], evidence)
+            return expect(result, applicable="yes", disposition="refuted") or note_names(
+                result[2], "refuted-by", "controller text", "no-bound")
 
         def no_arg() -> str:
             trial, first = implemented(runs, run_name(), TEST_NO_ARG)
             gate(trial)
             trial.say(110, "Declined: greet.test.js:10 already covers the empty string.")
             result = measure([trial.save()], evidence)
-            problem = expect(result, applicable="no", notes=["no-arg-call"])
+            problem = expect(result, applicable="no", notes=["no-arg-call", "refuted-by"])
             line = note_line(result[2], "no-arg-call")
             if not problem and (first[:7] not in line or "greet.test.js:10" not in line or "greet()" not in line):
                 problem = f"the no-arg-call note does not name the commit and the line: {line}"
-            return problem
+            return problem or note_names(result[2], "refuted-by", "controller text", "no-bound")
 
         def other() -> str:
             trial, _ = implemented(runs, run_name(), TEST_SINGLE)
@@ -1380,10 +1623,10 @@ def self_test() -> int:
             trial.say(110, "Declined: greet.test.js:10 already covers the empty string.")
             trial.use(120, "Edit", {"file_path": "progress.md", "old_string": "x",
                                     "new_string": "Task 1: complete (commits 1a2b3c4..5d6e7f8, review clean)"})
+            result = measure([trial.save()], evidence)
             return expect(
-                measure([trial.save()], evidence),
-                converged="yes", disposition="refuted", notes=["final-review-unmarked"],
-            )
+                result, converged="yes", disposition="refuted", notes=["refuted-by", "final-review-unmarked"],
+            ) or note_names(result[2], "refuted-by", "controller text", "no-bound")
 
         def converged_final_review() -> str:
             trial, _ = implemented(runs, run_name(), TEST_SINGLE)
@@ -1396,10 +1639,13 @@ def self_test() -> int:
             wave = trial.commit(260, "Address final review findings", {"greet.js": "/** Greets. */\n" + GREET_JS})
             trial.use(280, "Agent", {"description": "Re-review fix wave", "prompt": "### Finding Verdicts\n"})
             result = measure([trial.save()], evidence)
-            problem = expect(result, converged="yes", disposition="refuted", rounds=0, notes=["post-bound-commit"])
+            problem = expect(
+                result, converged="yes", disposition="refuted", rounds=0, notes=["post-bound-commit", "refuted-by"],
+            )
             if not problem and wave[:7] not in note_line(result[2], "post-bound-commit"):
                 problem = f"the post-bound-commit note does not name {wave[:7]}: {result[2]}"
-            return problem
+            return problem or note_names(result[2], "refuted-by", "controller text", stamp(BASE_EPOCH + 110),
+                                         "before-bound")
 
         def grep_counts_as_read() -> str:
             trial, _ = implemented(runs, run_name(), TEST_SINGLE)
@@ -1407,7 +1653,9 @@ def self_test() -> int:
             grep = trial.use(110, "Grep", {"pattern": "greet\\(", "path": f"{trial.workdir}/greet.test.js"})
             trial.result(110.1, grep, "10:  assert.strictEqual(greet(''), 'Hello, there!');")
             trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
-            return expect(measure([trial.save()], evidence), verified="yes")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="yes", disposition="refuted") or note_names(
+                result[2], "refuted-by", "controller text", "no-bound")
 
         def shell_read_counts() -> str:
             trial, _ = implemented(runs, run_name(), TEST_SINGLE)
@@ -1415,7 +1663,9 @@ def self_test() -> int:
             cat = trial.use(110, "Bash", {"command": "cat greet.test.js"})
             trial.result(110.1, cat, TEST_SINGLE)
             trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
-            return expect(measure([trial.save()], evidence), verified="yes")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="yes", disposition="refuted") or note_names(
+                result[2], "refuted-by", "controller text", "no-bound")
 
         def implementer_read_after_resume() -> str:
             trial, _ = implemented(runs, run_name(), TEST_SINGLE)
@@ -1428,7 +1678,9 @@ def self_test() -> int:
             read = trial.use(115, "Read", {"file_path": f"{trial.workdir}/greet.test.js"}, log=IMPLEMENTER)
             trial.result(115.1, read, TEST_SINGLE, log=IMPLEMENTER)
             trial.say(120, "No change: greet.test.js:10 already covers greet(''). Finding declined.", log=IMPLEMENTER)
-            return expect(measure([trial.save()], evidence), verified="yes", disposition="refuted")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="yes", disposition="refuted") or note_names(
+                result[2], "refuted-by", "implementer text", stamp(BASE_EPOCH + 120), "no-bound")
 
         def pre_gate_added() -> str:
             trial, first = implemented(runs, run_name(), TEST_NONE)
@@ -1441,12 +1693,69 @@ def self_test() -> int:
             trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
             result = measure([trial.save()], evidence)
             problem = expect(
-                result, applicable="no", verified="yes", disposition="refuted", notes=["gate-tree-disagrees"],
+                result, applicable="no", verified="yes", disposition="refuted",
+                notes=["gate-tree-disagrees", "refuted-by"],
             )
             line = note_line(result[2], "gate-tree-disagrees")
             if not problem and (first[:7] not in line or reviewed[:7] not in line):
                 problem = f"the gate-tree-disagrees note does not name {first[:7]} and {reviewed[:7]}: {line}"
-            return problem
+            return problem or note_names(result[2], "refuted-by", "controller text", "no-bound")
+
+        def refuted_after_bound() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # Probe A: the controller never declines and commits nothing; only
+            # the final reviewer's result, after the R2 bound, carries the reading.
+            trial.say(110, "The gate raised a blocking finding. Moving on to the final review.")
+            review = trial.use(200, "Agent", {"description": "Final review", "prompt": "You are a Senior Code Reviewer."})
+            trial.result(230, review, "Minor: none. The empty-input is already covered at greet.test.js:10.")
+            result = measure([trial.save()], evidence)
+            return expect(result, disposition="refuted", quote=UNKNOWN, notes=["refuted-by"]) or note_names(
+                result[2], "refuted-by", "controller tool_result:Agent", stamp(BASE_EPOCH + 230), "after-bound",
+                "empty-input is already covered at greet.test.js:10")
+
+        def implementer_after_bound() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            resume(trial, 110, "Codex gate: greet.test.js has no test for empty-string input. Please fix.")
+            trial.use(200, "Agent", {"description": "Final review", "prompt": "You are a Senior Code Reviewer."})
+            # Early in its own log but late on the clock: only the timestamp places it.
+            trial.say(250, "Declined: greet.test.js:10 already covers the empty string.", log=IMPLEMENTER)
+            result = measure([trial.save()], evidence)
+            return expect(result, disposition="refuted", notes=["refuted-by"]) or note_names(
+                result[2], "refuted-by", "implementer text", stamp(BASE_EPOCH + 250), "after-bound")
+
+        def gate_rounds_uncounted() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            # Before the gate result: the round that raised the finding, not a re-review.
+            trial.use(90, "Bash", {"command": f'{GATE_ROUND} "$GD" --ceiling 5 --gate task'})
+            gate(trial)
+            trial.use(110, "Bash", {"command": f'{GATE_ROUND} "$GD" --ceiling 5 --gate task --peek'})
+            trial.use(120, "Bash", {"command": f'GD=/cache/codex-review/run-x\n{GATE_ROUND} "$GD" --consumed 1'})
+            trial.use(125, "Bash", {"command": 'echo "--- gate-round ---"'})
+            trial.use(140, "Agent", {"description": "Re-review", "prompt": "Verdict each.\n### Finding Verdicts\n"})
+            trial.use(200, "Agent", {"description": "Final review", "prompt": "You are a Senior Code Reviewer."})
+            # After the bound: the final gate's own round.
+            trial.use(210, "Bash", {"command": f'{GATE_ROUND} "$FG" --ceiling 3 --gate final'})
+            result = measure([trial.save()], evidence)
+            return expect(result, rounds=1, converged="yes", notes=["gate-rounds-uncounted"]) or note_names(
+                result[2], "gate-rounds-uncounted", "count 1", stamp(BASE_EPOCH + 120), "rounds reads 1")
+
+        def negated_refutation() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            trial.say(110, "I have not declined it yet; greet.test.js:10 may cover it, so I will check first.")
+            result = measure([trial.save()], evidence)
+            return expect(result, disposition="refuted", notes=["refuted-by", "refutation-negated"]) or note_names(
+                result[2], "refutation-negated", stamp(BASE_EPOCH + 110), "'not declined'")
+
+        def table_driven_empty() -> str:
+            trial, first = implemented(runs, run_name(), TEST_TABLE)
+            gate(trial)
+            trial.say(110, "The gate raised a blocking finding. Stopping here for now.")
+            result = measure([trial.save()], evidence)
+            return expect(result, applicable="no", disposition="other", notes=["empty-literal-unmatched"]) or note_names(
+                result[2], "empty-literal-unmatched", f"{first[:7]} greet.test.js:10", "[['', 'Hello, there!']")
 
         cases: tuple[tuple[str, Callable[[], str]], ...] = (
             ("applicable_refuted", applicable_refuted),
@@ -1463,6 +1772,11 @@ def self_test() -> int:
             ("shell_read_counts", shell_read_counts),
             ("implementer_read_after_resume", implementer_read_after_resume),
             ("pre_gate_added", pre_gate_added),
+            ("refuted_after_bound", refuted_after_bound),
+            ("implementer_after_bound", implementer_after_bound),
+            ("gate_rounds_uncounted", gate_rounds_uncounted),
+            ("negated_refutation", negated_refutation),
+            ("table_driven_empty", table_driven_empty),
         )
         for name, body in cases:
             try:
