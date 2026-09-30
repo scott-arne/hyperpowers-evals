@@ -1,0 +1,40 @@
+  is the username; the field exists so the later server value has somewhere to land without changing the shape.
+
+  Error handling is where most of the real design is, and it rests on one invariant:
+
+  [2m▎[0m [1;3m[38;5;153mgetCurrentUser()[39m never throws. [38;5;153mnull[39m means "no usable identity."[0m
+
+  That collapses three different failures into the one case consumers already have to handle — not logged in. A future
+  form does [38;5;153mconst u = getCurrentUser(); if (!u) ...[39m and is correct in all of them. The three:
+
+  - [1mStorage unavailable or throwing.[0m Safari private mode has historically thrown on [38;5;153msetItem[39m; storage can be
+    policy-disabled; writes can hit quota. Every storage call in [38;5;153msession.mjs[39m is wrapped. A failed [3mwrite[0m is warned and
+    swallowed — the login genuinely succeeded, and failing it because storage is full would be the worse outcome. A
+    failed [3mread[0m returns [38;5;153mnull[39m.
+  - [1mCorrupt JSON.[0m [38;5;153mJSON.parse[39m throws → catch, [38;5;153mclearCurrentUser()[39m, return [38;5;153mnull[39m. Self-healing rather than permanently
+    broken.
+  - [1mWrong shape.[0m Parsed but missing a non-empty string [38;5;153muserId[39m → same treatment. This one isn't paranoia: [38;5;153msessionStorage[39m
+    is shared by everything on the origin, so a key collision is a real way to get valid JSON that isn't ours.
+
+  Two more, outside [38;5;153msession.mjs[39m:
+
+  - [1m[38;5;153mlogin[39m rejects.[0m The stub can't today — that's the whole point of making the interface async now. [38;5;153mapp.mjs[39m wraps the
+    call in try/catch and logs. Without it, an async submit handler turns a failure into an unhandled rejection and the
+    user sees nothing at all.
+  - [1mFailed login must not leave a stale identity.[0m If someone is logged in as A and a later attempt fails, the session
+    still says A. So [38;5;153mlogin[39m calls [38;5;153mclearCurrentUser()[39m on any failure or rejection, giving: [3mthe session never holds an [0m
+    [3midentity that the most recent authentication attempt didn't establish.[0m
+
+  One thing going into the spec as an explicit non-goal: this identity is [1mself-asserted convenience data, not [0m
+  [1mauthorization[0m. [38;5;153mlogin()[39m verifies nothing, and [38;5;153msessionStorage[39m is writable by any script on the origin. Stamping a form
+  with it is fine; gating anything on it is not, and the server must re-verify independently.
+
+  Does the error handling look right — particularly clearing on failed login, and swallowing write failures rather than
+  surfacing them?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 35s · done 10:59 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  The request uses [38;5;153mfetch(..., { keepalive: true })[39m so it survives the page navigation that usually follows a login —
+  without it, the event you most care about is the one most likely to be cancelled. No retry and no queue, per your
+  fire-and-forget answer.
+
+  One consequence worth naming: fire-and-forget plus console-only reporting means loss is visible [1mto whoever has [0m
+  [1mdevtools open[0m, which in production is nobody. You'll get gaps you can't measure. That's the accepted cost of not
+  blocking login; I'd revisit it only if the data ever becomes compliance-relevant.
+
+  [1mTestability shapes the code.[0m [38;5;153mtrack[39m resolves [38;5;153mfetch[39m off [38;5;153mglobalThis[39m at call time rather than capturing it at import, so
+  tests substitute a fake with no dependency-injection plumbing. Worth covering: identity attaches after [38;5;153midentify[39m;
+  [38;5;153muserId[39m is [38;5;153mnull[39m without it; [38;5;153mreset[39m clears; non-ok and rejected responses log without throwing; [38;5;153mtrack[39m returns
+  synchronously.
+
+  Keeping all logic in [38;5;153mtracking.js[39m means the part that [3misn't[0m unit-testable — the DOM wiring in [38;5;153mapp.js[39m — stays thin
+  enough not to need it.
+
+  [1mRunning the page.[0m Module scripts don't load from [38;5;153mfile://[39m, so opening [38;5;153mindex.html[39m directly stops working. It'll need
+  [38;5;153mpython3 -m http.server[39m or equivalent. I'll note this in the README as part of the change.
+
+  [1mTooling.[0m This repo has none configured — no linter, no formatter, no test runner, no scripts in [38;5;153mpackage.json[39m. It's
+  cheapest to add now, before there's code to retrofit. My recommendation is unit tests via Node's built-in [38;5;153mnode:test[39m
+  and [38;5;153mnode:assert[39m (zero dependencies, runs ESM natively, preserves the repo's current zero-dep state) plus a formatter.
+  I'd skip end-to-end: it needs a browser driver and real dependencies to cover one form.
+
+  Whatever you pick goes into the spec's Global Constraints so the implementation plan inherits it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Section 2 [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mDoes the error handling and testing approach look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right — continue[39m
+     [38;5;246mApprove total (never-throwing) track, keepalive transport, console-only error reporting, no retry, and [39m
+     [38;5;246mglobalThis.fetch for test substitution.[39m
+  [38;5;246m2.[39m Revise it
+     [38;5;246mTell me what to change about failure handling, the transport, or the testing seam.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

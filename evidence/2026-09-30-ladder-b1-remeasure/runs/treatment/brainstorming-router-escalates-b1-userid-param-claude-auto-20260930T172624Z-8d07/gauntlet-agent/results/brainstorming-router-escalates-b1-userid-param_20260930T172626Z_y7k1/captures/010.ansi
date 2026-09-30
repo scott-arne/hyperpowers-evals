@@ -1,0 +1,40 @@
+
+  First clarifying question.
+
+  [1mThe fork:[0m whether the stored ID identifies [3mthe browser[0m or [3mthe person[0m. A browser-scoped ID is written once and reused
+  for every login attempt from that browser forever — which means logins from two different accounts on the same machine
+  carry the same ID, and anything consuming that ID can link those accounts together. An account-scoped ID resets when
+  the user changes, so it can't link accounts, but then it isn't really "persistent across page loads" until after a
+  successful login tells you who the user is — there's a bootstrapping gap on the very first attempt, which is exactly
+  the attempt you most want to trace.
+
+  - [1mBrowser-scoped[0m: simplest, always available, traces every attempt including failed and first-ever ones. Cost: it is a
+    cross-account linking identifier, and that is the part that needs a deliberate yes.
+  - [1mAccount-scoped[0m: no cross-account linkage, but unavailable on the first attempt and on failed attempts from a fresh
+    browser — the gap swallows the main use case.
+  - [1mBrowser-scoped with a reset[0m: same as the first, plus an explicit clear (on logout, or a reset call) so the
+    identifier isn't unbounded in time. Keeps failed-attempt tracing, caps the linking window.
+
+  My recommendation is [1mbrowser-scoped with a reset on logout[0m. It keeps the property you're actually buying — tracing an
+  attempt before you know who the user is — while bounding how long one identifier accumulates history. Note there's no
+  logout in the app today, so "reset" would mean adding a small clear function now and calling it from a logout when one
+  exists.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID scope [39m[49m
+
+[1m[38;5;231mWhat should the persistent ID identify — the browser, or the account?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser-scoped + reset (Recommended)[39m
+     [38;5;246mOne ID per browser, cleared on logout/reset. Traces first and failed attempts; bounds how long one ID accumulates [39m
+     [38;5;246mhistory.[39m
+  [38;5;246m2.[39m Browser-scoped, never reset
+     [38;5;246mSimplest and most durable. Links every account ever used on that browser under one identifier — accept this [39m
+     [38;5;246mdeliberately.[39m
+  [38;5;246m3.[39m Account-scoped
+     [38;5;246mResets per user, no cross-account linking. Unavailable on first and failed attempts, which is the main thing you [39m
+     [38;5;246mwanted to trace.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

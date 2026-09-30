@@ -1,0 +1,40 @@
+  before writing anything. Say the word if you'd rather I just add the parameter and stop, and I'll drop back to a
+  bounded change.
+
+  First question — this one decides the shape of everything else:
+
+  [1mThe fork:[0m whether [38;5;153muserId[39m is an [3minput[0m the caller already knows, or an [3moutput[0m the login produces. That changes who is
+  responsible for identity and whether the signature change is even the right move.
+
+  - [1mCaller supplies it[0m — [38;5;153mlogin(userId, username, password)[39m. Cheapest; matches your request literally. But something
+    upstream must already know the userId, and today nothing does. Cost: you'd have to invent a source (a hidden form
+    field, a tenant/client id, a pre-auth lookup). Cheap to change later.
+  - [1mLogin derives it[0m — the auth response carries the userId back; login returns it rather than accepting it. Truer to
+    how real auth works (the server knows the id, the browser doesn't). No signature change at all; changes the return
+    shape instead. Also cheap to change while this is a stub.
+  - [1mTracking is a separate concern[0m — [38;5;153mlogin[39m stays as-is, and a small tracking/telemetry call records the event with
+    whatever identity is available. Keeps [38;5;153mlogin[39m from growing a parameter that only exists for observability. This is the
+    one that's expensive to undo, because it introduces a module and a call convention other code will follow.
+
+  [1mMy recommendation: login derives it.[0m Your goal is knowing [3mwho[0m logged in, and the only party that can authoritatively
+  answer that is the thing doing the authenticating. Threading a [38;5;153muserId[39m in from a caller that doesn't have one means
+  fabricating an identity source to satisfy a parameter.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLogin derives it (Recommended)[39m
+     [38;5;246mlogin() returns the userId from the auth response instead of accepting it. No signature change; the return shape [39m
+     [38;5;246mgrows. Matches how real auth works.[39m
+  [38;5;246m2.[39m Caller passes it in
+     [38;5;246mlogin(userId, username, password) as you literally asked. Requires inventing an upstream source, since the form [39m
+     [38;5;246monly has username/password.[39m
+  [38;5;246m3.[39m Separate tracking call
+     [38;5;246mLeave login() alone; record the login event through a small tracking module. Keeps observability out of the auth [39m
+     [38;5;246msignature, but adds a module.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

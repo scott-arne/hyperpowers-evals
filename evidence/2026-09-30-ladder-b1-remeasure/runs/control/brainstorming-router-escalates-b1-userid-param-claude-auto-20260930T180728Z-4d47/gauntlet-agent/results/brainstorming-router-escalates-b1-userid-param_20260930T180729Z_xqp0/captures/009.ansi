@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m [1mPath: bounded.[0m [38;5;153mlogin()[39m already exists in [38;5;153mapp.js:4[39m and this is a one-function change, so I'll present a short design in
+  chat rather than write a spec.
+
+  One thing I want to settle first, because it changes the interface.
+
+  [1mThe fork:[0m [38;5;153mlogin(username, password)[39m is called from the form submit handler ([38;5;153mapp.js:17-28[39m), which only has the two form
+  fields. There is no [38;5;153muserId[39m anywhere in the codebase for a caller to pass in — and at the moment login is called, the
+  user isn't authenticated yet, so a caller-supplied ID is unverified. So "add a userId parameter" can mean three fairly
+  different things:
+
+  - [1mCaller passes userId in[0m — matches your words literally. Cheap to write, but the form handler has nothing real to
+    pass, so it would be a synthetic value (a generated session/attempt ID, or username echoed back). Changes the
+    signature others would call.
+  - [1mlogin returns the userId[0m — the function already returns [38;5;153m{ success, user }[39m; add the id to the result, which is where
+    a real API would put it. No signature change, nothing to thread through callers, and it's the value you'd actually
+    trust for tracking. Harder to undo later only in that the return shape is what consumers read.
+  - [1mBoth[0m — accept an optional caller-supplied correlation id [3mand[0m return the authoritative one. More surface than this
+    stub needs right now.
+
+  [1mMy recommendation:[0m the second — have login produce the userId rather than receive it — because the thing you want to
+  track ("who logged in") is only known after login succeeds. But if you have an upstream caller that already holds a
+  userId and I just can't see it in this stub, the first option is the right one and I'll do that instead.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlogin returns it (Recommended)[39m
+     [38;5;246mAdd userId to the returned object; no signature change. The id is known only after auth succeeds, so this is the [39m
+     [38;5;246mvalue you can actually trust for tracking.[39m
+  [38;5;246m2.[39m Caller passes it in
+     [38;5;246mAdd userId as a parameter as literally asked. The form handler will need to supply something — tell me what, or [39m
+     [38;5;246mI'll generate an attempt id.[39m
+  [38;5;246m3.[39m Both
+     [38;5;246mOptional caller-supplied correlation id plus an authoritative userId in the result.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

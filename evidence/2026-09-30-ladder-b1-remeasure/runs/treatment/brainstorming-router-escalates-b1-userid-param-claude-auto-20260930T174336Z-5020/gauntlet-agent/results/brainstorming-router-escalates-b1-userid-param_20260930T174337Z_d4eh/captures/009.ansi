@@ -1,0 +1,40 @@
+
+  Called once, from the form submit handler, which only has [38;5;153musername[39m and [38;5;153mpassword[39m from the two form fields.
+
+  [1mThe fork:[0m there is no [38;5;153muserId[39m at the call site. The form collects a username and a password; a user ID is something the
+  server knows [3mafter[0m it authenticates. So "add a [38;5;153muserId[39m parameter" can't be satisfied literally without deciding what
+  the caller passes in — and the answer changes the signature that the call site and any future caller depend on.
+
+  - [1mTrack the identity [38;5;153mlogin[39m returns[0m — no signature change. Log/record from the [38;5;153m{ success, user }[39m result at the call
+    site (or add [38;5;153muserId[39m to the returned object when the real API call lands). Buys correct tracking with no caller
+    obligation; costs nothing you'd redo. Rules out nothing.
+  - [1mAdd [38;5;153muserId[39m as a third parameter, passed from the client[0m — matches your request literally, but the caller has to
+    source it from somewhere it doesn't have today: [38;5;153mlocalStorage[39m, a device/analytics ID from a prior session, or
+    similar. That's a real (small) subsystem decision, and once the parameter is in the signature it's awkward to
+    remove.
+  - [1mAdd [38;5;153muserId[39m and pass [38;5;153musername[39m into it[0m — satisfies the signature request cheaply, but it duplicates the [38;5;153musername[39m
+    argument and bakes a misleading name into the API. Cheap to write, annoying to undo.
+
+  [1mMy recommendation: the first.[0m The thing you said you want — knowing who logged in — is already available as the login
+  [3mresult[0m, and it's the only version that's correct once real authentication replaces the stub. If you have an external
+  ID (analytics, tenant, device) that genuinely exists before login, tell me where it comes from and the second option
+  is the right one.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mHow should login tracking get the user identity?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mTrack from return value (Recommended)[39m
+     [38;5;246mLeave login(username, password) unchanged; record who logged in from the {success, user} result at the call site. [39m
+     [38;5;246mCorrect once real auth replaces the stub.[39m
+  [38;5;246m2.[39m Add userId param from client
+     [38;5;246mlogin(username, password, userId). You tell me the client-side source (localStorage, device/analytics ID, etc.) and
+[39m     [38;5;246mI wire the call site to it.[39m
+  [38;5;246m3.[39m Add userId param = username
+     [38;5;246mlogin(username, password, userId) with the form's username passed in. Matches the literal request but duplicates an
+[39m     [38;5;246mexisting argument.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

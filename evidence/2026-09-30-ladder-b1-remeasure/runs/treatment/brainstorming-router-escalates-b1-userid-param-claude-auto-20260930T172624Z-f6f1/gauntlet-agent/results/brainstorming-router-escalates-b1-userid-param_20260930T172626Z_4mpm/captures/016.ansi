@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Last question before I present the design — it's about how those [3mother[0m forms actually reach the identifier.
+
+  Right now [38;5;153mapp.js[39m is loaded with a plain [38;5;153m<script src="app.js">[39m. There are no modules, no bundler, and no dependencies.
+  So "other forms need it too" requires picking how code gets shared between files, and that choice is structural.
+
+  [1mThe fork:[0m whether the shared identity code is a real module or a global.
+
+  - [1mES modules[0m ([38;5;153m<script type="module">[39m, a new [38;5;153msrc/session.js[39m with [38;5;153mimport[39m/[38;5;153mexport[39m) — proper encapsulation, explicit
+    dependencies, no build step, and each future form just imports what it needs. One real cost: [38;5;153mtype="module"[39m is
+    fetched under CORS rules, so [38;5;153mindex.html[39m stops working when opened directly from disk as a [38;5;153mfile://[39m URL — you'd need
+    to serve it ([38;5;153mpython3 -m http.server[39m or similar). If double-clicking the HTML file is part of how you work, this
+    changes that.
+  - [1mGlobal namespace object[0m (a second [38;5;153m<script src="session.js">[39m defining [38;5;153mwindow.Session[39m) — zero setup, keeps [38;5;153mfile://[39m
+    working, every later script sees it automatically. Cost: no encapsulation, load order matters, and anything on the
+    page can overwrite it. It's the pattern this file is already in.
+  - [1mAdd a bundler[0m — buys nothing here that ES modules don't, and adds a toolchain to a repo with zero dependencies.
+    Listing it to reject it.
+
+  [1mMy recommendation:[0m ES modules. You're building a layer that multiple future consumers depend on, and that's exactly
+  the case where implicit global ordering turns into bugs. The [38;5;153mfile://[39m tradeoff is the only thing I'd want you to
+  confirm, since it's a change to how you open the page.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Sharing [39m[49m
+
+[1m[38;5;231mHow should future forms consume the shared userId?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mNew src/session.js with import/export; index.html uses type="module". Real encapsulation, no build step. Page must
+[39m     [38;5;246mbe served, not opened via file://.[39m
+  [38;5;246m2.[39m Global window.Session
+     [38;5;246mSecond script tag defining a global object. Zero setup, file:// keeps working. No encapsulation, load-order [39m
+     [38;5;246msensitive.[39m
+  [38;5;246m3.[39m Add a bundler
+     [38;5;246mFull toolchain. Adds dependencies to a currently zero-dependency repo for no gain over ES modules.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

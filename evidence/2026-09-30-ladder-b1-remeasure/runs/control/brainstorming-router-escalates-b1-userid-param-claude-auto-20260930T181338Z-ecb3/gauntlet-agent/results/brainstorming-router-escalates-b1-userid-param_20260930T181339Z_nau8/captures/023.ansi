@@ -1,0 +1,40 @@
+  ---
+
+  Spec written to [38;5;153mdocs/hyperpowers/specs/2026-09-30-login-session-identity-design.md[39m (not committed — I added a
+  [38;5;153m.gitignore[39m covering [38;5;153mdocs/hyperpowers[39m so it stays out of commits). Please review it and let me know if you want any
+  changes before we start writing out the implementation plan.
+
+  [1mWhat changed from your original request, and why it's worth a look before you approve:[0m
+
+  Your one-line ask — add a [38;5;153muserId[39m parameter to [38;5;153mlogin()[39m — isn't what the spec describes, and that's deliberate. Two
+  things turned it around:
+
+  1. [1mThe parameter goes the wrong way.[0m [38;5;153mlogin()[39m is what [3mdetermines[0m who the user is; the caller has only a username and
+     password off the form and no userId to hand it. You confirmed it comes back in the response instead. So there is no
+     new parameter — [38;5;153mlogin()[39m gains a [38;5;153muserId[39m in its [1mreturn value[0m.
+  2. [1m"Persist, and work across the app" is a subsystem, not an edit.[0m That answer is what moved this off the bounded
+     path. The repo has no storage layer, no way for two files to share code (the browser script and [38;5;153msrc/[39m are mutually
+     unreachable — no bundler), and only one form. The structure your requirement depends on doesn't exist yet.
+
+  Net result: one new [38;5;153msession.mjs[39m module, [38;5;153mlogin()[39m becomes async, [38;5;153mindex.html[39m gets [38;5;153mtype="module"[39m, plus a [38;5;153mnode --test[39m
+  suite. Roughly 4 files touched, none of them [38;5;153msrc/[39m.
+
+  [1mThree things in the spec I'd specifically like you to check:[0m
+
+  - [1mThe security boundary.[0m Only the opaque [38;5;153muserId[39m goes in localStorage — never a token or password. Any script on the
+    origin can read localStorage, so this limit is doing real work. If you later want to store an auth token, that's a
+    different design, not an extra line in this module.
+  - [1mThe coverage gap.[0m Choosing approach A means the tests cover [38;5;153msession.mjs[39m but not [38;5;153mlogin()[39m — [38;5;153mapp.js[39m touches the DOM at
+    import time, so it can't be imported without one. That was the explicit trade against approach B; I want it to be a
+    decision you remember making, not a surprise later.
+  - [1mThe [38;5;153mfile://[39m cost.[0m ES modules are CORS-blocked on [38;5;153mfile://[39m. After this, opening [38;5;153mindex.html[39m by double-clicking it stops
+    working — you'll need a local HTTP server.
+
+  Once you approve the spec, the next step is the writing-plans skill to produce the implementation plan. No code yet.
+
+[38;5;246m✻[39m [38;5;246mChurned for 6m 8s · done 11:25 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

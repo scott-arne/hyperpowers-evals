@@ -1,0 +1,40 @@
+  ├───────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Non-2xx from      │ [38;5;153m{ success: false, error }[39m, with 401 distinguished from 5xx — "Invalid credentials" is the   │
+  │ login             │ user's problem, "Login service unavailable" is ours, and collapsing them makes the failure  │
+  │                   │ unreportable. No tracking fires.                                                            │
+  ├───────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ 2xx, but body     │ [38;5;153m{ success: false, error: "Malformed login response" }[39m. This is the contract from Section 2  │
+  │ isn't JSON or     │ being violated, and since I invented that contract against a fake server, it is the failure │
+  │ [38;5;153muserId[39m is missing │  most likely to actually happen. It must not pass silently — sending [38;5;153m{ userId: undefined }[39m  │
+  │                   │ to analytics would produce tracking data that looks fine and means nothing.                 │
+  ├───────────────────┼─────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Analytics POST    │ [1mLogin still succeeds.[0m [38;5;153mtrackLogin[39m catches its own failure, logs it, and returns. Tracking is │
+  │ fails             │  secondary; a dead analytics endpoint must never make a user look logged-out when they      │
+  │                   │ aren't.                                                                                     │
+  └───────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  [1mOne judgment call worth your input.[0m [38;5;153mlogin[39m will [38;5;153mawait[39m the tracking call, with the catch living inside [38;5;153mtrackLogin[39m. The
+  alternative is to fire it without awaiting and attach a [38;5;153m.catch()[39m.
+
+  Awaiting means a slow analytics endpoint adds its latency to the user's login. Not awaiting means the login returns
+  immediately, but the tracking call is a floating promise — tests can't deterministically assert it fired, and ordering
+  becomes timing-dependent.
+
+  I recommend awaiting: at this scale the determinism in tests is worth more than the latency, and it's a one-line
+  change to switch later if analytics turns out slow. But if login latency is something you already care about, say so
+  and I'll invert it.
+
+  The thing I want to be explicit about: [1mthere is no retry and no queue.[0m If the analytics POST fails, that login event
+  is simply lost. That's the right call for a first version, but it means "track who logged in" is best-effort — the
+  data will have holes whenever the endpoint is down. If you need it to be reliable, that's a different feature
+  (buffering, retry, probably server-side logging instead of client-side) and it should be its own spec rather than
+  smuggled into this one.
+
+  Does the error handling look right?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 22s · done 11:19 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

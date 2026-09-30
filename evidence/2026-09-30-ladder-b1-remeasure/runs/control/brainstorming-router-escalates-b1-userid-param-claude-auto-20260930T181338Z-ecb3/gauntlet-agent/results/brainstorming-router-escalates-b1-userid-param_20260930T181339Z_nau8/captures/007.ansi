@@ -1,0 +1,40 @@
+
+  [1mThe fork:[0m there is no [38;5;153muserId[39m anywhere in this codebase, so the question isn't how to add the parameter — it's where
+  the caller gets a value to pass. Each answer commits you to a different interface.
+
+  - [1mNew form field[0m — user types their ID. Buys: a real, user-supplied ID with no plumbing. Costs: an HTML change and a
+    [38;5;153mvalidateForm[39m rule; asks users for something they usually don't know. Rules out treating userId as server-assigned
+    later without a migration.
+  - [1mClient-generated correlation ID[0m — [38;5;153mlogin()[39m gets a caller-supplied ID (crypto.randomUUID or similar) purely to tie
+    events together. Buys: works today with no backend or form change. Costs: it identifies a [3msession[0m, not a person —
+    "who logged in" is still just the username. Cheap to change later.
+  - [1mRead from existing client state[0m — pull from localStorage/a cookie set by a previous session. Buys: a stable
+    per-browser identity. Costs: absent on first login, so the parameter is optional and often undefined. Moderately
+    cheap to change.
+  - [1mNot a parameter at all[0m — the server returns the userId in the login response and you log it there. Buys: the
+    actually-authoritative ID, since identity is what login [3mestablishes[0m. Costs: doesn't match your literal request, and
+    the API call is currently a stub, so nothing returns a real ID yet.
+
+  [1mMy recommendation: the fourth.[0m A login function's job is to determine who the user is; an ID passed [3min[0m by the caller
+  can't be trusted as the answer to "who logged in," and here the caller has nothing to pass. That said, the stub
+  returns [38;5;153m{ success: true, user: username }[39m with no network call, so this option is design-only until the real POST
+  exists — which is why the correlation ID is the best option if you want something working today.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[2m│[0m [1m[38;5;231mWhere should the userId value come from, given the form only has username and password?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFrom login response[39m
+     [38;5;246mServer returns the userId; log it after the call instead of passing it in. Most correct, but blocked on the stubbed
+[39m     [38;5;246mAPI.[39m
+  [38;5;246m2.[39m Client correlation ID
+     [38;5;246mCaller generates a UUID and passes it to login(). Works today, but identifies a session rather than a person.[39m
+  [38;5;246m3.[39m New form field
+     [38;5;246mAdd a userId input to index.html and validate it alongside username/password.[39m
+  [38;5;246m4.[39m Existing client state
+     [38;5;246mRead a stored ID from localStorage/cookie; parameter is optional and undefined on first login.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

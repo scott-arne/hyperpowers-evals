@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m [1mDesign — Section 2: error handling, security boundary, testing and tooling[0m
+
+  [1mError handling.[0m Three failure modes, all of which should degrade rather than break login — tracking who logged in is
+  not worth failing an authentication over:
+
+  - [1m[38;5;153msessionStorage[39m throws.[0m [38;5;153msetItem[39m can raise [38;5;153mQuotaExceededError[39m, and both read and write raise [38;5;153mSecurityError[39m when
+    storage is disabled by policy or blocked in a private window. All three [38;5;153mSession[39m methods wrap their access in
+    try/catch, log a warning, and carry on — [38;5;153msetUserId[39m swallows the failure, [38;5;153mgetUserId[39m returns [38;5;153mnull[39m.
+  - [1mNo stored id.[0m [38;5;153mgetUserId()[39m returns [38;5;153mnull[39m, which is the single "nobody is signed in" signal. Callers check for [38;5;153mnull[39m;
+    there is no empty-string state to also handle.
+  - [1m[38;5;153mSession[39m missing at call time.[0m This is the specific fragility of the global-namespace choice you picked: if a future
+    page adds [38;5;153mapp.js[39m without [38;5;153msession.js[39m, or orders them wrong, [38;5;153mlogin[39m would throw a [38;5;153mReferenceError[39m and authentication
+    breaks entirely. [38;5;153mapp.js[39m guards with [38;5;153mtypeof Session === "undefined"[39m, warns, and completes the login without
+    persisting. One line, and it converts a broken login into a missing tracking record.
+
+  [1mSecurity boundary.[0m Writing this into the spec explicitly, because it's the part most likely to be misread later:
+
+  - Anything in [38;5;153msessionStorage[39m is readable by every script on the page, so the stored value is the opaque [38;5;153muserId[39m and
+    nothing else — never the password, never a token.
+  - The stub value [38;5;153mstub-${username}[39m deliberately encodes the username. That's fine for a dev placeholder, but the real
+    server-supplied id should be opaque, and the spec will say so at the point where [38;5;153mAPI_ENDPOINT[39m gets wired up.
+  - [1mA client-stored [38;5;153muserId[39m is a tracking convenience, not proof of identity.[0m When the stub at [38;5;153mapp.js:6[39m becomes a real
+    call, the server must establish identity itself from a session cookie or token and must never trust a [38;5;153muserId[39m the
+    client sends. This is the assumption most likely to cause a real vulnerability if someone later reads
+    [38;5;153mSession.getUserId()[39m and treats it as authorization.
+  - Choosing [38;5;153msessionStorage[39m is what lets us skip an expiry mechanism — the value dies with the tab. There's no sign-out
+    in this app today; [38;5;153mSession.clear()[39m exists so one can be added without touching storage details.
+
+  [1mTesting — and one structural obstacle.[0m [38;5;153mapp.js[39m calls [38;5;153mdocument.getElementById("login-form")[39m at the top level (line 17),
+  so merely importing it under Node throws. Testing [38;5;153mlogin[39m therefore requires either a DOM environment (jsdom) or
+  splitting the DOM wiring into its own file so [38;5;153mlogin[39m and [38;5;153mSession[39m can be loaded headlessly. I'd split the wiring — it's
+  the smaller, more durable change, and it's the kind of targeted improvement that serves this work rather than
+  unrelated refactoring. Worth flagging that it makes the diff bigger than "add a parameter" implies.
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

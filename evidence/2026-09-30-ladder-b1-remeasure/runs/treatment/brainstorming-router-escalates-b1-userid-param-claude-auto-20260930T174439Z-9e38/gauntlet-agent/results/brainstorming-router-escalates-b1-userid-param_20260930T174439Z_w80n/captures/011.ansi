@@ -1,0 +1,40 @@
+  Next question, and it's the one with a security consequence, so I want your answer before I shape anything.
+
+  [1mThe fork:[0m whether the stored value is just a label the UI displays, or something later requests rely on to prove who
+  the caller is. Those are the same three characters on screen and completely different systems underneath.
+
+  - [1mDisplay/tracking only[0m — the ID identifies the user in log lines and UI ("logged in as 4417"), and anything the
+    server does with it, the server re-derives from its own session. Non-secret, so browser storage is fine and the
+    design stays small. Nothing to redo later.
+  - [1mOther forms send it as the identity[0m — later forms read the ID from the store and submit it, and the server trusts
+    it. This is the shape your "other forms will need it later" could imply, and I'd push back on it: any user can edit
+    browser storage, so a server that trusts a client-supplied [38;5;153muserId[39m lets anyone act as anyone. If that's the intent,
+    the fix belongs on the server (a session cookie or token the client never chooses), and the client store goes back
+    to being display-only.
+  - [1mStore a session token alongside the ID[0m — the store holds the credential too. Makes the client the keeper of a
+    secret, which means the storage choice becomes an XSS exposure decision rather than a convenience one. Real systems
+    do this, but it's a meaningfully larger design and it should be a deliberate call, not a side effect of adding a
+    parameter.
+
+  [1mMy recommendation:[0m display/tracking only. It matches what you originally asked for, it's the only one of the three
+  that's cheap to get wrong, and it doesn't quietly build an auth mechanism out of a logging change. If you need the
+  second or third, say so and I'll design it properly rather than approximating it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID purpose [39m[49m
+
+[1m[38;5;231mWhat is the stored userId used for?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDisplay and tracking only[39m
+     [38;5;246mNon-secret label for logs and UI. The server re-derives real identity from its own session. Smallest design, [39m
+     [38;5;246mnothing to redo later.[39m
+  [38;5;246m2.[39m Forms submit it as identity
+     [38;5;246mLater forms read it from the store and send it; server trusts it. I'd design the server-side fix instead, since [39m
+     [38;5;246mbrowser storage is user-editable.[39m
+  [38;5;246m3.[39m Store a session token too
+     [38;5;246mThe client holds a credential. Turns the storage choice into an XSS exposure decision and makes this a [39m
+     [38;5;246msubstantially larger design.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

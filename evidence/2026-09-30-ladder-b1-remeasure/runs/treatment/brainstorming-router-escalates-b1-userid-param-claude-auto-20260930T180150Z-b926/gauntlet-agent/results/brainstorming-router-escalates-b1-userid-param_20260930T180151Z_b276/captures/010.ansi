@@ -1,0 +1,40 @@
+  chat, and wait for your yes rather than writing a spec.
+
+  One thing to settle first, because it changes the shape of the change:
+
+  [1mThe fork:[0m [38;5;153mlogin(username, password)[39m is the thing that [3mestablishes[0m who the user is. At the call site ([38;5;153mapp.js:19-23[39m) the
+  only data available is what the form holds — username and password. There is no userId in scope to pass in, and the
+  form has no field for one. So "add a userId parameter" can mean three different things, and they produce different
+  code.
+
+  - [1mClient-generated correlation ID[0m — the caller mints an ID ([38;5;153mcrypto.randomUUID()[39m) and passes it in so the login attempt
+    can be traced across client and server logs. Buys you: tracking of [3mattempts[0m, including failed ones. Costs: the ID
+    isn't the user's real identity, so it can't be used for anything identity-related later. Cheap to change.
+  - [1muserId comes back from login, not into it[0m — leave the signature alone and put the identifier in the return value ([38;5;153m{
+[39m    [38;5;153msuccess, user, userId }[39m), logging it after the call. Buys you: a real identity, sourced where it's actually known.
+    Costs: doesn't satisfy "add a parameter" literally, and tracks only successful logins. Cheap to change.
+  - [1muserId is real caller-supplied input[0m — an account/tenant ID the user actually types, which means a new form field in
+    [38;5;153mindex.html[39m, a [38;5;153mvalidateForm[39m rule, and a new required argument. Buys you: identity known up front. Costs: changes the
+    UI and the validation contract; the most expensive to undo.
+
+  [1mMy recommendation:[0m the correlation ID. It matches your literal request (a new parameter on [38;5;153mlogin[39m), it's the only one
+  of the three where the caller genuinely has something to pass at line 23, and it tracks failed attempts too — which is
+  usually the point of login tracking. But if "who logged in" means the real account identity, the second option is the
+  honest answer and the parameter is the wrong place for it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere does userId come from at the call site?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mClient correlation ID (Recommended)[39m
+     [38;5;246mCaller mints a UUID per attempt and passes it to login(). Tracks both successful and failed attempts. No UI change.
+[39m  [38;5;246m2.[39m Returned from login
+     [38;5;246mLeave the signature alone; add userId to the return value and log it after the call. Real identity, successful [39m
+     [38;5;246mlogins only.[39m
+  [38;5;246m3.[39m New form field
+     [38;5;246mUser types an account/tenant ID. Adds an input to index.html, a validateForm rule, and a required third argument.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

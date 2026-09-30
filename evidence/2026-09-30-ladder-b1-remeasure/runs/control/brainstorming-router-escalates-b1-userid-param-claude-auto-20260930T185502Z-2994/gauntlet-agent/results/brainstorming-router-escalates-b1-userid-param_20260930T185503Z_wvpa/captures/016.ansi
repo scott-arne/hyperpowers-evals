@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m sessionStorage it is.
+
+  [1mThird question: should [38;5;153mlogin[39m become async now?[0m Today it's synchronous and returns [38;5;153m{ success: true, user: username }[39m
+  immediately. But you've just chosen "the server returns the userId," and a real network call can't be synchronous.
+  This is the single most expensive thing to defer: async-ness is viral, so every call site and every form that waits on
+  identity has to be written for it. Doing it later means rewriting all of them.
+
+  - [3mAsync interface now, fake behind it[0m — [38;5;153mlogin[39m returns a Promise and the stub resolves a fixed id after a tick. Every
+    call site is written correctly from day one; swapping the fake for a real [38;5;153mfetch[39m touches exactly one function. Costs
+    a little ceremony today for code that isn't calling a network yet.
+  - [3mStay synchronous, return a fixed id[0m — smallest possible change, reads naturally right now. But it bakes a
+    synchronous contract into every form you add, and the day the real API lands you rewrite all of them plus the
+    session layer's timing assumptions.
+  - [3mImplement the real [38;5;153mfetch[39m now[0m — no fake at all. Honest, but [38;5;153mapi.example.com[39m isn't real, so nothing is runnable or
+    testable until there's a backend, and the whole feature is blocked on something outside this repo.
+
+  My recommendation is the async interface with a fake behind it. It's the option where the thing that's hard to change
+  (the contract) is right immediately and the thing that's easy to change (what the stub does) stays swappable. It also
+  keeps the feature testable today, which the third option doesn't.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Async now? [39m[49m
+
+[2m│[0m [1m[38;5;231mShould login adopt an async interface now, given the userId comes from the server?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAsync now, fake behind it (Recommended)[39m
+     [38;5;246mlogin returns a Promise; the stub resolves a fixed id. Call sites are correct from day one and the real fetch later
+[39m     [38;5;246mtouches one function.[39m
+  [38;5;246m2.[39m Stay synchronous for now
+     [38;5;246mSmallest change today, but bakes a sync contract into every form; the real API later forces rewriting all call [39m
+     [38;5;246msites.[39m
+  [38;5;246m3.[39m Implement the real fetch now
+     [38;5;246mNo fake. Honest contract, but api.example.com does not exist so nothing is runnable or testable until a backend [39m
+     [38;5;246mdoes.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

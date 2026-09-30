@@ -1,0 +1,40 @@
+  are in one file, so this is a bounded change.
+
+  The snag: nothing in the app has a user ID. [38;5;153mindex.html[39m collects only username and password, and the stub's own return
+  value ([38;5;153m{ success: true, user: username }[39m) is the closest thing to an identity — and it only exists [3mafter[0m login. So
+  "track who logged in" doesn't have an obvious value to pass in, and the options differ in what you end up with:
+
+  - [1mClient tracking ID[0m — generate a UUID once, persist in [38;5;153mlocalStorage[39m, pass as [38;5;153muserId[39m. Gives you a stable handle for
+    correlating login attempts from the same browser, including failed ones. It is [3mnot[0m an authenticated identity —
+    anyone can clear or forge it. No UI change. Cheap to swap out later.
+  - [1mNew form field[0m — add a [38;5;153muserId[39m input to [38;5;153mindex.html[39m and read it in the handler. Gives a real user-supplied ID, but it
+    duplicates username for the person filling the form, and it's self-asserted, so it's no more trustworthy than the
+    tracking ID. Changes the UI, so it's the most visible to undo.
+  - [1mDon't add a parameter[0m — have [38;5;153mlogin[39m derive and return the id in its result instead. Tracks who [3msuccessfully[0m logged
+    in, which is what the server would authoritatively know anyway. But it doesn't match your request, and it can't
+    attribute failed attempts.
+
+  My recommendation is the client tracking ID: it matches your request literally (a [38;5;153muserId[39m parameter on [38;5;153mlogin[39m), needs no
+  UI change, and covers failed attempts, which is usually the point of login tracking. The thing it can't do is prove
+  identity — if that's what you need, that has to come from the server response, not a parameter.
+
+  One more thing worth flagging either way: [38;5;153mlogin[39m and the handler both [38;5;153mconsole.log[39m already, so whatever you pass will
+  land in the browser console alongside the username.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID source [39m[49m
+
+[1m[38;5;231mWhere should the userId value come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mClient tracking ID (Recommended)[39m
+     [38;5;246mGenerate a UUID once, persist in localStorage, pass it to login(). No UI change, covers failed attempts, not an [39m
+     [38;5;246mauthenticated identity.[39m
+  [38;5;246m2.[39m New form field
+     [38;5;246mAdd a userId input to index.html and read it in the submit handler. Real user-supplied value, but duplicates [39m
+     [38;5;246musername and changes the UI.[39m
+  [38;5;246m3.[39m Return it instead
+     [38;5;246mSkip the parameter; have login() derive and return the id in its result. Only tracks successful logins.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

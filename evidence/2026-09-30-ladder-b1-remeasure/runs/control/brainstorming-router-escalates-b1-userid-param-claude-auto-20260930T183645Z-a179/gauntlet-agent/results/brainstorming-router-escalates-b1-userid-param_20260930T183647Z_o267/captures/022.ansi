@@ -1,0 +1,40 @@
+  [1mB — Explicit [38;5;153muserId[39m parameter, threaded.[0m Literally the original ask: [38;5;153mlogin(userId, username, password)[39m, and every
+  future form function takes [38;5;153muserId[39m too. Since no id exists before authentication, it would have to be a
+  client-generated pseudonymous device id kept in [38;5;153mlocalStorage[39m.
+  [3mBuys:[0m explicit, no hidden state, matches what you asked for. [3mCosts:[0m prop-drilling through every form, and it conflates
+  two different things — a forgeable device id and the real authenticated user. [3mRules out:[0m little technically, but a
+  client-minted id is weak evidence in a compliance trail, which is the one thing you said this is for.
+
+  [1mC — Audited request chokepoint.[0m One [38;5;153mapiRequest()[39m wrapper every form uses. It attaches the correlation id and current
+  identity and shapes the audit envelope in a single place. Forms never handle [38;5;153muserId[39m themselves.
+  [3mBuys:[0m a form physically cannot forget to be audited. [3mCosts:[0m an abstraction layer and a backend contract pinned down up
+  front. [3mRules out:[0m ad-hoc direct [38;5;153mfetch[39m calls, deliberately.
+
+  [1mMy recommendation: C[0m, which absorbs A's context module as its internals. "Other forms will need it later" plus
+  compliance means the failure mode that matters is a future form silently not being audited — a chokepoint is the only
+  one of the three that makes that impossible rather than merely discouraged. Its extra cost is small here precisely
+  because the repo is nearly empty. I'd steer away from B: it's the literal request, but it would put a value the client
+  invented into a record meant to prove who accessed what.
+
+  Separately — this repo has no tooling at all ([38;5;153mpackage.json[39m has no dependencies and no [38;5;153mscripts[39m; no test runner, linter,
+  or formatter). Tooling is cheapest to add before the code exists, and for compliance code the tests are part of the
+  argument that it works.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Approach [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhich tooling should the spec require from the start?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;114m[✔][39m [38;5;153mUnit tests[39m
+         [38;5;246mTest runner, layout, and a first passing test. Highest value here — compliance logic needs evidence it works.[39m
+  [38;5;246m2.[39m [ ] Lint + auto-format
+         [38;5;246mESLint + Prettier, the stack standard. Cheap now, annoying to retrofit.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+         [38;5;246mBrowser-level test of the actual login flow. Heavier setup; catches the wiring unit tests miss.[39m
+  [38;5;246m4.[39m [ ] None — keep it dependency-free
+         [38;5;246mStay at zero dependencies as the repo is today. Fastest, but the compliance path ships untested.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

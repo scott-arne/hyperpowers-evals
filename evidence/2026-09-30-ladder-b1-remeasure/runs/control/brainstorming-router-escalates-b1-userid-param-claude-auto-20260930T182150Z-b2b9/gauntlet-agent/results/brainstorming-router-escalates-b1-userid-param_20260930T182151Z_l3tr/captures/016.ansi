@@ -1,0 +1,40 @@
+  The return value stays exactly as it is. I considered returning the record instead, but the store is the delivery
+  mechanism and changing the return shape would be a breaking change bought for nothing.
+
+  [38;5;153mindex.html[39m gains one line: [38;5;153m<script src="identity.js"></script>[39m above the existing script tag.
+
+  [1mSection 3 — Failure behavior[0m
+
+  [38;5;153msessionStorage[39m throws in real conditions — Safari private browsing, storage disabled by policy, quota exhaustion.
+  Since attribution is non-critical, [1ma storage failure must never break login.[0m [38;5;153mset[39m catches, warns, and returns [38;5;153mfalse[39m;
+  login succeeds regardless.
+
+  [38;5;153mget[39m returns [38;5;153mnull[39m when nothing is stored [3mand[0m when the stored JSON is corrupt (clearing the bad key on its way out).
+  Every consumer therefore has to handle [38;5;153mnull[39m. With attribution-only scope that branch is trivial — the form submits
+  unattributed — but it exists at every call site, and future forms need to know that.
+
+  [1mSection 4 — Testing, and a tooling question[0m
+
+  The project has no test runner, no lint, and no format config. Since [38;5;153midentity.js[39m will be loadable in Node with a fake
+  storage, unit tests are cheap here: Node's built-in [38;5;153mnode:test[39m needs zero dependencies and no config.
+
+  This is the cheapest moment to decide — before any code exists.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Design [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhat tooling should the spec require from the start?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mUnit tests (node:test)[39m
+         [38;5;246mNode's built-in runner with a fake-storage stub. Zero dependencies, no config, covers the store's get/set/clear
+[39m         [38;5;246mand its failure paths.[39m
+  [38;5;246m2.[39m [ ] Lint + format
+         [38;5;246mAdd ESLint and Prettier as dev dependencies. Catches mistakes early but introduces the project's first [39m
+         [38;5;246mnode_modules.[39m
+  [38;5;246m3.[39m [ ] Nothing, keep it bare
+         [38;5;246mNo test runner, no lint. Fastest to ship; the storage failure paths go unverified.[39m
+  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  Your answers pinned down most of the design. The one axis genuinely still open is [1mthe stored data model[0m — what
+  actually sits in [38;5;153mlocalStorage[39m — and it's the choice the rest of the module is written around.
+
+  [1mApproach A — bounded append-only event log.[0m One key holding an array of event records, newest appended, capped at a
+  fixed count (say 500) with oldest dropped on overflow. [3mTrade-off:[0m you get real history — sequence, timestamps, repeat
+  logins — and the shape is uniform for whatever future forms push into it. Costs a cap you have to pick, and the whole
+  array is read and rewritten on each append (fine at this size, not at 50k events). [3mComplexity: moderate.[0m
+
+  [1mApproach B — last-state-per-event record.[0m An object keyed by event name, each holding only the most recent occurrence
+  plus a count. [3mTrade-off:[0m tiny, can never grow unbounded, and no retention policy to design. But it answers only "who
+  logged in most recently, how many times" — the sequence is gone, so you can't ever ask "did this user log in before
+  that failure." [3mComplexity: trivial.[0m
+
+  [1mApproach C — session log plus durable rollup.[0m Two tiers: a full event list scoped to the current session, and a small
+  persistent summary that survives it. [3mTrade-off:[0m bounded growth with detail where you usually want it. But it's two
+  storage shapes, two lifecycles, and two sets of tests for a subsystem whose first consumer is one login form.
+  [3mComplexity: high.[0m
+
+  [1mRecommendation: A.[0m "Track who logged in" is a question about history, and B can't answer it — the moment you want to
+  know [3mwhen[0m or [3mhow often[0m, B needs replacing rather than extending. C is real engineering, but it's buying a problem you
+  don't have yet at triple the surface area. A's cap is the one thing you have to choose, and choosing it wrong is a
+  one-constant fix.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Data model [39m[49m
+
+[1m[38;5;231mWhich data model should the tracker store?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: bounded event log[39m
+     [38;5;246mAppend-only array of events, capped at N with oldest dropped. Real history, uniform shape for future forms. [39m
+     [38;5;246mRecommended.[39m
+  [38;5;246m2.[39m B: last-state record
+     [38;5;246mMost recent occurrence per event name, plus a count. Tiny and unbounded-growth-proof, but no sequence or history.[39m
+  [38;5;246m3.[39m C: session + rollup
+     [38;5;246mFull log for the current session plus a durable summary. Detail where you want it, at roughly triple the surface [39m
+     [38;5;246marea.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  identity.
+
+  [1mData flow.[0m [38;5;153mlogin()[39m gains a [38;5;153muserId[39m in its return value — [38;5;153m{ success, user, userId }[39m — not a parameter. Since the
+  function is still a stub with no network call, it fabricates the id behind a clearly-marked placeholder comment naming
+  [38;5;153mAPI_ENDPOINT[39m as where the real value will come from. The submit handler in [38;5;153mapp.js[39m calls
+  [38;5;153mUserTracking.setUserId(result.userId)[39m after a successful login. [38;5;153mindex.html[39m gets a [38;5;153m<script src="user-tracking.js">[39m
+  before [38;5;153mapp.js[39m, since the global must exist first. A future form repeats only that script tag and calls [38;5;153mgetUserId()[39m.
+
+  [1mError handling.[0m Two real failure modes. [38;5;153msessionStorage[39m can throw — disabled cookies, Safari private mode, quota — so
+  both accessors wrap access in try/catch and degrade to "no id" rather than breaking the login flow; tracking must
+  never be able to fail a login. And "no id yet" is a normal state, not an error: before login and after a failed login,
+  [38;5;153mgetUserId()[39m returns [38;5;153mnull[39m, and consumers log the event with the id field omitted rather than substituting a
+  placeholder, so absent attribution is visibly absent in the data instead of silently wrong.
+
+  [1mTesting.[0m Per your tooling answer, no automated tests. Verification is manual in the browser: submit the form, confirm
+  the id appears in [38;5;153msessionStorage[39m and in the logged result; reload and confirm it survives; open a new tab and confirm
+  it starts clean.
+
+  [1mNot in scope[0m, stated so it doesn't drift in later: no logout, no auth or gating, no real network call, no change to
+  [38;5;153mvalidateForm[39m, and nothing touching the CommonJS code in [38;5;153msrc/[39m.
+
+  One assumption worth naming: I'm treating "other forms" as additional pages in this same static site loading their own
+  script tags. If any of them will instead be a different app or a different origin, [38;5;153msessionStorage[39m won't reach them
+  and this design needs revisiting.
+
+  Does this look right? If so I'll write it up as a spec for you to review before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 3m 1s · done 10:51 AM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mlooks good, go ahead[39m
+[49m
+[38;5;231m⏺[39m Writing the spec.
+
+[38;5;174m✽[39m [38;5;174mCrystallizing… [38;5;246m(32s · ↓[39m [38;5;246m1.8k tokens)[39m
+[38;5;246m  ⎿  Tip: Use Plan Mode to prepare for a complex request before making changes. Press shift+tab twice to enable.[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

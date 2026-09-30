@@ -1,0 +1,40 @@
+  One thing blocks me from just writing it. Here's the current flow:
+
+  [34mfunction[39m [33mlogin[39m(username, password) { ... [34mreturn[39m { [36msuccess[39m: [34mtrue[39m, [36muser[39m: username }; }
+
+  and the only caller, the submit handler, reads just [38;5;153m#username[39m and [38;5;153m#password[39m from the form. [1mThere is no userId anywhere
+[0m  [1mat the call site to pass in.[0m So "add a userId parameter" has a few materially different readings, and they don't cost
+  the same later:
+
+  - [1muserId comes back from login, not into it[0m — the server identifies the user; the form can't know an ID before
+    authenticating. Tracking then reads [38;5;153mresult.userId[39m. Costs: no new parameter at all, so it's not literally what you
+    asked for. Rules out nothing; this is the cheapest to change later.
+  - [1mCaller supplies it from existing context[0m — something outside the form (a tenant, a device, a prior session) already
+    holds the ID and threads it in. Costs: I need to know where that value lives, and the submit handler changes too.
+    Locks in a parameter order other callers would depend on.
+  - [1mAdd the parameter as a stub now[0m — [38;5;153mlogin(username, password, userId)[39m, callers pass [38;5;153mnull[39m until a real source exists.
+    Costs: an unused parameter in the signature and a dead argument at the one call site. Cheap to add, mildly annoying
+    to remove once the real source arrives.
+
+  My recommendation is the first. At the moment [38;5;153mlogin[39m is called, the user is by definition not yet identified — the ID
+  is an [3moutput[0m of authentication, not an input to it. Threading in an ID the caller made up would let you "track" a
+  value the server never confirmed, which defeats the point of tracking who logged in.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[2m│[0m [1m[38;5;231mWhere should userId come from, given the login form has no ID available before authentication?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn it from login (Recommended)[39m
+     [38;5;246mlogin() returns { success, user, userId } and the handler logs result.userId. No new parameter — the ID is an [39m
+     [38;5;246moutput of authenticating, not an input.[39m
+  [38;5;246m2.[39m Caller passes existing ID
+     [38;5;246mSome context outside the form already holds a userId and threads it in. Tell me where that value lives and I'll [39m
+     [38;5;246mwire it through the submit handler.[39m
+  [38;5;246m3.[39m Add parameter as a stub
+     [38;5;246mLiterally add the third parameter now; the call site passes null until a real source exists. Matches your request [39m
+     [38;5;246mas written.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

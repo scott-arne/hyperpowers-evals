@@ -1,0 +1,40 @@
+  an existing function looks like a one-line edit, but the request names an outcome — "track who logged in" — that this
+  repo has no structure for, and the parameter itself has no source: nothing in the current flow knows a [38;5;153muserId[39m at the
+  point [38;5;153mlogin()[39m is called. So the real work isn't the signature, it's deciding where an ID comes from and where the
+  tracking goes. I'd rather ask two or three questions than guess and hand you a parameter that's always [38;5;153mundefined[39m.
+
+  First question, and it's the one that determines everything downstream.
+
+  [1mThe fork:[0m a user ID is either something the client already has before login, or something the server assigns as a
+  [3mresult[0m of login. Those aren't the same feature.
+
+  - [1mCaller passes it in[0m — matches your request literally; cheap; but nothing in this app can supply a real ID today, so
+    the caller would be inventing one (a generated client/session ID). That's a session identifier, not a user identity
+    — honest, but it can't answer "who."
+  - [1mServer returns it[0m — [38;5;153mlogin()[39m keeps its two parameters and its [3mreturn[0m grows a [38;5;153muserId[39m from the auth response. Answers
+    "who" truthfully, needs the real API call to exist (currently stubbed). Hard to change later: it's the response
+    contract.
+  - [1mBoth[0m — a client-generated correlation ID passed in, reconciled with the real user ID that comes back. Most capable,
+    most machinery; only worth it if you're correlating pre- and post-auth events.
+
+  [1mMy recommendation: server returns it.[0m "Track who logged in" is a question about identity, and identity is what
+  authentication establishes — it isn't known before. A [38;5;153muserId[39m parameter supplied by the caller would be tracking who
+  [3mclaimed[0m to log in, which you already have in [38;5;153musername[39m.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer returns it (Recommended)[39m
+     [38;5;246mlogin() keeps (username, password); the auth response carries userId, and login() returns it. Truthful identity, [39m
+     [38;5;246mbut depends on the real API call that's currently stubbed.[39m
+  [38;5;246m2.[39m Caller passes it in
+     [38;5;246mlogin(username, password, userId) as literally requested. Caller must generate it — effectively a client/session [39m
+     [38;5;246mID, not a verified user identity.[39m
+  [38;5;246m3.[39m Both
+     [38;5;246mClient-generated correlation ID in, real userId back, reconciled. Most capable, most machinery.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

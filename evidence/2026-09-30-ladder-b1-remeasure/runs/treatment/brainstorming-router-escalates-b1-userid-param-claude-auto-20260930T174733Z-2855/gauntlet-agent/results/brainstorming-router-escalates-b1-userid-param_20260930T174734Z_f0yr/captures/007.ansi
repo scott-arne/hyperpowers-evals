@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m [1mPath: bounded.[0m The flow is already here — [38;5;153mlogin()[39m at [38;5;153mapp.js:4[39m with one caller at [38;5;153mapp.js:23[39m — so I'll present a short
+  design in chat rather than write a spec. Before I can do that, one question needs answering.
+
+  [1mThe fork:[0m you asked for [38;5;153muserId[39m as a [3mparameter[0m, but the submit handler at [38;5;153mapp.js:19-23[39m has no user ID to pass — it only
+  has the username and password typed into the form. Login is the thing that establishes identity; an ID is normally
+  something it [3mreturns[0m, not something it receives. So "track who logged in" could mean two different changes, and they
+  differ in who has to change:
+
+  - [1m[38;5;153muserId[39m as a new parameter[0m (literally what you asked) — [38;5;153mlogin(userId, username, password)[39m. Buys you exactly the
+    signature you described. Costs: every caller must now produce a user ID [3mbefore[0m authenticating, and today's only
+    caller can't; I'd have to invent a source (a form field, a generated client-side ID, a lookup). It also changes an
+    interface — anything outside this file calling [38;5;153mlogin()[39m breaks. Cheap to change later only if callers stay at one.
+  - [1m[38;5;153muserId[39m on the return value[0m — [38;5;153mlogin()[39m keeps [38;5;153m(username, password)[39m and returns [38;5;153m{ success, user, userId }[39m. Buys you the
+    tracking without touching any caller's arguments. Costs: the ID has to come from the auth response, which is a stub
+    here ([38;5;153mapp.js:6[39m), so it'd be a placeholder until the real POST exists. Additive, so nothing breaks.
+  - [1mA separate tracking call[0m — leave [38;5;153mlogin()[39m alone, log the event alongside it in the handler. Buys separation of auth
+    from telemetry. Costs: a second thing to keep in sync; probably overkill at this size.
+
+  [1mMy recommendation:[0m the return value. "Track who logged in" is satisfied by login [3mreporting[0m the identity, and it's the
+  only option where the existing caller keeps working unchanged. If you specifically need the parameter — say, a
+  client-generated correlation/session ID that exists before auth — that's a legitimate design, I just want to hear it
+  stated rather than assume it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId shape [39m[49m
+
+[1m[38;5;231mWhere should userId live on the login function?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn it (Recommended)[39m
+     [38;5;246mlogin(username, password) returns { success, user, userId }. No caller changes; ID sourced from the auth response [39m
+     [38;5;246m(placeholder while it's a stub).[39m
+  [38;5;246m2.[39m Parameter, as asked
+     [38;5;246mlogin(userId, username, password). I'll need you to tell me where the caller gets the ID from, since the form has [39m
+     [38;5;246mno such field today.[39m
+  [38;5;246m3.[39m Separate tracking call
+     [38;5;246mLeave login() untouched; record the login event next to it in the submit handler.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

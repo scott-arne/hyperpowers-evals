@@ -1,0 +1,40 @@
+  What's here today: [38;5;153mlogin()[39m is a stub that never calls [38;5;153mAPI_ENDPOINT[39m, returns a hardcoded [38;5;153m{ success: true }[39m, and the app
+  is a single [38;5;153mapp.js[39m with no module system, no build step, and one HTML page.
+
+  One question at a time, starting with the one everything else hangs off.
+
+  [1mThe fork:[0m a real account ID has to be [3missued[0m by something that knows the account exists. Right now nothing in this
+  repo does — [38;5;153mlogin()[39m fabricates success without a network call. So either the authentication becomes real as part of
+  this work, or the ID gets faked locally, and those two lead to very different designs.
+
+  - [1mReal auth response is in scope[0m — [38;5;153mlogin()[39m actually POSTs to [38;5;153mAPI_ENDPOINT[39m and the server returns the account ID. Buys
+    a genuine identity that other forms can trust. Costs: real network code, error/failure paths, and a backend contract
+    you'd have to pin down. This is the only option where "identify the actual user account" is literally true.
+  - [1mStub keeps faking it, shaped like the real thing[0m — [38;5;153mlogin()[39m stays offline but returns a synthesized ID through the
+    same interface a real response would use. Buys the full client-side design (storage, accessor, other forms) now,
+    with a one-function swap later. Costs: the ID is not real until the backend lands. Cheap to change.
+  - [1mUsername [3mis[0;1m the identity[0m — no separate ID; persist the username and treat it as the account key. Buys the least
+    machinery. Costs: breaks the day someone renames an account, and migrating off a username key later means touching
+    every stored record. Expensive to reverse.
+
+  [1mMy recommendation: the stubbed-but-real-shaped option.[0m It lets us design the persistence and cross-app access properly
+  — which is the part you said matters — without inventing a backend contract in a repo whose login has never made a
+  network call. The swap to real auth later touches one function.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID source [39m[49m
+
+[1m[38;5;231mWhere does the real account ID come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mStub, real-shaped (Recommended)[39m
+     [38;5;246mlogin() stays offline but returns a synthesized ID through the interface a real auth response would use. Swap to [39m
+     [38;5;246mreal auth later in one function.[39m
+  [38;5;246m2.[39m Make auth real now
+     [38;5;246mlogin() POSTs to API_ENDPOINT and uses the server's account ID. Requires pinning down the backend contract and [39m
+     [38;5;246merror paths.[39m
+  [38;5;246m3.[39m Use username as identity
+     [38;5;246mNo separate ID. Persist and key off the username. Least machinery, but painful to migrate away from later.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

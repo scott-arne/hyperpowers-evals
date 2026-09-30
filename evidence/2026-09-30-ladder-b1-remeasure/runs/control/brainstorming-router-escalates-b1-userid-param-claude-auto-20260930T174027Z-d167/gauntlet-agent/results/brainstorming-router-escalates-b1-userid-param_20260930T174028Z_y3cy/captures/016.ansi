@@ -1,0 +1,40 @@
+  [1mEvery access is wrapped.[0m Touching [38;5;153mwindow.localStorage[39m can throw outright — [38;5;153mSecurityError[39m when a browser or embedded
+  webview blocks storage, quota errors on write — so [38;5;153msession.js[39m guards each call rather than feature-detecting once at
+  load. Availability isn't a stable property; a write can fail on a browser where a read just succeeded.
+
+  [1mFailure policy differs by direction, deliberately:[0m
+
+  - [38;5;153mgetSession()[39m [1mnever throws[0m. Anything it can't produce a valid record from — storage blocked, key absent, parse
+    failure, wrong shape — returns [38;5;153mnull[39m, i.e. "nobody is logged in." That's the safe reading of a failed identity read,
+    and it means no caller ever needs a try/catch.
+  - [38;5;153msetSession()[39m [1mreturns a boolean[0m for whether the write landed, and the submit handler warns to the console when it's
+    [38;5;153mfalse[39m. This is the case I don't want swallowed: if the write fails, the user is logged in on this page and will be a
+    stranger again after a reload. Silently ignoring that produces a bug report ("it keeps forgetting me") with nothing
+    in the logs to explain it.
+
+  [1mCorrupt data self-heals.[0m If the key holds unparseable JSON, or valid JSON of the wrong shape (a bare string, [38;5;153mnull[39m, an
+  object missing [38;5;153muserId[39m), [38;5;153mgetSession()[39m clears the key and returns [38;5;153mnull[39m. The alternative — leave it and keep failing —
+  means one bad write bricks the app for that user on every subsequent load, with no UI to recover. A record is valid
+  only if [38;5;153muserId[39m and [38;5;153musername[39m are both non-empty strings.
+
+  [1mNothing is cached in memory.[0m Every read goes to storage. This costs nothing at this scale and buys the cross-tab case
+  for free: log out in one tab, and the next read in another tab already sees it gone. That's specifically why I'm
+  comfortable with you having ruled out the subscription mechanism — without a cache, there's no stale copy for a
+  subscription to correct. It only falls short for a page sitting idle that never reads again, which no current code
+  does.
+
+  [1mOne thing that isn't an edge case — it's a constraint the spec will state outright:[0m this stored userId is [1mnot [0m
+  [1mauthentication[0m. [38;5;153mlocalStorage[39m is fully editable by the user; anyone can set [38;5;153muserId[39m to any value. It's fine as "who this
+  browser thinks it is" for prefilling and display. The natural next step once a backend appears — send the stored
+  userId up and trust it to identify the user — would be an authentication bypass. The real backend must derive identity
+  from a credential it issued and verifies, never from this field. I'd rather have that written down now than
+  discovered later, since the whole point of this design is that other code will start depending on the value.
+
+  Does this section look right?
+
+[38;5;246m✻[39m [38;5;246mChurned for 29s · done 10:49 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

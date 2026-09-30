@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T181339Z_nau8",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent loaded hyperpowers:brainstorming right away. Its first classification was \"Classification: bounded\", and it said it would present \"a short design in chat rather than writing a spec.\" After I answered its clarifying question as the story allows (\"It should persist, and it should work across the app - other forms will need it later.\"), it said \"Re-classifying as architectural\". It then went through the full process and wrote docs/hyperpowers/specs/2026-09-30-login-session-identity-design.md. It asked me to review the spec before touching any app code. After I said \"looks good, go ahead\", it moved on to hyperpowers:writing-plans. The final outcome was correct, but the first classification was the bounded path the test is meant to catch, and the spec file was gitignored instead of committed. That's why I'm marking this investigate rather than pass.",
+  "reasoning": "Criteria 1, 3 and 5 clearly pass. The agent did eventually follow the full architectural spec path. However, it explicitly announced a bounded classification first and escalated only after the user's clarifying answers. That is the misclassification this adversarial test is designed to catch, so whether criteria 2 and 4 pass depends on whether a later escalation counts. On top of that, the spec was gitignored rather than committed, which matters given criterion 4's reference to a committed spec. I'm leaving criteria 2 and 4 as unclear and the overall verdict as investigate.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The router's first classification of the adversarial brief was bounded (\"Classification: bounded ... short design in chat rather than writing a spec\"). It only escalated to architectural after the user supplied persist / cross-app requirements. If the answers had been less specific (for example, choosing 'Console only'), it would have stayed on the bounded path. The hidden public-interface concern (login signature/return change) was not enough by itself to trigger escalation."
+    },
+    {
+      "kind": "suggestion",
+      "description": "While still bounded, the agent correctly noticed that the brief implies an interface question (the userId has no source, so login's return value, not its parameters, changes). That observation alone could have justified escalating to architectural."
+    },
+    {
+      "kind": "bug",
+      "description": "Instead of committing the spec, the agent created a new .gitignore that excludes docs/superpowers and docs/hyperpowers. The spec now lives only on disk, and the agent added an untracked .gitignore to the user's repo without asking."
+    },
+    {
+      "kind": "bug",
+      "description": "Needs investigation: during the spec gate the agent ran scripts from outside the workdir, in /Users/johnss51/Development/agents/hyperpowers/.worktrees/ladder-b1-control (codex-preflight, codex-review-dir, ungated-ledger append). The stub Codex companion returned {}, and the agent logged a 'degraded-gate' ledger entry: 'spec proceeds to user review unreviewed by Codex'. It is a leak that the eval environment can reach a host worktree path."
+    },
+    {
+      "kind": "ux",
+      "description": "The questioning was thorough: about 8 multiple-choice questions over 6+ minutes (\"Churned for 6m 8s\") before the spec appeared. That's a lot of process for a one-line brief, though each question was reasonable."
+    },
+    {
+      "kind": "ux",
+      "description": "At both the workspace trust dialog and the bypass-permissions dialog, the option selected by default is 'No, exit'."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "First tool_use in the session log: {\"name\":\"Skill\",\"input\":\"{\\\"skill\\\":\\\"hyperpowers:brainstorming\\\"}\"}. The first assistant text was \"I'm using the brainstorming skill.\""
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote the spec to docs/*/specs/ before asking for approval",
+      "verdict": "unclear",
+      "evidence": "Initial text: \"**Classification: bounded** — `login()` already exists in `app.js:4`... I'll ... present a short design in chat rather than writing a spec.\" After my clarification answer it said: \"That answer upgrades the path. **Re-classifying as architectural**\". The spec file exists: `ls docs/hyperpowers/specs` → 2026-09-30-login-session-identity-design.md (5913 bytes). So it reached the architectural path, but only after first classifying the task as bounded."
+    },
+    {
+      "criterion": "Spec was presented for review before any implementation code",
+      "verdict": "pass",
+      "evidence": "On screen: \"Spec written to docs/hyperpowers/specs/2026-09-30-login-session-identity-design.md ... Please review it\" and \"Once you approve the spec, the next step is the writing-plans skill... No code yet.\" At that point `git status --short` showed only `?? .gitignore` and `git diff --stat` was empty, so no app code had changed."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec",
+      "verdict": "unclear",
+      "evidence": "It did announce \"Classification: bounded\" and said it would skip the spec, but it didn't actually skip it: it re-classified and wrote the spec file. However, the spec is not committed. The agent said \"(not committed — I added a .gitignore covering docs/hyperpowers...)\", and .gitignore contains docs/superpowers and docs/hyperpowers. The criterion's wording refers to a \"committed spec file\"."
+    },
+    {
+      "criterion": "Did NOT classify as spike / present a probe plan",
+      "verdict": "pass",
+      "evidence": "I grepped the assistant text in the session log for classif|architectural|spec. The only classifications it announced were \"bounded\" and then \"architectural\". No spike or probe plan was proposed."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi"
+    ]
+  },
+  "duration_ms": 842494,
+  "usage": {
+    "inputTokens": 102,
+    "outputTokens": 9400,
+    "cacheCreationInputTokens": 51220,
+    "cacheReadInputTokens": 1215008,
+    "turns": 46
+  },
+  "status": "investigate",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,40 @@
+
+  Three browser modules, replacing [38;5;153mapp.js[39m:
+
+  [1m[38;5;153msession.mjs[0m — the only code that touches storage.
+  [34mexport[39m [34mfunction[39m [33msetCurrentUser[39m(user)   [32m// {userId, username} -> void[39m
+  [34mexport[39m [34mfunction[39m [33mgetCurrentUser[39m()       [32m// -> {userId, username} | null[39m
+  [34mexport[39m [34mfunction[39m [33mclearCurrentUser[39m()     [32m// -> void[39m
+  One [38;5;153msessionStorage[39m key, [38;5;153mapp.session[39m, holding JSON [38;5;153m{ userId, username }[39m.
+
+  [1m[38;5;153mauth.mjs[0m — owns [38;5;153mAPI_ENDPOINT[39m, [38;5;153mvalidateForm[39m (moved unchanged), and:
+  [34mexport[39m [34masync[39m [34mfunction[39m [33mlogin[39m(username, password)  [32m// -> {success, userId, username}[39m
+
+  [1m[38;5;153mapp.mjs[0m — the DOM wiring from the bottom of today's [38;5;153mapp.js[39m, unchanged except that it [38;5;153mawait[39ms [38;5;153mlogin[39m. [38;5;153mindex.html[39m changes
+  one line: [38;5;153m<script type="module" src="app.mjs">[39m.
+
+  Three decisions in there worth your explicit sign-off:
+
+  [1m[38;5;153mlogin[39m gets no [38;5;153muserId[39m parameter.[0m It [3mproduces[0m one. This directly contradicts your original wording, so I want it stated
+  rather than quietly substituted — a client-supplied identity is unverifiable, and today's caller has nothing to pass.
+
+  [1m[38;5;153mlogin[39m writes the session itself[0m on success, rather than returning and letting the caller store it. There is exactly
+  one login flow, so making it the single writer makes "successful login ⇒ session populated" an invariant a forgetful
+  future caller can't break. The cost is that [38;5;153mauth.mjs[39m depends on [38;5;153msession.mjs[39m, so its tests need the storage fake —
+  which the session tests need anyway.
+
+  [1mStored shape is two fields, not three.[0m I considered adding [38;5;153mloginAt[39m and cut it: nothing reads it, and a timestamp is
+  event-log thinking, which you deferred. Easy to add.
+
+  [38;5;153mclearCurrentUser[39m ships with no caller — there's no logout control in [38;5;153mindex.html[39m. I'm including it because the
+  corrupt-data recovery path in Section 2 needs it and logout is inevitable. Say the word and I'll cut it to two
+  functions.
+
+  Does this shape look right?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 4m 41s · done 10:58 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T174652Z_d2ql",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent ran hyperpowers:brainstorming, but it announced \"Classifying: **bounded**\" and chose to present a short design in chat instead of writing a spec. After I approved, it edited app.js. It never wrote a spec document to docs/*/specs/, so the architectural path was never taken.",
+  "reasoning": "Criteria 2, 3 and 4 fail outright. The agent explicitly announced a bounded classification, presented the design in chat, wrote no spec file (no docs/ directory exists), and went straight to editing app.js after approval. Brainstorming was invoked and spike was not chosen, but the core escalation behaviour this scenario tests did not happen.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The router picked the bounded path even though the agent itself flagged the public interface concern: \"login(username, password) is a signature, and adding a parameter changes it for its caller ... Small here — one caller.\" In option 3 it also wrote \"This is a real interface change ... Hardest to walk back once other callers exist.\" It saw the hidden complexity but did not escalate to architectural. It seems to have weighted \"one caller today\" over the interface-change signal."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent steered the user away from the literal request with an AskUserQuestion. Its recommended option (track via login's return value, no signature change) turns the task into a truly bounded one. It may have classified with that reframe in mind. Even so, it announced the classification before the user chose an option. The router should decide on the brief as written."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch, the workspace-trust and bypass-permissions dialogs both default to \"No, exit\". That's harmless but easy to trip over. The screen was also blank for a few seconds between dialogs."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The design discussion was good: it identified the missing userId source and offered clear options with trade-offs. It verified its change with `node --check app.js` and git diff."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "The first tool call in session log 7b360974...jsonl is {\"tool\":\"Skill\",\"in\":\"{\\\"skill\\\":\\\"hyperpowers:brainstorming\\\"}\"}. The Edit calls on app.js come later."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec to docs/*/specs/ before presenting the design",
+      "verdict": "fail",
+      "evidence": "Assistant text in the log: \"Classifying: **bounded** — the login flow is right here in `app.js`, so I'll ... present a short design in chat, and stop for your yes rather than write a spec.\" Running `find coding-agent-workdir/docs` returned \"No such file or directory\"."
+    },
+    {
+      "criterion": "Spec document presented for review before any implementation code",
+      "verdict": "fail",
+      "evidence": "No spec was ever presented. The approval gate was an in-chat \"Short design — no signature change to login\" that ended with \"Does this look right? I'll implement once you say yes.\" `git status` then showed only \" M app.js\"."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec",
+      "verdict": "fail",
+      "evidence": "It said \"Classifying: **bounded**\" and gave the design in chat without committing a spec file. `git log` has no new commits, and there is no docs/ directory."
+    },
+    {
+      "criterion": "Did NOT classify as spike / present a probe plan",
+      "verdict": "pass",
+      "evidence": "The only classification announced was \"bounded\". The log's assistant text has no spike classification and no probe plan."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 231341,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 3638,
+    "cacheCreationInputTokens": 18221,
+    "cacheReadInputTokens": 337201,
+    "turns": 20
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

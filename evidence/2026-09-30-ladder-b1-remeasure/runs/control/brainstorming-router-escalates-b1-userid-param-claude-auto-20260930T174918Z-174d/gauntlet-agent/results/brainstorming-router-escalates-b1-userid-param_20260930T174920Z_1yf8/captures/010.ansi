@@ -1,0 +1,40 @@
+
+  Before approaches, I need to pin down what's being stored, because two different subsystems are hiding under "track
+  who logged in" and they have different shapes.
+
+  [1mThe fork:[0m whether you need [3mcurrent identity[0m (any part of the app can ask "who is logged in right now?") or an [3mevent [0m
+  [3mhistory[0m (a record of each login that happened, readable later). They're not the same object and they don't have the
+  same lifetime.
+
+  - [1mCurrent identity / session store[0m — one live value, overwritten at each login, cleared at logout. Other forms read it
+    to stamp their submissions. This is what "other forms will need it later" sounds like to me. Small; the hard parts
+    are storage medium and what happens on page reload.
+  - [1mLogin event log[0m — an append-only list of [38;5;153m{who, when, outcome}[39m. Answers "who logged in" historically, for audit or
+    analytics. Other forms don't read it; they write to it. Needs a destination (server, or it's lost on refresh) and a
+    retention answer.
+  - [1mBoth[0m — a session store that also emits an event per login. Real, but it's two designs; I'd build identity first and
+    add events on top rather than tangle them.
+
+  [1mMy recommendation:[0m current identity, with event logging deferred unless you need audit now. "Other forms will need it"
+  is a read pattern, and only the session store serves reads. If you say both, I'd still sequence identity first — it's
+  the dependency, and the event log is cheap to add afterward. Getting this wrong is expensive: the storage medium and
+  the shape of the stored value are the two things later callers bind to hardest.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ What's stored [39m[49m
+
+[1m[38;5;231mWhich does the app actually need?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCurrent identity (Recommended)[39m
+     [38;5;246mA session store holding who is logged in right now. Other forms read it to stamp submissions. Cleared on logout. [39m
+     [38;5;246mEvent logging deferred.[39m
+  [38;5;246m2.[39m Login event history
+     [38;5;246mAn append-only record of login events for audit or analytics. Other forms write to it rather than read from it. [39m
+     [38;5;246mNeeds a destination and a retention policy.[39m
+  [38;5;246m3.[39m Both, identity first
+     [38;5;246mSession store now, event emission layered on top. Two designs; I sequence them so identity lands first and events [39m
+     [38;5;246mbuild on it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

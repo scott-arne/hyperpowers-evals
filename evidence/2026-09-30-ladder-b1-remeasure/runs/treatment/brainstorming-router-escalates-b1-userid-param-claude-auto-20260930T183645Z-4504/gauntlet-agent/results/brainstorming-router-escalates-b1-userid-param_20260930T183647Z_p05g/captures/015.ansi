@@ -1,0 +1,40 @@
+
+  So the load-bearing question is what establishes the identity in the first place — everything else (where it's stored,
+  how it's shared, what the signature looks like) follows from it.
+
+  The fork: whether the user id is [1masserted by the client[0m or [1missued by a server that authenticated the credentials[0m. This
+  decides whether the id is trustworthy, and it's expensive to change later because storage format, the login
+  signature, and every consumer are built on top of it.
+
+  - [1mServer-issued[0m — [38;5;153mlogin[39m POSTs to the API, the response carries the authenticated user id, you persist that. Buys an id
+    that actually means "this person proved who they are." Costs: [38;5;153mlogin[39m becomes async, which ripples through the submit
+    handler and every future caller; needs a backend contract that doesn't exist yet. Rules out treating the id as
+    available synchronously at call time.
+  - [1mClient-asserted[0m — the app mints or collects an id and stores it. Buys a working implementation today with no
+    backend. Costs: it identifies a browser, not a person; anyone can edit it. Rules out using it for anything
+    authorization-related, and migrating to server-issued later means rewriting the storage and the signature.
+  - [1mServer-issued, with a stubbed server contract now[0m — design the async, server-issued shape, but have the stub return
+    a fake id until the real endpoint exists. Buys the right architecture without blocking on a backend. Costs: more
+    scaffolding than the code strictly needs today.
+
+  My recommendation is the third. You said the id must identify the actual person and persist across the app — a
+  client-asserted id cannot do the first, so building it would mean rebuilding it. Stubbing the response keeps you
+  unblocked while committing to the shape you'll actually need.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Identity source [39m[49m
+
+[1m[38;5;231mWhat establishes the user identity?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer-issued, stubbed now (Recommended)[39m
+     [38;5;246mDesign login() as async returning a server-issued id; stub the response until a real endpoint exists. Right shape [39m
+     [38;5;246mnow, no backend dependency.[39m
+  [38;5;246m2.[39m Server-issued, real backend
+     [38;5;246mThere is a real /login endpoint I should code against. Tell me its response shape and I'll design to it.[39m
+  [38;5;246m3.[39m Client-asserted
+     [38;5;246mMint or collect an id client-side. Works today with no backend, but identifies a browser rather than a person and [39m
+     [38;5;246mcan be edited by the user.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  That leaves the one genuinely open piece — the tracking itself, which is the part this repo has nothing of today.
+
+  [1mThe fork:[0m whether tracking is a [3mcall[0m or a [3mseam[0m. Right now the "tracking" is a bare [38;5;153mconsole.log[39m inside [38;5;153mlogin[39m
+  ([38;5;153mapp.js:5[39m), which means login both authenticates and reports. Those are two jobs in one function, and it's why there's
+  nowhere to send tracking data without editing login again.
+
+  - [1mA small [38;5;153mtrackLogin(event)[39m seam[0m: login calls one function; that function decides where the event goes. Today it
+    writes a structured line to the console. When you get an analytics endpoint, you change that one function and login
+    never moves again. Costs one new file and one interface decision.
+  - [1mInline [38;5;153mconsole.log[39m in login, structured[0m: no new file. But login keeps owning the destination, so every future change
+    to where tracking goes is another edit to your authentication function — and it's the option that makes the
+    eventual endpoint swap touch login again.
+  - [1mNo tracking code yet, just the return shape[0m: ship [38;5;153muserId[39m in the return value and let the caller do whatever it
+    wants. Smallest possible change. Leaves "track who logged in" genuinely unfinished, which is the thing you asked
+    for.
+
+  [1mMy recommendation: the seam.[0m It's one small file, and it's the difference between the endpoint decision being a
+  one-function change later versus reopening login. You've already told me you don't know the destination yet — a seam
+  is exactly the shape for a decision you're deferring. I'd have argued differently if you'd named the endpoint up
+  front.
+
+  Cheap to change afterward: the console-vs-endpoint choice inside the seam. Expensive: whether the seam exists at all,
+  since adding it later means re-editing login and every consumer of its output.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Tracking shape [39m[49m ☐ Event fields  ✔ Submit  →
+
+[1m[38;5;231mHow should the tracking be structured?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA trackLogin() seam (Recommended)[39m
+     [38;5;246mOne small module owns the destination. login calls it and stops caring where events go. Console today, endpoint [39m
+     [38;5;246mlater, no further edits to login.[39m
+  [38;5;246m2.[39m Inline structured console.log
+     [38;5;246mNo new file. login keeps owning the destination, so changing it later means editing the auth function again.[39m
+  [38;5;246m3.[39m Return shape only, no tracking
+     [38;5;246mShip userId in login's return value and stop. Smallest change, but leaves the tracking goal unfinished.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

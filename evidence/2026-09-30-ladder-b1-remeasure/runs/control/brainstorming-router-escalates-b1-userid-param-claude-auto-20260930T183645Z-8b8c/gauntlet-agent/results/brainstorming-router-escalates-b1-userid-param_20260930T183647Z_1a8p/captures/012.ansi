@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Recorded: server-side audit, no client tracking module. That removes the second subsystem entirely.
+
+  One last requirements question, and it's the one where your word "persist" actually bites. Because the cookie is
+  httpOnly, [1mJavaScript cannot read it[0m — so after a page reload, the client knows it's authenticated (the browser will
+  send the cookie) but has no idea [3mwho[0m it is. The display copy has to come from somewhere.
+
+  [1mThe fork:[0m how the client re-learns the [38;5;153muserId[39m on a fresh page load. This sets what every future page's startup looks
+  like, so it's worth settling before I write the module.
+
+  - [1m[38;5;153m/me[39m call on page load[0m — the page asks the server who it is. The server is the single source of truth, so the UI can
+    never claim a stale identity. Costs one round trip per page load and a brief "loading" state that every future form
+    has to handle.
+  - [1mMirror the [38;5;153muserId[39m in [38;5;153mlocalStorage[0m — instant, no round trip, survives restart. Costs correctness: the cookie and the
+    mirror expire independently, so when the session lapses the page still cheerfully shows "logged in as alice" until
+    something fails. That desync is the classic bug here, and it's silent.
+  - [1mDon't persist the display copy[0m — [38;5;153muserId[39m is known only in the moment right after login; other pages show nothing
+    until the user acts. Cheapest by far, but it doesn't deliver "works across the app," which is the thing you added.
+
+  [1mMy recommendation: the first.[0m It's the only option where the displayed identity and the real session can't diverge,
+  and the round trip is the price of that guarantee. If the loading flash turns out to matter, the fix is caching the
+  [38;5;153m/me[39m result for the page's lifetime — which is a later optimization, not a different architecture.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Rehydration [39m[49m
+
+[1m[38;5;231mHow should the client re-learn the userId after a page reload?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153m/me call on page load (Recommended)[39m
+     [38;5;246mServer is single source of truth; UI can never show a stale identity. Costs a round trip and a loading state on [39m
+     [38;5;246mevery page.[39m
+  [38;5;246m2.[39m Mirror userId in localStorage
+     [38;5;246mInstant, no round trip. Cookie and mirror expire independently, so the UI silently shows a stale user after the [39m
+     [38;5;246msession lapses.[39m
+  [38;5;246m3.[39m Don't persist the display copy
+     [38;5;246muserId known only right after login. Cheapest, but does not deliver 'works across the app'.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

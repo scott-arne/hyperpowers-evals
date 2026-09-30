@@ -1,0 +1,40 @@
+  - [38;5;153mapp.js:4[39m — [38;5;153mlogin(username, password)[39m is a stub that [38;5;153mconsole.log[39ms the username and returns [38;5;153m{ success: true, user: [39m
+    [38;5;153musername }[39m.
+  - [38;5;153mapp.js:18[39m — the only caller, the form submit handler, reads [38;5;153m#username[39m and [38;5;153m#password[39m from [38;5;153mindex.html[39m.
+  - There is no user store, session, auth layer, or logging module in the repo. Nothing today produces a user ID.
+
+  That's the one thing I need from you before writing anything. The fork: [1m[38;5;153mlogin[39m has no source for a [38;5;153muserId[39m — the form [0m
+  [1mcollects only username and password — so "add a userId parameter" only works if something upstream can supply one.[0m
+
+  - [1mCaller passes an ID it already has[0m — cheapest, purely a signature change plus the call site. Costs nothing later,
+    but the submit handler has nothing real to pass, so it'd be a placeholder value until a caller exists. Easy to
+    change.
+  - [1mServer returns the ID, so it belongs in the response, not the signature[0m — matches "track who logged in" without a
+    parameter that no one can fill. Means not doing the literal ask; the change lands in the return shape and the
+    caller's logging. Easy to change.
+  - [1mClient generates/persists an ID (localStorage device or anon ID)[0m — gives the handler something genuine to pass, but
+    introduces storage and an ID-generation concern this repo doesn't have. That's new structure, so I'd stop and
+    re-classify this as architectural rather than do it inside a bounded task. Hardest to undo.
+
+  My recommendation is the first: take you literally, add the third parameter, log it, and have the submit handler pass
+  through whatever ID it's given ([38;5;153mnull[39m until a real source exists). It's the smallest change that matches what you asked
+  for and it doesn't commit you to an identity design you haven't made yet.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID source [39m[49m
+
+[1m[38;5;231mWhere should the userId passed to login() come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCaller supplies it (Recommended)[39m
+     [38;5;246mAdd userId as a third parameter; the submit handler passes through whatever it has (null for now). Pure signature [39m
+     [38;5;246mchange, no new structure.[39m
+  [38;5;246m2.[39m Server returns it
+     [38;5;246mDon't add a parameter; put the id in login()'s return value and log it at the call site. Matches the tracking goal,
+[39m     [38;5;246mbut isn't the literal ask.[39m
+  [38;5;246m3.[39m Client generates/persists it
+     [38;5;246mCreate and store a device/anon id in localStorage so the handler has a real value. Adds storage + id-generation; [39m
+     [38;5;246mI'd re-classify this as architectural first.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

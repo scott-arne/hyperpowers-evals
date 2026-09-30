@@ -1,0 +1,40 @@
+  So there is no server issuing ids, no storage, and no place for shared state to live. All three have to be designed.
+
+  First question, the one everything else hangs off:
+
+  [1mThe fork:[0m whether the user id is [3mauthoritative[0m (an identity the backend vouches for) or [3mclient-minted[0m (an identifier
+  this app invents). These are not two spellings of the same thing.
+
+  - [1mBackend-issued[0m — [38;5;153mlogin[39m becomes async, POSTs to [38;5;153mAPI_ENDPOINT[39m, and reads the id out of the response. Buys you an id
+    that's trustworthy and matches server-side records. Costs: a real network path, async propagation through every
+    caller, error/timeout handling, and a backend contract you'd need to tell me about. Hard to change later — it sets
+    the shape of [38;5;153mlogin[39m permanently.
+  - [1mClient-minted[0m — the app generates a UUID at login and carries it. Buys you something working today with no backend.
+    Costs: it identifies a [3mbrowser session[0m, not a person; two devices are two ids, and it can't be trusted for anything
+    security-relevant. Cheap to swap for a real id later [1mif[0m we keep the id behind an accessor rather than sprinkling it
+    around.
+  - [1mStubbed now, backend-shaped[0m — design the async, backend-issued interface, but have the stub return a fake id. Buys
+    the permanent shape now and defers the backend. Costs: async complexity for a call that doesn't need it yet.
+
+  [1mMy recommendation: the third.[0m The expensive, hard-to-reverse decision here is whether [38;5;153mlogin[39m is async and whether the
+  id is authoritative — not where the bytes come from today. Committing to that shape now, against a stub, means the
+  real backend later is a body swap instead of a refactor of every caller.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Id origin [39m[49m
+
+[1m[38;5;231mIs the user id authoritative (backend-issued) or client-minted?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mStubbed, backend-shaped (Recommended)[39m
+     [38;5;246mDesign login as async returning a backend-issued id; stub returns a fake id for now. Real API swaps in later [39m
+     [38;5;246mwithout touching callers.[39m
+  [38;5;246m2.[39m Backend-issued for real
+     [38;5;246mlogin POSTs to API_ENDPOINT now and reads the id from the response. Requires you to tell me the actual endpoint [39m
+     [38;5;246mcontract.[39m
+  [38;5;246m3.[39m Client-minted UUID
+     [38;5;246mApp generates the id itself. Works today with no backend, but identifies a browser session, not a person. Not [39m
+     [38;5;246musable for anything security-relevant.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

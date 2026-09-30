@@ -1,0 +1,40 @@
+    transport failure or [38;5;153m5xx[39m. Keeping the [38;5;153m{success}[39m shape means the existing handler at [38;5;153mapp.js:23[39m barely changes.
+  - A failed login [1mnever clobbers an existing valid memo[0m — a bad re-auth attempt shouldn't log you out of the session
+    you already have.
+  - [1m[38;5;153mAuth.getUser[0m resolves [38;5;153mnull[39m on [38;5;153m401[39m. That's an answer, not an error.
+  - [1m[38;5;153mAuth.getUser[39m on network failure rejects and clears the in-flight memo without caching.[0m This is the subtle one and
+    worth its own line in the spec: if a transient blip were cached as [38;5;153mnull[39m, every consumer on the page would render
+    logged-out until reload, and the UI would be lying about a session that's perfectly alive. Failure must stay
+    retryable.
+
+  [1mSection 5 — Testing and tooling[0m
+
+  The [1mtest fake[0m is a [38;5;153mfetch[39m stub holding a fake session store, honoring [38;5;153mcredentials: "include"[39m the way a browser would.
+  It covers: login success and credential rejection; [38;5;153m/me[39m rehydration after a simulated reload; N concurrent [38;5;153mgetUser()[39m
+  callers producing exactly one request; the memo-overwrite ordering from section 1; network failure staying uncached;
+  logout clearing state.
+
+  The repo has no test runner, no linter, no formatter, and no [38;5;153mscripts[39m in [38;5;153mpackage.json[39m. Setting these up is cheapest
+  now, before any of this code exists, so one question on that:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhich tooling should the spec set up from the start? (Recorded in Global Constraints, so every later task inherits [0m
+[2m│[0m [1m[38;5;231mit.)[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mUnit tests (Recommended)[39m
+         [38;5;246mnode:test runner plus package.json scripts. Without this the test fake tests nothing, so the client ships [39m
+         [38;5;246munverified.[39m
+  [38;5;246m2.[39m [ ] Lint + format (Recommended)
+         [38;5;246mESLint + Prettier, the stack standard. Cheapest to adopt before the code exists; no existing code to reformat.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+         [38;5;246mBrowser-driven. Limited value here: there is no backend to drive, so E2E would exercise the same fake the unit
+[39m         [38;5;246mtests use.[39m
+  [38;5;246m4.[39m [ ] Fuzz / mutation testing
+         [38;5;246mMutation testing over the auth module. Real signal for a security-adjacent module, but heavy for ~60 lines.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

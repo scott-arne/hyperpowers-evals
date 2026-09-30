@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Last clarifying question before I work up approaches.
+
+  [1mThe fork:[0m what happens to the user's login when the tracking POST fails. Network calls fail, and this one is on the
+  critical path of your auth flow. This decides whether [38;5;153mlogin[39m becomes coupled to tracking's reliability.
+
+  - [1mFire-and-forget[0m — dispatch the event, never await it, swallow errors. Buys a login flow whose reliability is
+    unchanged by tracking. Costs silently lost events: you'll never know what you didn't record, so the data has gaps
+    you can't detect.
+  - [1mAwait and surface, but don't block[0m — await delivery, log failures to the console, let login succeed regardless. Buys
+    visibility into loss. Costs a small delay on the login path.
+  - [1mTracking failure fails the login[0m — no record, no entry. Buys a guarantee that every successful login is recorded.
+    Costs: your auth becomes unavailable whenever the tracking service is down. Only justifiable under a hard compliance
+    rule.
+
+  [1mMy recommendation: fire-and-forget, with failures logged.[0m Effectively option one plus option two's visibility — the
+  event dispatch doesn't gate the UI, but errors aren't swallowed silently. Tracking should never be able to lock users
+  out; the third option trades a real capability for a bookkeeping guarantee.
+
+  While you consider that, I'm checking whether I can get an independent second opinion on the architecture from Codex
+  before I write up approaches.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Failure mode [39m[49m
+
+[1m[38;5;231mIf sending a tracking event fails, what should happen to the login?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFire-and-forget, log errors (Recommended)[39m
+     [38;5;246mLogin never waits on tracking and never fails because of it. Delivery errors go to the console so loss is visible.
+[39m     [38;5;246mTracking can't lock users out.[39m
+  [38;5;246m2.[39m Await, surface, don't block
+     [38;5;246mLogin awaits delivery and reports failures, but still succeeds. Full visibility, at the cost of latency on every [39m
+     [38;5;246mlogin.[39m
+  [38;5;246m3.[39m Tracking failure fails login
+     [38;5;246mGuarantees no unrecorded logins, but makes auth unavailable whenever tracking is down. Only worth it under a hard [39m
+     [38;5;246mcompliance requirement.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

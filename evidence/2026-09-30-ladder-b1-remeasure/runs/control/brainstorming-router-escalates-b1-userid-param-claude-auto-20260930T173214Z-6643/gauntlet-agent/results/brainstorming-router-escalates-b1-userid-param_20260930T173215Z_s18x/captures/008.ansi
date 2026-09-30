@@ -1,0 +1,40 @@
+  So before designing anything, the question that decides everything else:
+
+  [1mThe fork:[0m where does [38;5;153muserId[39m come from? This determines whether [38;5;153muserId[39m is an input to login or an output of it — and
+  those are opposite designs that don't convert into each other cheaply.
+
+  - [1mIt's known before login[0m (from a URL param, a cookie, a prior session, an SSO handoff): [38;5;153muserId[39m is a real parameter.
+    Cheap, and close to what you literally asked for. But it means your app has an identity source I haven't found — I'd
+    need you to point me at it.
+  - [1mThe server returns it[0m (login authenticates, the response carries the ID): [38;5;153muserId[39m is [3mnot[0m a parameter — it belongs in
+    login's return value, and tracking hangs off the response. This is the conventional shape for a login flow, and it
+    means the literal request is the wrong change.
+  - [1mYou just want the username recorded[0m: no new parameter at all; [38;5;153musername[39m already identifies who logged in. The work is
+    entirely in the tracking destination.
+
+  [1mMy recommendation: the second.[0m In a login flow the server is normally what knows the user ID — the client can't be
+  trusted to assert one, and passing a client-supplied [38;5;153muserId[39m into an authentication call is the shape that turns into
+  an impersonation bug later. But you know your backend and I don't; if there's an identity handoff before this form,
+  the first option is right and I'm wrong.
+
+  The choice is not cheap to reverse: it fixes login's signature and return shape, and anything that consumes the
+  tracking data gets built against whichever one we pick.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ userId source [39m[49m ☐ Destination  ✔ Submit  →
+
+[1m[38;5;231mWhere does the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer returns it (Recommended)[39m
+     [38;5;246mlogin() authenticates and the response carries the user ID. userId becomes part of login's return value, not a [39m
+     [38;5;246mparameter. Conventional and avoids a client-asserted identity.[39m
+  [38;5;246m2.[39m Known before login
+     [38;5;246mAn upstream identity source (URL param, cookie, SSO handoff, prior session) already knows it. userId becomes a real
+[39m     [38;5;246mparameter — but you'll need to point me at that source.[39m
+  [38;5;246m3.[39m Username is enough
+     [38;5;246mNo new parameter. username already identifies who logged in; all the work goes into where the tracking data is [39m
+     [38;5;246mrecorded.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

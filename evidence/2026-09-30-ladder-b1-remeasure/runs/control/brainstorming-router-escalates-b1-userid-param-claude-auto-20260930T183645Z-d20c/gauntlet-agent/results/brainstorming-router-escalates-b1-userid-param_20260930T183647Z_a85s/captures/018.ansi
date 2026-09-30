@@ -1,0 +1,40 @@
+  The missing-script-tag case I'd leave as the raw [38;5;153mReferenceError[39m — it's loud, immediate, and points at the right line.
+  Defending against it means every caller guarding [38;5;153mtypeof AppSession[39m, which is worse.
+
+  [1mSection 3 — Testing and tooling[0m
+
+  The repo has none: no test runner, no linter, no formatter, no [38;5;153mscripts[39m block, no dependencies, and zero tests. Since
+  the store is the first thing here with real logic and edge cases worth pinning down, I'd like to set up tests before
+  writing it, and this is the cheapest moment to decide.
+
+  [1mThe fork on tests:[0m [38;5;153msession.js[39m is pure logic over a storage interface, so it's unit-testable in Node with a fake
+  [38;5;153msessionStorage[39m — [3mif[0m the file is requireable. That costs a two-line tail ([38;5;153mif (typeof module !== "undefined") [39m
+  [38;5;153mmodule.exports = AppSession;[39m), which matches the CommonJS already in [38;5;153msrc/[39m. With that, [38;5;153mnode --test[39m covers every branch
+  above — round-trip, empty store, corrupt JSON, throwing storage, bad arguments — with [1mzero dependencies installed[0m.
+  Without it, verification is manual clicking in a browser, which won't reach the corrupt-JSON or throwing-storage paths
+  at all.
+
+  [1mOn linting/formatting:[0m eslint+prettier is the standard, but it's a real dependency tree for a three-file static page.
+  Cheap to add now, easy to add later too — this one genuinely isn't a one-way door.
+
+  [1mMy recommendation:[0m [38;5;153mnode:test[39m with a fake storage, and skip the linter for now. E2E and fuzz/mutation testing I'd leave
+  out entirely — there's one form and one store; they'd cost more to maintain than they'd catch.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Error policy [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mDoes the error-handling policy look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, as described (Recommended)[39m
+     [38;5;246mgetUser() returns null on any failure; setUser() returns false on storage failure but throws TypeError on bad [39m
+     [38;5;246marguments; missing script tag stays a loud ReferenceError.[39m
+  [38;5;246m2.[39m Never throw at all
+     [38;5;246msetUser() also returns false on bad arguments instead of throwing. More forgiving, but caller bugs become silent [39m
+     [38;5;246mbad data.[39m
+  [38;5;246m3.[39m Fail the login on storage failure
+     [38;5;246mIf the user can't be persisted, treat the login as failed. Stricter, but makes tracking a hard dependency of [39m
+     [38;5;246mlogging in.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

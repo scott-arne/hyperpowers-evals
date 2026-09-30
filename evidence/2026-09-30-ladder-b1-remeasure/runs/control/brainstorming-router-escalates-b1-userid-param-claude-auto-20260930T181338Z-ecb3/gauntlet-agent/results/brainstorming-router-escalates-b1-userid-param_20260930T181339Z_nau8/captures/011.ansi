@@ -1,0 +1,40 @@
+  [38;5;153m<script src="app.js">[39m — no modules, no bundler, no build step — while [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are CommonJS Node
+  files that [38;5;153mapp.js[39m cannot reach. [38;5;153mpackage.json[39m has no dependencies, no scripts, and no test runner. So "work across the
+  app" has no existing sharing mechanism to plug into; that's part of what we're designing.
+
+  First question — the persistence fork. [1mWhat differs:[0m how long the stored identity survives, and who can read it. This
+  is not cheap to change later: it sets the storage API, the lifetime semantics other forms will assume, and the
+  security posture.
+
+  - [1mlocalStorage[0m — survives browser restart, shared across all tabs of the origin. Buys: "remembered" identity, the
+    usual meaning of persist. Costs: readable by any script on the origin, so an XSS bug exposes it; never put a raw
+    auth token here without accepting that. Rules out per-tab identities.
+  - [1msessionStorage[0m — lives until the tab closes, isolated per tab. Buys: same API, much smaller blast radius, and
+    different tabs can hold different users. Costs: closing the tab loses it, which may not match "persist."
+  - [1mServer-set cookie[0m — the login response sets it, ideally [38;5;153mHttpOnly[39m. Buys: the only option JS-based XSS can't read, and
+    it's sent automatically with API calls. Costs: requires the backend that doesn't exist yet (the API is still a
+    stub), and [38;5;153mHttpOnly[39m means your own JS can't read the userId for display.
+  - [1mIn-memory only[0m — a module variable, no storage. Buys: nothing to leak, simplest. Costs: gone on refresh, so it fails
+    your "should persist" requirement outright.
+
+  [1mMy recommendation: localStorage for the userId, with the explicit rule that no auth token goes there.[0m It matches
+  "persist" as you described it, needs no backend, and keeps the userId readable for the other forms you mentioned. The
+  security cost is real but bounded if what we store is an opaque user identifier rather than a credential.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mHow long should the stored identity survive?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage (Recommended)[39m
+     [38;5;246mSurvives browser restart, shared across tabs. Store userId only, never a raw token.[39m
+  [38;5;246m2.[39m sessionStorage
+     [38;5;246mCleared when the tab closes; per-tab isolation and a smaller XSS blast radius.[39m
+  [38;5;246m3.[39m HttpOnly cookie
+     [38;5;246mSet by the login response, unreadable by JS. Safest, but needs the backend that doesn't exist yet.[39m
+  [38;5;246m4.[39m In-memory only
+     [38;5;246mA module variable, lost on refresh. Simplest, but does not actually persist.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

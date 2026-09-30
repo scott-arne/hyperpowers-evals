@@ -1,0 +1,40 @@
+  to make it correct, which isn't in scope today.
+  [3mComplexity:[0m moderate, same as A, plus expiry/logout work to be safe.
+
+  [1mC. Server-owned session, [38;5;153mHttpOnly[39m cookie, client caches nothing durable[0m
+  The server sets an [38;5;153mHttpOnly[39m session cookie on login; JS cannot read it. The client module holds [38;5;153muserId[39m in memory only
+  and re-hydrates by calling a [38;5;153m/me[39m endpoint on page load.
+  [3mTrade-offs:[0m the genuinely correct model for real authentication — the browser can't lie about identity and XSS can't
+  exfiltrate the session. But it requires a backend that does not exist here, and it makes every page load depend on a
+  network round-trip. It also makes the client module a cache rather than a source of truth, which is a different shape
+  from A/B.
+  [3mComplexity:[0m high, and currently unbuildable in this repo.
+
+  [1mMy recommendation: A[0m, with the server contract written into the spec so C stays reachable. Reasoning: [38;5;153msessionStorage[39m
+  matches the actual lifetime of a login session without inventing an expiry policy we haven't discussed, and it's the
+  only option of the three that's fully buildable and testable against the repo as it stands. B's extra durability isn't
+  free — it's a security and correctness commitment (logout, expiry, shared machines) that you'd be taking on
+  implicitly. C is where this should land once there's a real backend, and specifying the contract now is what keeps
+  that migration from being a rewrite.
+
+  One caveat I want on the record regardless of choice: [1m[38;5;153muserId[39m in client storage must never be treated as authorization.
+[0m  It says who the client claims to be, not who they've proven to be. Any server endpoint must re-derive identity from
+  the session cookie or token, never from a [38;5;153muserId[39m the client sends. I'll write that into the spec as a constraint.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the spec build on?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA — sessionStorage (Recommended)[39m
+     [38;5;246mSession module owning userId, persisted per-tab. Fully buildable and testable today; server contract specified for
+[39m     [38;5;246ma later move to C.[39m
+  [38;5;246m2.[39m B — localStorage
+     [38;5;246mSame module, survives browser restart. Needs an explicit logout and expiry policy to be safe on shared machines.[39m
+  [38;5;246m3.[39m C — HttpOnly cookie + /me
+     [38;5;246mServer owns the session; client caches in memory only. The correct end state, but needs a backend that does not [39m
+     [38;5;246mexist in this repo yet.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

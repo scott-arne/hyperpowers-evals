@@ -1,0 +1,40 @@
+  the tracker. [38;5;153msrc/tracking.js[39m exports [38;5;153mtrackLogin(userId)[39m. [38;5;153msrc/config.js[39m holds both URLs — the single swap point when
+  the real endpoints exist. [38;5;153mapp.js[39m becomes thin DOM glue loaded as [38;5;153mtype="module"[39m. Tests import [38;5;153mauth.js[39m directly and pass
+  a fake [38;5;153mfetch[39m.
+  [3mTrade-offs:[0m real module boundaries, everything verifiable, the swap point is one file. Costs an [38;5;153mindex.html[39m change and
+  forces a decision on module format, since [38;5;153msrc/[39m is CommonJS today and this wants ESM. [3mComplexity: moderate.[0m
+
+  [1mB. Single file, guarded export seam[0m
+  Everything stays in [38;5;153mapp.js[39m. Add a [38;5;153mtypeof module !== "undefined"[39m export at the bottom and wrap the DOM wiring so it
+  doesn't run under Node. Tests [38;5;153mrequire("./app.js")[39m and inject a fake [38;5;153mfetch[39m.
+  [3mTrade-offs:[0m smallest diff, no [38;5;153mindex.html[39m change, no module-format decision. But the guards exist purely to make the
+  file testable — that's scaffolding, not design — and auth, analytics, validation, and DOM wiring stay in one file
+  that's about to grow. [3mComplexity: trivial.[0m
+
+  [1mC. Decouple analytics from auth[0m
+  [38;5;153mlogin[39m stays single-purpose: authenticate, return [38;5;153m{ success, userId }[39m. It never knows analytics exists. The submit
+  handler — or a small emitter — routes the result to [38;5;153msrc/tracking.js[39m.
+  [3mTrade-offs:[0m the cleanest separation, and adding a second tracked event later costs nothing. But every future caller of
+  [38;5;153mlogin[39m has to remember to track, so the thing you actually asked for ("track who logged in") becomes opt-in and
+  silently skippable. [3mComplexity: moderate.[0m
+
+  [1mI recommend A.[0m It's the only one where the tracking can't be forgotten, the fakes have a real seam to plug into, and
+  the "swap in real URLs later" promise lands in one file. B is cheaper today but spends its savings on test scaffolding
+  you'd delete when the file splits — which this feature is already pushing it toward. C's decoupling is genuinely
+  better design in a larger app; here it trades a guarantee for flexibility you have no second use for yet.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the spec be built around?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Extract modules (Recommended)[39m
+     [38;5;246msrc/auth.js + src/tracking.js + src/config.js, injected deps, app.js as ESM DOM glue. Tracking can't be forgotten.[39m
+  [38;5;246m2.[39m B: Single file, guarded export
+     [38;5;246mSmallest diff. Everything stays in app.js behind test guards.[39m
+  [38;5;246m3.[39m C: Decouple analytics from auth
+     [38;5;246mlogin returns userId and knows nothing of tracking; the caller routes it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m [1mSection 3 — Error handling[0m
+
+  Two invariants, then one choice.
+
+  [1mTracking must never break login.[0m [38;5;153mwithTracking[39m wraps the [38;5;153mtrack()[39m call in its own [38;5;153mtry/catch[39m. If the sink throws, the
+  wrapper warns on [38;5;153mconsole[39m and returns the auth result unchanged. A telemetry outage must never become a login outage —
+  this is the single most important property of the decorator, and the reason the [38;5;153mtry/catch[39m lives in the wrapper rather
+  than inside [38;5;153mtrack()[39m.
+
+  [1mThe wrapper awaits [38;5;153mtrack()[39m before returning.[0m That keeps ordering deterministic and tests trivial, and with a console
+  sink it costs nothing. It does mean a future network transport would sit between the user and their login result — so
+  when you swap the sink, that's the moment to add a timeout or move to fire-and-forget. I'll note that in the spec at
+  the sink boundary; adding the machinery now would be solving a problem the console sink doesn't have.
+
+  [1mThe choice:[0m what happens when [38;5;153mlogin()[39m itself throws. It can't today — the offline stub only returns — but it will the
+  moment the real [38;5;153mfetch[39m lands, and the wrapper's behavior is easier to fix now than to retrofit.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Throw handling [39m[49m
+
+[2m│[0m [1m[38;5;231mSection 3 — when login() throws (a future network error), what should the wrapper do?[0m
+
+[38;5;153m❯[38;5;246m 1.[1m[38;5;153m Emit failure, then [0m          [38;5;246m┌───────────────────────────────────────────────────────────────┐[39m
+    [1m[38;5;153mrethrow (Recommended)[0m         [38;5;246m│ [39mtry {[38;5;246m                                                         │[39m
+ [38;5;246m 2.[39m Let it propagate             [38;5;246m│ [39m  result = await loginFn(username, password);[38;5;246m                 │[39m
+    untracked                     [38;5;246m│ [39m} catch (err) {[38;5;246m                                               │[39m
+ [38;5;246m 3.[39m Swallow into a failure       [38;5;246m│ [39m  await safeTrack("login.failure", {[38;5;246m                          │[39m
+    result                        [38;5;246m│ [39m    userId: null, username, reason: "error",[38;5;246m                  │[39m
+                                  [38;5;246m│ [39m  });[38;5;246m                                                         │[39m
+                                  [38;5;246m│ [39m  throw err;              // caller still sees the real error[38;5;246m │[39m
+                                  [38;5;246m│ [39m}[38;5;246m                                                             │[39m
+                                  [38;5;246m│ [39m// reason distinguishes "error" from "invalid_credentials"[38;5;246m    │[39m
+                                  [38;5;246m└───────────────────────────────────────────────────────────────┘[39m
+
+                                  [38;5;153mNotes:[39m [3m[38;5;246mpress n to add notes[0m
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel[39m

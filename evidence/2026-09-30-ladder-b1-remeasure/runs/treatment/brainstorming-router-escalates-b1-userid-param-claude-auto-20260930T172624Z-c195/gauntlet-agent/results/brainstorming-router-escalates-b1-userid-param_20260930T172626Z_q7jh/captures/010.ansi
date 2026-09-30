@@ -1,0 +1,40 @@
+  different security properties.
+
+  [1mThe fork:[0m at the moment [38;5;153mlogin[39m is called, nothing in this app knows a user ID. The form collects a username and
+  password; the ID that identifies the account is something the [3mserver[0m would assign after authenticating. So "a userId
+  parameter so we can track who logged in" can mean three different things, and they aren't interchangeable.
+
+  - [1mServer returns it[0m — [38;5;153mlogin[39m keeps its signature and the identity comes back in the result: [38;5;153m{ success, user, userId }[39m.
+    Buys you real tracking of who logged in, with the ID authenticated. Costs nothing at the call site. Rules out
+    nothing. This is the standard shape.
+  - [1mClient-generated correlation ID parameter[0m — [38;5;153mlogin(username, password, requestId)[39m where the caller mints a random ID
+    per attempt. Buys you the ability to trace a login attempt through logs even when it fails. It is [3mnot[0m an identity —
+    you still don't know who logged in until the server answers. Cheap to add later or remove.
+  - [1mCaller-supplied identity parameter[0m — [38;5;153mlogin(userId, username, password)[39m with the caller asserting who the user is.
+    This is the literal reading of your request, and I'd push back on it: a client-supplied identity that the auth path
+    trusts is the shape of an auth bypass. It only makes sense if some upstream system already authenticated the user
+    and this stub is downstream of that — which isn't the case in this repo today.
+
+  [1mMy recommendation: the first.[0m It's the only one that actually answers "who logged in" with a trustworthy value, and it
+  doesn't change the signature other code depends on. If you also want failed attempts traceable, the correlation ID
+  composes with it — they aren't exclusive.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId shape [39m[49m
+
+[1m[38;5;231mWhich reading of "userId" do you want in login()?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer returns userId (Recommended)[39m
+     [38;5;246mSignature unchanged; login() returns { success, user, userId }. The ID is authenticated, so it actually identifies
+[39m     [38;5;246mwho logged in.[39m
+  [38;5;246m2.[39m Client correlation ID param
+     [38;5;246mlogin(username, password, requestId). Traces an attempt through logs, including failures. Not an identity.[39m
+  [38;5;246m3.[39m Caller-supplied identity param
+     [38;5;246mlogin(userId, username, password). The literal request. Trusting a client-supplied identity in an auth path is an [39m
+     [38;5;246mauth-bypass shape.[39m
+  [38;5;246m4.[39m Both: returned userId + correlation ID
+     [38;5;246mServer returns the authenticated userId, and the caller passes a per-attempt requestId for tracing.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

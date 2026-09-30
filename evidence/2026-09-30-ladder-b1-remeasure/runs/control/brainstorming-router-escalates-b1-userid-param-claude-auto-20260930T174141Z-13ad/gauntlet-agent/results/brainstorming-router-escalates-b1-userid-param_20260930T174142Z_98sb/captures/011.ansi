@@ -1,0 +1,40 @@
+  I'll work through this as a design, one question at a time, and write a spec before any code.
+
+  [1mFirst fork: what establishes the user's identity?[0m
+
+  Right now [38;5;153mlogin()[39m is a stub — it never contacts [38;5;153mAPI_ENDPOINT[39m, it just returns [38;5;153m{success: true}[39m unconditionally. Nothing
+  in the app can vouch that a user is who they claim. Whatever we pick here gets baked into every tracking record you
+  ever store, so it's the expensive one to change later.
+
+  - [1mAuth API assigns it[0m — [38;5;153mlogin()[39m actually POSTs and the server returns a real [38;5;153muserId[39m. It's the only option where the ID
+    means "this person authenticated." Costs: you need a real endpoint (or a defined mock contract), and [38;5;153mlogin()[39m
+    becomes [38;5;153masync[39m, which changes its interface and its one caller. Cheap to build on later.
+  - [1mClient-generated pseudonymous ID[0m — a UUID in [38;5;153mlocalStorage[39m. No backend needed, works today. But it identifies a
+    [3mbrowser[0m, not a person: it resets when storage clears, splits across devices, and two people on one laptop share it.
+    Expensive to undo — once these IDs are in your data, old events can't be re-attributed.
+  - [1mUsername as the key[0m — zero new machinery, available right now at the call site. But usernames are typically mutable
+    and are user-supplied data you may not want in an analytics store. If someone renames, their history splits in two.
+    Re-keying stored events later is painful.
+
+  [1mMy recommendation: auth API assigns it.[0m You said you want to track [3mwho[0m logged in. Only the server can answer that; the
+  other two answer "which browser" or "what was typed in the box." The [38;5;153masync[39m change is real work, but retrofitting it
+  after you've built tracking on a client-side ID is strictly worse than doing it now.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Identity [39m[49m
+
+[1m[38;5;231mWhat establishes the user's identity for tracking?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAuth API assigns it (Recommended)[39m
+     [38;5;246mlogin() POSTs to API_ENDPOINT and the server returns a real userId. Only option where the ID genuinely means 'this
+[39m     [38;5;246mperson authenticated'. Requires a real endpoint or an agreed mock contract, and makes login() async.[39m
+  [38;5;246m2.[39m Client-generated UUID
+     [38;5;246mA UUID stored in localStorage. No backend required, works immediately. Identifies a browser rather than a person: [39m
+     [38;5;246mresets on storage clear, splits across devices, shared by everyone on one machine. Costly to re-attribute later.[39m
+  [38;5;246m3.[39m Use the username
+     [38;5;246mTreat the username already passed to login() as the identity key. No new machinery at all. Breaks if usernames are
+[39m     [38;5;246mmutable, and puts user-supplied data into your tracking store.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

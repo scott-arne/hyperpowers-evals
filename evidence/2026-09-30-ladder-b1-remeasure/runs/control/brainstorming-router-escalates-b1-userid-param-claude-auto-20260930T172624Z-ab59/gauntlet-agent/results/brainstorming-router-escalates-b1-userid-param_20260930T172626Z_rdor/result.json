@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T172626Z_rdor",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "I sent the ambiguous brief to Claude Code (Opus 5, hyperpowers plugin). The agent loaded hyperpowers:brainstorming, said up front that the task was \"architectural, not bounded\", and asked 3 clarifying questions (where the userId comes from, where tracking goes, stub vs. a real fetch). After a tooling question it asked me to approve the design, wrote the spec to docs/hyperpowers/specs/2026-09-30-login-user-tracking-design.md, and ran a Codex spec gate. The gate returned no verdict because Codex here is a stub. The agent then asked me to review the spec, with no implementation code written. I said \"looks good, go ahead\" and it moved on to hyperpowers:writing-plans.",
+  "reasoning": "All 5 criteria are backed by the session log and files on disk. The agent loaded brainstorming first and explicitly classified the task as architectural. It wrote the spec to docs/hyperpowers/specs/ and asked for spec review before writing any code, and it did not go down the bounded or spike paths. The side observations (skip-spec option, git-ignored spec) are worth a look but don't change these verdicts.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Startup needed 3 interactive dialogs (theme, trust folder, bypass-permissions). On the trust and bypass dialogs the highlighted default was \"No, exit\", so the harness has to press Down before Enter each time."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The design-approval question offered \"Approved — skip the spec, just build it\" even after the agent had classified the task as architectural. A user could skip the spec document from there, which weakens the architectural path's guarantee."
+    },
+    {
+      "kind": "bug",
+      "description": "The spec was left uncommitted, and the agent created an untracked .gitignore that excludes docs/hyperpowers and docs/superpowers so specs never get committed. Criterion 4's wording mentions a \"committed spec file\", but here the spec exists only on disk and is deliberately git-ignored. This conflicts with that wording. It also means the agent created a new repo file that was never asked for."
+    },
+    {
+      "kind": "ux",
+      "description": "The Codex spec gate ran against the stub Codex and got an empty {} result. The agent correctly reported \"None — review did not complete. Not an approval\" and logged an ungated-ledger entry. After my approval it still said \"Spec approved\" and moved to writing-plans, which is reasonable because I approved. The gate took several minutes and produced a lot of screen output."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent turned a literal request (\"add a userId parameter\") into a different design: login() keeps its signature and returns a userId from the server. The reasoning was well explained and given as a recommended option. Still, a user who literally wanted a parameter has to read carefully to notice the change."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "First tool call in the session log: Skill {\"skill\":\"hyperpowers:brainstorming\",...}. Before it, the agent only ran find/Read on the repo. No Write or Edit to code files happened before this call."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec to docs/*/specs/ before presenting it for approval",
+      "verdict": "pass",
+      "evidence": "Agent text (log line 53): \"**Classification: architectural, not bounded.** I want to flag that up front so you can override me.\" A Write tool call created docs/hyperpowers/specs/2026-09-30-login-user-tracking-design.md (174 lines, 6936 bytes on disk per ls -la)."
+    },
+    {
+      "criterion": "Spec was presented for review before any implementation code was written",
+      "verdict": "pass",
+      "evidence": "Screen: \"No implementation code has been written yet.\" ... \"Please review the spec and let me know if you want changes before I write the implementation plan.\" At that point `git diff --stat` in the workdir was empty and `git status --short` showed only `?? .gitignore`. Nothing was written to app.js or src/."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec document",
+      "verdict": "pass",
+      "evidence": "The agent said \"architectural, not bounded\" and wrote a spec file. Its approval menu did include \"Approved — skip the spec, just build it\", but it recommended and defaulted to \"Approved — write the spec\"."
+    },
+    {
+      "criterion": "Did NOT classify as spike / present a probe plan",
+      "verdict": "pass",
+      "evidence": "The agent announced the architectural path (quote above). It presented no throwaway probe plan. The next skill it loaded was hyperpowers:writing-plans with args \"Create implementation plan from docs/hyperpowers/specs/2026-09-30-login-user-tracking-design.md\"."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi"
+    ]
+  },
+  "duration_ms": 600283,
+  "usage": {
+    "inputTokens": 78,
+    "outputTokens": 5361,
+    "cacheCreationInputTokens": 42835,
+    "cacheReadInputTokens": 666221,
+    "turns": 35
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,40 @@
+  Cache lifetime is exactly the page's lifetime. Nothing is written to [38;5;153mlocalStorage[39m, [38;5;153msessionStorage[39m, or a readable
+  cookie — which is what keeps the stale-identity failure from section 1's alternative off the table entirely.
+
+  Does this look right so far? Next sections are the backend contract (including one cross-origin wrinkle I want to
+  flag), error handling, and testing + tooling.
+
+[38;5;246m✻[39m [38;5;246mWorked for 4m 25s · done 11:46 AM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mlooks good, go ahead[39m
+
+[38;5;231m[49m⏺[39m [1mSection 3 — Backend contract
+
+[0m  We're not building this, so the spec has to state it precisely enough that someone else can.
+
+  ┌──────────────┬──────────────────────┬─────────────────────────────────────┬──────────────────────────┐
+  │   Endpoint   │       Request        │               Success               │         Failure          │
+  ├──────────────┼──────────────────────┼─────────────────────────────────────┼──────────────────────────┤
+  │ [38;5;153mPOST /login[39m  │ [38;5;153m{username, password}[39m │ [38;5;153m200[39m [38;5;153m{userId, username}[39m + [38;5;153mSet-Cookie[39m │ [38;5;153m401[39m [38;5;153m{error}[39m              │
+  ├──────────────┼──────────────────────┼─────────────────────────────────────┼──────────────────────────┤
+  │ [38;5;153mGET /me[39m      │ — (cookie only)      │ [38;5;153m200[39m [38;5;153m{userId, username}[39m              │ [38;5;153m401[39m (body ignored)       │
+  ├──────────────┼──────────────────────┼─────────────────────────────────────┼──────────────────────────┤
+  │ [38;5;153mPOST /logout[39m │ —                    │ [38;5;153m204[39m, cookie cleared                 │ idempotent, never errors │
+  └──────────────┴──────────────────────┴─────────────────────────────────────┴──────────────────────────┘
+
+  Cookie: [38;5;153mHttpOnly; Secure; Path=/[39m, server-chosen lifetime.
+
+  [1mThe audit clause[0m (this is your original "track who logged in", and it's the entire tracking deliverable): the server
+  records every login [3mattempt[0m — [38;5;153muserId[39m on success or the attempted username on failure, timestamp, outcome, source IP,
+  user agent. Recording failures matters more than recording successes; a log of only successful logins can't show you a
+  brute-force attempt.
+
+  [1mThe cross-origin wrinkle I flagged.[0m [38;5;153mAPI_ENDPOINT[39m currently points at [38;5;153mhttps://api.example.com/login[39m — a different
+  origin from wherever the page is served. Cross-origin cookies require [38;5;153mSameSite=None[39m plus CORS
+  [38;5;153mAccess-Control-Allow-Credentials: true[39m and an exact-origin [38;5;153mAccess-Control-Allow-Origin[39m (the [38;5;153m*[39m wildcard is rejected
+  when credentials are involved). That works today, but [38;5;153mSameSite=None[39m cookies are third-party cookies, and browsers are
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

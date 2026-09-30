@@ -1,0 +1,40 @@
+  - [3mCosts:[0m indirection that's hard to trace, and events with no listener fail silently — the exact failure mode you
+    can't detect. Real value at many producers and several consumers; you have one of each.
+  - [3mComplexity: high.[0m
+
+  [1mMy recommendation: B.[0m The deciding factor is your own stated goal. If other forms are going to adopt this, the
+  interface they're written against should be an explicit import, not an ambient global with an implicit load-order
+  requirement — and it should be testable without a browser. C is the right shape for a much larger app and premature
+  here; A is cheapest today and the one you'd most likely regret at the fourth call site. B's real cost is needing a
+  local server to open the page, which is mild.
+
+  Two things I'd fold into B's design rather than ask separately: transport via [38;5;153mfetch(..., { keepalive: true })[39m with a
+  [38;5;153m.catch[39m that logs — [38;5;153msendBeacon[39m is the usual fire-and-forget choice but reports only a boolean, which can't satisfy your
+  "failures stay visible" answer. And the event envelope carries optional identity, so failed logins record the
+  attempted username with no [38;5;153muserId[39m.
+
+  One flag: the repo mixes conventions already — [38;5;153msrc/[39m is CommonJS while [38;5;153mapp.js[39m is a global script, and the two never
+  interact. B adds a third. Unifying [38;5;153msrc/[39m to ESM is a two-file change I'd suggest but keep out of scope unless you want
+  it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Architecture [39m[49m
+
+[1m[38;5;231mWhich architecture should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: Native ES modules (Recommended)[39m
+     [38;5;246mReal module boundary, no globals, no bundler, testable by import. Requires converting app.js to a module script and
+[39m     [38;5;246mserving the page over local HTTP instead of file://.[39m
+  [38;5;246m2.[39m A: Global script namespace
+     [38;5;246mA Tracking global loaded by a second script tag. Matches the current style exactly and needs zero setup, but relies
+[39m     [38;5;246mon load order and is awkward to unit test.[39m
+  [38;5;246m3.[39m C: Decoupled event bus
+     [38;5;246mForms dispatch domain events; a tracking subscriber translates them. Maximum decoupling, but heavy indirection and
+[39m     [38;5;246msilent failure when nothing is listening.[39m
+  [38;5;246m4.[39m Stop — I just wanted the parameter
+     [38;5;246mThe escalation is wrong for what you need. I'll drop the tracking module and we'll go back to the small change to [39m
+     [38;5;246mlogin itself.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

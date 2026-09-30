@@ -1,0 +1,40 @@
+
+  [38;5;246mSearched for [1m2[0m[38;5;246m patterns, read [1m1[0m[38;5;246m file, ran [1m1[0m[38;5;246m shell command
+
+[38;5;231m⏺[39m This looks [1mbounded[0m — one file, one existing flow ([38;5;153mapp.js:4[39m), one caller — so I'll present a short design in chat
+  rather than write a spec. But there's a question I can't answer from the code.
+
+  [38;5;153mlogin(username, password)[39m is called at [38;5;153mapp.js:23[39m from the form submit handler, which only has the username and
+  password the user typed. There is no [38;5;153muserId[39m available at that call site — nothing in this repo produces one. So "add a
+  userId parameter" has a fork in it:
+
+  [1mThe fork:[0m whether [38;5;153muserId[39m is something the [3mcaller[0m supplies, or something [3mlogin itself[0m produces.
+
+  - [1mIt's the identity the server returns.[0m Then it isn't a parameter at all — the stub already returns [38;5;153m{ success: true, [39m
+    [38;5;153muser: username }[39m, and "track who logged in" means logging the identity out of the result. Cheapest, no signature
+    change, nothing else to build. But it only tells you who logged in [3msuccessfully[0m — a failed attempt has no userId.
+  - [1mIt's a client-side correlation ID[0m generated per attempt and passed in, so a login attempt can be traced whether or
+    not it succeeds. This does change the signature and adds an ID-generation step; the caller becomes responsible for
+    creating it. Changing the signature is cheap now (one caller, same file) and gets expensive once anything else calls
+    [38;5;153mlogin[39m.
+  - [1m[38;5;153muserId[39m just means the username.[0m Then the parameter is redundant — [38;5;153musername[39m is already the parameter — and the real
+    change is what gets logged, not the signature.
+
+  [1mMy recommendation:[0m the third reading is almost certainly what "track who logged in" means, and it needs no new
+  parameter. But if you want failed attempts traceable too, the correlation ID is the only option that covers them.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should `userId` come from?[0m
+
+  [38;5;246m1.[39m It's the username
+     [38;5;246mNo new parameter. Log the identity we already have, in login and on the result. Signature unchanged.[39m
+  [38;5;246m2.[39m Server returns it
+     [38;5;246mStub returns a userId in the result object; caller logs it. Tracks successful logins only.[39m
+  [38;5;246m3.[39m Client correlation ID
+     [38;5;246mCaller generates an ID per attempt and passes it to login. Changes the signature; traces failed attempts too.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

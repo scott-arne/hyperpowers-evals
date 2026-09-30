@@ -1,0 +1,40 @@
+  the repo to pass in. So "add a userId parameter" has three different plausible meanings, and they don't cost the
+  same:
+
+  [1mThe fork:[0m whether [38;5;153muserId[39m is something the caller already knows before login, or something login produces.
+
+  - [1mCaller-supplied account/tenant id[0m — [38;5;153mlogin(userId, username, password)[39m. Cheap edit, but it only works if some id
+    genuinely exists client-side before authentication. Nothing in this repo produces one today, so you'd also need to
+    decide where it comes from. Changes the signature permanently; every future caller inherits it.
+  - [1mLogin returns the id[0m — keep [38;5;153mlogin(username, password)[39m, have it return [38;5;153m{ success, user, userId }[39m and log that. This
+    is the shape that matches reality: the server knows who you are after authenticating, not before. Callers are
+    unaffected, and it's cheap to change later.
+  - [1mPer-attempt correlation id[0m — [38;5;153mlogin(username, password, attemptId)[39m where the id is generated at the call site to
+    trace one attempt through logs. Useful for tracing failures, not for "who logged in" — it identifies the attempt,
+    not the person.
+
+  [1mMy recommendation: the second.[0m "Track who logged in" is answered by the login result, and the username at [38;5;153mapp.js:5[39m
+  already identifies the person for the console-log stub. Threading a [38;5;153muserId[39m [3min[0m means inventing a value the client
+  doesn't have yet.
+
+  I'd also flag: if "track" means real tracking (an analytics or audit log that persists somewhere), that's a subsystem
+  this repo doesn't have, and I'd re-classify this as architectural rather than bolt it on.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ userId source [39m[49m ☐ Tracking scope  ✔ Submit  →
+
+[1m[38;5;231mWhere does the userId come from?[0m
+
+  [38;5;246m1.[39m Login returns it (Recommended)
+     [38;5;246mKeep login(username, password); return { success, user, userId } and log it. Matches how auth actually works — the
+[39m     [38;5;246mid is known after authenticating, not before. No caller changes.[39m
+  [38;5;246m2.[39m Caller passes an existing id
+     [38;5;246mlogin(userId, username, password). Requires deciding where the client gets that id, since nothing in this repo [39m
+     [38;5;246mproduces one today.[39m
+  [38;5;246m3.[39m Per-attempt correlation id
+     [38;5;246mlogin(username, password, attemptId) for tracing a single login attempt through logs. Identifies the attempt, not [39m
+     [38;5;246mthe person.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;153m❯[39m [38;5;153m5. Chat about this[39m
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

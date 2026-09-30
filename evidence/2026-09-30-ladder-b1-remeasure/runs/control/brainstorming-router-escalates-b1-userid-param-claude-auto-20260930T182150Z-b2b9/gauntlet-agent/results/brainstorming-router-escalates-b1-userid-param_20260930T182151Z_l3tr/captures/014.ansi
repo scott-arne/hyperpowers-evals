@@ -1,0 +1,40 @@
+  [3mComplexity:[0m trivial.
+
+  [1mB. ES modules[0m
+  [38;5;153m<script type="module" src="app.js">[39m, with [38;5;153midentity.js[39m using real [38;5;153mexport[39m/[38;5;153mimport[39m.
+  [3mTrade-offs:[0m the cleanest boundary — no globals, explicit dependencies. But it commits you to serving over http
+  forever, since [38;5;153mfile://[39m blocks module scripts, and you don't currently have a server. There's also a snag in the repo:
+  [38;5;153msrc/[39m uses CommonJS [38;5;153mrequire[39m, so adding [38;5;153m"type": "module"[39m to [38;5;153mpackage.json[39m to make Node tests work would break
+  [38;5;153msrc/index.js[39m. Workable via [38;5;153m.mjs[39m extensions, but that's friction bought for a two-function store.
+  [3mComplexity:[0m moderate.
+
+  [1mC. Bare storage convention, no module[0m
+  No new file. [38;5;153mlogin[39m writes [38;5;153msessionStorage.setItem('app.identity', JSON.stringify({id, username}))[39m, and each future form
+  reads and parses that key directly.
+  [3mTrade-offs:[0m the least code today, and genuinely simple. But it spreads the key name and the record shape across every
+  consumer — which defeats the reason you picked [38;5;153m{ id, username }[39m in the first place. The whole point of that shape was
+  that swapping [38;5;153mid[39m to a server-issued value later touches one place; with this approach it touches all of them.
+  [3mComplexity:[0m trivial.
+
+  [1mI recommend A.[0m It's as simple as C in practice but keeps the record shape behind one accessor, which is the property
+  you paid a field for. And it sidesteps the serving question entirely — that's the tradeoff I'm accepting on your
+  behalf: one global variable, in exchange for the app working however you open it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: namespaced global (Recommended)[39m
+     [38;5;246midentity.js as a classic script exposing AppIdentity. Works from file:// and http, keeps the record shape in one [39m
+     [38;5;246mplace, testable in Node.[39m
+  [38;5;246m2.[39m B: ES modules
+     [38;5;246mCleanest boundary, but commits to http serving and needs .mjs juggling to avoid breaking the CommonJS src/ [39m
+     [38;5;246mdirectory.[39m
+  [38;5;246m3.[39m C: bare storage convention
+     [38;5;246mNo new file; each consumer reads the sessionStorage key directly. Least code now, but duplicates the record shape [39m
+     [38;5;246macross every form.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

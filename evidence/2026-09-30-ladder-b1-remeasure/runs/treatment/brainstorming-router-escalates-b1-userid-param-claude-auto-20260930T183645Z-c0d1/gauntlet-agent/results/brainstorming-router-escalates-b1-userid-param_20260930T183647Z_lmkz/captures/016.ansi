@@ -1,0 +1,40 @@
+    [38;5;153mSession.getUserId()[39m and treats it as authorization.
+  - Choosing [38;5;153msessionStorage[39m is what lets us skip an expiry mechanism — the value dies with the tab. There's no sign-out
+    in this app today; [38;5;153mSession.clear()[39m exists so one can be added without touching storage details.
+
+  [1mTesting — and one structural obstacle.[0m [38;5;153mapp.js[39m calls [38;5;153mdocument.getElementById("login-form")[39m at the top level (line 17),
+  so merely importing it under Node throws. Testing [38;5;153mlogin[39m therefore requires either a DOM environment (jsdom) or
+  splitting the DOM wiring into its own file so [38;5;153mlogin[39m and [38;5;153mSession[39m can be loaded headlessly. I'd split the wiring — it's
+  the smaller, more durable change, and it's the kind of targeted improvement that serves this work rather than
+  unrelated refactoring. Worth flagging that it makes the diff bigger than "add a parameter" implies.
+
+  What I'd want covered: [38;5;153mSession[39m set/get/clear round-trip, [38;5;153mgetUserId()[39m returning [38;5;153mnull[39m when empty, [38;5;153mlogin[39m returning a
+  [38;5;153muserId[39m, [38;5;153mlogin[39m persisting on success and clearing on failure, and graceful degradation when storage throws.
+
+  [1mThe tooling question.[0m This repo currently has no tooling at all — [38;5;153mpackage.json[39m has no dependencies and no scripts, and
+  there's no linter, no test runner, and no CI. Setting these up is cheapest now, before there's code to retrofit, and
+  whatever you pick lands in the spec's Global Constraints so every later task inherits it. The fork is how much of a JS
+  toolchain you want to own here: each of these adds [38;5;153mnode_modules[39m and a config file to a repo that currently has
+  neither, and unit tests are the one that also drives the [38;5;153mapp.js[39m split above. E2E is the heaviest — Playwright pulls
+  browser binaries — and only pays off once there are real pages to click through.
+
+  My recommendation: linting/formatting plus unit tests, and skip E2E for now. Those two are cheap, and the unit tests
+  are what make the error-handling paths above actually verifiable rather than aspirational.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhich tooling should we set up as part of this work? (none is a valid answer via Other)[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Lint + format (Recommended)
+         [38;5;246mESLint + Prettier with the standard config. Cheap now, adds a config file and dev dependencies.[39m
+  [38;5;246m2.[39m [38;5;114m[✔][39m Unit tests (Recommended)
+         [38;5;246mA runner plus a first passing test. Makes the error-handling paths verifiable; drives splitting the DOM wiring
+[39m         [38;5;246mout of app.js.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+         [38;5;246mPlaywright driving the real login form in a browser. Heaviest option; pulls browser binaries for one page.[39m
+  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+[38;5;153m❯[39m    [1m[38;5;153mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

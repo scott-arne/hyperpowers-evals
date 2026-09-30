@@ -1,0 +1,40 @@
+  [1mC. Event bus: [38;5;153mlogin[39m emits, a tracker subscribes[0m
+
+  [38;5;153mlogin()[39m dispatches a [38;5;153mlogin:success[39m event; a tracker module listens, stores, and logs. Fully decoupled; other forms
+  subscribe to their own events later.
+
+  - [1mBuys:[0m genuinely extensible if tracking grows to many events from many places.
+  - [1mCosts:[0m an indirection layer on a 25-line app, and the flow becomes non-obvious to read. This is the YAGNI casualty —
+    I'd only pick it if you already know several other forms will emit tracking events.
+
+  [1mWhy A:[0m it gives you the shared, persisted, reusable piece you asked for, keeps the seam between "authenticate" and
+  "remember who" visible, and is the cheapest of the three to change when the real API call replaces the stub.
+
+  [1mTwo things I'd fold into A, which I'll detail in the design if you pick it:[0m
+
+  1. [1m[38;5;153mlogin()[39m is still a stub[0m — it returns a hardcoded object and never calls [38;5;153mAPI_ENDPOINT[39m. A real call is async, which
+     would make [38;5;153mlogin()[39m return a Promise and change the call site again. I'd keep it synchronous now and have the stub
+     return a clearly-marked placeholder [38;5;153muserId[39m, rather than half-building an async path against an API that isn't
+     wired.
+  2. [1mThere's no test infrastructure at all[0m — no runner, no scripts, no dependencies in [38;5;153mpackage.json[39m. A storage module
+     with absent/malformed-value handling is exactly the kind of thing worth a test, so I'll ask whether to set one up
+     as part of this.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Approach [39m[49m ☐ Test setup  ✔ Submit  →
+
+[1m[38;5;231mWhich approach should I design in full?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: tracking module (Recommended)[39m
+     [38;5;246mSeparate tracking.js owns sessionStorage; login() returns userId; the handler wires them. Clear seam, testable, [39m
+     [38;5;246mone-line swap to localStorage.[39m
+  [38;5;246m2.[39m B: login() stores it
+     [38;5;246mFewer call-site changes, but login() becomes side-effecting and harder to test. Every future caller writes storage
+[39m     [38;5;246mimplicitly.[39m
+  [38;5;246m3.[39m C: event bus
+     [38;5;246mlogin() emits, a tracker subscribes. Most extensible, most indirection. Worth it only if many other forms will emit
+[39m     [38;5;246mtracking events.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

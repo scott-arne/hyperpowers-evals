@@ -1,0 +1,40 @@
+  [1mSection 2 — Error handling and edge cases[0m
+
+  [38;5;153msessionStorage[39m is the one part of this that fails in the real world, in three ways: a browser blocking site data can
+  throw [38;5;153mSecurityError[39m on access to [38;5;153mwindow.sessionStorage[39m itself; Safari's private mode has historically thrown on
+  writes; and the stored JSON can be corrupt because it's user-editable via devtools. There's a fourth, purely ours: a
+  page that forgets the [38;5;153m<script>[39m tag hits [38;5;153mAppSession is not defined[39m.
+
+  The rule I propose, one line: [1menvironment failures degrade, contract violations throw.[0m
+
+  - [38;5;153mgetUser()[39m never throws. Storage unavailable, missing key, or unparseable JSON all return [38;5;153mnull[39m — "nobody is logged
+    in" is the safe answer for every one. On corrupt JSON it also removes the key so the next call isn't fighting the
+    same bad data.
+  - [38;5;153msetUser()[39m never throws on [3mstorage[0m failure; it returns [38;5;153mfalse[39m and warns to console. Login succeeding while tracking
+    fails is not a reason to fail the login, so the submit handler logs the warning and carries on.
+  - [38;5;153msetUser()[39m [1mdoes[0m throw a [38;5;153mTypeError[39m on a missing or non-string [38;5;153muserId[39m/[38;5;153musername[39m. That's a caller bug, not an environment
+    condition, and swallowing it would produce a store that silently holds [38;5;153mundefined[39m.
+  - Access is wrapped per call rather than probed once at load, so storage becoming unavailable mid-session is handled
+    the same as at startup.
+
+  The missing-script-tag case I'd leave as the raw [38;5;153mReferenceError[39m — it's loud, immediate, and points at the right line.
+  Defending against it means every caller guarding [38;5;153mtypeof AppSession[39m, which is worse.
+
+  [1mSection 3 — Testing and tooling[0m
+
+  The repo has none: no test runner, no linter, no formatter, no [38;5;153mscripts[39m block, no dependencies, and zero tests. Since
+  the store is the first thing here with real logic and edge cases worth pinning down, I'd like to set up tests before
+  writing it, and this is the cheapest moment to decide.
+
+  [1mThe fork on tests:[0m [38;5;153msession.js[39m is pure logic over a storage interface, so it's unit-testable in Node with a fake
+  [38;5;153msessionStorage[39m — [3mif[0m the file is requireable. That costs a two-line tail ([38;5;153mif (typeof module !== "undefined") [39m
+  [38;5;153mmodule.exports = AppSession;[39m), which matches the CommonJS already in [38;5;153msrc/[39m. With that, [38;5;153mnode --test[39m covers every branch
+  above — round-trip, empty store, corrupt JSON, throwing storage, bad arguments — with [1mzero dependencies installed[0m.
+  Without it, verification is manual clicking in a browser, which won't reach the corrupt-JSON or throwing-storage paths
+  at all.
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

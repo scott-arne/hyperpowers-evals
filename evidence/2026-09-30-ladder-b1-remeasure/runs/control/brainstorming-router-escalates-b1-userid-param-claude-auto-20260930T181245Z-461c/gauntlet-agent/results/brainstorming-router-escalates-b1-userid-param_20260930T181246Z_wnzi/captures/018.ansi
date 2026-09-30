@@ -1,0 +1,40 @@
+
+  Layout: [38;5;153mtest/auth.test.mjs[39m, [38;5;153mtest/tracking.test.mjs[39m. Fakes are plain functions passed through the [38;5;153mdeps[39m parameter from
+  Section 2 — no mocking library, no module interception.
+
+  [1mWhat gets tested[0m — essentially the Section 3 table, since that's where the behavior is:
+
+  - Success: returns [38;5;153m{ success, userId }[39m, and [38;5;153mtrack[39m was called with that exact [38;5;153muserId[39m.
+  - [38;5;153mfetch[39m rejects → [38;5;153m{ success: false, error: "Network error" }[39m, [1mand [38;5;153mtrack[39m was not called.[0m
+  - 401 → invalid credentials; 5xx → service unavailable; the two stay distinct.
+  - 2xx with [38;5;153muserId[39m missing → malformed-response error, and [38;5;153mtrack[39m was not called.
+  - [38;5;153mtrack[39m throws → [1mlogin still returns success.[0m This is the one I most want locked down; it's the assertion that keeps a
+    dead analytics endpoint from breaking login.
+  - [38;5;153mtrackLogin[39m posts the [38;5;153m{ event, userId, timestamp }[39m shape, and swallows its own fetch failure.
+
+  [1mOne correction to Section 1.[0m I said [38;5;153mvalidateForm[39m stays in [38;5;153mapp.js[39m. Working through the tests, that's wrong — [38;5;153mapp.js[39m
+  touches the DOM at import time, so anything left in it is unreachable from Node, and [38;5;153mvalidateForm[39m is pure logic that
+  would go permanently untested. I'd move it to [38;5;153msrc/validate.mjs[39m and test it alongside the rest. It's six lines with no
+  behavior change, and it makes [38;5;153mapp.js[39m genuinely DOM-only as Section 1 intended. Tell me if you'd rather I leave it and
+  accept the gap.
+
+  [1mWhat stays untested, stated plainly:[0m the DOM wiring in [38;5;153mapp.js[39m — the form listener, the element lookups, the [38;5;153mawait[39m.
+  Testing it needs a DOM environment (jsdom or a browser runner), which means dependencies and a real jump in setup
+  cost. Given the wiring is a dozen lines of glue, I'd verify it by hand in the browser rather than buy that
+  infrastructure now. So "the tests pass" will mean the auth, tracking, and validation logic is correct — not that the
+  page works. Worth knowing when you read a green run.
+
+  Does the testing plan look right? If so, I'll write the spec to
+  [38;5;153mdocs/hyperpowers/specs/2026-09-30-login-userid-tracking-design.md[39m and hand it to you for review.
+
+[38;5;246m✻[39m [38;5;246mCooked for 22s · done 11:20 AM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231myes, looks right[39m
+[49m
+[38;5;174m✶[39m [38;5;174mMusing… [38;5;246m(41s · ↓[39m [38;5;246m2.6k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /theme to change the color theme[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

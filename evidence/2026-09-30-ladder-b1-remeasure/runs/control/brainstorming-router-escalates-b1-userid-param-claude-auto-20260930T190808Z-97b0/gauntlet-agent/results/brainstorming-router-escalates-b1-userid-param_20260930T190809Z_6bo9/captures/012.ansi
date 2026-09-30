@@ -1,0 +1,40 @@
+    [34mreturn[39m { [36msuccess[39m: [34mtrue[39m, [36muser[39m: username };
+  }
+
+  Called once, from the submit handler ([38;5;153mapp.js:23[39m), with values read straight off the form. [38;5;153msrc/index.js[39m / [38;5;153msrc/utils.js[39m
+  are unrelated. No tests, no test runner in [38;5;153mpackage.json[39m.
+
+  [1mThe fork, in one sentence:[0m [38;5;153mlogin[39m already receives [38;5;153musername[39m — the identity of the person logging in — and the only call
+  site has nothing else available, so "add a [38;5;153muserId[39m parameter" only makes sense if [38;5;153muserId[39m is something [3mother[0m than the
+  username, and where it comes from determines whether this is a one-line signature change or new structure.
+
+  - [1m[38;5;153muserId[39m is a caller-supplied correlation/session ID[0m (e.g. a device or request ID generated before submit) — cheap,
+    one new param plus a generator at the call site, no new module. Locks in the convention that callers own ID
+    generation.
+  - [1m[38;5;153muserId[39m is the account's stable internal ID[0m — the call site can't supply it; pre-authentication the browser only
+    knows the typed username. Would need the ID to come back [3mfrom[0m the login response instead, which means the parameter
+    you asked for isn't the right shape. Cheap to change now, expensive after other callers depend on it.
+  - [1m"Track" means a real logging/analytics sink[0m, not [38;5;153mconsole.log[39m — that's a new subsystem, and I'd re-classify as
+    architectural and write a spec first.
+
+  [1mMy recommendation:[0m the first option, if what you want is to correlate login attempts. It's the only one where "add a
+  [38;5;153muserId[39m parameter" is literally the right change, and it stays a handful of lines in one file.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ userId meaning [38;5;16m[48;5;153m ☐ Tracking sink [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhat should "track" actually do with it?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mconsole.log, like today (Recommended)[39m
+     [38;5;246mMatch the existing stub style — include userId in the existing log line and the returned result. No new [39m
+     [38;5;246mdependencies, stays bounded.[39m
+  [38;5;246m2.[39m Include it in the API payload
+     [38;5;246mThread userId into the stubbed POST to API_ENDPOINT so the backend records it. Still bounded, but changes the [39m
+     [38;5;246mrequest contract.[39m
+  [38;5;246m3.[39m A real logging/analytics module
+     [38;5;246mA new module that persists or ships login events. This is new structure — I'd stop and write a spec first [39m
+     [38;5;246m(architectural path).[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

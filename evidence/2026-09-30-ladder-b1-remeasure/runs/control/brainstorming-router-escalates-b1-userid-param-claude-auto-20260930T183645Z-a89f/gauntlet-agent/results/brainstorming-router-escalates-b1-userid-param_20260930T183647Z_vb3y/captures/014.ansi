@@ -1,0 +1,40 @@
+  while swapping [38;5;153msessionStorage[39m for something else touches only [38;5;153msession.js[39m — the two changes you've already said are
+  coming.
+  [3mComplexity:[0m moderate.
+
+  [1mB. Observable identity store[0m
+  Same split, but [38;5;153msession.js[39m becomes a pub/sub store: [38;5;153msubscribe(fn)[39m, and consumers re-render when identity appears or
+  clears.
+  [3mTrade-offs:[0m buys automatic UI reaction across many forms; costs listener registration, teardown, and a class of subtle
+  leak bugs. [3mWhen it wins:[0m several always-mounted views must visibly react to login/logout. You have one form and no
+  logout.
+  [3mComplexity:[0m high. [1mI'd skip it[0m — this is machinery for a problem you don't have yet, and on-demand reads convert to a
+  store later without touching callers.
+
+  [1mC. Storage-only, no module state[0m
+  No layering and no in-memory copy: one tiny [38;5;153msession.js[39m with [38;5;153mgetUserId()[39m/[38;5;153msetUserId()[39m reading and writing [38;5;153msessionStorage
+[39m  directly, and [38;5;153mlogin()[39m writes the id itself.
+  [3mTrade-offs:[0m fewest moving parts, and no possibility of an in-memory copy drifting from storage. But [38;5;153mlogin()[39m then does
+  two jobs — authenticate [3mand[0m persist — which is exactly the seam you'll need to cut when real auth arrives, and it
+  JSON-parses on every read. [3mWhen it wins:[0m if this stays a one-form toy forever.
+  [3mComplexity:[0m trivial.
+
+  [1mWhy A:[0m your two stated futures are "real auth later" and "other forms later." A is the only one of the three that puts
+  a seam at each of those points without inventing subscriber infrastructure for a single form.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Approach [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mWhich approach should I write up as the design?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: layered auth + session (Recommended)[39m
+     [38;5;246mauth.js issues the id, session.js owns sessionStorage, app.js wires the DOM. Seams at both points you said are [39m
+     [38;5;246mcoming.[39m
+  [38;5;246m2.[39m C: storage-only
+     [38;5;246mOne tiny session.js, login() writes directly. Fewest parts, but no seam between authenticating and persisting.[39m
+  [38;5;246m3.[39m B: observable store
+     [38;5;246mLayered plus pub/sub so forms react to identity changes. More machinery than one form justifies.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

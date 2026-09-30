@@ -1,0 +1,40 @@
+  Called any number of times from anywhere, it returns the same opaque id. [38;5;153msrc/[39m stays untouched — it's unrelated
+  Node/CommonJS code and dragging it in would just spread the module-format conflict.
+
+  [1mHow the id is produced and kept.[0m [38;5;153mgetUserId()[39m is lazy and memoized in module scope. On first call it reads [38;5;153mlocalStorage
+[39m  under the key [38;5;153mapp.userId[39m; if nothing is there it mints one with [38;5;153mcrypto.randomUUID()[39m, writes it back, and caches it.
+  Subsequent calls return the cached value without touching storage. That gives you the stable-across-restarts semantics
+  you picked, with no id generated for visitors who never trigger a call.
+
+  [1mHow [38;5;153mlogin()[39m changes.[0m Its signature stays [38;5;153mlogin(username, password)[39m — no new parameter. It calls [38;5;153mgetUserId()[39m itself and
+  the id flows out two ways: into the log line, and into the returned object.
+
+  [34mfunction[39m [33mlogin[39m(username, password) {
+    [34mconst[39m userId = [33mgetUserId[39m();
+    console.[33mlog[39m([31m"Logging in:"[39m, username, [31m"userId:"[39m, userId);
+    [34mreturn[39m { [36msuccess[39m: [34mtrue[39m, [36muser[39m: username, userId };
+  }
+
+  This is the shape you approved in the first question: login produces the id rather than receiving it. Note the id is
+  [3mnot[0m how future forms get at it — they [38;5;153mimport { getUserId }[39m directly rather than routing through login's return value,
+  so a form that has nothing to do with authentication doesn't have to care that login exists.
+
+  [1m[38;5;153mindex.html[0m changes one line: [38;5;153m<script src="app.js">[39m becomes [38;5;153m<script src="app.js" type="module">[39m. The tag is already the
+  last element in [38;5;153m<body>[39m and the form is parsed before it, so module deferral changes nothing observable. [38;5;153mapp.js[39m gains
+  one import at the top.
+
+  [1mData flow:[0m form submit → [38;5;153mvalidateForm[39m → [38;5;153mlogin()[39m → [38;5;153mgetUserId()[39m → memo hit, else [38;5;153mlocalStorage[39m read, else generate +
+  persist → log line carries the id → result object carries the id.
+
+  [1mDeliberately not in scope:[0m no network transport, no [38;5;153mtrack()[39m/event layer, no logout or id rotation, no per-login
+  session id. Each is a clean addition later on top of this boundary, and none of them earn their keep before you have a
+  real endpoint.
+
+  Does this section look right before I move on to error handling, testing, and the tooling question?
+
+[38;5;246m✻[39m [38;5;246mBaked for 3m 26s · done 11:14 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

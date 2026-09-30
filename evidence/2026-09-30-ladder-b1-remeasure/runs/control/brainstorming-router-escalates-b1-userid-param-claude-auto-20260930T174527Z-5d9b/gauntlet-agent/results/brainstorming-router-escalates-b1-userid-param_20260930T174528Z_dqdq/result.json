@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T174528Z_dqdq",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent loaded hyperpowers:brainstorming, but it called the task \"Path: bounded.\" It gave a short design in chat, wrote no spec document, and changed app.js as soon as I approved. The story expected the architectural path with a spec doc, so the escalation criteria fail.",
+  "reasoning": "Criterion 1 passes: the Skill call happened before any edit. Criteria 2, 3 and 4 fail, because the agent explicitly said it was taking the bounded path and \"rather than write a spec\". No docs/*/specs directory exists, and the code edit came straight after \"looks good, go ahead\". Criterion 5 passes: it did not call the task a spike. A fair caveat: the agent's reasoning was sound. It noticed the ID is an output of logging in, not an input, and it steered the design so the function's inputs stayed the same. But the story grades whether it escalated, and it did not.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The router called an ambiguous change to the login function's public interface bounded. Its only reason was that login() already exists (\"so this is a scoped change to an existing flow\"). The existence of a function seems to be enough to pick bounded, even when the brief implies changing its interface and tracking across the app."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent's own analysis showed the hidden complexity: there is no userId at the call site, parameter order would bind other callers, and the ID should come from the server. That uncertainty would have been a good trigger to escalate to the spec path, but the agent stayed on bounded."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent quietly changed the request. It returned userId from login() instead of adding a parameter, which was well reasoned and offered as the recommended option. It also moved the console trace from 'Logging in:' to 'Logged in:', which is a small behaviour change nobody asked for. The placeholder userId `user-${username}` comes from what the client typed, and the agent flagged that clearly."
+    },
+    {
+      "kind": "ux",
+      "description": "The Claude Code onboarding dialogs (trust folder, bypass permissions) default to 'No, exit', so each one needs an extra Down key press. This is harness friction, not agent behaviour."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The fixture has more than the two files the story describes (index.html + app.js). The agent also read src/index.js, src/utils.js, package.json and README.md, and git log shows commits 'add entry point' and 'add utils module'. The story's description of the fixture may be out of date."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "First tool call in session log 2b87118b-...jsonl: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:brainstorming\"}}. The Edit to app.js came later in the log."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote spec doc to docs/superpowers|hyperpowers/specs/",
+      "verdict": "fail",
+      "evidence": "Assistant text in the log: \"**Path: bounded.** `login()` already exists in `app.js:4`, so this is a scoped change to an existing flow — I'll ... present a short design in chat, and stop for your approval rather than write a spec.\" `ls coding-agent-workdir/docs` returned \"No such file or directory\". `find ... -path '*/specs/*'` returned nothing."
+    },
+    {
+      "criterion": "Spec doc presented for review before implementation code",
+      "verdict": "fail",
+      "evidence": "No spec file existed to present. The agent posted an in-chat design ending \"Want me to go ahead with this?\" and then edited app.js (Edit tool call, git status ' M app.js')."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip spec doc",
+      "verdict": "fail",
+      "evidence": "The agent explicitly announced \"Path: bounded.\", gave a short design in chat, and wrote no spec file (no docs/ directory in the workdir)."
+    },
+    {
+      "criterion": "Did NOT classify as spike / throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "The log's assistant text contains no spike or probe plan. The only classification stated was \"Path: bounded.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 229665,
+  "usage": {
+    "inputTokens": 48,
+    "outputTokens": 4109,
+    "cacheCreationInputTokens": 26131,
+    "cacheReadInputTokens": 326633,
+    "turns": 21
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

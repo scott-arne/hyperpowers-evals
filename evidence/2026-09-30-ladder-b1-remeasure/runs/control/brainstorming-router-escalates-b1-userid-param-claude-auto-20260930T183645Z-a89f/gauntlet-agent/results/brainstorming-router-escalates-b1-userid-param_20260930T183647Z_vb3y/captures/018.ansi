@@ -1,0 +1,40 @@
+  │            │ the stored JSON shape.                                                             │                │
+  ├────────────┼────────────────────────────────────────────────────────────────────────────────────┼────────────────┤
+  │ [38;5;153mapp.js[39m     │ DOM wiring only: read the form, validate, call auth, hand the result to session,   │ both           │
+  │            │ report to the user.                                                                │                │
+  └────────────┴────────────────────────────────────────────────────────────────────────────────────┴────────────────┘
+
+  [38;5;153mvalidateForm[39m stays in [38;5;153mapp.js[39m — it validates form input, which is DOM-layer work.
+
+  [1mThe auth response shape[0m — this is the contract real auth will have to satisfy, so it's worth getting right now:
+
+  [32m// success[39m
+  { [36mok[39m: [34mtrue[39m,  [36muser[39m: { [36mid[39m: [31m"u_3f9a2c"[39m, [36musername[39m: [31m"alice"[39m } }
+  [32m// failure (the stub never returns this yet, but the shape exists)[39m
+  { [36mok[39m: [34mfalse[39m, [36merror[39m: [31m"Invalid credentials"[39m }
+
+  The stub synthesizes [38;5;153mid[39m deterministically from the username so it's stable across logins in a session. Swapping in
+  real auth means replacing the body of one function; the shape callers depend on doesn't move.
+
+  [1mThe stored shape[0m — one key, one JSON object:
+
+  sessionStorage[[31m"webapp.session"[39m] = [31m'{"userId":"u_3f9a2c","username":"alice"}'[39m
+
+  A single namespaced key rather than parallel [38;5;153muserId[39m/[38;5;153musername[39m keys, so the identity is written and cleared atomically
+  and adding a field later doesn't add a key. [38;5;153msession.js[39m exposes [38;5;153msaveSession(user)[39m, [38;5;153mgetSession()[39m, [38;5;153mgetUserId()[39m,
+  [38;5;153mclearSession()[39m — callers never touch [38;5;153msessionStorage[39m or the key name, which is what makes the store swappable.
+
+  [1mOne thing I need to flag:[0m the repo's [38;5;153msrc/*.js[39m use CommonJS [38;5;153mrequire[39m, and [38;5;153mpackage.json[39m has no [38;5;153m"type"[39m field, so Node
+  treats every [38;5;153m.js[39m here as CommonJS — meaning the unit tests can't [38;5;153mimport[39m the new ES modules as-is. My fix is to add
+  [38;5;153m"type": "module"[39m to [38;5;153mpackage.json[39m and drop in a two-line [38;5;153msrc/package.json[39m containing [38;5;153m{"type":"commonjs"}[39m, which keeps
+  [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m working [1mwithout editing either file[0m. The browser doesn't read [38;5;153mpackage.json[39m at all, so
+  this is purely for Node.
+
+  Does section 1 look right?
+
+[38;5;246m✻[39m [38;5;246mChurned for 3m 53s · done 11:44 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  to [38;5;153m<script type="module" src="app.js">[39m; the storage backend is passed in, so it can be memory, [38;5;153msessionStorage[39m or
+  [38;5;153mlocalStorage[39m, and tests can substitute a fake. [3mWins when[0m you expect several more modules soon and want real boundaries
+  and testability from the start. [3mCosts:[0m module scripts are deferred and don't create globals, so [38;5;153mlogin[39m and
+  [38;5;153mvalidateForm[39m stop being reachable from the console or inline handlers — a real behavior change for a 28-line app, in
+  service of structure that doesn't exist yet. Complexity: moderate.
+
+  [1mC. No client-side store — re-read the id from the server[0m — persist nothing. Any page that needs the id asks a
+  [38;5;153m/me[39m-style endpoint; the server session is already the source of truth. [3mWins when[0m correctness matters more than
+  latency: nothing can go stale, nothing to clear on logout, no user-editable copy. [3mCosts:[0m a round trip per page, and it
+  needs a server endpoint that does not exist — [38;5;153mlogin[39m is a stub that never calls [38;5;153mAPI_ENDPOINT[39m. Complexity: moderate,
+  and most of it isn't on our side.
+
+  [1mMy recommendation: A.[0m It's the only one whose cost is proportional to what you asked for. B buys structure for
+  components that are still hypothetical and pays for it by breaking the global-script model the page currently relies
+  on; if the app really does grow, moving A's module to ES modules later is a mechanical change because the interface
+  ([38;5;153mset[39m/[38;5;153mget[39m/[38;5;153mclear[39m) stays identical. C is the architecturally cleanest answer and I'd revisit it the moment [38;5;153mlogin[39m becomes
+  a real network call — but today it would be building a client for an endpoint nobody has written.
+
+  One sub-decision inside A that I'd rather you make than assume: [38;5;153msessionStorage[39m (cleared when the tab closes) versus
+  [38;5;153mlocalStorage[39m (survives browser restart until explicitly cleared). For a display-only id I'd default to [38;5;153msessionStorage[39m
+  — a stale "logged in as…" banner after a browser restart is a worse failure than asking someone to log in again — but
+  [38;5;153mlocalStorage[39m is the right call if you want the id to outlive the tab.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Approach  ☒ Lifetime [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mThe repo has no linter, formatter, or test runner. Set any up now?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mUnit test infrastructure[39m
+         [38;5;246mA runner plus a first passing test. The session module has real logic worth testing (storage fallback, clear),
+[39m         [38;5;246mand the normal workflow here is test-driven.[39m
+  [38;5;246m2.[39m [ ] Lint + auto-format
+         [38;5;246mESLint + Prettier with standard config. Cheapest to add now, before there is much code to reformat.[39m
+  [38;5;246m3.[39m [ ] Neither — keep it bare
+         [38;5;246mMatch the fixture as-is. Fastest, but the session module ships without tests.[39m
+  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel

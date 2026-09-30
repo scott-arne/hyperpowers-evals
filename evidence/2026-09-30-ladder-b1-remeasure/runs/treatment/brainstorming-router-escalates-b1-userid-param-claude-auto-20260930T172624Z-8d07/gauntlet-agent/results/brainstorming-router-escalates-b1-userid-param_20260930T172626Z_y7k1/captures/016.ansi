@@ -1,0 +1,40 @@
+  [34mif[39m ([34mtypeof[39m module !== [31m"undefined"[39m && module.exports) {
+    module.exports = { createTracker, STORAGE_KEY, getTrackingId, clearTrackingId };
+  } [34melse[39m {
+    globalThis.LoginTracking = { getTrackingId, clearTrackingId };
+  }
+
+  Public surface is two functions: [38;5;153mgetTrackingId()[39m → [38;5;153mstring | null[39m, and [38;5;153mclearTrackingId()[39m → [38;5;153mvoid[39m.
+
+  [1mOne decision inside this section I want your call on.[0m The natural ID generator is [38;5;153mcrypto.randomUUID()[39m, but it's only
+  defined in a [3msecure context[0m. [38;5;153mfile://[39m qualifies in Chrome and Firefox, so your common case is fine — but plain [38;5;153mhttp://[39m
+  on a LAN host does not, and there [38;5;153mcrypto.randomUUID[39m is [38;5;153mundefined[39m. That's a third failure mode distinct from the
+  storage one you already decided, and it needs its own answer: storage works, ID generation doesn't.
+
+  Returning [38;5;153mnull[39m there is the consistent reading of "null means no durable ID" — but it's arguably the [3mwrong[0m
+  consistency, because storage is fine and we genuinely could persist something. A [38;5;153mMath.random[39m-based ID is not
+  cryptographically random, which would matter for a session token and does not matter here: a correlation ID needs
+  collision resistance, not unpredictability, and it is never used for authorization. Falling back keeps the
+  cross-page-load linkage you asked for on insecure origins instead of silently dropping the feature there.
+
+  My recommendation is the fallback, with a comment stating plainly that this value is a correlation ID and must never
+  be used as a secret — because the real risk of a [38;5;153mMath.random[39m ID in a codebase is someone later mistaking it for one.
+
+  [1mAlso flagged, not asking:[0m [38;5;153mclearTrackingId()[39m will exist but have no caller — the app has no logout. I'm not adding one;
+  that's scope creep. The design notes it as an explicit gap so the reset path gets wired when logout arrives.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Section 1 [38;5;16m[48;5;153m ☐ ID generation [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhen crypto.randomUUID is unavailable (insecure origin), what should happen?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mMath.random fallback (Recommended)[39m
+     [38;5;246mKeep the durable ID on insecure origins. Commented as a correlation ID that must never be used as a secret. Not [39m
+     [38;5;246mcryptographically random.[39m
+  [38;5;246m2.[39m Return null
+     [38;5;246mConsistent with 'null means no durable ID', but drops the feature entirely on plain-http origins even though [39m
+     [38;5;246mstorage works fine.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

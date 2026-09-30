@@ -1,0 +1,40 @@
+  one at a time, then 2-3 approaches with trade-offs, then a sectioned design for your approval, then a written spec at
+  [38;5;153mdocs/hyperpowers/specs/[39m before any code. No code until you've approved that spec. Your first answer carries over —
+  [38;5;153mlogin()[39m returns the userId rather than taking it — that's now the subsystem's entry point rather than the whole
+  change.
+
+  Nothing else I do depends on the next answer, so here's the first question.
+
+  [1mThe fork:[0m "track who logged in, persisting across the app" splits into two different data models, and they're
+  expensive to swap later because the consuming forms get built against whichever one we pick.
+
+  - [1mCurrent-user store[0m — one live value: who is logged in right now. Other forms read it to stamp submissions or gate
+    UI. Cheap, small interface, single source of truth. Rules out answering "when did they log in" or "what did they do"
+    without adding a second mechanism.
+  - [1mEvent log[0m — an append-only list of tracked events, login being the first kind. Answers history questions and extends
+    to other forms' actions naturally. Costs an event schema, a size/retention policy, and more surface area. "Who is
+    logged in now" becomes a derived query rather than a read.
+  - [1mBoth[0m — a current-user store that also appends a login event. Most capable, but it's two subsystems' worth of design,
+    and I'd want a concrete need for the history before recommending it.
+
+  [1mMy recommendation: the current-user store.[0m Everything you've described concretely — other forms needing the user — is
+  a read of the present value, not a query over history. It's the smaller thing to build, and if audit history turns out
+  to matter, adding an event log on top of a clean current-user interface is additive rather than a rewrite.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Data model [39m[49m
+
+[1m[38;5;231mWhat shape should the tracked user data take?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCurrent-user store (Recommended)[39m
+     [38;5;246mOne live value for who is logged in now. Other forms read it. Smallest interface; history can be added later [39m
+     [38;5;246mwithout a rewrite.[39m
+  [38;5;246m2.[39m Append-only event log
+     [38;5;246mA list of tracked events, login being the first kind. Answers history questions; costs an event schema and [39m
+     [38;5;246mretention policy.[39m
+  [38;5;246m3.[39m Both
+     [38;5;246mA current-user store that also appends login events. Most capable, roughly twice the design surface.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

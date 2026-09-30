@@ -1,0 +1,40 @@
+  [1mThe fork:[0m [38;5;153mlogin(username, password)[39m is called from exactly one place — the form submit handler — and that handler only
+  has the two form fields. There is no userId anywhere in this repo: no session, no stored identity, no auth response
+  carrying an id ([38;5;153mlogin[39m is a stub that returns [38;5;153m{ success: true, user: username }[39m). So "add a userId parameter" needs a
+  source, and the source decides whether this is a one-file edit or a new piece of the app.
+
+  - [1mReturn the id from login instead of passing it in[0m — the server (eventually) tells you who authenticated, and
+    tracking reads it off the result. No new data source, stays in [38;5;153mapp.js[39m, and the stub just grows an [38;5;153mid[39m field. Cheap to
+    reverse later. Worth noting: an id you pass [3minto[0m login is circular — the caller can't know who logged in before the
+    login happened. That's the reason I lean here.
+  - [1mTreat [38;5;153musername[39m as the identifier[0m — cheapest of all, but then a [38;5;153muserId[39m parameter buys nothing that [38;5;153musername[39m doesn't
+    already carry; this really means "no new parameter, just include it in the tracking call." Cheap to reverse.
+  - [1mCaller supplies userId from something upstream[0m — a tenant id, a device/anonymous id, an existing session. This is
+    the only reading that genuinely needs a new parameter, but it also needs a new source of identity in the page, and
+    it changes the signature for every future caller. Expensive to undo.
+
+  [1mMy recommendation:[0m the first one. It gets you "track who logged in" without inventing an identity source, and it keeps
+  [38;5;153mlogin[39m's signature honest.
+
+  If the answer turns out to involve real tracking infrastructure (an analytics call, an audit log, anything beyond the
+  existing [38;5;153mconsole.log[39m), that's a subsystem this repo doesn't have and I'll stop and re-classify this as architectural
+  rather than quietly build it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mThere's no userId in this codebase today — where should it come from?[0m
+
+  [38;5;246m1.[39m Return it from login (Recommended)
+     [38;5;246mlogin() returns the id alongside success; tracking reads it off the result. No new identity source, no signature [39m
+     [38;5;246mchange for callers. My recommendation — a caller can't know who logged in before login happens.[39m
+  [38;5;246m2.[39m username is the id
+     [38;5;246mSkip the new parameter; just include the existing username in the tracking output. Cheapest, but adds nothing over
+[39m     [38;5;246mwhat login already has.[39m
+  [38;5;246m3.[39m Caller passes it in
+     [38;5;246mlogin(userId, username, password) — but the page needs a new source of identity (tenant id, device id, existing [39m
+     [38;5;246msession) that doesn't exist yet. This one likely escalates to architectural.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

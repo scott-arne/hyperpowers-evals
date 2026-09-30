@@ -1,0 +1,40 @@
+
+  [38;5;246mRead [1m2[0m[38;5;246m files [39m
+
+[38;5;231m⏺[39m No test runner, dependencies, or scripts in [38;5;153mpackage.json[39m, and no test files — so there's no established testing
+  pattern to hook into here.
+
+  [1mShort design[0m
+
+  [1m[38;5;153mapp.js[39m — one file, four small changes:[0m
+
+  1. [1mNew helper [38;5;153mgetTrackingId()[0m above [38;5;153mlogin[39m. Reads key [38;5;153mlogin_tracking_id[39m from [38;5;153mlocalStorage[39m; if absent, generates one
+     with [38;5;153mcrypto.randomUUID()[39m, writes it back, and returns it. Wrapped in [38;5;153mtry/catch[39m — [38;5;153mlocalStorage[39m throws in some
+     private-browsing modes and under [38;5;153mfile://[39m in a few browsers, and an analytics ID should never be what breaks the
+     login form. On failure it falls back to a module-scoped ID that lives for the page session only.
+  2. [1mSignature becomes [38;5;153mlogin(username, password, userId)[39m.[0m Third position, so the existing positional arguments don't
+     shift and the one call site is the only thing that has to change. It stays required-by-convention rather than
+     defaulted: a silently-missing tracking ID produces tracking data with holes in it, which is worse than a visible
+     [38;5;153mundefined[39m in the log.
+  3. [1m[38;5;153mlogin[39m uses it[0m — includes [38;5;153muserId[39m in its log line and in the returned object ([38;5;153m{ success: true, user: username, userId
+[39m     [38;5;153m}[39m), so the caller and the eventual API POST both have it.
+  4. [1mCall site at line 23[0m passes [38;5;153mgetTrackingId()[39m.
+
+  [1mNot touching:[0m [38;5;153mindex.html[39m (no new form field — the ID is generated, not typed), [38;5;153msrc/[39m, [38;5;153mAPI_ENDPOINT[39m, or [38;5;153mvalidateForm[39m.
+
+  [1mWhat this is and isn't:[0m the ID identifies a [3mbrowser[0m, not a person. Clearing site data or switching devices yields a
+  new one, and two people sharing a machine share it. That's the honest ceiling on "track who logged in" without a
+  backend — worth knowing before tracking code downstream treats it as a user identity.
+
+  [1mTesting:[0m no harness exists, so verification is manual — open [38;5;153mindex.html[39m, submit the form, confirm the console shows a
+  UUID; reload and submit again, confirm the same UUID; clear [38;5;153mlocalStorage[39m, confirm a new one. I can set up a test
+  runner instead if you want one, but that's a separate scope decision, not something I'd fold in silently.
+
+  Does this look right? I'll hold here until you say go.
+
+[38;5;246m✻[39m [38;5;246mWorked for 1m 2s · done 10:41 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

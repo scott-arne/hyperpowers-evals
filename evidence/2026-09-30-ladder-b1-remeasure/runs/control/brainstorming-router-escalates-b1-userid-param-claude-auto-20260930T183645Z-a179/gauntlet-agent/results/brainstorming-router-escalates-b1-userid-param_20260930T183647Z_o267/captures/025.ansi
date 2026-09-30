@@ -1,0 +1,40 @@
+  which reads identity from the context and mints its own correlation id per request. No form ever passes a [38;5;153muserId[39m.
+
+  Two changes to existing behavior worth naming: today [38;5;153mapp.js:5[39m does [38;5;153mconsole.log("Logging in:", username)[39m. Client-side
+  console output is not an audit record and shouldn't look like one, so client logging drops to the correlation id only
+  — no username, and never the password. The correlation id is what lets support tie a browser-side report to the
+  server's real record.
+
+  [1mError handling.[0m
+
+  - [1mNetwork failure / no response:[0m [38;5;153m{ success: false, reason: 'network', correlationId }[39m. Critical subtlety: the client
+    not hearing back does [3mnot[0m mean the attempt wasn't audited — the server may have recorded it already. The client must
+    never present its own failure as evidence of no access attempt.
+  - [1mRetry:[0m reuses the [3msame[0m correlation id, so a retried attempt can be de-duplicated server-side rather than appearing
+    as two access events.
+  - [1mRejected credentials (401):[0m [38;5;153m{ success: false, reason: 'invalid-credentials' }[39m, with no distinction between unknown
+    user and bad password.
+  - [1mMalformed success response (no [38;5;153muserId[39m):[0m treated as failure and the context is [3mnot[0m set. The module refuses to invent
+    an identity — that's the whole point of approach C.
+  - [1mSession storage:[0m in memory only, not [38;5;153mlocalStorage[39m, so an XSS bug can't lift it. This assumes the server keeps the
+    real session in an HttpOnly cookie; it means a page refresh requires re-establishing identity.
+
+  [1mTesting[0m ([38;5;153mnode:test[39m, zero dependencies). Unit tests for: correlation id uniqueness and format; [38;5;153msession-context[39m
+  set/get/clear and its rejection of a payload missing [38;5;153muserId[39m; [38;5;153mapi-request[39m attaching the right headers, and its behavior
+  on non-2xx and on a thrown [38;5;153mfetch[39m (both via an injected fake); and [38;5;153mlogin[39m for success, rejection, malformed response,
+  and correlation-id reuse across a retry.
+
+  [1mKnown gap, stated plainly:[0m you chose unit tests only, so the DOM wiring in the submit handler — that the form is
+  actually connected to [38;5;153mlogin[39m — is not covered by any test. That's the seam most likely to break silently. It's a
+  reasonable trade for scope; I just won't let the spec imply coverage we don't have.
+
+  Does Section 2 look right? Once you confirm, I'll write the spec to
+  [38;5;153mdocs/hyperpowers/specs/2026-09-30-login-audit-correlation-design.md[39m, self-review it, run the Codex spec gate, and hand
+  it to you to read before any plan gets written.
+
+[38;5;246m✻[39m [38;5;246mWorked for 26s · done 11:45 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

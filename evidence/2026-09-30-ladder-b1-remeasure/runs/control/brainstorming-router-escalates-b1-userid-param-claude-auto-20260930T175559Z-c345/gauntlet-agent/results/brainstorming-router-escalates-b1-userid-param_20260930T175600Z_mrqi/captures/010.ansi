@@ -1,0 +1,40 @@
+  Before I write anything, there's one fork I can't resolve from the code.
+
+  [1mThe fork:[0m [38;5;153mlogin()[39m is the thing that [3mestablishes[0m identity — it already receives [38;5;153musername[39m and returns [38;5;153muser[39m. A [38;5;153muserId[39m
+  passed [3min[0m has to come from somewhere, and the call site at [38;5;153mapp.js:23[39m has nothing to pass: it only has the two form
+  inputs. So "add a userId parameter" can mean three different changes, and they differ in who owns the identifier.
+
+  - [1mCaller supplies it[0m — [38;5;153mlogin(userId, username, password)[39m. Buys you an identifier chosen upstream (a
+    device/tenant/correlation id). Costs: you must decide where the call site gets it, since today it has no source, and
+    every caller must now produce one. Changing the signature later means touching all callers.
+  - [1mLogin returns it[0m — signature unchanged; [38;5;153mlogin()[39m returns [38;5;153m{ success, userId, user }[39m from what the API resolved. Buys
+    you the real identity without inventing a value at the call site. Costs: nothing to track until the stub actually
+    talks to [38;5;153mAPI_ENDPOINT[39m. Cheapest to change later — it's additive to the return shape.
+  - [1mOptional param with a default[0m — [38;5;153mlogin(username, password, userId = null)[39m. Buys you the exact signature you asked for
+    without breaking the existing call. Costs: a parameter that is [38;5;153mnull[39m in the only code path that exists, so it tracks
+    nothing today.
+
+  [1mMy recommendation: the third, as a stepping stone, only if you already know what will pass a real value.[0m Otherwise the
+  second is what "track who logged in" usually wants — the id comes back from auth rather than being guessed by the
+  form handler. But you know the upstream system and I don't.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ userId source  ☒ Tracking scope [38;5;16m[48;5;153m ✔ Submit [38;5;246m[49m →[39m
+
+[1m[38;5;231mReview your answers[0m
+
+ [2m│[0m ● Where does the userId come from? The submit handler at app.js:23 has only the two form fields, so it has nothing to
+ [2m│[0m   pass today.
+   [38;5;114m→ Returned by login (Recommended)[39m
+ ● What should "track" actually do with it, once the value exists?
+   [38;5;114m→ Real tracking module[39m
+
+[38;5;246mReady to submit your answers?[39m
+
+[38;5;153m❯[39m [38;5;246m1. [38;5;153mSubmit answers[39m
+  [38;5;246m2. [39mCancel
+
+
+
+
+

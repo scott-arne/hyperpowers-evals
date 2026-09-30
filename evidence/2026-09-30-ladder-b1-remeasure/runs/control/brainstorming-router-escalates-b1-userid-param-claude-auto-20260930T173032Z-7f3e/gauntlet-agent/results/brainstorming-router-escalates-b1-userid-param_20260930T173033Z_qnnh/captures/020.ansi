@@ -1,0 +1,40 @@
+  retries whenever it likes. No timers, no retry loop, no backoff inside the tracker — scheduling belongs to whoever
+  owns the backend, which doesn't exist yet. Nothing calls [38;5;153mflush[39m in this change; it's the seam, wired up when there's
+  somewhere to send to.
+
+  [1mTesting with [38;5;153mnode:test[39m.[0m One wrinkle worth designing around: [38;5;153mlocalStorage[39m is a browser global and Node doesn't reliably
+  provide it. So the tracker takes its storage as an injectable dependency defaulting to [38;5;153mglobalThis.localStorage[39m, and
+  tests pass a [38;5;153mMap[39m-backed fake. That keeps tests dependency-free and hermetic — no browser, no jsdom. First tests cover
+  the queue cap and eviction order, the password-key rejection, corrupt-JSON recovery, storage-throws fallback, and that
+  flush preserves records added mid-flight.
+
+  [1mOne decision left, because it changes the interface.[0m Hashing the username properly means
+  [38;5;153mcrypto.subtle.digest("SHA-256", …)[39m, which is async — and [38;5;153mlogin()[39m is synchronous today.
+
+  - [1m[38;5;153mtrack()[39m returns a promise; [38;5;153mlogin()[39m calls it without awaiting.[0m Gets real SHA-256. Costs an internal promise chain to
+    serialize queue writes, since two overlapping async read-modify-writes would otherwise lose a record. [38;5;153mlogin()[39m stays
+    synchronous and its return value is unchanged. [3mThis is the interface every future form is written against, so it's [0m
+    [3mworth getting right now.[0m
+  - [1m[38;5;153mtrack()[39m stays synchronous, using a small non-cryptographic hash (FNV-1a).[0m No races, no promise chain, simplest
+    possible code. But a 32-bit non-crypto hash of a short username is brute-forceable in milliseconds, so the
+    pseudonymisation is close to decorative.
+
+  [1mMy recommendation: the async version.[0m You chose a pseudonymous ID to avoid storing identifiable data; FNV-1a doesn't
+  actually deliver that, so the sync option quietly undercuts the decision you already made. The promise chain is about
+  five lines. I'd also salt the hash with a per-deployment constant, which is what stops the "just hash every common
+  username and compare" attack that a bare digest is still open to.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Hashing [39m[49m ☐ Section 3  ✔ Submit  →
+
+[1m[38;5;231mAsync track() with real SHA-256, or sync track() with a weak hash?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAsync, SHA-256 + salt (Recommended)[39m
+     [38;5;246mtrack() returns a promise; login() fires and forgets. Real pseudonymisation, needs a short write-serialization [39m
+     [38;5;246mchain.[39m
+  [38;5;246m2.[39m Sync, FNV-1a
+     [38;5;246mSimplest code, no races, but the hash is brute-forceable, which undercuts the pseudonymous-ID decision.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+  [38;5;153mvalidateForm[39m stays in [38;5;153mapp.js[39m. It's pure and would be more testable in [38;5;153msrc/[39m, but it has nothing to do with tracking and
+  moving it is scope creep.
+
+  [1mOne conflict I have to flag.[0m [38;5;153mpackage.json[39m has no [38;5;153m"type"[39m field, so Node treats every [38;5;153m.js[39m as CommonJS — which means
+  [38;5;153msrc/auth.js[39m written as ESM will fail to load under the test runner even though the browser loads it fine. The fix is
+  [38;5;153m"type": "module"[39m in [38;5;153mpackage.json[39m, which then breaks [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m (both CommonJS). Those are 7 and 5
+  lines respectively, so converting them is a two-minute mechanical edit. I'd rather do that than name the new files
+  [38;5;153m.mjs[39m and leave a permanent oddity. It does mean this change touches two files that have nothing to do with login —
+  required for correctness, not cleanup.
+
+  [1mThe scope question I can't answer for you:[0m [38;5;153mlogin()[39m today is a stub that unconditionally returns [38;5;153m{ success: true, user:
+[39m  [38;5;153musername }[39m and never contacts [38;5;153mAPI_ENDPOINT[39m. That matters because your chosen design has a failure event and a real
+  [38;5;153muserId[39m — and a stub produces neither. Either [38;5;153mlogin()[39m starts actually calling the endpoint, or the failure path is
+  unreachable code and [38;5;153muserId[39m is a fabricated value.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Auth scope [39m[49m
+
+[2m│[0m [1m[38;5;231mSection 1 — does the module layout look right, and should login() become a real fetch or stay a stub?[0m
+
+[38;5;153m❯[38;5;246m 1.[1m[38;5;153m Keep stub, make it [0m          [38;5;246m┌────────────────────────────────────────────────────────────────────────────────────┐
+[39m    [1m[38;5;153mfail-capable (Recommended)[0m    [38;5;246m│ [39m// src/auth.js  (still offline, but shaped like the real thing)[38;5;246m                    │
+[39m [38;5;246m 2.[39m Implement the real fetch     [38;5;246m│ [39mexport async function login(username, password) {[38;5;246m                                  │
+[39m [38;5;246m 3.[39m Leave stub exactly as-is     [38;5;246m│ [39m  if (!password) {[38;5;246m                                                                 │
+[39m                                  [38;5;246m│ [39m    return { success: false, userId: null, user: username,[38;5;246m                         │
+[39m                                  [38;5;246m│ [39m             reason: "invalid_credentials" };[38;5;246m                                      │
+[39m                                  [38;5;246m│ [39m  }[38;5;246m                                                                                │
+[39m                                  [38;5;246m│ [39m  return { success: true, userId: [38;5;153mu_${username}[39m, user: username,[38;5;246m                   │
+[39m                                  [38;5;246m│ [39m           reason: null };[38;5;246m                                                         │
+[39m                                  [38;5;246m│ [39m}[38;5;246m                                                                                  │
+[39m                                  [38;5;246m│ [39m// both event paths reachable + testable; no live endpoint needed[38;5;246m                  │
+[39m                                  [38;5;246m└────────────────────────────────────────────────────────────────────────────────────┘
+
+[39m                                  [38;5;153mNotes:[39m [3m[38;5;246mpress n to add notes[0m
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel[39m

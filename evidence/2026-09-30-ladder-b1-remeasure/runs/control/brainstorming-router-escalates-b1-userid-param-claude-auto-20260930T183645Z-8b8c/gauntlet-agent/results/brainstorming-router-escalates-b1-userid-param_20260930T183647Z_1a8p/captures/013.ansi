@@ -1,0 +1,40 @@
+  three, [38;5;153mlogin[39m becomes [1masync[0m and gains [1mno [38;5;153muserId[39m parameter[0m — it returns the server's [38;5;153muserId[39m. That's the inversion you
+  already agreed to; the one call site at [38;5;153mapp.js:23[39m has to [38;5;153mawait[39m.
+
+  - [1mMemoized readiness promise[0m — [38;5;153mauth.js[39m exposes [38;5;153mAuth.getUser()[39m, which returns a promise resolving to [38;5;153m{userId, username}
+[39m    or [38;5;153mnull[39m. The first call fires [38;5;153m/me[39m; every later caller on that page gets the same in-flight promise, so N forms cost
+    one round trip. Consumers write [38;5;153mconst user = await Auth.getUser()[39m. [3mTradeoff:[0m every consumer is async, including
+    ones that would rather not be. [3mBuys:[0m the unknown-identity window is unrepresentable — you cannot read the value
+    without waiting for it. Moderate.
+  - [1mPage bootstrap that gates wiring[0m — each page calls [38;5;153mawait Auth.init()[39m once at startup, then [38;5;153mAuth.currentUser[39m is a
+    plain synchronous value everywhere. [3mTradeoff:[0m every future page must remember the bootstrap, and a page that forgets
+    reads [38;5;153mnull[39m and silently renders as logged-out — a bug that looks like a session problem. Also delays all
+    interactivity behind one request. [3mBuys:[0m synchronous consumers, simplest thing to read. Moderate.
+  - [1mSubscription model[0m — [38;5;153mAuth.subscribe(fn)[39m fires immediately with the current state and again on login, logout, or
+    detected expiry; consumers re-render. [3mTradeoff:[0m the most machinery, and consumers must still handle an "unknown yet"
+    state. [3mBuys:[0m it's the only one that reacts when the session lapses mid-session instead of discovering it on the
+    next failed request. High.
+
+  [1mMy recommendation: the memoized readiness promise.[0m You told me other forms will need this later, and the second
+  option's failure mode is one that lands specifically on [3mlater[0m forms, silently, in a way that reads as a backend bug.
+  Making the wait explicit costs an [38;5;153mawait[39m per consumer and removes that whole class of error. Being straight about the
+  cost: if you later want the subscription behaviour, that migration does touch consumers — the promise doesn't grow
+  into it for free.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Consumption [39m[49m
+
+[1m[38;5;231mHow should pages and future forms consume the current identity?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mMemoized promise (Recommended)[39m
+     [38;5;246mAuth.getUser() returns a shared promise; one /me per page. Unknown-identity window is unrepresentable. All [39m
+     [38;5;246mconsumers async.[39m
+  [38;5;246m2.[39m Page bootstrap, sync reads
+     [38;5;246mawait Auth.init() once per page, then Auth.currentUser is a plain value. Simplest to read; a page that forgets init
+[39m     [38;5;246msilently looks logged-out.[39m
+  [38;5;246m3.[39m Subscription model
+     [38;5;246mAuth.subscribe(fn) fires on login/logout/expiry. Only option that reacts to mid-session expiry. Most machinery.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m
