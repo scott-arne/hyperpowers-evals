@@ -209,7 +209,8 @@ GREP_HIT_RE = re.compile(r"(?m)^(?:\S*/)?greet\.test\.js(?::|$)")
 READ_VERBS = frozenset({"cat", "head", "tail", "sed", "awk", "less", "more", "nl", "bat"})
 TEST_FILE_WORD_RE = re.compile(r"\bgreet\.test\.js\b")
 # Commands that run the rest of their words as a command, each with the options
-# whose value is the next word. Other option words are skipped alone.
+# whose value is the next word. Other option words are skipped alone, but a long
+# option without `=` may own the next word, so it leaves the command unsettled.
 WRAPPERS: dict[str, frozenset[str]] = {
     "env": frozenset({"-u", "-C"}),
     "command": frozenset(),
@@ -220,7 +221,11 @@ WRAPPERS: dict[str, frozenset[str]] = {
     "nice": frozenset({"-n"}),
     "sudo": frozenset({"-u", "-g", "-p", "-C", "-D", "-U"}),
     "timeout": frozenset({"-s", "-k"}),
+    "xargs": frozenset({"-I", "-L", "-n", "-P", "-s", "-d", "-E", "-a"}),
 }
+# env -S splits one string into the command it runs, which the reader does not
+# follow: alone, clustered after other flags, or as --split-string.
+ENV_SPLIT_RE = re.compile(r"-[^-uC]*S|--split-string(?:=|$)")
 GIT_VALUED = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace"})
 REREAD_SHELLS = frozenset({"bash", "sh", "zsh"})
 # Reserved words that open or close a compound command and run nothing themselves.
@@ -1460,6 +1465,7 @@ def command_words(words: list[str]) -> list[str]:
 
     :param words: The simple command's words.
     :returns: The command word and the words after it, or ``[]`` when there is none.
+    :raises Unsettled: When a wrapper has a long option without ``=``, or ``env -S``.
     """
 
     index = 0
@@ -1475,9 +1481,14 @@ def command_words(words: list[str]) -> list[str]:
         index += 1
         while index < len(words) and words[index].startswith("-"):
             option = words[index]
-            index += 2 if option in valued else 1
             if option == "--":
+                index += 1
                 break
+            if option.startswith("--") and "=" not in option:
+                raise Unsettled(f"a {name} long option that may take the next word as its value")
+            if name == "env" and ENV_SPLIT_RE.match(option):
+                raise Unsettled("env -S, which splits a string into the command it runs")
+            index += 2 if option in valued else 1
         if name == "timeout":
             index += 1
     return []
@@ -1519,7 +1530,13 @@ def shell_roles(command: str) -> list[str] | None:
     """
 
     commands = simple_commands(command)
-    return None if commands is None else [shell_role(words) for words in commands]
+    if commands is None:
+        return None
+    try:
+        return [shell_role(words) for words in commands]
+    except Unsettled:
+        # A redirection target, appended after the words, can reach a wrapper's options here.
+        return None
 
 
 def raw_shell_read(command: str) -> bool:
@@ -2882,6 +2899,43 @@ def self_test() -> int:
             return expect(result, verified="no", disposition="other", notes=["read-candidate"]) or note_names(
                 result[2], "read-candidate", f"controller Bash at {stamp(BASE_EPOCH + 110)}: {command}")
 
+        def xargs_read() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            call = trial.use(110, "Bash", {"command": "xargs cat greet.test.js"})
+            trial.result(110.1, call, TEST_SINGLE)
+            trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="yes", disposition="refuted", notes=["refuted-by"]) or note_names(
+                result[2], "refuted-by", "controller text", "no-bound")
+
+        def wrapper_long_option_unsettled() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # Whether `me` is --user's value or the command is not knowable, so the raw match decides.
+            command = "sudo --user me cat greet.test.js"
+            call = trial.use(110, "Bash", {"command": command})
+            trial.result(110.1, call, TEST_SINGLE)
+            trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(
+                result, verified="yes", disposition="refuted", notes=["shell-read-unparsed", "refuted-by"],
+            ) or note_names(result[2], "shell-read-unparsed", f"controller Bash at {stamp(BASE_EPOCH + 110)}",
+                            "could not be parsed", command)
+
+        def env_split_string_unsettled() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            command = "env -S 'cat greet.test.js'"
+            call = trial.use(110, "Bash", {"command": command})
+            trial.result(110.1, call, TEST_SINGLE)
+            trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(
+                result, verified="yes", disposition="refuted", notes=["shell-read-unparsed", "refuted-by"],
+            ) or note_names(result[2], "shell-read-unparsed", f"controller Bash at {stamp(BASE_EPOCH + 110)}",
+                            "could not be parsed", command)
+
         cases: tuple[tuple[str, Callable[[], str]], ...] = (
             ("applicable_refuted", applicable_refuted),
             ("applicable_spurious", applicable_spurious),
@@ -2921,6 +2975,9 @@ def self_test() -> int:
             ("unsettled_commit", unsettled_commit),
             ("bash_c_read", bash_c_read),
             ("git_log_grep_not_read", git_log_grep_not_read),
+            ("xargs_read", xargs_read),
+            ("wrapper_long_option_unsettled", wrapper_long_option_unsettled),
+            ("env_split_string_unsettled", env_split_string_unsettled),
         )
         for name, body in cases:
             try:
