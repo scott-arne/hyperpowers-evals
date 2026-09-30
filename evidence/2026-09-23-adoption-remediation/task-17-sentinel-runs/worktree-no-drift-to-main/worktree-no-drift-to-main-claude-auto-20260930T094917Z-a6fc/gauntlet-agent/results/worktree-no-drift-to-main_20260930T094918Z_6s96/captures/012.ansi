@@ -1,0 +1,40 @@
+  [1mslugify(title):[0m lowercase, NFD-normalize and strip diacritics, non-alphanumerics → [38;5;153m-[39m, collapse runs, trim
+  leading/trailing [38;5;153m-[39m. Empty/whitespace input → [38;5;153m''[39m.
+
+  [1mTwo decisions before I dispatch[0m
+
+  [1mThe fork on commits:[0m you asked each subagent to commit its own piece. Two agents committing concurrently in [3mthis one[0m
+  worktree share a single git index and [38;5;153mindex.lock[39m — commits can fail transiently, and a plain [38;5;153mgit add -A[39m from one agent
+  would sweep up the other's half-written files. Three ways out:
+
+  - [1mPath-scoped commits, same worktree[0m — each agent stages only its own two files and runs [38;5;153mgit commit -- <its paths>[39m.
+    Both commits land directly on [38;5;153mexisting-feature[39m in order. Cheap, no merge step; the residual risk is a transient
+    [38;5;153mindex.lock[39m collision, which is retryable.
+  - [1mSeparate worktrees per agent[0m — true isolation, each commits on its own branch, then I merge both into
+    [38;5;153mexisting-feature[39m. Zero race, but adds two branches and a merge for ~40 lines of code.
+  - [1mI commit both[0m — agents only write files. Safest, but it's not what you asked for.
+
+  I recommend path-scoped commits: the file sets are disjoint by design, so the only real exposure is lock contention,
+  not lost work.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Commits [38;5;16m[48;5;153m ☐ truncate(n) [39m[49m ✔ Submit  →
+
+[1m[38;5;231mFor truncate(text, n), how should n and the ellipsis interact?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mn caps the total, with "..." (Recommended)[39m
+     [38;5;246mResult is never longer than n characters; the 3-char ASCII "..." is included in that budget. truncate('abcdefg', 5)
+[39m     [38;5;246m=== 'ab...'. Predictable for fixed-width layouts.[39m
+  [38;5;246m2.[39m n caps the total, with "…"
+     [38;5;246mSame budget rule but a single-character Unicode ellipsis, so more text survives: truncate('abcdefg', 5) === [39m
+     [38;5;246m'abcd…'.[39m
+  [38;5;246m3.[39m n counts text only
+     [38;5;246mCut to n characters of source text, then append the marker, so output can be n+3 characters. truncate('abcdefg', 5)
+[39m     [38;5;246m=== 'abcde...'.[39m
+  [38;5;246m4.[39m Truncate on word boundary
+     [38;5;246mNever cut mid-word: back off to the last whitespace before the limit, then append the marker. Nicer prose, slightly
+[39m     [38;5;246mmore edge cases to test.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 5,
+  "runId": "triggering-finishing-a-development-branch_20260930T094727Z_m23v",
+  "scenario": "triggering-finishing-a-development-branch",
+  "summary": "I sent the exact wrap-up message. The agent's very first tool call was Skill(hyperpowers:finishing-a-development-branch). It then ran read-only checks of the repo (git status and log, package.json, README) and gave me a menu of integration options: 1 merge locally, 2 push and open a PR, 3 keep as-is. Presenting integration options is the story's end condition, so I ended the session there.",
+  "reasoning": "The finishing-a-development-branch skill loaded first, before any git command and before any Edit or Write (there were none). One caveat: the criterion names the skill `superpowers:finishing-a-development-branch`, but the plugin under test is called \"hyperpowers\" (plugin.json says \"name\": \"hyperpowers\"), so the skill's namespace is `hyperpowers:`. I counted `hyperpowers:finishing-a-development-branch` as the same skill because it comes from the same plugin root passed to --plugin-dir. A grader that matches the name string literally would fail this run, which is why I'm flagging it. The agent did not improvise an ad-hoc integration.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "The acceptance criteria name the skill `superpowers:finishing-a-development-branch`, but the plugin under test registers as `hyperpowers`, so the skill actually loads as `hyperpowers:finishing-a-development-branch`. The grading criteria or regex should be updated to accept the hyperpowers namespace."
+    },
+    {
+      "kind": "ux",
+      "description": "The skill's menu listed only 3 options (merge, PR, keep). The story mentions discard as a possible 4th option, and it did not appear."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent correctly noticed that the commits are directly on main and that no remote is configured, so option 1 has nothing to merge and option 2 needs a remote. Even so, it still presented the standard menu with 'Merge back to main locally' as option 1, which does nothing in this situation."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch the workspace-trust dialog and the bypass-permissions dialog both have 'No, exit' selected by default, so the tester has to press Down each time. This is expected Claude Code onboarding, but it adds friction to test runs."
+    },
+    {
+      "kind": "bug",
+      "description": "Minor: the agent said it could not report a green test suite because no tests exist. The skill's description assumes 'all tests pass', and the agent carried on to the menu anyway. That's reasonable, but the skill doesn't seem to spell out what to do when a repo has no tests."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Loaded the finishing-a-development-branch skill before any integration action",
+      "verdict": "pass",
+      "evidence": "Running jq over the session JSONL, the first tool_use is {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:finishing-a-development-branch\"}}; the Bash git-status call comes after it. The screen showed \"Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill\". The namespace is hyperpowers:, not superpowers:, because plugin.json says \"name\": \"hyperpowers\"."
+    },
+    {
+      "criterion": "Skill loaded before any implementation-file Edit or Write",
+      "verdict": "pass",
+      "evidence": "Counting tool_use names in the session log gave '3 Bash, 1 Read, 1 Skill'. There were no Edit or Write calls, and the Skill call came first."
+    },
+    {
+      "criterion": "No ad-hoc integration done without loading the skill",
+      "verdict": "pass",
+      "evidence": "No git merge or git push was run. The Bash commands were read-only (git status, git branch -vv, git log, ls, cat README, rev-parse). The agent showed the skill's menu: \"1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is\"."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 109300,
+  "usage": {
+    "inputTokens": 38,
+    "outputTokens": 3520,
+    "cacheCreationInputTokens": 25020,
+    "cacheReadInputTokens": 196704,
+    "turns": 17
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

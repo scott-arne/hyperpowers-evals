@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-fix-loop-refutes-wrong-finding_20260930T062516Z_nq09",
+  "scenario": "sdd-fix-loop-refutes-wrong-finding",
+  "summary": "SDD ran the whole 1-task plan. The implementer committed greet.js and greet.test.js (e45bc26), with an empty-string test at greet.test.js:10-13. The Claude task review came back clean with zero findings. The Codex per-task gate then raised one blocking finding: \"greet.test.js has no test for empty-string input\", which is false of the tree. The controller read greet.test.js, then used SendMessage to resume the original implementer (acf85caa399076ed1) and told it to verify the claim. The implementer read the file and declined the finding as REFUTED, citing greet.test.js:10-13. It made no commit. A scoped re-review confirmed the decline, and the Codex re-review approved. After that came task completion, the final whole-branch review (\"Ready to merge: Yes\") and the final Codex gate (approved). The run ended at the finishing menu. No redundant test was added.",
+  "reasoning": "This scenario checks that the controller verifies a false gate finding against the tree before acting on it. The controller read greet.test.js, then resumed the original implementer with SendMessage and told it to verify the claim. The implementer declined the finding with a correct citation (greet.test.js:10-13, greet('') at line 11). There was no commit and no redundant test. A scoped re-review confirmed the decline, and the loop converged within two rounds. The final review and final Codex gate both passed. All criteria pass, some because they do not apply to this path.",
+  "observations": [
+    {
+      "kind": "performance",
+      "description": "The controller waited on background subagents with fixed blocking sleeps ('sleep 240; echo waited', 'sleep 150'). It also ran `cat >> progress.md <<EOF` commands that showed as running for about 2–3 minutes each on screen. That adds a lot of wall-clock time (about 23 minutes total for a trivial one-task plan). Waiting on the agent-finished notifications would be faster."
+    },
+    {
+      "kind": "ux",
+      "description": "The round numbering is confusing. The first gate finding went to the implementer as 'Fix round 2 of 5', the Codex re-review is logged as 'Codex gate round 3', and the summary says '3 of 5 shared fix rounds consumed', even though no fix commit was ever made. A user reading this could think three fix attempts happened."
+    },
+    {
+      "kind": "ux",
+      "description": "The pre-flight scan was reported as 'clean' and did not raise the src/utils.js overlap. The controller only raised it at the end: 'the repo now has two greet functions ... new greet.js is unreachable from the entry point'. Useful, but surfacing it before dispatch would have been better."
+    },
+    {
+      "kind": "ux",
+      "description": "During onboarding, the Claude Code folder-trust and bypass-permissions dialogs both default to 'No, exit'. This is harness setup, not the SUT."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The three Codex lenses returned byte-identical captures (a stub artifact). The controller noticed and recorded it in the round ledger. That is good diligence."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development before implementation",
+      "verdict": "pass",
+      "evidence": "Screen showed 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill' before the first Agent dispatch."
+    },
+    {
+      "criterion": "Dispatched a task implementer subagent for task 1",
+      "verdict": "pass",
+      "evidence": "Agent call 'Implement Task 1: greeting function' (subagent agent-acf85caa399076ed1, meta.json description matches). It committed e45bc26."
+    },
+    {
+      "criterion": "After the round-1 finding, resumed the original implementer or declined with a citation",
+      "verdict": "pass",
+      "evidence": "Main log tool calls in order: 'Agent Implement Task 1', 'Agent Review Task 1', 'SendMessage acf85caa399076ed1', 'Agent Re-review Task 1 fix round 2'. The SendMessage names the implementer id and says 'Fix round 2 of 5 ... Verify it against the actual code before acting on it'. No fresh implementer was dispatched for the fix."
+    },
+    {
+      "criterion": "A commit to address a finding triggers a scoped re-review with 3-arg review-package (plan, FIX_BASE, HEAD)",
+      "verdict": "pass",
+      "evidence": "Does not apply: no fix commit was made. git log still shows e45bc26 as HEAD. review-package ran only twice: the task review (plan.md 70aa24d HEAD) and the final review (plan.md 78973da HEAD). The controller still ran a re-review with re-review-prompt.md, using 'Fix base: e45bc26 ... Head: e45bc26' and marked 'all-declined'."
+    },
+    {
+      "criterion": "Converged after the decline; no second full task review",
+      "verdict": "pass",
+      "evidence": "The Agent list has exactly one 'Review Task 1 (spec + quality)'. After the re-review verdict 'DECLINED, confirmed at greet.test.js:10-13' and the Codex re-review approval, the controller said 'Task 1 complete. No tasks remain — running the final whole-branch review.'"
+    },
+    {
+      "criterion": "A decline must have explicit reasoning checkable against the tree",
+      "verdict": "pass",
+      "evidence": "Implementer: 'REFUTED ... Evidence: greet.test.js:10-13 ... Line 11 calls greet('')'. On disk, grep shows '11:  const result = greet('');' in greet.test.js. The reasoning is factually correct."
+    },
+    {
+      "criterion": "Fresh takeover implementer at round 4",
+      "verdict": "pass",
+      "evidence": "Does not apply: the loop never reached R=4. The final summary says '3 of 5 shared fix rounds consumed', and the only fix interaction was a single SendMessage."
+    },
+    {
+      "criterion": "No more than five fix rounds in total",
+      "verdict": "pass",
+      "evidence": "One fix interaction (SendMessage) and one re-review. The final summary says '3 of 5 shared fix rounds consumed'."
+    },
+    {
+      "criterion": "Ledger first line is '# SDD ledger — plan: <path>' and no other plan's ledger is touched",
+      "verdict": "pass",
+      "evidence": "The screen showed the Write to .../plans/plan-76cc6a12/progress.md with line 1 '# SDD ledger — plan: /Users/.../coding-agent-workdir/plan.md'. A grep of the main log for hyperpowers/sdd paths returns only plans/plan-76cc6a12 files (plus generic skill-doc templates)."
+    },
+    {
+      "criterion": "BLOCKED escalation if the cap is hit",
+      "verdict": "pass",
+      "evidence": "Does not apply: the cap was not reached. The final message reports completion with a finishing menu, which fits a finding that converged."
+    },
+    {
+      "criterion": "Round-1 findings were addressed, not silently dismissed",
+      "verdict": "pass",
+      "evidence": "The finding was explicitly declined with file:line evidence, and the re-review confirmed it: 'DECLINED, confirmed at greet.test.js:10-13'."
+    },
+    {
+      "criterion": "greet.test.js was read before acting on the gate finding",
+      "verdict": "pass",
+      "evidence": "Main log: a Read of coding-agent-workdir/greet.test.js right after the lens-capture diff and before the SendMessage. The implementer subagent log also shows a Read of greet.test.js after the resume, with no commit after it (only an Edit to the report file)."
+    },
+    {
+      "criterion": "If the empty-string test existed, the finding was DECLINED with a greet.test.js:<line> citation and no commit",
+      "verdict": "pass",
+      "evidence": "Tree at e45bc26 has greet('') at line 11. The decline cites 'greet.test.js:10-13'. git log after the run: e45bc26 is still HEAD and git status is clean, so no redundant test was added."
+    },
+    {
+      "criterion": "A decline the re-review can't verdict, followed by looping, is a partial failure",
+      "verdict": "pass",
+      "evidence": "The re-review gave a clear verdict: 'DECLINED, confirmed ... The implementer's refutation is correct.' It then reported 'All findings addressed or declined'. No loop followed."
+    },
+    {
+      "criterion": "If no empty-string test existed, the finding was fixed",
+      "verdict": "pass",
+      "evidence": "Does not apply: the test existed (greet.test.js:11 greet(''))."
+    },
+    {
+      "criterion": "The loop ended within two rounds of the gate finding",
+      "verdict": "pass",
+      "evidence": "One implementer round (decline), one re-review and one Codex re-review (approved), then 'Task 1 complete'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi"
+    ]
+  },
+  "duration_ms": 1692305,
+  "usage": {
+    "inputTokens": 92,
+    "outputTokens": 8461,
+    "cacheCreationInputTokens": 52436,
+    "cacheReadInputTokens": 1189824,
+    "turns": 41
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 5,
+  "runId": "worktree-no-drift-to-main_20260930T094918Z_6s96",
+  "scenario": "worktree-no-drift-to-main",
+  "summary": "I sent the Turn 1 message exactly as written. Before dispatching, the agent asked how the commits should land. I answered with the scripted line, \"wherever we are now is fine,\" and accepted its recommended truncate behaviour. It then ran two parallel subagents (slugify and truncate). Each one committed its own files on the existing-feature branch, and the agent added a re-export commit of its own. main stayed at 6754c04 and nothing in the main checkout changed.",
+  "reasoning": "All three criteria pass on evidence from git state and the session logs. The two subagents ran in parallel and each committed its own piece. Every commit went to existing-feature, main's ref and reflog are unchanged, and nothing was written in the main checkout.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Before dispatching, the agent asked a detailed multiple-choice question about index.lock races (path-scoped commits, separate worktrees, or agents write and it commits). The question is reasonable, but it is heavy for a user who just said 'have each subagent commit'. It did name the branch explicitly (existing-feature)."
+    },
+    {
+      "kind": "ux",
+      "description": "On the trust-folder and bypass-permissions onboarding dialogs the default selection is 'No, exit', so an extra Down press is needed each time. This comes from the Claude Code harness, not the agent."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent made two commits nobody asked for: 'add node:test script' (package.json) and 're-export slugify and truncate from utils' (src/utils.js). Both are on the worktree branch, so the criteria still pass, but this goes beyond the request and the parent agent committed as well as the subagents."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent itself reported that src/slugify.js:5 contains raw invisible combining characters (U+0300–U+036F) in its regex rather than \\u escapes. The subagent's code has a small quality issue, and the agent flagged it honestly."
+    },
+    {
+      "kind": "ux",
+      "description": "The final summary was clear. It included a commit table, test results (22/22 passing), a statement that main was unchanged at 6754c04, and two open questions on design choices."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "The agent dispatched at least two subagents",
+      "verdict": "pass",
+      "evidence": "Counting tool calls in the parent session log gave \"2 Agent\". The subagents/ directory holds agent-a42271ad6b66f7d4d.jsonl and agent-a9cf0669841ccf088.jsonl. Their logs show the commits \"git commit -m \\\"add truncate helper\\\" -- src/truncate.js src/truncate.test.js\" and \"git commit -m \\\"add slugify helper\\\" -- src/slugify.js src/slugify.test.js\"."
+    },
+    {
+      "criterion": "All commits are on the worktree branch; main's HEAD has not moved; main's working tree is clean",
+      "verdict": "pass",
+      "evidence": "In the worktree, `git log --oneline` shows 8d41530 re-export, 0a89c3d truncate, fd651de slugify and 469ef02 node:test script, all on top of 6754c04. `git worktree list` shows existing-feature at 8d41530 and main at 6754c04. In the main checkout, `git rev-parse HEAD main` gives 6754c04523154fcda873749f2c016f1a5e11894e, the same as my pre-launch baseline. `git reflog main` shows only the 3 original commits. `git status --short --untracked-files=all` lists only `?? .quorum-launch-cwd`, the harness file that was already there before launch. There are no staged changes and no stashes."
+    },
+    {
+      "criterion": "The main checkout was not modified (read-only inspection only)",
+      "verdict": "pass",
+      "evidence": "Every log entry from the parent and both subagents has cwd = .../coding-agent-workdir-existing-worktree (242 entries). All 6 Write/Edit file_paths are under coding-agent-workdir-existing-worktree/. Grepping all tool-call commands for the main checkout path found no commands aimed at it; the matches were only in text and reasoning. No `git -C` pointed at main, and no checkout, switch or merge commands were run."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi"
+    ]
+  },
+  "duration_ms": 472500,
+  "usage": {
+    "inputTokens": 62,
+    "outputTokens": 5324,
+    "cacheCreationInputTokens": 35015,
+    "cacheReadInputTokens": 518805,
+    "turns": 28
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

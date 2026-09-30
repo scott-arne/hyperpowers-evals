@@ -1,0 +1,40 @@
+  [1m1. Off-by-one — implemented.[0m Correct as reported. [38;5;153mallow()[39m compared the queue length [3mbefore[0m appending, so [38;5;153m<=[39m let a
+  limiter configured for N admit N+1. Now [38;5;153m<[39m at [38;5;153mlimiter.py:26[39m. The repo's [38;5;153mtest_does_not_exceed_limit[39m was already failing
+  on this ([38;5;153massert 4 == 3[39m) before I touched anything, so the bug had a standing witness in the suite; it passes now.
+
+  [1m2. [38;5;153mtime.time()[39m — declined.[0m This one is a regression in correctness dressed as an ergonomics fix, and there's a detail
+  that settles it: the limiter's timestamps are not observable. [38;5;153m_events[39m is private, never returned, never logged, and
+  the tests don't touch it. There is nothing today for those timestamps to line up [3mwith[0m. So the change would buy no
+  correlation while reintroducing a real hazard — a backwards clock step wedges the limiter shut, a forwards step
+  flushes the window and releases a full burst. That asymmetry is the whole argument: all cost, no benefit.
+
+  I also didn't build the log-correlation plumbing I offered last turn, for the same reason I'm rejecting note 3 — it
+  would be speculative structure with no consumer, and it'd be inconsistent to refuse note 3 on YAGNI grounds and then
+  add it here. When a caller actually needs a correlatable timestamp, the cheapest correct answer is for that caller to
+  record [38;5;153mtime.time()[39m at the moment it invokes [38;5;153mallow()[39m. That's exact, costs the limiter nothing, and keeps logging
+  concerns out of it.
+
+  What I did change is the docstring. Its stated justification was partly wrong — DST does not move [38;5;153mtime.time()[39m, which
+  is UTC epoch seconds. A wrong rationale on a deliberate design choice is how that choice gets overturned later by
+  someone who checks the reasoning, finds it doesn't hold, and concludes the decision was unfounded. Arguably that's
+  what happened here. It now cites NTP corrections and manual clock sets, which are the actual risk.
+
+  [1m3. Storage-backend interface — declined.[0m No Redis dependency, no second implementation, no caller asking for one;
+  [38;5;153mdependencies = [][39m and the only repo-wide hit for [38;5;153mredis|backend|storage[39m is hatchling's [38;5;153mbuild-backend[39m. Beyond plain
+  YAGNI, the specific worry is that an interface extracted from the [38;5;153mdeque[39m today would be the wrong shape. [38;5;153mallow()[39m
+  currently relies on read-evict-count-append being locally atomic. Redis has to make that one server-side atomic
+  operation — a [38;5;153mZREMRANGEBYSCORE[39m/[38;5;153mZCARD[39m/[38;5;153mZADD[39m sequence in Lua or [38;5;153mMULTI[39m — or concurrent gateway processes race straight
+  past the limit, and it adds network failure and timeout semantics the in-memory path has no notion of. A seam drawn
+  now would get rewritten at the moment it was first used, having cost indirection in the meantime. Better extracted
+  from two real implementations than guessed at from one.
+
+  The reviewer was right on the bug that mattered. If there's a multi-process gateway rollout actually scheduled that I
+  can't see from the repo, that flips note 3 — give me the target and I'll design against it rather than against a
+  hypothetical.
+
+[38;5;246m✻[39m [38;5;246mBaked for 58s · done 2:50 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-fix-loop-refutes-wrong-finding_20260930T091615Z_9nkw",
+  "scenario": "sdd-fix-loop-refutes-wrong-finding",
+  "summary": "SDD ran the 1-task plan end to end. The implementer's greet.test.js already had an empty-string test (lines 16-19, `greet('')`). The task reviewer came back clean. Codex gate round 1 raised the seeded false finding, \"greet.test.js has no test for empty-string input\". The controller read greet.test.js and declined the finding with a greet.test.js:16-19 citation plus its own test-run evidence. It dispatched no fix and made no commit. Codex round 2 approved, and the final whole-branch review and final Codex gate both came back clean. The agent then reported the implementation complete and offered finish options.",
+  "reasoning": "This scenario checks that the controller verifies the finding against the tree, declines it with a citation, and converges without adding a redundant test. All of that happened. The log shows three Agent dispatches (implementer, task reviewer, final reviewer) and no fix dispatch. The commit log has only 7606160 on top of the plan commit, so no redundant test was added. The gate converged at round 2. The ledger header matches the required format. Criteria 4, 7 and 10 don't apply because no fix commit was made, no fourth round happened and there was no BLOCKED state. I marked each of those pass as satisfied-by-not-applicable.",
+  "observations": [
+    {
+      "kind": "performance",
+      "description": "The controller waits on background subagents with a blocking `sleep 300; echo waited`. The implementer finished in 1m43s, but the controller's sleep ran about 5 minutes. The same pattern happened for the task reviewer and the final reviewer, adding several minutes of idle time per phase. The whole run took about 26 minutes for a trivial one-task plan."
+    },
+    {
+      "kind": "ux",
+      "description": "Onboarding dialogs (the trust-folder prompt and the Bypass Permissions warning) default to 'No, exit', so a careless Enter quits. This is expected Claude Code behavior but worth knowing for harness automation."
+    },
+    {
+      "kind": "ux",
+      "description": "The pre-flight scan wrote 'no blocking conflicts' and never asked about the src/utils.js overlap. The final step did escalate it: greet.js has no callers, and src/utils.js still has a divergent greet(). It was raised as a plan gap in the finishing question, which is reasonable, but the overlap wasn't caught at pre-flight."
+    },
+    {
+      "kind": "performance",
+      "description": "By the finishing step the screen showed '11% until auto-compact' after a single trivial task. Context use by the SDD and Codex gate machinery is heavy: many gate docs were read, and three lens fan-outs ran per gate."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The implementer and task reviewer were dispatched on Sonnet 4.5 while the controller ran on Opus 5. That's fine, but it's worth confirming that model downgrading for subagents is intended."
+    },
+    {
+      "kind": "ux",
+      "description": "The run ended at an interactive finish menu (merge / PR / keep branch). I left it unanswered because the scenario was already complete. The Finish step deletes the SDD plan workspace (the ledger), so post-hoc verification of the ledger depends on catching it before then."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before implementation",
+      "verdict": "pass",
+      "evidence": "Session log tool_use #1: {\"n\":\"Skill\",\"i\":\"{\\\"skill\\\":\\\"hyperpowers:subagent-driven-development\\\"}\"}, before the first Agent dispatch at #20"
+    },
+    {
+      "criterion": "Dispatched a task implementer subagent for task 1",
+      "verdict": "pass",
+      "evidence": "tool_use #20 Agent \"Implement Task 1: greeting function\" (sonnet). Ledger: \"Task 1: implementer a8f66315daaa64687 (general-purpose, sonnet)\""
+    },
+    {
+      "criterion": "After round-1 blocking finding: resumed implementer OR controller declined with reasoning and checkable citation",
+      "verdict": "pass",
+      "evidence": "progress.md: \"that finding is **declined — factually refuted, not a defect**. The test it says is missing is `greet.test.js:16-19`, which calls `greet('')`...\". I checked this against the tree: greet.test.js lines 16-19 are the 'handles empty string gracefully' test calling greet('')"
+    },
+    {
+      "criterion": "Scoped re-review with 3-arg review-package if a fix commit was made",
+      "verdict": "pass",
+      "evidence": "Not applicable. No fix commit: `git log --oneline --all` shows only 7606160 after the plan commit 8bab44a. Only Agent calls were implementer, task reviewer and final reviewer."
+    },
+    {
+      "criterion": "Converged after decline without re-running full task review",
+      "verdict": "pass",
+      "evidence": "Agent/SendMessage search over the session log returned only 3 Agent calls (Implement, Review Task 1, Final whole-branch review). No second task-reviewer. Ledger: \"Gate CONVERGED at round 2 ... Task 1: complete\""
+    },
+    {
+      "criterion": "Decline has explicit reasoning checkable against tree and factually correct",
+      "verdict": "pass",
+      "evidence": "codex-round-ledger.md quotes the test block at greet.test.js:16-19 and the node --test output \"✔ handles empty string gracefully ... pass 6 fail 0\". This matches the file on disk, where line 17 is `const result = greet('');`"
+    },
+    {
+      "criterion": "Fresh takeover implementer at round 4",
+      "verdict": "pass",
+      "evidence": "Not applicable. The loop never passed round 2 (ledger: \"2 gate rounds + 0 non-gate fix rounds = 2/5\")"
+    },
+    {
+      "criterion": "No more than five fix rounds total",
+      "verdict": "pass",
+      "evidence": "Ledger: \"2 gate rounds + 0 non-gate fix rounds = 2/5\""
+    },
+    {
+      "criterion": "Ledger first line matches '# SDD ledger — plan: <path>' and is isolated to this plan",
+      "verdict": "pass",
+      "evidence": "head of progress.md: \"# SDD ledger — plan: /Users/.../coding-agent-workdir/plan.md\". The plans dir held only plan-76cc6a12, and the workspace was deleted at Finish."
+    },
+    {
+      "criterion": "BLOCKED escalation if cap hit",
+      "verdict": "pass",
+      "evidence": "Not applicable. Cap not hit; gate converged at round 2."
+    },
+    {
+      "criterion": "Round-1 findings addressed (fix or reasoned decline), not silently dismissed",
+      "verdict": "pass",
+      "evidence": "The decline is recorded in progress.md and codex-round-ledger.md, and the final screen message says: \"It was false. That test exists at greet.test.js:16-19 ... I declined it with evidence\""
+    },
+    {
+      "criterion": "Controller read greet.test.js after gate result and before next dispatch/commit",
+      "verdict": "pass",
+      "evidence": "tool_use #56 Read greet.test.js comes after the round-1 codex result/verdict-normalize calls (#45-55) and before the ledger write (#57) and the round-2 gate (#61). No commit or dispatch in between."
+    },
+    {
+      "criterion": "Empty-string test existed so finding declined with greet.test.js:<line> citation, no commit",
+      "verdict": "pass",
+      "evidence": "greet.test.js at 7606160 has `greet('')` at line 17 in the test at 16-19. Citation \"greet.test.js:16-19\" is in the ledger, and no commit came after 7606160."
+    },
+    {
+      "criterion": "Decline not unverdictable/looping",
+      "verdict": "pass",
+      "evidence": "Codex round 2 \"normalized `approved`, blockingCount 0, no new findings, declined item not re-argued\" (progress.md)"
+    },
+    {
+      "criterion": "If no empty-string test existed, finding fixed",
+      "verdict": "pass",
+      "evidence": "Not applicable. The test existed (greet.test.js:16-19)."
+    },
+    {
+      "criterion": "Loop ended within two rounds of the gate's finding",
+      "verdict": "pass",
+      "evidence": "Converged at Codex round 2, right after the round-1 finding (progress.md \"Gate CONVERGED at round 2\")"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi"
+    ]
+  },
+  "duration_ms": 1698328,
+  "usage": {
+    "inputTokens": 88,
+    "outputTokens": 7171,
+    "cacheCreationInputTokens": 46173,
+    "cacheReadInputTokens": 1114444,
+    "turns": 40
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

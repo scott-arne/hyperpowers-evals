@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T061254Z_9maw",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review, read the code-reviewer.md template, and sent the review to a general-purpose subagent through the Agent tool. Both seeded defects came back as Critical, each with a concrete trigger and outcome: the page*size offset at src/handlers.js:18 and the unawaited saveOrder at src/handlers.js:37. The verdict was \"Ready to merge? No\". None of the six correct-code decoys got a Critical or Important finding. The only mentions of them were a Minor note on withRetry and praise under Strengths.",
+  "reasoning": "Every criterion passed, based on the main and subagent session logs. Both seeded defects were reported as Critical with a file:line, a trigger input and the outcome. The diff was not approved. None of the decoy items drew a blocking finding. The review was done by an Agent-tool subagent using the skill's template, not inline.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The startup dialogs 'Is this a project you trust?' and 'Bypass Permissions mode' both default the cursor to 'No, exit'. Pressing Enter out of habit would quit. Both needed Down+Enter."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The user asked for superpowers:requesting-code-review, but the agent loaded the hyperpowers: variant. The criteria accept this. It worked, but it is a silent namespace substitution."
+    },
+    {
+      "kind": "ux",
+      "description": "After the subagent returned, the main agent loaded hyperpowers:receiving-code-review and checked the Critical findings itself. That is a nice extra step, but it is extra work the user didn't ask for."
+    },
+    {
+      "kind": "ux",
+      "description": "The report ends with a long Codex-gate advertisement ('not-installed ... /plugin marketplace add openai/codex-plugin-cc ...') and a note about an ungated ledger entry. For a user who just wanted review findings, this is noise."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Important #3 and #4 are test-coverage gaps, not runtime defects. They are reasonable, but they sit alongside real bugs at the Important level."
+    },
+    {
+      "kind": "performance",
+      "description": "The whole review took about 3m17s, including the subagent run and the agent's own checks."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill and dispatched reviewer subagent via Agent tool",
+      "verdict": "pass",
+      "evidence": "Main session log tool calls: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, then Read of skills/requesting-code-review/code-reviewer.md, then {\"name\":\"Agent\",...\"subagent_type\":\"general-purpose\",\"prompt\":\"You are a Senior Code Reviewer...\"}. A subagent log appeared at subagents/agent-a0057be15f5394fe6.jsonl."
+    },
+    {
+      "criterion": "Flags pagination offset in listOrdersHandler as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final report, under Critical: \"1. Pagination offset is off by one page — src/handlers.js:18 ... Page 1 computes offset = 10, so records 0–9 are returned by no page at all.\""
+    },
+    {
+      "criterion": "Flags unawaited store.saveOrder in createOrderHandler as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final report, under Critical: \"2. store.saveOrder is not awaited — src/handlers.js:37 ... the client gets 201 Created for an order that was never persisted, and the unhandled rejection kills the Node process\". The subagent reproduced it with total:-5."
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Subagent: \"Ready to merge? No\". Main agent: \"Verdict: not ready to merge.\""
+    },
+    {
+      "criterion": "No Critical/Important finding asserts a defect in the correct-code items (header)",
+      "verdict": "pass",
+      "evidence": "There are four Critical/Important findings: #1 offset, #2 saveOrder, #3 pagination test asserts only length, #4 no create success-path test. None of them targets the listed items. Details are in criteria 6–11."
+    },
+    {
+      "criterion": "withRetry not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "withRetry appears only under Minor (#9: \"wraps an operation that cannot fail ... dead code today\") and under Strengths (\"withRetry's backoff and error preservation are correct\")."
+    },
+    {
+      "criterion": "module-load readFileSync of config.json not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "The only config mention is under Strengths: \"Config extraction with an explicit reload-policy comment\"."
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Under Strengths: \"parseOrderId keeping the ID format in one constant and returning null for clean 400 mapping\"."
+    },
+    {
+      "criterion": "listOrders returning orders.slice not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "store.listOrders is only mentioned as context in Critical #1 (\"passes offset straight to slice\") and in Minor notes. No finding says slice itself is a defect."
+    },
+    {
+      "criterion": "catch in listOrdersHandler that logs and rethrows not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "No finding criticizes the catch. Critical #2's fix actually recommends \"matching how listOrdersHandler already handles its async call\"."
+    },
+    {
+      "criterion": "fixed clock and seeded 25-order list in test not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Important #3 criticizes only the count-only assertion (\"asserts only res.orders.length === 10\"), not the seed or the clock. It uses the 25-order seed as its reasoning. The fixed clock is never flagged."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line plus a trigger and outcome",
+      "verdict": "pass",
+      "evidence": "#1 src/handlers.js:18, trigger page=1 → offset=10, outcome: records 0–9 unreachable. #2 src/handlers.js:37, trigger total:-5 or omitted, outcome: 201 returned, nothing stored, process exits. #3 test/handlers.test.js:21-27, trigger: offset 0 or 10 both return 10 rows, outcome: suite stays green with the bug. #4 test/handlers.test.js line 29, trigger: the only create test hits the malformed-ID branch, outcome: the saveOrder path is untested. #4 is the weakest, since it describes missing coverage rather than a runtime input."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 327388,
+  "usage": {
+    "inputTokens": 40,
+    "outputTokens": 4443,
+    "cacheCreationInputTokens": 19861,
+    "cacheReadInputTokens": 229304,
+    "turns": 18
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

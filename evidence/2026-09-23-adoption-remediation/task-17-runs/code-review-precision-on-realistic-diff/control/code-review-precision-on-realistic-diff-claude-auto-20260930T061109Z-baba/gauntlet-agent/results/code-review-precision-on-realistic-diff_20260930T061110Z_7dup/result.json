@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T061110Z_7dup",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "I sent the exact story prompt. The agent loaded hyperpowers:requesting-code-review, sent the review to a general-purpose reviewer subagent using the template, checked its findings by running code, and reported back \"Not ready to merge.\" Both real defects came back as Critical, each with a file:line and a reproduced outcome. But the review also filed blocking \"Important\" findings against three pieces of code the story lists as correct: parseOrderId, withRetry, and the module-load readFileSync of config.json. The main agent kept all three as Important in its final report.",
+  "reasoning": "Criteria 1–4, 9–12 pass: the skill and subagent path was used, both real defects are Critical with file:line and reproduced outcomes, and the diff was not approved. Criteria 6, 7 and 8 fail because withRetry, the config readFileSync and parseOrderId each got a blocking Important finding in the reviewer output and in the final report. That makes the header criterion 5 fail as well. Since criteria failed, the overall verdict is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The review is not precise enough: it files blocking 'Important' findings against code that is correct for this codebase. withRetry is blocked on a hypothetical attempts=0 config that the agent itself calls 'latent today'. Config load is blocked on missing-file handling. parseOrderId is blocked on array input. The main agent ran the receiving-code-review skill and pushed back on two other findings, but kept these three as Important."
+    },
+    {
+      "kind": "ux",
+      "description": "The final report tacks on a long note about a Codex plugin not being installed, with install commands and an 'ungated ledger' event ID. That is noise for a user who only asked for a review."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent loaded and read many gate-* files (gate-preflight, gate-setup, gate-lenses, gate-fix-loop, and others) and wrote to the ungated ledger. The whole run took about 4 minutes, which is a heavy process for a one-commit review."
+    },
+    {
+      "kind": "ux",
+      "description": "Launching the agent showed first-run dialogs (theme, security notes, folder trust, bypass-permissions warning). The trust and bypass dialogs both have 'No, exit' selected by default, so a tester who just presses Enter ends the run."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent ran code itself to reproduce the findings (node -e scripts, node --test). That is useful verification, but it goes beyond relaying what the subagent found, which is what the user asked for."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review and dispatched a reviewer subagent via Agent",
+      "verdict": "pass",
+      "evidence": "Session log tool calls: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, then Read of code-reviewer.md, then {\"name\":\"Agent\",\"subagent_type\":\"general-purpose\",\"prompt\":\"You are a Senior Code Reviewer...\"}. The subagent log exists at subagents/agent-a14ad7e50df3a4757.jsonl."
+    },
+    {
+      "criterion": "Pagination offset in listOrdersHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final report, under 'Two confirmed Critical defects': \"1. Pagination offset is off by one page — src/handlers.js:18 ... const offset = page * size; with a 1-based page ... page1: ord_00000010 -> ord_00000019\""
+    },
+    {
+      "criterion": "Unawaited store.saveOrder in createOrderHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final report: \"2. store.saveOrder is async and never awaited — src/handlers.js:37 ... returned: {\\\"status\\\":201,...} Error: order total must be positive ... unhandled rejection kills the process\""
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Subagent: \"Ready to merge? No\". Final report: \"Verdict: Not ready to merge.\""
+    },
+    {
+      "criterion": "No Critical/Important finding asserts a defect in the listed correct items (header)",
+      "verdict": "fail",
+      "evidence": "Three of the six sub-items below failed. parseOrderId, withRetry and config.js readFileSync each got an Important finding in both the subagent report and the main agent's final report."
+    },
+    {
+      "criterion": "withRetry not blocked on",
+      "verdict": "fail",
+      "evidence": "Final report, under Important: \"withRetry throws undefined when attempts is 0/missing — src/util.js:8-18 ... Latent today since config.json sets retryAttempts: 3\". The agent itself calls it latent but still files it as blocking. Subagent item #4 is under 'Important (Should Fix)'."
+    },
+    {
+      "criterion": "config.js module-load readFileSync not blocked on",
+      "verdict": "fail",
+      "evidence": "Final report, under Important: \"Config load has no error handling — src/config.js:7-9. readFileSync + JSON.parse at require time...\". Subagent item #6 is Important."
+    },
+    {
+      "criterion": "parseOrderId not blocked on",
+      "verdict": "fail",
+      "evidence": "Final report, under Important: \"parseOrderId returns the uncoerced input — src/util.js:24 ... parseOrderId([\\\"ord_abcd1234\\\"]) → [\\\"ord_abcd1234\\\"]\". Subagent item #3 is Important."
+    },
+    {
+      "criterion": "listOrders slice not blocked on",
+      "verdict": "pass",
+      "evidence": "Only mention is in Minor: \"Retry wrapper around a purely in-memory Array.slice\" (subagent Minor #9). Nothing blocking."
+    },
+    {
+      "criterion": "catch in listOrdersHandler that logs and rethrows not blocked on",
+      "verdict": "pass",
+      "evidence": "No Critical or Important finding targets the catch/rethrow. I read the full subagent and final report text from the session logs with jq; the Important items are #3 to #8 and none is about it."
+    },
+    {
+      "criterion": "Fixed clock and seeded 25-order list in tests not blocked on",
+      "verdict": "pass",
+      "evidence": "Important #7 (test/handlers.test.js:21-27) criticizes the assertions (\"asserts only res.status, res.size, and res.orders.length\"). It does not claim the fixed clock or the seeded list is a defect."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line plus a trigger and its outcome",
+      "verdict": "pass",
+      "evidence": "Every Critical/Important item cites a file:line (e.g. src/handlers.js:18, :37, src/util.js:24, :8-18, src/config.js:7-9, test/handlers.test.js:21-27, src/handlers.js:15/16) and gives a concrete input and result, e.g. \"?page=-2&size=10 returns ... first ord_00000005\" and \"attempts=0 threw: undefined\"."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 401778,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 4776,
+    "cacheCreationInputTokens": 25605,
+    "cacheReadInputTokens": 261276,
+    "turns": 20
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

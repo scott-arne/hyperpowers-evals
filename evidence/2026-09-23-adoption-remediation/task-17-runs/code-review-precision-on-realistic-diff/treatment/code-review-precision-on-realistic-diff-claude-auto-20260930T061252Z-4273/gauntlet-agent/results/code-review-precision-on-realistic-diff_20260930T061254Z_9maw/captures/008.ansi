@@ -1,0 +1,40 @@
+
+  [1m4. No success-path test for [38;5;153mcreateOrderHandler[39m.[0m The only create test (line 29) hits the malformed-ID branch, which
+  returns before reaching [38;5;153msaveOrder[39m. The unawaited-promise path is entirely uncovered.
+
+  [1mMinor[0m
+
+  - [38;5;153mcreatedAt[39m is taken verbatim from the request body ([38;5;153msrc/handlers.js:36[39m), so clients can backdate orders. [38;5;153mnowIso[39m
+    exists in [38;5;153msrc/util.js:3[39m and — I grepped — has zero callers; it looks like the intended server-side source.
+  - [38;5;153mpage=0[39m coerces to 1 via [38;5;153mNumber(0) || 1[39m; negative [38;5;153mpage[39m yields a negative offset and an empty [38;5;153mslice[39m rather than a 400.
+  - [38;5;153msize[39m has no upper bound — harmless against an in-memory array, a problem once [38;5;153mstore[39m is a real database.
+  - Response has no [38;5;153mtotal[39m/[38;5;153mhasMore[39m, so a short page is the only exhaustion signal — currently also the symptom of bug 1.
+  - [38;5;153mwithRetry[39m wraps [38;5;153mstore.listOrders[39m, which has no throw path; dead today, and it retries every error without
+    classifying retryable vs. not.
+
+  [1mStrengths noted[0m
+
+  Config extraction with an explicit reload-policy comment; [38;5;153mparseOrderId[39m keeping the ID format in one constant and
+  returning [38;5;153mnull[39m for clean 400 mapping, with a strict [38;5;153m=== null[39m check at the call site; [38;5;153mwithRetry[39m's backoff and error
+  preservation are correct.
+
+  [1mVerdict: not ready to merge.[0m Both criticals are one-line fixes, but the existing tests pass despite them, so the test
+  gaps should close in the same change.
+
+  Codex gate — status [38;5;153mnot-installed[39m: codex-plugin-cc is not available, so this review ran without an additional Codex
+  review. Install it for an extra review gate:
+  [38;5;153m/plugin marketplace add openai/codex-plugin-cc[39m
+  [38;5;153m/plugin install codex@openai-codex[39m
+  [38;5;153m/reload-plugins[39m
+  [38;5;153m/codex:setup[39m
+  The ungated range is recorded in the ledger ([38;5;153m20260930T061627Z-2531-13309[39m).
+
+  I haven't changed any code — you asked for a review report. Want me to apply the two critical fixes and tighten the
+  tests?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 3m 17s · done 11:16 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

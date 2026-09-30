@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Explored the repo. It's a minimal CommonJS project: [38;5;153msrc/utils.js[39m exports [38;5;153mgreet[39m, [38;5;153msrc/index.js[39m calls it, no dependencies
+  and no test infrastructure at all.
+
+  [1mClassification: bounded.[0m A pure predicate function added to the existing [38;5;153msrc/utils.js[39m — the flow is already here, no
+  new module or subsystem. So I'll present a short design in chat rather than write a spec.
+
+  One thing worth deciding before I write it. Your four rules leave a gap around malformed input, and the readings
+  differ in what real strings the function accepts:
+
+  - [1mLiteral[0m — exactly your four rules, nothing more. [38;5;153ma@b@c.com[39m passes (there [3mis[0m an @, there [3mis[0m a char before it, there
+    [3mis[0m a dot after). [38;5;153m"a@b.c"[39m with spaces passes. A [38;5;153mnull[39m input throws a TypeError.
+  - [1mLiteral + guarded[0m — same four rules, but non-string input returns [38;5;153mfalse[39m instead of throwing. Callers can pass
+    whatever they have.
+  - [1mSane minimum[0m — the four rules, plus: exactly one [38;5;153m@[39m, non-empty domain, no whitespace, non-string returns [38;5;153mfalse[39m.
+
+  What this costs you later: the first two are cheap to tighten afterward. Going the other way is not — if something
+  starts relying on [38;5;153mvalidateEmail[39m and you later make it stricter, previously-accepted addresses start failing, and
+  that's the change that bites. Note none of these are real RFC 5322 validation; all three will accept addresses no mail
+  server would.
+
+  I'd recommend [1mliteral + guarded[0m: it's what you asked for, and the [38;5;153mnull[39m/[38;5;153mundefined[39m guard removes the only way a caller
+  can crash on it without inventing rules you didn't ask for.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Strictness [39m[49m
+
+[1m[38;5;231mHow strict should validateEmail be beyond your four rules?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLiteral + guarded (Recommended)[39m
+     [38;5;246mYour four rules exactly; non-string input returns false instead of throwing. Accepts a@b@c.com and strings with [39m
+     [38;5;246mspaces.[39m
+  [38;5;246m2.[39m Literal only
+     [38;5;246mYour four rules and nothing else. Passing null or a number throws a TypeError.[39m
+  [38;5;246m3.[39m Sane minimum
+     [38;5;246mFour rules plus: exactly one @, non-empty domain, no whitespace, non-string returns false. Hardest to loosen later.
+[39m  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T061753Z_6gyi",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded the hyperpowers:requesting-code-review skill and sent a reviewer subagent with the template. The reviewer flagged both real defects as Critical: the pagination offset at handlers.js:18 and the unawaited saveOrder at handlers.js:37. It also rejected the merge. But it raised several blocking (Important) findings against code the story says is correct: withRetry (#10, #11), the module-load readFileSync of config.json (#12), and the log-and-rethrow catch in listOrdersHandler (#9). So the precision criteria fail.",
+  "reasoning": "The workflow ran correctly: the skill was loaded, the Agent tool sent the reviewer, both real defects were reported as Critical with a solid trigger and outcome, and the verdict was 'No'. But the reviewer put blocking Important findings on three items the story says are correct: withRetry (#10, #11), the module-load readFileSync in config.js (#12), and the log-and-rethrow catch in listOrdersHandler (#9). That fails criteria 5, 6, 7 and 10, so the overall verdict is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The reviewer over-flags: 13 Important findings, including blocking ones against code that is correct (withRetry, the config readFileSync, the log-and-rethrow catch). This buries the two real defects in noise."
+    },
+    {
+      "kind": "bug",
+      "description": "The main agent's summary drops file:line for several Important items that the subagent had cited (e.g. 'size is unbounded', 'No total/hasMore'), so the user sees less evidence than the reviewer produced."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent loaded hyperpowers:requesting-code-review even though the user asked for superpowers:requesting-code-review. This is allowed, but the agent didn't mention the substitution."
+    },
+    {
+      "kind": "ux",
+      "description": "The final message has a long Codex plugin install advertisement and records an 'ungated range' in a sweep ledger. The user didn't ask for either."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch, the trust-folder and bypass-permissions dialogs both default to 'No, exit'. Expected, but worth noting for automation."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The main agent's summary refers to '#7' and '#8', but its condensed Important list has no numbers, so those references are confusing."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill and dispatched reviewer via Agent tool",
+      "verdict": "pass",
+      "evidence": "Session log tool_use entries: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, Read code-reviewer.md, then {\"name\":\"Agent\",\"subagent_type\":\"general-purpose\",\"prompt\":\"You are a Senior Code Reviewer...\"}; subagent log agent-a662a5f2c9d59f0b8.jsonl exists"
+    },
+    {
+      "criterion": "Pagination offset flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Subagent report under '#### Critical (Must Fix)': '1. Off-by-one in the page offset — the first page of orders is unreachable. src/handlers.js:18 — const offset = page * size;'"
+    },
+    {
+      "criterion": "Unawaited saveOrder flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Under Critical: '2. store.saveOrder is not awaited: creation reports 201 for orders it failed to save, then crashes the process. src/handlers.js:37'"
+    },
+    {
+      "criterion": "Review does not approve",
+      "verdict": "pass",
+      "evidence": "'Ready to merge? No'. The main agent also said 'Verdict: not ready to merge'."
+    },
+    {
+      "criterion": "No blocking finding against the listed correct items (header)",
+      "verdict": "fail",
+      "evidence": "Sub-items 6, 7 and 10 below fail: Important #9, #10, #11 and #12 target code listed as correct."
+    },
+    {
+      "criterion": "withRetry not flagged as a blocking defect",
+      "verdict": "fail",
+      "evidence": "Under Important: '10. withRetry around an in-memory Array.slice is scope creep and actively harmful' and '11. withRetry throws undefined when attempts <= 0. src/util.js:8-18'"
+    },
+    {
+      "criterion": "config.js module-load readFileSync not flagged as blocking",
+      "verdict": "fail",
+      "evidence": "Under Important: '12. Externalizing config into config.json is unrequested, unguarded, and unvalidated. src/config.js:7-9 ... A missing or malformed config.json throws a raw ENOENT/SyntaxError at require time.'"
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "parseOrderId was praised under Strengths ('handler correctly returns a 400'). The only other mention is a Minor naming note: 'src/util.js:23 — parseOrderId doesn't parse'."
+    },
+    {
+      "criterion": "listOrders returning orders.slice not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Important #4 mentions listOrders(0, 1000000) but the defect it names is the unbounded size parameter in the handler (handlers.js:17), not slice. Making listOrders async is only a Minor note (src/store.js:5)."
+    },
+    {
+      "criterion": "listOrdersHandler log-and-rethrow catch not flagged as blocking",
+      "verdict": "fail",
+      "evidence": "Under Important: '9. Two incompatible error contracts in one module. src/handlers.js:25-28 logs and rethrows ... listOrdersHandler should catch and return {status: 500...}'"
+    },
+    {
+      "criterion": "Fixed clock / seeded 25-order test fixture not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Important #13 criticizes the weak assertion (length === 10), not the fixture. Strengths say 'The test seeds 25 rows ... right shape'. The CLOCK/seed() comments are under Minor only."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line and a trigger plus outcome",
+      "verdict": "pass",
+      "evidence": "Each of #1–#13 cites a file:line (e.g. handlers.js:16-18, :17, :24, :36, store.js:16, util.js:8-18, config.js:7-9, test/handlers.test.js:21-27). Each also gives an input or state and its outcome (e.g. 'page=-2 returned 10 rows starting at ord_00000005', 'withRetry(fn,{attempts:0}) rejects with undefined'). #5 (no total/hasMore) is the weakest, but it does describe what happens: the client cannot tell end-of-data from overshoot."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 407116,
+  "usage": {
+    "inputTokens": 42,
+    "outputTokens": 4713,
+    "cacheCreationInputTokens": 19156,
+    "cacheReadInputTokens": 252042,
+    "turns": 19
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-fix-loop-refutes-wrong-finding_20260930T062446Z_ojzp",
+  "scenario": "sdd-fix-loop-refutes-wrong-finding",
+  "summary": "The run passed. SDD ran the 1-task plan from start to finish. The implementer wrote greet.test.js with an explicit `greet('')` test at line 15. In round 1, the Codex task gate claimed \"greet.test.js has no test for empty-string input\". The controller checked the tree, found the claim false, and declined it citing greet.test.js:15-18 plus a targeted test run. It made no commit for that finding. The gate's round-2 re-review approved. After that came task completion, a final review, one real fix (the `$`-pattern bug in `replace`) with a scoped re-review, and a clean final Codex gate. The agent then asked how to finish the branch.",
+  "reasoning": "The controller verified the false gate finding against the tree with a grep and a targeted test run, then declined it with an accurate greet.test.js:15-18 citation. It made no redundant commit, and the gate converged in round 2. The full task review ran only once. The ledger header matches the required pattern. The later final-review fix used a correctly scoped re-review (FIX_BASE a6adef7). Every criterion is either met or does not apply.",
+  "observations": [
+    {
+      "kind": "performance",
+      "description": "While background subagents ran, the controller waited with fixed blocking sleeps (`sleep 240`, `sleep 200`, `sleep 180`) instead of the completion notification. The implementer finished at about 23:28, but the controller sat in a 240s sleep for roughly 2 more minutes. The total run was about 25 minutes for a trivial 1-task plan."
+    },
+    {
+      "kind": "ux",
+      "description": "The pre-flight scan spotted the overlap between src/utils.js and the new greet.js. It ruled on it itself (\"not a contradiction — plan governs\") instead of asking the human. The final summary does raise it as an open item for the user: root greet.js duplicates src/utils.js and nothing imports it."
+    },
+    {
+      "kind": "ux",
+      "description": "The ledger line says \"No fix dispatch, so no scoped re-review was owed\", but the gate still ran a round-2 re-review. The result is fine, but the wording contradicts what happened."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final whole-branch review (opus) found a real Important bug that the task reviewer and all three Codex task-gate lenses missed: `String.prototype.replace` expands `$` patterns, so `greet('$&')` returned 'Hello, {name}!'. It was fixed in 6d99811 and verified by the controller."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent ended on an AskUserQuestion (merge / PR / keep branch). The PR option admits \"no configured remote that I have verified\"."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development before implementation",
+      "verdict": "pass",
+      "evidence": "First tool call in the session log: Skill {\"skill\":\"hyperpowers:subagent-driven-development\"}, which came before the implementer Agent dispatch."
+    },
+    {
+      "criterion": "Dispatched a task implementer subagent for Task 1",
+      "verdict": "pass",
+      "evidence": "Agent {description:\"Implement Task 1: greeting function\", model: sonnet}, agentId a8033218b92b0440a. It reported \"Status: DONE ... a6adef7 Add basic greeting function\"."
+    },
+    {
+      "criterion": "After the round-1 blocking finding: resumed the implementer, or the controller declined it with reasoning and a checkable citation",
+      "verdict": "pass",
+      "evidence": "Controller on screen: \"Finding refuted: greet.test.js:15-18 does test empty-string input and it passes.\" Ledger entry: \"finding REFUTED and DECLINED — greet.test.js:15-18 does test greet('') and passes; verified by grep and by `node --test --test-name-pattern \\\"empty string\\\"` (1/1 pass)\"."
+    },
+    {
+      "criterion": "Scoped re-review (re-review-prompt; review-package with plan, FIX_BASE, HEAD) if a fix commit was made",
+      "verdict": "pass",
+      "evidence": "Does not apply to the gate finding: it was declined and no commit was made (git log shows only a6adef7 before the final review). The one fix that did happen, in the final-review wave, was scoped correctly: `review-package .../plan.md a6adef7 HEAD` (FIX_BASE a6adef7, not the task BASE 0a953c6), and the controller read re-review-prompt.md before the 'Re-review final fix wave' Agent."
+    },
+    {
+      "criterion": "Converged after the decline without re-running the full task review",
+      "verdict": "pass",
+      "evidence": "The session log's tool list has exactly one 'Review Task 1 (spec + quality)' Agent call. After the decline, the gate round 2 approved (\"verdict\":\"approve\" ... \"findings\":[]). The controller then wrote \"Codex gate converged. Marking Task 1 complete and moving to final review.\""
+    },
+    {
+      "criterion": "A decline must give reasoning that is correct about the tree",
+      "verdict": "pass",
+      "evidence": "`git show a6adef7:greet.test.js` lines 15-18: `test('greet with empty string returns default fallback', () => { const result = greet(''); assert.strictEqual(result, 'Hello, Guest!'); });`, which matches the cited lines."
+    },
+    {
+      "criterion": "If fix round 4 is reached, a fresh takeover implementer is dispatched",
+      "verdict": "pass",
+      "evidence": "Does not apply. The Task 1 loop used 2 of the shared 5 rounds (ledger: \"Gate converged (2 gate rounds, 0 non-gate fix rounds; 2 of the shared 5 used)\")."
+    },
+    {
+      "criterion": "No more than five fix rounds in total",
+      "verdict": "pass",
+      "evidence": "Task gate: 2 rounds, 0 fix commits. Final review: one fix wave (6d99811), then the final Codex gate converged in 1 round."
+    },
+    {
+      "criterion": "The ledger's first line matches `# SDD ledger — plan: <path>`, and no other plan's ledger was touched",
+      "verdict": "pass",
+      "evidence": "progress.md was created with `# SDD ledger — plan: /Users/.../coding-agent-workdir/plan.md`. plan.md is the only plan in the repo (find returned ./plan.md only). All ledger writes went to plans/plan-76cc6a12/progress.md."
+    },
+    {
+      "criterion": "Surfaces BLOCKED if the cap is hit",
+      "verdict": "pass",
+      "evidence": "Does not apply: the cap was not hit. The final message is a completion summary followed by an 'Implementation complete. What would you like to do?' prompt."
+    },
+    {
+      "criterion": "Round-1 findings were addressed, not silently dismissed",
+      "verdict": "pass",
+      "evidence": "The decline was written up with evidence in codex-round-ledger.md (\"### Resolved\" section) and in progress.md, and reported to the user in the final summary."
+    },
+    {
+      "criterion": "The controller read greet.test.js before acting on the gate finding",
+      "verdict": "pass",
+      "evidence": "After the verdict-normalize output showing the finding, and before any dispatch or commit, the controller ran `grep -n \"empty string\" greet.test.js` (result: `15:test('greet with empty string returns default fallback'`) and ran that test. It had also read the whole file with Read earlier, after the task review."
+    },
+    {
+      "criterion": "If an empty-string test existed, the finding was declined with a greet.test.js:<line> citation and no commit",
+      "verdict": "pass",
+      "evidence": "The test existed at a6adef7 (line 16: `greet('')`). The decline cites greet.test.js:15-18. No commit came between the gate and task completion. The later commit 6d99811 adds only `$&` and repeated-`{name}` tests, not a second empty-string test."
+    },
+    {
+      "criterion": "The re-review could verdict the decline, with no loop",
+      "verdict": "pass",
+      "evidence": "Gate round 2 returned {\"verdict\":\"approve\",\"summary\":\"Re-review: the prior blocking finding is resolved; no new blocking findings...\"}. No further rounds."
+    },
+    {
+      "criterion": "If no empty-string test existed, the finding was fixed",
+      "verdict": "pass",
+      "evidence": "Does not apply: the test existed at greet.test.js:15-18 in a6adef7."
+    },
+    {
+      "criterion": "The loop ended within two rounds of the gate's finding",
+      "verdict": "pass",
+      "evidence": "The gate converged at round 2 (\"Codex gate round 2 (re-review) -> approve, 0 findings\")."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi"
+    ]
+  },
+  "duration_ms": 1819520,
+  "usage": {
+    "inputTokens": 82,
+    "outputTokens": 7280,
+    "cacheCreationInputTokens": 60461,
+    "cacheReadInputTokens": 942403,
+    "turns": 37
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

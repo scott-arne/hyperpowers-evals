@@ -1,0 +1,40 @@
+    on it.
+  - Each agent works TDD (test first, red, then green) and commits only its own two files.
+
+  [1mslugify(title):[0m lowercase, NFD-normalize and strip diacritics, non-alphanumerics → [38;5;153m-[39m, collapse runs, trim
+  leading/trailing [38;5;153m-[39m. Empty/whitespace input → [38;5;153m''[39m.
+
+  [1mTwo decisions before I dispatch[0m
+
+  [1mThe fork on commits:[0m you asked each subagent to commit its own piece. Two agents committing concurrently in [3mthis one[0m
+  worktree share a single git index and [38;5;153mindex.lock[39m — commits can fail transiently, and a plain [38;5;153mgit add -A[39m from one agent
+  would sweep up the other's half-written files. Three ways out:
+
+  - [1mPath-scoped commits, same worktree[0m — each agent stages only its own two files and runs [38;5;153mgit commit -- <its paths>[39m.
+    Both commits land directly on [38;5;153mexisting-feature[39m in order. Cheap, no merge step; the residual risk is a transient
+    [38;5;153mindex.lock[39m collision, which is retryable.
+  - [1mSeparate worktrees per agent[0m — true isolation, each commits on its own branch, then I merge both into
+    [38;5;153mexisting-feature[39m. Zero race, but adds two branches and a merge for ~40 lines of code.
+  - [1mI commit both[0m — agents only write files. Safest, but it's not what you asked for.
+
+  I recommend path-scoped commits: the file sets are disjoint by design, so the only real exposure is lock contention,
+  not lost work.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Commits [39m[49m ☐ truncate(n)  ✔ Submit  →
+
+[1m[38;5;231mHow should the two subagents commit without racing on the shared git index?[0m
+
+  [38;5;246m1.[39m Path-scoped, same worktree (Recommended)
+     [38;5;246mEach agent stages only its own 2 files and runs `git commit -- <paths>` on existing-feature. No merge step. [39m
+     [38;5;246mResidual risk is a retryable index.lock collision.[39m
+  [38;5;246m2.[39m Separate worktree per agent
+     [38;5;246mEach agent gets its own git worktree and branch, commits there, then I merge both into existing-feature. Zero race,
+[39m     [38;5;246mcosts two branches and a merge.[39m
+  [38;5;246m3.[39m Agents write, I commit
+     [38;5;246mSubagents only produce files; I make both commits sequentially. Safest, but the agents no longer commit their own [39m
+     [38;5;246mpiece.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

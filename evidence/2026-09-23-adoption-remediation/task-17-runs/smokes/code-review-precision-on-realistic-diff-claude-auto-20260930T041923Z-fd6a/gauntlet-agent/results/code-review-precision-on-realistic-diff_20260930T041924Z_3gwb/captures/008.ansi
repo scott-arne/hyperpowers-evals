@@ -1,0 +1,40 @@
+
+  [1mWorth fixing before merge[0m
+
+  [1m3. [38;5;153mwithRetry[39m rejects with [38;5;153mundefined[39m when [38;5;153mattempts[39m is 0/negative/undefined[0m ([38;5;153msrc/util.js:7-18[39m) — the loop never runs,
+  [38;5;153mlastErr[39m stays [38;5;153mundefined[39m, and [38;5;153mthrow lastErr[39m yields a non-Error rejection. This is now reachable from config: [38;5;153mattempts[39m
+  comes from [38;5;153mconfig.retryAttempts[39m, which is read from [38;5;153mconfig.json[39m with no shape validation, so a missing or mistyped key
+  turns every list request into [38;5;153mlist failed: undefined[39m. Guard the count or validate the config.
+
+  [1m4. [38;5;153msize[39m/[38;5;153mpage[39m are unvalidated and unbounded[0m ([38;5;153msrc/handlers.js:16-17[39m) — [38;5;153m?size=1000000[39m returns the whole dataset in one
+  response, which defeats the point of the change and hands clients a memory/serialization lever. [38;5;153m?page=-1[39m produces a
+  negative offset and silently returns [38;5;153m[][39m instead of a 400.
+
+  [1m5. [38;5;153mtotal[39m and [38;5;153mcreatedAt[39m are persisted verbatim from the body[0m ([38;5;153msrc/handlers.js:36[39m) — only [38;5;153mid[39m is parsed. [38;5;153mcreatedAt[39m is
+  whatever the client sends, so timestamps are forgeable and downstream date handling gets untyped values.
+  [38;5;153mutil.nowIso(clock)[39m already exists for this and is now unused; stamp it server-side.
+
+  [1m6. The new pagination test can't catch bug #1[0m ([38;5;153mtest/handlers.test.js:23[39m) — it asserts only [38;5;153morders.length === 10[39m, which
+  is true for both the correct offset and the buggy one, so the suite passes today. Assert on content ([38;5;153morders[0].id[39m)
+  and add a last-page case. Separately, [38;5;153mseed()[39m mutates the shared module-level [38;5;153mstore.orders[39m and the second test depends
+  on state left by the first; move seeding into [38;5;153mbeforeEach[39m.
+
+  [1mMinor[0m
+
+  - [38;5;153mbody.id[39m / [38;5;153mquery.page[39m dereference without a guard, so an empty POST body throws [38;5;153mTypeError[39m rather than returning 400
+    ([38;5;153msrc/handlers.js:31[39m, [38;5;153m:16[39m).
+  - Duplicate ids are accepted silently — [38;5;153msaveOrder[39m only appends, so a client retry creates a second row with the same
+    id that then appears twice in listings. A 409 would make the endpoint retry-safe.
+  - [38;5;153msrc/config.js:7[39m reads and parses [38;5;153mconfig.json[39m at require time with no error handling; a missing or malformed file
+    becomes a raw [38;5;153mENOENT[39m/[38;5;153mSyntaxError[39m at startup with no indication of the culprit — a regression from the previous
+    inlined literal.
+
+  My recommendation: don't merge until #1 and #2 are fixed — #2 is a remote crash reachable from any malformed POST. #6
+  matters too, since the test currently gives false confidence in the code path that's broken.
+
+[38;5;246m✻[39m [38;5;246mChurned for 1m 59s · done 9:21 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

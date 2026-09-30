@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T055155Z_2spi",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The run passed on every criterion. The agent loaded hyperpowers:requesting-code-review, read the code-reviewer.md template, and sent a general-purpose reviewer subagent over c21b165..04d4048 using the Agent tool. The review rated two defects Critical: the pagination off-by-one at src/handlers.js:18 and the unawaited saveOrder at src/handlers.js:37. Its verdict was \"Ready to merge? No\". None of the six pieces of correct code got a blocking finding.",
+  "reasoning": "I checked the review against the session log and against the reviewer subagent's own log. Both defects are rated Critical, each with a file:line and a concrete trigger and outcome. The diff is not approved. The three Important findings are about other things: the handler's contract change, pagination input validation, and test coverage. Each cites a file or line and states a trigger. withRetry, config.js readFileSync and the test fixture's seed() appear only under Minor. parseOrderId, the listOrders slice and the log-and-rethrow catch get no blocking findings.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "On first launch, both the workspace-trust dialog and the Bypass Permissions dialog have 'No, exit' selected by default, so it takes extra Down presses to get started. This is probably intentional as a safety default."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The main agent re-read src/handlers.js and src/store.js to spot-check the subagent's Critical findings before reporting. That is good practice. Its summary folds seven Minor items into one paragraph, which is harder to scan than the subagent's numbered list."
+    },
+    {
+      "kind": "ux",
+      "description": "Important 1 (the listOrdersHandler contract change) is arguably overrated. The reviewer itself says the only in-tree caller was updated, so it is a change to the exported interface, not a live defect."
+    },
+    {
+      "kind": "performance",
+      "description": "The review took 3m 11s from start to finish."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill and dispatched a reviewer subagent via Agent tool",
+      "verdict": "pass",
+      "evidence": "Main session log tool calls: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, then a Read of code-reviewer.md, then {\"name\":\"Agent\",...\"subagent_type\":\"general-purpose\",\"prompt\":\"You are a Senior Code Reviewer...\"}. The subagent log is at subagents/agent-a4619d499ecb47fba.jsonl."
+    },
+    {
+      "criterion": "Pagination offset in listOrdersHandler flagged under Critical/Important",
+      "verdict": "pass",
+      "evidence": "Under Critical: \"Off-by-one makes the first page unreachable — src/handlers.js:18 ... const offset = page * size; // computed as if 0-based ... Page 1 returns records 10–19\""
+    },
+    {
+      "criterion": "Unawaited store.saveOrder in createOrderHandler flagged under Critical/Important",
+      "verdict": "pass",
+      "evidence": "Under Critical: \"Unawaited async saveOrder — false 201 plus process crash — src/handlers.js:37 ... the caller is told 201 Created for an order that was never stored\""
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Subagent: \"Ready to merge? No\". Main agent's summary: \"Verdict: Not ready to merge\""
+    },
+    {
+      "criterion": "No Critical/Important finding asserts a defect in the listed correct code (umbrella)",
+      "verdict": "pass",
+      "evidence": "The Important findings are: the listOrdersHandler contract change (handlers.js:15), pagination input validation (handlers.js:16-17) and the test-coverage gap. None of them targets the correct code listed in criteria 6–11."
+    },
+    {
+      "criterion": "withRetry not blocking",
+      "verdict": "pass",
+      "evidence": "Mentioned only under Minor: \"6. src/util.js:7-18 — withRetry with attempts: 0 rejects with undefined\" and \"7. ... the retry wraps an operation that cannot fail transiently\""
+    },
+    {
+      "criterion": "config.js module-load readFileSync not blocking",
+      "verdict": "pass",
+      "evidence": "Mentioned only under Minor: \"8. src/config.js:7-9 — config moved from a literal to an unguarded runtime file read\""
+    },
+    {
+      "criterion": "parseOrderId not blocking",
+      "verdict": "pass",
+      "evidence": "parseOrderId comes up only in passing (\"parseOrderId only inspects id\") inside Critical 2's reasoning. It is never called a defect."
+    },
+    {
+      "criterion": "listOrders slice not blocking",
+      "verdict": "pass",
+      "evidence": "The slice is described as in-memory under Minor 7. Important 2 is about negative page input to the handler, not about store.listOrders itself."
+    },
+    {
+      "criterion": "catch that logs and rethrows not blocking",
+      "verdict": "pass",
+      "evidence": "None of the Critical, Important or Minor findings in the subagent output mentions the catch/rethrow in listOrdersHandler."
+    },
+    {
+      "criterion": "Fixed clock and seeded 25-order test list not blocking",
+      "verdict": "pass",
+      "evidence": "Important 5 criticizes assertions that check only length (\"Line 26 asserts only res.orders.length === 10\"), not the fixture. It even says the fixture is \"sized 25/10 precisely to produce one\" (a last partial page). seed() mutating store.orders appears only under Minor 12. The fixed clock is not criticized."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line and states trigger and outcome",
+      "verdict": "pass",
+      "evidence": "Critical 1: handlers.js:18, page=1 → records 10–19. Critical 2: handlers.js:37, total<=0 → false 201 plus crash. Important 3: handlers.js:15, no-arg call → TypeError. Important 4: handlers.js:16-17, page:-1 → empty list with 200. Important 5: test/handlers.test.js line 26, buggy window still has length 10, so the test passes."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 321627,
+  "usage": {
+    "inputTokens": 40,
+    "outputTokens": 4498,
+    "cacheCreationInputTokens": 30126,
+    "cacheReadInputTokens": 229607,
+    "turns": 18
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,1 @@
+const h=require('./src/handlers');h.listOrdersHandler({}).then(r=>console.log('listOrders ->',JSON.stringify(r))).catch(e=>console.log('rejected ->',String(e)))

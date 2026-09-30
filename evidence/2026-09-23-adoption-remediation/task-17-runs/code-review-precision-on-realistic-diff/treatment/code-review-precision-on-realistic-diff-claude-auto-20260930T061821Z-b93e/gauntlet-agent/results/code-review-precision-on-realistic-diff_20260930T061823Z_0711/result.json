@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T061823Z_0711",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "Claude loaded hyperpowers:requesting-code-review, read the code-reviewer.md template, and sent the review to a general-purpose subagent using the Agent tool. The review listed two Critical defects: the pagination offset at src/handlers.js:18 and the unawaited saveOrder at src/handlers.js:37. Its verdict was \"do not merge\". None of the correct-by-design constructs got a blocking finding.",
+  "reasoning": "Every acceptance criterion is supported by the session log (028a4ea1-...jsonl) and by the final review text on screen. The one judgment call is Important #3, which is about test/handlers.test.js. It criticizes the length-only assertion. It does not say the fixed clock or the seeded 25-order list is wrong; it only uses the 25 orders to explain why the assertion passes either way. So I don't count it as a blocking finding against criterion 11.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "On the startup trust prompt and the Bypass Permissions prompt, the preselected option is \"No, exit\", so I had to press Down before Enter each time. This is probably intentional for safety, but it is extra friction in scripted runs."
+    },
+    {
+      "kind": "ux",
+      "description": "I asked for the superpowers: variant and it loaded hyperpowers:requesting-code-review instead. The criteria allow either, but the name mismatch could confuse users."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the review, the skill ran a Codex review-gate preflight and printed a fairly long install nag for codex-plugin-cc (\"status: not-installed\"). It also appended the range to an 'ungated ledger'. This is noise for a user who only asked for a review."
+    },
+    {
+      "kind": "ux",
+      "description": "Important #3 criticizes the test file. That is a reasonable observation, but some graders might read it as a blocking finding about the seeded test fixture. I did not count it that way because it targets the assertion, not the fixture."
+    },
+    {
+      "kind": "performance",
+      "description": "The review took about 4m16s end to end (\"Cooked for 4m 16s\")."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill and dispatched reviewer subagent via Agent tool",
+      "verdict": "pass",
+      "evidence": "Session log tool_use entries: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, then a Read of code-reviewer.md, then {\"name\":\"Agent\",\"subagent_type\":\"general-purpose\",\"description\":\"Review code changes\",\"prompt\":\"You are a Senior Code Reviewer...\"}. A subagent log file was created at subagents/agent-afb2979c370fed530.jsonl."
+    },
+    {
+      "criterion": "Flags pagination offset in listOrdersHandler as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Under Critical: \"1. Pagination off-by-one — src/handlers.js:18 ... const offset = page * size; // page 1 -> offset 20, not 0 ... Must be (page - 1) * size.\""
+    },
+    {
+      "criterion": "Flags unawaited store.saveOrder in createOrderHandler as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Under Critical: \"2. saveOrder is never awaited — src/handlers.js:37 ... client gets 201 Created, the order is silently dropped, and the unhandled rejection kills the process\""
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "\"Verdict: do not merge. Two Critical defects.\""
+    },
+    {
+      "criterion": "No Critical/Important finding asserts a defect in the listed correct constructs (header)",
+      "verdict": "pass",
+      "evidence": "The Critical items are #1 (offset) and #2 (saveOrder). The Important items are #3 (weak test assertion), #4 (createdAt), and #5 (size bound). None of them targets a listed construct. See sub-criteria 6-11."
+    },
+    {
+      "criterion": "withRetry not blocked on",
+      "verdict": "pass",
+      "evidence": "withRetry shows up only under Minor (\"withRetry wrapping a pure in-memory Array.slice\") and under Strengths (\"withRetry gets the detail most implementations miss right\")."
+    },
+    {
+      "criterion": "config.json readFileSync not blocked on",
+      "verdict": "pass",
+      "evidence": "It appears only under Minor: \"no error handling on config load\"."
+    },
+    {
+      "criterion": "parseOrderId not blocked on",
+      "verdict": "pass",
+      "evidence": "It appears only under Strengths: \"parseOrderId is a clean validation boundary\"."
+    },
+    {
+      "criterion": "listOrders returning orders.slice not blocked on",
+      "verdict": "pass",
+      "evidence": "No Critical or Important item names store.js listOrders or slice as a defect. The only reference to store.js is store.js:13 (the saveOrder rejection) inside finding #2."
+    },
+    {
+      "criterion": "catch that logs and rethrows not blocked on",
+      "verdict": "pass",
+      "evidence": "The closest mention is the Minor note \"Inconsistent handler contracts (list throws, create returns a status object)\". No Critical or Important item mentions it."
+    },
+    {
+      "criterion": "Fixed clock and seeded 25-order list in tests not blocked on",
+      "verdict": "pass",
+      "evidence": "Important #3: \"test/handlers.test.js:21-27 can't fail on the bug it covers. With 25 seeded orders, slice(10,20) and the correct slice(0,10) both return 10 rows, so the length assertion passes either way\". This targets the length-only assertion, not the fixed clock or the seed. Judgment call."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line plus trigger and outcome",
+      "verdict": "pass",
+      "evidence": "#1 handlers.js:18: page 1 -> offset 20, so the first page is unreachable. #2 handlers.js:37: a request whose total is not >0 gets 201, the order is dropped, and there is an unhandled rejection. #3 test:21-27: with 25 orders the buggy slice still returns 10 rows, so the test passes. #4 handlers.js:36: a create without createdAt stores a record with no timestamp. #5 handlers.js:16-17: size=1000000 returns the whole store; a negative page returns an empty 200."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 407051,
+  "usage": {
+    "inputTokens": 40,
+    "outputTokens": 4427,
+    "cacheCreationInputTokens": 14512,
+    "cacheReadInputTokens": 231101,
+    "turns": 18
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

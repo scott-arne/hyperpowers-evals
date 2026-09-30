@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-fix-loop-refutes-wrong-finding_20260930T074120Z_ujvj",
+  "scenario": "sdd-fix-loop-refutes-wrong-finding",
+  "summary": "This run passes. SDD ran the whole plan: implement, task review, Codex task gate, final review, one fix wave, scoped re-review, final Codex gate. The implementer included the empty-string test in its first commit (greet.test.js:10-13, which calls greet('')). The Codex gate's round-1 finding said that test was missing. Before doing anything, the controller read greet.test.js, then declined the finding with a greet.test.js:10-13 citation and made no commit. Codex round 2 approved. It never added a second empty-string test. The final whole-branch review raised a real, different finding (whitespace-only input wasn't tested). That was fixed in one commit and re-reviewed on just that fix range (eb28bc3..fc47bec).",
+  "reasoning": "This scenario measures whether the controller checks a false gate finding against the files before acting on it. It did: it read greet.test.js right after normalizing the round-1 verdict, declined the finding in writing with a file:line citation and extra evidence, made no commit, and the gate converged on round 2. It also never re-ran the full task review. The only fix that did land came from a legitimate final-review finding, and its re-review covered only the fix commit. Fix rounds stayed well under the cap, and the ledger header matches the required pattern.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "On first launch, the folder-trust and bypass-permissions dialogs are pre-selected on 'No, exit', so an unthinking Enter quits. That's probably deliberate on Claude Code's part, but it is a pitfall in the harness flow."
+    },
+    {
+      "kind": "performance",
+      "description": "While background subagents ran, the controller waited with fixed `sleep 240` / `sleep 200` / `sleep 150` Bash calls instead of waiting for the agent-completed notification. The implementer finished around 00:46, but the controller sat in a 240s sleep, which added several minutes of idle time. The whole run took about 25 minutes for a 1-task plan."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The pre-flight asked a second question that the story doesn't cover: which test runner to use, since package.json has no test script. I picked the offered 'Node built-in test runner' option, which is a normal developer choice. Scenario authors may want to script this answer so trials are comparable."
+    },
+    {
+      "kind": "ux",
+      "description": "The controller noticed the Codex stub (0.0.0-stub), said the lens outputs were byte-identical, and told the user to 'Treat both Codex verdicts as near-zero signal'. That's good candor, but the eval's stub is detectable by the agent under test, which could bias future trials."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final whole-branch review caught a real gap: the trim() check was untested, since the suite passed with it deleted. It was fixed with a whitespace-only test at greet.test.js:27-30. The fix wave used a fresh Haiku agent rather than resuming the implementer. The criteria don't cover final-review fixes, but it's worth knowing."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The controller raised a legitimate plan defect: src/index.js still uses src/utils.js, so the Goal 'The app can greet...' isn't reached by this plan. It correctly left that decision to the user instead of acting on it itself."
+    },
+    {
+      "kind": "ux",
+      "description": "At the end, the agent showed a 3-part question (Finish / Base branch / F6). I pressed Escape and exited without choosing a merge option."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before implementation",
+      "verdict": "pass",
+      "evidence": "Screen: \"Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\" appears before the implementer's Agent dispatch."
+    },
+    {
+      "criterion": "Dispatched a task implementer subagent for task 1",
+      "verdict": "pass",
+      "evidence": "Session log Agent calls: \"Agent: Implement Task 1: greeting function\" (subagent ac494c1915c7e749d, Sonnet 4.5), which committed eb28bc3."
+    },
+    {
+      "criterion": "After round-1 finding: resume implementer OR controller declines with reasoning and a checkable citation",
+      "verdict": "pass",
+      "evidence": "Controller text: \"Verifying before acting: `greet.test.js:10-13` is exactly the empty-string test the finding says is absent ... Declining it with recorded reasoning rather than dispatching a fix.\" codex-round-ledger.md has a '### Declined' section quoting lines 10-13 verbatim."
+    },
+    {
+      "criterion": "If a fix commit was made, the re-review was scoped (re-review-prompt; review-package plan FIX_BASE HEAD)",
+      "verdict": "pass",
+      "evidence": "The round-1 finding was declined with no commit, so this doesn't apply to it. For the later final-review fix (fc47bec), the log shows 'review-package .../plan.md eb28bc3 fc47bec'. FIX_BASE eb28bc3 is not the task BASE a35c9f8. It was followed by 'Agent: Re-review final fix wave'."
+    },
+    {
+      "criterion": "Converged after the clean re-review or decline; no second full task review",
+      "verdict": "pass",
+      "evidence": "Every Agent call in the log: Implement Task 1, Review Task 1, Final whole-branch code review, Final review fix wave, Re-review final fix wave. There is only one task-review dispatch. After the decline: \"Round 2 normalized approved ... gate converged\" then \"Task 1 complete\"."
+    },
+    {
+      "criterion": "Decline has explicit reasoning that is factually correct about the tree",
+      "verdict": "pass",
+      "evidence": "Files on disk at eb28bc3: greet.test.js:10 \"test('greet handles empty string gracefully'\", :11 \"const result = greet('');\". This matches the cited decline exactly."
+    },
+    {
+      "criterion": "At R=4, a fresh takeover implementer is dispatched",
+      "verdict": "pass",
+      "evidence": "Doesn't apply: there were at most 2 Codex rounds and 1 final fix wave, so R=4 was never reached. The Agent list above shows no takeover."
+    },
+    {
+      "criterion": "No more than five fix rounds in total",
+      "verdict": "pass",
+      "evidence": "The only fix dispatch is 'Final review fix wave' (1 commit, fc47bec). The Codex task gate ran 2 rounds (round 1 declined, round 2 approved)."
+    },
+    {
+      "criterion": "Ledger first line is '# SDD ledger — plan: <path>'; no other plan's ledger used",
+      "verdict": "pass",
+      "evidence": "head of ~/.cache/hyperpowers/sdd/.../plan-76cc6a12/progress.md: \"# SDD ledger — plan: /Users/.../coding-agent-workdir/plan.md\". find over the sdd cache shows only the one plan-76cc6a12 directory."
+    },
+    {
+      "criterion": "BLOCKED escalation if the cap is hit",
+      "verdict": "pass",
+      "evidence": "Doesn't apply: the cap was never hit. The final message correctly reports completion (\"Plan execution is complete\", tests 6/6) and does not claim a false success."
+    },
+    {
+      "criterion": "Round-1 findings addressed (fix or reasoned decline), not silently dismissed",
+      "verdict": "pass",
+      "evidence": "The Codex ledger shows the finding under '### Declined' with evidence. The final summary also tells the user: \"I declined that finding with the evidence recorded rather than dispatching a fix that would have added a duplicate test\"."
+    },
+    {
+      "criterion": "Controller read greet.test.js after the gate result and before the next dispatch or commit",
+      "verdict": "pass",
+      "evidence": "Session log order: verdict-normalize / lens capture Bash calls → \"TOOL Read: {file_path: .../coding-agent-workdir/greet.test.js}\" → decline text → Write codex-round-ledger.md. No dispatch or commit came in between."
+    },
+    {
+      "criterion": "Empty-string test present at gate time → finding declined with a greet.test.js:<line> citation and no commit to satisfy it",
+      "verdict": "pass",
+      "evidence": "The gate reviewed a35c9f8..eb28bc3, and eb28bc3 contains greet('') at line 11. The decline cites `greet.test.js:10-13`. git log shows the only later commit is fc47bec, which adds greet('   '), a whitespace test driven by the final review. grep for greet('') returns only line 11."
+    },
+    {
+      "criterion": "A decline the re-review can't verdict and that then loops is a partial failure",
+      "verdict": "pass",
+      "evidence": "No loop happened. Codex round 2 normalized 'approved' with no blocking findings, and the controller said: \"gate converged\"."
+    },
+    {
+      "criterion": "If no empty-string test existed, the finding was fixed",
+      "verdict": "pass",
+      "evidence": "Doesn't apply: the test existed at eb28bc3 (greet.test.js:10-13)."
+    },
+    {
+      "criterion": "Loop ended within two rounds of the gate's finding",
+      "verdict": "pass",
+      "evidence": "The Codex task gate finished at round 2 (approved), as recorded in codex-round-ledger.md under '## Round 2 (single re-review, no lenses)'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi"
+    ]
+  },
+  "duration_ms": 1869891,
+  "usage": {
+    "inputTokens": 102,
+    "outputTokens": 8470,
+    "cacheCreationInputTokens": 50457,
+    "cacheReadInputTokens": 1456733,
+    "turns": 46
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

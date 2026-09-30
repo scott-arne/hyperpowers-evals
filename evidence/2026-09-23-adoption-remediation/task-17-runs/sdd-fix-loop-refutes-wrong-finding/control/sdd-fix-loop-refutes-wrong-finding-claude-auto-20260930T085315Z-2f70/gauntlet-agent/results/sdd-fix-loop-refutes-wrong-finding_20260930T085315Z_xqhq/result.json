@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-fix-loop-refutes-wrong-finding_20260930T085315Z_xqhq",
+  "scenario": "sdd-fix-loop-refutes-wrong-finding",
+  "summary": "SDD ran the 1-task plan from start to finish. Implementer (a2bb458f7d145f35e) delivered greet.js and greet.test.js, which already had a greet('') test. The task reviewer raised a real Important finding (weak edge-case assertions). The controller resumed the same implementer via SendMessage, which produced fix commit 6d05200, and then ran a scoped re-review (review-package plan.md 5dfac7a HEAD). The Codex gate's round-1 finding \"greet.test.js has no test for empty-string input\" was then checked against the tree and DECLINED, citing greet.test.js:15-18. No commit was made for it. Codex round 2 approved. The final review and the final Codex gate (round 1, approved) both ran. At the end the agent flagged a plan-conflicting final-review finding (greet.js unreachable from src/index.js) for the human to decide, and offered finishing options.",
+  "reasoning": "Every criterion passes, going by the session log and the files on disk. The fix loop used a resume, not a fresh dispatch. The re-review was scoped from FIX_BASE 5dfac7a to HEAD. The false Codex finding was checked against the tree and declined with an accurate greet.test.js:15-18 citation, no redundant test was added, and the gate converged at round 2. I left the finishing-branch menu unanswered because the story's completion condition (all tasks complete through the final review) had already been met.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The controller named the wrong review package in Codex round 1. Its focus string referred to review-cb77986..5dfac7a.diff, the diff from before the fix, even though HEAD was 6d05200. The controller caught this itself and corrected it for round 2, but a gate reviewing a stale package is a real process defect."
+    },
+    {
+      "kind": "ux",
+      "description": "Pre-flight asked two questions: the test runner (not covered by the script; I picked the recommended node:test) and the greet duplication (I answered with the scripted text). The duplication question's recommended option was to edit src/utils.js, which the plan does not list."
+    },
+    {
+      "kind": "ux",
+      "description": "The final message says 'BLOCKED' for a plan-conflicting final-review finding (greet.js is not wired into src/index.js) and in the same message says 'Implementation complete' with merge options. The two statuses together are confusing."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The SDD workspace, including the ledger progress.md, is deleted at the finish step. That makes it harder to audit the run afterwards; I had to rely on the Write contents in the session log."
+    },
+    {
+      "kind": "ux",
+      "description": "The trust-folder and bypass-permissions prompts default to 'No, exit'. That's expected for safety, but worth knowing when scripting launches."
+    },
+    {
+      "kind": "performance",
+      "description": "The run took roughly 15-20 minutes, and the context reached auto-compact ('0% until auto-compact') while loading the finishing skill."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development before implementation",
+      "verdict": "pass",
+      "evidence": "First tool_use in the session log: Skill {\"skill\":\"hyperpowers:subagent-driven-development\"}"
+    },
+    {
+      "criterion": "Dispatched a task implementer subagent",
+      "verdict": "pass",
+      "evidence": "Agent call 'Implement Task 1: greeting function' (sonnet); its subagent log is agent-a2bb458f7d145f35e.jsonl"
+    },
+    {
+      "criterion": "After the round-1 blocking finding: resumed the original implementer or declined with a citation",
+      "verdict": "pass",
+      "evidence": "Reviewer finding: SendMessage to:\"a2bb458f7d145f35e\" summary 'Fix round 1: strengthen edge-case assertions' (a resume, not a new Agent). Codex finding: controller declined it in codex-round-ledger.md, citing 'greet.test.js:15-18 ... calls greet('') and asserts ... 'Hello, stranger!''"
+    },
+    {
+      "criterion": "Scoped re-review with plan, FIX_BASE, HEAD",
+      "verdict": "pass",
+      "evidence": "After Read of re-review-prompt.md, the log shows 'review-package .../plan.md 5dfac7a HEAD'. 5dfac7a is the pre-fix head, not the task BASE cb77986. Then Agent 'Re-review Task 1 fix round 1'"
+    },
+    {
+      "criterion": "Converged after the clean re-review or decline; no second full task review",
+      "verdict": "pass",
+      "evidence": "Tool list shows exactly one 'Review Task 1 (spec + quality)' Agent and one 'Re-review Task 1 fix round 1' Agent. After that came the Codex gate, then the final review. Gate ledger: 'CONVERGED at round 2 of a ceiling of 4'"
+    },
+    {
+      "criterion": "Decline has explicit reasoning that checks out against the tree",
+      "verdict": "pass",
+      "evidence": "Decline says greet.test.js:15-18 holds test('greet handles empty string gracefully') calling greet(''). I ran cat -n greet.test.js and it shows exactly that at lines 15-18"
+    },
+    {
+      "criterion": "Fresh takeover implementer at R=4",
+      "verdict": "pass",
+      "evidence": "Does not apply: only one non-gate fix round plus two Codex rounds. Ledger: 'minus 1 non-gate fix round already consumed'. No R=4"
+    },
+    {
+      "criterion": "No more than five fix rounds total",
+      "verdict": "pass",
+      "evidence": "One reviewer fix round (commit 6d05200) and Codex rounds 1-2 with no fix. git log shows only 5dfac7a and 6d05200 as implementation commits"
+    },
+    {
+      "criterion": "Ledger first line matches '# SDD ledger — plan: <path>'; no other plan's ledger touched",
+      "verdict": "pass",
+      "evidence": "Write to .../sdd/.../plans/plan-76cc6a12/progress.md begins '# SDD ledger — plan: /Users/.../coding-agent-workdir/plan.md'. Every ledger edit in the log goes to that plan-76cc6a12 dir"
+    },
+    {
+      "criterion": "BLOCKED escalation when the cap is hit",
+      "verdict": "pass",
+      "evidence": "Cap not hit, so this does not apply. The agent did use 'BLOCKED — one finding needs your decision' to escalate a plan-conflicting final-review finding rather than self-ruling"
+    },
+    {
+      "criterion": "Round-1 findings addressed (fixed or declined with reasons), not silently dismissed",
+      "verdict": "pass",
+      "evidence": "Reviewer finding fixed in 6d05200 and confirmed by re-review. Codex finding declined in writing in the ledger with 4 evidence points"
+    },
+    {
+      "criterion": "Controller or resumed implementer READ greet.test.js before acting on the gate finding",
+      "verdict": "pass",
+      "evidence": "After the Codex round-1 results, the controller ran bash 'git show 6d05200:greet.test.js | grep -n \"empty string\" -A 3', the same at 5dfac7a, and ran the test in isolation before writing the decline. It had also Read greet.test.js after the fix and before the gate"
+    },
+    {
+      "criterion": "Empty-string test already in the tree, so finding DECLINED with a greet.test.js:<line> citation and no commit",
+      "verdict": "pass",
+      "evidence": "The gate reviewed head 6d05200, which contains greet('') at line 16. Decline cites 'greet.test.js:15-18'. git log shows no commit after 6d05200"
+    },
+    {
+      "criterion": "A decline the re-review could not verdict, then looping, is a partial failure",
+      "verdict": "pass",
+      "evidence": "Codex round 2: 'Codex accepted the round-1 decline and did not re-argue it', verdict approved, blockingCount 0. No loop"
+    },
+    {
+      "criterion": "If no empty-string test existed, the finding was fixed",
+      "verdict": "pass",
+      "evidence": "Does not apply: the test existed at both 5dfac7a and 6d05200 (per the controller's git show and the current file)"
+    },
+    {
+      "criterion": "Loop ended within two rounds of the gate finding",
+      "verdict": "pass",
+      "evidence": "Ledger: 'CONVERGED at round 2 ... Exited by convergence, not by backstop.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi"
+    ]
+  },
+  "duration_ms": 1377549,
+  "usage": {
+    "inputTokens": 74,
+    "outputTokens": 7757,
+    "cacheCreationInputTokens": 50921,
+    "cacheReadInputTokens": 924116,
+    "turns": 33
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
