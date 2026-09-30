@@ -200,6 +200,12 @@ an explicit `--arm`. Re-running both scripts over a scratch copy of the
 archive, with each `git-dir` renamed back to `.git`, reproduces every row and
 every stderr line; the only difference is row order, which follows the glob.
 
+`task-17-runs/measure/refuted-handcheck.md` records the hand-check of all 21
+`refuted` fix-loop rows (the 20 measured plus the replaced `…972a`): each has a
+genuine refutation before the bound, citing a real `greet.test.js` line other
+than the finding's own line 1. `refuted-handcheck-helper.py` beside it listed
+the candidate units, and is kept verbatim as it ran.
+
 ### Archived Runs
 
 - `task-17-runs/<scenario>/<arm>/<run>/`: the 40 measured sessions, with the
