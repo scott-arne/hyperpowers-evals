@@ -65,9 +65,13 @@ converged
     result. Tool results do not count, because SDD's worked example carries
     the same line and a controller reads it back.
 
-The gate result is the first ``Bash`` tool_result in the controller transcript
-that carries the finding's title (R4). Under R6 the story grades against the
-tree the gate reviewed, while ``applicable`` still reads the first commit. An
+The gate result is the first tool_result in the controller transcript that
+carries the finding's title (R4) and answers either a ``Bash`` call or a
+``Read`` of a file in a gate directory (a ``file_path`` containing
+``/.cache/hyperpowers/codex-review/``), because the gate skill captures each
+lens's output to a file in the gate directory. The earliest such result wins;
+a ``Read`` of any other file never anchors. Under R6 the story grades against
+the tree the gate reviewed, while ``applicable`` still reads the first commit. An
 empty-string call that arrives in a pre-gate commit therefore leaves
 ``applicable`` ``no`` with only the ``gate-tree-disagrees`` note to signal it,
 and the ``pre_gate_added`` self-test case pins that note.
@@ -80,7 +84,8 @@ stderr and gets no row, and the exit status is then 1. The tokens are
 A reading the analyst should see prints ``NOTE <token> <run-id>: <detail>``
 and leaves the row in place:
 
-- Input: ``jsonl-unparsed``, ``finding-surfaced-elsewhere``.
+- Input: ``jsonl-unparsed``, ``finding-surfaced-elsewhere``,
+  ``gate-result-via-read`` (the anchor is a ``Read`` of a gate-directory file).
 - First commit: ``first-commit-ambiguous``, ``first-commit-after-gate``.
 - Applicability: ``test-file-absent``, ``test-file-ambiguous``,
   ``no-arg-call`` (R5), ``empty-literal-unmatched`` (R3),
@@ -165,6 +170,9 @@ HEADER_RE = re.compile(
 WORKDIR = "coding-agent-workdir"
 TRANSCRIPT_GLOB = os.path.join("home", ".claude", "projects", "*", "*.jsonl")
 FINDING_TITLE = "greet.test.js has no test for empty-string input"
+# codex-review-dir makes every gate directory under ${XDG_CACHE_HOME:-$HOME/.cache},
+# and an eval run's HOME is <run>/home, so this segment names a gate directory.
+GATE_DIR_SEGMENT = "/.cache/hyperpowers/codex-review/"
 TEST_FILE = "greet.test.js"
 IMPL_FILE = "greet.js"
 PLAN_FILE = "plan.md"
@@ -607,31 +615,66 @@ def note_degraded(log: Log, notes: list[tuple[str, str]]) -> None:
 
 
 def find_gate(controller: Log, notes: list[tuple[str, str]]) -> Unit:
-    """The gate result: the first ``Bash`` tool_result carrying the finding's title (R4).
+    """The gate result: the first controller tool_result carrying the finding's title that answers an accepted call (R4).
+
+    A ``Bash`` call is accepted, and so is a ``Read`` whose ``file_path`` lies
+    in a gate directory (:data:`GATE_DIR_SEGMENT`), because the gate skill
+    captures each lens's output to a file there and the controller may read it
+    back either way. The earliest such result wins, whichever tool it answers.
+    A ``Read`` of any other file, such as the Codex stub's own source, never
+    anchors.
 
     :param controller: The controller transcript.
-    :param notes: Where the ``finding-surfaced-elsewhere`` note goes.
+    :param notes: Where the ``finding-surfaced-elsewhere`` and ``gate-result-via-read`` notes go.
     :returns: The gate result, which anchors every window.
     :raises RunError: ``gate-result-missing`` when there is none; the gate did
         not run or did not reach the controller, and a row would be a guess.
     """
 
-    elsewhere = [u for u in controller.units if FINDING_TITLE in u.text and not (u.kind == "result" and u.tool == "Bash")]
+    uses: dict[str, Unit] = {}
     for unit in controller.units:
-        if unit.kind == "result" and unit.tool == "Bash" and FINDING_TITLE in unit.text:
-            earlier = [u for u in elsewhere if u.order < unit.order and u.kind == "result"]
-            if earlier:
-                notes.append((
-                    "finding-surfaced-elsewhere",
-                    (f"the finding first reached the controller in a {earlier[0].tool or 'unattributed'} result at "
-                    f"{stamp(earlier[0].ts)}, before the Bash result at {stamp(unit.ts)} that anchors every window"),
-                ))
-            return unit
+        if unit.kind == "use":
+            uses.setdefault(unit.use_id, unit)
+
+    def gate_read(unit: Unit) -> Unit | None:
+        use = uses.get(unit.use_id) if unit.tool == "Read" else None
+        return use if use and GATE_DIR_SEGMENT in use.field("file_path") else None
+
+    def accepted(unit: Unit) -> bool:
+        return unit.kind == "result" and (unit.tool == "Bash" or gate_read(unit) is not None)
+
+    titled = [u for u in controller.units if FINDING_TITLE in u.text]
+    elsewhere = [u for u in titled if not accepted(u)]
+    for unit in titled:
+        if not accepted(unit):
+            continue
+        earlier = [u for u in elsewhere if u.order < unit.order and u.kind == "result"]
+        if earlier:
+            notes.append((
+                "finding-surfaced-elsewhere",
+                (f"the finding first reached the controller in a {earlier[0].tool or 'unattributed'} result at "
+                f"{stamp(earlier[0].ts)}, before the {unit.tool} result at {stamp(unit.ts)} that anchors every window"),
+            ))
+        read = gate_read(unit)
+        if read:
+            bash = next((u for u in titled if u.order > unit.order and u.kind == "result" and u.tool == "Bash"), None)
+            follows = (f"a Bash result carrying the title follows at {stamp(bash.ts)}" if bash
+                       else "no Bash result carries the title")
+            notes.append((
+                "gate-result-via-read",
+                (f"the gate result is a Read of {os.path.basename(read.field('file_path'))} in the gate directory at "
+                f"{stamp(unit.ts)}, which anchors every window; {follows}"),
+            ))
+        return unit
     where = (
         f"it appears only in a {elsewhere[0].kind} of {elsewhere[0].tool or 'an unattributed tool'} at "
         f"{stamp(elsewhere[0].ts)}" if elsewhere else "the title appears nowhere in the transcript"
     )
-    raise RunError("gate-result-missing", f"no Bash tool_result in the controller transcript carries {FINDING_TITLE!r}; {where}")
+    raise RunError(
+        "gate-result-missing",
+        (f"no Bash tool_result, and no Read tool_result of a file in a gate directory, in the controller transcript "
+         f"carries {FINDING_TITLE!r}; {where}"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2390,6 +2433,20 @@ def gate(trial: Trial, sec: float = 100) -> None:
     trial.result(sec + 1, use, GATE_PAYLOAD)
 
 
+def read_gate(trial: Trial, sec: float = 100) -> str:
+    """The task gate's round-1 lens capture, read back with the Read tool from the gate directory.
+
+    :returns: The capture's path, which a real run keeps under its throwaway ``HOME``.
+    """
+
+    path = os.path.join(trial.run_dir, "home", ".cache", "hyperpowers", "codex-review", "f67da997", "run-x",
+                        "lens-correctness-capture")
+    use = trial.use(sec, "Read", {"file_path": path})
+    # The Read tool numbers each line it returns.
+    trial.result(sec + 1, use, f"1\t{GATE_PAYLOAD}")
+    return path
+
+
 def resume(trial: Trial, sec: float, message: str, to: str = IMPLEMENTER) -> None:
     """The controller resumes the implementer, as a real run's SendMessage records it."""
 
@@ -3075,6 +3132,47 @@ def self_test() -> int:
             ) or note_names(result[2], "shell-read-unparsed", f"controller Bash at {stamp(BASE_EPOCH + 110)}",
                             "could not be parsed", command)
 
+        def read_anchor() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            # The controller reads the lens capture with the Read tool, so no Bash result ever carries the title.
+            read_gate(trial)
+            read = trial.use(110, "Read", {"file_path": f"{trial.workdir}/greet.test.js"})
+            trial.result(110.1, read, TEST_SINGLE)
+            resume(trial, 120, "Fix round 2 of 5: greet.test.js has no test for empty-string input.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="yes", notes=["gate-result-via-read"]) or note_names(
+                result[2], "gate-result-via-read", "lens-correctness-capture", stamp(BASE_EPOCH + 101),
+                "no Bash result carries the title")
+
+        def read_outside_gate_dir() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            # The Codex stub's own source carries the title as a canned payload; reading it receives no gate result.
+            stub = os.path.join(trial.run_dir, "home", ".claude", "plugins", "cache", "openai-codex", "codex", "stub",
+                                "scripts", "codex-companion.mjs")
+            read = trial.use(100, "Read", {"file_path": stub})
+            trial.result(100.1, read, f"1\tconst FINDING = {{ title: {json.dumps(FINDING_TITLE)} }};")
+            code, rows, err = measure([trial.save()], evidence)
+            fatal = [line for line in err if line.startswith("FATAL ")]
+            if code != 1 or rows or len(fatal) != 1 or not fatal[0].startswith("FATAL gate-result-missing "):
+                return f"exit {code} with {len(rows)} row(s), expected exit 1, no row and one gate-result-missing; {err}"
+            wanted = ("no Read tool_result of a file in a gate directory", f"a result of Read at {stamp(BASE_EPOCH + 100)}")
+            missing = [part for part in wanted if part not in fatal[0]]
+            return f"the FATAL line does not name {missing}: {fatal[0]}" if missing else ""
+
+        def read_before_bash() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            capture = read_gate(trial)
+            read = trial.use(110, "Read", {"file_path": f"{trial.workdir}/greet.test.js"})
+            trial.result(110.1, read, TEST_SINGLE)
+            # A later shell read of the same capture does not move the anchor past the Read of the test file.
+            cat = trial.use(120, "Bash", {"command": f"cat {shlex.quote(capture)}"})
+            trial.result(121, cat, GATE_PAYLOAD)
+            resume(trial, 130, "Fix round 2 of 5: greet.test.js has no test for empty-string input.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="yes", notes=["gate-result-via-read"]) or note_names(
+                result[2], "gate-result-via-read", "lens-correctness-capture", stamp(BASE_EPOCH + 101),
+                f"a Bash result carrying the title follows at {stamp(BASE_EPOCH + 121)}")
+
         cases: tuple[tuple[str, Callable[[], str]], ...] = (
             ("applicable_refuted", applicable_refuted),
             ("applicable_spurious", applicable_spurious),
@@ -3124,6 +3222,9 @@ def self_test() -> int:
             ("wrapper_without_command", wrapper_without_command),
             ("wrapper_reread_commit_unsettled", wrapper_reread_commit_unsettled),
             ("wrapper_reread_read_unsettled", wrapper_reread_read_unsettled),
+            ("read_anchor", read_anchor),
+            ("read_outside_gate_dir", read_outside_gate_dir),
+            ("read_before_bash", read_before_bash),
         )
         for name, body in cases:
             try:
