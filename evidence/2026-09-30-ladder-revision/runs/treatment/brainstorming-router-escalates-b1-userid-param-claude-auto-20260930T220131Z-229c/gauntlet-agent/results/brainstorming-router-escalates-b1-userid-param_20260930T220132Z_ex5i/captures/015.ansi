@@ -1,0 +1,40 @@
+  shape.
+
+  [1mData flow.[0m Submit → [38;5;153mvalidateForm[39m → [38;5;153mlogin()[39m → returns [38;5;153muserId[39m → [38;5;153mSession.save({ userId, username })[39m → [38;5;153mconsole.log[39m with
+  the id. Unchanged for the validation-failure branch except as noted below.
+
+  [1mError handling.[0m Three cases, and the first is the one that matters:
+
+  - [38;5;153msessionStorage[39m can throw — Safari private mode, storage disabled, quota. [38;5;153msave[39m wraps in try/catch, warns, and returns
+    false. [1mA storage failure must not fail the login.[0m Persistence is a side benefit here, not a precondition.
+  - [38;5;153mread()[39m catches JSON parse errors on a corrupted value, clears the key, and returns [38;5;153mnull[39m.
+  - A failed or invalid login calls [38;5;153mSession.clear()[39m. Without this, a stale userId from an earlier login in the same tab
+    outlives it and reads as the current user — the one genuine bug this feature can introduce.
+
+  [1mSecurity constraint, recorded in the spec.[0m This value is non-authoritative. It's XSS-readable by any script on the
+  origin and trivially editable from devtools, so it may be displayed and logged but must never be what the app trusts
+  to decide who someone is or what they may do.
+
+  Before I write this up: the repo has no tooling configured at all — no linter, no formatter, no test runner, and
+  [38;5;153mpackage.json[39m has no [38;5;153mscripts[39m or [38;5;153mdevDependencies[39m. Setting that up is cheapest now, and [38;5;153msession.js[39m is genuinely
+  unit-testable (three functions, one dependency you can fake).
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Tooling [39m[49m ✔ Submit  →
+
+[1m[38;5;231mThe repo has no lint/format/test tooling. Set any up as part of this work?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;114m[✔][39m [38;5;153mUnit tests only (Recommended)[39m
+         [38;5;246mAdd a test runner (node:test, zero deps) and a first passing test for session.js save/read/clear including the
+[39m         [38;5;246mstorage-throws path. Covers the error handling that's most likely to regress.[39m
+  [38;5;246m2.[39m [ ] Lint + format too
+         [38;5;246mAdd eslint + prettier alongside the tests. Cheapest to adopt before more code exists, but adds devDependencies
+[39m         [38;5;246mto a repo that currently has none.[39m
+  [38;5;246m3.[39m [ ] No tooling
+         [38;5;246mShip the feature only, leave the repo's zero-config state as-is. Nothing verifies the sessionStorage-throws or
+[39m         [38;5;246mstale-session behavior.[39m
+  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

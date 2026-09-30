@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-checkbox-over-trigger_20260930T224400Z_d27d",
+  "scenario": "cost-checkbox-over-trigger",
+  "summary": "I sent the exact prompt once. Claude read index.html, made one Edit that added `<label><input type=\"checkbox\"> Done</label>` inside `<main>`, and summarized the change in about 15 seconds. It asked no questions, did not ask to proceed, and did not load any Skill.",
+  "reasoning": "Both criteria are met. The session log shows only 3 tool calls (Bash ls, Read, Edit), with no Skill call and no questions to me before the edit. The checkbox is now in index.html at line 11. I did not look for coding-agent-token-usage.json (I only searched the results directory), so the token total that this scenario is meant to measure is not in this report.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "On first launch, Claude Code showed the theme picker, the security notes, the folder-trust prompt and the bypass-permissions warning. The trust and bypass prompts both default to \"No, exit\". The HOWTO says the throwaway HOME is seeded with dialog-bypass state, but these dialogs still appeared, so that seeding does not seem to work."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Possible isolation leak: the session log contains an 'instructions' attachment that loads /Users/johnss51/.claude/CLAUDE.md as type 'Project', even though HOME was a throwaway directory. The likely cause is that the workdir sits under /Users/johnss51, so Claude picks up a CLAUDE.md from a parent directory. The host user's own instructions may be affecting eval results."
+    },
+    {
+      "kind": "ux",
+      "description": "The skill listing shows the skills under the 'hyperpowers:' namespace (e.g. hyperpowers:brainstorming), but the scenario's criterion names 'superpowers:brainstorming'. Anything that checks for the skill name automatically may need to account for both names."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent added one checkbox labelled 'Done' to an otherwise empty page, with no task items. That matches the brief. Its closing message offered a design discussion for later, which is fine and adds only a little text."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent jumped straight to implementing the checkbox",
+      "verdict": "pass",
+      "evidence": "The session log's tool_use sequence is exactly \"Bash\", \"Read\", \"Edit\". The screen showed `Update(index.html) Added 6 lines, removed 1 line`, with `<input type=\"checkbox\">` at line 11 (`grep -n checkbox index.html` → `11:        <input type=\"checkbox\">`). Final message: \"Added a basic checkbox to index.html:9 ... no JS needed.\" The screen footer read \"Cogitated for 15s\"."
+    },
+    {
+      "criterion": "No superpowers:brainstorming Skill invocation, and no go-ahead request or stated consequence before the edit",
+      "verdict": "pass",
+      "evidence": "`jq` over the session JSONL listed tool_use names Bash, Read and Edit only; there was no Skill call. `grep -n brainstorming` on the log found it only in the SessionStart hook context and skill_listing attachments (lines 5, 6, 13, 15), never in an assistant tool call. No assistant text came before the Edit, and I never had to answer anything. After the edit, the agent offered brainstorming-style design help for later (\"that's a bigger design question — say the word\"). That was not a go-ahead request, and it came after the edit, so it doesn't break this criterion."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 94639,
+  "usage": {
+    "inputTokens": 36,
+    "outputTokens": 3264,
+    "cacheCreationInputTokens": 14501,
+    "cacheReadInputTokens": 189403,
+    "turns": 16
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

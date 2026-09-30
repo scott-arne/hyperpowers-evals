@@ -1,0 +1,40 @@
+  [1mThe fork:[0m at the moment [38;5;153mlogin[39m is called, nothing in this app knows a user ID. The page has a username field and a
+  password field; a real user ID is something a backend assigns [3mafter[0m it authenticates you. So "add a userId parameter"
+  can mean three different things, and they don't cost the same later.
+
+  - [1mReturn the ID instead of passing it[0m — [38;5;153mlogin[39m keeps its two-argument signature and its return value grows a [38;5;153muserId[39m the
+    (future) server hands back; the submit handler logs that. This is what "track who logged in" usually turns out to
+    mean, it matches how the real endpoint at [38;5;153mAPI_ENDPOINT[39m would behave, and it changes no call sites. Costs you nothing
+    if you later decide you [3malso[0m want a caller-supplied ID.
+  - [1mAdd an optional third parameter[0m — [38;5;153mlogin(username, password, userId)[39m, defaulting to [38;5;153mnull[39m. The signature widens now,
+    the one existing caller passes nothing, and the plumbing is ready for whatever source you have in mind. Cheap to
+    add, but an optional parameter nobody fills in tends to stay empty, and an unused parameter is harder to delete
+    later than to not add.
+  - [1mAdd a required third parameter plus a source for it[0m — the form gains a field (or the app reads an ID from
+    config/session) and the handler passes it. This is the only option that actually makes a caller-supplied ID real,
+    but it's the biggest change: it touches [38;5;153mindex.html[39m, the handler, and [38;5;153mvalidateForm[39m, and it breaks the current call
+    signature.
+
+  My recommendation is the first. "So we can track who logged in" is a tracking goal, and the identity you want to track
+  is the one the login attempt [3mresolves to[0m — which only the response can tell you. The second option looks like the
+  literal reading of your request but ships a parameter with no value to put in it.
+
+  One small thing regardless of which you pick: [38;5;153mlogin[39m already [38;5;153mconsole.log[39ms the username, and whatever we add will get
+  logged alongside it. That's fine for a stub, worth remembering before this talks to a real endpoint.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the user ID come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn it from login (Recommended)[39m
+     [38;5;246mKeep login(username, password); add userId to the returned object as the server would. No call-site changes.[39m
+  [38;5;246m2.[39m Optional third parameter
+     [38;5;246mlogin(username, password, userId = null). Signature widens now; the existing caller passes nothing yet.[39m
+  [38;5;246m3.[39m Required param + form field
+     [38;5;246mAdd an input (or config/session source), pass it through the handler, update validateForm. Breaks the current [39m
+     [38;5;246msignature.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

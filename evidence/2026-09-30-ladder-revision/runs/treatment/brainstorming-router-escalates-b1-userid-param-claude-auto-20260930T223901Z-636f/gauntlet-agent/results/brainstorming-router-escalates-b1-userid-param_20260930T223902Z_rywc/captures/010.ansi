@@ -1,0 +1,40 @@
+  Nothing in this repo produces an ID. The options differ in what you'd have to redo later:
+
+  - [1mThe server issues it.[0m [38;5;153mlogin()[39m eventually POSTs to [38;5;153mAPI_ENDPOINT[39m and the response carries the real [38;5;153muserId[39m; the session
+    module stores whatever came back. Correct long-term shape and the only one where the ID means the same thing across
+    devices. Cost: until the endpoint exists, the stub has to fake a response — so we design against a response
+    contract that isn't built yet.
+  - [1mThe client generates it.[0m A [38;5;153mcrypto.randomUUID()[39m minted at login and kept in storage. Self-contained, works today,
+    zero backend dependency. But it identifies a [3mbrowser[0m, not a person — the same user on a second device is a different
+    ID, and swapping to server IDs later invalidates every stored value.
+  - [1m[38;5;153musername[39m is the ID.[0m No new value at all; the session stores the username. Simplest, works today, and it's already
+    what [38;5;153mlogin()[39m returns. Costs: breaks if usernames are ever editable, and leaks a human-readable identifier into
+    storage.
+
+  Cheap to change later: the [3mstorage[0m mechanism and the module's API. Expensive to change later: the ID's meaning —
+  anything already persisted under the old scheme is garbage after a switch, so this is the decision worth getting right
+  now.
+
+  [1mMy recommendation: design for the server-issued ID, with the stub faking that response shape.[0m It costs the same today
+  as the other two, and it's the only one that doesn't force a migration when [38;5;153mAPI_ENDPOINT[39m becomes real. I'd have
+  [38;5;153mlogin()[39m return [38;5;153m{ success, user, userId }[39m and the session module consume that — which, notably, still isn't a [38;5;153muserId[39m
+  [3mparameter[0m on [38;5;153mlogin()[39m.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID source [39m[49m
+
+[1m[38;5;231mWhere does the userId value come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer-issued (stub fakes it)[39m
+     [38;5;246mlogin() returns { success, user, userId }; stub fabricates it until API_ENDPOINT is real. No migration later. [39m
+     [38;5;246mRecommended.[39m
+  [38;5;246m2.[39m Client-generated UUID
+     [38;5;246mcrypto.randomUUID() at login. Self-contained today, but identifies a browser, not a person; invalidated if you move
+[39m     [38;5;246mto server IDs.[39m
+  [38;5;246m3.[39m username is the userId
+     [38;5;246mStore the username as the identifier. Simplest, already available. Breaks if usernames change; human-readable value
+[39m     [38;5;246min storage.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

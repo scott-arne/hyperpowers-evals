@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-fires-approach-gate_20260930T220050Z_ub0v",
+  "scenario": "brainstorming-bounded-fires-approach-gate",
+  "summary": "Test passed. The agent loaded hyperpowers:brainstorming, said the task was \"bounded\", and asked one clarifying question: should the '...' count toward maxLength? It compared exact cut against word boundary in chat, recommended word boundary, and asked me to approve. After I approved, it implemented the change with tests. No spec file was written: there is no docs/ directory, and only format.js and format.test.js were modified.",
+  "reasoning": "All seven criteria have direct evidence from the screen, the session log and the filesystem. The agent explicitly called the task bounded, kept the design in chat, presented both algorithm choices and got approval before editing any code. It wrote no spec document and started implementing right after approval.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The folder-trust and Bypass Permissions startup dialogs both have \"No, exit\" selected by default, so each one needs Down+Enter. That's normal for Claude Code, but a harness could trip over it."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Besides the two approaches in the brief, the agent asked one extra clarifying question: does the '...' count inside maxLength or get added after it? It's a reasonable question. It is still one more round-trip on a bounded task."
+    },
+    {
+      "kind": "performance",
+      "description": "On this small bounded task the agent still ran the Codex approach-gate preflight and a stub Codex review (writing context/prompt files under ~/.cache/hyperpowers/codex-review). Before the approval question appeared it had been working for about 1m40s. That may be expected with codex-plugin-cc installed, but it adds latency."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In the approval question, both algorithm options say \"Selecting this is your go-ahead to implement\". Approval and approach choice are bundled into one question, which works but is a little implicit."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent itself noticed that format.test.js prints \"All tests passed\" unconditionally, because console.assert does not exit non-zero. This is a pre-existing problem in the fixture, and the agent left it alone."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "On screen: \"⏺ Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\". In the session log this is the first tool_use, {\"name\":\"Skill\",\"p\":\"hyperpowers:brainstorming\"}, and it comes before any Edit."
+    },
+    {
+      "criterion": "Classified as BOUNDED",
+      "verdict": "pass",
+      "evidence": "Assistant text: \"I'll classify this first: this is **bounded** — `format()` already exists in `format.js` and you're adding one more option to it, so I'll ask a clarifying question, present a short design in chat, and stop for your approval rather than writing a spec.\""
+    },
+    {
+      "criterion": "Approach gate fired in chat before implementation code",
+      "verdict": "pass",
+      "evidence": "In chat the agent wrote \"I recommend word boundary...\" followed by a 'Short design' section. It then used AskUserQuestion \"Which truncation approach should I implement?\" with the options \"1. Word boundary (Recommended)\" and \"2. Exact cut\". In the log's tool order, that second AskUserQuestion comes before the first Edit of format.test.js/format.js."
+    },
+    {
+      "criterion": "No spec file in docs/superpowers/specs or docs/hyperpowers/specs",
+      "verdict": "pass",
+      "evidence": "In the workdir, `ls -R docs` returned \"ls: docs: No such file or directory\". `git status --short` showed only \"M format.js\" and \"M format.test.js\". `find . -path '*specs*'` found only unrelated claude-security plugin marketplace files. The agent's only Write calls went to ~/.cache/hyperpowers/codex-review/.../approach-context.md and approach-prompt.md, which is the Codex reviewer's scratch space."
+    },
+    {
+      "criterion": "Did NOT classify as spike",
+      "verdict": "pass",
+      "evidence": "Grepping the assistant text for 'spike|architectural|bounded' matched only the \"this is **bounded**\" line."
+    },
+    {
+      "criterion": "Did NOT classify as architectural / write spec",
+      "verdict": "pass",
+      "evidence": "The same grep found no mention of 'architectural', and there is no spec file (see criterion 4)."
+    },
+    {
+      "criterion": "Began implementation after approval",
+      "verdict": "pass",
+      "evidence": "After I typed \"truncate at word boundary sounds better, go ahead with that\", the log shows Edit format.test.js, Bash node format.test.js, then Edit format.js twice. The final screen said \"All 15 assertions pass, no failures.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 314905,
+  "usage": {
+    "inputTokens": 54,
+    "outputTokens": 4364,
+    "cacheCreationInputTokens": 29150,
+    "cacheReadInputTokens": 366408,
+    "turns": 24
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

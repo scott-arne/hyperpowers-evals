@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m I explored the repo before answering. Here's what's there:
+
+  - [38;5;153mapp.js:4[39m — [38;5;153mfunction login(username, password)[39m, a stub that logs the username and returns [38;5;153m{ success: true, user: [39m
+    [38;5;153musername }[39m.
+  - [38;5;153mapp.js:23[39m — the only caller, inside the form's submit handler.
+  - The form ([38;5;153mindex.html[39m) collects [1musername[0m and [1mpassword[0m only. [38;5;153mlogin[39m isn't exported and [38;5;153msrc/[39m is unrelated.
+
+  [1mClassification: bounded[0m — the login flow already exists here, one function and one caller, so I'll present a short
+  design in chat rather than write a spec. Say the word if you'd rather I go heavier.
+
+  One thing I need to settle before touching the signature, because it changes what the parameter is worth:
+
+  [1mThe fork:[0m nothing in the app currently has a user id at the moment [38;5;153mlogin()[39m is called. The caller only has what the
+  user typed. A user's id is normally something you [3mlearn from[0m authenticating, not something you hand to the
+  authenticator — so "add a [38;5;153muserId[39m parameter" needs a source, and the three plausible sources give you genuinely
+  different things.
+
+  - [1mCorrelation id generated per attempt[0m — a random id minted in the submit handler and passed in, so every attempt
+    (including failures) is traceable. Buys you real tracking today with no backend and no PII. Costs: it identifies the
+    attempt/browser, not the person. Cheap to swap later for a real id.
+  - [1m[38;5;153muserId[39m returned from [38;5;153mlogin[39m, not passed in[0m — stub an id into the return value and log it after the call. Buys
+    correctness: identity as an output of auth, which is where it'll come from once there's a real API. Costs: it's a
+    return-shape change, not the parameter you asked for, and anything reading [38;5;153mresult[39m sees a new field.
+  - [1mLiteral [38;5;153muserId[39m parameter, caller passes the username[0m — exactly the change as worded, one line, signature
+    [38;5;153mlogin(username, password, userId)[39m. Costs: [38;5;153muserId[39m and [38;5;153musername[39m are the same value, so the parameter carries no new
+    information, and a real id later means changing the signature a second time. Hardest of the three to undo, because
+    the signature is the thing others would code against.
+
+  [1mMy recommendation: the correlation id.[0m It's the only one that actually delivers "track who logged in" with the data
+  the app has, it keeps the signature honest (the param means something the other arguments don't), and it survives a
+  real backend — the server can join its own user id to your correlation id later.
+
+[38;5;246m✻[39m [38;5;246mCooked for 55s · done 3:56 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

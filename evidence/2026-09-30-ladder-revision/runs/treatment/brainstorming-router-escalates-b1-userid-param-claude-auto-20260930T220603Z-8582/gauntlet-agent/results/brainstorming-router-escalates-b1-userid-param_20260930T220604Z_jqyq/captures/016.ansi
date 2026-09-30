@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m [1mNext fork: where the "real user id" comes from before the server exists.[0m This one has a trap in it, so I want to be
+  direct about it.
+
+  A browser can't know who someone is. Anything we mint client-side identifies a [3mbrowser profile[0m, not a person — two
+  people sharing a laptop get one id, one person on phone and desktop gets two. Calling that [38;5;153muserId[39m writes a false
+  promise into the name, and the bill comes due at cutover, when the server has actual user ids and something has to
+  reconcile them.
+
+  - [1mMint an opaque id, name it honestly[0m ([38;5;153mdeviceId[39m or [38;5;153mclientId[39m), store it, and send it with the login attempt. The server
+    later returns the real [38;5;153muserId[39m and the identity module starts preferring it, keeping the device id as a correlation
+    key. Nothing has to be un-taught later because nothing was misnamed.
+  - [1mUse the username as the id.[0m Stable, readable, zero plumbing — and it puts a user-supplied string in storage as a
+    key, breaks if usernames are ever editable, and is the thing most likely to collide with the server's real id
+    scheme.
+  - [1mLeave it null until the server exists.[0m Build the identity module and the log, have [38;5;153mgetUserId()[39m return null for now.
+    Maximally honest, but every consumer has to handle null from day one and you get no tracking in the meantime — which
+    is what you asked for.
+
+  I recommend the first: mint an opaque id, but name it for what it is. The identity module exposes both — a device id
+  available now, and a user id that stays null until the backend fills it — so "other forms" code against the real shape
+  from the start instead of against a placeholder that lies.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Id provenance [39m[49m
+
+[1m[38;5;231mBefore the backend exists, what identifier do we actually have?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mOpaque device id (Recommended)[39m
+     [38;5;246mMint a UUID named `deviceId`/`clientId`. Module also exposes `userId`, null until the server issues one. No [39m
+     [38;5;246mmisnamed value to un-teach at cutover.[39m
+  [38;5;246m2.[39m Username as the id
+     [38;5;246mSimplest, no plumbing. Puts a user-supplied string in storage as a key; likely to collide with the server's id [39m
+     [38;5;246mscheme later.[39m
+  [38;5;246m3.[39m Null until backend exists
+     [38;5;246mBuild the module and log now, `getUserId()` returns null. Most honest, but no tracking until cutover and every [39m
+     [38;5;246mconsumer handles null.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

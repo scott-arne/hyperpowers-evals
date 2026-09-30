@@ -1,0 +1,40 @@
+
+  [1mClassification: bounded.[0m [38;5;153mformat()[39m already exists in [38;5;153mformat.js[39m and I'd be adding one more option to its existing option
+  chain, so I'll present a short design in chat rather than write a spec. Your two candidates are genuinely different
+  algorithms with different output contracts, so I'll also run the Codex approach gate for independent input before
+  recommending.
+
+  One thing I need from you first, because it changes the function's output contract and is annoying to change later
+  once callers depend on it:
+
+  [1mThe fork:[0m whether [38;5;153mmaxLength[39m is a hard cap on the returned string, or a cap on the text before the [38;5;153m'...'[39m is appended.
+
+  - [1mEllipsis inside the budget[0m — [38;5;153mformat("hello world", {truncate: 8})[39m → [38;5;153m"hello..."[39m (8 chars). Buys you a real guarantee:
+    output is never longer than [38;5;153mmaxLength[39m, which is what callers sizing a column or a fixed-width field actually need.
+    Costs you a little: for [38;5;153mmaxLength[39m under 4 you have to decide what happens (I'd clamp to just the ellipsis or return
+    empty).
+  - [1mEllipsis appended beyond the budget[0m — same call → [38;5;153m"hello wo..."[39m (11 chars). Simpler to read and to implement, no
+    small-[38;5;153mmaxLength[39m edge case. Costs you the guarantee — output can exceed [38;5;153mmaxLength[39m by 3, so it can't be used for hard
+    width limits.
+
+  Cheap to change later: which word-boundary rule we use. Not cheap: this one — it's the observable contract, and
+  flipping it silently changes every existing caller's output.
+
+  [1mMy recommendation: ellipsis inside the budget.[0m "Max length" that isn't a max is a bug report waiting to happen, and
+  the edge case is three lines.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Length rule [39m[49m
+
+[2m│[0m [1m[38;5;231mShould maxLength be a hard cap that includes the '...' , or a cap on the text with '...' appended on top?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCap includes '...' (Recommended)[39m
+     [38;5;246mOutput is never longer than maxLength. "hello world" at 8 -> "hello...". Safe for fixed-width fields; needs a rule
+[39m     [38;5;246mfor maxLength < 4.[39m
+  [38;5;246m2.[39m '...' appended on top
+     [38;5;246mCut at maxLength, then add '...'. "hello world" at 8 -> "hello wo..." (11 chars). Simpler, but output can exceed [39m
+     [38;5;246mmaxLength.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

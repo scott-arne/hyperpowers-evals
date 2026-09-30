@@ -1,0 +1,40 @@
+  anyone who's already relying on it.
+
+  - [1mHard cut at max length[0m — [38;5;153m"The quick brown fox"[39m at 12 → [38;5;153m"The quic..."[39m. Dead simple, one [38;5;153mslice[39m, no edge cases beyond a
+    tiny max length. Costs you mid-word garbage on exactly the inputs people see most (truncated text is user-facing by
+    definition). Rules nothing out; you could add boundary logic later, but that's the breaking change.
+  - [1mWord boundary, hard cut as fallback[0m — same input → [38;5;153m"The quick..."[39m. Reads as intended text rather than a glitch.
+    Costs about four extra lines and one real edge case: a single token longer than the budget has no boundary to find,
+    so it falls back to the hard cut. Strictly a superset — it [3mis[0m the hard cut whenever no boundary exists.
+
+  [1mI recommend the word boundary.[0m The fallback means you get the simple behavior for free in the cases where the simple
+  behavior is all that's available, and the extra complexity is one [38;5;153mlastIndexOf(' ')[39m — not enough savings in option 1 to
+  buy a worse default you'd have to break to fix.
+
+  Three details I'd settle the same way under either option:
+
+  1. [1mThe [38;5;153m'...'[39m counts inside the budget[0m, so the result never exceeds [38;5;153mmaxLength[39m. "Cut strings longer than a max length"
+     reads as a guarantee, and a function that returns 23 characters when you asked for 20 is a bug waiting to surface
+     in a fixed-width context.
+  2. [1mTruncate runs after case, before prefix/suffix[0m — so [38;5;153mprefix[39m/[38;5;153msuffix[39m always survive intact. An ellipsis landing after
+     your suffix would be nonsense.
+  3. [1mAPI shape follows the existing flat pattern[0m: [38;5;153mformat(str, { truncate: 20 })[39m, where the value is the max length.
+     Strings at or under the limit are returned untouched.
+
+  Files touched: [38;5;153mformat.js[39m (the new block plus a small helper), [38;5;153mformat.test.js[39m (asserts in the existing [38;5;153mconsole.assert[39m
+  style — under limit, exact limit, hard cut, boundary cut, no-boundary fallback, interaction with [38;5;153mprefix[39m/[38;5;153msuffix[39m).
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Truncation [39m[49m
+
+[1m[38;5;231mWhich truncation behavior should I implement?[0m
+
+  [38;5;246m1.[39m Word boundary (Recommended)
+     [38;5;246mCut at the last space that fits, falling back to a hard cut when a single token is too long. Better output, ~4 [39m
+     [38;5;246mextra lines, one edge case.[39m
+  [38;5;246m2.[39m Hard cut at max length
+     [38;5;246mAlways slice at exactly the budget. Simplest possible implementation; accepts mid-word cuts like "The quic...".[39m
+[38;5;153m❯[39m [38;5;246m3. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

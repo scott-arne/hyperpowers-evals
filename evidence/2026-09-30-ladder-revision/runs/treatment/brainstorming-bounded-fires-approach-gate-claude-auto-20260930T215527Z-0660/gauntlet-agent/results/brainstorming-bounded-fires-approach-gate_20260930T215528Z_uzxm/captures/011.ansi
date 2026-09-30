@@ -1,0 +1,40 @@
+    same way. Cost: [38;5;153m"authentication failed"[39m at 12 becomes [38;5;153m"authenti..."[39m, which reads as garbage.
+  - [1mWord boundary[0m — cut at [38;5;153mn[39m, then back up to the last space; hard-cut as fallback when there's no space (long URLs, CJK
+    text, one giant token). About three extra lines and one extra branch. Output length becomes variable — at worst you
+    lose most of the budget when a long word straddles the limit ([38;5;153m"supercalifragilistic done"[39m at 20 yields [38;5;153m"..."[39m-ish
+    results unless the fallback catches it).
+
+  Neither is hard to change later: it's a private detail of one function, and the option's signature is identical either
+  way. So this is a cheap decision, not a load-bearing one.
+
+  [1mMy recommendation: word boundary with a hard-cut fallback.[0m The extra code is three lines, the fallback removes the
+  only real failure mode, and truncation output is almost always read by a human — which is exactly when partial words
+  hurt.
+
+  Two smaller decisions ride along, and they [3mare[0m sticky because they define the contract callers depend on:
+
+  1. [1mDoes [38;5;153m'...'[39m count toward the max?[0m I'd say yes — [38;5;153mformat()[39m then guarantees [38;5;153mresult.length <= maxLength[39m, which is what
+     you need to fit a column. The alternative (ellipsis added on top) means the real cap is [38;5;153mmaxLength + 3[39m, which
+     callers get wrong.
+  2. [1mWhere does truncation run?[0m I'd put it last, after [38;5;153mprefix[39m/[38;5;153msuffix[39m, so the cap bounds the actual returned string. The
+     tradeoff: a suffix can get eaten by the truncation. Running it first instead keeps prefix/suffix intact but lets
+     the output exceed [38;5;153mmaxLength[39m.
+
+  Option shape either way: [38;5;153mformat(str, { maxLength: 20 })[39m — a plain number, matching the existing flat options bag. No
+  nested object, no separate boolean to enable it.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Strategy  ☒ Contract [38;5;16m[48;5;153m ✔ Submit [38;5;246m[49m →[39m
+
+[1m[38;5;231mReview your answers[0m
+
+ ● Which truncation strategy should the truncate option use?
+   [38;5;114m→ truncate at word boundary sounds better, go ahead with that[39m
+ [2m│[0m ● How should the contract handle the ellipsis and the existing prefix/suffix options?
+   [38;5;114m→ Ellipsis counts; truncate last (Recommended)[39m
+
+[38;5;246mReady to submit your answers?[39m
+
+[38;5;153m❯[39m [38;5;246m1. [38;5;153mSubmit answers[39m
+  [38;5;246m2. [39mCancel
+

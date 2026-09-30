@@ -1,0 +1,40 @@
+
+[38;5;114m⏺[39m [1mSkill[0m(hyperpowers:brainstorming)
+[38;5;246m  ⎿  [39mSuccessfully loaded skill
+
+  [38;5;246mSearched for [1m1[0m[38;5;246m pattern, read [1m7[0m[38;5;246m files, listed [1m1[0m[38;5;246m directory, ran [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Bounded task — [38;5;153mformat()[39m already exists in [38;5;153mformat.js[39m and this adds an option to it. So I'll present a short design in
+  chat rather than write a spec, and I'll wait for your go-ahead before touching code. Say the word if you'd rather I
+  treat it as something bigger.
+
+  One thing I need from you before I recommend an approach, because it changes the function's contract rather than just
+  its internals:
+
+  [1mThe fork:[0m whether [38;5;153m...[39m counts against [38;5;153mmaxLength[39m, or is added on top of it.
+  - [1mEllipsis inside the budget[0m — output is [3mnever[0m longer than [38;5;153mmaxLength[39m. Callers can rely on the result fitting a
+    fixed-width column or a DB field. Cost: a small [38;5;153mmaxLength[39m eats itself ([38;5;153mmaxLength: 4[39m leaves one real character).
+  - [1mEllipsis appended after[0m — you always keep [38;5;153mmaxLength[39m characters of real content, but output can be [38;5;153mmaxLength + 3[39m.
+    Simpler to reason about; breaks any caller that sized a buffer to [38;5;153mmaxLength[39m.
+
+  This is the expensive one to change later — it's the observable contract, and it's what the tests will pin down. The
+  word-boundary-vs-hard-cut question you asked is cheap to change afterward; it's internal to the function.
+
+  My recommendation is [1mellipsis inside the budget[0m: the whole point of a max length is a guarantee, and "never exceeds N"
+  is the behavior nearly every consumer (tables, logs, previews) actually needs.
+
+  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Ellipsis [39m[49m
+
+[1m[38;5;231mShould the '...' count toward maxLength, or be added on top of it?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mInside the budget (Recommended)[39m
+     [38;5;246mOutput never exceeds maxLength. format('hello world', {truncate: 8}) === 'hello...' (8 chars).[39m
+  [38;5;246m2.[39m Appended after
+     [38;5;246mKeep maxLength real characters, then add '...'. Output can be maxLength + 3.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

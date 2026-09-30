@@ -1,0 +1,40 @@
+  [1mThe fork:[0m nothing in this app currently has a userId to pass. The form collects only username and password
+  ([38;5;153mindex.html:9-10[39m), and [38;5;153mlogin[39m is a stub that returns [38;5;153m{ success: true, user: username }[39m. So "add a userId parameter"
+  needs a source for that value, and the three plausible sources produce different interfaces.
+
+  - [1mClient-generated attempt id[0m — the handler mints an id (e.g. [38;5;153mcrypto.randomUUID()[39m) per login attempt and passes it in.
+    Buys you a real correlation id for tracking each attempt end-to-end, costs one line in the handler, and is the only
+    option that works today with no server. It does [3mnot[0m identify the person — it identifies the attempt.
+  - [1mCaller-supplied, optional third param[0m — [38;5;153mlogin(username, password, userId)[39m with [38;5;153muserId[39m defaulting to [38;5;153mnull[39m. Buys you
+    the signature you asked for with the existing caller still working unchanged. Costs: the handler has nothing real to
+    pass, so it stays [38;5;153mnull[39m until something upstream produces one — the parameter is scaffolding for later.
+  - [1muserId as a return value, not a parameter[0m — the server identifies the user after authenticating, so [38;5;153mlogin[39m returns [38;5;153m{
+[39m    [38;5;153msuccess, user, userId }[39m and the handler logs it. Buys you the actual "who logged in" fact. Costs: it's not the
+    change you asked for, and the stub would fake the id until there's a real API.
+
+  Cheap to change later: the client-generated id and the logging. Not cheap: the parameter position and whether [38;5;153muserId[39m
+  is an input or an output — once a real API is wired to [38;5;153mAPI_ENDPOINT[39m, callers depend on that shape.
+
+  [1mMy recommendation: the optional third param.[0m It's what you asked for, it keeps the one existing caller working, and it
+  doesn't invent a tracking scheme you didn't ask for. But I want to flag that it will hold [38;5;153mnull[39m in the only call site
+  until something supplies a userId — if the goal is genuinely "track who logged in" and you want that working now, the
+  client-generated attempt id is the option that actually delivers it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId value come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mOptional third param (Recommended)[39m
+     [38;5;246mlogin(username, password, userId = null). The signature you asked for; existing caller unchanged, passes null until
+[39m     [38;5;246msomething upstream supplies a real id.[39m
+  [38;5;246m2.[39m Client-generated attempt id
+     [38;5;246mHandler mints crypto.randomUUID() per attempt and passes it. Works today with no server, but identifies the attempt
+[39m     [38;5;246mrather than the person.[39m
+  [38;5;246m3.[39m Return it, don't pass it
+     [38;5;246mlogin returns { success, user, userId } — the server identifies the user after auth. Gives the real 'who logged in'
+[39m     [38;5;246mfact, but is not a parameter change.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

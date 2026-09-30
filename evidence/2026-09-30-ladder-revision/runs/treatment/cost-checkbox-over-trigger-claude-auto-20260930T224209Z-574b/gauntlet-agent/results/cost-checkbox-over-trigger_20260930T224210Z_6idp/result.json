@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-checkbox-over-trigger_20260930T224210Z_6idp",
+  "scenario": "cost-checkbox-over-trigger",
+  "summary": "I sent the exact checkbox request, and Claude Code (Opus 5) added `<label><input type=\"checkbox\"> Done</label>` to index.html in about 17 seconds. It didn't invoke the brainstorming skill, ask me anything, or ask for a go-ahead before editing. I never had to reply.",
+  "reasoning": "The session log shows four tool calls in a row: Bash ls, Bash git status/log, Read index.html, then Edit index.html. There were no Skill tool calls, no questions, and no request for permission before the edit. Before editing, the agent said on screen: \"Ladder check: a basic form control with one obvious implementation — rung 2, so I'm making the edit directly.\" The file on disk now contains `<input type=\"checkbox\">`. Both criteria are met. I couldn't check the headline token metric because I didn't find coding-agent-token-usage.json in the results directory while the run was going; the harness may write it later.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Two of the first-run dialogs have 'No, exit' selected by default: the folder trust prompt and the Bypass Permissions warning. This is expected for safety prompts, but a driver who just presses Enter will exit."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the edit, the agent's final message added a note: if the user meant a checkbox per task item, that would be 'a different shape (rendering, per-item state, persistence) — say the word and we can work through it.' This came after the work was done, so it doesn't hurt this scenario. It is a small open invitation to a design discussion, though, which slightly adds tokens and chattiness to a trivial request."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent printed its internal ladder reasoning to the user ('Ladder check: ... rung 2'). That's harmless, but it's plugin jargon a normal user wouldn't understand."
+    },
+    {
+      "kind": "bug",
+      "description": "The token-usage file mentioned in the scenario (coding-agent-token-usage.json) wasn't in the results directory during the run, so I couldn't read the headline cost metric. The harness may write it after the run."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent jumped straight to implementing the checkbox",
+      "verdict": "pass",
+      "evidence": "Session log 720ed595-...jsonl tool_use sequence: Bash(ls), Bash(git status), Read(index.html), Edit(index.html, old_string \"<main></main>\" -> label + <input type=\"checkbox\"> Done). `cat coding-agent-workdir/index.html` shows `<input type=\"checkbox\"> Done`. Screen: \"Sautéed for 17s\"."
+    },
+    {
+      "criterion": "No superpowers:brainstorming Skill invocation, and no go-ahead request or stated consequence before the edit",
+      "verdict": "pass",
+      "evidence": "`jq 'select(.type==\"assistant\")|.message.content[]|select(.type==\"tool_use\" and .name==\"Skill\")' | wc -l` returned 0. The 4 grep hits for 'brainstorming' are all attachments (hook_success, hook_additional_context, skill_listing, instructions), not agent actions. The only assistant text before the Edit was \"Ladder check: ... rung 2, so I'm making the edit directly.\" No question was asked, and I never sent a second message."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 106226,
+  "usage": {
+    "inputTokens": 38,
+    "outputTokens": 3424,
+    "cacheCreationInputTokens": 17907,
+    "cacheReadInputTokens": 204495,
+    "turns": 17
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

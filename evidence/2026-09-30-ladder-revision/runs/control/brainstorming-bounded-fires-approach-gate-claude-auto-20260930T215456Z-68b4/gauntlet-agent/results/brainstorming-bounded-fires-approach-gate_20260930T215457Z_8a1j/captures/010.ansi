@@ -1,0 +1,40 @@
+  The reason the pure hard cut loses: [38;5;153m"The quick brown fox"[39m at [38;5;153mmaxLength: 14[39m gives [38;5;153m"The quick b..."[39m. Mid-word fragments
+  are the thing truncation UI gets complained about. It also produces [38;5;153m"The quick ..."[39m at 13 — a trailing space wedged
+  against the ellipsis — so the "simpler" version needs a [38;5;153mtrimEnd[39m anyway, and half its simplicity advantage evaporates.
+
+  The reason the pure word boundary loses: a single long token ([38;5;153m"supercalifragilistic"[39m, a URL, a hash) has no space to
+  break at, so it degrades to returning bare [38;5;153m"..."[39m — all information destroyed. It needs a fallback regardless.
+
+  Combining them is about four lines more than the hard cut, and the fallback branch is exactly the case where
+  word-boundary behavior is wrong. You get clean breaks on prose and graceful behavior on unbreakable tokens.
+
+  [1mBehavior[0m
+
+  - [38;5;153mtruncate: n[39m — if the result is longer than [38;5;153mn[39m, cut it so the returned string is at most [38;5;153mn[39m characters, ellipsis
+    included.
+  - Cut at the last space within the first [38;5;153mn - 3[39m characters; if there is no such space, cut at exactly [38;5;153mn - 3[39m.
+  - [38;5;153mtrimEnd[39m before appending [38;5;153m'...'[39m, so no [38;5;153m"word ..."[39m.
+  - Final [38;5;153m.slice(0, n)[39m as a backstop, which also handles [38;5;153mn < 3[39m (you get a clipped ellipsis rather than a string longer
+    than the max you asked for).
+  - Guarded by truthiness like every other option, so [38;5;153mtruncate: 0[39m is a no-op — consistent with the file's existing
+    style, and the alternative ("truncate everything to empty") isn't useful.
+
+  [1mFiles touched[0m
+
+  - [38;5;153mformat.js[39m — one new block at the end of the chain, after [38;5;153msuffix[39m. No helper function; the file has no helpers and
+    this is short enough to stay inline, matching the existing shape.
+  - [38;5;153mformat.test.js[39m — new [38;5;153mconsole.assert[39m lines in the existing style: under-limit passthrough (unchanged), exact-limit
+    passthrough, word-boundary cut, single-long-word fallback, interaction with [38;5;153msuffix[39m (truncate applies to the combined
+    string), and [38;5;153mn < 3[39m.
+
+  [1mTesting[0m: [38;5;153mnode format.test.js[39m, same as today. I won't add a test script or runner to [38;5;153mpackage.json[39m — out of scope for
+  this change.
+
+  Does this look right? I'll hold here until you say go.
+
+[38;5;246m✻[39m [38;5;246mBaked for 2m 5s · done 2:58 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

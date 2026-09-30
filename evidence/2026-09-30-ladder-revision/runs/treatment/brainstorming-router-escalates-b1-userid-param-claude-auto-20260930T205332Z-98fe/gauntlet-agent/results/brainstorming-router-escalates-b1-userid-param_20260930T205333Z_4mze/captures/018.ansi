@@ -1,0 +1,40 @@
+
+  [38;5;153msessionStorage[39m is not reliably present. Reading [38;5;153mwindow.sessionStorage[39m can throw [38;5;153mSecurityError[39m when cookies are blocked
+  or the page runs in a sandboxed context, and [38;5;153msetItem[39m can throw [38;5;153mQuotaExceededError[39m in some private-browsing modes.
+  Since you want [38;5;153mindex.html[39m to keep working when opened straight from disk, this is a real path, not a theoretical one.
+
+  The rules:
+
+  - [1mEvery storage access is wrapped.[0m The store probes [38;5;153msessionStorage[39m once on load inside a try/catch. If it's unusable,
+    it falls back to a module-private in-memory variable and emits a single [38;5;153mconsole.warn[39m — once, at fallback time, not
+    on every call.
+  - [1mDegraded semantics are stated, not hidden.[0m In fallback mode [38;5;153mSession[39m still works for the life of the page but does
+    not survive navigation. Login won't break; the userId just won't outlive the page.
+  - [1m[38;5;153mgetUserId()[39m never throws.[0m It returns [38;5;153mnull[39m for "absent", "unreadable", and "storage unavailable" alike. Callers get
+    one thing to check, and [38;5;153mnull[39m always means nobody is logged in.
+  - [1m[38;5;153msetUserId()[39m rejects junk.[0m A non-string or empty id is refused with a warning rather than stored — this is what
+    prevents the classic [38;5;153m"undefined"[39m-as-a-string bug, where a later form reads a truthy ID for a user who never logged
+    in.
+  - [1mFailed login clears.[0m As in section 2, so a failure can't leave the previous user's ID readable.
+
+  The existing [38;5;153mconsole.log[39m/[38;5;153mconsole.error[39m calls in the submit handler stay as they are — replacing them isn't part of
+  this change.
+
+  [1mSection 4 — Testing and tooling[0m
+
+  This is the part I can't decide for you, because the project currently has [1mno tooling at all[0m: [38;5;153mpackage.json[39m declares no
+  dependencies, no devDependencies, and no scripts, and there are no test files. So there's no established pattern to
+  follow — anything here is a new dependency in a project that presently has zero, which is a genuine tradeoff and the
+  reason I'm asking rather than assuming.
+
+  What the design gives you if you do want tests: [38;5;153msession.js[39m is the interesting unit, and its behavior is fully
+  specified by the rules in section 3 — stores and returns an id, returns [38;5;153mnull[39m when empty, refuses junk, clears, and
+  falls back cleanly when storage throws. That last one is the case most worth having a test for, because it's the one
+  you'll never hit by clicking around. Verifying login's write is then one assertion: call [38;5;153mlogin()[39m, read
+  [38;5;153mSession.getUserId()[39m.
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

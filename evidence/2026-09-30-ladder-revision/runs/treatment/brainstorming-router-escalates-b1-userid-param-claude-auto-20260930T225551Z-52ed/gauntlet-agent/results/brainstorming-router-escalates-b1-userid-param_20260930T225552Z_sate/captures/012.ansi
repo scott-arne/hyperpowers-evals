@@ -1,0 +1,40 @@
+  the tab mid-request is a rounding error, not a defect.
+
+  Next question: [1mwhere do the events go?[0m This is the one real dependency decision in the design, and it's the expensive
+  one to change later — it determines the event format, the failure handling, and whether this repo gains a third-party
+  script.
+
+  - [1mA third-party analytics service[0m (PostHog, Plausible, Amplitude, GA4, etc.) — you get dashboards, retention, and
+    session handling for free, and the send-and-retry logic is the vendor's problem. Cost: a third-party script on your
+    login page, a vendor account, and a data-processor relationship for what is personal data. Changing vendors later
+    means re-instrumenting, though if we put a thin wrapper in front of it that's a contained change.
+  - [1mYour own endpoint[0m (POST the event to an API you control, alongside the existing [38;5;153mapi.example.com[39m auth host) — no
+    third party, no vendor script, full control over retention and format. Cost: you need that endpoint to exist and
+    someone has to build the query/dashboard side, which is where "just log it" quietly becomes a data project. Cheapest
+    to swap [3mto[0m later, most expensive to get value from now.
+  - [1mDefer the destination; build the seam[0m — emit events through a small [38;5;153mtrackEvent[39m module whose only implementation for
+    now writes to the console, with the real transport dropped in when you've picked one. Cost: no data until you finish
+    the decision. Buys: the app-side work is done, correct, and testable, and the choice above stops blocking it.
+
+  [1mMy recommendation:[0m the third, then the first. This repo currently has zero dependencies and no backend; picking a
+  vendor today is the heaviest possible first move for a stub [38;5;153mlogin[39m that doesn't even make a network call yet. Build the
+  seam now — it's a couple of small, well-bounded units — and the vendor becomes a contained change behind it rather
+  than something threaded through your login path. If you already have an analytics vendor in the real system this stub
+  represents, say so and we go straight to option one.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mWhere should login events be sent?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBuild the seam, defer (Recommended)[39m
+     [38;5;246mA trackEvent module with a console transport now; real transport dropped in later. No dependency, no vendor [39m
+     [38;5;246mdecision blocking the work.[39m
+  [38;5;246m2.[39m Third-party analytics
+     [38;5;246mPostHog / Plausible / Amplitude / GA4. Dashboards for free, vendor script on the login page. Tell me which one.[39m
+  [38;5;246m3.[39m Own endpoint
+     [38;5;246mPOST to an API you control. No third party, but the endpoint and the query side have to be built.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

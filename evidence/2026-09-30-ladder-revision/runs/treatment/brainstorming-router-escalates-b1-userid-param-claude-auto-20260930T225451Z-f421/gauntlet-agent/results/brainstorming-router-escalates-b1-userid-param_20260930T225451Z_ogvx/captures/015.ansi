@@ -1,0 +1,40 @@
+  [1mIntegration.[0m [38;5;153mindex.html[39m gets one line, [38;5;153mtracking.js[39m before [38;5;153mapp.js[39m, so the global exists by the time the submit handler
+  binds. In [38;5;153mapp.js[39m, [38;5;153mlogin[39m's body changes but its signature doesn't:
+
+  [34mfunction[39m [33mlogin[39m(username, password) {
+    [34mTracking[39m.[33mtrack[39m([31m"login.attempt"[39m, { username });
+    [32m// Stub: would POST to API_ENDPOINT in real app[39m
+    [34mconst[39m result = { [36msuccess[39m: [34mtrue[39m, [36muser[39m: username };
+    [34mif[39m (result.success) {
+      [32m// The real API will return the account ID; the stub has none to stamp.[39m
+      [34mTracking[39m.[33msetUserId[39m(result.userId ?? [34mnull[39m);
+    }
+    [34mTracking[39m.[33mtrack[39m([31m"login.result"[39m, { username, [36msuccess[39m: result.success });
+    [34mreturn[39m result;
+  }
+
+  That replaces the existing [38;5;153mconsole.log("Logging in:", username)[39m. The submit handler stays untouched. [38;5;153mpassword[39m is never
+  passed to [38;5;153mtrack[39m, and I'll note that in the file — a tracking helper is exactly the kind of place a credential gets
+  logged by accident later.
+
+  [1mError handling — the governing rule is that tracking must never be able to break login.[0m
+
+  - [38;5;153mlocalStorage[39m and [38;5;153msessionStorage[39m throw in real conditions: disabled site data, sandboxed iframes, some
+    private-browsing modes. Every read and write is wrapped, and on failure the value falls back to an in-memory copy
+    that lives as long as the page. You lose persistence, not function.
+  - [38;5;153mcrypto.randomUUID()[39m needs a secure context and isn't guaranteed on [38;5;153mfile://[39m. Fallback chain: [38;5;153mrandomUUID()[39m →
+    [38;5;153mcrypto.getRandomValues()[39m formatted as hex → a [38;5;153mMath.random()[39m-based ID. The last one is weak, and that's acceptable
+    here [3monly[0m because this handle is a correlation label and never a secret — I'll say so in the comment so nobody
+    reuses the helper for a token.
+  - Worst case, everything fails: [38;5;153mgetHandle()[39m returns a per-page ID, [38;5;153mtrack[39m still logs, login behaves exactly as it does
+    today.
+
+  [1mTesting.[0m There's no test runner in this repo, which brings up tooling — the cheapest moment to decide is now, before
+  the code exists. My recommendation is unit tests via Node's built-in [38;5;153mnode --test[39m: it needs zero dependencies, which
+  keeps [38;5;153mpackage.json[39m as dependency-free as it is today. The test file stubs [38;5;153mwindow[39m, the two storages, and [38;5;153mcrypto[39m, and
+  covers: the handle mints once and is stable across a simulated reload; [38;5;153msetUserId[39m/[38;5;153mgetUserId[39m/clear; a throwing storage
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

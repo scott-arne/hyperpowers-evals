@@ -1,0 +1,40 @@
+
+  Called once, from the form submit handler at [38;5;153mapp.js:23[39m, with values read from the two [38;5;153mindex.html[39m inputs — there is no
+  third field.
+
+  [1mThe fork:[0m at the moment [38;5;153mlogin()[39m is called, the user has not been authenticated yet, so a real user ID does not exist
+  on the client. Whatever [38;5;153muserId[39m is, the caller has to get it from somewhere, and the three plausible somewheres lead to
+  different code.
+
+  - [1mTrack from the response (no new parameter).[0m The server knows who authenticated; [38;5;153mlogin()[39m returns it, and the handler
+    logs [38;5;153mresult.userId[39m. Buys you the identity you actually want, costs a change to the return shape instead of the
+    signature, rules out nothing. Cheap to change later.
+  - [1mAdd [38;5;153muserId[39m as a caller-supplied parameter.[0m Literally what you asked for, and easy — but the caller has to invent the
+    value. It ends up being either the username (already passed) or a client-generated ID, which is a different thing
+    from "who logged in." Signature changes are the expensive kind to walk back once other callers exist.
+  - [1mAdd a client-generated correlation ID.[0m Useful if the point is tracing a login [3mattempt[0m through logs, including
+    failures. Costs an ID generator and a logging convention — that's new structure, and would push this out of bounded
+    into a small design discussion.
+
+  [1mMy recommendation: the first.[0m "Track who logged in" is information the login result produces, not information the
+  caller has beforehand — so taking it from the response gets you the real answer without a signature others would have
+  to satisfy. If you have an out-of-band source for [38;5;153muserId[39m I can't see from this repo, tell me and the second option is
+  fine.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFrom the login response (Recommended)[39m
+     [38;5;246mLeave the signature alone; return the id from login() and log it in the submit handler. No caller has to supply a [39m
+     [38;5;246mvalue that doesn't exist yet.[39m
+  [38;5;246m2.[39m Caller-supplied parameter
+     [38;5;246mAdd userId as a third parameter as asked. Tell me what the caller passes — the form only has username and password.
+[39m  [38;5;246m3.[39m Correlation ID for the attempt
+     [38;5;246mGenerate an ID client-side to trace the attempt (including failures) through logs. This adds a logging convention,
+[39m     [38;5;246mso we'd design it properly first.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

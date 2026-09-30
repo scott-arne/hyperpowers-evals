@@ -1,0 +1,40 @@
+
+  This matters because it's the pattern every future form inherits. Right now the repo has two incompatible module
+  worlds: [38;5;153mindex.html:13[39m loads [38;5;153mapp.js[39m as a [1mplain classic script[0m (globals, no module system), while [38;5;153msrc/utils.js[39m and
+  [38;5;153msrc/index.js[39m use [1mCommonJS[0m [38;5;153mrequire[39m/[38;5;153mmodule.exports[39m for Node. There's no bundler and no build step. A shared ID module
+  has to run in the browser, so the CommonJS side can't be reused as-is.
+
+  [1mThe fork:[0m how the shared module gets loaded, which fixes the import style every later form must follow.
+
+  - [1mSecond classic script + namespace global[0m — [38;5;153mtracking.js[39m sets [38;5;153mwindow.Tracking = { getUserId }[39m, added as a [38;5;153m<script>[39m tag
+    before [38;5;153mapp.js[39m. Matches exactly what [38;5;153mapp.js[39m already is, zero build step, and [38;5;153mindex.html[39m still opens by
+    double-clicking. Costs: one global name, and script-tag ordering becomes load-bearing — a future form that forgets
+    the tag fails at runtime, not at build time.
+  - [1mES modules[0m — [38;5;153m<script type="module">[39m with real [38;5;153mimport[39m/[38;5;153mexport[39m. Properly scoped, explicit dependencies, a missing
+    import fails loudly. No build step needed; browsers do this natively. The real cost: module scripts are blocked by
+    CORS over [38;5;153mfile://[39m, so you'd need to serve the page over a local HTTP server from then on. For a static demo page
+    that's a genuine workflow change.
+  - [1mBundler[0m — rejecting this outright. Nothing here justifies a build pipeline, and [38;5;153mpackage.json[39m has no dependencies at
+    all.
+
+  [1mMy recommendation: classic script + a single namespace global.[0m Your own guideline is to match existing project style
+  before introducing new patterns, and [38;5;153mapp.js[39m is already a classic global script — this is the local pattern. The
+  global-namespace cost is real but negligible at two or three modules, and migrating to ESM later is mechanical if the
+  app outgrows it. I'd rather not impose "you must now run a web server to open the page" on a repo that doesn't need
+  one yet.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should the shared ID module load in the browser?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mClassic script + global (Recommended)[39m
+     [38;5;246mtracking.js sets window.Tracking, loaded by a script tag before app.js. Matches the existing app.js pattern. No [39m
+     [38;5;246mbuild step, page still opens from file://.[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246mReal import/export with type="module". Cleaner scoping and explicit deps, but the page must then be served over [39m
+     [38;5;246mHTTP, not opened directly.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

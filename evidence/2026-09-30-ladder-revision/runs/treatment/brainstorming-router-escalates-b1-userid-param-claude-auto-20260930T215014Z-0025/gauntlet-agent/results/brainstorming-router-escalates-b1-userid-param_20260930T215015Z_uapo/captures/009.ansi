@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Context: [38;5;153mapp.js:4[39m defines [38;5;153mlogin(username, password)[39m; the sole caller is the submit handler at [38;5;153mapp.js:23[39m, which reads
+  only [38;5;153musername[39m and [38;5;153mpassword[39m from the form ([38;5;153mindex.html:9-10[39m). There is no [38;5;153muserId[39m anywhere in the app — no field, no
+  session, no store. So the parameter has no value to receive, and that's the decision I need from you.
+
+  [1mThe fork:[0m where a [38;5;153muserId[39m comes from, which determines whether this is a parameter at all.
+
+  - [1mGenerate a login-attempt ID client-side[0m — [38;5;153mlogin()[39m mints a UUID per attempt and logs it, no signature change and no
+    new form field. Buys you correlatable log lines today; costs nothing; doesn't identify the person, only the attempt.
+    Cheap to change later.
+  - [1mAdd [38;5;153muserId[39m as a third parameter[0m — the caller must supply one, so [38;5;153mindex.html[39m needs a new input or the handler derives
+    it from [38;5;153musername[39m. Buys an explicit identity in the signature; costs a form change and a breaking signature. Note: a
+    client-supplied [38;5;153muserId[39m is an identity the user controls — if anything downstream ever trusts it for authorization,
+    that's a spoofing vector. Hard to walk back once callers exist.
+  - [1mTake [38;5;153muserId[39m from the login response instead[0m — the server authenticates and returns the id; [38;5;153mlogin()[39m logs it after the
+    fact. Buys a trustworthy id and matches how the real API would work; costs that it's not a parameter, and the stub
+    at [38;5;153mapp.js:6-7[39m has to fake the return. Cheap to change.
+
+  My recommendation is the third: "track who logged in" is a fact you only reliably know [3mafter[0m authentication, and a
+  caller-supplied [38;5;153muserId[39m on a login function is the one shape that can be forged. If you need something before then, the
+  first option gives you correlation without claiming identity.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFrom login response (Recommended)[39m
+     [38;5;246mServer returns the id after auth; login() logs it. No signature change; stub returns a fake id. Trustworthy and [39m
+     [38;5;246mmatches the real API shape.[39m
+  [38;5;246m2.[39m Generated attempt ID
+     [38;5;246mlogin() mints a UUID per attempt for log correlation. No signature change, no form change. Identifies the attempt,
+[39m     [38;5;246mnot the person.[39m
+  [38;5;246m3.[39m Third parameter, caller-supplied
+     [38;5;246mlogin(username, password, userId). Requires a new form input or deriving it from username. Breaking signature; the
+[39m     [38;5;246mvalue is user-controlled.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

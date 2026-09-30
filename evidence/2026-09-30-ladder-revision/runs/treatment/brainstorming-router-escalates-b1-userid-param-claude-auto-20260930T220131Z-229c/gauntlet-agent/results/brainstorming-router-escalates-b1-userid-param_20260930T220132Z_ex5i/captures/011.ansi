@@ -1,0 +1,40 @@
+
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What does "track" mean here — where does the userId need to go? → Persist it (storage/session)[39m
+
+[38;5;231m⏺[39m That answer changes the classification, so I'm stopping to say so.
+
+  [1mUpgrading: bounded → architectural.[0m Persisting the userId names storage this repo doesn't have — there's no storage
+  layer, no session concept, no module that owns client-side state. [38;5;153mapp.js[39m is a single script with two functions and an
+  event listener. The first edit still looks like one line ([38;5;153msessionStorage.setItem(...)[39m), but the outcome you named is a
+  new subsystem, and the brainstorming ratchet is one-way: I step up rather than talk myself into calling it small. So
+  this gets the full treatment — approaches, a sectioned design, and a written spec before any code.
+
+  One thing I want on the table before the questions, because it's a consequence beyond the lines I'd touch: persisting
+  identity in browser storage makes it readable by any script on the origin, so it's XSS-exposed, and [38;5;153mlocalStorage[39m
+  survives browser restarts on shared machines. It's a normal thing to do for a non-authoritative display value ("logged
+  in as…"); it is not safe as something the app later [3mtrusts[0m to decide who someone is. That distinction drives most of
+  the design, so it's the first thing I need to pin down.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Lifetime [39m[49m
+
+[1m[38;5;231mWho reads the persisted userId later, and how long should it survive?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mThis tab only, display/logging[39m
+     [38;5;246msessionStorage; cleared when the tab closes. The value is non-authoritative — used for showing who's logged in and
+[39m     [38;5;246mstamping client-side logs. Lowest risk.[39m
+  [38;5;246m2.[39m Across browser restarts
+     [38;5;246mlocalStorage; survives until explicitly cleared. Convenient for 'remember me', but persists identity on shared [39m
+     [38;5;246mmachines and needs an explicit clear-on-logout path.[39m
+  [38;5;246m3.[39m Server needs to see it
+     [38;5;246mA cookie, so it rides along on requests to the API. This makes it part of the auth surface and needs [39m
+     [38;5;246mSecure/HttpOnly/SameSite decisions — significantly larger scope.[39m
+  [38;5;246m4.[39m In-memory only
+     [38;5;246mA module-level session object, no persistence at all. Survives navigation within the SPA but not a page reload. [39m
+     [38;5;246mSmallest security surface.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  [38;5;153msession.getUserId()[39m reads through to storage on each call rather than caching in a variable. It's a single small JSON
+  parse, and caching would go stale across tabs — you chose [38;5;153mlocalStorage[39m specifically so a second tab sees the same
+  user, and a cached copy would quietly defeat that.
+
+  [1mError handling.[0m Five cases, and the first is the one that actually bites:
+
+  1. [1mStorage throws.[0m [38;5;153mlocalStorage[39m is not always writable — Safari private browsing has historically thrown on [38;5;153msetItem[39m,
+     browsers with site data disabled throw on access, and quota errors exist. Every storage call is wrapped; on failure
+     the session falls back to an in-memory object for the life of the page and logs once. The app keeps working, the
+     identity just doesn't survive a reload. The alternative — letting it throw — would break the login handler on a
+     browser setting the user chose, which is worse.
+  2. [1mCorrupt stored JSON.[0m [38;5;153mgetUser()[39m parses inside a try/catch. On a parse failure it clears the bad key and returns
+     [38;5;153mnull[39m, so one bad write can't wedge the app permanently.
+  3. [1mResponse has no [38;5;153muserId[39m.[0m Don't write a partial record. Log a warning and leave the session empty — a stored [38;5;153m{userId:
+[39m     [38;5;153mundefined}[39m would make [38;5;153mgetUserId()[39m return something falsy but present, which is the kind of thing that costs an
+     afternoon later.
+  4. [1m[38;5;153mlogin()[39m rejects.[0m Once it's async and eventually does a real [38;5;153mfetch[39m, network failure is a rejection. The handler
+     wraps the [38;5;153mawait[39m in try/catch, logs, and writes nothing.
+  5. [1m[38;5;153msuccess: false[39m.[0m No session write. Only a successful login establishes identity.
+
+  [1mReading contract for future forms:[0m [38;5;153mgetUserId()[39m returns [38;5;153mstring | null[39m. Never [38;5;153mundefined[39m, never throws. Callers branch on
+  [38;5;153mnull[39m for "nobody is logged in." A single, boring contract is what makes this usable by the forms you haven't written
+  yet.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 2 [39m[49m
+
+[1m[38;5;231mDoes Section 2 (data flow and error handling) look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, continue[39m
+     [38;5;246mMove on to Section 3 (testing), then I write the spec.[39m
+  [38;5;246m2.[39m Change something
+     [38;5;246mTell me what to adjust — the read-through behavior, the in-memory fallback, or any of the five error cases.[39m
+  [38;5;246m3.[39m Drop the storage fallback
+     [38;5;246mLet storage errors propagate instead of degrading to in-memory. Simpler code, but login breaks on private-mode [39m
+     [38;5;246mbrowsers.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

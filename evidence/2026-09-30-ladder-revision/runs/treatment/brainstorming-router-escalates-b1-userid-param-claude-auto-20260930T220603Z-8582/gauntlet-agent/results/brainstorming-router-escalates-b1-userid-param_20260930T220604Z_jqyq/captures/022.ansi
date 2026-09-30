@@ -1,0 +1,40 @@
+  [38;5;153mgetUserId()[39m, [38;5;153mrecordLogin({username})[39m, [38;5;153mdrainPendingLogins()[39m. Reads and writes go through a small storage adapter whose
+  default implementation is [38;5;153mlocalStorage[39m; at cutover you swap the adapter, not the callers. [3mTrade-off:[0m globals are
+  untyped and implicitly ordered — [38;5;153midentity.js[39m must load first, and nothing enforces that. [3mWins when[0m you want zero
+  workflow change: [38;5;153mindex.html[39m still opens from the filesystem, no server, no build.
+
+  [1mB. Convert to ES modules[0m — [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" src="app.js">[39m, [38;5;153midentity.js[39m exports named
+  functions, [38;5;153mapp.js[39m imports them. Real boundaries, no load-order hazard, and the module is directly importable by a Node
+  test runner. [3mTrade-off:[0m ES modules are blocked by CORS on [38;5;153mfile://[39m, so opening [38;5;153mindex.html[39m by double-clicking stops
+  working — you'd need a local dev server. That's a genuine change to how you run this thing, and it's the main reason
+  I'm not leading with it despite it being the cleaner structure. [3mWins when[0m you're adding real tests and more pages
+  soon, and a dev server is acceptable.
+
+  [1mC. Inline it in [38;5;153mapp.js[39m, no module[0m — helper functions and direct [38;5;153mlocalStorage[39m calls in the existing file. [3mTrade-off:[0m it
+  directly contradicts "works across the app" — the second form would copy-paste or trigger the extraction you skipped.
+  [3mWins when[0m the identity turns out to be single-page after all. I don't recommend it given what you told me, but it's
+  the honest YAGNI option and it's the cheapest thing that produces a login record today.
+
+  [1mRecommendation: A, with one amendment[0m — [38;5;153mlogin[39m takes the identity explicitly, [38;5;153mlogin(username, password, identity)[39m,
+  rather than reaching for the global itself. That keeps [38;5;153mlogin[39m testable without a DOM or storage (you hand it a fake),
+  and it means the parameter you originally asked for does get added — just carrying an honestly-named value instead of
+  a [38;5;153muserId[39m the browser can't actually know. A also leaves the door open to B later: an IIFE module with a clean surface
+  is a mechanical conversion to ES modules once you want a dev server.
+
+  Two things I'd fold in regardless of which you pick, flagged now rather than smuggled in later: [38;5;153mlogin[39m is currently a
+  synchronous stub that always returns success, and the real backend will make it async — I'd give it its async shape
+  now so the call site isn't rewritten twice. And the capped log needs an explicit cap and eviction rule (I'd propose 50
+  entries, oldest dropped) so [38;5;153mlocalStorage[39m can't fill up.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which approach should the design use? → A: global module (Recommended)[39m
+     [38;5;246m· The repo has no linter, formatter, or test runner. What should we set up now, while it's cheapest? → Unit test [39m
+     [38;5;246minfra (Recommended)[39m
+
+[1m[38;5;220m·[0m [38;5;220mCanoodling… [38;5;246m(4m 48s · ↓[39m [38;5;246m17.4k tokens · [38;5;220mthinking more[38;5;246m)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

@@ -1,0 +1,40 @@
+  password.
+
+  That surfaces the one thing I need from you before touching the signature.
+
+  [1mThe fork:[0m at the moment [38;5;153mlogin[39m is called, the caller doesn't know who the user is — there is no user ID anywhere on the
+  page. Logging in is what establishes identity. So "pass a userId in" and "track who logged in" pull in opposite
+  directions, and which one you mean changes the interface.
+
+  - [1mReturn the ID instead of taking it[0m — the server identifies the user and hands back an ID; [38;5;153mlogin[39m returns [38;5;153m{ success, [39m
+    [38;5;153muser, userId }[39m and the caller logs it. Buys you real identity tracking, costs a change to the return shape (any
+    caller reading the result is affected — here, just the one), and rules out nothing later.
+  - [1mTake a caller-supplied [38;5;153muserId[39m parameter[0m — matches your words literally, but the caller has nothing real to pass, so
+    it'd be [38;5;153mundefined[39m or a placeholder today. Cheap now, but bakes a parameter into the signature that nothing can fill
+    until you decide where IDs come from.
+  - [1mTake a client-generated request/session ID[0m — [38;5;153mlogin(username, password, requestId)[39m where the caller mints a
+    correlation ID. Buys you traceable login attempts including failures, costs an ID scheme, and is a different thing
+    from user identity (it tracks the attempt, not the person).
+
+  [1mMy recommendation:[0m the first. "Track who logged in" is answered by the login response, not by the caller, and it's the
+  only option where the value is real rather than a placeholder. If you also want failed attempts traced, the third
+  stacks on top later.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Identity [39m[49m
+
+[1m[38;5;231mThe caller has no user ID at login time — how should `login` handle identity?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn userId (Recommended)[39m
+     [38;5;246mlogin returns { success, user, userId }; the stub synthesizes an ID until the real API exists. Caller logs who it [39m
+     [38;5;246mwas. Return-shape change, one caller affected.[39m
+  [38;5;246m2.[39m Add userId parameter
+     [38;5;246mlogin(username, password, userId) as literally asked. Caller passes undefined/placeholder today since nothing on [39m
+     [38;5;246mthe page knows the ID yet.[39m
+  [38;5;246m3.[39m Add requestId parameter
+     [38;5;246mlogin(username, password, requestId) with a caller-generated correlation ID. Traces attempts including failures, [39m
+     [38;5;246mbut does not identify the person.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

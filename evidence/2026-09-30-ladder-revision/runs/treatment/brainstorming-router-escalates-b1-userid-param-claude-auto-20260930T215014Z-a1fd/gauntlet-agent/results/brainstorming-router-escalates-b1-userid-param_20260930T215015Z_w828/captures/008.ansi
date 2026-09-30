@@ -1,0 +1,40 @@
+  so this is a short in-chat design rather than a spec. One thing I need to settle first.
+
+  [1mThe fork:[0m [38;5;153mlogin(username, password)[39m is a stub, and nothing in the app currently has a [38;5;153muserId[39m. The form
+  ([38;5;153mindex.html:9-11[39m) collects only username and password, and the stub returns [38;5;153m{ success: true, user: username }[39m. So "add
+  a userId parameter" needs a source for that value, and the three plausible sources produce genuinely different code —
+  and different answers to "who logged in."
+
+  - [1mCaller passes an existing ID[0m — [38;5;153mlogin(userId, username, password)[39m. Buys a real identity you can correlate against
+    your backend's user records. Costs: nothing in the browser knows a user ID [3mbefore[0m authentication, so the form would
+    need a new input or the ID would have to come from somewhere you haven't described. Rules out nothing later, but
+    it's the option most likely to be wrong about where the data lives.
+  - [1mGenerate a client-side correlation ID[0m — [38;5;153mlogin(username, password, attemptId)[39m with a [38;5;153mcrypto.randomUUID()[39m per attempt.
+    Buys per-attempt tracing through logs without inventing user identity. Costs: it tracks the [3mattempt[0m, not the [3mperson[0m
+    — it won't answer "who logged in" on its own. Cheap to change; it's local to the handler.
+  - [1mServer returns the ID on success[0m — no new parameter at all; [38;5;153mlogin[39m returns [38;5;153m{ success, userId, user }[39m. Buys the
+    authoritative ID from the only party that knows it. Costs: it's a return-shape change, not the parameter you asked
+    for. This is the one that's expensive to undo later, since callers start depending on the field.
+
+  [1mMy recommendation: the third.[0m "Track who logged in" is post-authentication information, and the client can't know a
+  trustworthy user ID before the credentials are checked — anything the caller passes in is a guess the server would
+  have to ignore. But this contradicts the literal request, which is why I'm asking rather than picking.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId value come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer returns it (Recommended)[39m
+     [38;5;246mNo new parameter. login() returns { success, userId, user } and the handler logs it. Authoritative, but changes the
+[39m     [38;5;246mreturn shape instead of the signature.[39m
+  [38;5;246m2.[39m Caller passes existing ID
+     [38;5;246mlogin(userId, username, password). Requires a new source for the ID before auth — you'd need to tell me where it [39m
+     [38;5;246mcomes from.[39m
+  [38;5;246m3.[39m Generated correlation ID
+     [38;5;246mlogin(username, password, attemptId) using crypto.randomUUID(). Traces the attempt through logs, but does not [39m
+     [38;5;246midentify the person.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

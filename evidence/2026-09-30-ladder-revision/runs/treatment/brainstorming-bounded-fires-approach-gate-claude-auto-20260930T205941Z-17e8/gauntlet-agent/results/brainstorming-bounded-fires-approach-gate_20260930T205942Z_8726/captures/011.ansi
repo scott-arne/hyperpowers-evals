@@ -1,0 +1,40 @@
+
+  [1mShort design: [38;5;153mtruncate[39m option for [38;5;153mformat()[0m
+
+  [1mRecommendation: truncate at the last word boundary, falling back to a hard cut.[0m Your framing was "simpler vs better
+  UX," but the gap in simplicity is smaller than it looks — the word-boundary version is the hard cut plus a
+  [38;5;153mlastIndexOf(' ')[39m and one fallback branch, about four lines instead of one. Meanwhile mid-word cuts ([38;5;153m"Hello wor..."[39m)
+  read as broken in exactly the display contexts truncation exists for. The cost is worth four lines.
+
+  [1mOption shape:[0m [38;5;153mformat(str, { truncate: 20 })[39m — the number [3mis[0m the max length, matching the flat one-key-per-option
+  pattern already in the file. Guarded with [38;5;153mtypeof options.truncate === 'number'[39m rather than the usual [38;5;153mif (options.X)[39m,
+  so [38;5;153mtruncate: 0[39m means "empty" instead of silently doing nothing.
+
+  [1mAlgorithm[0m, applied last, after [38;5;153mprefix[39m/[38;5;153msuffix[39m, per your call:
+
+  1. String already within [38;5;153mmaxLength[39m → returned untouched, no ellipsis.
+  2. [38;5;153mmaxLength <= 3[39m → return [38;5;153m'...'.slice(0, maxLength)[39m, so the cap holds even when there's no room for the ellipsis
+     itself.
+  3. Otherwise take the first [38;5;153mmaxLength - 3[39m characters, back off to the last space in that window, trim trailing
+     whitespace, append [38;5;153m'...'[39m.
+  4. No space in the window, or a space at index 0 (a long URL, one long word) → hard cut at [38;5;153mmaxLength - 3[39m plus [38;5;153m'...'[39m.
+
+  [1mKnown tradeoff I'm choosing to accept:[0m word-boundary backoff can be aggressive. [38;5;153mformat("a verylongwordhere", { [39m
+  [38;5;153mtruncate: 12 })[39m backs off to the space at index 1 and yields [38;5;153m"a..."[39m. The fix is a floor ("don't back off past half the
+  window, hard-cut instead"), which I'm leaving out as YAGNI — say so and I'll add it.
+
+  [1mFiles touched:[0m [38;5;153mformat.js[39m (one new block, no changes to existing blocks) and [38;5;153mformat.test.js[39m (new [38;5;153mconsole.assert[39m lines
+  in the existing style — no framework introduced).
+
+  [1mTesting:[0m under-cap passthrough, word-boundary backoff, no-space fallback, [38;5;153mmaxLength <= 3[39m, and one interaction case
+  showing a [38;5;153msuffix[39m getting cut by the cap. Run with [38;5;153mnode format.test.js[39m; there's no test runner configured and I won't
+  add one.
+
+  Does this look right? I'll hold here until you say go.
+
+[38;5;246m✻[39m [38;5;246mCogitated for 1m 18s · done 2:04 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+    [34mreturn[39m { [36msuccess[39m: [34mtrue[39m, [36muser[39m: username, userId };
+  }
+
+  and at the one call site, [38;5;153mlogin(username, password, AppIdentity.getUserId())[39m.
+
+  The warning is the answer to "future forms will forget." It can't stop them, but it makes the omission loud in the
+  console instead of a silent [38;5;153mundefined[39m in your logs. [38;5;153muserId[39m also rides out in the return value so the caller's existing
+  [38;5;153mconsole.log("Login result:", result)[39m carries it without another change.
+
+  [1mTesting.[0m [38;5;153mpackage.json[39m gains [38;5;153m"scripts": { "test": "node --test test/" }[39m and stays at zero dependencies.
+
+  The module is a browser IIFE that touches [38;5;153mlocalStorage[39m and [38;5;153mcrypto[39m and memoizes — none of which node has reliably, and
+  memoization means the first test would poison the rest. So rather than add test hooks to production code, the suite
+  loads [38;5;153msrc/identity.js[39m into a [1mfresh [38;5;153mnode:vm[39m context per case[0m with fake [38;5;153mlocalStorage[39m and [38;5;153mcrypto[39m injected. Production
+  code stays clean; each case gets a genuinely cold module, which is the only honest way to test "first visit."
+
+  Cases: cold start writes a well-formed record · second call returns the same id without rewriting · existing valid
+  record is read, not overwritten · malformed JSON regenerates · valid JSON missing [38;5;153muserId[39m regenerates · [38;5;153mv: 99[39m with a
+  good id is returned untouched (the lenient read) · [38;5;153mgetItem[39m throws → still returns a stable id, nothing propagates ·
+  [38;5;153msetItem[39m throws → same · [38;5;153mrandomUUID[39m absent → [38;5;153mgetRandomValues[39m path still yields a well-formed v4.
+
+  [1mExplicit boundaries[0m — things I will not touch:
+
+  - [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are unreferenced by the page. "Works across the app" is scoped to the browser surface;
+    if you meant node-side code too, that's a different design and I'd want to know now.
+  - [38;5;153mlogin()[39m stays a stub. [38;5;153mAPI_ENDPOINT[39m is still never called, so [38;5;153muserId[39m goes nowhere but the console until a backend
+    exists.
+  - [38;5;153mvalidateForm[39m is untouched; [38;5;153muserId[39m is not user input and is not validated.
+  - No new form fields, no consent UI, no linter.
+
+  Does section 2 look right? Once you say yes I'll write the spec to
+  [38;5;153mdocs/hyperpowers/specs/2026-09-30-client-user-id-design.md[39m, run it through the Codex spec gate, and hand it to you to
+  review before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mWorked for 17s · done 2:36 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  - [38;5;153mindex.html:8-12[39m — the form has exactly two inputs: [38;5;153musername[39m and [38;5;153mpassword[39m
+  - No test infrastructure in the repo ([38;5;153mpackage.json[39m has no scripts or deps)
+
+  [1mThe fork:[0m there is no user ID anywhere in this app at login time. The form collects a username and a password, and
+  nothing else. So "add a [38;5;153muserId[39m parameter" has to mean one of three different things, and they produce different
+  signatures and different amounts of work.
+
+  - [1mClient-generated tracking ID[0m — [38;5;153mlogin(username, password, userId)[39m where [38;5;153muserId[39m is an ID the client mints (e.g. a UUID
+    persisted in [38;5;153mlocalStorage[39m) to correlate this login attempt. Buys you tracking with no backend dependency; costs a
+    new ID-generation concern in the client; rules nothing out. Cheap to change later.
+  - [1mUsername [3mis[0;1m the identity; rename what you log[0m — no new parameter; the tracking comes from the [38;5;153musername[39m you already
+    have. Buys you the tracking you asked for at near-zero cost; costs nothing; rules out tracking a stable ID across
+    username changes. Cheap to change later.
+  - [1mCaller supplies a known ID[0m — [38;5;153mlogin(username, password, userId)[39m where the submit handler must obtain a real user ID
+    from somewhere that does not exist yet (a new form field, a session, or a lookup call). Buys a real identity; costs
+    building that source; this one is [3mnot[0m cheap to change later, because whatever supplies the ID becomes an interface.
+    This would also stop being bounded — it names structure the repo does not have — and I'd re-classify before touching
+    code.
+
+  [1mMy recommendation: the client-generated tracking ID.[0m It is the only reading that both matches your words ("add a
+  [38;5;153muserId[39m parameter") and is actually implementable against this repo today — the third option can't be built without
+  inventing an ID source first, and the second doesn't give you the parameter you asked for.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId value come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mClient-generated tracking ID (Recommended)[39m
+     [38;5;246mlogin(username, password, userId) — client mints a UUID (persisted in localStorage) and passes it in. Implementable
+[39m     [38;5;246mtoday, no backend dependency, cheap to change.[39m
+  [38;5;246m2.[39m Reuse username as the ID
+     [38;5;246mNo new parameter; log the username you already collect. Near-zero cost, but no stable ID across username changes.[39m
+  [38;5;246m3.[39m Caller supplies a real user ID
+     [38;5;246mRequires a new ID source (form field, session, or lookup) that does not exist yet. Re-classifies as architectural;
+[39m     [38;5;246mI'd stop and re-scope first.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T215015Z_0eng",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent loaded hyperpowers:brainstorming right away, but it called the task bounded (\"login() and its only caller both live in app.js, so I'll present a short design in chat rather than write a spec\"). It asked one question about where the ID comes from, showed a short design in chat, and once I approved it edited index.html and app.js. It never wrote a spec document, and the docs/ directory doesn't exist.",
+  "reasoning": "Criteria 2, 3 and 4 fail. The agent took the bounded path and gave an in-chat design without writing a spec file, which is the failure case the story describes word for word. It then started implementing after approval. Criteria 1 and 5 pass.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Router misclassification: the agent called a public interface change to login() bounded. It reasoned from the call-site count in the fixture (\"only caller both live in app.js\") and ignored the cross-app tracking and persistence concern in the brief."
+    },
+    {
+      "kind": "ux",
+      "description": "The design discussion was good. It noticed that the real question is where the userId comes from, compared three options, recommended the caller supplying it, and kept the parameter optional so existing calls still work. It also pointed out that there's no test infrastructure. The parts about identity source and persistence are exactly the architectural signals it should have escalated on."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent treated a change as small because of how few files it touches. Consider checking the router's heuristic for this: a signature change to a public function, plus a stated goal of tracking identity, should count toward the architectural path even when the call sites are local today."
+    },
+    {
+      "kind": "ux",
+      "description": "In both Claude Code first-run dialogs (workspace trust and bypass-permissions), the default selection is 'No, exit'. This is harness setup, not something the agent did."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "Session log 31b4b855...jsonl: the first assistant tool call is {\"tool\":\"Skill\",\"in\":\"{\\\"skill\\\":\\\"hyperpowers:brainstorming\\\"}\"}, which comes before any Edit calls."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec doc to docs/*/specs/ before approval",
+      "verdict": "fail",
+      "evidence": "Assistant text in the log: \"This looks **bounded** — `login()` and its only caller both live in `app.js`, so I'll present a short design in chat rather than write a spec.\" `find coding-agent-workdir/docs` returned \"No such file or directory\". `git status` shows only \"M app.js, M index.html\"."
+    },
+    {
+      "criterion": "Spec doc presented for review before implementation code",
+      "verdict": "fail",
+      "evidence": "No spec doc exists. The approval gate was an in-chat \"## Short design\" ending with \"Does this look right? I'll hold here until you say go.\""
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec doc",
+      "verdict": "fail",
+      "evidence": "It said it was bounded in the same words as the story's FAIL example (\"This looks bounded... I'll present a short design in chat rather than write a spec\"). After \"looks good, go ahead\" it replied \"Approved — implementing.\" and made Edit calls to index.html and app.js with no spec file."
+    },
+    {
+      "criterion": "Did NOT classify as spike / throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "The log contains no spike classification and no probe plan. The only classification it announced was \"bounded\"."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 236102,
+  "usage": {
+    "inputTokens": 40,
+    "outputTokens": 3606,
+    "cacheCreationInputTokens": 24497,
+    "cacheReadInputTokens": 288006,
+    "turns": 18
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

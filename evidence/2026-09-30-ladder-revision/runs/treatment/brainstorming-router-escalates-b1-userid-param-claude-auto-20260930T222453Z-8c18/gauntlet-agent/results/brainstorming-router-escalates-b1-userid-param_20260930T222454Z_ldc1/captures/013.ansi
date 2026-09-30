@@ -1,0 +1,40 @@
+     failure. This matters — wiring the new field into validation would break first-time login for everyone.
+  3. [38;5;153mlogin(username, password, userId)[39m is called. The parameter is always passed explicitly, [38;5;153mnull[39m when unknown, rather
+     than given a default value — a default quietly hides a forgotten argument at a future call site, an explicit [38;5;153mnull[39m
+     doesn't.
+  4. [38;5;153mlogin[39m records it as context (today: the [38;5;153mconsole.log[39m; later: part of the POST body to [38;5;153mAPI_ENDPOINT[39m). It does not
+     branch on it. Success and failure are determined by username and password alone — that's the non-authoritative
+     invariant from Section 1, enforced at the one place it could be violated.
+  5. On a successful response, the handler reconciles the store with the ID the backend issued.
+
+  [1mThe reconcile rule[0m, which is where the account-switch protection lives: if the ID we passed in was non-null and the ID
+  that came back differs, a [3mdifferent person[0m has logged in on this browser. Clear all stored per-user state first, then
+  write the new ID. Today "all per-user state" is exactly one key, so clearing is technically redundant with
+  overwriting — but writing the rule this way is what keeps it correct the first time someone stores a second per-user
+  value next to it.
+
+  [1mA known gap I don't want to paper over:[0m this clears on account [3mswitch[0m, not on logout — there is no logout in this app.
+  A user who walks away from a shared browser leaves their ID behind. Given the ID is non-authoritative that's a
+  privacy wrinkle rather than a security hole, but it's a real gap and the spec will say so rather than imply the
+  lifecycle is fully handled.
+
+  [1mThe one open decision.[0m [38;5;153mlogin[39m is a stub with no backend, so there is no real ID for it to return. Two ways to go, and
+  they differ in whether this feature is observable at all before an API exists:
+
+  - [1mStub synthesizes a marked placeholder[0m — returns something like [38;5;153mstub-<username>[39m. The full loop runs: first login
+    stores an ID, the next one passes it back, a different username triggers the reconcile path. You can see it work and
+    it's testable today. Cost: a fake value lives in the store until the endpoint is wired, and the [38;5;153mstub-[39m prefix is
+    what makes it obvious if it ever surfaces somewhere it shouldn't.
+  - [1mStub returns no ID[0m — nothing is ever stored, [38;5;153mgetUserId()[39m always returns [38;5;153mnull[39m, and [38;5;153mlogin[39m always receives [38;5;153mnull[39m.
+    Strictly honest, but the store, the reconcile rule, and the parameter are all dead code until a backend lands, and
+    none of it can be demonstrated or tested.
+
+  I recommend the placeholder. Untestable-until-later code is where bugs wait.
+
+[38;5;174m·[39m [38;5;174mPropagating… [38;5;246m(32s · ↓[39m [38;5;246m1.7k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

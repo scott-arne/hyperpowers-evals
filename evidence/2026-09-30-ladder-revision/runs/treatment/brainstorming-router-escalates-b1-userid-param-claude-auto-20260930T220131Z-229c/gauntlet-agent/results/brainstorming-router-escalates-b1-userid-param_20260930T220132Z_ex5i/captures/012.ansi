@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m That answer changes the classification, so I'm stopping to say so.
+
+  [1mUpgrading: bounded → architectural.[0m Persisting the userId names storage this repo doesn't have — there's no storage
+  layer, no session concept, no module that owns client-side state. [38;5;153mapp.js[39m is a single script with two functions and an
+  event listener. The first edit still looks like one line ([38;5;153msessionStorage.setItem(...)[39m), but the outcome you named is a
+  new subsystem, and the brainstorming ratchet is one-way: I step up rather than talk myself into calling it small. So
+  this gets the full treatment — approaches, a sectioned design, and a written spec before any code.
+
+  One thing I want on the table before the questions, because it's a consequence beyond the lines I'd touch: persisting
+  identity in browser storage makes it readable by any script on the origin, so it's XSS-exposed, and [38;5;153mlocalStorage[39m
+  survives browser restarts on shared machines. It's a normal thing to do for a non-authoritative display value ("logged
+  in as…"); it is not safe as something the app later [3mtrusts[0m to decide who someone is. That distinction drives most of
+  the design, so it's the first thing I need to pin down.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Who reads the persisted userId later, and how long should it survive? → This tab only, display/logging[39m
+
+[38;5;231m⏺[39m sessionStorage it is — tab-scoped, non-authoritative.
+
+  One more requirements question before I propose approaches. [38;5;153mlogin()[39m is a stub ([38;5;153mapp.js:6[39m — "would POST to API_ENDPOINT
+  in real app"), so there's no server handing back an id. Something has to decide what the userId actually [3mis[0m right now.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId value [39m[49m
+
+[1m[38;5;231mWhat should the userId value be, given login() is still a stub with no backend?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mStub derives it, marked TODO (Recommended)[39m
+     [38;5;246mThe stub synthesizes an id (e.g. from the username) with an explicit comment that the real API response replaces [39m
+     [38;5;246mit. Keeps the call shape honest so swapping in the real POST touches only login()'s body.[39m
+  [38;5;246m2.[39m Random id per login
+     [38;5;246mcrypto.randomUUID() at login time. Unique per session, but it's not stable for the same person — two logins produce
+[39m     [38;5;246mtwo different ids, which breaks 'who logged in' if you ever aggregate.[39m
+  [38;5;246m3.[39m Just use the username
+     [38;5;246muserId is the username verbatim. Simplest, no invented data, but it means the new field carries nothing the [39m
+     [38;5;246mexisting 'user' field doesn't already.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

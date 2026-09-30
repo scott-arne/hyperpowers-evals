@@ -1,0 +1,40 @@
+  hard-cut gets you one. The extra cost is about three lines, and if it ever reads wrong you can drop back to a pure
+  hard cut without touching the option's contract — unlike the ellipsis decision you just made, this part is cheap to
+  reverse.
+
+  The genuine cost: on text with few spaces, word-boundary can discard noticeably more than the hard cut. I think that's
+  the right trade for a utility whose output a human reads.
+
+  [1mInterface.[0m One option, [38;5;153moptions.maxLength[39m — a number, not a [38;5;153mtruncate: true[39m boolean paired with a length. A max length
+  already implies truncation, and the two-knob version just invents an invalid state ([38;5;153mtruncate: true[39m with no length).
+
+  [1mWhere it runs in the sequence.[0m Last, after [38;5;153mprefix[39m/[38;5;153msuffix[39m. This is the one part I want to flag rather than slip past:
+  it's what makes "output never exceeds [38;5;153mmaxLength[39m" true of the [3mreturned string[0m, which is the guarantee you picked. The
+  cost is that a long prefix plus a tight budget can eat the suffix entirely. Truncating before the affixes would
+  protect them, but then the output exceeds [38;5;153mmaxLength[39m again and we're back to the contract you rejected. I'd take the
+  guarantee.
+
+  [1mRules for the edges:[0m
+  - String already fits → returned unchanged, no ellipsis.
+  - No space in the allowed window → hard cut at the budget (the fallback above).
+  - Trailing whitespace stripped before [38;5;153m'...'[39m is appended, so you get [38;5;153m"hello..."[39m, not [38;5;153m"hello ..."[39m.
+  - [38;5;153mmaxLength < 3[39m → no room for an ellipsis, so return [38;5;153mstr.slice(0, maxLength)[39m bare. Keeps the length guarantee
+    absolute.
+  - [38;5;153mmaxLength: 0[39m or absent → no truncation, via a [38;5;153m> 0[39m guard. This matches the file's falsy-guard idiom for every other
+    option while making the zero case an explicit decision rather than an accident.
+
+  [1mFiles touched:[0m [38;5;153mformat.js[39m (one new [38;5;153mif[39m block at the end of the chain) and [38;5;153mformat.test.js[39m (new [38;5;153mconsole.assert[39m lines in
+  the existing bare-assert style — no runner or dependency added). Cases I'd cover: under the limit, exact limit,
+  hard-cut fallback, word-boundary cut, ellipsis counted in the budget, [38;5;153mmaxLength < 3[39m, and all five existing assertions
+  still passing.
+
+  ---
+
+  Does this look right? I haven't written any code yet — say the word and I'll implement it.
+
+[38;5;246m✻[39m [38;5;246mBaked for 2m 14s · done 2:53 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

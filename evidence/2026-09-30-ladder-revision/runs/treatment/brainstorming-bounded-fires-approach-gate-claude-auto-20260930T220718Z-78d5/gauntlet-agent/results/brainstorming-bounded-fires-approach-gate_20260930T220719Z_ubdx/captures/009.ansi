@@ -1,0 +1,40 @@
+  whether a word is allowed to be cut mid-way, and that difference is cheap to reverse later — it's internal to one
+  branch, with no effect on the signature or the contract.
+
+  [1mOption A — hard cut at the budget.[0m [38;5;153mresult.slice(0, maxLength - 3) + '...'[39m. Fully predictable: the same input always
+  loses the same number of characters. Costs you mid-word cuts like [38;5;153m"Antidisestab..."[39m.
+
+  [1mOption B — back off to the last space, hard-cut if there isn't one (recommended).[0m Slice to the budget, then drop back
+  to the last whitespace; if the budget contains no whitespace, fall back to A's behavior. Reads better on prose, ~3
+  extra lines, and the fallback is what keeps it correct on URLs, hashes, and single long words.
+
+  [1mOption C — word boundary only if it retains ≥ some fraction of the budget.[0m B, plus a guard so that backing off never
+  throws away most of the allowance. Genuinely better on edge inputs, but it adds a tuning knob nobody has asked for.
+  YAGNI — skipping it unless you want it.
+
+  [1mRecommending B.[0m You named better UX as the goal, and the only thing standing between A and B is a fallback branch you
+  need anyway; without it, B silently returns [38;5;153m"..."[39m for a spaceless string.
+
+  [1mThe rest of the design:[0m
+
+  - [1mSignature:[0m [38;5;153moptions.maxLength[39m (a number). Truncation applies only when the string exceeds it — at or under, the
+    string is returned untouched, with no ellipsis.
+  - [1mWhere it runs:[0m [3mlast[0m, after [38;5;153mprefix[39m/[38;5;153msuffix[39m. That's what makes [38;5;153mmaxLength[39m a true cap on the returned value, per your
+    answer. Consequence worth naming: a suffix can itself be truncated away if the budget is tight. The alternative —
+    truncate the content first — would let prefix and suffix push the result past [38;5;153mmaxLength[39m, which is the contract you
+    just rejected.
+  - [1mEdge cases:[0m [38;5;153mmaxLength <= 3[39m leaves no room for both content and ellipsis, so it returns [38;5;153mresult.slice(0, maxLength)[39m
+    with no ellipsis; trailing whitespace is trimmed before appending [38;5;153m'...'[39m so you get [38;5;153m"hello..."[39m, not [38;5;153m"hello ..."[39m.
+  - [1mFiles touched:[0m [38;5;153mformat.js[39m (one new [38;5;153mif[39m block matching the existing truthiness-gated style, plus a small helper for the
+    boundary logic) and [38;5;153mformat.test.js[39m.
+  - [1mTesting:[0m new [38;5;153mconsole.assert[39m lines in the existing flat style — under the limit (unchanged), over the limit, a
+    spaceless string hitting the fallback, [38;5;153mmaxLength <= 3[39m, and interaction with [38;5;153msuffix[39m. Run with [38;5;153mnode format.test.js[39m.
+
+  Does this look right? I'll hold here until you say go.
+
+[38;5;246m✻[39m [38;5;246mCogitated for 1m 46s · done 3:10 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+
+  [1mThe fork: where does [38;5;153muserId[39m come from?[0m The login form collects only username and password ([38;5;153mindex.html:8[39m), and [38;5;153mlogin[39m is
+  a stub that doesn't call the API yet. Nothing in the app currently holds a user ID, so a new parameter has no value
+  to receive. How you want that resolved changes the shape of the work:
+
+  - [1mCaller supplies it[0m — add [38;5;153mlogin(username, password, userId)[39m and thread a value in from somewhere new (a hidden field,
+    a stored value, a generated client ID). Buys you exactly what you asked for. Costs: something has to produce the ID
+    before login runs, and if that source doesn't exist yet, we're building it. Cheap to change later.
+  - [1mServer returns it[0m — leave the signature alone; the real API returns a user ID on success and [38;5;153mlogin[39m surfaces it in
+    its return value for tracking. Buys you an ID that actually identifies the account, since the server is the only
+    party that knows it. Costs: nothing to track until the stub is replaced with a real call. This is the conventional
+    shape for auth.
+  - [1mIt's a correlation ID, not an identity[0m — add an optional trailing [38;5;153muserId[39m used to tie log lines together across a
+    session. Buys traceability now with no API dependency. Costs: it doesn't tell you [3mwho[0m, only that requests belong
+    together.
+
+  My recommendation is the second: "track who logged in" is identity, and in an auth flow the client can't know the
+  user's ID before authenticating — passing one in means trusting the client to assert who it is. If the intent is
+  really the third option, the name [38;5;153muserId[39m will mislead whoever reads it next.
+
+  I also don't know what "track" should do. Right now it's a [38;5;153mconsole.log[39m. If you want tracking to go anywhere real (an
+  analytics call, a log store), that's a new piece of the app and I'd want to design it rather than bolt it on — tell me
+  and I'll step up to a fuller design.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+  [38;5;246m1.[39m Server returns it (Recommended)
+     [38;5;246mLeave login's signature alone; surface the user ID from the login response for tracking. Conventional for auth, but
+[39m     [38;5;246mneeds the real API call to exist.[39m
+  [38;5;246m2.[39m Caller supplies it
+     [38;5;246mAdd login(username, password, userId) as asked, and thread a value in from a new source we'd also have to add.[39m
+  [38;5;246m3.[39m Correlation ID, not identity
+     [38;5;246mOptional trailing parameter used to tie log lines together. Works today, but doesn't identify the user.[39m
+[38;5;153m❯[39m [38;5;246m4. [39mWhatever you think is right. It should work across the app and persist; other forms will need it later.[7m [0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

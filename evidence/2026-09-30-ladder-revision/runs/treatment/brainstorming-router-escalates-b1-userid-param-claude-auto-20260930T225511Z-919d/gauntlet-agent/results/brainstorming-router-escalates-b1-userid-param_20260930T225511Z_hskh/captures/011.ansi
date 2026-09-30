@@ -1,0 +1,40 @@
+
+  [1mClassification: bounded[0m — the login flow already exists here, in one file, with one caller. So I'll present a short
+  design in chat rather than write a spec. Say the word if you want it treated as bigger.
+
+  One thing blocks me from just doing it: [1mnothing in this app currently has a userId.[0m The form has username and
+  password; the submit handler has no other source of identity. So "add a userId parameter" needs a source, and the
+  three plausible sources lead to different code and different meanings of "who logged in":
+
+  - [1mGenerated client-side per attempt[0m (e.g. [38;5;153mcrypto.randomUUID()[39m in the submit handler) — buys you a correlation ID that
+    ties this attempt's logs together. Costs nothing and adds no new input. But it identifies the [3mattempt[0m, not the
+    person; it can't answer "which account logged in" on its own. Cheap to change later.
+  - [1mSame value as username[0m — matches what the form actually knows about identity. But then the parameter is redundant
+    with [38;5;153musername[39m, and you get a signature carrying the same value twice. Cheap to change, but arguably not worth
+    adding.
+  - [1mA real account ID supplied by the caller[0m — the only option that genuinely tracks [3mwho[0m, and the one that matches how
+    this would work against [38;5;153mAPI_ENDPOINT[39m. Costs the most: nothing in the client has an account ID before login succeeds,
+    so it has to come from somewhere new (a new form field, a stored value, or the login response). This is the one
+    that's expensive to undo, because it changes where identity comes from.
+
+  My recommendation is the [1mclient-side correlation ID[0m, because this is a stub that only [38;5;153mconsole.log[39ms — a per-attempt ID
+  makes the logging actually useful today without inventing an identity source the app doesn't have. If what you really
+  want is account-level tracking, that's the third option and it's a larger change than adding a parameter.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId value come from?[0m
+
+  [38;5;246m1.[39m Generated per attempt (Recommended)
+     [38;5;246mSubmit handler generates a UUID and passes it in. Tracks the login attempt for correlating logs. No new input, no [39m
+     [38;5;246mnew identity source.[39m
+  [38;5;246m2.[39m Same as username
+     [38;5;246mPass the username through as userId. Matches what the form knows, but duplicates an existing argument.[39m
+  [38;5;246m3.[39m Real account ID
+     [38;5;246mA genuine account identifier. Requires a new source (form field, stored value, or login response) — a larger change
+[39m     [38;5;246mthan adding a parameter.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

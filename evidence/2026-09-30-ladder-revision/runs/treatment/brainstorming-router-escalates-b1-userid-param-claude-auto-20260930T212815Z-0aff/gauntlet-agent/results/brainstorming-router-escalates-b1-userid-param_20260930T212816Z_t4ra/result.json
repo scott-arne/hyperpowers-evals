@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T212816Z_t4ra",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "I sent the exact brief. Claude loaded hyperpowers:brainstorming and first called the task \"bounded\". It asked where userId should come from, and I answered honestly that it should work across the app and that other forms will need it later. Claude then explicitly moved the task up from bounded to architectural. It asked clarifying questions and offered 3 approaches (A/B/C). It walked through the design in 2 sections and wrote docs/hyperpowers/specs/2026-09-30-client-user-id-design.md. It showed me that spec and asked for approval before touching any app code. After I said \"looks good, go ahead\", it invoked hyperpowers:writing-plans.",
+  "reasoning": "Every criterion is met by the final behaviour. Brainstorming ran first, the task ended up architectural with a spec file on disk, the spec went to review before any code, the task never went down the bounded path without a spec, and it was never treated as a spike. One caveat: the brief alone was not enough to trigger the escalation. Claude's first call was \"bounded\", and it moved up only after my clarifying answer. It asked about the userId source, not about scope; the cross-app answer was the story's suggested clarification text, volunteered by me. Criterion 4 defines failure as calling it bounded AND skipping the spec file, and the spec was not skipped, so I graded this pass. The initial misclassification is flagged in the observations because it matters for the aggregate router-sensitivity metric.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Router sensitivity: on the bare brief \"Add a userId parameter to the login function...\", Claude classified the task as BOUNDED, even though it noted the change would alter the public signature (\"it changes the public signature, so any future caller must supply it too\"). It moved up to architectural only after I answered \"It should work across the app, and other forms will need it later.\" The hidden public-interface complexity in the brief alone did not trigger escalation. Worth tracking in the cross-brief aggregate."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude's first question was about where userId comes from (caller, generated, or server), not about scope, yet it tied escalation to my volunteered scope answer. A tester who answered only the question asked might never have triggered the escalation."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The spec file was written but not committed (`?? docs/`; the screen said \"(not committed)\"). If the harness expects a committed spec, this could matter. Criterion 4's wording mentions a 'committed spec file'."
+    },
+    {
+      "kind": "ux",
+      "description": "The Codex gate used the stub companion (0.0.0-stub), which returned empty results. Claude clearly reported \"this spec has had no independent Codex review\" and recorded it in an ungated ledger rather than failing silently. That is good transparency."
+    },
+    {
+      "kind": "ux",
+      "description": "The Claude Code trust prompt and bypass-permissions prompt both default to 'No, exit'. That is expected safety behaviour, but it takes an extra Down keypress each time."
+    },
+    {
+      "kind": "performance",
+      "description": "Some turns ran long (\"Crunched for 3m 26s\", \"Brewed for 2m 18s\") for a two-file webapp change. Much of that time was spent on Codex gate scripts."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "First tool call in the session log: {\"name\":\"Skill\",\"i\":\"{\\\"skill\\\":\\\"hyperpowers:brainstorming\\\"}\"}. The screen showed \"Using hyperpowers:brainstorming.\""
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec to docs/*/specs/ before presenting it for approval",
+      "verdict": "pass",
+      "evidence": "Log text: \"**Upgrading bounded → architectural.** 'Works across the app' and 'other forms will need it later' names reuse across components...\" Spec file on disk: docs/hyperpowers/specs/2026-09-30-client-user-id-design.md (9564 bytes, \"Status: awaiting user review\"). Caveat: the first call on the bare brief was \"Classification: bounded\"; it moved up only after my clarifying answer. Also, git status shows `?? docs/`, so the spec was written but not committed."
+    },
+    {
+      "criterion": "Spec presented for review before any implementation code",
+      "verdict": "pass",
+      "evidence": "Screen: \"Spec written to docs/hyperpowers/specs/2026-09-30-client-user-id-design.md (not committed). Please review it before I write the implementation plan... Nothing has been written to app.js, index.html, or package.json\". Listing every Write/Edit file_path in the log returned only ~/.cache/hyperpowers/codex-review/* prompt files and the spec file. After approval, `git status --short` still showed only `?? docs/`."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec",
+      "verdict": "pass",
+      "evidence": "Claude first said \"Classification: bounded ... I'll present a short design in chat rather than write a spec\", but it never presented an in-chat design as the final approval gate. After escalating it wrote the spec file and asked for review before any code (see criteria 2 and 3). So it did not skip the spec, but its first call was the one this criterion warns about."
+    },
+    {
+      "criterion": "Did NOT classify as spike / throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "Searching assistant text for classify/spike-related words returned only the 'bounded' and 'architectural' lines. No probe plan was offered."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi"
+    ]
+  },
+  "duration_ms": 879747,
+  "usage": {
+    "inputTokens": 80,
+    "outputTokens": 6742,
+    "cacheCreationInputTokens": 40117,
+    "cacheReadInputTokens": 868453,
+    "turns": 36
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

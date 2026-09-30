@@ -1,0 +1,40 @@
+  The part that actually needs care isn't the boundary search — it's the edges.
+
+  [1mApproach (what I'd write):[0m one new block at the end of [38;5;153mformat[39m, after [38;5;153msuffix[39m, so [38;5;153mmaxLength[39m bounds the final string as
+  you chose.
+
+  1. Skip entirely if [38;5;153mresult.length <= maxLength[39m — return untouched, no ellipsis.
+  2. Budget = [38;5;153mmaxLength - 3[39m. If [38;5;153mmaxLength < 3[39m there's no room for content [3mor[0m a full ellipsis, so return [38;5;153m'...'.slice(0, [39m
+     [38;5;153mmaxLength)[39m. This guard matters: without it, [38;5;153mmaxLength: 2[39m hits [38;5;153mslice(0, -1)[39m, and a negative end index in JS counts
+     from the [3mend[0m of the string — you'd silently get nearly the whole input back instead of a truncation.
+  3. Otherwise slice to the budget, look for the last space in that slice, and cut there if one exists; if the string
+     has no space in range, fall back to the hard cut. Trim trailing whitespace so you get [38;5;153m"hello..."[39m and not [38;5;153m"hello [39m
+     [38;5;153m..."[39m.
+  4. Append [38;5;153m'...'[39m.
+
+  I'm deliberately [3mnot[0m adding a "boundary must leave at least N% of the budget" rule. It handles one degenerate case ([38;5;153m"a
+[39m  [38;5;153mverylongword"[39m → [38;5;153m"a..."[39m) at the cost of a magic number, and lodash doesn't bother either. Easy to add later if it ever
+  bites.
+
+  [1mTwo things worth knowing before you say yes:[0m
+
+  - Because truncation runs last, a [38;5;153msuffix[39m can get eaten: [38;5;153mformat("hello world", {suffix: "!", maxLength: 8})[39m →
+    [38;5;153m"hello..."[39m, no [38;5;153m![39m. That's inherent to [38;5;153mmaxLength[39m being a hard bound on the output — something has to give, and the
+    tail is what's in range. [38;5;153mprefix[39m survives, since it's at the front. If you'd rather the suffix always survive, say so
+    now; it's a different (and messier) composition.
+  - I'd guard with [38;5;153moptions.maxLength !== undefined[39m rather than the truthiness check the other options use, so [38;5;153mmaxLength:
+[39m    [38;5;153m0[39m behaves instead of being silently ignored. Minor deviation from the local pattern, flagging it rather than hiding
+    it.
+
+  [1mFiles touched:[0m [38;5;153mformat.js[39m (one block, ~10 lines), [38;5;153mformat.test.js[39m (new [38;5;153mconsole.assert[39m lines in the existing style — no
+  truncation needed, exact-boundary, mid-word fallback, no-space-in-string, [38;5;153mmaxLength < 3[39m, and interaction with [38;5;153mprefix[39m).
+  Run with [38;5;153mnode format.test.js[39m, same as today. No new dependencies, no test framework.
+
+  Want me to build it that way?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 2m 14s · done 2:58 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

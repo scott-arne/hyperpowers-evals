@@ -1,0 +1,40 @@
+  just a plumbing one. Where it's stored and how long it lives determine what an XSS bug or a shared machine can leak.
+  I'll treat it as such rather than picking a default quietly.
+
+  First question, and it's the one everything else hangs off.
+
+  [1mThe fork:[0m who creates the userId — the server, as a consequence of authenticating, or the client, before anyone has
+  proven who they are.
+
+  - [1mServer issues it on successful login[0m — [38;5;153mlogin()[39m returns it, the app stores it. Buys a real identity: the value means
+    something because the server vouched for it. Costs a dependency on the API contract (right now [38;5;153mlogin()[39m is a stub
+    returning [38;5;153m{success, user}[39m at [38;5;153mapp.js:7[39m, so we'd be designing against an endpoint that doesn't exist yet). This is the
+    hard-to-change one — it defines the client/server boundary.
+  - [1mClient generates and persists it[0m — a UUID minted on first visit, reused forever. Buys immediate progress with no
+    backend. Costs correctness as [3midentity[0m: it identifies a browser, not a person. Two people on one machine share it;
+    one person on two devices looks like two users. It is spoofable, so it can never gate anything that matters.
+  - [1mBoth, separate values[0m — a client device/visitor id for analytics plus a server-issued user id after auth. Buys
+    honest semantics for each. Costs two things to thread through every future form instead of one.
+
+  [1mMy recommendation:[0m server-issued. You said it should identify the [3mactual[0m user, and a client-minted value cannot do
+  that — it would quietly become a thing later code trusts for authorization. If the backend isn't ready, I'd still
+  design the seam that way and stub the server's half, so the contract is right even while the value is fake.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Issuer [39m[49m
+
+[1m[38;5;231mWho issues the userId?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer on login (Recommended)[39m
+     [38;5;246mlogin() returns the userId after successful auth; the app stores what the server vouched for. Real identity, but [39m
+     [38;5;246mdepends on an API contract that doesn't exist yet (login() is currently a stub).[39m
+  [38;5;246m2.[39m Client-generated, persisted
+     [38;5;246mA UUID minted on first visit and reused. No backend needed, but identifies a browser rather than a person and is [39m
+     [38;5;246mspoofable — unsafe to trust for anything.[39m
+  [38;5;246m3.[39m Both, kept separate
+     [38;5;246mA client visitor id for analytics plus a server-issued user id after auth. Honest semantics for each, at the cost [39m
+     [38;5;246mof threading two values through future forms.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

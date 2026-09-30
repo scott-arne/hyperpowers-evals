@@ -1,0 +1,40 @@
+
+  [1mUpgrading from bounded to architectural.[0m The ratchet only goes one way, so I won't downgrade this later. That means:
+  clarifying questions, 2-3 approaches with trade-offs, a sectioned design you approve section by section, and a written
+  spec at [38;5;153mdocs/hyperpowers/specs/[39m before any code. No implementation until you've approved that.
+
+  First question — it's the one everything else hangs off.
+
+  Right now [38;5;153mlogin()[39m is a stub that returns [38;5;153m{ success: true, user: username }[39m and never calls [38;5;153mAPI_ENDPOINT[39m. So the
+  identifier either originates on the server or on the client, and that decision is the expensive one:
+
+  - [1mServer-issued[0m — the login response carries the real account ID (and normally a session token). This is the only
+    version where the ID actually attests that the user authenticated; the client just stores what it was given. It's
+    also the one that's hard to change later, because every consumer ends up shaped around the response. But it means
+    the design depends on a backend contract that doesn't exist yet in this repo, so we'd be designing against an
+    assumed response shape.
+  - [1mClient-generated[0m — the client mints and persists an ID itself. Nothing external is needed and it works today against
+    the stub. But a client-minted value is self-asserted: it can be edited by anyone with devtools, so it can label
+    telemetry but must never gate access or be trusted as proof of identity.
+
+  I recommend [1mserver-issued[0m, with the response shape written into the spec as an explicit assumption to validate.
+  "Identifies the actual user" and "persists" together point at a real session, and building the persistence layer
+  around a self-asserted ID now means redoing every consumer when the backend arrives.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID origin [39m[49m
+
+[1m[38;5;231mWhere does the canonical user identifier originate?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer-issued (Recommended)[39m
+     [38;5;246mLogin response returns the account ID; client stores it. Real identity, but depends on a backend contract we'd [39m
+     [38;5;246mspecify as an assumption.[39m
+  [38;5;246m2.[39m Client-generated
+     [38;5;246mClient mints and persists its own ID. Works against the stub today, but self-asserted — usable for telemetry only,
+[39m     [38;5;246mnever for access decisions.[39m
+  [38;5;246m3.[39m Not decided yet
+     [38;5;246mTreat the origin as open and have the design keep both paths viable behind one interface.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

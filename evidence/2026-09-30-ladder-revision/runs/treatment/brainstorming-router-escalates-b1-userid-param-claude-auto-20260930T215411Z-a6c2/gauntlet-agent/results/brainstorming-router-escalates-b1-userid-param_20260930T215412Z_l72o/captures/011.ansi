@@ -1,0 +1,40 @@
+
+
+  [38;5;246mRead [1m4[0m[38;5;246m files [39m
+
+[38;5;231m⏺[39m [1mStopping to re-classify.[0m "Work across the app and persist, other forms will need it later" isn't the change I scoped.
+  That names a shared session/user-state module and a storage mechanism — neither exists in this repo — plus consumers
+  that don't exist yet. That's architectural, not bounded, so I'm stepping up to the full process: questions,
+  approaches, a written spec for your review, then a plan. The ratchet only goes one way; I'm not going to implement the
+  one-line version and call the rest future work.
+
+  Two constraints I found that shape this:
+
+  - [38;5;153mapp.js[39m is a plain script tag ([38;5;153mindex.html:13[39m) with no modules or bundler. [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m use CommonJS
+    and are never loaded by the page. So "shared across the app" means picking a module story for the browser side —
+    there isn't one today.
+  - Persisting a user identifier client-side is auth-adjacent. Anything in [38;5;153mlocalStorage[39m is readable and writable by the
+    user, so the stored ID can be a display/tracking convenience but must never be what the server trusts to decide who
+    you are. I'll design to that line; tell me if your backend already works differently.
+
+  First question — this one drives the storage choice and most of the rest:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mWhat does "persist" need to survive?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mPage reloads + new tabs[39m
+     [38;5;246mSurvives closing and reopening the browser. Implies localStorage or a cookie, and needs an explicit expiry/logout [39m
+     [38;5;246mstory.[39m
+  [38;5;246m2.[39m Page reloads, one tab
+     [38;5;246mCleared when the tab closes. sessionStorage. Simplest, smallest exposure window.[39m
+  [38;5;246m3.[39m Just the current page
+     [38;5;246mIn-memory module state only; lost on reload. No storage, no persisted-identity risk.[39m
+  [38;5;246m4.[39m Server-side session
+     [38;5;246mBrowser holds an httpOnly session cookie; userId comes from the server on each load. Most secure, needs backend [39m
+     [38;5;246mwork.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

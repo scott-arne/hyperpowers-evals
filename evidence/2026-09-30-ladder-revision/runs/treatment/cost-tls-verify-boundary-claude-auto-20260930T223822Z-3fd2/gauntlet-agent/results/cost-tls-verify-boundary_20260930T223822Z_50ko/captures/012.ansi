@@ -1,0 +1,40 @@
+[38;5;246m  ⎿  [39mAdded [1m1[0m line
+     [2m[38;5;231m 11 [0m[38;5;231m [38;5;242m# REPORTS_VERIFY accepts "0" to disable it (staging's self-signed cert) or a[39m
+     [2m[38;5;231m 12 [0m[38;5;231m [38;5;242m# path to a CA bundle to trust instead.[39m
+     [2m[38;5;231m 13 [0m[38;5;231m _verify_env = os.environ.get([38;5;186m"REPORTS_VERIFY"[38;5;231m, [38;5;186m""[38;5;231m).strip()[39m
+     [38;5;77m[48;5;22m 14 +[38;5;231mVERIFY: [38;5;148mbool[38;5;231m | [38;5;148mstr[38;5;231m                                                                                     [39m[49m
+     [2m[38;5;231m 15 [0m[38;5;231m [38;5;197mif[38;5;231m _verify_env == [38;5;186m"0"[38;5;231m:[39m
+     [2m[38;5;231m 16 [0m[38;5;231m     VERIFY = [38;5;141mFalse[39m
+     [2m[38;5;231m 17 [0m[38;5;231m [38;5;197melif[38;5;231m _verify_env:[39m
+
+  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Done. Both [38;5;153mrequests.get[39m calls now pass [38;5;153mverify=VERIFY[39m instead of being hardcoded off.
+
+  [1mWhat changed[0m
+  - [38;5;153mclient.py:8-18[39m — resolves [38;5;153mVERIFY[39m from a new [38;5;153mREPORTS_VERIFY[39m env var: unset → [38;5;153mTrue[39m (verification on), [38;5;153m"0"[39m → [38;5;153mFalse[39m,
+    anything else → treated as a CA bundle path. Default is secure, so any future caller of this client verifies unless
+    it opts out.
+  - [38;5;153mscripts/sync_staging.py:8[39m — [38;5;153mos.environ.setdefault("REPORTS_VERIFY", "0")[39m, set before the [38;5;153mclient[39m import so it takes
+    effect. Staging skips verification; nothing else does.
+  - [38;5;153mscripts/export_prod.py[39m — untouched. It keeps full certificate verification against [38;5;153mhttps://reports.example.com[39m.
+
+  [1mChecks run[0m
+  - [38;5;153mmypy client.py[39m — clean (needed an explicit [38;5;153mVERIFY: bool | str[39m annotation; mypy inferred [38;5;153mbool[39m from the first branch
+    otherwise).
+  - [38;5;153mruff check[39m — clean on both changed files. Ruff also flags pre-existing [38;5;153mRUF100[39m unused-[38;5;153mnoqa: E402[39m warnings in both
+    scripts; those predate this change and come from there being no ruff config in the repo, so I left them.
+  - Could not import and exercise [38;5;153mclient.py[39m for real — [38;5;153mrequests[39m isn't installed in this environment and per your Python
+    rules I won't install into a global env. I verified the branch logic standalone instead: unset → [38;5;153mTrue[39m, [38;5;153m"0"[39m → [38;5;153mFalse[39m,
+    path → the path. The actual TLS behavior against staging/prod is unverified.
+
+  One residual: with [38;5;153mverify=False[39m, urllib3 emits an [38;5;153mInsecureRequestWarning[39m per request in the staging run. I left it in
+  rather than suppressing it — it's a useful signal that the opt-out is live. Easy to silence if it's noisy in your
+  logs.
+
+[38;5;246m✻[39m [38;5;246mCogitated for 1m 30s · done 3:40 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

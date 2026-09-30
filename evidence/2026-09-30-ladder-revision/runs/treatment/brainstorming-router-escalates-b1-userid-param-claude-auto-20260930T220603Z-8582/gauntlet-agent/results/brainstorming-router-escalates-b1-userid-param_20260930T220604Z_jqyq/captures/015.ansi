@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Good — that's the option I'd have recommended. It gives us a seam to design against instead of a client-side design
+  we'd have to unpick later.
+
+  [1mNext fork: what "a record of who logged in" means.[0m These sound alike and produce different data models, different
+  storage, and different cutover work when the server arrives.
+
+  - [1mCurrent identity only[0m — one stored value answering "who is logged in right now," read on page load so other forms
+    know the user without re-asking. Fixed size, trivially swappable for a server session later. Answers "who is here,"
+    not "who logged in on Tuesday."
+  - [1mAn event log[0m — append a record per login attempt (id, username, timestamp, success/failure). This is the
+    audit-shaped reading of your words. In [38;5;153mlocalStorage[39m it grows without bound and needs an explicit cap and eviction
+    rule, and it's still forgeable until the server owns it — so treat it as a staging area that ships to the backend on
+    cutover, not as the real log.
+  - [1mBoth[0m — current identity for the app to read, plus a bounded recent-event buffer.
+
+  The distinction that matters for cost: current identity is a value other code [3mdepends on[0m, so its shape is expensive to
+  change once other forms read it. The event log is write-mostly and nothing branches on it, so it stays cheap to
+  change.
+
+  I recommend [1mboth[0m, with the log capped and explicitly labeled provisional. "Other forms will need it later" needs the
+  current identity; "we have a record of who logged in" needs the log; and building only one of them means revisiting
+  this.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Record shape [39m[49m
+
+[1m[38;5;231mWhat should persist — the current identity, a log of login events, or both?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBoth (Recommended)[39m
+     [38;5;246mCurrent identity for other forms to read, plus a capped buffer of recent login events that ships to the backend on
+[39m     [38;5;246mcutover.[39m
+  [38;5;246m2.[39m Current identity only
+     [38;5;246mOne stored value: who is logged in now. Other forms read it on page load. No history.[39m
+  [38;5;246m3.[39m Event log only
+     [38;5;246mAppend a record per login attempt. Answers 'who logged in when'; other forms get no identity to read.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

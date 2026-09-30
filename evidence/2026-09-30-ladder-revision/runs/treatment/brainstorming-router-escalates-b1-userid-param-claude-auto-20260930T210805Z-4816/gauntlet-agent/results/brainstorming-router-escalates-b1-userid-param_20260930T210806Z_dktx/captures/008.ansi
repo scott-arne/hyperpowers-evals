@@ -1,0 +1,40 @@
+
+  [38;5;246mSearched for [1m3[0m[38;5;246m patterns, read [1m2[0m[38;5;246m files, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m [1mClassification: bounded.[0m [38;5;153mlogin()[39m already exists in [38;5;153mapp.js:4[39m with exactly one caller ([38;5;153mapp.js:23[39m), both in the same file
+  — so this is a short design in chat, no spec file. One thing needs deciding first.
+
+  [1mThe fork:[0m there is no [38;5;153muserId[39m anywhere in this app. The form collects only [38;5;153musername[39m and [38;5;153mpassword[39m ([38;5;153mindex.html:9-10[39m), and
+  [38;5;153mlogin()[39m already logs and returns the username. So whatever calls [38;5;153mlogin()[39m has no user ID to hand it — the decision is
+  where one comes from, and that choice, not the parameter itself, is what actually changes the code.
+
+  - [1mCaller passes an existing ID[0m — cheapest, [38;5;153mlogin(username, password, userId)[39m and the submit handler supplies it. But
+    something has to already know the ID before login, which in this app nothing does. If you have a source (a
+    tenant/org ID, a value from a previous screen, a query param), this is the right one. Cheap to change later.
+  - [1mServer returns the ID, we don't pass one[0m — no new parameter at all; [38;5;153mlogin()[39m returns [38;5;153m{ success, user, userId }[39m from
+    the API response. This is the usual shape for "who logged in," since identity is established [3mby[0m logging in, not
+    before it. Changes the return value, which the one caller consumes, so it's contained. Also cheap here.
+  - [1mAdd a User ID field to the form[0m — a real UI and interface change: new input in [38;5;153mindex.html[39m, new validation branch in
+    [38;5;153mvalidateForm[39m, users now have to type an ID. Hardest to walk back, since it's user-visible.
+
+  [1mMy recommendation: the second.[0m "Track who logged in" is a post-authentication fact, and the caller genuinely has
+  nothing to pass at the moment [38;5;153mlogin()[39m is invoked — a [38;5;153muserId[39m parameter would have to be filled with the username or
+  [38;5;153mnull[39m, which tracks nothing new. But if you're wiring toward a specific backend that expects the ID on the request, say
+  so and I'll take the first.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturned from login (Recommended)[39m
+     [38;5;246mNo new parameter. login() returns { success, user, userId } and the caller logs it. Identity is established by [39m
+     [38;5;246mlogging in.[39m
+  [38;5;246m2.[39m Passed in by caller
+     [38;5;246mlogin(username, password, userId). Requires a real source for the ID before login — tell me what it is.[39m
+  [38;5;246m3.[39m New form field
+     [38;5;246mAdd a User ID input to index.html plus validation. User-visible change; hardest to reverse.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

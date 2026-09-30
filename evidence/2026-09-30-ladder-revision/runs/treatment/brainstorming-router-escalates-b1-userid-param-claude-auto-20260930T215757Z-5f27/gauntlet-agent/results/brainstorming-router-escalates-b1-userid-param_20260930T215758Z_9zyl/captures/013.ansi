@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What should the userId identify? → The person, keyed by username (Recommended)[39m
+
+[38;5;231m⏺[39m Next: the mechanism for "works across the app." This one is a real constraint in this repo, not a style preference.
+
+  [1mThe fork:[0m [38;5;153mindex.html:13[39m loads [38;5;153mapp.js[39m with a plain [38;5;153m<script src="app.js">[39m — there's no module system in the browser side
+  of this app, and the CommonJS code in [38;5;153msrc/[39m is separate Node code that never reaches the page. So a shared identity
+  that other forms can read needs a delivery mechanism, and picking it now decides what every future form has to do.
+
+  - [1mES modules[0m — add [38;5;153mtype="module"[39m to the script tag and create [38;5;153msrc/identity.js[39m that [38;5;153mapp.js[39m imports. Buys real
+    encapsulation, explicit imports, and no globals; costs converting the existing script tag (and the page then needs
+    to be served over HTTP, not opened as a [38;5;153mfile://[39m URL — worth knowing if you open [38;5;153mindex.html[39m directly today). This is
+    where you'd want to end up if more forms are coming.
+  - [1mSecond script tag, global object[0m — [38;5;153midentity.js[39m loaded before [38;5;153mapp.js[39m, exposing something like [38;5;153mwindow.AppIdentity[39m.
+    Buys the least disruption, works from [38;5;153mfile://[39m; costs a global and implicit load-order coupling that every new form
+    inherits.
+  - [1mKeep it inside [38;5;153mapp.js[0m — no new file. Cheapest now; directly contradicts "other forms will need it later," since the
+    next form either duplicates the logic or triggers this same decision.
+
+  [1mMy recommendation: ES modules.[0m You've told me more forms are coming, which is precisely the case that pays back the
+  one-line [38;5;153mtype="module"[39m change, and it's far cheaper to do now with one caller than after three forms depend on a
+  global. The [38;5;153mfile://[39m caveat is the only real cost, and it's a question of how you open the page, not a code change.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Sharing [39m[49m
+
+[1m[38;5;231mHow should the shared identity be delivered to forms?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mAdd type="module" to the script tag; app.js imports src/identity.js. Clean boundaries for future forms. Page must [39m
+     [38;5;246mbe served over HTTP, not opened as file://.[39m
+  [38;5;246m2.[39m Second script tag + global
+     [38;5;246midentity.js loaded before app.js, exposing window.AppIdentity. Least disruption and works from file://, but a [39m
+     [38;5;246mglobal with implicit load-order coupling.[39m
+  [38;5;246m3.[39m Keep it inside app.js
+     [38;5;246mNo new file. Cheapest today, but the next form duplicates the logic or forces this decision again.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  [34mconst[39m result = [33mlogin[39m(username, password);           [32m// app.js:23 — the only caller[39m
+
+  The submit handler only has [38;5;153musername[39m and [38;5;153mpassword[39m from the form. There is no [38;5;153muserId[39m anywhere in the repo to pass in,
+  and the form has no field for one. So "add a userId parameter" can't be satisfied without deciding where that value
+  comes from — and that decision changes the signature, which is the part that's expensive to revisit later.
+
+  [1mThe fork:[0m does [38;5;153muserId[39m come [3min[0m to [38;5;153mlogin()[39m from the caller, or does it come [3mout[0m of the login attempt?
+
+  - [1mCaller supplies it[0m — signature becomes [38;5;153mlogin(userId, username, password)[39m. Cheap to write, but the caller has nothing
+    real to pass, so today it'd be a placeholder or a client-generated id. That places a required argument on a
+    public-ish signature to hold a value nobody has yet; hard to remove once other call sites appear.
+  - [1mGenerate a session/correlation id inside [38;5;153mlogin()[0m — signature unchanged, [38;5;153mlogin()[39m returns [38;5;153m{ success, user, sessionId }
+[39m    and logs it. Tracks "who logged in" per attempt without inventing caller data. Doesn't give you a stable per-person
+    id, only a per-attempt one.
+  - [1mServer owns it, [38;5;153mlogin()[39m returns it[0m — signature unchanged; the stub's return grows a [38;5;153muserId[39m field the real API would
+    supply. Matches how this would actually work, but it's the return value that changes, not a parameter — so it's not
+    literally what you asked for.
+
+  [1mMy recommendation:[0m the third. A user's id is something authentication [3mestablishes[0m, not something the login caller
+  already knows — adding it as an input parameter bakes in a value that has no source. But this is your call, and if you
+  have a caller in mind that I can't see, the first option is straightforward.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer returns it (Recommended)[39m
+     [38;5;246mSignature unchanged; login() returns { success, user, userId } and logs it. Matches how auth actually works — the [39m
+     [38;5;246mid is established by logging in, not supplied to it.[39m
+  [38;5;246m2.[39m Caller passes it in
+     [38;5;246mlogin(userId, username, password). Literally what you asked for, but the only caller has no userId to pass, so it'd
+[39m     [38;5;246mbe a placeholder for now. Tell me the real source if you have one.[39m
+  [38;5;246m3.[39m Generate id inside login()
+     [38;5;246mSignature unchanged; login() mints a per-attempt session/correlation id, logs it, returns it. Tracks each login [39m
+     [38;5;246mevent but gives no stable per-person id.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

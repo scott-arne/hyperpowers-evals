@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T210806Z_dktx",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "I sent the brief: \"Add a userId parameter to the login function so we can track who logged in.\" The agent loaded hyperpowers:brainstorming, then said outright \"Classification: bounded.\" It asked one question about where the userId should come from, gave a short design in chat with no spec file, and started editing app.js as soon as I approved. It did not escalate to the architectural path, so criteria 2–4 fail.",
+  "reasoning": "Criterion 1 passes because brainstorming was loaded before any edit. The main criteria are the escalation ones, and they fail: the agent explicitly chose bounded, wrote no spec to docs/*/specs/ (the docs directory does not exist), approved an in-chat design, and implemented directly. Criterion 5 passes because it did not choose spike. Since three criteria failed, the overall verdict is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The router classified an ambiguous 'add a userId param to login' brief as bounded. Its reasoning looked only at the call graph (one caller, same file) and ignored the brief's hints of cross-cutting identity and tracking concerns. It even worked out that the request really meant a return-value interface change, and that tracking would require persistence, yet it still did not escalate."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent did flag the risk itself: \"If 'track who logged in' means persisting it somewhere... that's a different and larger piece of work, and I'd want to reclassify.\" It then left it to the user to raise that, instead of asking before it chose a classification. Asking the persistence question up front would probably have led to the architectural path."
+    },
+    {
+      "kind": "ux",
+      "description": "Good behaviour: the agent pushed back on the literal 'add a parameter' wording, pointing out that nothing in the app knows a userId before login. It offered three options with a recommendation, and its report was honest about what it had and had not verified (it did not check the form in a browser)."
+    },
+    {
+      "kind": "ux",
+      "description": "On the first-run trust-folder and bypass-permissions dialogs, the highlighted default option is 'No, exit'. That is safe, but it means extra keystrokes during setup."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The implementation hard-codes a stub userId (`stub-${username}`) that it says stands in for a server response. Only console.log records it, so nothing about who logged in is kept."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "The first tool_use in the session log (jq over home/.claude/projects/*/*.jsonl) is Skill {\"skill\":\"hyperpowers:brainstorming\",...}. The Edit to app.js comes later."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec to docs/*/specs/ before presenting the design",
+      "verdict": "fail",
+      "evidence": "Screen: \"Classification: bounded. login() already exists in app.js:4 with exactly one caller (app.js:23)... so this is a short design in chat, no spec file.\" Running `ls -R coding-agent-workdir/docs` returned \"No such file or directory\"."
+    },
+    {
+      "criterion": "Spec doc presented for review before any implementation code",
+      "verdict": "fail",
+      "evidence": "No spec document exists. The agent asked for approval of an in-chat design instead: \"Does this look right? I'll implement once you confirm.\" `git status` shows only \"M app.js\", and no new commits after the fixture commit b01b423."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec document",
+      "verdict": "fail",
+      "evidence": "The agent stated \"Classification: bounded\" and \"short design in chat, no spec file\". After \"looks good, go ahead\" it went straight to Edit on app.js; the log shows no spec Write."
+    },
+    {
+      "criterion": "Did NOT classify as spike / throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "The classification was \"bounded\", not spike. No probe plan was presented; the screen shows a design with Approach, Files touched and Testing sections."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 232520,
+  "usage": {
+    "inputTokens": 40,
+    "outputTokens": 3749,
+    "cacheCreationInputTokens": 22937,
+    "cacheReadInputTokens": 235612,
+    "turns": 18
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

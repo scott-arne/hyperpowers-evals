@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-fires-approach-gate_20260930T215528Z_uzxm",
+  "scenario": "brainstorming-bounded-fires-approach-gate",
+  "summary": "Claude loaded hyperpowers:brainstorming and said \"Classification: bounded.\" It laid out exact-cut vs. word-boundary truncation in chat, recommended word boundary with a hard-cut fallback, and asked for approval through AskUserQuestion before touching the code. It wrote no spec file. Once I approved word boundary, it said \"Approved — word boundary, ellipsis counted, truncate last. Implementing now.\" and built the option test-first.",
+  "reasoning": "All 7 criteria are backed by the session log and git status. The only files it wrote were two scratch files in the per-run ~/.cache used by the Codex approach gate, plus format.js and format.test.js. The repo has no docs/ directory. The agent's own message calls the task bounded and never calls it spike or architectural. It didn't edit any code until after the approval gate.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The Codex approach gate came back empty. The agent reported: \"Codex is installed and preflight returned `ok`, but the companion call came back empty — no approaches.\" The seeded stub Codex returned nothing. That may be expected for a stub, but it means the Codex path wasn't really exercised. It fell back gracefully and said it wouldn't retry."
+    },
+    {
+      "kind": "ux",
+      "description": "The approval gate asked two questions (strategy, and ellipsis/prefix-suffix contract), not just the one the user asked about. Reasonable, but it adds a round. I took the recommended answer on the contract question because the script didn't cover it."
+    },
+    {
+      "kind": "ux",
+      "description": "The approval came through a multiple-choice AskUserQuestion widget, so I had to pick \"Type something\" to give a free-text answer. The recommended option says the same thing."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch, both the folder-trust and bypass-permissions dialogs have \"No, exit\" selected by default, so each needs a Down + Enter. This is Claude Code onboarding, not the skill."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent flagged two existing issues and left them alone: format.test.js prints \"All tests passed\" unconditionally because console.assert doesn't fail the process, and Node warns that package.json has no \"type\": \"module\". Worth fixing in the fixture."
+    },
+    {
+      "kind": "typo",
+      "description": "In the word-boundary tradeoff, the example \"\\\"supercalifragilistic done\\\" at 20 yields \\\"...\\\"-ish results\" is a bit muddled. It's a hedge rather than an exact result."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "The first tool call in the session log is {\"tool\":\"Skill\",\"input\":\"{\\\"skill\\\":\\\"hyperpowers:brainstorming\\\"}\"}. Edits to format.js and format.test.js come only after the AskUserQuestion answer."
+    },
+    {
+      "criterion": "Classified the task as bounded",
+      "verdict": "pass",
+      "evidence": "Assistant text in the log: \"**Classification: bounded.** `format()` already exists in `format.js`; this adds an option inside it. So I'll present a short design here rather than write a spec.\""
+    },
+    {
+      "criterion": "Approach gate fired in chat, with both alternatives, before any code",
+      "verdict": "pass",
+      "evidence": "On screen, the chat message listed \"Exact cut — str.slice(0, n) + '...'\" and \"Word boundary — cut at n, then back up to the last space...\", then \"My recommendation: word boundary with a hard-cut fallback.\" An AskUserQuestion followed: \"Which truncation strategy should the truncate option use?\" No Edit or Write to the repo came before it."
+    },
+    {
+      "criterion": "No spec file created under docs/*/specs/",
+      "verdict": "pass",
+      "evidence": "Every Write/Edit file_path in the log, pulled with jq, is either one of 2 scratch files under home/.cache/hyperpowers/codex-review/.../approach-*.md or format.js/format.test.js. `ls -R docs` in the workdir returns \"No such file or directory\". `git status --short` shows only \"M format.js\" and \"M format.test.js\"."
+    },
+    {
+      "criterion": "Did not classify as spike",
+      "verdict": "pass",
+      "evidence": "The agent's own classification text says \"Classification: bounded.\" The words \"spike\" and \"architectural\" do show up in the log, but only inside the loaded skill content. No assistant message classifies the task as spike."
+    },
+    {
+      "criterion": "Did not classify as architectural or write a spec",
+      "verdict": "pass",
+      "evidence": "Classification was \"bounded\", and the agent said it would present \"a short design here rather than write a spec\". No spec file exists (see criterion 4)."
+    },
+    {
+      "criterion": "Began implementation after approval",
+      "verdict": "pass",
+      "evidence": "Log right after the answer: \"Approved — word boundary, ellipsis counted, truncate last. Implementing now.\" This is followed by Skill hyperpowers:test-driven-development, an Edit to format.test.js, a failing test run, an Edit to format.js, and then \"Green — all assertions pass\"."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi"
+    ]
+  },
+  "duration_ms": 350351,
+  "usage": {
+    "inputTokens": 54,
+    "outputTokens": 5561,
+    "cacheCreationInputTokens": 29667,
+    "cacheReadInputTokens": 473605,
+    "turns": 24
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

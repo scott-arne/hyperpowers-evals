@@ -1,0 +1,40 @@
+
+  [34mif[39m ([34mtypeof[39m localStorage !== [31m"undefined"[39m) {
+    globalThis.Identity = [33mcreateIdentity[39m(localStorage, [34mDate[39m.now);
+  }
+  [34mif[39m ([34mtypeof[39m module !== [31m"undefined"[39m) module.exports = { createIdentity };
+
+  The browser gets its global; Node gets the factory and never touches [38;5;153mlocalStorage[39m. [38;5;153mpackage.json[39m has no [38;5;153m"type"[39m field
+  and [38;5;153msrc/[39m is already CommonJS, so [38;5;153mrequire[39m is the consistent choice. The only addition there is [38;5;153m"scripts": { "test": [39m
+  [38;5;153m"node --test" }[39m.
+
+  [1mTest doubles[0m — a ~10-line in-memory storage object ([38;5;153mgetItem[39m/[38;5;153msetItem[39m/[38;5;153mremoveItem[39m over a [38;5;153mMap[39m), a variant that throws on
+  every call, and a mutable [38;5;153mnow()[39m. No DOM, no dependencies.
+
+  [1m[38;5;153mtest/identity.test.js[0m covers the behavior we actually decided:
+
+  - Round-trip: [38;5;153mset[39m then [38;5;153mget[39m returns the id; [38;5;153mget[39m with nothing stored returns [38;5;153mnull[39m.
+  - TTL boundary, both sides: readable at 29 days, [38;5;153mnull[39m at 31 — and the 31-day case also asserts the record was [3mremoved[0m,
+    not just hidden.
+  - Re-login refreshes the window: setting the same id again updates [38;5;153mstoredAt[39m, so an active user doesn't expire mid-use.
+  - Different user overwrites: after [38;5;153mset("a")[39m then [38;5;153mset("b")[39m, [38;5;153mget()[39m is [38;5;153m"b"[39m and no trace of [38;5;153m"a"[39m remains.
+  - [38;5;153mclear()[39m removes the record.
+  - Malformed record → [38;5;153mnull[39m and removed. Three cases: unparseable JSON, missing [38;5;153muserId[39m, unrecognized [38;5;153mv[39m.
+  - Future [38;5;153mstoredAt[39m → [38;5;153mnull[39m and removed.
+  - Throwing storage: [38;5;153mset[39m doesn't propagate, [38;5;153mget[39m returns [38;5;153mnull[39m.
+  - [38;5;153mset(null)[39m and [38;5;153mset("")[39m write nothing.
+
+  [1mWhat this does not cover, stated plainly.[0m The submit handler, the [38;5;153mawait[39m, and the [38;5;153m<script>[39m ordering need a DOM, and a
+  DOM means a dependency we chose not to take. Those get manual verification instead: open [38;5;153mindex.html[39m, log in, confirm
+  [38;5;153mwebapp:identity[39m appears in devtools with the expected shape, log in as a different username, confirm the value is
+  replaced rather than duplicated. I'll report that as manual, not as a passing test.
+
+  If Section 3 looks right, I'll write the spec to [38;5;153mdocs/hyperpowers/specs/2026-09-30-persistent-user-id-design.md[39m
+  (uncommitted), self-review it, run the Codex spec gate, and hand it to you to read before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mBaked for 28s · done 4:03 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

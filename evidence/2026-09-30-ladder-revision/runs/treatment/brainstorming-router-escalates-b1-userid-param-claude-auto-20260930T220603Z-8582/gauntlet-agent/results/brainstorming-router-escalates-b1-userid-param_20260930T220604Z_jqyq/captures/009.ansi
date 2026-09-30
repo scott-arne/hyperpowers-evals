@@ -1,0 +1,40 @@
+  One thing blocks me before I can write anything:
+
+  [1mThe fork: there is no [38;5;153muserId[39m at the call site.[0m The submit handler reads only [38;5;153m#username[39m and [38;5;153m#password[39m from the form
+  ([38;5;153mapp.js:19-20[39m), and [38;5;153mlogin[39m currently returns [38;5;153m{ success: true, user: username }[39m. Adding a parameter is easy; the real
+  question is what value flows into it, and the three plausible answers produce different interfaces.
+
+  - [1m[38;5;153muserId[39m [3mis[0;1m the username[0m — then no new parameter is needed at all; [38;5;153mlogin[39m already knows who logged in, and the work is
+    purely in what gets tracked. Cheapest, and nothing to undo later.
+  - [1m[38;5;153muserId[39m is a client-generated correlation id[0m (e.g. [38;5;153mcrypto.randomUUID()[39m per attempt) — lets you tie a login attempt to
+    later events before the server has authenticated anyone. Adds a parameter the caller must mint. Cheap to change
+    now, annoying once anything downstream parses the id format.
+  - [1m[38;5;153muserId[39m comes from outside the form[0m — a tenant/account/customer id you already hold in the page. This is the one that
+    needs new plumbing: something has to put that id where the handler can read it. Most expensive, hardest to reverse,
+    because it changes what the page has to know before login runs.
+
+  There's also a sharp edge worth naming regardless of which you pick: identifiers in [38;5;153mconsole.log[39m are client-side and
+  visible in the browser console, so whatever you pass shouldn't be anything you'd mind a user reading.
+
+  My recommendation is the first. "Track who logged in" is already satisfiable with the [38;5;153musername[39m the function receives —
+  adding a [38;5;153muserId[39m parameter that the only caller would populate with the username buys a wider signature and no
+  information. If you need the tracking to survive past the console, that's a separate, worthwhile change I'd rather
+  scope on its own.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ userId source [39m[49m ☐ Tracking sink  ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhat value should flow into `userId`? The login form only has username and password today.[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mUse existing username (Recommended)[39m
+     [38;5;246mNo new parameter. `login` already receives `username`; improve what gets tracked instead. Nothing to undo later.[39m
+  [38;5;246m2.[39m Generated correlation id
+     [38;5;246mCaller mints a per-attempt id (e.g. `crypto.randomUUID()`) and passes it as `userId`. Ties an attempt to later [39m
+     [38;5;246mevents.[39m
+  [38;5;246m3.[39m Id from outside the form
+     [38;5;246mA tenant/account id the page already holds. Requires new plumbing to get it to the submit handler — the largest [39m
+     [38;5;246mchange.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

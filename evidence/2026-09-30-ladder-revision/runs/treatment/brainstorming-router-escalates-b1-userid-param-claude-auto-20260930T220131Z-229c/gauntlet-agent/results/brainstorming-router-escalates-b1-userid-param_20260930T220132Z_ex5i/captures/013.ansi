@@ -1,0 +1,40 @@
+  value with a TODO. What's left is where the storage code lives — and the wrinkle is that this repo has two worlds.
+  [38;5;153msrc/[39m is Node CommonJS ([38;5;153mrequire[39m/[38;5;153mmodule.exports[39m), while [38;5;153mapp.js[39m is a plain browser script with globals, loaded by a bare
+  [38;5;153m<script src>[39m tag in [38;5;153mindex.html:13[39m. Neither convention obviously governs the new code.
+
+  [1mA. Separate [38;5;153msession.js[39m browser script (recommended).[0m A new file loaded before [38;5;153mapp.js[39m, exposing [38;5;153mwindow.Session = { [39m
+  [38;5;153msave, read, clear }[39m. It owns the sessionStorage key and the stored shape; [38;5;153mapp.js[39m never touches [38;5;153msessionStorage[39m
+  directly. Matches the existing plain-script pattern — no build step, no change to how the page loads. Costs one new
+  file, one new [38;5;153m<script>[39m tag, and one new global. [3mModerate.[0m
+
+  [1mB. Inline helpers in [38;5;153mapp.js[39m.[0m Three small functions in the file that's already there. Smallest diff, no new globals, no
+  load-order to get wrong. But it puts storage ownership in the same file as form wiring and the API stub, which is how
+  that file turns into a grab bag — and there's no boundary to test or reuse if a second page ever needs the session.
+  [3mTrivial.[0m
+
+  [1mC. Convert the browser side to ES modules.[0m [38;5;153m<script type="module">[39m plus a real [38;5;153mimport[39m/[38;5;153mexport[39m boundary, closer to [38;5;153msrc/[39m's
+  style. Cleanest long-term and where this lands if the app grows. But module scripts are deferred and blocked by CORS
+  on [38;5;153mfile://[39m, so opening [38;5;153mindex.html[39m directly would stop working — a real behavior change to buy structure this feature
+  doesn't need yet. [3mModerate-to-high.[0m
+
+  I recommend [1mA[0m. You escalated this to a storage concern deliberately, and the value of treating it as one is the
+  boundary: a single place that knows the key name and the stored shape, so when the real API arrives or a logout
+  appears, there's one file to change. B saves ten lines and gives that up. C is the right end state but pays a
+  page-loading regression now for it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should I design against?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: separate session.js (Recommended)[39m
+     [38;5;246mNew global script owning the sessionStorage key and shape; app.js calls window.Session. Matches the existing [39m
+     [38;5;246mplain-script pattern, no build step.[39m
+  [38;5;246m2.[39m B: inline in app.js
+     [38;5;246mThree helper functions in the existing file. Smallest diff, but no boundary and no reuse.[39m
+  [38;5;246m3.[39m C: convert to ES modules
+     [38;5;246mReal import/export boundary, but module scripts break opening index.html over file://.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

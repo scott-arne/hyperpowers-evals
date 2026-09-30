@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Locked: a stable per-person id in [38;5;153mlocalStorage[39m.
+
+  Second question — this is the "works across the app" part.
+
+  [1mThe fork:[0m how does a future form [3mget[0m the id into its call?
+
+  - [1mShared module, explicit parameter at each call site.[0m [38;5;153msrc/identity.js[39m exports [38;5;153mgetUserId()[39m; callers write
+    [38;5;153mlogin(username, password, getUserId())[39m. The signature declares the dependency, tests can pass a fixed id with no
+    mocking, and you can see at a glance which calls are tracked. Cost: every new form has to remember to pass it, and a
+    forgotten one fails silently as [38;5;153mundefined[39m.
+  - [1mShared module, read internally by each function.[0m Signatures stay as they are; [38;5;153mlogin()[39m calls [38;5;153mgetUserId()[39m itself.
+    Impossible to forget, nothing to thread through. Cost: a hidden global dependency that tests must stub, and it isn't
+    a parameter — it walks back the thing you asked for.
+  - [1mA submit-handler wrapper that injects it.[0m One [38;5;153mwithUserId(handler)[39m at the form-binding layer; new forms opt in by
+    wrapping. Consistent by construction, but it's the most machinery for an app with one form today, and it only helps
+    calls that originate from form submits.
+
+  [1mMy recommendation: the shared module with an explicit parameter.[0m It's what you approved, it keeps [38;5;153mlogin()[39m a pure
+  function of its inputs, and the "forgot to pass it" failure is cheap to catch — I'd have [38;5;153mlogin()[39m log a warning when
+  [38;5;153muserId[39m is missing rather than let it go silently undefined. Option 2 is genuinely better at the "other forms won't
+  forget" goal, so if that's your real worry, say so and I'll flip.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Wiring [39m[49m
+
+[1m[38;5;231mHow should callers obtain and pass the userId?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mShared module + explicit param (Recommended)[39m
+     [38;5;246msrc/identity.js exports getUserId(); each call site passes it: login(username, password, getUserId()). Explicit and
+[39m     [38;5;246mtestable; callers must remember.[39m
+  [38;5;246m2.[39m Shared module, read internally
+     [38;5;246mlogin() calls getUserId() itself. Signatures unchanged, impossible to forget, but a hidden dependency and not [39m
+     [38;5;246mactually a parameter.[39m
+  [38;5;246m3.[39m Submit-handler wrapper injects it
+     [38;5;246mwithUserId(handler) at the form-binding layer. Consistent by construction, most machinery, only covers [39m
+     [38;5;246mform-submit-originated calls.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  That names a shared session/user-state module and a storage mechanism — neither exists in this repo — plus consumers
+  that don't exist yet. That's architectural, not bounded, so I'm stepping up to the full process: questions,
+  approaches, a written spec for your review, then a plan. The ratchet only goes one way; I'm not going to implement the
+  one-line version and call the rest future work.
+
+  Two constraints I found that shape this:
+
+  - [38;5;153mapp.js[39m is a plain script tag ([38;5;153mindex.html:13[39m) with no modules or bundler. [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m use CommonJS
+    and are never loaded by the page. So "shared across the app" means picking a module story for the browser side —
+    there isn't one today.
+  - Persisting a user identifier client-side is auth-adjacent. Anything in [38;5;153mlocalStorage[39m is readable and writable by the
+    user, so the stored ID can be a display/tracking convenience but must never be what the server trusts to decide who
+    you are. I'll design to that line; tell me if your backend already works differently.
+
+  First question — this one drives the storage choice and most of the rest:
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What does "persist" need to survive? → Page reloads + new tabs[39m
+
+[38;5;231m⏺[39m Next: where the ID actually comes from. Right now [38;5;153mlogin()[39m is a stub ([38;5;153mapp.js:4-8[39m) — it returns [38;5;153m{ success: true, user: [39m
+  [38;5;153musername }[39m and never calls [38;5;153mAPI_ENDPOINT[39m. My recommendation was "return the userId from login", which only produces a
+  real ID if something real is answering.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Backend [39m[49m
+
+[1m[38;5;231mDoes this work include wiring login to a real backend?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mKeep the stub[39m
+     [38;5;246mlogin stays a stub; it synthesizes a userId so the session plumbing can be built and tested now. Real API swapped [39m
+     [38;5;246min later.[39m
+  [38;5;246m2.[39m Wire up the real API
+     [38;5;246mlogin POSTs to API_ENDPOINT and reads userId from the response. Adds async, error handling, and a response contract
+[39m     [38;5;246mto the design.[39m
+  [38;5;246m3.[39m Real API exists, shape unknown
+     [38;5;246mThere is a backend but I should confirm its response shape before designing against it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

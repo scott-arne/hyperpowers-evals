@@ -1,0 +1,40 @@
+
+  [1mRecommendation: word boundary, with a hard cut as the fallback.[0m The extra cost is about four lines, and the fallback
+  removes the only case where word-boundary logic is ambiguous. Cutting mid-word ([38;5;153m"hello wo..."[39m) reads as a rendering
+  bug; [38;5;153m"hello..."[39m reads as deliberate.
+
+  [1mWhere it goes in the chain.[0m Since you chose "the result never exceeds [38;5;153mmaxLength[39m," truncation has to be the [3mlast[0m step
+  in [38;5;153mformat()[39m — after [38;5;153mprefix[39m and [38;5;153msuffix[39m. If it ran on the core string first, a prefix would push the return value back
+  over the cap and the guarantee would be false. Consequence worth naming: a long enough [38;5;153mprefix[39m can eat the whole budget
+  and a [38;5;153msuffix[39m can be cut off entirely. That is the honest reading of a hard cap; the alternative is a cap that doesn't
+  cap.
+
+  [1mOption shape.[0m One flat numeric option, [38;5;153mmaxLength[39m, matching the existing [38;5;153mif (options.X)[39m style. Guarded with
+  [38;5;153moptions.maxLength != null[39m rather than truthiness, so [38;5;153mmaxLength: 0[39m behaves instead of being silently ignored.
+
+  [1mAlgorithm.[0m If the string already fits, return it untouched — no ellipsis. Otherwise take the first [38;5;153mmaxLength - 3[39m
+  characters, walk back to the last whitespace in that slice, trim trailing space, and append [38;5;153m'...'[39m. If there is no
+  whitespace in the slice, keep the hard cut.
+
+  [1mDegenerate cases[0m (the part that actually needs a decision):
+
+  - [38;5;153mmaxLength <= 3[39m — no room for a meaningful ellipsis. I'll return [38;5;153mmaxLength[39m characters of the content instead of a
+    bare [38;5;153m"..."[39m, since three dots convey nothing. Cheap to flip if you disagree.
+  - First word longer than the budget — hard-cut fallback, as above.
+  - [1mKnown tradeoff:[0m when the only whitespace sits very early, word-boundary mode wastes budget. [38;5;153mformat("a [39m
+    [38;5;153mverylongwordhere b", { maxLength: 15 })[39m yields [38;5;153m"a..."[39m, not 15 characters of content. Fixable with a tolerance guard
+    ("only back up if it costs less than N chars"), but that adds a magic number — I'd leave it out unless you want it.
+
+  [1mFiles touched.[0m [38;5;153mformat.js[39m (the new block), [38;5;153mformat.test.js[39m (new [38;5;153mconsole.assert[39m lines in the existing style — no test
+  runner added). Verified with [38;5;153mnode format.test.js[39m. Note that [38;5;153mconsole.assert[39m only warns, it doesn't fail the process;
+  I'm following the local pattern rather than changing it, but say the word if you'd rather I make failures exit
+  non-zero.
+
+  Does this look right? I'll hold here until you say go.
+
+[38;5;246m✻[39m [38;5;246mSautéed for 2m 14s · done 3:03 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

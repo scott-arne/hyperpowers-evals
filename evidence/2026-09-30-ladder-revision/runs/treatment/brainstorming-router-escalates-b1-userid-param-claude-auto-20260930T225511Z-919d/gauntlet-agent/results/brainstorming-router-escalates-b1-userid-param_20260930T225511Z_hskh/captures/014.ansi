@@ -1,0 +1,40 @@
+  putting a stealable credential in a place JavaScript can read. It also keeps this design honest about the fact that
+  the backend contract is still assumed.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What does the persisted client-side identity contain? → Identifier only (Recommended)[39m
+
+[38;5;231m⏺[39m Next: how the shared layer is actually delivered. This is a real fork because of how this repo is wired — [38;5;153mindex.html[39m
+  loads [38;5;153mapp.js[39m as a plain classic script, while [38;5;153msrc/[39m uses CommonJS [38;5;153mrequire[39m for Node. Neither gives the browser a module
+  system, so "readable across the app by other forms later" needs one picked:
+
+  - [1mES modules[0m — switch [38;5;153mindex.html[39m to [38;5;153m<script type="module" src="app.js">[39m and use real [38;5;153mimport[39m/[38;5;153mexport[39m for an identity
+    module. Native, no build step, and it's the direction the platform settled on. It changes the script's loading
+    semantics (deferred, module scope, and it won't load over [38;5;153mfile://[39m — it needs a local server), so it's a small but
+    real behavior change to the existing page.
+  - [1mGlobal on [38;5;153mwindow[0m — a second [38;5;153m<script>[39m defines [38;5;153mwindow.Identity[39m before [38;5;153mapp.js[39m runs. Zero change to how anything loads
+    and it works from [38;5;153mfile://[39m. But load order becomes an invisible dependency, and a global is the thing you'd have to
+    unpick later when there are several consumers.
+  - [1mAdd a bundler[0m — the most conventional answer for a real app, and the most machinery: a build step, a dependency, and
+    a [38;5;153mpackage.json[39m that currently has no scripts and no dependencies at all.
+
+  I recommend [1mES modules[0m: it gives you a genuine shared module for the future forms without adding a build system to a
+  repo that has none, and the cost is one attribute plus serving over http instead of opening the file directly.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module delivery [39m[49m
+
+[1m[38;5;231mHow should the shared identity module be delivered to the browser?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mscript type=module + import/export. Native, no build step. Requires serving over http rather than opening [39m
+     [38;5;246mindex.html directly.[39m
+  [38;5;246m2.[39m Global on window
+     [38;5;246mExtra script tag defining window.Identity. Works from file://, no loading change, but relies on script order and is
+[39m     [38;5;246mharder to unpick later.[39m
+  [38;5;246m3.[39m Add a bundler
+     [38;5;246mConventional for a real app, but introduces a build step and dependencies into a repo that currently has neither.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

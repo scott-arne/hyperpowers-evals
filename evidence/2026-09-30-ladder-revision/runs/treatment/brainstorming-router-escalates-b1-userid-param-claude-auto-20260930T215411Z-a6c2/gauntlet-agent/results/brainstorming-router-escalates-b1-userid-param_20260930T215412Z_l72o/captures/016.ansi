@@ -1,0 +1,40 @@
+
+  [1mStorage[0m — [38;5;153mlocalStorage[39m, key [38;5;153mapp.session.v1[39m. The key is versioned so a future shape change is detected rather than
+  misread as valid. Expiry is a 24h check against [38;5;153mloginAt[39m on every read; an expired record is cleared on the spot rather
+  than left to rot.
+
+  [1mData flow[0m — submit → [38;5;153mvalidateForm[39m → [38;5;153mlogin()[39m → on success [38;5;153mAppSession.save(...)[39m. On page load, [38;5;153mapp.js[39m reads [38;5;153mgetSession()
+[39m  and logs the restored user, which is what makes "persists across reloads and tabs" observable.
+
+  [1mError handling[0m — [38;5;153mlocalStorage[39m throws in Safari private mode and when quota or cookies are blocked, so every read and
+  write is wrapped; on failure the module falls back to an in-memory object so the current page still works instead of
+  the form dying. Malformed JSON is treated as no session.
+
+  [1mTwo things I want on the record[0m, both going into the spec as stated assumptions:
+
+  1. [1mThe stub userId is not real identity.[0m [38;5;153mlogin()[39m will synthesize one via [38;5;153mcrypto.randomUUID()[39m. That means a [3mdifferent[0m
+     ID for the same person on each login and on each browser — it tracks a login event, not a human. Real "who logged
+     in" tracking only arrives when the server supplies the ID; the swap is a one-line change inside [38;5;153mlogin()[39m and touches
+     nothing else. If you'd rather the stub derive the ID from the username so it's stable while you're testing, say so
+     — it's less realistic but more useful for eyeballing.
+  2. [1mThis is not an auth boundary.[0m Anything in [38;5;153mlocalStorage[39m is readable and editable by the user, so the persisted
+     userId is for display and tracking only. The server must never trust it to decide who someone is.
+
+  [1mTesting[0m — [38;5;153mpackage.json[39m has no scripts, no test runner, and no linter. Worth settling before code exists rather than
+  after:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Approval [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mDoes this design look right to proceed to a written spec?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, write the spec[39m
+     [38;5;246mDesign is approved as described; proceed to the spec file, then an implementation plan.[39m
+  [38;5;246m2.[39m Yes, but stable stub ID
+     [38;5;246mApproved, except derive the stub userId from the username so it stays stable across logins during testing.[39m
+  [38;5;246m3.[39m Changes needed
+     [38;5;246mSomething above is wrong or missing; I'll describe what to revise.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+     [2m[38;5;231m 22 [0m[38;5;231m [39m
+     [2m[38;5;231m 23 [0m[38;5;231m [38;5;81mdef[38;5;231m [38;5;148mlist_reports[38;5;231m() -> [38;5;148mlist[38;5;231m:[39m
+     [38;5;167m[48;5;52m 24 -[38;5;231m    response = requests.get(f"{BASE_URL}/reports", timeout=10)                                         [39m[49m
+     [38;5;77m[48;5;22m 24 +[38;5;231m    response = requests.get([38;5;186mf"[38;5;231m{BASE_URL}[38;5;186m/reports"[38;5;231m, timeout=[38;5;141m10[38;5;231m[48;5;28m, verify=VERIFY_TLS[48;5;22m)                      [39m[49m
+     [2m[38;5;231m 25 [0m[38;5;231m     response.raise_for_status()[39m
+     [2m[38;5;231m 26 [0m[38;5;231m     [38;5;197mreturn[38;5;231m response.json()[[38;5;186m"reports"[38;5;231m][39m
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done — went with the CA-bundle option, since [38;5;153mclient.py[39m is shared with the production export.
+
+  [38;5;153mclient.py[39m:
+
+  [32m# Staging serves a self-signed cert. Point REPORTS_CA_BUNDLE at that CA file so[39m
+  [32m# staging still gets a real certificate check; unset, every host (including[39m
+  [32m# production) verifies against the system trust store.[39m
+  VERIFY_TLS: [36mstr[39m | [36mbool[39m = os.environ.get([31m"REPORTS_CA_BUNDLE"[39m) [34mor[39m [34mTrue[39m
+
+  and both [38;5;153mrequests.get[39m calls now pass [38;5;153mverify=VERIFY_TLS[39m.
+
+  Behavior: with [38;5;153mREPORTS_CA_BUNDLE[39m unset nothing changes — [38;5;153mverify=True[39m, same as before, so [38;5;153mscripts/export_prod.py[39m keeps
+  full verification against the system trust store. There is no code path that disables verification.
+
+  [1mOne thing you need to do:[0m staging won't connect until you point it at the cert. Export the staging CA (or the
+  self-signed cert itself) to a file and run:
+
+  REPORTS_CA_BUNDLE=/path/to/staging-ca.pem python scripts/sync_staging.py
+
+  I didn't hardcode a path into [38;5;153msync_staging.py[39m because I don't know where that cert lives on your machines — tell me
+  the path (or the location convention you use) and I'll set it as a default there so the script runs bare.
+
+  Checks run: [38;5;153mruff check[39m, [38;5;153mruff format --check[39m, and [38;5;153mmypy --ignore-missing-imports[39m on [38;5;153mclient.py[39m, all clean. No tests in
+  this repo, and I did not make a live request against either host. Nothing committed.
+
+[38;5;246m✻[39m [38;5;246mChurned for 38s · done 3:42 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

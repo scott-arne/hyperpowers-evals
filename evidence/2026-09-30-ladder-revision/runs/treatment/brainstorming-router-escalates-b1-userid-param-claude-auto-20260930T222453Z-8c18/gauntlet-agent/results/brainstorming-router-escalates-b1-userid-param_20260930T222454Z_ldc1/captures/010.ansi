@@ -1,0 +1,40 @@
+  One more question decides the design, and then I'll lay out approaches.
+
+  [1mThe fork:[0m what [38;5;153mlogin[39m does with an ID it's handed. Your original framing was tracking — "so we can track who logged in"
+  — but a previously-stored user ID arriving as an input to authentication can mean something much stronger, and the
+  two need different designs.
+
+  - [1mRecord only.[0m The ID rides along as context on the login attempt — it goes into the log line and, later, the request
+    payload, so you can see "this browser, previously user 4821, just attempted a login." It never affects whether the
+    login succeeds. Small, safe, and matches your original sentence.
+  - [1mInfluence authentication.[0m The backend uses the passed ID to recognize a returning user — resume a session, skip a
+    step, pre-authorize. This is a genuine auth-surface change: an identifier held in the browser and persisted across
+    visits starts carrying authority, which makes where we store it a security decision rather than a convenience one.
+    Buildable, but it needs to be a deliberate choice, and it changes what I'd recommend for storage.
+  - [1mGuard against account switching.[0m The stored ID is compared to who just logged in; a mismatch means a different
+    person is on this browser, so we clear the stored state rather than leaking the previous user's ID into their forms.
+    Useful safety behavior, and worth having regardless — but as the [3mprimary[0m purpose it's a narrow feature.
+
+  My recommendation is record-only, with the mismatch clearing from the third option folded in as a rule rather than as
+  its own feature. That keeps the persisted ID non-authoritative — it's a breadcrumb, not a credential — which means
+  storing it in the browser carries no authentication risk, and it's still exactly the thing that makes "other forms
+  need it later" work. If you want the second option, I'll design for it, but I'd want to say plainly in the spec that a
+  browser-held ID influencing auth needs the backend to treat it as untrusted input.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Param purpose [39m[49m
+
+[1m[38;5;231mWhat should login do with a userId passed into it?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mRecord only (Recommended)[39m
+     [38;5;246mRides along as tracking context; never affects the auth outcome. Persisted ID stays non-authoritative. Includes [39m
+     [38;5;246mclearing on account mismatch.[39m
+  [38;5;246m2.[39m Influence authentication
+     [38;5;246mBackend uses it to recognize a returning user. Makes the stored ID auth-relevant — a real security surface to [39m
+     [38;5;246mdesign around.[39m
+  [38;5;246m3.[39m Guard account switching only
+     [38;5;246mCompare against who just logged in; clear stored state on mismatch. Narrow, but safe.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

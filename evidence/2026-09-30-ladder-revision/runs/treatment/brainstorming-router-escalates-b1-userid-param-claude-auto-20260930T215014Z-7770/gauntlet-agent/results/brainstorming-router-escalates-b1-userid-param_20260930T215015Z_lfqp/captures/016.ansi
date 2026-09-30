@@ -1,0 +1,40 @@
+  - [1mIn-memory only (a module holding state)[0m — the ID lives in a JS variable other modules read. Invisible to other tabs,
+    gone on refresh. Safest by default. Fine if you go single-page; painful if [38;5;153mindex.html[39m becomes several pages, since
+    every navigation is a fresh login.
+  - [1m[38;5;153msessionStorage[0m — survives refresh, dies when the tab closes, not shared across tabs. A reasonable middle ground, and
+    the ID alone is low-sensitivity. Readable by any script on the page.
+  - [1m[38;5;153mlocalStorage[0m — survives everything until explicitly cleared. This is what people usually mean by "persist," and it's
+    the one I'd push back on for anything beyond the bare ID: any injected script can read it, and there's no expiry
+    unless you build one.
+  - [1mCookie, [38;5;153mHttpOnly[39m + [38;5;153mSecure[39m, set by the server[0m — the token becomes unreadable to JavaScript, which is the strongest
+    option, but it requires backend cooperation and gives you a non-trivial CSRF story to handle. The ID itself could
+    still ride in a readable cookie or come from the response.
+
+  [1mMy recommendation: [38;5;153msessionStorage[39m for the user ID, and keep the auth token out of web storage entirely[0m — in memory, or
+  in an [38;5;153mHttpOnly[39m cookie if the backend will set one. The ID is an identifier, not a credential; leaking it is bad but
+  survivable. The token is the credential, and putting it in [38;5;153mlocalStorage[39m is the single most common way apps turn a
+  minor XSS into full account takeover. Splitting them costs you almost nothing here and is much harder to retrofit
+  later.
+
+  Cheap to change afterward: the storage mechanism, if it's behind a small accessor module. Expensive to change: whether
+  the token was ever written to web storage, because by then every deployed client has one sitting there.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mHow long should the user ID persist, and where should it live?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153msessionStorage, token separate (Recommended)[39m
+     [38;5;246mID in sessionStorage (survives refresh, dies with the tab); auth token kept in memory or an HttpOnly cookie, never
+[39m     [38;5;246min web storage. Balances usability against XSS blast radius.[39m
+  [38;5;246m2.[39m localStorage
+     [38;5;246mSurvives browser restarts until cleared. What most people mean by 'persist', but readable by any injected script [39m
+     [38;5;246mand needs a hand-built expiry.[39m
+  [38;5;246m3.[39m In-memory module only
+     [38;5;246mSafest: nothing written to disk, gone on refresh. Workable only if the app stays single-page.[39m
+  [38;5;246m4.[39m HttpOnly cookie from server
+     [38;5;246mStrongest protection for the token — unreadable to JavaScript. Requires backend changes and a CSRF defense.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

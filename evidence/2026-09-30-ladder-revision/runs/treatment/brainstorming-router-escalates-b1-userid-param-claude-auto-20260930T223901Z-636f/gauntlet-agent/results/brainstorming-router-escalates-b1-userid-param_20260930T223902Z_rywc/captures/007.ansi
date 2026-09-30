@@ -1,0 +1,40 @@
+  user store, no API response carrying one. So a [38;5;153muserId[39m parameter has nothing to pass at the only call site.
+
+  [1mThe fork:[0m what [38;5;153muserId[39m is, and who produces it. These differ in what happens afterward, not just in naming.
+
+  - [1mA) [38;5;153musername[39m is already the identifier — add nothing.[0m Login already logs who logged in. Free, nothing to redo. Rules
+    out nothing; you can add a real ID later. Costs: doesn't satisfy the request literally if you meant a distinct ID.
+  - [1mB) Caller-supplied [38;5;153muserId[39m, added as an optional 3rd param.[0m [38;5;153mlogin(username, password, userId)[39m. Cheap,
+    backward-compatible with the existing call. But the caller has no ID to supply, so the call site passes [38;5;153mundefined[39m
+    until something upstream produces one — the parameter is dead until then.
+  - [1mC) [38;5;153muserId[39m comes back from the server, not into the function.[0m Track it from [38;5;153mlogin()[39m's [3mreturn value[0m ([38;5;153m{ success, user,
+[39m    [38;5;153muserId }[39m) rather than as a parameter. Matches how IDs normally flow (the server knows the ID; the browser doesn't).
+    Not a signature change at all. Costs: the API is a stub here, so it means deciding the response shape.
+  - [1mD) You meant a real tracking/analytics path[0m — logging logins somewhere durable. That's a new subsystem, not this
+    signature. I'd re-classify as architectural and we'd brainstorm it properly.
+
+  [1mMy recommendation: C[0m, or [1mB[0m if something upstream (an auth token, a prior session) already has the ID and I just
+  haven't found it. A [38;5;153muserId[39m [3mparameter[0m asks the caller to know something only the server knows, which is why B ends up
+  passing [38;5;153mundefined[39m.
+
+  I haven't changed anything yet.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere does userId come from, and what should "track who logged in" actually do?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn it from login (C)[39m
+     [38;5;246mServer produces the ID; login() returns { success, user, userId }. No signature change. I'd need the intended [39m
+     [38;5;246mresponse shape.[39m
+  [38;5;246m2.[39m Optional 3rd param (B)
+     [38;5;246mlogin(username, password, userId). Backward-compatible, but the one call site has no ID to pass — tell me what [39m
+     [38;5;246mupstream supplies it.[39m
+  [38;5;246m3.[39m username is enough (A)
+     [38;5;246mlogin() already logs the username. No change needed; revisit when a real ID exists.[39m
+  [38;5;246m4.[39m Real tracking subsystem (D)
+     [38;5;246mPersist login events somewhere durable. New subsystem — I'd re-classify as architectural and brainstorm it fully.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m
