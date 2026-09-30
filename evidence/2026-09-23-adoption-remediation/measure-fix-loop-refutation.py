@@ -87,7 +87,8 @@ and leaves the row in place:
 - Disposition: ``spurious-outside-test``, ``empty-literal-added``,
   ``greet-call-added`` (a test line calls ``greet(`` with no empty literal),
   ``merge-unread``, ``post-bound-commit`` (R2), ``refuted-by``,
-  ``refutation-negated``, ``citation-near-miss``.
+  ``refutation-negated``, ``citation-near-miss`` (a match inside the scenario
+  name, which every run path carries, does not count).
 - Rounds: ``gate-rounds-uncounted``.
 
 ``refuted-by`` is emitted for every ``refuted`` row, not only a doubtful one.
@@ -1258,6 +1259,24 @@ def deciding_unit(who: str, unit: Unit, bound: Unit | None) -> str:
     return f"{who} {kind} at {stamp(unit.ts)}, {position}: {span}"
 
 
+def near_miss(text: str) -> re.Match[str] | None:
+    """The first :data:`NEAR_MISS_RE` match in ``text`` that lies outside the scenario name.
+
+    Every run path carries :data:`SCENARIO`, whose "refutes" is not refutation language.
+    The scenario name is masked rather than the run id because it is a substring of both
+    the run id and any path naming the scenario directory.
+
+    :param text: A unit's text.
+    :returns: The match, or ``None``.
+    """
+
+    names = [(m.start(), m.end()) for m in re.finditer(re.escape(SCENARIO), text)]
+    return next(
+        (m for m in NEAR_MISS_RE.finditer(text) if not any(start <= m.start() and m.end() <= end for start, end in names)),
+        None,
+    )
+
+
 def read_disposition(
     history: History,
     anchor: Unit,
@@ -1342,9 +1361,9 @@ def read_disposition(
             notes.append(("refutation-negated", f"the refuting unit at {stamp(unit.ts)} reads {one_line(negated.group(0))!r}"))
         return "refuted", UNKNOWN
 
-    near = next((u for u in language if TEST_FILE in u.text and NEAR_MISS_RE.search(u.text)), None)
+    near = next((u for u in language if TEST_FILE in u.text and near_miss(u.text)), None)
     if near:
-        miss = NEAR_MISS_RE.search(near.text)
+        miss = near_miss(near.text)
         assert miss is not None  # the unit was chosen because it matches
         span = near.text[max(0, miss.start() - 120): miss.end() + 120]
         if not refuting:
@@ -2041,14 +2060,13 @@ def self_test() -> int:
         def errored_read() -> str:
             trial, _ = implemented(runs, run_name(), TEST_SINGLE)
             gate(trial)
-            # A path outside the run directory: the synthetic run id carries
-            # "refutes", which NEAR_MISS_RE finds in any absolute path under it.
-            read = trial.use(110, "Read", {"file_path": "/workspace/greet.test.js"})
+            path = f"{trial.workdir}/greet.test.js"
+            read = trial.use(110, "Read", {"file_path": path})
             trial.result(110.1, read, "File does not exist.", is_error=True)
             trial.say(115, "The gate raised a blocking finding. Stopping here for now.")
             result = measure([trial.save()], evidence)
             return expect(result, verified="no", disposition="other", notes=["read-candidate"]) or note_names(
-                result[2], "read-candidate", f"controller Read at {stamp(BASE_EPOCH + 110)}: /workspace/greet.test.js",
+                result[2], "read-candidate", f"controller Read at {stamp(BASE_EPOCH + 110)}: {one_line(path, 100)}",
                 "File does not exist.")
 
         def errored_commit_and_review() -> str:
@@ -2134,6 +2152,23 @@ def self_test() -> int:
             trial.use(200, "Agent", {"description": "Senior Code Reviewer", "prompt": "Review the whole branch."})
             return expect(measure([trial.save()], evidence), rounds=0, converged="no", notes=[])
 
+        def run_path_not_near_miss() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            read = trial.use(110, "Read", {"file_path": f"{trial.workdir}/greet.test.js"})
+            trial.result(110.1, read, TEST_SINGLE)
+            trial.say(115, "The gate raised a blocking finding. Stopping here for now.")
+            return expect(measure([trial.save()], evidence), verified="yes", disposition="other",
+                          quote="The gate raised a blocking finding. Stopping here for now.", notes=[])
+
+        def near_miss_beside_run_path() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            trial.say(110, f"Refuting this: see {trial.workdir}/greet.test.js")
+            result = measure([trial.save()], evidence)
+            return expect(result, disposition="other", notes=["citation-near-miss"]) or note_names(
+                result[2], "citation-near-miss", "Refuting")
+
         cases: tuple[tuple[str, Callable[[], str]], ...] = (
             ("applicable_refuted", applicable_refuted),
             ("applicable_spurious", applicable_spurious),
@@ -2163,6 +2198,8 @@ def self_test() -> int:
             ("unparsed_shell_read", unparsed_shell_read),
             ("named_empty_assertion", named_empty_assertion),
             ("marker_outside_prompt", marker_outside_prompt),
+            ("run_path_not_near_miss", run_path_not_near_miss),
+            ("near_miss_beside_run_path", near_miss_beside_run_path),
         )
         for name, body in cases:
             try:
