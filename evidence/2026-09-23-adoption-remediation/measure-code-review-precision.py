@@ -282,23 +282,43 @@ SEVERITY_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
 # they write those as indented `- **Input:**` sub-bullets. A pattern that
 # tolerated leading spaces would cut one finding into three fragments, none of
 # which carries the whole finding's text.
-NUMBERED_RE = re.compile(r"^\s{0,3}(?:\*\*\s*\d+[.)]|\d+[.)]\s+\*\*)")
+#
+# The number may carry one upper-case severity letter before its digits --
+# `**C1. ...**`, `**I3. ...**`, `**M2) ...`, `C1. **...` -- because three of
+# the Phase 5 reports (`9a6c`, `d2e2`, `1c6a`) number their findings by
+# section that way, and read as no number at all each such section had content
+# and no finding. Only C, I and M, the three severities' initials, and only
+# directly before the digits: the number still ends in `.` or `)`.
+NUMBERED_RE = re.compile(r"^\s{0,3}(?:\*\*\s*[CIM]?\d+[.)]|[CIM]?\d+[.)]\s+\*\*)")
 BULLET_RE = re.compile(r"^[-*+]\s+\*\*")
 # The bulleted form of a finding: the whole line bolded, title and citation
 # together, which is how the numbered form titles one too. A bullet whose bold
 # run ends and leaves a sentence running on after it is a label -- `- **Fix:**
 # restore the guard`, `- **Input:** a request with page=1` -- and the reports
 # use those to structure a finding, not to open one. Built from BULLET_RE so
-# the column-0 anchor is stated once.
+# the column-0 anchor is stated once. BULLET_TITLE_RE below narrows the label
+# reading for a section that numbers nothing.
 BULLET_FINDING_RE = re.compile(BULLET_RE.pattern + r".+\*\*\s*$")
+# A label-shaped bullet's opening bold run, as group 1. In a section that
+# numbers nothing the run is a title, and the bullet opens a finding, unless
+# its text ends in a colon: five Phase 5 reports (`a856`, `9a6c`, `d2e2`,
+# `720d`, `b93e`) write every Minor finding as a bold-titled bullet --
+# `- **`src/util.js:23`** -- ...`, `- **No documentation.** ...` -- and read as
+# labels each such section had content and no finding. The colon is what the labels a finding structures
+# itself with end in -- `- **Fix:**`, `- **Input:**` -- so those stay
+# scaffolding. A section that numbers any finding gains no start from this:
+# its column-0 bullets are the ones inside its numbered findings.
+BULLET_TITLE_RE = re.compile(BULLET_RE.pattern + r"(.+?)\*\*")
 # The heading form of a finding title: a heading whose text opens with the
 # number the numbered form carries, bolded or not. Only a numbered heading can
 # title a finding. An unnumbered heading inside a finding list is a subsection
 # -- `#### Suggested test`, `##### Suggested fix` -- and reading one as a title
 # invented a blocking finding on a clean hunk with no note to say so. The number
-# has to end in `.` or `)` and a space, so `#### 1.5x slower` stays prose. Group
-# 1 is the `#` run, as in HEADING_RE, so depth reads the same off either.
-TITLE_HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(?:\*\*\s*)?\d+[.)](?:\*\*)?\s")
+# has to end in `.` or `)` and a space, so `#### 1.5x slower` stays prose. It
+# may carry the severity letter NUMBERED_RE allows, because `a856` titles its
+# findings `#### C1. ...` and `#### I1. ...`. Group 1 is the `#` run, as in
+# HEADING_RE, so depth reads the same off either.
+TITLE_HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(?:\*\*\s*)?[CIM]?\d+[.)](?:\*\*)?\s")
 # A section that says it is empty, rather than one this script failed to read.
 EMPTY_SECTION_RE = re.compile(
     r"^[\s*_`\-]*(?:none|n/?a|nothing|no\s+\w+\s+(?:findings|issues))\b[\s*_`.!]*$",
@@ -790,6 +810,14 @@ def split_findings(
     finding read ``proof_total`` high and queued a line about nothing for the
     analyst.
 
+    Where the section numbers nothing, a bullet also opens a finding when its
+    opening bold run is a title rather than a label: five Phase 5 reports write
+    every Minor finding as a bold title with its prose running on after it,
+    and read as labels each such section had content and no finding. The run
+    is a label, and stays scaffolding, when its text ends in a colon, as
+    ``- **Fix:**`` and ``- **Input:**`` do. A section that numbers any finding
+    gains no start from this, ahead of its first number or below it.
+
     What a section may carry ahead of its first finding is therefore narrow
     but not empty: a fence, because reviewers quote the code they are about to
     fault, and a bullet in that scaffolding shape. Anything else -- a
@@ -861,6 +889,9 @@ def split_findings(
     bulleted: list[int] = []
     # The bullets read as the section's scaffolding rather than as starts.
     labels: list[int] = []
+    # The labels among them whose opening bold run is a title. They become
+    # starts only where the section numbers nothing; see BULLET_TITLE_RE.
+    titled: list[int] = []
     # The lines ahead of a first finding that the section itself accounts for.
     accounted: set[int] = set()
     # Every heading outside a fence, taken before the branches below because a
@@ -901,12 +932,20 @@ def split_findings(
             accounted.add(index)
             scaffold = True
             labels.append(index)
+            bold = BULLET_TITLE_RE.match(line)
+            if bold is not None and not bold.group(1).rstrip().endswith(":"):
+                titled.append(index)
         elif scaffold and (not line.strip() or line.startswith((" ", "\t"))):
             # A scaffolding bullet wraps; every observed report wraps at about
             # 80 columns, so its second line is part of it and not new content.
             accounted.add(index)
         else:
             scaffold = False
+    if not numbered:
+        # Decided after the pass because a number anywhere in the section
+        # keeps every title-run bullet the scaffolding it was.
+        bulleted.extend(titled)
+        labels = [index for index in labels if index not in titled]
     opens = numbered[0] if numbered else len(body)
     starts = sorted(numbered + [index for index in bulleted if index < opens])
 
@@ -2347,6 +2386,67 @@ invisible and the request still reports success.
 ### Assessment
 
 **Ready to merge?** No
+"""
+# The severity-lettered numbering three Phase 5 reports wrote (`9a6c`, `d2e2`,
+# `1c6a`): the section's initial before the digits of a bold title. The bolded
+# claim closing the first finding is the shape of a bullet start, so only the
+# lettered title being read as numbered keeps it inside the finding, as in
+# GUARD_FINDING.
+LETTERED_OFFSET_FINDING = """**C1. `src/handlers.js:18` — off-by-one offset makes the first page of orders permanently unreachable.**
+
+- **Input:** a request with `page=1, size=10`.
+- **Outcome:** the handler asks the store for rows from 10, so the first ten
+  orders are never returned on the first page.
+- **Reject a request whose page is below 1.**
+"""
+LETTERED_SAVE_FINDING = """**C2. `src/handlers.js:37` — unawaited `store.saveOrder` returns a false 201.**
+
+The handler answers before the write resolves, so a rejected write becomes an
+unhandled rejection.
+"""
+# The heading form of the same numbering, as `a856` wrote it: `#### C1. ...`
+# under a `###` severity heading, the citation on the bold line below.
+LETTERED_HEADING_REPORT = """## Review: "paginate order listing and add order creation"
+
+### Issues
+
+### Critical (Must Fix)
+
+#### C1. Pagination off-by-one — the first page of orders is permanently unreachable
+**`src/handlers.js:18`** — `const offset = page * size;`
+
+`page` is documented as 1-based, so page 1 must map to offset 0. It maps to
+offset `size`.
+
+#### C2. `createOrderHandler` never awaits `saveOrder` — returns 201 for orders it did not save
+**`src/handlers.js:37`**
+
+The rejection is unhandled and the 201 is returned before the store has
+validated anything.
+
+### Important (Should Fix)
+
+_None._
+
+### Assessment
+
+**Ready to merge?** No
+"""
+# The Minor section two Phase 5 reports (`720d`, `b93e`) wrote as column-0
+# bullets, each a bold title with its prose running on after it, in both of the
+# shapes they use: a bolded citation alone, and a bolded title sentence.
+BOLD_TITLE_MINOR_BULLETS = """- **`test/handlers.test.js:11`** — `seed()` mutates the shared `store.orders` and is called from only one test.
+- **No documentation.** No README or API notes describe the new query parameters.
+- **`src/handlers.js:24` — the page response carries no `total` or `hasMore`.** Clients can only detect the last page by receiving a short one.
+"""
+# A section of nothing but colon labels: the bullets a finding structures
+# itself with, and no finding for them to structure.
+COLON_LABELS_ONLY = """- **Fix:** restore the guard before computing the offset.
+- **Input:** a request with `page=1, size=10`.
+"""
+# A bold-titled bullet ahead of a numbered section's first finding. Where the
+# section numbers its findings this is scaffolding, skipped and reported.
+TITLE_BULLET_LEAD = """- **Two blockers, both in the handlers.** The rest is minor.
 """
 
 
@@ -4330,6 +4430,191 @@ def self_test() -> int:
                 return f"the note reads {reported[0]!r}, expected {want!r}"
             return ""
 
+        def a_severity_lettered_number_opens_a_finding() -> str:
+            # Three Phase 5 reports (`9a6c`, `d2e2`, `1c6a`) number their
+            # findings `**C1. ...**`, `**I3. ...**`. Read as no number at all,
+            # the section had content and no finding, and three valid trials
+            # had no row.
+            report = build_report([LETTERED_OFFSET_FINDING, LETTERED_SAVE_FINDING], [])
+            body = next(
+                lines for severity, lines in split_sections(report) if severity == "Critical"
+            )
+            found = split_findings("Critical", body)
+            if [text.split(" ", 1)[0] for text in found] != ["**C1.", "**C2."]:
+                return f"expected the two lettered findings, got {found}"
+            # Both alternatives of the number rule take the letter, each of C,
+            # I and M, with either closing mark. Nothing else about the number
+            # moves, so another letter, a lower-case one or two of them is
+            # still no number, and the section still refuses it.
+            for title, reads in (
+                ("**I7. The write is never awaited**", True),
+                ("**M2) The backoff is not jittered**", True),
+                ("C1. **Pagination offset skips a whole page**", True),
+                ("**X1. Pagination offset skips a whole page**", False),
+                ("**c1. Pagination offset skips a whole page**", False),
+                ("**CI1. Pagination offset skips a whole page**", False),
+            ):
+                try:
+                    count = len(split_findings("Critical", [title, "", "Some prose."]))
+                except RunError as error:
+                    if reads or error.kind != "report-unparsed":
+                        return f"{title!r} raised {error.kind}: {error.evidence}"
+                    continue
+                if not reads:
+                    return f"{title!r} was read as {count} finding(s), expected report-unparsed"
+                if count != 1:
+                    return f"{title!r} was read as {count} findings, expected 1"
+            run_dir = run(report)
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            return ""
+
+        def a_severity_lettered_heading_titles_a_finding() -> str:
+            # The heading form of the same numbering, as `a856` writes it.
+            # Without the letter `#### C1. ...` is no title, so it is prose
+            # ahead of any finding and the section is refused.
+            body = next(
+                lines
+                for severity, lines in split_sections(LETTERED_HEADING_REPORT)
+                if severity == "Critical"
+            )
+            folded: list[list[str]] = []
+            found = split_findings("Critical", body, None, folded)
+            if [text.split(" ", 2)[1] for text in found] != ["C1.", "C2."]:
+                return f"expected the two lettered heading titles, got {found}"
+            if folded != [[], []]:
+                return f"a title was read as a folded heading: {folded}"
+            run_dir = run(LETTERED_HEADING_REPORT)
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            if notes != ["disagreements", "(none)"]:
+                return f"unexpected disagreements block {notes}"
+            return ""
+
+        def bold_title_bullets_open_findings_where_nothing_is_numbered() -> str:
+            # `720d` and `b93e` number their blocking findings and write the
+            # Minor section as column-0 bullets, each a bold title with its
+            # prose running on after it. Read as labels, the section had
+            # content and no finding, and the trial had no row.
+            report = build_report([OFFSET_FINDING], [SAVE_FINDING], [BOLD_TITLE_MINOR_BULLETS])
+            bullets = BOLD_TITLE_MINOR_BULLETS.rstrip("\n").split("\n")
+            minor = [f.text for f in parse_report(report) if f.severity == "Minor"]
+            if [text.split("\n", 1)[0] for text in minor] != bullets:
+                return f"the Minor bullets read as {minor}, expected one finding per bullet"
+            run_dir = run(report)
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            return ""
+
+        def colon_label_bullets_alone_still_fail_closed() -> str:
+            # The other edge of the bullet-title rule. A bold run ending in a
+            # colon is a label -- `- **Fix:**`, `- **Input:**` -- and a section
+            # of nothing but labels has no finding for them to structure.
+            # Reading them as titles would count a finding's scaffolding as
+            # findings, so the section is refused, as it was before the rule.
+            # No sidecar, as for every report this script cannot read.
+            body = COLON_LABELS_ONLY.rstrip("\n").split("\n")
+            try:
+                found = split_findings("Minor", body)
+            except RunError as error:
+                if error.kind != "report-unparsed":
+                    return f"the labels raised {error.kind}, expected report-unparsed"
+            else:
+                return f"the labels were read as {len(found)} finding(s), expected report-unparsed"
+            run_dir = run(
+                build_report([OFFSET_FINDING], [SAVE_FINDING], [COLON_LABELS_ONLY]), sidecar=False
+            )
+            code, rows, notes = measure([run_dir], evidence)
+            if rows:
+                return f"{len(rows)} rows, expected none"
+            if code == 0:
+                return "exit 0, expected non-zero"
+            if not any("\treport-unparsed\t" in note for note in notes):
+                return f"no report-unparsed line in {notes}"
+            return ""
+
+        def a_title_bullet_ahead_of_numbers_stays_scaffolding() -> str:
+            # The bullet-title rule is for a section that numbers nothing. In
+            # one that numbers its findings, a bold-titled bullet ahead of the
+            # first number has always been scaffolding -- skipped, and named
+            # for the analyst -- and it still is: the rule adds no start to a
+            # numbered section.
+            lead = TITLE_BULLET_LEAD.rstrip("\n")
+            body = [
+                lead,
+                "",
+                *OFFSET_FINDING.rstrip("\n").split("\n"),
+                "",
+                *SAVE_FINDING_BY_LINE.rstrip("\n").split("\n"),
+            ]
+            skipped: list[str] = []
+            found = split_findings("Critical", body, skipped)
+            if [text.split(" ", 1)[0] for text in found] != ["**1.", "**2."]:
+                return f"expected the two numbered findings, got {found}"
+            if skipped != [lead]:
+                return f"reported {skipped} as skipped, expected the lead bullet"
+            run_dir = run(
+                build_report([TITLE_BULLET_LEAD, OFFSET_FINDING, SAVE_FINDING_BY_LINE], [])
+            )
+            code, rows, notes = measure([run_dir], evidence)
+            if len(rows) != 1:
+                return f"{len(rows)} rows, expected 1: {notes}"
+            problem = expect(
+                rows[0],
+                recall=2,
+                blocking_on_clean=0,
+                clean_hunks_hit=UNKNOWN,
+                proof_total=2,
+                accepted="yes",
+            )
+            if problem:
+                return problem
+            if code != 0:
+                return f"exit {code}, expected 0"
+            reported = [note for note in notes if "\tscaffolding-skipped\t" in note]
+            if len(reported) != 1 or "Two blockers" not in reported[0]:
+                return f"expected the lead bullet as the one skip reported: {notes}"
+            return ""
+
         def fixture_ranges_unique() -> str:
             # The eight regions the brief's Step 3 declares, resolved against
             # the real fixture. A start pattern that matches twice is drift the
@@ -4542,6 +4827,26 @@ def self_test() -> int:
             (
                 "a_citation_path_is_not_read_as_a_name",
                 a_citation_path_is_not_read_as_a_name,
+            ),
+            (
+                "a_severity_lettered_number_opens_a_finding",
+                a_severity_lettered_number_opens_a_finding,
+            ),
+            (
+                "a_severity_lettered_heading_titles_a_finding",
+                a_severity_lettered_heading_titles_a_finding,
+            ),
+            (
+                "bold_title_bullets_open_findings_where_nothing_is_numbered",
+                bold_title_bullets_open_findings_where_nothing_is_numbered,
+            ),
+            (
+                "colon_label_bullets_alone_still_fail_closed",
+                colon_label_bullets_alone_still_fail_closed,
+            ),
+            (
+                "a_title_bullet_ahead_of_numbers_stays_scaffolding",
+                a_title_bullet_ahead_of_numbers_stays_scaffolding,
             ),
             ("fixture_ranges_unique", fixture_ranges_unique),
             ("two_clean_hunks", two_clean_hunks),
