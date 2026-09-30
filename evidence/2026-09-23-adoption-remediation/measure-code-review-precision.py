@@ -296,19 +296,55 @@ BULLET_RE = re.compile(r"^[-*+]\s+\*\*")
 # run ends and leaves a sentence running on after it is a label -- `- **Fix:**
 # restore the guard`, `- **Input:** a request with page=1` -- and the reports
 # use those to structure a finding, not to open one. Built from BULLET_RE so
-# the column-0 anchor is stated once. BULLET_TITLE_RE below narrows the label
+# the column-0 anchor is stated once. title_run() below narrows the label
 # reading for a section that numbers nothing.
 BULLET_FINDING_RE = re.compile(BULLET_RE.pattern + r".+\*\*\s*$")
-# A label-shaped bullet's opening bold run, as group 1. In a section that
-# numbers nothing the run is a title, and the bullet opens a finding, unless
-# its text ends in a colon: five Phase 5 reports (`a856`, `9a6c`, `d2e2`,
-# `720d`, `b93e`) write every Minor finding as a bold-titled bullet --
-# `- **`src/util.js:23`** -- ...`, `- **No documentation.** ...` -- and read as
-# labels each such section had content and no finding. The colon is what the labels a finding structures
+# A label-shaped bullet's opening bold run. In a section that numbers nothing
+# the run is a title, and the bullet opens a finding, unless its text ends in a
+# colon: five Phase 5 reports (`a856`, `9a6c`, `d2e2`, `720d`, `b93e`) write
+# every Minor finding as a bold-titled bullet -- `- **`src/util.js:23`** -- ...`,
+# `- **No documentation.** ...` -- and read as labels each such section had
+# content and no finding. The colon is what the labels a finding structures
 # itself with end in -- `- **Fix:**`, `- **Input:**` -- so those stay
 # scaffolding. A section that numbers any finding gains no start from this:
-# its column-0 bullets are the ones inside its numbered findings.
-BULLET_TITLE_RE = re.compile(BULLET_RE.pattern + r"(.+?)\*\*")
+# its column-0 bullets are the ones inside its numbered findings. The run
+# closes at the first `**` outside inline code, because a label can quote the
+# fixture's own delay, `baseMs * 2 ** i`, and closed at that `**` the run of
+# `- **Input to `withRetry` (delay `baseMs * 2 ** i`):**` lost its colon and
+# read as a second title. A run nothing closes outside code is no title.
+
+
+def title_run(line: str) -> str | None:
+    """The opening bold run of a label-shaped bullet, or ``None`` where nothing closes it.
+
+    The run ends at the first ``**`` that follows at least one character of it
+    and lies outside an inline code span. A code span opens at a run of
+    backticks and closes at the next run of exactly as many, as CommonMark reads
+    one; a backtick run with no such closer is literal text.
+
+    :param line: A line ``BULLET_RE`` matches.
+    :returns: The run's text between its opening and closing ``**``, or ``None``
+        when no ``**`` outside a code span closes it.
+    """
+    opening = BULLET_RE.match(line)
+    if opening is None:
+        return None
+    start = index = opening.end()
+    while index < len(line):
+        if line[index] == "`":
+            fence = index
+            while index < len(line) and line[index] == "`":
+                index += 1
+            closer = re.search(f"(?<!`){line[fence:index]}(?!`)", line[index:])
+            if closer is not None:
+                index += closer.end()
+        elif index > start and line.startswith("**", index):
+            return line[start:index]
+        else:
+            index += 1
+    return None
+
+
 # The heading form of a finding title: a heading whose text opens with the
 # number the numbered form carries, bolded or not. Only a numbered heading can
 # title a finding. An unnumbered heading inside a finding list is a subsection
@@ -890,7 +926,7 @@ def split_findings(
     # The bullets read as the section's scaffolding rather than as starts.
     labels: list[int] = []
     # The labels among them whose opening bold run is a title. They become
-    # starts only where the section numbers nothing; see BULLET_TITLE_RE.
+    # starts only where the section numbers nothing; see title_run().
     titled: list[int] = []
     # The lines ahead of a first finding that the section itself accounts for.
     accounted: set[int] = set()
@@ -932,8 +968,8 @@ def split_findings(
             accounted.add(index)
             scaffold = True
             labels.append(index)
-            bold = BULLET_TITLE_RE.match(line)
-            if bold is not None and not bold.group(1).rstrip().endswith(":"):
+            bold = title_run(line)
+            if bold is not None and not bold.rstrip().endswith(":"):
                 titled.append(index)
         elif scaffold and (not line.strip() or line.startswith((" ", "\t"))):
             # A scaffolding bullet wraps; every observed report wraps at about
@@ -2447,6 +2483,23 @@ COLON_LABELS_ONLY = """- **Fix:** restore the guard before computing the offset.
 # A bold-titled bullet ahead of a numbered section's first finding. Where the
 # section numbers its findings this is scaffolding, skipped and reported.
 TITLE_BULLET_LEAD = """- **Two blockers, both in the handlers.** The rest is minor.
+"""
+# A bold-titled finding in a section that numbers nothing, structured by two
+# labels. The first label quotes the fixture's own delay, `baseMs * 2 ** i`,
+# in a code span ahead of its colon, so a run that closed at the first `**`
+# would not end in the colon and would read the label as a second title.
+CODE_SPAN_LABEL_FINDING = """- **`src/util.js:16` — `withRetry` retries an error no retry can fix.** A bad argument fails the same way on every attempt.
+- **Input to `withRetry` (delay `baseMs * 2 ** i`):** a TypeError is retried with backoff.
+- **Outcome:** the caller waits out every delay before the certain error surfaces.
+"""
+# Two bold-titled findings, the first carrying `**` inside a code span in its
+# title, so its run has to reach past the span to the `**` that closes it.
+CODE_SPAN_TITLE_BULLETS = """- **`src/util.js:16` — the delay `baseMs * 2 ** i` has no ceiling.** A large `attempts` makes the last wait run to minutes.
+- **No documentation.** No README describes the retry policy.
+"""
+# A bold run whose only `**` after the opening one lies inside a code span, so
+# nothing closes it: no run, and so no title.
+UNCLOSED_CODE_SPAN_BULLET = """- **Retry delay `2 ** i` grows unbounded
 """
 
 
@@ -4615,6 +4668,81 @@ def self_test() -> int:
                 return f"expected the lead bullet as the one skip reported: {notes}"
             return ""
 
+        def code_span_label_merges() -> str:
+            # A label's bold run can quote code that carries `**` -- the
+            # fixture's own delay is `baseMs * 2 ** i` -- and the run closes at
+            # the first `**` outside a code span, after the colon. Closed at the
+            # first `**` of any kind it did not end in the colon, the label read
+            # as a title, and one finding was cut into two.
+            report = build_report([OFFSET_FINDING], [CODE_SPAN_LABEL_FINDING])
+            skipped: list[tuple[str, str]] = []
+            important = [
+                f.text for f in parse_report(report, None, skipped) if f.severity == "Important"
+            ]
+            labels = CODE_SPAN_LABEL_FINDING.rstrip("\n").split("\n")[1:]
+            if len(important) != 1 or not all(label in important[0] for label in labels):
+                return f"expected one finding carrying both labels, got {important}"
+            if skipped != [("Important", label) for label in labels]:
+                return f"expected both labels reported as merged, got {skipped}"
+            return ""
+
+        def code_span_title_opens() -> str:
+            # The other edge: a title whose run carries `**` inside a code span
+            # is still a title, because the run reaches past the span to the
+            # `**` that closes it.
+            report = build_report([OFFSET_FINDING], [CODE_SPAN_TITLE_BULLETS])
+            bullets = CODE_SPAN_TITLE_BULLETS.rstrip("\n").split("\n")
+            important = [f.text for f in parse_report(report) if f.severity == "Important"]
+            if [text.split("\n", 1)[0] for text in important] != bullets:
+                return f"the bullets read as {important}, expected one finding per bullet"
+            return ""
+
+        def unclosed_bold_code_span_alone() -> str:
+            # A bold run whose only later `**` is inside a code span never
+            # closes, so it is no title, and a section holding nothing else has
+            # content and no finding. The report is refused, exactly as it is
+            # for the same bullet with no code span in it.
+            unclosed = UNCLOSED_CODE_SPAN_BULLET.rstrip("\n")
+            for line in ("- **Retry delay grows unbounded", unclosed):
+                try:
+                    found = split_findings("Important", [line])
+                except RunError as error:
+                    if error.kind != "report-unparsed" or "but no finding" not in error.evidence:
+                        return f"{line!r} raised {error.kind}: {error.evidence}"
+                    continue
+                return f"{line!r} was read as {len(found)} finding(s), expected report-unparsed"
+            run_dir = run(
+                build_report([OFFSET_FINDING], [UNCLOSED_CODE_SPAN_BULLET]), sidecar=False
+            )
+            code, rows, notes = measure([run_dir], evidence)
+            if rows:
+                return f"{len(rows)} rows, expected none"
+            if code == 0:
+                return "exit 0, expected non-zero"
+            if not any("\treport-unparsed\t" in note for note in notes):
+                return f"no report-unparsed line in {notes}"
+            return ""
+
+        def unclosed_bold_code_span_after_title() -> str:
+            # Below a title the same unclosed bullet is that finding's
+            # scaffolding, not a second finding, again exactly as it is with no
+            # code span in it.
+            title = CODE_SPAN_LABEL_FINDING.split("\n", 1)[0]
+            unclosed = UNCLOSED_CODE_SPAN_BULLET.rstrip("\n")
+            for line in ("- **Retry delay grows unbounded", unclosed):
+                report = build_report([OFFSET_FINDING], [f"{title}\n{line}\n"])
+                skipped: list[tuple[str, str]] = []
+                important = [
+                    f.text
+                    for f in parse_report(report, None, skipped)
+                    if f.severity == "Important"
+                ]
+                if len(important) != 1 or line not in important[0]:
+                    return f"{line!r}: expected one finding carrying it, got {important}"
+                if skipped != [("Important", line)]:
+                    return f"{line!r}: expected it reported as merged, got {skipped}"
+            return ""
+
         def fixture_ranges_unique() -> str:
             # The eight regions the brief's Step 3 declares, resolved against
             # the real fixture. A start pattern that matches twice is drift the
@@ -4848,6 +4976,10 @@ def self_test() -> int:
                 "a_title_bullet_ahead_of_numbers_stays_scaffolding",
                 a_title_bullet_ahead_of_numbers_stays_scaffolding,
             ),
+            ("code_span_label_merges", code_span_label_merges),
+            ("code_span_title_opens", code_span_title_opens),
+            ("unclosed_bold_code_span_alone", unclosed_bold_code_span_alone),
+            ("unclosed_bold_code_span_after_title", unclosed_bold_code_span_after_title),
             ("fixture_ranges_unique", fixture_ranges_unique),
             ("two_clean_hunks", two_clean_hunks),
             ("proof_partial", proof_partial),
