@@ -1,0 +1,40 @@
+    prefix, suffix, and ellipsis. Gets both guarantees. Cost: it's the only option that needs the truncate step to know
+    about the other options, which breaks the flat independent-[38;5;153mif[39m shape the file is built on, and it needs a defined
+    behavior for when prefix + suffix alone already exceed [38;5;153mmaxLength[39m.
+
+  I recommend [1mtruncate last[0m: it keeps the promise the name makes and preserves the file's existing shape, and the
+  prefix-mangling case only appears when [38;5;153mmaxLength[39m is smaller than the decorations themselves, which is already a caller
+  error.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should truncation sit relative to prefix/suffix? → Truncate last (Recommended)[39m
+
+[38;5;231m⏺[39m [1mSecond fork — does the [38;5;153m'...'[39m count against [38;5;153mmaxLength[39m?[0m Your original wording ("cut strings longer than a max length and
+  add [38;5;153m'...'[39m at the end") reads as appending the ellipsis after the cut, but you just chose the ordering where output is
+  always ≤ [38;5;153mmaxLength[39m, which pulls the other way. This is the observable contract, so it's worth pinning now rather than
+  discovering in a test.
+
+  - [1mEllipsis inside the budget[0m — [38;5;153mmaxLength: 10[39m always returns at most 10 characters, 7 of text plus [38;5;153m"..."[39m. Consistent
+    with the guarantee you just picked; callers sizing to a column width get exactly what they asked for. Cost: the
+    visible text is 3 characters shorter than the number suggests, and you need a defined behavior for [38;5;153mmaxLength[39m
+    under 4.
+  - [1mEllipsis appended after the cut[0m — [38;5;153mmaxLength: 10[39m returns 10 characters of text plus [38;5;153m"..."[39m, so 13 total. Matches your
+    original phrasing literally and is simpler to reason about. Cost: it contradicts the "output ≤ maxLength" guarantee
+    from the last question, so the two answers would need reconciling.
+
+  I recommend [1mellipsis inside the budget[0m — it's the only one that keeps the guarantee you just chose, and truncation is
+  nearly always used to fit a known width.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Ellipsis [39m[49m
+
+[1m[38;5;231mShould the '...' count toward maxLength?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mInside the budget (Recommended)[39m
+     [38;5;246mmaxLength 10 returns at most 10 chars total: 7 of text plus '...'. Keeps the output <= maxLength guarantee.[39m
+  [38;5;246m2.[39m Appended after the cut
+     [38;5;246mmaxLength 10 returns 10 chars of text plus '...' = 13 total. Matches your original wording literally.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

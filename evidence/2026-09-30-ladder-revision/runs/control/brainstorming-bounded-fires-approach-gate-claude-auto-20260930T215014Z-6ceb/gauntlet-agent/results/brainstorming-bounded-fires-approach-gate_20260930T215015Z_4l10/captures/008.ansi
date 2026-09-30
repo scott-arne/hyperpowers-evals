@@ -1,0 +1,40 @@
+
+[38;5;246m  ⎿  [39mSuccessfully loaded skill
+
+  [38;5;246mRead [1m5[0m[38;5;246m files, listed [1m1[0m[38;5;246m directory, ran [1m4[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m [1mPath: bounded.[0m [38;5;153mformat.js[39m already exists with an options-bag pattern ([38;5;153muppercase[39m, [38;5;153mlowercase[39m, [38;5;153mprefix[39m, [38;5;153msuffix[39m), so this is
+  a new option on an existing flow. I'll present a short design in chat rather than write a spec — and I'll hold off on
+  any code until you approve it.
+
+  One thing I need from you before I can recommend anything, because it changes the observable output either way:
+
+  [1mThe fork:[0m whether [38;5;153mmaxLength[39m is a cap on the [3mreturned string[0m or on the [3mcontent[0m before the ellipsis is appended.
+
+  - [1mEllipsis inside the budget[0m — [38;5;153mformat("hello world", {maxLength: 8})[39m → [38;5;153m"hello..."[39m (8 chars). The guarantee is "output
+    is never longer than [38;5;153mmaxLength[39m", which is what callers laying out fixed-width UI, table cells, or DB columns
+    actually need. Costs an edge case: [38;5;153mmaxLength < 3[39m has no room for the ellipsis, so it needs a defined answer.
+  - [1mEllipsis on top[0m — → [38;5;153m"hello wo..."[39m (11 chars). Simpler to implement and to read, but the function's own name-brand
+    promise ("max length") becomes false by 3 characters, and every caller has to remember to subtract.
+
+  This one is expensive to change later: it's the contract the option advertises, and flipping it silently shifts output
+  for every existing call site. The truncation [3mstrategy[0m (hard cut vs. word boundary) is much cheaper to change
+  afterward — it only affects where the cut lands, not the length guarantee.
+
+  [1mMy recommendation:[0m ellipsis inside the budget. An option called [38;5;153mmaxLength[39m that can return [38;5;153mmaxLength + 3[39m is a bug
+  report waiting to happen.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Budget [39m[49m
+
+[1m[38;5;231mShould the '...' count toward maxLength, or be appended on top of it?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mEllipsis inside budget (Recommended)[39m
+     [38;5;246mOutput is never longer than maxLength; the '...' eats into the content. Honest contract, needs a rule for maxLength
+[39m     [38;5;246m< 3.[39m
+  [38;5;246m2.[39m Ellipsis appended on top
+     [38;5;246mContent cut at maxLength, then '...' added; output can be maxLength + 3. Simpler, but the name overpromises.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

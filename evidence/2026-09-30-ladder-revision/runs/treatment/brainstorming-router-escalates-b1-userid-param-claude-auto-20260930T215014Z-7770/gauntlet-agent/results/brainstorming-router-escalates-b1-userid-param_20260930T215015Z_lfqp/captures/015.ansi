@@ -1,0 +1,40 @@
+  client and still have it mean anything. Right now [38;5;153mlogin[39m ([38;5;153mapp.js:4-8[39m) is a stub: it never calls [38;5;153mAPI_ENDPOINT[39m, it just
+  returns [38;5;153m{ success: true, user: username }[39m. So there is currently no source of a real ID anywhere in this codebase.
+
+  - [1mThe API returns it[0m — [38;5;153mlogin[39m becomes a real [38;5;153mfetch[39m to [38;5;153mAPI_ENDPOINT[39m, and the response carries the ID. This is the only
+    option that yields a genuinely authoritative ID, but it means implementing the network call, async handling, and
+    error paths that the stub skips. It also makes the ID's shape the backend's decision, not ours — I'd need to know
+    what it returns.
+  - [1mA separate identity/profile endpoint[0m — login authenticates, a second call fetches the user record including the ID.
+    More round trips, but keeps auth and profile separable; common when the ID lives in a user service rather than the
+    auth service.
+  - [1mClient-generated and persisted[0m — we mint a UUID on first visit and keep it. Requires no backend at all and works
+    today, but it identifies a [3mbrowser[0m, not a person: it breaks across devices, dies when storage is cleared, and two
+    people sharing a laptop become one user. It cannot honestly be called a real user ID.
+
+  [1mMy recommendation: the first[0m, if a backend actually exists behind [38;5;153mapi.example.com/login[39m. An ID that other forms will
+  rely on has to survive a new device and a cleared cache, and only a server-issued ID does. But I don't know whether
+  that endpoint is real or a placeholder in this fixture — that determines whether this project is "wire up the login
+  call" or "design around not having a backend yet."
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID origin [39m[49m
+
+[2m│[0m [1m[38;5;231mWhere does the authoritative user ID come from? (app.js never actually calls API_ENDPOINT today)[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLogin API returns it (Recommended)[39m
+     [38;5;246mImplement the real fetch to API_ENDPOINT; the login response carries the user ID. Authoritative and portable across
+[39m     [38;5;246mdevices, but requires async handling and error paths the stub currently skips.[39m
+  [38;5;246m2.[39m Separate identity endpoint
+     [38;5;246mLogin authenticates, then a second call fetches the user record with the ID. More round trips, keeps auth and [39m
+     [38;5;246mprofile concerns separable.[39m
+  [38;5;246m3.[39m Client-generated UUID
+     [38;5;246mMint and persist an ID in the browser. Needs no backend, but identifies a device rather than a person — breaks [39m
+     [38;5;246macross devices and on cleared storage.[39m
+  [38;5;246m4.[39m No backend exists yet
+     [38;5;246mapi.example.com is a placeholder. Design the identity layer against a stubbed/mock source now, with a defined seam
+[39m     [38;5;246mto swap in the real API later.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+    IDs, and CJK-ish no-space text without any special case. Costs you nothing later; switching to word-boundary
+    afterward is a local change.
+  - [1mWord boundary before maxLength[0m — reads better for prose. Needs a fallback to the hard cut anyway, for the case where
+    the first word is already longer than the budget ([38;5;153m"supercalifragilistic..."[39m has no boundary to find). So it is [3mhard[0m
+    [3mcut plus one step[0m, not a different algorithm — about 4 extra lines. Output length becomes variable but stays within
+    the bound.
+
+  [1mEllipsis accounting[0m (this is the one with a tail)
+
+  - [1m[38;5;153m'...'[39m counted inside maxLength[0m — guarantees [38;5;153mresult.length <= maxLength[39m, always. That guarantee is the whole reason a
+    caller passes a max: a table column, a terminal width, a database field. Cheap now, painful to retrofit — flipping
+    it later silently changes every existing caller's output width.
+  - [1m[38;5;153m'...'[39m appended beyond maxLength[0m — slightly simpler to read in the source, but output can be [38;5;153mmaxLength + 3[39m, so the
+    option no longer bounds anything and callers have to subtract 3 themselves.
+
+  One consequence worth naming before you pick: to hold a real length guarantee, truncate has to run [1mlast[0m in the option
+  chain — after [38;5;153mprefix[39m/[38;5;153msuffix[39m — otherwise appending a suffix blows past the bound. That means a long [38;5;153msuffix[39m can get
+  truncated away. The alternative (truncate before prefix/suffix, matching the current positional order) keeps the
+  suffix intact but makes [38;5;153mmaxLength[39m a bound on the middle of the string rather than on what you get back.
+
+  [1mMy recommendation: word boundary with hard-cut fallback, ellipsis counted inside [38;5;153mmaxLength[39m, applied last.[0m The
+  word-boundary work is small and mostly code you'd write anyway for the fallback, and the counted ellipsis is the only
+  version where [38;5;153mmaxLength[39m means what the name says. I'd take the truncated-suffix consequence over a bound that doesn't
+  bind.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Cut point [39m[49m ☐ Ellipsis  ☐ Ordering  ✔ Submit  →
+
+[1m[38;5;231mWhich truncation strategy should `truncate` use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mWord boundary + fallback (Recommended)[39m
+     [38;5;246mCut at the last space before the budget; fall back to a hard cut when a single word is already too long. Better [39m
+     [38;5;246mprose output, ~4 lines more than the hard cut.[39m
+  [38;5;246m2.[39m Hard cut at maxLength
+     [38;5;246mCut at exactly the budget, no boundary search. Simplest and fully predictable; cuts mid-word. Easy to upgrade to [39m
+     [38;5;246mword-boundary later.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

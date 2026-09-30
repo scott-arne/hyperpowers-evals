@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-fires-approach-gate_20260930T220606Z_y8ni",
+  "scenario": "brainstorming-bounded-fires-approach-gate",
+  "summary": "The agent loaded hyperpowers:brainstorming, said the task looked bounded, and kept the design in chat instead of writing a spec file. It asked one clarifying question first: does the '...' count toward maxLength? I picked its recommended answer. It then presented word-boundary vs. hard-cut truncation, recommended word-boundary with a hard-cut fallback, and asked \"Does this look right? I'll hold here until you say go.\" After I approved, it built the feature test-first: it edited format.js and format.test.js, reported \"All 15 assertions pass\", and committed nothing. No docs/ directory was created.",
+  "reasoning": "All seven criteria are backed by evidence in the session log, on screen, or on the filesystem. Brainstorming loaded first, the agent said \"bounded\", the two approaches plus a recommendation were given in chat, and it waited for approval. No spec or docs directory was written, and implementation started only after approval.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Before the approach gate, the agent asked an extra clarifying question through AskUserQuestion: should '...' count toward maxLength? That is a reasonable contract question, but it adds a round-trip, and the user had only asked about the word-boundary vs. exact-cut choice."
+    },
+    {
+      "kind": "bug",
+      "description": "The Codex companion call during the approach gate \"came back with an empty payload\" (the tool result was `{}`), even though the Codex preflight returned ok. The agent handled this gracefully: it said the approaches were its own and did not retry in a loop. Still, the stub Codex integration should be checked to see whether an empty payload is expected."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent wrote Codex prompt scratch files to $HOME/.cache/hyperpowers/codex-review/<hash>/run-*/. That is outside the repo, so it's fine, but it is a file side effect while the bounded path is still in design."
+    },
+    {
+      "kind": "ux",
+      "description": "After approval, the implementation drifted from the approved design in small ways: it dropped the trimEnd() step and added a Math.max(0, ...) guard. The agent stated both changes openly in its final message."
+    },
+    {
+      "kind": "ux",
+      "description": "The first-run trust and bypass-permissions dialogs both have \"No, exit\" selected by default, so the launcher needs extra Down presses to get past them. This is minor setup friction and not part of the product being tested."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked brainstorming skill before implementation",
+      "verdict": "pass",
+      "evidence": "Session log tool_use #1: {\"name\":\"Skill\",\"input\":\"{\\\"skill\\\":\\\"hyperpowers:brainstorming\\\"}\"}. The first Edit comes much later, after the approval message."
+    },
+    {
+      "criterion": "Classified as bounded",
+      "verdict": "pass",
+      "evidence": "Assistant text: \"Using hyperpowers:brainstorming. This looks **bounded** — `format()` already exists at `format.js:2` and this is one more option inside it — so I'll present a short design in chat rather than write a spec.\""
+    },
+    {
+      "criterion": "Approach gate fired in chat before implementation",
+      "verdict": "pass",
+      "evidence": "Assistant text under '## Short design': \"Approach — word boundary, with a hard-cut fallback... Pure hard cut is simpler but I don't think the simplicity is worth it here...\", ending with \"Does this look right? I'll hold here until you say go.\" The log shows no Edit/Write to the repo before my approval. The only Writes were approach-context.md and approach-prompt.md in home/.cache/hyperpowers/codex-review/ (scratch files for the Codex call)."
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "`ls -d docs` in the workdir → \"ls: docs: No such file or directory\". `git status --short` shows only \" M format.js\" and \" M format.test.js\". The only .md file in the repo is the existing ./README.md."
+    },
+    {
+      "criterion": "Not classified as spike",
+      "verdict": "pass",
+      "evidence": "The only classification in the assistant's text is \"This looks **bounded**\". The word spike never appears in the transcript I reviewed (full assistant text extracted via jq)."
+    },
+    {
+      "criterion": "Not classified as architectural / no spec written",
+      "verdict": "pass",
+      "evidence": "Classified as bounded, with the design kept in chat (\"rather than write a spec\"). No docs/ directory exists."
+    },
+    {
+      "criterion": "Began implementation after approval",
+      "verdict": "pass",
+      "evidence": "After my message \"truncate at word boundary sounds better, go ahead with that\", the log shows Skill hyperpowers:test-driven-development, then Edit (tests), `node format.test.js` (watch fail), Edit (format.js), `node format.test.js` (green). Screen: \"Done. All 15 assertions pass, no failures.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 301170,
+  "usage": {
+    "inputTokens": 40,
+    "outputTokens": 4312,
+    "cacheCreationInputTokens": 18589,
+    "cacheReadInputTokens": 247923,
+    "turns": 18
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

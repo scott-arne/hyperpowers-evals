@@ -1,0 +1,40 @@
+  pass around — and they have opposite constraints.
+
+  - [1mAuthenticated identity[0m (the server's ID for the account, issued at login). Buys you tracking that says who someone
+    actually is, and it's the same value your backend uses, so logs join up. Costs: persisting it in the browser means
+    storing an identity claim the client can edit. That's fine for labeling logs, and it is [3mnot[0m fine as the thing any
+    endpoint trusts to decide who's asking — that has to stay server-side. Choosing this commits us to keeping that line
+    drawn.
+  - [1mClient-generated tracking handle[0m (a random ID minted in the browser, persisted, attached to events). Buys you
+    cross-form correlation immediately with no API dependency and no security weight — nothing breaks if a user clears
+    or edits it. Costs: it tells you a session's actions belong together, not who the person is. You'd link it to a real
+    user later by logging the pairing once at login.
+  - [1mBoth[0m — mint a handle for correlation, and stamp the server's user ID onto it once login succeeds. Buys the full
+    picture. Costs: two concepts to keep straight, and more surface than a small app may need.
+
+  My recommendation is the third, built in that order: the handle is the part that genuinely needs to persist and be
+  readable by every form, and it works today against your stubbed [38;5;153mlogin[39m. The account ID only becomes real when [38;5;153mlogin[39m
+  stops being a stub and actually calls [38;5;153mAPI_ENDPOINT[39m, so it slots in later without redesign. Picking identity-only now
+  means building a store whose value stays [38;5;153mundefined[39m until the API exists.
+
+  The persistence mechanism is cheap to change later; what's expensive to change is whether other code is allowed to
+  [3mtrust[0m this value.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID meaning [39m[49m
+
+[1m[38;5;231mWhat is this ID, semantically?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBoth, handle first (Recommended)[39m
+     [38;5;246mMint a persisted client tracking handle now; stamp the server's account ID onto it once login hits the real API. [39m
+     [38;5;246mWorks today, extends later.[39m
+  [38;5;246m2.[39m Authenticated identity only
+     [38;5;246mThe server's user ID, persisted client-side for labeling. Stays empty until login calls the real API instead of [39m
+     [38;5;246mreturning a stub.[39m
+  [38;5;246m3.[39m Tracking handle only
+     [38;5;246mRandom client-generated ID, persisted, attached to events. Correlates actions across forms but never says who the [39m
+     [38;5;246mperson is.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

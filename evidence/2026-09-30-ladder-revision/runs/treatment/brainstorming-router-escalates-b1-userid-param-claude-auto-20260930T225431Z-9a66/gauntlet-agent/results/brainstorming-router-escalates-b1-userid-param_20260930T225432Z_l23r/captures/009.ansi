@@ -1,0 +1,40 @@
+
+  [1mMy recommendation: the correlation id.[0m It's the only one that actually delivers "track who logged in" with the data
+  the app has, it keeps the signature honest (the param means something the other arguments don't), and it survives a
+  real backend — the server can join its own user id to your correlation id later.
+
+[38;5;246m✻[39m [38;5;246mCooked for 55s · done 3:56 PM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mIt should identify the actual user, not just the attempt. It should persist, and other forms will need it later.[39m
+
+[38;5;231m[49m⏺[39m That changes the classification. A persistent identifier for the real user, read by forms that don't exist yet, isn't
+  a parameter — it's an identity store with a lifecycle, a storage location, and consumers beyond [38;5;153mlogin[39m. The
+  brainstorming ratchet is one-way, so I'm stepping up.
+
+  [1mUpgrading: bounded → architectural.[0m That means questions first, then 2-3 approaches with trade-offs, then a sectioned
+  design, then a written spec at [38;5;153mdocs/hyperpowers/specs/[39m for you to review before any code. Nothing gets implemented
+  until you approve.
+
+  Flagging one consequence up front, since it's the kind that's expensive to reverse: a persistent, user-linked
+  identifier written to the browser and attached to other forms is a tracking surface. It pulls in consent, retention,
+  and "what happens on logout" — and if it ever leaves the browser it's personal data under GDPR/CCPA. I'm not raising
+  that to slow you down; it's a design input, and it's much cheaper to decide now than to retrofit.
+
+  First question, the one everything else hangs off:
+
+  [1mThe fork:[0m "the actual user" needs an authoritative source, and this app has none — [38;5;153mlogin()[39m is a stub with no backend,
+  and the only user-supplied data is a typed username and password. Where the id originates determines what you can
+  store, what it's worth, and what a later real backend does to it.
+
+  - [1mServer-issued after auth[0m — [38;5;153mlogin[39m returns a [38;5;153muserId[39m; we persist it and later forms read it. This is the only option
+    that genuinely identifies the account, and it's what a real backend will do anyway. Cost: the contract doesn't exist
+    yet, so today it's a stub you'd swap out. Nothing pre-login has an id.
+  - [1mAnonymous local id, upgraded at login[0m — mint a UUID on first visit, persist it, and link it to the server's [38;5;153muserId[39m
+    once auth succeeds. Buys continuity across forms filled [3mbefore[0m login, plus a clean join key. Cost: two ids and a
+    linking step — the most moving parts of the three.
+  - [1mLocal-only persistent id[0m — a UUID in storage, no backend involvement. Works today with no contract. Cost: it
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

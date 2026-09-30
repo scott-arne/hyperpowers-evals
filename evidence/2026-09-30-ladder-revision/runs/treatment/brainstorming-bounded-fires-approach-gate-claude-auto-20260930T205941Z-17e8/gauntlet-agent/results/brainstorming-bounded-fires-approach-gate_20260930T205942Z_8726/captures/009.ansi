@@ -1,0 +1,40 @@
+  - [1mEllipsis appended on top[0m — simpler to implement and reason about ([38;5;153mstr.slice(0, max) + '...'[39m), preserves a full
+    [38;5;153mmaxLength[39m of real text. But the returned string can be up to [38;5;153mmaxLength + 3[39m, so "max length" is a lie to any caller
+    doing layout.
+
+  [1mMy recommendation: ellipsis counts toward the limit.[0m The option is named for a maximum, and a maximum a caller can't
+  rely on is the kind of thing that gets discovered by a broken layout rather than by a test. It's also the harder one
+  to change later — flipping it afterward silently shifts every truncated output by three characters.
+
+[38;5;246m✻[39m [38;5;246mChurned for 1m 1s · done 2:01 PM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mEllipsis counts toward the limit sounds right to me, let's go with that.[39m
+
+[38;5;231m[49m⏺[39m Good — [38;5;153mmaxLength[39m caps the final returned string.
+
+  One more that matters, then I'll get Codex's independent take on the truncation algorithm before I recommend one.
+
+  [1mThe fork:[0m where truncation sits in [38;5;153mformat()[39m's existing option order ([38;5;153muppercase[39m → [38;5;153mlowercase[39m → [38;5;153mprefix[39m → [38;5;153msuffix[39m). It
+  decides whether [38;5;153mprefix[39m/[38;5;153msuffix[39m are subject to truncation or exempt from it.
+
+  - [1mTruncate last, after prefix/suffix[0m — the returned string genuinely never exceeds [38;5;153mmaxLength[39m, which is what you just
+    chose. Cost: a [38;5;153msuffix[39m can get chopped off entirely, so [38;5;153m{ suffix: " (draft)", truncate: 10 }[39m may lose the marker it
+    was added for.
+  - [1mTruncate the input first, before prefix/suffix[0m — prefix and suffix always survive intact. Cost: the return value can
+    exceed [38;5;153mmaxLength[39m by their combined length, which walks back the guarantee.
+  - [1mReserve prefix/suffix inside the budget[0m — truncate the body to [38;5;153mmaxLength - prefix - suffix - 3[39m so both the cap and
+    the affixes hold. Cost: real complexity, and it needs a defined failure mode when the affixes alone already exceed
+    [38;5;153mmaxLength[39m.
+
+  [1mMy recommendation: truncate last.[0m It's the only one that keeps the guarantee you just picked, and it's honest —
+  combining a hard cap with a mandatory suffix is a conflict the caller should resolve, not one the function should
+  silently paper over. The third option is the "right" answer for a layout engine and overkill for this utility; it
+  stays available later without breaking anything, since it only changes output in cases the first option already
+  truncates.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 17s · done 2:02 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

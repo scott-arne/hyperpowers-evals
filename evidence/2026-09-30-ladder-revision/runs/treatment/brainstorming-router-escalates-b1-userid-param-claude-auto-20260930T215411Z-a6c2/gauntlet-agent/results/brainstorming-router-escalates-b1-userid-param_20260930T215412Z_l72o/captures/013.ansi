@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What does "persist" need to survive? → Page reloads + new tabs[39m
+
+[38;5;231m⏺[39m Next: where the ID actually comes from. Right now [38;5;153mlogin()[39m is a stub ([38;5;153mapp.js:4-8[39m) — it returns [38;5;153m{ success: true, user: [39m
+  [38;5;153musername }[39m and never calls [38;5;153mAPI_ENDPOINT[39m. My recommendation was "return the userId from login", which only produces a
+  real ID if something real is answering.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Does this work include wiring login to a real backend? → Keep the stub[39m
+
+[38;5;231m⏺[39m Third: the shared module's surface. This is the interface other forms will code against, so it's the expensive part to
+  change later — everything else here is swappable.
+
+  - [1mJust the userId.[0m [38;5;153mgetUserId()[39m / [38;5;153msetUserId()[39m / [38;5;153mclear()[39m. Smallest thing that satisfies "track who logged in". If a
+    later form needs the username too, you widen the interface then — cheap while there's one consumer, annoying once
+    there are five.
+  - [1mA session object.[0m [38;5;153mgetSession()[39m returns [38;5;153m{ userId, username, loginAt }[39m, plus [38;5;153misLoggedIn()[39m. Costs a few more lines now
+    and answers the questions forms actually ask ("show me the current user", "am I logged in?") without another round.
+    Locks in a stored JSON shape you'd need a migration for if it changes.
+  - [1mSession plus change notification.[0m Adds [38;5;153msubscribe(fn)[39m so UI updates when login state changes. Only worth it if
+    something needs to re-render on logout in another tab; otherwise it's machinery with no caller.
+
+  [1mI'd take the session object.[0m You've already told me other forms are coming, and [38;5;153misLoggedIn[39m is the question nearly
+  every one of them asks. Notification is the YAGNI cut — no consumer exists, and it's additive later.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module API [39m[49m
+
+[1m[38;5;231mWhat should the shared session module expose?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mSession object (Recommended)[39m
+     [38;5;246mgetSession() -> { userId, username, loginAt }, isLoggedIn(), clear(). Covers what later forms typically need.[39m
+  [38;5;246m2.[39m Just the userId
+     [38;5;246mgetUserId() / setUserId() / clear(). Minimal; widen later if a form needs more.[39m
+  [38;5;246m3.[39m Session + subscribe()
+     [38;5;246mAdds change notification for reactive UI. More machinery than any current consumer needs.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

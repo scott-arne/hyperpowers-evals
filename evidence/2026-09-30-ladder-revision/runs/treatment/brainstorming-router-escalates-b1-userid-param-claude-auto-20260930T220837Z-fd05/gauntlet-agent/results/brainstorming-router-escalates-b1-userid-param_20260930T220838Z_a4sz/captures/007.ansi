@@ -1,0 +1,40 @@
+  state anywhere in the repo, and [38;5;153mindex.html[39m has no field that could carry a user ID.
+
+  So the blocker is real: [1mthere is no source for [38;5;153muserId[39m at the only call site.[0m That has to be settled before the
+  parameter has a meaning.
+
+  [1mThe fork:[0m whether [38;5;153muserId[39m is data that arrives from outside the login call, or something login itself produces.
+
+  - [1mUsername is the identifier[0m — [38;5;153mlogin[39m already receives and returns [38;5;153musername[39m; add the tracking log/return field using it
+    and add no parameter. Free, nothing new to wire, no spoofing question. Costs you nothing later: if a real ID
+    arrives, you add the param then.
+  - [1mCaller supplies [38;5;153muserId[0m — matches your request literally, but needs a new source (hidden form field, a value from a
+    prior lookup, or a query param), and that source doesn't exist yet. Note this makes the identity client-supplied, so
+    a real backend must never trust it for authorization — fine for logging, not for access control. This is the option
+    that locks an interface: once callers pass it, changing where it comes from means touching every caller.
+  - [1m[38;5;153mlogin[39m generates a tracking ID[0m — a per-attempt ID returned in the result ([38;5;153m{success, user, loginId}[39m). Good for
+    correlating log lines; it does not tell you [3mwho[0m, so it only helps if what you want is traceability rather than
+    identity. Changes the return shape, not the signature.
+
+  [1mMy recommendation: username is the identifier.[0m In this codebase the username is the only thing that identifies who
+  logged in, and it's already in hand at the call site — adding a [38;5;153muserId[39m parameter with no source to fill it means the
+  caller passes [38;5;153mundefined[39m or a duplicate of [38;5;153musername[39m, which is worse than not having the parameter.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[2m│[0m [1m[38;5;231mWhere should userId come from at the call site? Nothing in the repo currently supplies one.[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mUse username (Recommended)[39m
+     [38;5;246mNo new parameter. login already gets username; use it for the tracking log and return value. Add a real userId [39m
+     [38;5;246mparam later when a real ID exists.[39m
+  [38;5;246m2.[39m Caller passes it
+     [38;5;246mAdd the userId parameter as asked. Tell me where the value comes from (hidden form field, prior lookup, query [39m
+     [38;5;246mparam) and I'll wire that source too.[39m
+  [38;5;246m3.[39m login generates it
+     [38;5;246mlogin mints a per-attempt tracking ID and returns it in the result. Good for correlating logs; does not identify [39m
+     [38;5;246mthe user.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

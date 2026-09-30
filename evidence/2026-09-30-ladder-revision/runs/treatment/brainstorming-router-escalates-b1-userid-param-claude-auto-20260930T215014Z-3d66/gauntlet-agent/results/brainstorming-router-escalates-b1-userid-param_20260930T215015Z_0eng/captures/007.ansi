@@ -1,0 +1,40 @@
+  One caller, at [38;5;153mapp.js:17-27[39m, inside the form submit handler. It reads [38;5;153musername[39m and [38;5;153mpassword[39m out of the DOM. There is
+  no user ID anywhere in the form or the page.
+
+  [1mThe fork:[0m adding the parameter is trivial; the real question is where the caller gets a value to pass. That decision
+  is the one you have to live with, because it determines what "who logged in" actually identifies and whether it's
+  stable across sessions.
+
+  - [1mCaller-supplied from a new form/page source[0m — you add a hidden input or read it from a data attribute the server
+    rendered. Buys a real, server-meaningful ID. Costs a change to [38;5;153mindex.html[39m and an assumption that something upstream
+    knows the ID. Rules out nothing later.
+  - [1mClient-generated ID (e.g. [38;5;153mcrypto.randomUUID()[39m, persisted in [38;5;153mlocalStorage[39m)[0m — buys a stable per-browser identifier
+    with zero server coordination. Costs: it identifies a browser, not a person, so it will not match any user record
+    you have. Hard to change later once IDs are in logs.
+  - [1mDerive it from [38;5;153musername[0m — buys nothing you don't already have; [38;5;153mlogin[39m already logs and returns the username.
+    Cheapest, but the parameter would be redundant.
+
+  [1mMy recommendation: caller-supplied.[0m A tracking ID that can't be joined to a real user record is tracking you'll have
+  to redo, and the other two options give you exactly that. The cost here is one hidden input in [38;5;153mindex.html[39m.
+
+  Two smaller points I'll fold into whichever you pick: I'd make [38;5;153muserId[39m the [1mfirst[0m parameter (identity before
+  credentials) or the last — and I'd keep it [1moptional[0m so the single existing call site can't silently break if the ID is
+  absent.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID source [39m[49m
+
+[1m[38;5;231mWhere should the caller get the userId value it passes to login()?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCaller-supplied (Recommended)[39m
+     [38;5;246mAdd a hidden input / data attribute to index.html that something upstream populates; the submit handler reads it [39m
+     [38;5;246mand passes it through. Real, joinable user identity.[39m
+  [38;5;246m2.[39m Client-generated UUID
+     [38;5;246mGenerate crypto.randomUUID() on first visit, persist in localStorage. No server coordination, but identifies a [39m
+     [38;5;246mbrowser rather than a person.[39m
+  [38;5;246m3.[39m Derive from username
+     [38;5;246mPass the username as userId. Zero new plumbing, but the parameter duplicates what login() already logs and returns.
+[39m  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

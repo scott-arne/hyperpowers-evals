@@ -1,0 +1,40 @@
+
+  [1mShort design[0m
+
+  [1mThe real choice.[0m Pure word-boundary isn't actually viable on its own: [38;5;153mformat("supercalifragilistic", { truncate: 10 })
+[39m  has no space in the budget, so backing off to the last boundary yields an empty string. Any word-boundary version
+  needs a hard-cut fallback. So the choice is between hard cut, and word-boundary-with-fallback — which is hard cut plus
+  about three lines.
+
+  - [1mA — Hard cut.[0m [38;5;153mstr.slice(0, max - 3) + '...'[39m. Shortest, fully predictable, cuts mid-word: [38;5;153m"hello world"[39m at 9 → [38;5;153m"hello
+[39m    [38;5;153m..."[39m.
+  - [1mB — Word boundary, hard-cut fallback.[0m Take the same [38;5;153mmax - 3[39m budget, back off to the last whitespace, trim trailing
+    space, and fall back to the hard cut when no boundary exists. [38;5;153m"hello world"[39m at 9 → [38;5;153m"hello..."[39m.
+
+  [1mI recommend B.[0m You already named the reason — it's the better read — and the fallback that makes it correct is also
+  what makes the cost negligible. It's strictly A with a [38;5;153mlastIndexOf[39m and a guard, same complexity class, no new failure
+  mode: when there's no boundary it [3mis[0m A.
+
+  [1mBehavior I'm pinning down[0m (say if any is wrong):
+
+  - [38;5;153mstr.length <= maxLength[39m → returned unchanged, no ellipsis appended.
+  - [38;5;153mmaxLength <= 3[39m → returns [38;5;153m'...'.slice(0, maxLength)[39m, so the never-exceed invariant holds even at [38;5;153mmaxLength: 1[39m.
+  - Trailing whitespace is trimmed before the ellipsis, so you get [38;5;153m"hello..."[39m, not [38;5;153m"hello ..."[39m.
+  - [1mOrder:[0m truncate runs after the case transforms and before [38;5;153mprefix[39m/[38;5;153msuffix[39m, so [38;5;153mmaxLength[39m bounds the string being
+    truncated and caller-supplied chrome always survives. Consequence: with a prefix, the final return value can exceed
+    [38;5;153mmaxLength[39m. The alternative — truncating last so [38;5;153mmaxLength[39m bounds the whole return — lets a long prefix eat all the
+    content. This one is cheap to flip later if you'd rather have the hard ceiling on the final string.
+  - [1mOption shape:[0m [38;5;153mformat(str, { truncate: 20 })[39m — a plain number, matching the existing flat-option style. It inherits
+    the file's truthiness guard, so [38;5;153mtruncate: 0[39m reads as "no truncation" rather than "truncate to nothing".
+
+  [1mFiles touched:[0m [38;5;153mformat.js[39m (one new option block), [38;5;153mformat.test.js[39m (assertions in the existing [38;5;153mconsole.assert[39m style —
+  normal case, word boundary, no-boundary fallback, under-limit passthrough, tiny [38;5;153mmaxLength[39m).
+
+  Want me to build this?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 1m 59s · done 2:10 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+    and answers the questions forms actually ask ("show me the current user", "am I logged in?") without another round.
+    Locks in a stored JSON shape you'd need a migration for if it changes.
+  - [1mSession plus change notification.[0m Adds [38;5;153msubscribe(fn)[39m so UI updates when login state changes. Only worth it if
+    something needs to re-render on logout in another tab; otherwise it's machinery with no caller.
+
+  [1mI'd take the session object.[0m You've already told me other forms are coming, and [38;5;153misLoggedIn[39m is the question nearly
+  every one of them asks. Notification is the YAGNI cut — no consumer exists, and it's additive later.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · What should the shared session module expose? → Session object (Recommended)[39m
+
+[38;5;231m⏺[39m Fourth: how the page runs. This decides the module story — the session module has to be loadable by both [38;5;153mapp.js[39m and
+  the later forms, and there's no bundler here.
+
+  If you open [38;5;153mindex.html[39m straight from disk ([38;5;153mfile://[39m), ES modules are blocked by CORS and the module has to be a plain
+  global script. If it's served over HTTP, [38;5;153m<script type="module">[39m with real imports is the better structure. (Note
+  [38;5;153msrc/utils.js[39m uses CommonJS [38;5;153mmodule.exports[39m, which the browser can't load either way — that directory looks unrelated to
+  the page.)
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How is index.html loaded during development? → Opened from disk (file://)[39m
+
+[38;5;231m⏺[39m Last question. Persisting across browser restarts means the session has to end somehow — otherwise a shared or public
+  machine keeps showing the last person who logged in, indefinitely.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Expiry [39m[49m
+
+[1m[38;5;231mWhen should a persisted session expire?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFixed window, e.g. 24h (Recommended)[39m
+     [38;5;246mloginAt is stored; reads past the window return no session and clear it. Bounds exposure with no UI work.[39m
+  [38;5;246m2.[39m Never, until logout
+     [38;5;246mSession lives until clear() is called. Needs a logout control to exist, which today it doesn't.[39m
+  [38;5;246m3.[39m Sliding window
+     [38;5;246mEach access extends the deadline. Keeps active users signed in; more state churn on every read.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

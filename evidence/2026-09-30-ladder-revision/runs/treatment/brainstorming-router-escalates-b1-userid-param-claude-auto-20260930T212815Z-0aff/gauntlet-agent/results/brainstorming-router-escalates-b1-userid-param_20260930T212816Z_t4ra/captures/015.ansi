@@ -1,0 +1,40 @@
+  window.AppIdentity = { getUserId };
+
+  [1mStored record[0m — one [38;5;153mlocalStorage[39m key, [38;5;153mapp.identity[39m:
+
+  { [36m"v"[39m: [32m1[39m, [36m"userId"[39m: [31m"9f2c…"[39m, [36m"createdAt"[39m: [31m"2026-09-30T…Z"[39m }
+
+  [1m[38;5;153mgetUserId()[39m resolution order[0m, memoized once per page load:
+
+  1. Cached value from an earlier call this page load → return it.
+  2. Read and parse the key. [1mIf it parses and has a non-empty string [38;5;153muserId[39m, use it — whatever [38;5;153mv[39m says.[0m That lenient read
+     is deliberate: it means a future schema bump, or a rollback to this build, can never clobber an id that's already
+     out in someone's browser. [38;5;153mv[39m gets written for future readers; nothing branches on it today.
+  3. Otherwise (key absent, unparseable, wrong shape, empty [38;5;153muserId[39m) → generate, write, return. No attempt to salvage a
+     corrupt record.
+
+  [1mGeneration:[0m [38;5;153mcrypto.randomUUID()[39m when present, otherwise a v4 assembled from [38;5;153mcrypto.getRandomValues[39m. No [38;5;153mMath.random[39m
+  path — anything with [38;5;153mlocalStorage[39m has [38;5;153mgetRandomValues[39m.
+
+  [1mWhen storage is unavailable[0m (Safari private mode, blocked site data, quota): every read and write is wrapped, and a
+  throw falls through to an in-memory id for this page load. Consequences I want stated plainly rather than buried:
+
+  - [38;5;153mgetUserId()[39m [1mnever throws and never returns undefined.[0m Callers need no guard.
+  - Tracking silently degrades from per-person to per-visit for that user. There is no signal to the caller that this
+    happened. I think that's right — a login form should not fail because analytics can't persist — but it does mean
+    your data will contain visit-scoped ids you can't distinguish from person-scoped ones. If you want them
+    distinguishable, say so now; it's a field in the envelope and it's free today, expensive later.
+
+  [1mWhat this is not:[0m no consent prompt, no opt-out, no expiry. You accepted the persistence, so I'm not inventing a
+  consent mechanism you didn't ask for — but the id does persist indefinitely until the user clears site data, and I'll
+  record that as an explicit scope boundary in the spec rather than leave it implied.
+
+  Does section 1 look right? In particular the two flagged calls: the lenient [38;5;153mv[39m read, and letting a blocked-storage
+  visit produce an indistinguishable per-visit id.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 3m 26s · done 2:35 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

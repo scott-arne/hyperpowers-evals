@@ -1,0 +1,40 @@
+  the submit handler resolves it.
+  [3mTrades:[0m simplest thing that satisfies every answer you gave. IDs are unguessable and stable per username per browser.
+  But a later form that isn't a login form has no username to look up — it would have to know who's current, and this
+  approach has no notion of "current." That gap is the reason I don't recommend it.
+
+  [1mApproach B — derive the ID from the username.[0m No map at all: [38;5;153muserId = sha256(username)[39m, computed on demand. Same
+  username yields the same ID on every device with no storage to keep in sync.
+  [3mTrades:[0m no storage growth, nothing to migrate, and cross-device stability you can't get from A. But
+  [38;5;153mcrypto.subtle.digest[39m is async, so [38;5;153mlogin()[39m becomes async and the change ripples into the caller; the ID is computable
+  by anyone who knows the username, so it's an alias rather than an identifier; and it can never be rotated.
+  Cross-device stability is the real draw, and it's worth little while there's no backend to share it with.
+
+  [1mApproach C — identity store with a current-user pointer.[0m A's registry plus a [38;5;153mcurrent[39m record ([38;5;153m{ username, userId, [39m
+  [38;5;153mloggedInAt }[39m). The module exposes [38;5;153mgetUserId(username)[39m, [38;5;153msetCurrent(username)[39m, and [38;5;153mgetCurrent()[39m. [38;5;153mlogin()[39m takes [38;5;153muserId[39m;
+  the handler resolves it and marks it current.
+  [3mTrades:[0m one more stored field than A, and it forces one question A lets you dodge — when identity gets cleared, given
+  there's no logout today. In exchange, a future form calls [38;5;153mgetCurrent()[39m with no arguments and no knowledge of how login
+  worked.
+
+  [1mI recommend C.[0m You said other forms will need this, and that's the requirement A quietly fails: a settings or profile
+  form has a user, not a username to look up. C is A plus one field, which is a small price for the thing you actually
+  asked for. B solves a problem you don't have yet and makes [38;5;153mlogin()[39m async to do it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mC — store + current pointer (Recommended)[39m
+     [38;5;246mRegistry plus a current-user record. Future forms call getCurrent() with no arguments. One extra stored field; [39m
+     [38;5;246mneeds a clearing rule.[39m
+  [38;5;246m2.[39m A — username→ID registry
+     [38;5;246mJust the map, looked up by username. Simplest, but later non-login forms have no username to look up.[39m
+  [38;5;246m3.[39m B — derive ID from username
+     [38;5;246msha256(username), no stored map, stable across devices. Makes login() async, and the ID is computable by anyone who
+[39m     [38;5;246mknows the username.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

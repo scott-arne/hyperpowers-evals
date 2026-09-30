@@ -1,0 +1,40 @@
+  no [38;5;153muserId[39m anywhere in the app — no field in [38;5;153mindex.html[39m, nothing in [38;5;153msrc/utils.js[39m, and the login stub is what would
+  [3mestablish[0m identity. So adding a [38;5;153muserId[39m parameter means inventing a value at the call site, and where it comes from
+  changes what this actually is.
+
+  [1mThe fork[0m — what differs is where the ID originates, and that decides whether this is a signature tweak or a new
+  identity concept:
+
+  - [1mReturn it instead of passing it in[0m — [38;5;153mlogin()[39m stays [38;5;153m(username, password)[39m and its return value grows a [38;5;153muserId[39m (today
+    the stub can derive/echo one; in a real app the server sends it). Buys you a truthful shape: the server
+    authenticates, then tells you who it was. Costs nothing at the call site beyond reading [38;5;153mresult.userId[39m. Doesn't give
+    you a userId [3mbefore[0m the call.
+  - [1mClient-generated tracking ID[0m — the handler makes an ID (e.g. [38;5;153mcrypto.randomUUID()[39m) and passes it in as a
+    correlation/session ID for the attempt, including failed ones. Buys you traceability across the request. Costs: it's
+    not "who logged in", it's "which attempt this was" — naming it [38;5;153muserId[39m would be misleading; [38;5;153mrequestId[39m/[38;5;153msessionId[39m is
+    the honest name. Cheap to change now, annoying once logs are being parsed.
+  - [1mAdd a userId field to the form[0m — third input in [38;5;153mindex.html[39m, threaded through [38;5;153mvalidateForm[39m and [38;5;153mlogin[39m. Buys a literal
+    reading of the request. Costs: users now type an ID alongside a username, which is almost certainly not what you
+    want. This is the expensive one to walk back — it's a UI and validation change.
+
+  [1mMy recommendation: the first one.[0m "Track who logged in" is information that only exists [3mafter[0m authentication, so it
+  belongs on the way out, not on the way in. The second is a legitimate need but it's a different feature with a
+  different name. The third I'd only do if there's a real product reason for a separate account identifier.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn it from login (Recommended)[39m
+     [38;5;246mKeep login(username, password); add userId to the returned object and log/track it from the result. Identity comes
+[39m     [38;5;246mout of authentication, not into it.[39m
+  [38;5;246m2.[39m Client-generated tracking ID
+     [38;5;246mHandler generates an ID and passes it in to correlate the attempt. I'd name it requestId/sessionId rather than [39m
+     [38;5;246muserId.[39m
+  [38;5;246m3.[39m Add a userId form field
+     [38;5;246mNew input in index.html, threaded through validateForm and login as a third parameter. Users type it themselves.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

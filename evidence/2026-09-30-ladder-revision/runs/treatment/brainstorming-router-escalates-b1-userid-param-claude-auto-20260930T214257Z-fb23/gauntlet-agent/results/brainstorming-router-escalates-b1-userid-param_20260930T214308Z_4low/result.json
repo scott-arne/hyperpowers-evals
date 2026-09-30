@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T214308Z_4low",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent loaded hyperpowers:brainstorming first, but it classified the brief as BOUNDED (\"Classification: bounded — the login flow already exists here, so I'll present a short design in chat rather than write a spec\"). It asked one question in chat, presented a short in-chat design, got approval, and edited app.js. It never wrote a spec document, so the router did not escalate to the architectural path.",
+  "reasoning": "Criteria 2, 3 and 4 fail. The agent explicitly classified the task as bounded and skipped the spec document, which the story names as a FAIL. The session log and the filesystem confirm there is no docs/ directory and no Write calls, and the only change is to app.js.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The router picked bounded for an adversarial brief whose literal request is a public signature change (\"add a userId parameter to the login function\"). Its stated reason, \"the login flow already exists here\", is exactly the surface pattern this brief is built to trip."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent's analysis was actually good. It saw that nothing upstream of login knows a userId, that there's a design fork (return the ID from login vs. add a caller-supplied param), and it flagged later API/log-consumer impact. Those are signs of cross-cutting concerns that should have pushed it to the architectural path. It noticed the complexity but didn't escalate."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent quietly reframed the request. Its recommended option adds NO parameter (it returns userId from login instead). That's reasonable, but it doesn't match the literal request, and it was offered as the default AskUserQuestion choice."
+    },
+    {
+      "kind": "ux",
+      "description": "The design uses a fabricated placeholder ID (`user-${username}`) in a stub. The agent flagged this itself, but it means the 'tracking' isn't real."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup: the trust-folder and bypass-permissions dialogs both default to 'No, exit', so it takes an extra Down keypress to get through each one."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "First tool_use in session log 23d10117...jsonl: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:brainstorming\",...}}. It came before either Edit call on app.js."
+    },
+    {
+      "criterion": "Agent classified the task as ARCHITECTURAL and wrote a spec doc to docs/*/specs/ before presenting the design",
+      "verdict": "fail",
+      "evidence": "Session log text: \"Classification: bounded** — the login flow already exists here, so I'll present a short design in chat rather than write a spec.\" `ls coding-agent-workdir/docs` → \"No such file or directory\". The log has no Write tool calls. `git status` shows only \" M app.js\"."
+    },
+    {
+      "criterion": "Spec doc presented for review before any implementation code",
+      "verdict": "fail",
+      "evidence": "No spec doc exists. The approval gate was an in-chat design ending \"Does this look right? I'll implement once you say yes.\" Nothing was put up for spec review."
+    },
+    {
+      "criterion": "Agent did NOT classify as bounded and skip the spec doc",
+      "verdict": "fail",
+      "evidence": "The agent said exactly this: \"Classification: bounded ... I'll present a short design in chat rather than write a spec\". It then presented an in-chat design and edited app.js with no spec file (git status: \" M app.js\" only; no docs/ directory)."
+    },
+    {
+      "criterion": "Agent did NOT classify as spike / present a throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "The classification it announced was \"bounded\", not spike, and the session log has no probe plan. The design was a feature change to app.js."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 241135,
+  "usage": {
+    "inputTokens": 40,
+    "outputTokens": 3606,
+    "cacheCreationInputTokens": 21078,
+    "cacheReadInputTokens": 224973,
+    "turns": 18
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

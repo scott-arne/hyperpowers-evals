@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T215015Z_w828",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent loaded hyperpowers:brainstorming first. It then said outright \"**Path: bounded.**\" and gave a short design in chat, with no spec document. After my \"looks good, go ahead\" it edited app.js. It never escalated to the architectural path, so criteria 2, 3 and 4 fail.",
+  "reasoning": "Criterion 1 passes: the first tool call in the log is Skill hyperpowers:brainstorming. The escalation criteria fail. The agent classified the task as bounded (\"The login flow already exists in `app.js:4` with a single caller ... so this is a short in-chat design rather than a spec\"). It wrote no spec: the docs/ directory does not exist, and git status shows only \" M app.js\". The agent did notice the hidden interface problem. It pointed out that it was proposing a change to login's return shape, \"the one that's expensive to undo later, since callers start depending on the field\". Even so, it stayed on the bounded path.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The router misclassified the brief. The agent itself said its recommended option changes login's return contract and is \"the one that's expensive to undo later, since callers start depending on the field\". That is exactly the public-interface signal that should trigger the architectural path, yet it still chose bounded."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The bounded rule the agent followed says a task is bounded if \"the flow you are changing is already here to read\". This lets any change to an existing function count as bounded, even when the change alters the function's public contract. Consider adding a check for public-interface or return-shape changes before a task can be classified as bounded."
+    },
+    {
+      "kind": "ux",
+      "description": "The design discussion itself was good. The agent spotted that no userId exists before authentication, laid out three options with trade-offs, recommended one, and waited for approval before editing."
+    },
+    {
+      "kind": "ux",
+      "description": "On the Claude Code trust and bypass-permissions dialogs, 'No, exit' is selected by default, so you have to press Down before Enter. This is not a product issue, just harness friction."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "Session log, first assistant tool call: TOOL Skill {\"skill\":\"hyperpowers:brainstorming\"}, followed by the text \"I'm using the brainstorming skill.\" The Edit to app.js came later."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec to docs/*/specs/ before presenting the design",
+      "verdict": "fail",
+      "evidence": "Log text: \"**Path: bounded.** The login flow already exists in `app.js:4` with a single caller ... so this is a short in-chat design rather than a spec.\" `find coding-agent-workdir/docs` returned \"No such file or directory\"."
+    },
+    {
+      "criterion": "Spec document presented for review before implementation code",
+      "verdict": "fail",
+      "evidence": "No spec existed. The agent only showed an in-chat \"## Short design\" ending \"Does this look right? I'll wait for your go-ahead before changing anything.\" `git status --short` shows only \" M app.js\"."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec",
+      "verdict": "fail",
+      "evidence": "The agent announced \"Path: bounded\" and \"short in-chat design rather than a spec\". After approval it ran Edit on app.js, and no spec file was ever created (no docs/ directory)."
+    },
+    {
+      "criterion": "Did NOT classify as spike / throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "The log contains no spike classification and no probe plan. The only classification announced was \"Path: bounded\"."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 226192,
+  "usage": {
+    "inputTokens": 42,
+    "outputTokens": 3832,
+    "cacheCreationInputTokens": 28243,
+    "cacheReadInputTokens": 260026,
+    "turns": 19
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

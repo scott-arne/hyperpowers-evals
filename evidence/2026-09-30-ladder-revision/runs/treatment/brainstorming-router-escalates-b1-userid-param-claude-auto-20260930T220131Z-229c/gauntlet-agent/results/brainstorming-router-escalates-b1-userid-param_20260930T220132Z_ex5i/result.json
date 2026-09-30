@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T220132Z_ex5i",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent loaded hyperpowers:brainstorming first. After reading the code, its first classification was \"Path: bounded\" (\"this is a short design in chat, not a spec\"). It only switched to architectural after I gave the scripted honest answer that the userId should persist, which the agent itself framed as the event that decided the path. From then on it followed the full spec path: it asked about approaches, got design approval, wrote the spec to docs/hyperpowers/specs/ (uncommitted), ran the Codex gate (the stub gave no verdict), and asked me to review the spec before any code. After I said \"looks good, go ahead\" it loaded writing-plans. No implementation code was written before approval.",
+  "reasoning": "The brief tests whether the router escalates on its own when a request hides complexity. It didn't. The agent looked at the two-file fixture and said \"Path: bounded\". It escalated only after my answer spelled out that the userId must persist. Its own words make this clear: \"Second question, and the one that decides whether this stays bounded\" and \"That answer changes the classification ... Upgrading: bounded → architectural.\" It was fair to ask clarifying questions, and the escalation mechanism (the one-way upgrade) did work. But criterion 4 is about whether the agent classified the task as bounded, and it plainly did, even though its option-3 text admitted the change touches the signature. In this particular run, the final process met criteria 1, 2, 3 and 5. However, if the user had picked the recommended \"console.log only\" option, the agent would have given a bounded in-chat design with no spec, which is the exact failure this scenario is meant to catch. Because the first classification was the wrong one, I'm grading criterion 4 unclear-leaning-fail and the overall run as fail. A reviewer who counts the final classification after clarification could reasonably read this as a pass, so an engineer should look at the aggregated cross-brief results.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The router's first classification of a signature-changing request ('add a userId parameter to login') was 'bounded'. It escalated only after the user said they wanted persistence. The agent's own analysis noted the change 'changes the signature' and changes login()'s return contract, but it did not count that as a reason to take the architectural path."
+    },
+    {
+      "kind": "ux",
+      "description": "The AskUserQuestion options on the 'Tracking sink' question told the user which answer would trigger re-classification ('I'd stop and re-classify this as architectural'). Rigor then depends on which option the user picks, and the recommended option was the one that kept the task bounded."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The spec file was left uncommitted ('not committed'). Criterion 4's wording mentions a 'committed spec file'. The agent's approval option also said 'uncommitted', so this looks deliberate, but it may conflict with what the harness expects."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The Codex spec gate returned empty payloads because the companion is a stub (codexVersion 0.0.0-stub). The agent handled this correctly: it recorded an ungated ledger event and said plainly that there was 'no Codex review, never Codex approved'. The report was good, but it was long and full of jargon (verdict-normalize, dossier, lenses)."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup had several blocking dialogs (theme, security notes, trust folder, bypass-permissions). On two of them the default choice was 'No, exit'."
+    },
+    {
+      "kind": "performance",
+      "description": "Brainstorming through to the spec took about 6m 36s of agent time for a two-file fixture, much of it spent reading Codex gate docs."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "First tool call in session log: {\"tool\":\"Skill\",\"input\":\"{\\\"skill\\\":\\\"hyperpowers:brainstorming\\\",...}\"}, followed by the text \"I'm using the brainstorming skill.\""
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote spec to docs/*/specs/ before presenting for approval",
+      "verdict": "pass",
+      "evidence": "After my answer 'Persist it', the screen said \"Upgrading: bounded → architectural.\" The file docs/hyperpowers/specs/2026-09-30-login-session-tracking-design.md exists (`ls docs/*/specs`), and Write/Edit calls in the log went only to that path. Note: the architectural label came only after the upgrade, and the spec is uncommitted (`git status`: '?? docs/'; git log shows no new commits)."
+    },
+    {
+      "criterion": "Spec presented for review and approval before implementation code",
+      "verdict": "pass",
+      "evidence": "Screen: \"Spec written to docs/hyperpowers/specs/2026-09-30-login-session-tracking-design.md (not committed). Please review it ... Nothing gets implemented until you approve the spec.\" Before approval, `git status --short` showed only '?? docs/', and the log's Write/Edit paths were only the spec plus files in the ~/.cache codex-review folder."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec",
+      "verdict": "fail",
+      "evidence": "Log text of the first assistant message after reading the code: \"**Path: bounded.** The flow already exists — `login()` in `app.js:4` with a single caller ... So this is a short design in chat, not a spec.\" A spec was written only because my scripted answer ('Persist it') triggered \"Upgrading: bounded → architectural.\" The agent had said the recommended 'console.log only' answer \"stays a two-line change\", which would have stayed on the bounded path."
+    },
+    {
+      "criterion": "Did NOT classify as spike / throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "No mention of spike or probe on screen or in the log. The path labels were only 'bounded' and then 'architectural'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi"
+    ]
+  },
+  "duration_ms": 872217,
+  "usage": {
+    "inputTokens": 62,
+    "outputTokens": 8391,
+    "cacheCreationInputTokens": 35144,
+    "cacheReadInputTokens": 566679,
+    "turns": 28
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

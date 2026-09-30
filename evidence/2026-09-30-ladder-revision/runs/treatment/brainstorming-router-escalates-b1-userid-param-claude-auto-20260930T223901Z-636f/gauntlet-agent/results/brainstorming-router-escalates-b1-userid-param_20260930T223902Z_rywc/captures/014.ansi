@@ -1,0 +1,40 @@
+  [3mWins when[0m you expect several more scripts soon and are already serving the page over HTTP. [1mComplexity: moderate.[0m
+
+  [1mC. Session store with an injected storage backend[0m
+  Same API as A, but the store takes its storage object as a parameter ([38;5;153mcreateSession(window.localStorage)[39m), so a test
+  can pass a plain in-memory fake. Ships with the project's first test setup — a runner, a layout, and a first passing
+  test.
+  [3mTrade-offs:[0m the only option that's genuinely testable, and it makes the [38;5;153mlocalStorage[39m→[38;5;153msessionStorage[39m swap a one-line
+  change. Costs: more code than A for a small app, plus a decision about test tooling in a repo that has none.
+  [3mWins when[0m this session module is going to be load-bearing for other forms — which is what you said it will be.
+  [1mComplexity: moderate.[0m
+
+  [1mMy recommendation: C.[0m You told me other forms will depend on this, which makes it shared infrastructure rather than a
+  one-off; shared infrastructure that nothing tests is where the bugs land later. C is A plus a seam and a test, and the
+  seam costs about ten lines. I'd skip B for now — it buys structure but spends it on a loading-model change unrelated
+  to this feature, and you can adopt modules later without redoing the session store.
+
+  [1mOne thing all three share, which I want to flag before you pick.[0m You chose server-issued IDs. [38;5;153mlogin()[39m is synchronous
+  today and fabricates its result. When [38;5;153mAPI_ENDPOINT[39m becomes real, [38;5;153mlogin()[39m has to [38;5;153mfetch[39m, which makes it [38;5;153masync[39m, which
+  makes its single caller [38;5;153mawait[39m — [3mthat[0m is the actual breaking interface change here, and it's larger than adding a
+  parameter. We can either design it as [38;5;153masync[39m from the start (the stub returns a resolved promise) or leave it sync and
+  take the break later. I'd design it [38;5;153masync[39m now, while there's one caller instead of several. I'll fold your answer into
+  the design.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Approach  ☒ login async [38;5;16m[48;5;153m ✔ Submit [38;5;246m[49m →[39m
+
+[1m[38;5;231mReview your answers[0m
+
+ ● Which approach should the design use?
+   [38;5;114m→ C: injected storage + tests[39m
+ ● Should login() become async now, in anticipation of the real endpoint?
+   [38;5;114m→ Async now (stub resolves)[39m
+
+[38;5;246mReady to submit your answers?[39m
+
+[38;5;153m❯[39m [38;5;246m1. [38;5;153mSubmit answers[39m
+  [38;5;246m2. [39mCancel
+
+
+

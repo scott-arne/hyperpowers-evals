@@ -1,0 +1,40 @@
+  proceeds without independent Codex approaches. Not retrying it into a loop. The approaches below are mine alone; no
+  [38;5;153m(Codex)[39m or [38;5;153m(both converged)[39m tags, because nothing came back to converge with.
+
+  [1mShort design[0m
+
+  [1mApproach — word boundary, with a hard-cut fallback.[0m Cut back to the last whitespace before the budget; if the budget
+  contains no whitespace (one long unbroken word or a URL), hard-cut instead. That's four lines more than the pure hard
+  cut and removes its worst output — the mid-word amputation. Pure hard cut is simpler but I don't think the simplicity
+  is worth it here: the only thing it buys is the absence of one [38;5;153mlastIndexOf[39m call, and it's the choice you'd revisit the
+  first time a label reads [38;5;153m"Configu..."[39m. A third option — a [38;5;153mtruncate: 'word' | 'exact'[39m strategy setting — I'm
+  discarding as YAGNI; two behaviors in a utility with no callers yet is speculative.
+
+  [1mBehavior:[0m
+  - [38;5;153moptions.maxLength[39m is a number. Strings at or under it come back untouched.
+  - Budget is [38;5;153mmaxLength - 3[39m; slice there, cut back to the last whitespace if there is one, trim trailing whitespace,
+    append [38;5;153m'...'[39m. Result is never longer than [38;5;153mmaxLength[39m.
+  - [38;5;153mmaxLength <= 3[39m leaves no room for content: return [38;5;153m'...'.slice(0, maxLength)[39m. Keeps the never-exceed guarantee
+    instead of throwing.
+
+  [1mOne ordering decision worth flagging:[0m the truncate block goes [1mlast[0m, after [38;5;153mprefix[39m/[38;5;153msuffix[39m. If it ran earlier, a prefix
+  would push the result back over [38;5;153mmaxLength[39m and the guarantee you just picked would be false. The cost is that [38;5;153mmaxLength
+[39m  can eat into a suffix — with a short budget, [38;5;153m{ suffix: " (new)", maxLength: 10 }[39m can truncate away part of the
+  suffix. I think a real maximum is worth that; say so if you'd rather the suffix be protected.
+
+  [1mFiles touched:[0m [38;5;153mformat.js[39m (one new [38;5;153mif[39m block at the end of the existing chain, matching the surrounding style),
+  [38;5;153mformat.test.js[39m (new [38;5;153mconsole.assert[39m lines in the existing flat style).
+
+  [1mTesting:[0m [38;5;153mnode format.test.js[39m, written test-first. Cases: under the limit, exact-length boundary, word-boundary cut,
+  no-whitespace fallback, trailing-space cleanup, [38;5;153mmaxLength <= 3[39m, and interaction with [38;5;153msuffix[39m. Note the existing tests
+  use [38;5;153mconsole.assert[39m, which logs but doesn't set a non-zero exit code — I'll follow the local pattern rather than pull
+  in a test runner, unless you want that changed.
+
+  Does this look right? I'll hold here until you say go.
+
+[38;5;246m✻[39m [38;5;246mSautéed for 1m 46s · done 3:08 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  plain object and need no DOM at all. That combination costs one extra parameter and buys dependency-free tests. B
+  stays available later — you can add events to A's session module without changing any consumer that only reads.
+
+  [1mTwo problems I need to flag before designing[0m
+
+  [1m1. The token and the ID will have different lifetimes, and that's a bug waiting to happen.[0m You chose [38;5;153msessionStorage[39m
+  for the ID and in-memory (or [38;5;153mHttpOnly[39m cookie) for the token. On refresh, the in-memory token vanishes but the ID
+  survives — leaving the app holding a user ID with no credential, looking logged in while every API call fails. The
+  clean resolutions are either (a) the backend sets an [38;5;153mHttpOnly[39m cookie so the session genuinely survives refresh, or (b)
+  on load, an ID with no token is treated as logged-out and cleared. This needs deciding in the design, not after.
+
+  [1m2. [38;5;153mpackage.json[39m has no [38;5;153m"type"[39m field, so [38;5;153msrc/*.js[39m is CommonJS.[0m Adding ES modules for the browser code means either
+  setting [38;5;153m"type": "module"[39m and renaming those two Node files to [38;5;153m.cjs[39m, or giving the new browser files a [38;5;153m.mjs[39m extension.
+  Not hard, but it touches files outside the feature.
+
+  I'd also record as an explicit assumption: [1mthe login response shape is unknown[0m — nothing in this repo documents what
+  [38;5;153mapi.example.com/login[39m returns. I'll write it as [38;5;153mAssumption: response is {userId, token}, validate via <the actual API
+[39m  [38;5;153mcontract>[39m rather than as fact.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Approach [39m[49m ☐ Refresh gap  ☐ Module config  ✔ Submit  →
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA + injection seam (Recommended)[39m
+     [38;5;246mSession accessor module as the single source of truth, with an injectable storage backend so unit tests need no [39m
+     [38;5;246mDOM. Smallest design meeting all your answers; events can be added later without breaking readers.[39m
+  [38;5;246m2.[39m B: observable store
+     [38;5;246mSession module emits change events; tracking and future forms subscribe. Most decoupled, but builds an event system
+[39m     [38;5;246mfor consumers that don't exist yet.[39m
+  [38;5;246m3.[39m A, plain
+     [38;5;246mSession accessor module using sessionStorage directly, no injection. Slightly simpler code; unit tests then need a
+[39m     [38;5;246mDOM/storage shim.[39m
+  [38;5;246m4.[39m C: explicit wiring
+     [38;5;246mNo singleton at all; login returns the identity and each caller handles it. Most testable, but no shared accessor [39m
+     [38;5;246macross the app.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

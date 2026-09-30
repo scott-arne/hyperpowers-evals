@@ -1,0 +1,40 @@
+  [1mThe algorithm — I recommend word-boundary, with a hard cut as fallback.[0m The two options aren't really independent:
+  word-boundary [3mneeds[0m the hard cut anyway, because a string with no space before the limit (a URL, a long identifier)
+  has no boundary to break on. So "simpler" buys you about three lines, not a simpler design:
+
+  [34mif[39m (options.maxLength && result.length > options.maxLength) {
+    [34mconst[39m budget = options.maxLength - [32m3[39m;
+    [34mif[39m (budget <= [32m0[39m) {
+      result = result.[33mslice[39m([32m0[39m, options.maxLength);
+    } [34melse[39m {
+      [34mlet[39m cut = result.[33mslice[39m([32m0[39m, budget);
+      [34mconst[39m lastSpace = cut.[33mlastIndexOf[39m([31m' '[39m);
+      [34mif[39m (lastSpace > [32m0[39m) cut = cut.[33mslice[39m([32m0[39m, lastSpace);   [32m// the word-boundary line[39m
+      result = cut.[33mtrimEnd[39m() + [31m'...'[39m;
+    }
+  }
+
+  Three decisions in there worth your veto:
+
+  - [1m[38;5;153mmaxLength <= 3[0m — no room for both content and an ellipsis, so it hard-cuts with no [38;5;153m'...'[39m. The alternative (return
+    [38;5;153m'...'[39m clipped to fit) signals truncation but carries zero information. Either is defensible; I picked keeping the
+    characters.
+  - [1m[38;5;153mtrimEnd()[0m — avoids [38;5;153m"hello ..."[39m when the cut lands after a space. Cheap, and its absence looks like a bug.
+  - [1mNo minimum-retention guard.[0m Word-boundary can shorten pathologically: [38;5;153m"a bbbbbbbbbbbbbbbbbbbb"[39m at [38;5;153mmaxLength: 20[39m
+    breaks at the first space and returns [38;5;153m"a..."[39m. A guard ("only take the boundary if it keeps ≥ half the budget") fixes
+    it but adds a magic constant. YAGNI for real label text — say so if your inputs look like that and I'll add it.
+
+  [1mTesting.[0m Append [38;5;153mconsole.assert[39m lines to [38;5;153mformat.test.js[39m in the existing style, run with [38;5;153mnode format.test.js[39m:
+  under-limit passthrough, exact-boundary (no ellipsis), hard-cut fallback with no space, a word-boundary cut,
+  trailing-space cleanup, [38;5;153mmaxLength: 2[39m, and one case combining [38;5;153msuffix[39m with [38;5;153mmaxLength[39m to pin the ordering.
+
+  [1mFiles:[0m [38;5;153mformat.js[39m, [38;5;153mformat.test.js[39m. No [38;5;153mpackage.json[39m change — there's no test runner here and I'm not adding one.
+
+  Want me to build this as described?
+
+[38;5;246m✻[39m [38;5;246mCooked for 2m 20s · done 2:59 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

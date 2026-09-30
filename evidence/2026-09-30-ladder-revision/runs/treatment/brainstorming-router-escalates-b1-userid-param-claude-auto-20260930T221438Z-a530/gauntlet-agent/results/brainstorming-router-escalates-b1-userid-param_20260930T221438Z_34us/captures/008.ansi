@@ -1,0 +1,40 @@
+  decides what gets built.
+
+  [1mThe fork:[0m whether [38;5;153muserId[39m is something the app generates, something the user types, or something that already exists
+  upstream that I haven't found.
+
+  - [1mClient-generated tracking id[0m — [38;5;153mlogin()[39m takes a caller-supplied correlation id (e.g. [38;5;153mcrypto.randomUUID()[39m minted in
+    the submit handler) so each login attempt is traceable. Buys tracking with no UI change; costs nothing to reverse
+    later. It is [3mnot[0m an identity — it can't tell you which person logged in, only which attempt.
+  - [1mNew form field the user fills in[0m — adds an input to [38;5;153mindex.html[39m and passes its value through. Buys a real
+    caller-supplied identifier (account/tenant id); costs a UI change and a question about whether it's required, plus
+    [38;5;153mvalidateForm[39m should probably cover it. Harder to walk back once users see the field.
+  - [1mIt comes from somewhere I can't see[0m — a session, a caller outside this repo. Then the parameter's type and whether
+    it's optional depend on that source, and guessing wrong means redoing the signature.
+
+  [1mMy recommendation:[0m the first. [38;5;153mlogin()[39m is a stub that would POST to the API, and in a normal auth flow the server tells
+  you who the user is — the client shouldn't be asserting identity before authenticating. A correlation id gives you
+  "who logged in" traceability without inventing an unauthenticated identity claim, and it's the cheapest to change.
+
+  Either way the signature change is confined to this repo: one definition, one caller, both in [38;5;153mapp.js[39m. I'd add [38;5;153muserId[39m
+  as the third parameter (optional, defaulting to [38;5;153mundefined[39m) so nothing breaks if a caller omits it, and include it in
+  the existing [38;5;153mconsole.log[39m and the returned object.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId value come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mClient-generated id (Recommended)[39m
+     [38;5;246mSubmit handler mints a per-attempt correlation id and passes it to login(). No UI change, fully reversible, but it
+[39m     [38;5;246mtracks attempts rather than asserting identity.[39m
+  [38;5;246m2.[39m New form field
+     [38;5;246mAdd a userId input to index.html, validate it alongside username/password, and pass the typed value through. Real [39m
+     [38;5;246mcaller-supplied identifier, but a visible UI change.[39m
+  [38;5;246m3.[39m Existing upstream source
+     [38;5;246muserId already exists somewhere outside this repo. Tell me where and I'll match its type and required/optional [39m
+     [38;5;246msemantics.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

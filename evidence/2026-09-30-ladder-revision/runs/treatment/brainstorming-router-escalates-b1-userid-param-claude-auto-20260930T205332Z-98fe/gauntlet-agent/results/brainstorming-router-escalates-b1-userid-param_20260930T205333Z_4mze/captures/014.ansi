@@ -1,0 +1,40 @@
+    until something explicitly clears it. That's a real consequence, not a formality — it needs a deliberate
+    clear-on-logout path, which this app currently has no logout to hang off.
+  - [1mIn-memory module state[0m — a variable in the store module. Zero persistence surface, but lost on every page reload,
+    and since this is a multi-page static app ([38;5;153mindex.html[39m plus whatever forms come later), a reload is exactly what
+    happens when you navigate. This probably fails your "works across the app" requirement.
+  - [1mCookie[0m — persists and is sent to the server automatically, which matters if the backend needs the ID. Adds flags to
+    get right ([38;5;153mSameSite[39m, [38;5;153mSecure[39m, expiry) and sends the value on every request whether or not you want it.
+
+  [1mMy recommendation:[0m [38;5;153msessionStorage[39m. It satisfies "persists and works across the app" for a login session, which is the
+  actual requirement, without leaving an identifier on disk after the browser closes. [38;5;153mlocalStorage[39m is a defensible
+  choice if you want people to stay recognized across restarts — but that's a product decision about staying logged in,
+  not a storage detail, and it obliges us to build a logout/clear path in the same change.
+
+  Worth flagging: [38;5;153mlogin()[39m today is a stub that returns [38;5;153m{ success: true, user: username }[39m without ever calling
+  [38;5;153mAPI_ENDPOINT[39m. Whichever option you pick, the "server returns a userId" part will also be stubbed for now, and I'll
+  shape the return so the real call can drop in later without changing callers.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How long should the stored userId persist? → sessionStorage (Recommended)[39m
+
+  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should the session store be shared with app.js and future forms?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mPlain global script (Recommended)[39m
+     [38;5;246msession.js attaches a small API to window, loaded before app.js. Matches the current zero-build style and works [39m
+     [38;5;246mwhen opening index.html directly from disk.[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246msession.js exports, app.js imports, script tags become type=module. Cleaner boundaries, but requires serving over [39m
+     [38;5;246mhttp — file:// stops working.[39m
+  [38;5;246m3.[39m Add a bundler
+     [38;5;246mIntroduce a build step now so later forms scale. Real tooling, but adds dependencies and a build to a project that
+[39m     [38;5;246mcurrently has neither.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

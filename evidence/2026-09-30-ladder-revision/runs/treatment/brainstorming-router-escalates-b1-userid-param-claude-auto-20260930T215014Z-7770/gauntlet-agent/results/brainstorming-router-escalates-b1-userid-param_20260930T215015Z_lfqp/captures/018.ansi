@@ -1,0 +1,40 @@
+  step. Everything in that file is a global. The moment identity lives in its own file and "other forms" import it, that
+  stops working cleanly: with plain script tags, load order becomes the dependency graph, and every module is a global
+  anyone can overwrite. Note also that [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are CommonJS Node files with no connection to the
+  browser app — the repo already has two incompatible module conventions sitting next to each other.
+
+  - [1mNative ES modules[0m ([38;5;153m<script type="module">[39m, [38;5;153mimport[39m/[38;5;153mexport[39m) — works in every current browser with no build step, real
+    encapsulation, explicit dependencies. Costs: you must serve over [38;5;153mhttp://[39m rather than opening the file directly
+    ([38;5;153mfile://[39m blocks module loading), and there's no bundling, so each module is a request.
+  - [1mPlain script tags with a namespace global[0m ([38;5;153mwindow.Auth = {...}[39m) — zero change to how the page loads, works from
+    [38;5;153mfile://[39m. Costs: manual load-order management, no encapsulation, and it gets worse with every file you add.
+  - [1mA bundler[0m (Vite, esbuild) — modules plus dev server, HMR, and a production build. Costs: a [38;5;153mnode_modules[39m, a config,
+    and a build step in a repo that currently has neither a dependency nor a script.
+
+  [1mMy recommendation: native ES modules.[0m You've described at least three new units — an identity store, the tracking
+  module, and the login flow itself — plus future forms consuming them. That's precisely the point where globals start
+  causing bugs that are tedious to diagnose. ES modules get you there with no dependencies at all, which keeps this repo
+  as simple as it is now. A bundler is a fine later step and switching to one from ES modules is easy; untangling
+  globals into modules afterward is the expensive direction.
+
+  I'd also fold the two stray CommonJS files in [38;5;153msrc/[39m into the decision — not rewrite them, just be explicit about
+  whether the browser app and that Node code are meant to share anything.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Module system [39m[49m ☐ Tooling  ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mHow should the new modules be wired into the page? (app.js is currently a plain script tag with no build step)[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mNative ES modules (Recommended)[39m
+     [38;5;246mscript type=module with import/export. Real encapsulation, no dependencies, no build step. Requires serving over [39m
+     [38;5;246mhttp rather than opening index.html from disk.[39m
+  [38;5;246m2.[39m Plain scripts + namespace global
+     [38;5;246mKeep script tags, hang everything off a single window.App object. No change to page loading, works from file://, [39m
+     [38;5;246mbut load order is manual and nothing is encapsulated.[39m
+  [38;5;246m3.[39m Add a bundler (Vite)
+     [38;5;246mModules plus dev server and production build. Best long-term ergonomics, but introduces node_modules, a config, and
+[39m     [38;5;246ma build step this repo doesn't have.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

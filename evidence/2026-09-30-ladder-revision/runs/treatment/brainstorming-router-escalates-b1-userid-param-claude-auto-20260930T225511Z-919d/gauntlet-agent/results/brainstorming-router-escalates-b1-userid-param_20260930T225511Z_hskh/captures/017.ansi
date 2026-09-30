@@ -1,0 +1,40 @@
+
+  ---
+
+  [1mSection 1 — Architecture and module boundaries[0m
+
+  Three files change and one is added.
+
+  [1mNew: [38;5;153midentity.js[0m — the only module in the app that knows [38;5;153mlocalStorage[39m exists. Its interface:
+
+  - [38;5;153mget()[39m → [38;5;153m{ userId, displayName } | null[39m
+  - [38;5;153mset({ userId, displayName })[39m → persists, returns the stored record
+  - [38;5;153mclear()[39m → removes it (this is what logout calls)
+
+  It owns one storage key, validates what it reads back (a hand-edited or truncated [38;5;153mlocalStorage[39m entry must not crash
+  the app — a malformed record is treated as "no identity"), and never touches the DOM or the network. That isolation is
+  the point: [38;5;153mlocalStorage[39m → [38;5;153msessionStorage[39m, or adding C's subscriptions later, is a change inside this file only.
+
+  [1mChanged: [38;5;153mapp.js[0m — [38;5;153mlogin(username, password, identity)[39m becomes [38;5;153masync[39m. It performs the request, and on success calls
+  [38;5;153midentity.set(...)[39m with what the server returned. It does not read [38;5;153mlocalStorage[39m and does not reach for a global. The
+  submit handler becomes [38;5;153masync[39m too and passes the imported store in.
+
+  [1mChanged: [38;5;153mindex.html[0m — [38;5;153m<script src="app.js">[39m becomes [38;5;153m<script type="module" src="app.js">[39m.
+
+  [1mUntouched: [38;5;153msrc/[0m — [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are a Node CommonJS greet demo with no relationship to login. They
+  stay exactly as they are. I'm flagging this because [38;5;153mpackage.json[39m names [38;5;153msrc/index.js[39m as [38;5;153mmain[39m, so the package's declared
+  entry point is unrelated to the browser app; I'm not proposing to reconcile that here.
+
+  One consequence to name explicitly: [38;5;153mtype="module"[39m means [38;5;153mindex.html[39m [1mstops working when opened as a [38;5;153mfile://[39m URL[0m. Modules
+  are fetched with CORS rules that [38;5;153mfile://[39m fails. Anyone opening the page directly will need to serve it ([38;5;153mpython3 -m [39m
+  [38;5;153mhttp.server[39m or equivalent). That is a real change to how you run this thing today, and it's the price of the module
+  system you chose.
+
+  Does that structure look right so far?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 3m 42s · done 4:02 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

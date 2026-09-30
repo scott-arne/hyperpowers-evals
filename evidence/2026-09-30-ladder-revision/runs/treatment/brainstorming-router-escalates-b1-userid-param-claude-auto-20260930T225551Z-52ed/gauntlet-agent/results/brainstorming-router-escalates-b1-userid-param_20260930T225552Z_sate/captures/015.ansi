@@ -1,0 +1,40 @@
+  [38;5;153mtype="module">[39m.
+  [3mBuys:[0m the clearest boundaries — [38;5;153mlogin[39m authenticates, [38;5;153mtrackEvent[39m records, the handler orchestrates. Each is testable
+  alone, and swapping in a vendor touches only the transport.
+  [3mCosts:[0m the handler must remember to call it, so a future second login path could silently skip tracking. Converting to
+  ES modules is a real (small) change to [38;5;153mindex.html[39m.
+
+  [1mB. [38;5;153mlogin[39m emits its own event[0m
+  [38;5;153mlogin[39m calls [38;5;153mtrackEvent[39m internally before returning.
+  [3mBuys:[0m impossible to forget; every login is tracked by construction, and the handler stays as-is apart from [38;5;153mawait[39m.
+  [3mCosts:[0m couples authentication to analytics. [38;5;153mlogin[39m now has two reasons to change and can't be tested without stubbing
+  the tracker. For an auth function this coupling tends to age badly — analytics requirements churn far faster than auth
+  does.
+
+  [1mC. Event bus / pub-sub[0m
+  [38;5;153mlogin[39m publishes [38;5;153mlogin_succeeded[39m to a small emitter; an analytics subscriber registered at startup consumes it.
+  [3mBuys:[0m fully decoupled, and cheap to add more event types or more consumers later.
+  [3mCosts:[0m genuine indirection — you can't tell what happens on login by reading the login path. For exactly one event
+  with exactly one consumer, this is machinery bought against a future that may not arrive. YAGNI says no for now, and A
+  upgrades to C later without rework if it does.
+
+  [1mI recommend A.[0m It gives you the seam you asked for with the fewest moving parts, keeps [38;5;153mlogin[39m honest as an auth
+  function, and leaves both B's guarantee and C's flexibility available later. The one thing it gives up — the
+  compile-time guarantee that tracking can't be forgotten — is worth very little in a codebase with exactly one login
+  path.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Approach [38;5;16m[48;5;153m ☐ Module style [39m[49m ✔ Submit  →
+
+[1m[38;5;231mHow should the second browser file be loaded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mindex.html uses <script type="module">; real import/export. Modern, explicit dependencies, no globals.[39m
+  [38;5;246m2.[39m Second script tag + globals
+     [38;5;246mAdd <script src="src/analytics.js"> before app.js. Zero change to how app.js works, but relies on implicit global [39m
+     [38;5;246mordering.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel
+

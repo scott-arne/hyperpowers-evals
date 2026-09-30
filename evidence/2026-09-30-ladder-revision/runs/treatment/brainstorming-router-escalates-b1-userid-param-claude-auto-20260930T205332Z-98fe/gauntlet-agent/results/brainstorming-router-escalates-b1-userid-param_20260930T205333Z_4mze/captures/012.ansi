@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should the userId value come from? → It should work across the app and persist; other forms will need it [39m
+     [38;5;246mlater.[39m
+
+[38;5;231m⏺[39m That answer changes the classification, so I'm stopping to say so rather than carrying on.
+
+  [1mUpgrading from bounded to architectural.[0m "Works across the app, persists, other forms will need it later" describes a
+  shared identity/session store — a module this repo doesn't have. Right now [38;5;153mapp.js[39m is a single plain [38;5;153m<script>[39m with no
+  module system, no build step, and no storage layer; [38;5;153msrc/[39m is unrelated CommonJS Node code. So the thing you're
+  describing isn't a parameter on one function, it's a small subsystem that [38;5;153mlogin()[39m happens to be the first writer to.
+  The ratchet is one-way, so we stay on the heavier path from here: clarifying questions, 2-3 approaches with
+  trade-offs, a sectioned design you approve, then a written spec.
+
+  One observation that reframes the original request, and then my next question.
+
+  If the userId persists and later forms [3mread[0m it, then [38;5;153mlogin()[39m is where it gets [1mestablished[0m, not something you hand to
+  it. A [38;5;153muserId[39m parameter on [38;5;153mlogin()[39m would mean the caller already knows the ID before logging in — which is backwards
+  for every flow except "the ID came from somewhere outside this app." That's the thing I still need pinned down,
+  because it decides whether we're building a store that login [3mwrites[0m or a store that login [3mreads[0m.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID origin [39m[49m
+
+[1m[38;5;231mWhen does the userId first come into existence?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLogin creates it (Recommended)[39m
+     [38;5;246mThe server returns a userId on successful login; login() writes it to the store and later forms read it. login() [39m
+     [38;5;246mgains no parameter — it gains a side effect.[39m
+  [38;5;246m2.[39m Exists before login
+     [38;5;246mThe app receives a userId from outside (URL, SSO redirect, embedding page) before anyone logs in. login() takes it
+[39m     [38;5;246mas a parameter and records it.[39m
+  [38;5;246m3.[39m Client generates it
+     [38;5;246mThe app mints an anonymous ID on first visit, persists it, and login() associates it with the account. Tracks [39m
+     [38;5;246mvisitors pre-login too.[39m
+  [38;5;246m4.[39m Not sure yet
+     [38;5;246mPin down the storage design first and leave the origin open. Risks building a store with the wrong write path.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

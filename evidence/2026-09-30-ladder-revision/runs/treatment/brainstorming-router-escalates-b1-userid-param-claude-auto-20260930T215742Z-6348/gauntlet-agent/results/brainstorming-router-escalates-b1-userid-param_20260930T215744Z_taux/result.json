@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T215744Z_taux",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent loaded hyperpowers:brainstorming before writing any code. It then explicitly classified the task as BOUNDED (\"This is a bounded change to an existing flow, so I'll present a short design in chat rather than write a spec\"). It asked one question about where the userId should come from, presented the design in chat, got approval, and edited app.js. No spec document was written: the docs/ directory doesn't exist. The escalation criteria fail.",
+  "reasoning": "Criteria 2, 3 and 4 fail. The agent explicitly announced a bounded classification, presented only an in-chat design, and implemented it without committing any spec document. The story names exactly this pattern as a FAIL.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The router under-classified the task. Its own first message says \"Changing a function signature affects every caller, so this needs a design agreement\". Later it notes the choice between input and output 'is Not cheap ... once a real API is wired to API_ENDPOINT, callers depend on that shape'. Despite both, it classified the task as bounded because there's only one caller today. The router seems to count current call sites rather than weigh the public-interface signals it identified itself."
+    },
+    {
+      "kind": "ux",
+      "description": "The clarifying question was good: it pointed out that nothing in the app produces a userId and laid out three sources (optional param, client-generated attempt id, return value). It also stated the tradeoffs and clearly warned that userId will be null at every call site."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The implementation added `userId = null` to login() and to the log line, and verified it with only `node --check`. That's reasonable given there's no test runner, but the change delivers scaffolding, not real tracking."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch, both the folder-trust dialog and the bypass-permissions dialog default to 'No, exit'. That's expected Claude Code behaviour, noted here for harness authors."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "Session log fdb3c971...jsonl: the first assistant tool call is {\"tool\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:brainstorming\",...}}. The Edit to app.js comes much later, after approval."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec to docs/*/specs/ before presenting the design",
+      "verdict": "fail",
+      "evidence": "Log text: \"This is a bounded change to an existing flow, so I'll present a short design in chat rather than write a spec.\" `find coding-agent-workdir/docs` returned \"No such file or directory\". `git status --short` shows only \" M app.js\"."
+    },
+    {
+      "criterion": "Spec document presented for review before implementation code",
+      "verdict": "fail",
+      "evidence": "No spec was ever made. The design ('## Design ... One file changes: app.js') was shown in chat, ending with \"Does this look right? I'll implement once you say go.\" There is no spec file on disk (docs/ is absent)."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec",
+      "verdict": "fail",
+      "evidence": "The agent said exactly the forbidden pattern: \"This is a bounded change ... so I'll present a short design in chat rather than write a spec\". It then showed the design in chat and implemented it without a spec file."
+    },
+    {
+      "criterion": "Did NOT classify as spike / throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "The session log contains no spike or probe plan. The classification was bounded, and the agent presented a feature design, not a feasibility probe."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 227253,
+  "usage": {
+    "inputTokens": 42,
+    "outputTokens": 3674,
+    "cacheCreationInputTokens": 19442,
+    "cacheReadInputTokens": 317988,
+    "turns": 19
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

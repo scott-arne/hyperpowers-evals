@@ -1,0 +1,40 @@
+  The reason isn't that it's simpler — it's that [38;5;153mformat()[39m is a generic string utility, not a prose renderer. It'll be
+  pointed at IDs, hashes, paths, and URLs as often as sentences, and word boundaries are meaningless in those.
+  Word-boundary cutting also has a bad worst case: [38;5;153mformat("hello supercalifragilisticexpialidocious", { truncate: 30 })[39m
+  finds its last boundary at index 5 and yields [38;5;153m"hello..."[39m — 22 characters of budget thrown away. Avoiding that means a
+  hard-cut fallback [3mplus[0m a "how far back is too far" threshold, which is a tunable nobody has asked for.
+
+  Word boundary is genuinely better if you know the input is prose rendered to a human. Say so and I'll build that
+  instead — it's a cheap swap either way, since the cut strategy doesn't change the option's contract.
+
+  [1mAPI:[0m [38;5;153mtruncate[39m takes the max length as a number — [38;5;153mformat(str, { truncate: 20 })[39m.
+
+  [1mOrdering:[0m applies after [38;5;153muppercase[39m/[38;5;153mlowercase[39m, before [38;5;153mprefix[39m/[38;5;153msuffix[39m. Case transforms don't change length, so they're
+  free to run first. Prefix and suffix are decorations the caller supplies at a length they already know — silently
+  eating them to stay under budget is worse than the caller subtracting 7 for their own [38;5;153m"[log] "[39m. The consequence,
+  stated plainly: [38;5;153mmaxLength[39m bounds the content, so combining [38;5;153mtruncate[39m with [38;5;153mprefix[39m/[38;5;153msuffix[39m can exceed it. Tell me if you'd
+  rather it bound the whole result.
+
+  [1mBehavior:[0m
+  - [38;5;153mstr.length <= maxLength[39m → returned unchanged, no ellipsis.
+  - Otherwise → [38;5;153mstr.slice(0, maxLength - 3) + '...'[39m, exactly [38;5;153mmaxLength[39m chars.
+  - [38;5;153mmaxLength <= 3[39m → [38;5;153m'...'.slice(0, maxLength)[39m, so [38;5;153mtruncate: 2[39m gives [38;5;153m".."[39m and [38;5;153mtruncate: 0[39m gives [38;5;153m""[39m. Keeps the
+    never-exceeds guarantee at every value.
+  - Guarded with [38;5;153mtypeof options.truncate === 'number'[39m rather than the truthiness check the other options use — a
+    truthiness check would silently ignore [38;5;153mtruncate: 0[39m.
+
+  [1mFiles touched:[0m [38;5;153mformat.js[39m (one block in the existing sequence), [38;5;153mformat.test.js[39m (new [38;5;153mconsole.assert[39m lines in the
+  existing style: under limit, exact limit, over limit, the [38;5;153mmaxLength <= 3[39m edge, and one combined with [38;5;153mprefix[39m). Run with
+  [38;5;153mnode format.test.js[39m.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Cut strategy — answering this is also the go-ahead for the rest of the design above. → truncate at word boundary
+[39m     [38;5;246msounds better, go ahead with that[39m
+
+[1m[38;5;220m✻[0m [38;5;220mHatching… [38;5;246m(2m 44s · ↓[39m [38;5;246m9.7k tokens · [38;5;220mthinking some more[38;5;246m)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

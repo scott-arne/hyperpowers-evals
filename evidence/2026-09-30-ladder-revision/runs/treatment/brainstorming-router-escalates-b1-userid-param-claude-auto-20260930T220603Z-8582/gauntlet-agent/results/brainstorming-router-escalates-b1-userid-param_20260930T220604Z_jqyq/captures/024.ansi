@@ -1,0 +1,40 @@
+  [38;5;153mlocalStorage[39m is readable by any script on the origin, so an XSS reads every username in that log and the device id.
+  Nothing secret goes in — no passwords, no tokens, ever. The device id is a persistent tracking identifier with the
+  obligations that implies. And the log is [1mnot[0m an audit trail until the server owns it; I'd put that in a comment at the
+  top of the file so nobody later mistakes it for one.
+
+  [1m7. Cutover to the backend[0m
+
+  Three things change and nothing else: [38;5;153mlogin[39m calls [38;5;153mIdentity.setUserId(...)[39m from the real response; [38;5;153mdrainLoginRecords()[39m
+  ships the buffer; the storage adapter is swapped or supplemented with server sync. This rests on an assumption I can't
+  verify — that the backend will accept a client-supplied device id and return a stable user id. I'll record it in the
+  spec as an assumption to validate against the API design rather than as a fact.
+
+  [1m8. Out of scope[0m
+
+  Real authentication, tokens and session lifetime, logout UI, failure logging, and wiring the other forms — those are
+  separate work, and the last two are follow-ons this design deliberately makes cheap.
+
+  [1m9. Testing[0m
+
+  [38;5;153mnode --test[39m over the identity module with an injected in-memory storage: device id mints once and is stable across
+  calls, [38;5;153mgetUserId[39m is null before [38;5;153msetUserId[39m, [38;5;153mrecordLogin[39m appends with the right shape, the cap evicts oldest at 51
+  entries, [38;5;153mdrainLoginRecords[39m empties the buffer, corrupt JSON recovers, and a throwing storage degrades instead of
+  propagating. [38;5;153mlogin[39m gets tests with a fake identity object, which is what the third parameter buys.
+
+  Does this look right? Tell me what to change, or say go and I'll write it up as a spec for you to review before any
+  code gets written.
+
+[38;5;246m✻[39m [38;5;246mCogitated for 5m 10s · done 3:15 PM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mlooks good, go ahead[39m
+[49m
+[38;5;231m⏺[39m Approved. Writing the spec.
+
+[38;5;174m·[39m [38;5;174mMoseying… [38;5;246m(46s · ↓[39m [38;5;246m2.7k tokens)[39m
+[38;5;246m  ⎿  Tip: Start with small features or bug fixes, tell Claude to propose a plan, and verify its suggested edits[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

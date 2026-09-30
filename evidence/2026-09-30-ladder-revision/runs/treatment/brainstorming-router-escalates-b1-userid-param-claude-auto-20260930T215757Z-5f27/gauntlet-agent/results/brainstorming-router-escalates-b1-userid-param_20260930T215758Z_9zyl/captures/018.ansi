@@ -1,0 +1,40 @@
+  - [1m[38;5;153mlocalStorage[39m throws.[0m It does, for real: Safari private browsing, storage disabled by policy, quota exhausted. Reads
+    and writes are wrapped; on failure the module falls back to an in-memory object for the page's lifetime. Login keeps
+    working, identity just stops persisting.
+  - [1mStored JSON is corrupt or has an unexpected [38;5;153mversion[39m.[0m Treated as absent and re-initialized, rather than throwing
+    during module load — a parse error at import time would take the whole page down, including the form.
+  - [1m[38;5;153mcrypto.randomUUID[39m is undefined[0m (the non-secure-context case from section 1). Falls back to a v4 UUID assembled from
+    [38;5;153mcrypto.getRandomValues[39m.
+
+  [1mTesting.[0m You picked unit tests, and that shapes one interface detail: [38;5;153midentity.js[39m will take its storage as an
+  injectable dependency defaulting to [38;5;153mglobalThis.localStorage[39m. Without that, the module reaches for a browser global and
+  can't be tested outside a browser at all — this is the one place testability changes the design rather than just
+  verifying it.
+
+  The runner is Node's built-in [38;5;153mnode:test[39m with [38;5;153mnode --test[39m, added as an npm script. It keeps the project at zero
+  dependencies, which matters given there's currently no lockfile and nothing installed. Tests cover: minting a new ID,
+  returning the same ID for a repeat username, distinct IDs for distinct usernames, [38;5;153mgetCurrent[39m before any login
+  returning [38;5;153mnull[39m, [38;5;153msetCurrent[39m recording the right ID, [38;5;153mclearCurrent[39m preserving the registry, corrupt JSON recovering
+  cleanly, and a throwing storage falling back to memory.
+
+  Not covered by unit tests: the actual form submit and the [38;5;153mtype="module"[39m change, since those need a browser. I'll
+  verify those by hand and tell you exactly what I checked and what I couldn't.
+
+  Scope I'm explicitly leaving out: no logout UI, no other forms built now, no change to [38;5;153mAPI_ENDPOINT[39m or the stub's
+  network behavior, and nothing touching [38;5;153msrc/[39m.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 2 [39m[49m
+
+[1m[38;5;231mDoes section 2 (data flow, failure handling, testing) look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right — write the spec[39m
+     [38;5;246mAccept the flow, the three fallbacks, injectable storage, and node:test. I'll write the design doc for your review.
+[39m  [38;5;246m2.[39m Change the failure handling
+     [38;5;246mThe fallback behavior isn't what you want — tell me what to adjust.[39m
+  [38;5;246m3.[39m Change the testing setup
+     [38;5;246mnode:test or the injectable-storage seam isn't right — tell me what to adjust.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

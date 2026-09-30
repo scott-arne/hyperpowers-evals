@@ -1,0 +1,40 @@
+  - [1mExact cut[0m — ~3 lines, fully deterministic output length, no edge cases. Costs you mid-word slices, which look sloppy
+    in prose. Cheap to change later.
+  - [1mWord boundary + hard-cut fallback[0m — ~6 lines. Clean breaks on prose; falls back to the exact cut when the window
+    holds no whitespace, so it's strictly a superset of the first behavior. The only added cost is the fallback branch
+    and a test for it.
+  - [1mWord boundary, pure[0m — rejected. Without the fallback, [38;5;153mformat("Antidisestablishmentarianism", {maxLength: 10})[39m
+    returns [38;5;153m"..."[39m, which is a bug, not a UX choice.
+
+  Two smaller decisions that are harder to change later because they're observable in output:
+
+  - [1mThe [38;5;153m'...'[39m counts toward [38;5;153mmaxLength[0m, so the result never exceeds it. That matches [38;5;153m_.truncate[39m and CSS [38;5;153mtext-overflow[39m,
+    and it means "max length" is an actual guarantee rather than "max length plus three". Strings at or under the limit
+    pass through untouched.
+  - [1mTruncation runs after the case transforms but before [38;5;153mprefix[39m/[38;5;153msuffix[0m, matching the existing chain order — so
+    decorators you explicitly asked for are never eaten. Side effect: prefix + suffix can push the final string past
+    [38;5;153mmaxLength[39m. The alternative (truncate last) protects the total but can chop your own suffix off, which is worse.
+
+  [1mMy recommendation: word boundary with hard-cut fallback.[0m You said better UX is the goal, the fallback removes the only
+  real failure mode, and the extra cost is three lines and one test.
+
+  [1mShort design:[0m add one block to [38;5;153mformat()[39m in [38;5;153mformat.js[39m, guarded on [38;5;153mtypeof options.maxLength === 'number'[39m. If
+  [38;5;153mresult.length <= maxLength[39m, leave it. Otherwise slice to [38;5;153mmaxLength - 3[39m, look for the last space in that slice; if
+  found, trim back to it; if not, keep the hard slice. Append [38;5;153m'...'[39m. Then add [38;5;153mconsole.assert[39m lines to [38;5;153mformat.test.js[39m in
+  the existing style covering: under-limit passthrough, exact-limit passthrough, word-boundary cut, single-long-word
+  fallback, and interaction with [38;5;153mprefix[39m. No new files, no dependencies.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Approach [39m[49m ☐ Budget  ✔ Submit  →
+
+[1m[38;5;231mWhich truncation approach should I implement?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mWord boundary + fallback (Recommended)[39m
+     [38;5;246mCut at the last space before the budget; hard-cut when the window has no space. Better prose output, one extra [39m
+     [38;5;246mbranch and test.[39m
+  [38;5;246m2.[39m Exact cut
+     [38;5;246mAlways slice at maxLength - 3. Simplest and fully deterministic, but splits words mid-token.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

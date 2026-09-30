@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m This is a [1mbounded[0m task — [38;5;153mformat()[39m already exists in [38;5;153mformat.js[39m and I'm adding an option to it, so I'll present a short
+  design in chat rather than write a spec. You've named two real algorithmic alternatives, so I'll run the Codex
+  approach gate first.
+
+  [38;5;246mRead [1m1[0m[38;5;246m file [39m
+
+[38;5;231m⏺[39m Before I compare the two truncation strategies, one thing changes what both of them compute.
+
+  [1mThe fork:[0m whether [38;5;153m'...'[39m fits [3minside[0m [38;5;153mmaxLength[39m or is appended [3mon top of[0m it. With [38;5;153mformat("hello world", { truncate: 8 [39m
+  [38;5;153m})[39m:
+
+  - [1mEllipsis inside the budget[0m → [38;5;153m"hello..."[39m (8 chars). The result is never longer than [38;5;153mmaxLength[39m, so the option is a
+    hard guarantee you can rely on for column widths, table cells, or DB fields. Costs you 3 characters of real content,
+    and it needs an edge-case rule for [38;5;153mmaxLength < 3[39m.
+  - [1mEllipsis on top[0m → [38;5;153m"hello wo..."[39m (11 chars). You keep the full [38;5;153mmaxLength[39m of content, but the output can exceed
+    [38;5;153mmaxLength[39m by 3, so it can't be used as a width guarantee.
+
+  This one is expensive to change later — it's the observable contract of the option, and anything that depends on the
+  width would break if it flips. The word-boundary choice you raised is cheap to change by comparison; it only shifts
+  where the cut lands.
+
+  I recommend [1mellipsis inside the budget[0m: "max length" reading as an actual maximum is what callers assume, and it's the
+  only version that's safe to point at a fixed-width target.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Ellipsis [39m[49m
+
+[1m[38;5;231mShould the '...' count toward maxLength, or be appended on top of it?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mInside the budget (Recommended)[39m
+     [38;5;246mOutput never exceeds maxLength. format("hello world", {truncate: 8}) -> "hello..." (8 chars). Safe as a hard width
+[39m     [38;5;246mguarantee.[39m
+  [38;5;246m2.[39m Appended on top
+     [38;5;246mKeeps a full maxLength of content, output can be maxLength + 3. format("hello world", {truncate: 8}) -> "hello [39m
+     [38;5;246mwo..." (11 chars).[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

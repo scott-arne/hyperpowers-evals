@@ -1,0 +1,40 @@
+
+  You chose server-assigned [38;5;153muserId[39m: the ID comes back from authentication. But [38;5;153mlogin[39m today is [1msynchronous[0m — [38;5;153mapp.js:4[39m
+  returns a plain object immediately and the comment says it "would POST to [38;5;153mAPI_ENDPOINT[39m in a real app." A value
+  assigned by the server can only arrive from an actual round-trip, which makes [38;5;153mlogin[39m asynchronous, which changes its
+  caller at [38;5;153mapp.js:23[39m and the submit handler around it. That's not optional plumbing; it follows directly from the
+  choice you already made.
+
+  So: do we do that now, or shape the interface for it and leave the stub synchronous?
+
+  - [1mMake [38;5;153mlogin[39m async and really call the endpoint[0m — [38;5;153masync function login(username, password)[39m returning a promise of [38;5;153m{ [39m
+    [38;5;153msuccess, userId, user }[39m, with the submit handler awaiting it. You get a genuinely working login and a real [38;5;153muserId[39m to
+    track. Cost: this is where error handling enters the design — network failure, non-200, malformed response, and
+    what the form shows the user meanwhile. That's the bulk of the work, and it's login behavior, not tracking.
+  - [1mKeep the stub, but make it async-shaped[0m — [38;5;153mlogin[39m stays fake but returns a promise with a stubbed [38;5;153muserId[39m, and the
+    handler awaits it. The interface is final, the tracking layer is wired to a real shape, and swapping in the actual
+    [38;5;153mfetch[39m later touches only [38;5;153mlogin[39m's body. Cost: still no real authentication, so the [38;5;153muserId[39m is invented.
+  - [1mKeep it fully synchronous[0m — I'd have to invent a client-side [38;5;153muserId[39m, which contradicts "server-assigned" and gets
+    rewritten the moment login becomes real.
+
+  [1mMy recommendation:[0m the second. It commits to the async interface — the part that's expensive to change because it
+  propagates to callers — without dragging full login error handling into what you asked for as a tracking change. The
+  third option I'd rule out; it re-opens the decision you just made.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ login scope [39m[49m
+
+[1m[38;5;231mHow far should the login function itself change?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAsync-shaped stub (Recommended)[39m
+     [38;5;246mlogin returns a promise with a stubbed userId; handler awaits. Interface is final, real fetch drops in later [39m
+     [38;5;246mtouching only login's body.[39m
+  [38;5;246m2.[39m Real async API call
+     [38;5;246mActually POST to API_ENDPOINT, handle network/HTTP/parse failures and form feedback. A working login, but most of [39m
+     [38;5;246mthe work is login behavior, not tracking.[39m
+  [38;5;246m3.[39m Keep it synchronous
+     [38;5;246mInvent a client-side userId. Contradicts server-assigned; I'd advise against it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

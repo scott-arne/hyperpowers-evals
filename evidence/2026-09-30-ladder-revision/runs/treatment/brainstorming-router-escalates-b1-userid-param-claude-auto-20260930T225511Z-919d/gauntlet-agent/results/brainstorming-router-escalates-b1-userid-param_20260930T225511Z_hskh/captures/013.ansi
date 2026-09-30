@@ -1,0 +1,40 @@
+
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where does the canonical user identifier originate? → Server-issued (Recommended)[39m
+
+[38;5;231m⏺[39m Server-issued it is. Next question — it decides how much the storage decision matters.
+
+  You said the ID should persist and be readable across the app. What persists alongside it is a separate call, and it's
+  the one with security consequences:
+
+  - [1mIdentifier only[0m — store just the account ID (and maybe a display name). It's not a secret, so leaking it is a
+    privacy issue rather than an account-takeover one. Every request still has to authenticate some other way, which for
+    this app means the question comes back the moment [38;5;153mAPI_ENDPOINT[39m is real.
+  - [1mIdentifier plus session token[0m — store the credential too, so subsequent requests can authenticate. This is what a
+    working app needs, and it makes the storage choice a security decision: anything readable from JavaScript
+    (localStorage/sessionStorage) is exposed to any XSS on the page, and the usual answer is an httpOnly cookie the
+    client can't read — which means the client-side store holds the ID for display and the cookie holds the credential.
+
+  I recommend [1midentifier only[0m in the client store, with the credential handled as an httpOnly cookie owned by the
+  backend. It gives you exactly what you asked for — a real user ID, persisted, readable by future forms — without
+  putting a stealable credential in a place JavaScript can read. It also keeps this design honest about the fact that
+  the backend contract is still assumed.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ What persists [39m[49m
+
+[1m[38;5;231mWhat does the persisted client-side identity contain?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mIdentifier only (Recommended)[39m
+     [38;5;246mStore account ID (+ display name) client-side; credential lives in an httpOnly cookie the backend sets. No [39m
+     [38;5;246mstealable secret in JS-readable storage.[39m
+  [38;5;246m2.[39m Identifier + session token
+     [38;5;246mStore the auth token client-side too. Simpler to wire up, but any XSS on the page can exfiltrate it and take over [39m
+     [38;5;246mthe session.[39m
+  [38;5;246m3.[39m Defer the credential question
+     [38;5;246mDesign only the ID layer now and leave authentication of later requests explicitly out of scope.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

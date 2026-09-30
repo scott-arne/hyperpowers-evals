@@ -1,0 +1,40 @@
+    login path, tracking silently misses it — which defeats the point.
+  - [3mComplexity:[0m moderate.
+
+  [1mC. A [38;5;153mloginAndTrack[39m wrapper composing the two.[0m Gets both properties — separated internals, hard to forget at the call
+  site.
+  - [3mDiscarding this one:[0m it's three functions and an indirection layer for a 28-line file with a single caller. YAGNI.
+    Worth revisiting only if a second login path appears.
+
+  [1mI recommend A.[0m Your phrasing — "so we can track who logged in" — reads as an invariant, not a convenience, and A is
+  the only one of the two that enforces it. The coupling cost is real but cheap to unwind later (lifting the tracking
+  call out of [38;5;153mlogin[39m into the caller is a five-line change); silently-missed login events are not cheap to detect. B is
+  the better answer the moment this file grows a second entry point.
+
+  Two details that apply either way, and I want them visible rather than buried in the spec:
+
+  - [1mTracking failure must never fail login.[0m A user who authenticated successfully is logged in, full stop, even if the
+    analytics POST 500s. The tracking call gets its own [38;5;153m.catch[39m.
+  - [1mThe tracking endpoint URL doesn't exist yet.[0m [38;5;153mAPI_ENDPOINT[39m is [38;5;153mapi.example.com[39m, a placeholder. I'll add
+    [38;5;153mTRACKING_ENDPOINT[39m as a sibling constant and have [38;5;153mtrackLogin[39m no-op when it's unset, so the code is correct and inert
+    until you fill in a real URL. That goes in the spec as [38;5;153mAssumption: tracking endpoint URL to be supplied, validate [39m
+    [38;5;153mvia <you providing it>[39m.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA — tracking inside login (Recommended)[39m
+     [38;5;246mlogin does auth then fires the tracking POST fire-and-forget. Tracking can't be skipped. Couples auth to analytics;
+[39m     [38;5;246mcheap to unwind later.[39m
+  [38;5;246m2.[39m B — tracking in the caller
+     [38;5;246mlogin stays pure auth and returns userId; the submit handler calls trackLogin separately. Cleaner separation, but [39m
+     [38;5;246mfuture callers can forget to track.[39m
+  [38;5;246m3.[39m C — loginAndTrack wrapper
+     [38;5;246mCompose the two behind a wrapper. Both properties, but extra indirection I judged YAGNI for a 28-line file with one
+[39m     [38;5;246mcaller.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

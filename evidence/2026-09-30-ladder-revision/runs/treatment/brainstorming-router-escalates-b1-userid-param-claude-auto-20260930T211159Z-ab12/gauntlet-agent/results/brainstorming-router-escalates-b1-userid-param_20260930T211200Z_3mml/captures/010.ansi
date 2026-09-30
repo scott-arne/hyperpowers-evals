@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Project state, which matters for the design: [38;5;153mapp.js[39m is loaded as a [1mclassic script[0m ([38;5;153mindex.html:13[39m), not a module —
+  there's no bundler, no [38;5;153mtype="module"[39m, no dependencies, and no test runner ([38;5;153mpackage.json[39m has no scripts or devDeps).
+  [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are a separate CommonJS Node entry point unrelated to the login page. So "works across
+  the app" currently has no module system to work across; that's part of what we'd be deciding.
+
+  The question that determines everything downstream is where the identity actually comes from, because [38;5;153mlogin[39m is a stub
+  ([38;5;153mapp.js:4-8[39m) that never contacts [38;5;153mAPI_ENDPOINT[39m and returns the username the user typed.
+
+  The fork: whether the persisted identity is [1mauthenticated[0m or [1mself-asserted[0m.
+
+  - [1mA real backend authenticates and returns an ID.[0m The stored identity means something — the server vouched for it.
+    Costs a defined response contract and an auth story, and the client can't do this until that endpoint exists.
+  - [1mClient-only, storing the typed username.[0m Works today with no server. But the "identity" is whatever the user typed
+    into a text box — anyone can open devtools and set it to any value. It's fine for a display name or a UI
+    convenience, and it is [3mnot[0m something later forms should trust for authorization or attribution.
+
+  I want to be explicit about that second point rather than bury it: if other forms will read this value later, the
+  difference between "the server said this is who they are" and "this is what someone typed" is the difference between
+  an audit trail and a decoration. Choosing client-only now and hardening later means revisiting every consumer.
+
+  My recommendation depends on your answer, so I'll ask before proposing approaches.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Identity source [39m[49m
+
+[2m│[0m [1m[38;5;231mWhat authenticates the user — is there a real backend behind API_ENDPOINT, or is this client-only for now?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mClient-only for now[39m
+     [38;5;246mKeep login a stub; persist the typed username as a display-level identity. Fast, works today. I'd design it so the
+[39m     [38;5;246mtrust boundary is explicit and later consumers can't mistake it for authenticated identity.[39m
+  [38;5;246m2.[39m Real backend exists
+     [38;5;246mAPI_ENDPOINT will authenticate and return an account ID. I'd design around that response contract and treat the [39m
+     [38;5;246mstored identity as server-vouched.[39m
+  [38;5;246m3.[39m Backend planned, not built
+     [38;5;246mClient-only today, real auth later. I'd design the seam now so swapping in the server response doesn't require [39m
+     [38;5;246mtouching every consumer.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

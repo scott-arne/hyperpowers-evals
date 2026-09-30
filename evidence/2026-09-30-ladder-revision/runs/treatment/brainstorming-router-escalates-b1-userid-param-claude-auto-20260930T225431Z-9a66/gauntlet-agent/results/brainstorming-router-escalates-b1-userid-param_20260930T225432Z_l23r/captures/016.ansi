@@ -1,0 +1,40 @@
+
+  [1mThe happy path[0m
+
+  1. Page load: [38;5;153midentity.js[39m runs first and defines [38;5;153mIdentity[39m. It reads nothing at load time — expiry is checked on read,
+     so there's no startup work and no timer.
+  2. Submit → [38;5;153mpreventDefault()[39m → read both inputs → [38;5;153mvalidateForm[39m (unchanged).
+  3. If valid: [38;5;153mawait login(username, password)[39m.
+  4. [38;5;153mlogin[39m stays a stub, but an [3masync[0m one, returning [38;5;153m{ success: true, user: username, userId: "stub-" + username }[39m.
+     Keeping the existing [38;5;153muser[39m field means nothing that reads today's return value breaks. The [38;5;153mstub-[39m prefix makes it
+     obvious in a console that this is not a real server id, and varying it by username is what lets you exercise the
+     different-user overwrite by hand.
+  5. On [38;5;153msuccess[39m: [38;5;153mIdentity.set(result.userId)[39m. Then the existing result log.
+  6. Later, any other form calls [38;5;153mIdentity.get()[39m and gets the id or [38;5;153mnull[39m.
+
+  [1mError handling[0m — the governing rule: [3midentity tracking must never break logging in.[0m It's a secondary concern riding on
+  a primary flow, so every failure in it degrades to "no id" rather than to an exception.
+
+  - [1m[38;5;153mlogin[39m returns [38;5;153msuccess: false[0m — store nothing, and leave any existing record untouched. A failed attempt is not
+    evidence about who is at the keyboard, so it shouldn't clear a valid id.
+  - [1m[38;5;153mlogin[39m throws[0m (what a real network call will do) — the handler wraps the [38;5;153mawait[39m in [38;5;153mtry[39m/[38;5;153mcatch[39m, logs the error, stores
+    nothing. Today's stub can't throw; the handling goes in now because the real one will.
+  - [1m[38;5;153mlocalStorage[39m throws or is absent[0m — disabled cookies/storage, private-browsing quota, sandboxed iframes. [38;5;153mset[39m catches
+    and warns once; [38;5;153mget[39m catches and returns [38;5;153mnull[39m. Login still completes.
+  - [1mMalformed record[0m — unparseable JSON, missing [38;5;153muserId[39m, or an unrecognized [38;5;153mv[39m. Treated as absent and removed on read.
+  - [1m[38;5;153mstoredAt[39m in the future[0m — clock changes make this real, and a future timestamp would otherwise produce a record that
+    never expires. Treated as invalid and removed.
+  - [1m[38;5;153mset(null)[39m or [38;5;153mset("")[0m — ignored with a warning rather than throwing, for the same reason as above: a bad id is a
+    tracking bug, not a reason to fail a login.
+
+  The through-line is that [38;5;153mget()[39m has exactly two outcomes for any caller — a usable id, or [38;5;153mnull[39m. Future forms never have
+  to handle a third case.
+
+  Does Section 2 look right? Testing is the last section, then I'll write the spec.
+
+[38;5;246m✻[39m [38;5;246mCogitated for 1m 11s · done 4:02 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

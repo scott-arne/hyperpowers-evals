@@ -1,0 +1,40 @@
+  [38;5;153mSession.getUserId()      -> string | null[39m
+  [38;5;153mSession.setUserId(id)    -> void[39m
+  [38;5;153mSession.clearUserId()    -> void[39m
+
+  Backed by [38;5;153msessionStorage[39m under a single namespaced key ([38;5;153mapp.userId[39m). It's an IIFE so the storage key and the fallback
+  state stay private — matching the file-scope-function style already in [38;5;153mapp.js[39m, with no build step and no
+  [38;5;153mtype="module"[39m.
+
+  The interface is deliberately three functions rather than a general key-value session bag. You have one value today; a
+  wider interface would be guessing at what the later forms need, and widening later is cheap while narrowing is not.
+
+  [1m[38;5;153mindex.html[0m — one line added: [38;5;153m<script src="session.js"></script>[39m before the existing [38;5;153mapp.js[39m tag. Ordering matters and a
+  classic script guarantees it.
+
+  [1m[38;5;153mapp.js[0m — [38;5;153mlogin()[39m keeps its exact signature, [38;5;153mlogin(username, password)[39m. This is the part that contradicts the literal
+  request, so to be explicit: it gains no [38;5;153muserId[39m parameter. The caller has no userId to give it; the userId is what
+  login [3mproduces[0m. What changes inside is that the stubbed response now carries a [38;5;153muserId[39m, and login persists it.
+
+  [1mSection 2 — Data flow[0m
+
+  1. Submit handler reads username/password, runs [38;5;153mvalidateForm[39m (unchanged).
+  2. [38;5;153mlogin(username, password)[39m runs. Its stub response gains a [38;5;153muserId[39m field, clearly marked as standing in for a
+     server-issued ID and derived deterministically from the username so tests aren't random.
+  3. On success, [38;5;153mlogin()[39m calls [38;5;153mSession.setUserId(response.userId)[39m.
+  4. On failure, [38;5;153mlogin()[39m calls [38;5;153mSession.clearUserId()[39m — a failed login must not leave the previous user's ID readable by
+     the next form. That's why [38;5;153mclearUserId[39m is in the interface despite the app having no logout button yet.
+  5. Later forms call [38;5;153mSession.getUserId()[39m after [38;5;153msession.js[39m loads. They don't know storage exists.
+
+  The return value keeps [38;5;153m{ success, user }[39m and adds [38;5;153muserId[39m, so nothing reading it today breaks. When [38;5;153mlogin()[39m becomes
+  async and really calls [38;5;153mAPI_ENDPOINT[39m, it returns a promise of that same shape and step 3 moves inside the [38;5;153m.then[39m —
+  callers change once, at that point, not now.
+
+  Does that look right so far? Error handling and the testing/tooling question are next.
+
+[38;5;246m✻[39m [38;5;246mBaked for 3m 55s · done 2:01 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

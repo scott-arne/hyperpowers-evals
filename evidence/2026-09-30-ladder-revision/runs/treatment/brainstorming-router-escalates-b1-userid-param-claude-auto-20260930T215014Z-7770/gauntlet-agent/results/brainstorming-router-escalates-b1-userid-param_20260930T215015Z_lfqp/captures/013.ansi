@@ -1,0 +1,40 @@
+  [1mThe fork:[0m nothing in this app currently has a user ID. The form collects only [38;5;153musername[39m and [38;5;153mpassword[39m ([38;5;153mindex.html:9-10[39m),
+  and [38;5;153mlogin[39m is a stub that returns [38;5;153m{ success: true, user: username }[39m — the real identity of the person logging in only
+  exists [3mafter[0m the API responds, which this code never does. So "who logged in" has no value available at call time.
+  What you decide here fixes the signature and what every future caller must supply.
+
+  - [1m[38;5;153muserId[39m is a caller-supplied identifier[0m — you pass in something you already know (a tenant ID, an account ID from a
+    prior lookup). Cheap to add, but today's only caller has nothing to pass, so it would be [38;5;153mlogin(username, password, [39m
+    [38;5;153mundefined)[39m until something upstream produces one. Ruled out later: nothing; you can always fill it in.
+  - [1m[38;5;153muserId[39m is a client-generated correlation ID[0m — generate it at submit time (e.g. [38;5;153mcrypto.randomUUID()[39m) purely to tie
+    log lines together. Works immediately with zero upstream changes, but it identifies the [3mattempt[0m, not the person. If
+    what you want is "who", this is the wrong thing wearing the right name.
+  - [1m[38;5;153musername[39m already is who logged in[0m — no new parameter; add the tracking to the existing log line. Zero interface
+    change. Ruled out later: nothing, and it's the cheapest to reverse.
+
+  [1mMy recommendation: the third.[0m [38;5;153mlogin[39m already receives [38;5;153musername[39m and already logs it. Adding a [38;5;153muserId[39m that the sole
+  caller cannot populate gives you a parameter that is [38;5;153mundefined[39m at every call site — worse than no parameter, because
+  it looks like tracking while recording nothing. If the goal is genuinely a stable ID distinct from the username, that
+  ID has to come from the API response, which means the change belongs [3mafter[0m the fetch, not in the signature.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[2m│[0m [1m[38;5;231mNothing in this app produces a user ID today. Which of these did you actually mean?[0m
+
+  [38;5;246m1.[39m username is the ID (Recommended)
+     [38;5;246mNo new parameter. Enrich the existing log line in login() using the username it already receives. Zero interface [39m
+     [38;5;246mchange, nothing left undefined.[39m
+  [38;5;246m2.[39m Caller-supplied userId
+     [38;5;246mAdd the third parameter now and pass undefined from the current caller, on the expectation that something upstream
+[39m     [38;5;246mwill supply a real ID later.[39m
+  [38;5;246m3.[39m Generated correlation ID
+     [38;5;246mAdd userId and generate a UUID at submit time. Ties log lines for one attempt together, but does not identify the [39m
+     [38;5;246mperson.[39m
+  [38;5;246m4.[39m From the API response
+     [38;5;246mThe real ID only exists after the login API answers. Track it there instead of in the signature — a different [39m
+     [38;5;246mchange from the one described.[39m
+[38;5;153m❯[39m [38;5;246m5. [39mA real user ID for the person. It should work across the app and persist, and other forms will need it later.[7m [0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

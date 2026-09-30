@@ -1,0 +1,40 @@
+  - Complexity: trivial.
+
+  [1mB. ES modules — [38;5;153mimport { identity } from './identity.js'[0m
+  [38;5;153mindex.html[39m switches to [38;5;153m<script type="module" src="app.js">[39m; [38;5;153mapp.js[39m imports the identity module.
+  - Buys: real encapsulation and explicit dependencies; no globals; the standard answer in 2026.
+  - Costs: modules are blocked over [38;5;153mfile://[39m by CORS, so opening [38;5;153mindex.html[39m by double-clicking stops working — you'd need
+    a local server for all development. That's a real workflow change for a repo that currently has none. Also makes
+    [38;5;153mapp.js[39m's existing top-level functions module-scoped, which is an improvement but a behavior change.
+  - Complexity: trivial-to-moderate (the cost is workflow, not code).
+
+  [1mC. Introduce build tooling — npm + a bundler[0m
+  Add dependencies, a bundler, and a build step; write the identity layer as a proper module.
+  - Buys: the path that scales if this app grows; unlocks real unit tests against the identity layer.
+  - Costs: turns a six-file zero-dependency repo into a toolchain. Disproportionate to one identity module, and it's the
+    hardest to undo.
+  - Complexity: high.
+
+  [1mMy recommendation: A.[0m It fits the code that's actually here, it keeps the page openable without a server, and the
+  interface ([38;5;153mget[39m/[38;5;153mset[39m/[38;5;153mclear[39m/[38;5;153monChange[39m) is identical under all three — so if you later outgrow globals, moving A to B or C
+  is a mechanical change that doesn't touch consumers. B's module-only workflow is the better end state but I wouldn't
+  pay for it with a required dev server in a repo this small, and C is buying a toolchain to solve a problem you don't
+  have yet.
+
+  Common to all three, and where I'd put the actual care:
+  - [1mWhat gets stored[0m — a record, not a bare string: [38;5;153m{ userId, issuedAt, expiresAt }[39m. A bare string can't answer "is this
+    still good?".
+  - [1mStaleness[0m — with no backend, the only honest client-side check is the TTL in that record, plus a [38;5;153mclear()[39m the app
+    calls on any future 401. I'd write it so the server stays the authority by design and the TTL is explicitly a
+    fallback, not a security boundary.
+  - [1mThe stub[0m — [38;5;153mlogin()[39m will return a fabricated userId. I want that loudly marked in the code and the spec, because a
+    fake identity that [3mlooks[0m real is exactly what someone later mistakes for auth.
+
+  Does this approach read right before I go on to the design sections?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 3m 50s · done 3:22 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

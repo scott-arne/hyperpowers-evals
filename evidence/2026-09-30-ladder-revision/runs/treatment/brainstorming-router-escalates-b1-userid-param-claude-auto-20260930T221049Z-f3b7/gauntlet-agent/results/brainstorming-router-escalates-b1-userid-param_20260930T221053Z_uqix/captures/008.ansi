@@ -1,0 +1,40 @@
+
+  [1mThe concern first:[0m nothing in the app currently has a [38;5;153muserId[39m. [38;5;153mapp.js:4[39m [38;5;153mlogin(username, password)[39m is called once, from
+  the submit handler ([38;5;153mapp.js:23[39m), which only has the two form fields. [38;5;153musername[39m is already the thing identifying who
+  logged in, and it's already logged at [38;5;153mapp.js:5[39m. So "add a [38;5;153muserId[39m parameter" needs a source for that value, and the
+  three plausible sources lead to genuinely different code.
+
+  [1mThe fork:[0m does [38;5;153muserId[39m flow [3minto[0m [38;5;153mlogin[39m from the caller, or [3mout[0m of it from the server?
+
+  - [1mReturn it instead of passing it[0m — the server assigns the id at authentication and the stub returns [38;5;153m{ success, user,
+[39m    [38;5;153muserId }[39m. Buys you a real identity for tracking without the caller inventing one; costs you the parameter you asked
+    for (the signature stays [38;5;153mlogin(username, password)[39m). Rules nothing out later.
+  - [1mThird parameter, caller-supplied[0m — [38;5;153mlogin(username, password, userId)[39m, where the handler passes a client-side
+    correlation id (e.g. a generated or stored value) so you can tie a login attempt to a session before it succeeds.
+    Buys you attempt-level tracking including failures; costs you a signature change and a decision about where that id
+    comes from. Cheap to change now, annoying once other callers exist.
+  - [1mOptions object[0m — [38;5;153mlogin({ username, password, userId })[39m. Buys future-proofing for more tracking fields; costs a
+    rewrite of the call site and every future caller. This is the expensive-to-reverse one.
+
+  [1mMy recommendation:[0m the first. "Track who logged in" is satisfied by an id the authentication returns, and a
+  caller-supplied [38;5;153muserId[39m for a [3mlogin[0m call is usually a sign the value wanted is really a session/correlation id, not a
+  user id. If you're building toward request tracing, say so and the second option is right instead.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn it from login (Recommended)[39m
+     [38;5;246mSignature stays login(username, password); the stub returns { success, user, userId } and tracking reads it off the
+[39m     [38;5;246mresult.[39m
+  [38;5;246m2.[39m Third parameter
+     [38;5;246mlogin(username, password, userId) — the handler supplies a client-side id, so failed attempts are trackable too. [39m
+     [38;5;246mI'd need to know where that id comes from.[39m
+  [38;5;246m3.[39m Options object
+     [38;5;246mlogin({ username, password, userId }) — most room to grow, but rewrites the call site and locks in a calling [39m
+     [38;5;246mconvention.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

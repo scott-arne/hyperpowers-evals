@@ -1,0 +1,40 @@
+  thing that's awkward to change once people depend on it.
+
+  - [1mExact max length[0m — deterministic: output is always the same length for any input over the limit. Costs you mid-word
+    cuts on prose ([38;5;153m"the quick bro..."[39m). Handles inputs with no spaces at all (URLs, IDs, hashes, CJK text) identically
+    to everything else, because it never looks for a boundary.
+  - [1mLast word boundary[0m — reads better on prose. Costs you unpredictable output length: a long word straddling the limit
+    can throw away most of the budget ([38;5;153mmax: 20[39m on [38;5;153m"See https://very-long-url..."[39m cuts back to [38;5;153m"See..."[39m). Needs a
+    fallback to a hard cut when there's no space before the limit, so you end up implementing both anyway.
+
+  Neither is hard to swap later in [3mcode[0m — but the output changes for existing callers either way, so treat it as a real
+  commitment.
+
+  [1mMy recommendation: exact max length.[0m [38;5;153mformat()[39m here is a low-level string primitive, not a prose summarizer — it
+  doesn't know whether it's handed a sentence or a URL. The guarantee "output is never longer than N" is the useful
+  property at this layer, and word-boundary logic silently breaks it in the interesting direction (too short) on exactly
+  the inputs that aren't prose. If you want prose-aware trimming later, it's an additive [38;5;153mtruncate: { maxLength, [39m
+  [38;5;153mwordBoundary: true }[39m on top, not a rewrite.
+
+  Two smaller decisions bundled in, which I'd default as follows unless you say otherwise:
+
+  - [1mEllipsis counts toward the limit[0m — [38;5;153mformat("hello world", { truncate: 8 })[39m → [38;5;153m"hello..."[39m (8 chars), not [38;5;153m"hello wo..."[39m
+    (11). "Cut strings longer than max length" reads to me as a cap on the output.
+  - [1mTruncate runs before [38;5;153mprefix[39m/[38;5;153msuffix[39m, after the case transforms[0m — so the limit applies to the content and your
+    prefix/suffix survive intact rather than being chopped off the end.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ Strategy  ☒ Ellipsis [38;5;16m[48;5;153m ✔ Submit [38;5;246m[49m →[39m
+
+[1m[38;5;231mReview your answers[0m
+
+ ● Which truncation strategy should the truncate option use?
+   [38;5;114m→ truncate at word boundary sounds better, go ahead with that[39m
+ ● Should the '...' count toward the max length?
+   [38;5;114m→ Yes, output never exceeds max (Recommended)[39m
+
+[38;5;246mReady to submit your answers?[39m
+
+[38;5;153m❯[39m [38;5;246m1. [38;5;153mSubmit answers[39m
+  [38;5;246m2. [39mCancel
+

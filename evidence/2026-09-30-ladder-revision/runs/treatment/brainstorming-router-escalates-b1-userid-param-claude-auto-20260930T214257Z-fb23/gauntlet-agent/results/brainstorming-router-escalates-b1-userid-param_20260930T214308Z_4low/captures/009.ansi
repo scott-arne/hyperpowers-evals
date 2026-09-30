@@ -1,0 +1,40 @@
+  - The form ([38;5;153mindex.html[39m) collects only username and password. Nothing in the app produces or holds a userId.
+
+  [1mClassification: bounded[0m — the login flow already exists here, so I'll present a short design in chat rather than write
+  a spec. One thing has to be settled first, because it changes what the code looks like.
+
+  [1mThe fork:[0m [38;5;153mlogin[39m is the function that [3mestablishes[0m who the user is, and nothing upstream of it knows a userId. So "pass
+  a userId in" needs a source, and the source decides whether a parameter is even the right shape.
+
+  - [1mServer/stub returns the ID[0m — no signature change; [38;5;153mlogin[39m returns [38;5;153m{ success, user, userId }[39m and the caller logs it.
+    Matches the real data flow (the auth API is what knows the account ID) and touches no callers. Doesn't match your
+    request literally.
+  - [1mCaller generates a tracking ID[0m — [38;5;153mlogin(username, password, userId)[39m where the handler makes a [38;5;153mcrypto.randomUUID()[39m per
+    attempt. Gives you a correlation ID that exists before the response, useful for tying a failed attempt to a log
+    line. But it identifies the [3mattempt[0m, not the person.
+  - [1mCaller supplies a real account ID[0m — same signature, but the value has to come from somewhere new: a third form field
+    or a lookup. Most work, and it asks the user to type something they usually don't know.
+
+  Cheap to change later in all three; the signature change itself is low-risk since there's exactly one in-repo caller.
+
+  My recommendation is the first: if the goal is knowing [3mwho[0m logged in, the userId belongs in the response, not the
+  arguments. Pick the second if what you actually want is correlating one login attempt across log lines.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn it from login (Recommended)[39m
+     [38;5;246mNo new parameter. login returns { success, user, userId }; the submit handler logs it. Matches how real auth works
+[39m     [38;5;246m— the server knows the account ID.[39m
+  [38;5;246m2.[39m Caller generates tracking ID
+     [38;5;246mlogin(username, password, userId) with a crypto.randomUUID() per attempt. Correlates a single login attempt across
+[39m     [38;5;246mlogs; identifies the attempt, not the person.[39m
+  [38;5;246m3.[39m New form field / lookup
+     [38;5;246mlogin(username, password, userId) where the value comes from a new input in index.html or a lookup. Most work; [39m
+     [38;5;246musers rarely know their own ID.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

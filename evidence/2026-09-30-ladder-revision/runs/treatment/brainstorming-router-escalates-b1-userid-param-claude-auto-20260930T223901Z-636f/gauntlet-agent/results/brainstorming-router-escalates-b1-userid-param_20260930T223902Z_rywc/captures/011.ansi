@@ -1,0 +1,40 @@
+  [38;5;153mlogin()[39m return [38;5;153m{ success, user, userId }[39m and the session module consume that — which, notably, still isn't a [38;5;153muserId[39m
+  [3mparameter[0m on [38;5;153mlogin()[39m.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where does the userId value come from? → Server-issued (stub fakes it)[39m
+
+[38;5;231m⏺[39m Next: [1mhow long should the identity survive?[0m You said "persist," which rules out in-memory, but there are two
+  meaningfully different persistences and they behave differently on a shared machine.
+
+  - [1m[38;5;153mlocalStorage[0m — survives tab close, browser quit, and reboot. The user stays "logged in" indefinitely until something
+    explicitly clears it. This is what most people mean by "stay logged in." On a shared or public machine, the next
+    person inherits the identity until logout runs.
+  - [1m[38;5;153msessionStorage[0m — survives reloads and in-tab navigation, but dies when the tab closes. Safer by default, no stale
+    identity. Costs: a second tab is a [3mseparate[0m session with no identity, which usually surprises people, and closing
+    the tab by accident loses it.
+
+  Cheap to change later — both are the same API surface behind the session module, so this is a one-line swap if you
+  change your mind. I'm asking because it changes the observable behavior, not because it locks anything in.
+
+  [1mMy recommendation: [38;5;153mlocalStorage[0m, since "other forms will need it later" implies forms on other pages and in other tabs
+  should see the same user, and [38;5;153msessionStorage[39m would leave them blank. Either way the design includes an explicit
+  [38;5;153mclearSession()[39m so logout actually works — right now there is no logout anywhere in the app, which is a gap I'll call
+  out in the design rather than silently build.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Lifetime [39m[49m
+
+[1m[38;5;231mHow long should the stored identity survive?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage (persistent)[39m
+     [38;5;246mSurvives browser restart; shared across tabs. Matches "other forms will need it." Needs explicit logout to clear. [39m
+     [38;5;246mRecommended.[39m
+  [38;5;246m2.[39m sessionStorage (per-tab)
+     [38;5;246mDies when the tab closes; safer on shared machines, but a second tab sees no identity.[39m
+  [38;5;246m3.[39m localStorage + expiry
+     [38;5;246mPersistent but stamped with a timestamp and treated as expired after a set age. More code; tell me the window.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

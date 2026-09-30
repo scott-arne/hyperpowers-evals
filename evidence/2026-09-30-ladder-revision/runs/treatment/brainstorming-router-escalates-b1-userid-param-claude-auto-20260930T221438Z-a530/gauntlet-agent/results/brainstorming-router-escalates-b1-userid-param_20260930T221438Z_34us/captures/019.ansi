@@ -1,0 +1,40 @@
+
+  Three failure modes, and they need different answers.
+
+  [1mCorrupt or foreign storage.[0m [38;5;153mlocalStorage[39m is shared across everything on the origin, and the key can hold anything —
+  truncated JSON, a value written by an older version, a string where an object belongs. Every read goes through one
+  private [38;5;153mreadRecord()[39m that wraps [38;5;153mJSON.parse[39m in try/catch and validates the shape ([38;5;153muserId[39m a non-empty string, [38;5;153mexpiresAt[39m
+  a finite number). Anything that fails validation is treated as absent and the key is removed. The rule: a bad record
+  never throws out of [38;5;153mget()[39m and never half-loads. [38;5;153mget()[39m returns [38;5;153mnull[39m or a valid userId — no third state.
+
+  [1mStorage unavailable.[0m [38;5;153mlocalStorage[39m throws on access in Safari private mode and when the quota is full — including on
+  [3mwrite[0m, which is the case people forget. [38;5;153mset()[39m catches, keeps the userId in an in-memory fallback for the page's
+  lifetime, and returns a boolean so the caller knows persistence didn't happen. Degrading to "works until you close the
+  tab" beats an uncaught exception in a submit handler.
+
+  [1mExpiry — and here's the honest limit.[0m [38;5;153mget()[39m compares [38;5;153mDate.now()[39m against [38;5;153mexpiresAt[39m; past it, the record is cleared and
+  [38;5;153mnull[39m returned. Default TTL 24h, a named constant.
+
+  This is a [3mcleanliness[0m mechanism, not a security one, and the spec will say so in those words. Three reasons it can't
+  be more: the clock is the user's and can be moved; the record is in [38;5;153mlocalStorage[39m where any XSS or devtools session can
+  rewrite [38;5;153mexpiresAt[39m; and the TTL is the client's guess about a session lifetime only the server knows. The actual
+  expiry that matters is the HttpOnly cookie's, which this code can't read by design.
+
+  So the contract I'd write down: [1m[38;5;153mAppIdentity.get()[39m returning a userId means "this browser recently saw a login", never
+[0m  [1m"this request is authorized."[0m Authorization is the server re-checking the session cookie on every call. The TTL exists
+  so a shared machine doesn't show a stale name in the UI a week later — not to keep anyone out.
+
+  [1mThe gap this leaves, stated plainly.[0m Between the cookie expiring and the TTL lapsing, [38;5;153mget()[39m returns a userId for a
+  session that's already dead. With no backend there is no way to detect that — the only real fix is a 401 handler, and
+  there are no network calls to get a 401 from. The spec will carry this as a named limitation with the resolution
+  attached: when the real API lands, every non-2xx auth response calls [38;5;153mclear()[39m. I'd rather write that down than let the
+  TTL imply a correctness it doesn't have.
+
+  Does the error handling look right?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 16s · done 3:24 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+
+  [1mError handling.[0m The governing rule is that tracking must never break login — it's observability, and observability
+  that takes down the flow it observes is worse than no observability.
+
+  - [38;5;153mlocalStorage[39m access throws more often than people expect: private browsing, storage disabled by policy, quota
+    exhaustion, sandboxed iframes. Every read and write is wrapped.
+  - On storage failure, [38;5;153mgetUserId()[39m degrades to a module-scoped in-memory ID minted once per page load. The app keeps
+    working and correlation narrows to a single page visit. One [38;5;153mconsole.warn[39m, emitted once rather than per call, so the
+    degradation is visible without flooding the console.
+  - A stored value is validated as a non-empty string before use, not trusted. [38;5;153mlocalStorage[39m is user-writable, so
+    "there's something there" isn't the same as "it's an ID." Anything malformed is treated as absent and re-minted.
+  - If generation itself fails, [38;5;153mgetUserId()[39m returns [38;5;153mnull[39m and [38;5;153mlogin[39m proceeds with [38;5;153muserId: null[39m. It never throws into the
+    submit handler.
+  - [38;5;153mlogin[39m does not validate [38;5;153muserId[39m — it's a passthrough for logging only. I'll state explicitly in the spec that this
+    value must never gate an authorization decision, since a client-minted, client-writable identifier is trivially
+    forgeable. That restriction is what keeps this design safe; it's worth writing down rather than leaving to memory.
+
+  [1mTesting.[0m [38;5;153mnode --test[39m via [38;5;153mnpm test[39m, zero dependencies, tests in [38;5;153mtest/tracking.test.js[39m. Covering: mint-on-empty, reuse
+  on second call, re-mint on a corrupt stored value, the in-memory fallback when storage throws, and [38;5;153mlogin[39m both
+  including [38;5;153muserId[39m and tolerating [38;5;153mnull[39m.
+
+  One consequence you should agree to before I write the spec, because it touches [38;5;153mapp.js[39m beyond the signature change you
+  asked for. Today [38;5;153mapp.js[39m calls [38;5;153mdocument.getElementById("login-form").addEventListener(...)[39m at top level, so the file
+  cannot be loaded in Node at all — requiring it immediately throws on a missing DOM. To unit-test [38;5;153mlogin[39m, two small
+  additions are needed: wrap the DOM wiring in [38;5;153mif (typeof document !== "undefined")[39m, and add a [38;5;153mmodule.exports[39m tail
+  guarded by [38;5;153mtypeof module !== "undefined"[39m. Both are inert in the browser — behavior there is unchanged — but they are
+  edits beyond a parameter, so I'd rather you say yes than find them in a diff.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Section 2 — approve the error handling and the testability edits to app.js? → Approve both[39m
+
+[38;5;231m⏺[39m Both sections approved. Writing the spec.
+
+[38;5;174m·[39m [38;5;174mConsidering[38;5;216m…[38;5;174m [38;5;246m(4m 15s · ↓[39m [38;5;246m16.7k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

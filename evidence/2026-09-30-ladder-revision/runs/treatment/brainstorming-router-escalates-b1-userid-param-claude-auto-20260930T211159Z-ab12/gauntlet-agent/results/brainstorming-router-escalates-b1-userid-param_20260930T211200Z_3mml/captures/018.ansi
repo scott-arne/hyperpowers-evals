@@ -1,0 +1,40 @@
+  ├───────────────┼────────────────────────────────────────┤
+  │ [38;5;153mclear()[39m       │ Removes it — this is logout            │
+  ├───────────────┼────────────────────────────────────────┤
+  │ [38;5;153monChange(fn)[39m  │ Fires on cross-tab [38;5;153mstorage[39m events      │
+  └───────────────┴────────────────────────────────────────┘
+
+  The stored value is a versioned record under key [38;5;153mappSession.identity[39m, not a bare string:
+
+  { [36m"v"[39m: [32m1[39m, [36m"userId"[39m: [31m"alice"[39m, [36m"loginAt"[39m: [31m"2026-09-30T14:02:11.000Z"[39m, [36m"source"[39m: [31m"client-asserted"[39m }
+
+  Two fields there are deliberate. [38;5;153mv[39m exists because [38;5;153mlocalStorage[39m outlives deploys — without it, the first schema change
+  meets records written by the old code and has no way to tell them apart. [38;5;153msource: "client-asserted"[39m is the trust
+  marker: it records [3min the data[0m that no server vouched for this, so when the real backend lands it writes [38;5;153m"server"[39m and
+  any consumer that cares about trust can discriminate. That's the seam I promised for the backend swap.
+
+  [1mOne refinement to your choice.[0m You picked "login establishes the identity" over a [38;5;153muserId[39m parameter — I'd keep that
+  outcome but have the [3msubmit handler[0m call [38;5;153mAppSession.set(result.user)[39m after [38;5;153mlogin[39m returns success, rather than [38;5;153mlogin[39m
+  writing to storage itself. Same signature ([38;5;153mlogin(username, password)[39m, unchanged), same behavior, but it keeps the
+  network-call function from also owning persistence — so when [38;5;153mlogin[39m becomes async and returns a real server ID, only
+  the handler changes. If you'd rather [38;5;153mlogin[39m write directly, say so and I'll flip it.
+
+  [1mSection 2 — Data flow and lifecycle[0m
+
+  1. Submit handler validates ([38;5;153mvalidateForm[39m, unchanged).
+  2. [38;5;153mlogin(username, password)[39m runs — still the stub, still returns [38;5;153m{ success, user }[39m.
+  3. On success the handler calls [38;5;153mAppSession.set(result.user)[39m.
+  4. Any later form reads [38;5;153mAppSession.getUserId()[39m — no import, no load-order concern beyond the script tag.
+  5. A logout control calls [38;5;153mAppSession.clear()[39m.
+
+  On logout: "with an explicit logout" isn't real unless something can invoke it, so the design includes a minimal
+  [38;5;153m<button id="logout">[39m in [38;5;153mindex.html[39m wired to [38;5;153mclear()[39m. Not a styled UI — just an actual way to exercise the path.
+
+  Does this core look right before I go on to error handling and the test setup?
+
+[38;5;246m✻[39m [38;5;246mCooked for 4m 6s · done 2:19 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

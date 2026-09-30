@@ -1,0 +1,40 @@
+  value you wanted to pass in now lives in the shared store, and [38;5;153mlogin[39m reads and writes it there — a parameter would
+  just be a second, competing source for the same fact. This is what makes it work for "other forms later," since those
+  forms don't call [38;5;153mlogin[39m at all and couldn't pass anything to it. Say the word if you want the parameter anyway and I'll
+  revise.
+
+  [1mNew file [38;5;153mtracking.js[0m, an IIFE assigning a single global, loaded before [38;5;153mapp.js[39m:
+
+  [34mTracking[39m.[33mgetHandle[39m()        [32m// -> string; mints + persists on first call[39m
+  [34mTracking[39m.[33mgetUserId[39m()        [32m// -> string | null[39m
+  [34mTracking[39m.[33msetUserId[39m(id)      [32m// stores it; null clears[39m
+  [34mTracking[39m.[33mtrack[39m(event, details)  [32m// one log line, handle + userId attached[39m
+
+  Four functions, nothing else. [38;5;153mtrack[39m is the only place that decides what a tracked event looks like, so replacing
+  [38;5;153mconsole.log[39m with a real analytics call later is a one-file change.
+
+  [1mData model — two values, and deliberately two different lifetimes:[0m
+
+  - [1m[38;5;153mhandle[0m — a random ID minted on first read via [38;5;153mcrypto.randomUUID()[39m, stored in [38;5;153mlocalStorage[39m under [38;5;153mtracking.handle[39m.
+    Survives browser restarts. This is the thing that correlates a person's actions across forms and visits.
+  - [1m[38;5;153muserId[0m — the server's account ID, stored in [38;5;153msessionStorage[39m under [38;5;153mtracking.userId[39m, so it dies when the tab closes.
+
+  That split is the one real decision in this section, so here's the reasoning: this app has no logout. If [38;5;153muserId[39m went
+  in [38;5;153mlocalStorage[39m, it would outlive the session with nothing to ever clear it, and the next person on a shared machine
+  would have their activity logged under the previous user's account ID. Wrong data is worse than missing data.
+  [38;5;153msessionStorage[39m makes the session boundary do the clearing. The handle is safe in [38;5;153mlocalStorage[39m precisely because it
+  names nobody.
+
+  [1mThe security line, written into the design:[0m both values are client-editable — anyone can change them in devtools in
+  five seconds. They may label logs. They may never be what an endpoint trusts to decide who is asking; that stays
+  server-side. I'll put this in the file as a comment so the next person to touch it doesn't promote it into an auth
+  check.
+
+  Does this section look right before I go on to integration, error handling, and testing?
+
+[38;5;246m✻[39m [38;5;246mChurned for 3m 40s · done 4:01 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

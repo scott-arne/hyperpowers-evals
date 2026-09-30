@@ -1,0 +1,40 @@
+
+  That surfaces the question everything else depends on, so it goes first.
+
+  [1mThe fork:[0m [38;5;153mlogin[39m at [38;5;153mapp.js:4[39m is a stub with a comment saying it [3mwould[0m POST to [38;5;153mAPI_ENDPOINT[39m. It never does — it
+  synchronously returns [38;5;153m{ success: true, user: username }[39m. A server-assigned userId can only come from a real response,
+  so either the stub becomes a real call or the userId stays fictional. What you pick changes the shape of every piece
+  downstream:
+
+  - [1mMake [38;5;153mlogin[39m real[0m — it becomes [38;5;153masync[39m, does [38;5;153mfetch(API_ENDPOINT)[39m, and the caller at [38;5;153mapp.js:23[39m becomes [38;5;153mawait[39m/[38;5;153m.then[39m. Buys
+    you an actual userId and a real success/failure signal, so the tracking records something true. Costs: the submit
+    handler, error handling, and any future caller all move to async — that's the expensive-to-undo part, and it's a
+    real interface change. Also needs a decision about what happens when the network fails.
+  - [1mKeep the stub, fake the userId[0m — the stub returns a made-up id alongside [38;5;153muser[39m. Buys you the whole tracking path
+    built and testable now, with one clearly-marked seam to swap later. Costs: you're persisting invented IDs, so the
+    stored data is worthless until the swap happens — fine for scaffolding, bad if anyone reads it as real.
+  - [1mStub stays, tracking waits[0m — define the record shape and the storage interface, wire nothing. Cheap, reversible, but
+    it ships nothing that runs.
+
+  [1mMy recommendation: make [38;5;153mlogin[39m real.[0m The async conversion is the one genuinely irreversible piece here, and doing it
+  now is far cheaper than retrofitting it under a tracking layer that already assumes synchronous returns. Faking the ID
+  means building persistence against a contract you haven't confirmed.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ login stub [39m[49m
+
+[1m[38;5;231mDoes login become a real authenticated API call, or stay a stub?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mMake it real and async (Recommended)[39m
+     [38;5;246mlogin becomes async, fetches API_ENDPOINT, returns the server's userId. Caller at app.js:23 converts to async. Does
+[39m     [38;5;246mthe irreversible part now.[39m
+  [38;5;246m2.[39m Keep the stub, fake the userId
+     [38;5;246mStub returns an invented userId so the tracking path can be built and tested now, with one marked seam to swap [39m
+     [38;5;246mlater. Stored data is placeholder until then.[39m
+  [38;5;246m3.[39m Stub stays, design tracking only
+     [38;5;246mDefine the record shape and storage interface without wiring them. Nothing runs yet, but nothing is committed to [39m
+     [38;5;246meither.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

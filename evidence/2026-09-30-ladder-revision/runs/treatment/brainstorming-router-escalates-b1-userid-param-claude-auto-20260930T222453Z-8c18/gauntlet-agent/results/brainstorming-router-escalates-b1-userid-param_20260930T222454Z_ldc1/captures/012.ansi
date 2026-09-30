@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Approved: B. Here's the design, in sections — tell me if each looks right before I go on.
+
+  [1mSection 1 — The component and its contract[0m
+
+  [38;5;153msession.js[39m defines one global, [38;5;153mUserSession[39m, with three methods and no other surface:
+
+  - [38;5;153mgetUserId()[39m → the stored ID string, or [38;5;153mnull[39m if there isn't one.
+  - [38;5;153msetUserId(id)[39m → stores it.
+  - [38;5;153mclear()[39m → removes it.
+
+  Backing store is [38;5;153mlocalStorage[39m under a single namespaced key, [38;5;153mwebapp:userId[39m, holding the raw ID string rather than a
+  JSON envelope — there's one value and no versioning need, and a bare string keeps the failure modes trivial to reason
+  about.
+
+  [38;5;153mlocalStorage[39m is the choice over [38;5;153msessionStorage[39m because you said "persist": [38;5;153msessionStorage[39m dies with the tab, which
+  would mean a returning visitor always passes [38;5;153mnull[39m and the parameter would be empty in most real sessions.
+
+  Two properties I want to state as invariants, because they're what keep this safe:
+
+  - [1m[38;5;153mUserSession[39m is the only thing that touches [38;5;153mlocalStorage[39m.[0m No other code reads or writes the key directly. That's what
+    makes the storage mechanism swappable later without hunting call sites.
+  - [1mThe stored ID is non-authoritative[0m — it's tracking context, never a credential. Any future backend that receives it
+    treats it as untrusted input. This is the assumption that justifies browser-readable storage at all, so it belongs
+    in the spec rather than in someone's memory.
+
+  One failure mode that needs a decision and that I'd rather not decide silently: [38;5;153mlocalStorage[39m access [1mthrows[0m in some
+  real conditions — Safari private browsing historically, storage disabled by policy, quota exhausted. My proposal is
+  that [38;5;153mUserSession[39m catches those and falls back to an in-memory value for the page's lifetime, so the app keeps working
+  and only loses persistence. The alternative — letting it throw — turns a storage quirk into a broken login form.
+
+  Does this section look right?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 3m 24s · done 3:31 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m
