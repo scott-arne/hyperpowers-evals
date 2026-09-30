@@ -9,13 +9,17 @@
 # that exits non-zero, or a manifest row whose log is missing or does not end
 # with DONE, makes the exit status 1 and the closing line say so. LAUNCHER
 # overrides the launcher path (the stub test uses it); the default is
-# logs/measure-launch.sh beside the manifest.
+# logs/measure-launch.sh beside the manifest. The manifest is exported to the
+# launcher as MANIFEST so its pins come from the same file; LOGS names the log
+# directory both scripts use (default logs/ beside the manifest).
 set -uo pipefail
 manifest="$1"; max="${2:-8}"
 case "$max" in ''|*[!0-9]*) echo "max-concurrent must be a positive integer, got '$max'" >&2; exit 2 ;; esac
 [ "$max" -gt 0 ] || { echo "max-concurrent must be a positive integer, got '$max'" >&2; exit 2; }
 E=$(cd "$(dirname "$manifest")" && pwd)
 launcher="${LAUNCHER:-$E/logs/measure-launch.sh}"
+export MANIFEST="$E/$(basename "$manifest")"
+logs="${LOGS:-$E/logs}"
 [ -f "$manifest" ] || { echo "no manifest at $manifest" >&2; exit 1; }
 [ -x "$launcher" ] || [ -f "$launcher" ] || { echo "no launcher at $launcher" >&2; exit 1; }
 arms=(); scens=(); reps=(); procs=(); budgets=(); keys=" "; bad=0; tab=$'\t'
@@ -56,7 +60,7 @@ for i in "${!pids[@]}"; do
 done
 missing=0
 for row in "${rows[@]}"; do
-  log="$E/logs/$row.log"
+  log="$logs/$row.log"
   if [ ! -f "$log" ]; then echo "no log for $row" >&2; missing=$((missing + 1)); continue; fi
   tail -n 1 "$log" | grep -q "^DONE " || { echo "log for $row does not end with DONE" >&2; missing=$((missing + 1)); }
 done
