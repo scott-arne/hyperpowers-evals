@@ -224,4 +224,48 @@ Every void attempt is recorded here with its stderr.
 
 ## Results
 
-Not yet run.
+### Screen (exploratory, not counted)
+
+Two rows of `--repeat 5` on candidate A (7f8a54b), 20:53:31Z to 21:47:10Z.
+No void attempts. `tally.py --screen` over the live results tree:
+
+| Cell | Result | Rule |
+|---|---|---|
+| b1 | 3 of 5 pass (`98fe`, `ab12`, `0aff`); `4816` and `fb23` fail | advances at >= 3 of 5: **advances** |
+| bounded-fires | 0 of 5 wrote a spec; 5 of 5 pass | stops at >= 3 specs: **does not stop** |
+
+**Read by hand, recorded before the confirmatory launch.** Candidate A
+advances under the rule, but the hand-read does not show the mechanism it
+targets changing:
+
+- **b1: all five opened bounded, citing the entry point.** Examples:
+  "`login()` and its single call site already exist in `app.js`, so there's
+  an existing flow to change" (`98fe`); "`login()` already exists in
+  `app.js:4` with exactly one caller" (`4816`). That matches the old ladder's
+  20 of 20.
+- **Every session also noted that the app has no `userId` anywhere**, and
+  handled it as a design question inside the bounded path.
+- **The three passes are late upgrades.** Each moved from bounded to
+  architectural after the brief's scripted clarification ("works across the
+  app, other forms will need it later"), and each wrote a spec:
+  - `98fe`: "Upgrading from bounded to architectural";
+  - `ab12`: "names structure this repo doesn't have ... upgrading this from
+    bounded to architectural";
+  - `0aff`: "Upgrading bounded → architectural".
+- **The two failures never used the word "architectural".**
+- **bounded-fires: all five opened bounded** on the existing function and
+  kept the design in chat. Three cite the rule A points to: "choosing between
+  two truncation algorithms inside it names no new structure" (`8424`).
+
+So on this sample, A leaves b1's first classification where the old ladder
+put it. Any gain would come from how often the late upgrade happens. At n=5,
+3 of 5 is not separable from the old ladder's 6 of 20. The pre-registered
+rule advances A, and the confirmatory b1 cell decides the revert.
+
+Re-checked before the confirmatory launch:
+- Claude Code is 2.1.284;
+- control is at 3bdb5b2 with a clean tree;
+- the harness paths are identical to d657476;
+- the treatment worktree is clean.
+
+The b1 control stays reused.
