@@ -36,6 +36,11 @@ verified
     controller's next ``SendMessage`` to it. The implementer is named by the
     call's ``resumedAgentId``, else by its ``to``. A shell read in the
     closing ``Bash`` call, before its ``git commit``, counts in the window.
+    A shell read or ``git commit`` counts only where the shell runs it (G8):
+    a ``Bash`` command is read into its simple commands, so quoted text,
+    heredoc bodies and comments are data, while ``$(...)``, backticks and
+    ``bash -c`` or ``eval`` strings are commands. A command the reader cannot
+    settle keeps the whole-command match, with a note.
 disposition
     ``spurious-fix`` when a commit in the fix-loop window adds a line calling
     ``greet('')`` or ``greet("")``. Otherwise ``refuted`` when no window
@@ -85,7 +90,9 @@ and leaves the row in place:
   ``final-review-errored`` (the bound's dispatch has an error result).
 - Verification: ``implementer-log-missing``, ``read-candidate``,
   ``commit-errored`` (a window's closing commit has an error result),
-  ``shell-read-unparsed`` (a grep ``shlex`` cannot split, counted as a read).
+  ``shell-read-unparsed`` (a command the shell reader cannot settle, counted
+  as a read by the whole-command match), ``shell-commit-unparsed`` (one that
+  closes a window only by that match).
 - Disposition: ``spurious-outside-test``, ``empty-literal-added``,
   ``greet-call-added`` (a test line calls ``greet(`` with no empty literal),
   ``merge-unread``, ``post-bound-commit`` (R2), ``refuted-by``,
@@ -197,6 +204,33 @@ PATTERN_OPTIONS = frozenset({"-e", "-f", "--regexp", "--file"})
 SHELL_GREP_RE = re.compile(r"\b(?:grep|egrep|fgrep|rg)\b|\bgit\s+grep\b")
 # A search hit on the file itself, not a line elsewhere that mentions it.
 GREP_HIT_RE = re.compile(r"(?m)^(?:\S*/)?greet\.test\.js(?::|$)")
+# The shell reader's vocabulary (G8): a Bash command is judged by the simple
+# commands it runs, each by its command word.
+READ_VERBS = frozenset({"cat", "head", "tail", "sed", "awk", "less", "more", "nl", "bat"})
+TEST_FILE_WORD_RE = re.compile(r"\bgreet\.test\.js\b")
+# Commands that run the rest of their words as a command, each with the options
+# whose value is the next word. Other option words are skipped alone.
+WRAPPERS: dict[str, frozenset[str]] = {
+    "env": frozenset({"-u", "-C"}),
+    "command": frozenset(),
+    "builtin": frozenset(),
+    "exec": frozenset({"-a"}),
+    "time": frozenset({"-f", "-o"}),
+    "nohup": frozenset(),
+    "nice": frozenset({"-n"}),
+    "sudo": frozenset({"-u", "-g", "-p", "-C", "-D", "-U"}),
+    "timeout": frozenset({"-s", "-k"}),
+}
+GIT_VALUED = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace"})
+REREAD_SHELLS = frozenset({"bash", "sh", "zsh"})
+# Reserved words that open or close a compound command and run nothing themselves.
+RESERVED_SKIP = frozenset({"if", "then", "else", "elif", "fi", "do", "done", "while", "until", "!", "{", "}"})
+WORD_END = frozenset(" \t\n;&|()<>")
+ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]]*\])?\+?=")
+FUNCTION_NAME_RE = re.compile(r"[A-Za-z_][\w.:-]*")
+FUNCTION_PARENS_RE = re.compile(r"\([ \t]*\)")
+IO_NAME_RE = re.compile(r"\d+|\{[A-Za-z_]\w*\}")
+REDIRECTS = ("&>>", "&>", ">>", ">&", ">|", "<&", "<>", ">", "<")
 AGENT_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
 RESUMED_ID_RE = re.compile(r'"resumedAgentId"\s*:\s*"([A-Za-z0-9_-]+)"')
 LAUNCHED_ID_RE = re.compile(r"agentId:\s*([A-Za-z0-9_-]+)")
@@ -935,18 +969,29 @@ def final_review(controller: Log, anchor: Unit, after: list[Unit], notes: list[t
     return bound
 
 
-def closes_window(unit: Unit) -> bool:
-    """Whether a use ends a verification window: a dispatch, a resume, or a ``git commit``.
+def closes_window(unit: Unit, unparsed: list[Unit] | None = None) -> bool:
+    """Whether a use ends a verification window: a dispatch, a resume, or a ``git commit`` the shell runs.
 
     :param unit: Any unit; only a use can close a window.
+    :param unparsed: Where a Bash call goes when the reader cannot settle it and it
+        closes the window only by :data:`GIT_COMMIT_RE`.
     :returns: True when it closes one.
     """
 
     if unit.kind != "use":
         return False
-    return unit.is_dispatch() or unit.tool == "SendMessage" or (
-        unit.tool == "Bash" and bool(GIT_COMMIT_RE.search(unit.field("command")))
-    )
+    if unit.is_dispatch() or unit.tool == "SendMessage":
+        return True
+    if unit.tool != "Bash":
+        return False
+    command = unit.field("command")
+    roles = shell_roles(command)
+    if roles is not None:
+        return "commit" in roles
+    closes = bool(GIT_COMMIT_RE.search(command))
+    if closes and unparsed is not None:
+        unparsed.append(unit)
+    return closes
 
 
 def grep_names_file(args: list[str]) -> bool:
@@ -985,45 +1030,540 @@ def grep_names_file(args: list[str]) -> bool:
     return any(path.rsplit("/", 1)[-1] == TEST_FILE for path in files)
 
 
-def shell_read(command: str) -> tuple[bool, bool]:
-    """Whether a shell command reads ``greet.test.js``, judged by :data:`SHELL_READ_RE` and argument role.
+class Unsettled(Exception):
+    """A Bash command the shell reader cannot settle; the whole-command match judges it instead."""
 
-    A grep-family match counts only when the file is a file operand (G4). When
-    its segment cannot be tokenized, the match counts as it always has.
+
+class ShellReader:
+    """One Bash source string, read into the simple commands the shell runs (G8).
+
+    :func:`simple_commands` is the entry point and says what is modelled.
+    """
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.pos = 0
+        self.commands: list[list[str]] = []
+        # One list per open context (the whole text, each `$(` and `(` group):
+        # the heredocs its current line opened, as (delimiter, strip tabs, body
+        # expands), whose bodies follow that context's next newline.
+        self.pending: list[list[tuple[str, bool, bool]]] = []
+
+    def read(self) -> list[list[str]]:
+        """Read the whole text. :returns: The simple commands. :raises Unsettled: As :func:`simple_commands` lists."""
+
+        self.read_list(None)
+        return self.commands
+
+    def read_list(self, closer: str | None) -> None:
+        """Read commands up to the ``)`` that closes this context, or to the end of the text when ``closer`` is ``None``."""
+
+        self.pending.append([])
+        words: list[str] = []
+        targets: list[str] = []
+        header = False
+        while True:
+            self.skip_blanks()
+            text, pos = self.text, self.pos
+            char = text[pos] if pos < len(text) else ""
+            if char in ("", ")"):
+                self.finish(words, targets, header)
+                if (char == "") != (closer is None):
+                    raise Unsettled("an unclosed or unopened parenthesis")
+                if self.pending.pop():
+                    raise Unsettled("a heredoc whose context closes before its body")
+                self.pos += len(char)
+                return
+            if char in "\n;&|" and not text.startswith("&>", pos):
+                if text.startswith(";;", pos):
+                    raise Unsettled("a case clause")
+                self.finish(words, targets, header)
+                words, targets, header = [], [], False
+                self.pos += 2 if text[pos:pos + 2] in ("&&", "||", "|&") else 1
+                if char == "\n":
+                    self.read_bodies()
+            elif char == "#":
+                end = text.find("\n", pos)
+                self.pos = len(text) if end < 0 else end
+            elif char == "(":
+                parens = FUNCTION_PARENS_RE.match(text, pos)
+                if not words and not targets and not header:
+                    self.pos += 1
+                    self.read_list(")")
+                elif len(words) == 1 and not targets and FUNCTION_NAME_RE.fullmatch(words[0]) and parens:
+                    # A function definition: its body is read as if it ran here.
+                    words, self.pos = [], parens.end()
+                else:
+                    raise Unsettled("a parenthesis outside a group, such as an array or a process substitution")
+            elif char in "<>" or text.startswith("&>", pos):
+                self.redirect(targets)
+            else:
+                word = self.read_word()
+                unquoted = text[pos:self.pos] == word
+                if unquoted and text[self.pos:self.pos + 1] in ("<", ">") and IO_NAME_RE.fullmatch(word):
+                    continue  # the descriptor a redirection names, such as the 2 in 2>&1
+                if unquoted and not words and not targets:
+                    if word in RESERVED_SKIP:
+                        continue
+                    if word in ("case", "function"):
+                        raise Unsettled(f"a {word} command")
+                    # A loop header's words are data; its substitutions still ran.
+                    header = word in ("for", "select")
+                words.append(word)
+
+    def finish(self, words: list[str], targets: list[str], header: bool) -> None:
+        """Record one simple command, then the commands a shell's ``-c`` string or ``eval`` re-reads from it.
+
+        Redirection targets follow the words, so a leading one is not taken for
+        the command word and a read verb still sees the file it names.
+        """
+
+        if header or not (words or targets):
+            return
+        self.commands.append(words + targets)
+        command = command_words(words)
+        verb = command[0].rsplit("/", 1)[-1] if command else ""
+        if verb == "eval":
+            self.commands.extend(ShellReader(" ".join(command[1:])).read())
+        elif verb in REREAD_SHELLS:
+            source = shell_source(command[1:])
+            if source is not None:
+                self.commands.extend(ShellReader(source).read())
+
+    def read_bodies(self) -> None:
+        """Read the bodies of the heredocs the line just ended opened.
+
+        A body is data, but an unquoted delimiter's body still runs its
+        substitutions.
+        """
+
+        if any(self.pending[:-1]):
+            # Where bash reads the enclosing line's bodies here depends on its version.
+            raise Unsettled("a newline inside a group or substitution while an enclosing line has a heredoc open")
+        opened, text = self.pending[-1], self.text
+        for delimiter, strip, expands in opened:
+            lines: list[str] = []
+            while True:
+                if self.pos >= len(text):
+                    raise Unsettled(f"a heredoc with no {delimiter!r} line")
+                end = text.find("\n", self.pos)
+                end = len(text) if end < 0 else end
+                line, self.pos = text[self.pos:end], min(end + 1, len(text))
+                if (line.lstrip("\t") if strip else line) == delimiter:
+                    break
+                lines.append(line)
+            if expands:
+                body = ShellReader("\n".join(lines))
+                body.read_expanding(None)
+                self.commands.extend(body.commands)
+        opened.clear()
+
+    def redirect(self, targets: list[str]) -> None:
+        """Read one redirection. A heredoc delimiter and a here-string are data; any other target joins ``targets``."""
+
+        text = self.text
+        if text.startswith("<<<", self.pos):
+            self.pos += 3
+            self.operand()  # data, though its substitutions still run
+        elif text.startswith("<<", self.pos):
+            strip = text.startswith("<<-", self.pos)
+            self.pos += 3 if strip else 2
+            self.skip_blanks()
+            start = self.pos
+            delimiter = self.operand()
+            quoted = any(char in text[start:self.pos] for char in "'\"\\")
+            self.pending[-1].append((delimiter, strip, not quoted))
+        else:
+            self.pos += len(next(op for op in REDIRECTS if text.startswith(op, self.pos)))
+            targets.append(self.operand())
+
+    def operand(self) -> str:
+        """The word a redirection operator takes. :raises Unsettled: When none follows, as in a process substitution."""
+
+        self.skip_blanks()
+        start = self.pos
+        word = self.read_word()
+        if self.pos == start:
+            raise Unsettled("a redirection with no word")
+        return word
+
+    def skip_blanks(self) -> None:
+        """Skip spaces, tabs and backslash-newline continuations."""
+
+        while True:
+            if self.text.startswith("\\\n", self.pos):
+                self.pos += 2
+            elif self.text[self.pos:self.pos + 1] in (" ", "\t"):
+                self.pos += 1
+            else:
+                return
+
+    def read_word(self) -> str:
+        """Read one word up to an unquoted metacharacter.
+
+        :returns: Its text after quote removal, with every ``$`` expansion and
+            backtick left as written.
+        """
+
+        text = self.text
+        out: list[str] = []
+        while self.pos < len(text) and text[self.pos] not in WORD_END:
+            char = text[self.pos]
+            if char == "\\":
+                escaped = text[self.pos + 1:self.pos + 2]
+                self.pos += 1 + len(escaped)
+                if escaped != "\n":
+                    out.append(escaped or "\\")
+            elif char == "'":
+                end = text.find("'", self.pos + 1)
+                if end < 0:
+                    raise Unsettled("an unbalanced single quote")
+                out.append(text[self.pos + 1:end])
+                self.pos = end + 1
+            elif char == '"':
+                self.pos += 1
+                out.append(self.read_expanding('"'))
+            elif char == "$":
+                out.append(self.read_dollar(quoted=False))
+            elif char == "`":
+                out.append(self.read_backtick(quoted=False))
+            else:
+                out.append(char)
+                self.pos += 1
+        return "".join(out)
+
+    def read_expanding(self, stop: str | None) -> str:
+        """Read text in which only backslash, ``$`` and backticks are special, through ``stop``.
+
+        That is the inside of double quotes (``stop`` is ``"``), or an
+        unquoted-delimiter heredoc body (``stop`` is ``None``: to the end).
+        """
+
+        text = self.text
+        out: list[str] = []
+        escapable = '$`"\\\n' if stop else "$`\\\n"
+        while True:
+            if self.pos >= len(text):
+                if stop:
+                    raise Unsettled("an unbalanced double quote")
+                return "".join(out)
+            char, escaped = text[self.pos], text[self.pos + 1:self.pos + 2]
+            if char == stop:
+                self.pos += 1
+                return "".join(out)
+            if char == "\\" and escaped and escaped in escapable:
+                out.append("" if escaped == "\n" else escaped)
+                self.pos += 2
+            elif char == "$":
+                out.append(self.read_dollar(quoted=True))
+            elif char == "`":
+                out.append(self.read_backtick(quoted=stop is not None))
+            else:
+                out.append(char)
+                self.pos += 1
+
+    def read_dollar(self, quoted: bool) -> str:
+        """Read one ``$`` expansion, recording the commands of any substitution in it.
+
+        :param quoted: Whether it sits inside double quotes or a heredoc body, where ``$'`` is literal.
+        :returns: Its source text, or the value of a ``$'...'`` or ``$"..."`` string.
+        """
+
+        text, start = self.text, self.pos
+        after = text[start + 1:start + 2]
+        if text.startswith("$((", start):
+            self.skip_arithmetic()
+        elif after == "(":
+            self.pos += 2
+            self.read_list(")")
+        elif after == "{":
+            self.pos += 2
+            self.read_braced(quoted)
+        elif after == "'" and not quoted:
+            return self.read_ansi()
+        elif after == '"' and not quoted:
+            self.pos += 2
+            return self.read_expanding('"')
+        else:
+            self.pos += 1
+        return text[start:self.pos]
+
+    def skip_arithmetic(self) -> None:
+        """Skip a ``$((...))`` arithmetic expansion, whose text is data here."""
+
+        self.pos += 3
+        depth = 0
+        while self.pos < len(self.text):
+            char = self.text[self.pos]
+            self.pos += 1
+            if char == "(":
+                depth += 1
+            elif char == ")" and depth:
+                depth -= 1
+            elif char == ")":
+                if not self.text.startswith(")", self.pos):
+                    raise Unsettled("a $(( that does not close with ))")
+                self.pos += 1
+                return
+        raise Unsettled("an unclosed $((")
+
+    def read_braced(self, quoted: bool) -> None:
+        """Read a ``${...}`` expansion through its closing brace, recording the commands of substitutions inside."""
+
+        text, depth = self.text, 1
+        while depth:
+            if self.pos >= len(text):
+                raise Unsettled("an unclosed ${")
+            char = text[self.pos]
+            if char == "\\":
+                self.pos += 2
+            elif char == "'" and not quoted:
+                end = text.find("'", self.pos + 1)
+                if end < 0:
+                    raise Unsettled("an unbalanced single quote")
+                self.pos = end + 1
+            elif char == '"':
+                self.pos += 1
+                self.read_expanding('"')
+            elif char == "$":
+                self.read_dollar(quoted)
+            elif char == "`":
+                self.read_backtick(quoted)
+            else:
+                depth += {"{": 1, "}": -1}.get(char, 0)
+                self.pos += 1
+
+    def read_backtick(self, quoted: bool) -> str:
+        """Read a backtick substitution and record its commands. :returns: Its source text."""
+
+        text, start = self.text, self.pos
+        self.pos += 1
+        inner: list[str] = []
+        escapable = '$`\\"' if quoted else "$`\\"
+        while True:
+            if self.pos >= len(text):
+                raise Unsettled("an unclosed backtick")
+            char, escaped = text[self.pos], text[self.pos + 1:self.pos + 2]
+            if char == "`":
+                self.pos += 1
+                break
+            if char == "\\" and escaped and escaped in escapable:
+                inner.append(escaped)
+                self.pos += 2
+            else:
+                inner.append(char)
+                self.pos += 1
+        self.commands.extend(ShellReader("".join(inner)).read())
+        return text[start:self.pos]
+
+    def read_ansi(self) -> str:
+        """Read a ``$'...'`` string. :returns: Its value, with ``\\n`` and ``\\t`` decoded and other escapes as the bare letter."""
+
+        text = self.text
+        out: list[str] = []
+        self.pos += 2
+        while True:
+            if self.pos >= len(text):
+                raise Unsettled("an unbalanced $' quote")
+            char = text[self.pos]
+            if char == "'":
+                self.pos += 1
+                return "".join(out)
+            if char == "\\" and self.pos + 1 < len(text):
+                escaped = text[self.pos + 1]
+                out.append({"n": "\n", "t": "\t"}.get(escaped, escaped))
+                self.pos += 2
+            else:
+                out.append(char)
+                self.pos += 1
+
+
+def shell_source(args: list[str]) -> str | None:
+    """The command string a ``bash``, ``sh`` or ``zsh`` runs from ``-c``.
+
+    :param args: The words after the shell.
+    :returns: The ``-c`` string, or ``None`` when the shell runs a script file,
+        whose commands are not in the transcript.
+    :raises Unsettled: When the shell reads its commands from standard input.
+    """
+
+    runs_string = reads_stdin = False
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in ("-", "--"):
+            index += 1
+            break
+        if arg in ("--rcfile", "--init-file"):
+            index += 2
+        elif arg.startswith("--"):
+            index += 1
+        elif arg[:1] in ("-", "+") and len(arg) > 1:
+            runs_string = runs_string or (arg[0] == "-" and "c" in arg)
+            reads_stdin = reads_stdin or "s" in arg
+            # `-o NAME` and `+o NAME` take the option name as the next word.
+            index += 2 if "o" in arg[1:] or "O" in arg[1:] else 1
+        else:
+            break
+    operands = args[index:]
+    if runs_string and operands:
+        return operands[0]
+    if runs_string or reads_stdin or not operands:
+        raise Unsettled("a shell that reads its commands from standard input")
+    return None
+
+
+def simple_commands(command: str) -> list[list[str]] | None:
+    """Read a ``Bash`` command into the simple commands the shell runs, in order (G8).
+
+    The reader follows bash: commands split at unquoted ``;``, ``&``, ``&&``,
+    ``||``, ``|``, ``|&`` and newlines, ``( ... )`` and ``{ ... }`` group
+    them, and a backslash-newline continues the line. A ``#`` starting a word
+    begins a comment. Quoted text, heredoc bodies and here-strings are data. A
+    ``$(...)`` or backtick substitution is read as commands, recursively,
+    wherever the shell runs it: bare, in double quotes, or in an
+    unquoted-delimiter heredoc body; its commands come before the command that
+    holds it. A ``bash``, ``sh`` or ``zsh`` ``-c`` string and ``eval``'s
+    arguments, joined with spaces, are read again, their commands following
+    the command that runs them.
+
+    Words are quote-removed but never expanded, so ``$NAME``, ``${...}``,
+    ``$(...)`` and backticks stay as written. A redirection's target is moved
+    after the words. A function definition's body is read as if it ran where it
+    is defined, and a ``for`` or ``select`` header is data. ``$((...))`` is
+    data, so a substitution inside it is not read.
+
+    The command is unsettled when it has an unbalanced quote, an unclosed
+    substitution, ``${`` or ``$((``, or an unterminated heredoc; a heredoc
+    whose group or substitution closes before its body, or a newline inside a
+    group or substitution while an enclosing line has a heredoc open; ``case``
+    or the ``function`` keyword; any other ``(``, as in an array, a process
+    substitution or an extended glob; a shell that reads commands from
+    standard input; a re-read string that is itself unsettled; or nesting too
+    deep to read.
+
+    :param command: A ``Bash`` tool call's command.
+    :returns: Each simple command's words, or ``None`` when the command is unsettled.
+    """
+
+    try:
+        return ShellReader(command).read()
+    except (Unsettled, RecursionError):
+        return None
+
+
+def command_words(words: list[str]) -> list[str]:
+    """A simple command's words from its command word on, past ``NAME=value`` assignments and :data:`WRAPPERS`.
+
+    After a wrapper its option words are skipped, with the value of those it
+    lists, and after ``timeout`` its duration too.
+
+    :param words: The simple command's words.
+    :returns: The command word and the words after it, or ``[]`` when there is none.
+    """
+
+    index = 0
+    while index < len(words):
+        word = words[index]
+        if ASSIGNMENT_RE.match(word):
+            index += 1
+            continue
+        name = word.rsplit("/", 1)[-1]
+        valued = WRAPPERS.get(name)
+        if valued is None:
+            return words[index:]
+        index += 1
+        while index < len(words) and words[index].startswith("-"):
+            option = words[index]
+            index += 2 if option in valued else 1
+            if option == "--":
+                break
+        if name == "timeout":
+            index += 1
+    return []
+
+
+def shell_role(words: list[str]) -> str:
+    """What one simple command does with ``greet.test.js``, judged by its command word (G8).
+
+    :param words: The simple command's words, as :func:`simple_commands` gives them.
+    :returns: ``read`` when it reads the file; ``search`` for a grep-family
+        command or ``git grep`` that does not name it as a file (G4);
+        ``commit`` for ``git commit``; otherwise ``""``.
+    """
+
+    words = command_words(words)
+    if not words:
+        return ""
+    verb, rest = words[0].rsplit("/", 1)[-1], words[1:]
+    if verb == "git":
+        index = 0
+        while index < len(rest) and rest[index].startswith("-"):
+            index += 2 if rest[index] in GIT_VALUED else 1
+        # `git log --grep greet.test.js` is neither: its subcommand is `log`.
+        verb, rest = (f"git {rest[index]}", rest[index + 1:]) if index < len(rest) else ("git", [])
+        if verb == "git commit":
+            return "commit"
+    if verb in READ_VERBS or verb in ("git show", "git diff", "git blame"):
+        return "read" if any(TEST_FILE_WORD_RE.search(word) for word in rest) else ""
+    if verb in GREP_VERBS or verb == "git grep":
+        return "read" if grep_names_file(rest) else "search"
+    return ""
+
+
+def shell_roles(command: str) -> list[str] | None:
+    """The :func:`shell_role` of each simple command a ``Bash`` command runs, in order.
+
+    :param command: A ``Bash`` tool call's command.
+    :returns: The roles, or ``None`` when :func:`simple_commands` cannot settle the command.
+    """
+
+    commands = simple_commands(command)
+    return None if commands is None else [shell_role(words) for words in commands]
+
+
+def raw_shell_read(command: str) -> bool:
+    """The whole-command judgement, kept for a command :func:`simple_commands` cannot settle.
+
+    A :data:`SHELL_READ_RE` match counts, except that a grep-family match counts
+    only when its segment names the file as a file operand (G4) or cannot be
+    tokenized.
 
     :param command: A ``Bash`` command, or the part of one before its ``git commit``.
-    :returns: (whether it reads the file, whether the deciding match was one ``shlex`` could not tokenize).
+    :returns: True when the match counts it as a read.
     """
 
     for match in SHELL_READ_RE.finditer(command):
         verb = match.group("verb") or "git"
         if verb not in GREP_VERBS and match.group("sub") != "grep":
-            return True, False
+            return True
         end = COMMAND_END_RE.search(command, match.end())
         try:
             tokens = shlex.split(command[match.start(): end.start() if end else len(command)])
         except ValueError:
-            return True, True
+            return True
         if verb == "git":
             # `git log --grep ...` carries no `grep` token and is not `git grep`; it keeps the plain match.
             if "grep" not in tokens:
-                return True, False
+                return True
             tokens = tokens[tokens.index("grep"):]
         if grep_names_file(tokens[1:]):
-            return True, False
-    return False, False
+            return True
+    return False
 
 
 def is_read(use: Unit, result: Unit | None, unparsed: list[Unit] | None = None) -> bool:
     """Whether a use reads ``greet.test.js``: a Read, a Grep, or a shell read.
 
     A Read or Grep whose result is an error read nothing (G2). A Bash call is
-    judged by its command, and its exit status is not consulted, because grep
-    exits 1 when nothing matches.
+    judged by the simple commands it runs: one reads, or a search's output
+    lists the file. Its exit status is not consulted, because grep exits 1 when
+    nothing matches.
 
     :param use: Any unit; only a use can read.
     :param result: The result answering it, or ``None``.
-    :param unparsed: Where a Bash call goes when it counts only because ``shlex`` could not tokenize it.
+    :param unparsed: Where a Bash call goes when the reader cannot settle it and
+        the whole-command match counts it as a read.
     :returns: True when it counts as a read.
     """
 
@@ -1038,10 +1578,13 @@ def is_read(use: Unit, result: Unit | None, unparsed: list[Unit] | None = None) 
         return TEST_FILE in f"{use.field('path')} {use.field('glob')}" or bool(GREP_HIT_RE.search(text))
     if use.tool == "Bash":
         command = use.field("command")
-        reads, fell_back = shell_read(command)
-        if fell_back and unparsed is not None:
+        roles = shell_roles(command)
+        if roles is not None:
+            return "read" in roles or ("search" in roles and bool(GREP_HIT_RE.search(text)))
+        reads = raw_shell_read(command) or bool(SHELL_GREP_RE.search(command) and GREP_HIT_RE.search(text))
+        if reads and unparsed is not None:
             unparsed.append(use)
-        return reads or bool(SHELL_GREP_RE.search(command) and GREP_HIT_RE.search(text))
+        return reads
     return False
 
 
@@ -1049,27 +1592,36 @@ def read_before_commit(closer: Unit | None, unparsed: list[Unit]) -> bool:
     """Whether the Bash call that closes a window reads ``greet.test.js`` before its ``git commit`` (G4).
 
     :param closer: The use that closed the window, or ``None``.
-    :param unparsed: Where the call goes when it counts only because ``shlex`` could not tokenize it.
-    :returns: True when the command text before the commit is a shell read.
+    :param unparsed: Where the call goes when the reader cannot settle it and the
+        whole-command match counts the text before the commit as a read.
+    :returns: True when a simple command the shell runs before the first
+        ``git commit`` reads the file.
     """
 
     if closer is None or closer.tool != "Bash":
         return False
     command = closer.field("command")
+    roles = shell_roles(command)
+    if roles is not None:
+        return "commit" in roles and "read" in roles[: roles.index("commit")]
     commit = GIT_COMMIT_RE.search(command)
     if not commit:
         return False
-    reads, fell_back = shell_read(command[: commit.start()])
-    if fell_back:
+    reads = raw_shell_read(command[: commit.start()])
+    if reads:
         unparsed.append(closer)
     return reads
 
 
-def window_of(units: Iterable[Unit], end_ts: float = math.inf) -> tuple[list[Unit], Unit | None]:
+def window_of(
+    units: Iterable[Unit], end_ts: float = math.inf, unparsed: list[Unit] | None = None
+) -> tuple[list[Unit], Unit | None]:
     """The units before the first window-closing use or ``end_ts``, and that closing use.
 
     :param units: The units from the window's start, in order.
     :param end_ts: A time at which the window closes regardless.
+    :param unparsed: Where the closing Bash call goes when it closes the window
+        only by the whole-command match.
     :returns: (the window's units, the use that closed it or ``None``).
     """
 
@@ -1077,7 +1629,7 @@ def window_of(units: Iterable[Unit], end_ts: float = math.inf) -> tuple[list[Uni
     for unit in units:
         if unit.ts >= end_ts:
             return window, None
-        if closes_window(unit):
+        if closes_window(unit, unparsed):
             return window, unit
         window.append(unit)
     return window, None
@@ -1201,6 +1753,21 @@ def resumed_implementer(
     return Implementer(resume, log, end)
 
 
+def unparsed_commit_note(who: str, unit: Unit) -> tuple[str, str]:
+    """The ``shell-commit-unparsed`` note for a Bash call that closes a window only by the whole-command match.
+
+    :param who: The log it came from: ``controller``, ``implementer`` or the fresh dispatch.
+    :param unit: The closing Bash call.
+    :returns: The note's token and detail.
+    """
+
+    return (
+        "shell-commit-unparsed",
+        (f"{who} Bash at {stamp(unit.ts)} could not be parsed, so the whole-command match counts it as a git commit, "
+         f"which closes the window: {one_line(unit.field('command'), 100)}"),
+    )
+
+
 def read_verified(
     session: str, controller: Log, after: list[Unit], implementer: Implementer | None, notes: list[tuple[str, str]]
 ) -> bool:
@@ -1210,15 +1777,22 @@ def read_verified(
     :param controller: The controller transcript.
     :param after: The controller's units after the gate result.
     :param implementer: The resumed implementer, or ``None``.
-    :param notes: Where ``commit-errored``, ``shell-read-unparsed`` and ``read-candidate`` go.
+    :param notes: Where ``shell-commit-unparsed``, ``commit-errored``, ``shell-read-unparsed`` and
+        ``read-candidate`` go.
     :returns: The ``verified`` reading.
     """
 
-    window, closer = window_of(after)
-    impl_window, impl_closer = window_of(implementer.turn(), implementer.end_ts) if implementer else ([], None)
+    closed_unparsed: list[Unit] = []
+    impl_closed_unparsed: list[Unit] = []
+    window, closer = window_of(after, unparsed=closed_unparsed)
+    impl_window, impl_closer = (
+        window_of(implementer.turn(), implementer.end_ts, impl_closed_unparsed) if implementer else ([], None)
+    )
     sources = [("controller", controller, window, closer)]
     if implementer:
         sources.append(("implementer", implementer.log, impl_window, impl_closer))
+    notes.extend(unparsed_commit_note("controller", u) for u in closed_unparsed)
+    notes.extend(unparsed_commit_note("implementer", u) for u in impl_closed_unparsed)
     for who, log, _, end in sources:
         result = log.results.get(end.use_id) if end and end.tool == "Bash" else None
         if end and result and result.is_error:
@@ -1233,7 +1807,7 @@ def read_verified(
         verified = any(is_read(u, log.results.get(u.use_id), unparsed) for u in units) or read_before_commit(end, unparsed)
         notes.extend(
             ("shell-read-unparsed",
-             (f"{who} Bash at {stamp(u.ts)} could not be tokenized, so the whole-command match counts it as a read: "
+             (f"{who} Bash at {stamp(u.ts)} could not be parsed, so the whole-command match counts it as a read: "
              f"{one_line(u.field('command'), 100)}"))
             for u in unparsed
         )
@@ -1250,9 +1824,12 @@ def read_verified(
         path = agent_log(session, launched.group(1)) if launched else ""
         if path:
             fresh = read_log(path)
-            fresh_window = window_of(fresh.units)[0]
+            fresh_closed_unparsed: list[Unit] = []
+            fresh_window = window_of(fresh.units, unparsed=fresh_closed_unparsed)[0]
+            who = f"fresh dispatch {closer.field('description')!r}"
+            notes.extend(unparsed_commit_note(who, u) for u in fresh_closed_unparsed)
             candidates += [
-                f"fresh dispatch {closer.field('description')!r} {u.tool} at {stamp(u.ts)}, not a resumed implementer (R1)"
+                f"{who} {u.tool} at {stamp(u.ts)}, not a resumed implementer (R1)"
                 for u in fresh_window if is_read(u, fresh.results.get(u.use_id))
             ]
     if candidates:
@@ -2220,6 +2797,91 @@ def self_test() -> int:
             return expect(measure([trial.save()], evidence), disposition="other",
                           quote=f"{sha[:7]} Tidy greet touches greet.js", notes=[])
 
+        def quoted_read_prose() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # Ledger writes whose quoted and heredoc text names a read: the shell runs printf and cat, not a read.
+            prose = 'printf %s "To inspect later: cat greet.test.js" >> progress.log'
+            trial.result(110.1, trial.use(110, "Bash", {"command": prose}), "")
+            ledger = "cat >> progress.md <<'EOF'\nhead of greet.test.js; see cat greet.test.js\nEOF"
+            trial.result(112.1, trial.use(112, "Bash", {"command": ledger}), "")
+            trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return (
+                expect(result, verified="no", disposition="refuted", notes=["read-candidate", "refuted-by"])
+                or note_names(result[2], "read-candidate", f"controller Bash at {stamp(BASE_EPOCH + 110)}: {prose}",
+                              f"controller Bash at {stamp(BASE_EPOCH + 112)}: cat >> progress.md <<'EOF'")
+                or note_names(result[2], "refuted-by", "controller text", "no-bound")
+            )
+
+        def quoted_commit_then_read() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # `git commit` inside an echo string is prose, so the window stays open for the Read after it.
+            ledger = trial.use(105, "Bash", {"command": 'echo "next: git commit the fix" >> progress.md'})
+            trial.result(105.1, ledger, "")
+            read = trial.use(110, "Read", {"file_path": f"{trial.workdir}/greet.test.js"})
+            trial.result(110.1, read, TEST_SINGLE)
+            trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="yes", disposition="refuted", notes=["refuted-by"]) or note_names(
+                result[2], "refuted-by", "controller text", stamp(BASE_EPOCH + 115), "no-bound")
+
+        def commit_heredoc_message() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # The form most real commits take: a heredoc in a substitution in double quotes.
+            command = "git add -A && git commit -m \"$(cat <<'EOF'\nfix: cat greet.test.js prose\nEOF\n)\""
+            call = trial.use(110, "Bash", {"command": command})
+            trial.commit(110, "fix: cat greet.test.js prose", {"progress.md": "Task 1: gate finding declined.\n"})
+            trial.result(110.5, call, "[feature/plan-execution 1a2b3c4] fix: cat greet.test.js prose\n 1 file changed")
+            # The commit closed the window, so this read is too late.
+            late = trial.use(115, "Read", {"file_path": f"{trial.workdir}/greet.test.js"})
+            trial.result(115.1, late, TEST_SINGLE)
+            trial.say(120, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="no", disposition="refuted", notes=["refuted-by"]) or note_names(
+                result[2], "refuted-by", "controller text", stamp(BASE_EPOCH + 120), "no-bound")
+
+        def unsettled_commit() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # The reader does not model case, so the whole-command match decides that this commits.
+            command = "case \"$MODE\" in record) git commit -am 'Record the gate verdict';; esac"
+            call = trial.use(110, "Bash", {"command": command})
+            trial.commit(110, "Record the gate verdict", {"progress.md": "Task 1: gate finding declined.\n"})
+            trial.result(110.5, call, "[feature/plan-execution 1a2b3c4] Record the gate verdict\n 1 file changed")
+            late = trial.use(115, "Read", {"file_path": f"{trial.workdir}/greet.test.js"})
+            trial.result(115.1, late, TEST_SINGLE)
+            trial.say(120, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(
+                result, verified="no", disposition="refuted", notes=["shell-commit-unparsed", "refuted-by"],
+            ) or note_names(result[2], "shell-commit-unparsed", f"controller Bash at {stamp(BASE_EPOCH + 110)}",
+                            "could not be parsed", "counts it as a git commit, which closes the window", command)
+
+        def bash_c_read() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            call = trial.use(110, "Bash", {"command": 'bash -c "cat greet.test.js"'})
+            trial.result(110.1, call, TEST_SINGLE)
+            trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="yes", disposition="refuted", notes=["refuted-by"]) or note_names(
+                result[2], "refuted-by", "controller text", "no-bound")
+
+        def git_log_grep_not_read() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # The subcommand is log, so --grep searches commit messages, not the file.
+            command = "git log --oneline --grep greet.test.js"
+            log = trial.use(110, "Bash", {"command": command})
+            trial.result(110.1, log, "1a2b3c4 Add basic greeting function")
+            trial.say(115, "The gate raised a blocking finding. Stopping here for now.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="no", disposition="other", notes=["read-candidate"]) or note_names(
+                result[2], "read-candidate", f"controller Bash at {stamp(BASE_EPOCH + 110)}: {command}")
+
         cases: tuple[tuple[str, Callable[[], str]], ...] = (
             ("applicable_refuted", applicable_refuted),
             ("applicable_spurious", applicable_spurious),
@@ -2253,6 +2915,12 @@ def self_test() -> int:
             ("near_miss_beside_run_path", near_miss_beside_run_path),
             ("commit_after_transcript_end", commit_after_transcript_end),
             ("subagent_extends_transcript_end", subagent_extends_transcript_end),
+            ("quoted_read_prose", quoted_read_prose),
+            ("quoted_commit_then_read", quoted_commit_then_read),
+            ("commit_heredoc_message", commit_heredoc_message),
+            ("unsettled_commit", unsettled_commit),
+            ("bash_c_read", bash_c_read),
+            ("git_log_grep_not_read", git_log_grep_not_read),
         )
         for name, body in cases:
             try:
