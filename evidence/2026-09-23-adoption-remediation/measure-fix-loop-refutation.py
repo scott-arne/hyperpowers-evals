@@ -1448,9 +1448,9 @@ def simple_commands(command: str) -> list[list[str]] | None:
     substitution or an extended glob; a wrapper's long option without ``=``,
     or ``env -S``; a shell that reads commands from standard input; a re-read
     string that is itself unsettled; or nesting too deep to read.
-    :func:`shell_roles` also leaves a command unsettled when a read, grep or
-    ``git`` word sits behind a command word the reader does not know
-    (:func:`hides_verb`).
+    :func:`shell_roles` also leaves a command unsettled when a read, grep,
+    ``git``, shell or ``eval`` word sits behind a command word the reader does
+    not know (:func:`hides_verb`).
 
     :param command: A ``Bash`` tool call's command.
     :returns: Each simple command's words, or ``None`` when the command is unsettled.
@@ -1542,11 +1542,13 @@ def hides_verb(words: list[str]) -> bool:
     Its command word may be a wrapper the reader does not know (``stdbuf -oL``)
     or the value of an option :data:`WRAPPERS` does not list (``sudo -T 10``),
     so the reader cannot tell whether the shell runs that verb. ``echo`` and
-    ``printf`` print their words and never run them.
+    ``printf`` print their words and never run them. A later ``bash``, ``sh``,
+    ``zsh`` or ``eval`` with a word after it counts whatever its string would run.
 
     :param words: The simple command's words, as :func:`simple_commands` gives them.
     :returns: True when a later word, compared by basename, is a read verb, a
-        grep verb or ``git``, and :func:`shell_role` of the words from it on is not ``""``.
+        grep verb or ``git``, and :func:`shell_role` of the words from it on is not
+        ``""``; or is a shell or ``eval`` that some word follows.
     :raises Unsettled: As :func:`command_words` does.
     """
 
@@ -1555,6 +1557,8 @@ def hides_verb(words: list[str]) -> bool:
         return False
     for place, word in enumerate(words[1:], 1):
         verb = word.rsplit("/", 1)[-1]
+        if (verb in REREAD_SHELLS or verb == "eval") and place + 1 < len(words):
+            return True
         if (verb in READ_VERBS or verb in GREP_VERBS or verb == "git") and shell_role(words[place:]):
             return True
     return False
@@ -3041,6 +3045,36 @@ def self_test() -> int:
             return expect(result, verified="yes", disposition="refuted", notes=["refuted-by"]) or note_names(
                 result[2], "refuted-by", "controller text", "no-bound")
 
+        def wrapper_reread_commit_unsettled() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # sudo's -T is not in its valued set, so `10` reads as the command word and bash -c is not re-read.
+            command = "sudo -T 10 bash -c 'git commit -m x'"
+            call = trial.use(110, "Bash", {"command": command})
+            trial.commit(110, "x", {"progress.md": "Task 1: gate finding declined.\n"})
+            trial.result(110.5, call, "[feature/plan-execution 1a2b3c4] x\n 1 file changed")
+            late = trial.use(115, "Read", {"file_path": f"{trial.workdir}/greet.test.js"})
+            trial.result(115.1, late, TEST_SINGLE)
+            trial.say(120, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(
+                result, verified="no", disposition="refuted", notes=["shell-commit-unparsed", "refuted-by"],
+            ) or note_names(result[2], "shell-commit-unparsed", f"controller Bash at {stamp(BASE_EPOCH + 110)}",
+                            "could not be parsed", "counts it as a git commit, which closes the window", command)
+
+        def wrapper_reread_read_unsettled() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            command = "stdbuf -oL eval 'cat greet.test.js'"
+            call = trial.use(110, "Bash", {"command": command})
+            trial.result(110.1, call, TEST_SINGLE)
+            trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(
+                result, verified="yes", disposition="refuted", notes=["shell-read-unparsed", "refuted-by"],
+            ) or note_names(result[2], "shell-read-unparsed", f"controller Bash at {stamp(BASE_EPOCH + 110)}",
+                            "could not be parsed", command)
+
         cases: tuple[tuple[str, Callable[[], str]], ...] = (
             ("applicable_refuted", applicable_refuted),
             ("applicable_spurious", applicable_spurious),
@@ -3088,6 +3122,8 @@ def self_test() -> int:
             ("unknown_wrapper_read_unsettled", unknown_wrapper_read_unsettled),
             ("echo_prose_not_unsettled", echo_prose_not_unsettled),
             ("wrapper_without_command", wrapper_without_command),
+            ("wrapper_reread_commit_unsettled", wrapper_reread_commit_unsettled),
+            ("wrapper_reread_read_unsettled", wrapper_reread_read_unsettled),
         )
         for name, body in cases:
             try:
