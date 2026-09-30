@@ -1,0 +1,40 @@
+  rather than the id alone. The reason is specific to having no backend: if a later form wants to show "signed in as …",
+  a userId alone can't be resolved into a name, because there's nothing to ask. The username is already in hand at
+  login, so carrying it costs one field. Trivial to drop if you'd rather store strictly the id.
+
+  [1m[38;5;153mlogin()[39m's new contract.[0m It stops being given a userId and starts returning one:
+
+  [34mfunction[39m [33mlogin[39m(username, password) {
+    [32m// Stub: would POST to API_ENDPOINT in real app[39m
+    [34mreturn[39m { [36msuccess[39m: [34mtrue[39m, [36muserId[39m: STUB_USER_ID, username };
+  }
+
+  Two deliberate choices there. The stub userId is a [1mnamed constant with an obviously-fake value[0m, not a generated one —
+  a stub that mints plausible-looking ids invites someone to treat them as real identity later. And the [38;5;153muser[39m field is
+  renamed to [38;5;153musername[39m for consistency with the stored record; that's safe because [38;5;153mapp.js:23[39m is the only caller in the
+  repo.
+
+  [1m[38;5;153mlogin()[39m does not write to storage.[0m The submit handler does:
+
+  [34mconst[39m result = [33mlogin[39m(username, password);
+  [34mif[39m (result.success) [33msetSession[39m({ [36muserId[39m: result.userId, [36musername[39m: result.username });
+
+  Keeping the write in the caller means [38;5;153mlogin()[39m stays a pure stand-in for a network call — testable, and honest about
+  the fact that it will become async once [38;5;153mAPI_ENDPOINT[39m is real. If persistence were hidden inside it, every future test
+  of login would have storage side effects.
+
+  [1mLoading.[0m [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" src="app.js">[39m, and [38;5;153mapp.js[39m gains [38;5;153mimport { setSession, clearSession }
+[39m  [38;5;153mfrom "./session.js";[39m. Later forms import from the same file; no script-tag ordering to remember.
+
+  [1mLogout.[0m [38;5;153mindex.html[39m gets a logout button wired to [38;5;153mclearSession()[39m. I'm proposing it always visible rather than toggling
+  on session state — showing/hiding it means introducing UI state management, which is a bigger idea than this design
+  should smuggle in.
+
+  Does that look right so far?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 4m 7s · done 10:48 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

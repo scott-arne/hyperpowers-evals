@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Good — that settles the authority question. Next fork, and in this repo it's a real one.
+
+  [1mThe fork:[0m how the identity module gets loaded, given the repo has two incompatible halves and no build step. [38;5;153mapp.js[39m is
+  a bare [38;5;153m<script src>[39m with no module system; [38;5;153msrc/[39m uses CommonJS [38;5;153mrequire()[39m and can't run in a browser as-is. There's no
+  bundler, no [38;5;153mtype: "module"[39m, and no scripts in [38;5;153mpackage.json[39m. A shared identity module has to be reachable from the
+  login form [3mand[0m from "other forms later," so this decides what those future forms look like.
+
+  - [1mES modules, no build step[0m — [38;5;153midentity.js[39m exports, [38;5;153mapp.js[39m becomes [38;5;153m<script type="module">[39m, future forms import it.
+    Native in every current browser, no tooling to install, and it's where the ecosystem landed. Costs: it won't run
+    from [38;5;153mfile://[39m (needs a local server), and [38;5;153msrc/[39m's CommonJS stays a separate world unless converted.
+  - [1mGlobal script, no modules[0m — [38;5;153midentity.js[39m loads first via a second [38;5;153m<script>[39m tag and hangs an object off [38;5;153mwindow[39m. Zero
+    friction, works from [38;5;153mfile://[39m, matches how [38;5;153mapp.js[39m is written today. Costs: global namespace, implicit load-order
+    dependency, and it's the pattern you'd migrate off later.
+  - [1mAdd a bundler[0m — unifies [38;5;153msrc/[39m and [38;5;153mapp.js[39m into one module world. Costs a real dependency and a build step in a repo
+    that currently has neither, and nothing here needs it yet.
+
+  [1mMy recommendation: ES modules, no build step.[0m It's the option that makes "other forms will need it later" actually
+  pleasant — each form imports what it needs, no load-order rules to remember — and it costs no dependencies. The
+  [38;5;153mfile://[39m limitation is the one real tradeoff; it means opening the app needs something like [38;5;153mpython3 -m http.server[39m
+  instead of a double-click. I'd skip the bundler under YAGNI: one small shared module doesn't justify a build step, and
+  adding one later is easy.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module wiring [39m[49m
+
+[1m[38;5;231mHow should the shared identity module be wired in?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules, no build[39m
+     [38;5;246midentity.js uses export/import; app.js becomes type="module". No dependencies. Requires serving over http:// rather
+[39m     [38;5;246mthan opening the file directly.[39m
+  [38;5;246m2.[39m Global via window
+     [38;5;246mSecond script tag sets window.Identity. Works from file://, matches today's style. Global namespace and load-order
+[39m     [38;5;246mcoupling.[39m
+  [38;5;246m3.[39m Add a bundler
+     [38;5;246mInstall a bundler so src/ and app.js share one module system. Real dependency and build step; more than this needs
+[39m     [38;5;246mtoday.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

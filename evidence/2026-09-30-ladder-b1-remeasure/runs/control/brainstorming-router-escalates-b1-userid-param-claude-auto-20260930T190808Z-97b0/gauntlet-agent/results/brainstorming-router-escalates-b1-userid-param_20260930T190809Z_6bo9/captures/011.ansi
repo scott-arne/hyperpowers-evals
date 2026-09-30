@@ -1,0 +1,40 @@
+    [34mreturn[39m { [36msuccess[39m: [34mtrue[39m, [36muser[39m: username };
+  }
+
+  Called once, from the submit handler ([38;5;153mapp.js:23[39m), with values read straight off the form. [38;5;153msrc/index.js[39m / [38;5;153msrc/utils.js[39m
+  are unrelated. No tests, no test runner in [38;5;153mpackage.json[39m.
+
+  [1mThe fork, in one sentence:[0m [38;5;153mlogin[39m already receives [38;5;153musername[39m — the identity of the person logging in — and the only call
+  site has nothing else available, so "add a [38;5;153muserId[39m parameter" only makes sense if [38;5;153muserId[39m is something [3mother[0m than the
+  username, and where it comes from determines whether this is a one-line signature change or new structure.
+
+  - [1m[38;5;153muserId[39m is a caller-supplied correlation/session ID[0m (e.g. a device or request ID generated before submit) — cheap,
+    one new param plus a generator at the call site, no new module. Locks in the convention that callers own ID
+    generation.
+  - [1m[38;5;153muserId[39m is the account's stable internal ID[0m — the call site can't supply it; pre-authentication the browser only
+    knows the typed username. Would need the ID to come back [3mfrom[0m the login response instead, which means the parameter
+    you asked for isn't the right shape. Cheap to change now, expensive after other callers depend on it.
+  - [1m"Track" means a real logging/analytics sink[0m, not [38;5;153mconsole.log[39m — that's a new subsystem, and I'd re-classify as
+    architectural and write a spec first.
+
+  [1mMy recommendation:[0m the first option, if what you want is to correlate login attempts. It's the only one where "add a
+  [38;5;153muserId[39m parameter" is literally the right change, and it stays a handful of lines in one file.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ userId meaning [39m[49m ☐ Tracking sink  ✔ Submit  →
+
+[1m[38;5;231mWhat is `userId` here, given `login` already gets `username`?[0m
+
+  [38;5;246m1.[39m Correlation/session ID (Recommended)
+     [38;5;246mAn ID the caller generates before submit (device/request/session). Add the param, generate it at the call site, log
+[39m     [38;5;246mit alongside username. Stays bounded, one file.[39m
+  [38;5;246m2.[39m Stable account ID
+     [38;5;246mThe user's internal DB id. The call site can't know it pre-auth, so it should come back in the login response [39m
+     [38;5;246minstead — different change than the one requested.[39m
+  [38;5;246m3.[39m Same as username, just renamed
+     [38;5;246mYou want the existing identity threaded through more explicitly. Smallest possible change; arguably redundant with
+[39m     [38;5;246mthe existing username param.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

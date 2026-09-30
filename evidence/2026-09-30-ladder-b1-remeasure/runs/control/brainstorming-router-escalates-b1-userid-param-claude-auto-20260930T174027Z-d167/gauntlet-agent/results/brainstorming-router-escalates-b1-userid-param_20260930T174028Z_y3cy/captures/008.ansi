@@ -1,0 +1,40 @@
+
+  [38;5;246mSearched for [1m1[0m[38;5;246m pattern, read [1m6[0m[38;5;246m files [39m
+
+[38;5;231m⏺[39m I'm classifying this as [1mbounded[0m: [38;5;153mlogin()[39m already exists in [38;5;153mapp.js:4[39m, and this is a signature change in one file. So
+  I'll present a short design in chat rather than write a spec. One thing I need to settle first.
+
+  [1mThe fork:[0m nothing in this repo produces a [38;5;153muserId[39m. The form collects only username and password ([38;5;153mindex.html:9-10[39m), and
+  [38;5;153mlogin()[39m is called with exactly those ([38;5;153mapp.js:23[39m). So "add a userId parameter" needs a source for that value, and the
+  three plausible sources lead to different interfaces:
+
+  - [1mCaller passes it in[0m — [38;5;153mlogin(username, password, userId)[39m. The submit handler must get a userId from somewhere new (a
+    session/device/tenant id). Cheap to write, but it pushes the real question one level up: you'd still need to decide
+    what that id is and where it's stored. Rules out nothing later.
+  - [1muserId comes back from login, not into it[0m — the server assigns it and [38;5;153mlogin()[39m returns [38;5;153m{ success, user, userId }[39m. No
+    new parameter at all. This is the usual shape for "track who logged in," since the client doesn't know the id before
+    authenticating. Changes the return contract instead of the signature — also cheap now, harder to reverse once
+    callers read the field.
+  - [1mNew form field[0m — add a userId input the person types. Simplest to wire, but users don't normally know their own id,
+    and it makes the field part of the UI contract, which is the most expensive of the three to undo.
+
+  [1mMy recommendation:[0m the second. [38;5;153musername[39m already identifies who logged in for logging purposes, and a userId that the
+  client has to supply [3mbefore[0m authentication is usually a sign the value really belongs in the response. But if you have
+  an external id already in hand (a tenant or analytics id), the first is right and I'll do that.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFrom the login response (Recommended)[39m
+     [38;5;246mNo new parameter; login() returns { success, user, userId }. Fits 'track who logged in' since the id is [39m
+     [38;5;246mserver-assigned.[39m
+  [38;5;246m2.[39m Caller passes it in
+     [38;5;246mlogin(username, password, userId). You have an external id (session/tenant/analytics) available at the call site.[39m
+  [38;5;246m3.[39m New form field
+     [38;5;246mAdd a userId input to index.html that the user types, then pass it through.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

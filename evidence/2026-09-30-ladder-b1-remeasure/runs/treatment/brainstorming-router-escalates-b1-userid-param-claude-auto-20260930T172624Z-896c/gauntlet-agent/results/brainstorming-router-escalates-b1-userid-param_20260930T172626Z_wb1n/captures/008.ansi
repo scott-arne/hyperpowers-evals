@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m [1mClassification: bounded[0m — [38;5;153mlogin()[39m lives in [38;5;153mapp.js:4[39m with exactly one caller ([38;5;153mapp.js:23[39m), so the flow I'd change is
+  already here. I'll present a short design in chat rather than write a spec. Say the word if you want it treated
+  heavier.
+
+  One thing blocks me from just doing it, though. Changing [38;5;153mlogin[39m's signature is an interface change, and more
+  importantly [1mthere is no [38;5;153muserId[39m anywhere in this app to pass.[0m The form collects [38;5;153musername[39m and [38;5;153mpassword[39m only
+  ([38;5;153mindex.html:8[39m), and [38;5;153mlogin[39m already logs and returns [38;5;153musername[39m as the identity. So "track who logged in" is either
+  already solved, or [38;5;153muserId[39m means something the app doesn't have yet — and which it is changes what I build.
+
+  [1mThe fork:[0m where the value comes from, not what the parameter is called.
+
+  - [1m[38;5;153musername[39m is already the identity[0m — no signature change. [38;5;153mlogin[39m logs and returns [38;5;153musername[39m; if tracking means "know
+    which account logged in", that exists today. Costs nothing, rules out nothing, trivially revisited.
+  - [1mA new caller-supplied [38;5;153muserId[0m — a real third parameter, but then something upstream has to produce it: a new form
+    field, a stored value, a value from a prior lookup. That's a new input to design, and it's odd for a login to be
+    told the user id [3mbefore[0m authenticating.
+  - [1mA client-generated correlation id[0m — [38;5;153mlogin(username, password, requestId)[39m with a [38;5;153mcrypto.randomUUID()[39m, for tying a
+    login [3mattempt[0m to later log lines. Cheap, no new user-facing input, but it tracks the attempt, not the person.
+
+  [1mMy recommendation: the third.[0m If you want per-login traceability, a correlation id is what actually delivers it and
+  needs no new input. The second only makes sense if a real user id already exists somewhere you haven't shown me — and
+  if it does, I'd want to see where before wiring it through the signature.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId value come from?[0m
+
+  [38;5;246m1.[39m Client correlation id (Recommended)
+     [38;5;246mlogin(username, password, requestId) with a crypto.randomUUID() generated at the call site. Tracks each login [39m
+     [38;5;246mattempt in logs; no new user input needed.[39m
+  [38;5;246m2.[39m username is enough
+     [38;5;246mNo signature change. login already logs and returns username as the identity. Closes this as already-done.[39m
+  [38;5;246m3.[39m Real user id from upstream
+     [38;5;246mA genuine account id passed by the caller. Tell me where it comes from (new form field? stored value? prior [39m
+     [38;5;246mlookup?) and I'll design that input too.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

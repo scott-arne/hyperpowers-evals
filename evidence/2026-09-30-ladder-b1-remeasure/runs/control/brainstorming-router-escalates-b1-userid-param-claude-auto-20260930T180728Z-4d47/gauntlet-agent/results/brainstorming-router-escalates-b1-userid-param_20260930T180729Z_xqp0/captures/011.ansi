@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m That answer changes the classification, so I'm stepping up the path — and I want to be explicit about why rather than
+  quietly doing more work than you asked for.
+
+  "Works across the app, persists, and other forms will need it later" is not a parameter on one function. It's a shared
+  identity that outlives a single call and has consumers that don't exist yet — storage, a module that owns it, and a
+  contract those future forms read. This repo has none of that today: [38;5;153mapp.js[39m is a single stub with no state, no storage,
+  and no module boundaries ([38;5;153msrc/[39m is an unrelated [38;5;153mgreet[39m utility). Per the one-way ratchet, hidden complexity upgrades
+  the path and nothing downgrades it, so [1mthis is now architectural[0m: clarifying questions, approaches with trade-offs, a
+  written spec for you to review, then an implementation plan. The original one-line edit would have painted you into a
+  corner the moment the second form showed up.
+
+  First question, and this one drives most of the rest.
+
+  [1mThe fork:[0m whether this identity is [3mtrusted[0m or merely [3mdescriptive[0m. A value the client generates and stores is fine for
+  stitching log lines together and costs almost nothing; it is worthless for deciding what a user is allowed to see,
+  because the client can set it to anything. A server-issued session identity can do both, but it means the login stub
+  has to become a real request/response contract, and persistence has to be chosen with security in mind (cookie flags
+  vs. [38;5;153mlocalStorage[39m). Getting this wrong is expensive to reverse — every consumer you add later reads whichever shape you
+  pick, and retrofitting trust onto a client-generated id means changing all of them.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Identity role [39m[49m
+
+[1m[38;5;231mWhat will the persisted userId actually be used for?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mTracking/telemetry only[39m
+     [38;5;246mCorrelate log lines and form submissions to a user. Never used to grant access or gate UI. Client-generated id is [39m
+     [38;5;246msufficient and cheap.[39m
+  [38;5;246m2.[39m Real authenticated identity
+     [38;5;246mOther forms rely on it to know who the user is, and it may gate what they can do. Requires a server-issued session
+[39m     [38;5;246mand security-conscious storage.[39m
+  [38;5;246m3.[39m Tracking now, auth later
+     [38;5;246mStart descriptive, but design the boundary so it can become trusted without rewriting consumers. Costs a bit more [39m
+     [38;5;246mup front.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

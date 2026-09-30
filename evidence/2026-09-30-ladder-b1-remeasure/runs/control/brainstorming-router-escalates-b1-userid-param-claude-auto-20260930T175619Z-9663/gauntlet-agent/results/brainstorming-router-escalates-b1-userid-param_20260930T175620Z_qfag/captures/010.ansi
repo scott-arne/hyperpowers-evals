@@ -1,0 +1,40 @@
+  all, and whether the data is ever queryable by you rather than just by the user sitting at the browser.
+
+  - [1mBrowser storage ([38;5;153mlocalStorage[39m)[0m — buys working persistence with zero backend, synchronous and effectively infallible.
+    Costs: data lives only on that one device/browser, is trivially cleared or edited by the user, and you can never
+    query it. Fine for UX state, not for audit.
+  - [1mPOST to a backend endpoint[0m — buys durable, queryable, tamper-resistant records. Costs: a real endpoint (the repo's
+    [38;5;153mAPI_ENDPOINT[39m is a placeholder pointing at [38;5;153mapi.example.com[39m), plus async failure handling — what happens to the event
+    when the network is down. Hard to retrofit onto a synchronous interface later.
+  - [1mBoth: buffer locally, flush to the server[0m — buys durability across offline gaps. Costs the most complexity: a queue,
+    flush scheduling, retry, deduplication. Real, but usually premature.
+
+  [1mMy recommendation: the backend endpoint[0m, with the tracking module's interface made async from day one. "Track who
+  logged in" is an audit question, and audit data the user can edit or wipe isn't audit data. Making the interface async
+  now is nearly free; converting a synchronous one later means touching every call site — exactly the forms you said
+  would adopt this.
+
+  I should flag: if there's no backend to receive these events yet, that's a dependency outside this repo, and the spec
+  would have to define the wire format against an endpoint that doesn't exist.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mWhere do tracked events get persisted?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBackend endpoint (Recommended)[39m
+     [38;5;246mPOST events to a server. Durable and queryable by you. Async, fallible interface. Needs a real endpoint — [39m
+     [38;5;246mAPI_ENDPOINT is currently a placeholder.[39m
+  [38;5;246m2.[39m Browser localStorage
+     [38;5;246mPersists on the user's device only. No backend needed, synchronous, can't fail. Not usable as audit data: the user
+[39m     [38;5;246mcan clear or edit it, and you can never read it.[39m
+  [38;5;246m3.[39m Local buffer, flush to server
+     [38;5;246mQueue events locally and send in batches, surviving offline gaps. Most durable, most complex: needs retry, flush [39m
+     [38;5;246mscheduling, and deduplication.[39m
+  [38;5;246m4.[39m I don't know yet — help me decide
+     [38;5;246mI'll ask what you actually need from the data (who reads it, how long it's kept, whether it's compliance-driven) [39m
+     [38;5;246mand recommend from there.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

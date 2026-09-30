@@ -1,0 +1,40 @@
+  [1mSection 1 — Architecture, components, data flow[0m
+
+  [1mNew file: [38;5;153msession.js[0m — the whole subsystem, one IIFE assigning a single global:
+
+  window.AppSession = { setUser, getUser, clear };
+
+  - [38;5;153msetUser({ userId, username })[39m — writes [38;5;153msessionStorage["app.currentUser"][39m as JSON.
+  - [38;5;153mgetUser()[39m — reads and parses it, returning [38;5;153m{ userId, username }[39m or [38;5;153mnull[39m when nobody is logged in. Read-through every
+    call, no in-memory copy, so two scripts on a page can never disagree about who's logged in.
+  - [38;5;153mclear()[39m — removes the key. Your logout, whenever a logout exists.
+
+  It stores [1mboth[0m id and username, not just the id. Other forms will want to show who's logged in, and storing the id
+  alone would force a name lookup that this app has no way to do.
+
+  [1m[38;5;153mapp.js[39m changes, two of them.[0m [38;5;153mlogin()[39m keeps its [38;5;153m(username, password)[39m signature and returns [38;5;153m{ success: true, userId, [39m
+  [38;5;153muser: username }[39m. The submit handler, on success, calls [38;5;153mAppSession.setUser({ userId: result.userId, username: [39m
+  [38;5;153mresult.user })[39m.
+
+  [1mWhere the stub's userId comes from.[0m There's no real API — [38;5;153mAPI_ENDPOINT[39m is never called. The stub will synthesize
+  [38;5;153m`stub-${username}`[39m: deterministic, so the same login gives the same id across pages while you're developing, and
+  obviously fake so nobody mistakes it for real data. It gets a comment in the same style as the existing [38;5;153m// Stub:[39m line,
+  and it's the single line to delete when the real API lands.
+
+  [1m[38;5;153mindex.html[0m adds [38;5;153m<script src="session.js"></script>[39m before [38;5;153mapp.js[39m. Every future page does the same, before its own
+  script.
+
+  [1mData flow:[0m submit → [38;5;153mvalidateForm[39m → [38;5;153mlogin[39m → returns [38;5;153muserId[39m → handler → [38;5;153mAppSession.setUser[39m → [38;5;153msessionStorage[39m → any later
+  page's [38;5;153mAppSession.getUser()[39m.
+
+  [1mFiles touched:[0m new [38;5;153msession.js[39m; edit [38;5;153mapp.js[39m and [38;5;153mindex.html[39m. [38;5;153msrc/[39m is untouched — it's an unrelated CommonJS demo.
+
+  Does this look right so far? Two things I'd particularly like your read on: storing username alongside the id, and the
+  [38;5;153mstub-[39m id convention.
+
+[38;5;246m✻[39m [38;5;246mChurned for 3m 26s · done 11:42 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

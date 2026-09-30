@@ -1,0 +1,40 @@
+  [1mOne fork I didn't anticipate, and it's yours to call.[0m [38;5;153mapp.js[39m is loaded as a plain [38;5;153m<script src="app.js">[39m
+  ([38;5;153mindex.html:13[39m) — no module system. [38;5;153msrc/[39m uses CommonJS ([38;5;153msrc/utils.js:5[39m). Those are two incompatible module worlds, and
+  the seam has to live in one of them.
+
+  - [1mES modules[0m — [38;5;153m<script type="module">[39m, [38;5;153mimport { trackLogin } from './src/tracking.js'[39m. No build step, no globals, and
+    it's the only option where the seam is unit-testable. Real cost: a [38;5;153mtype="module"[39m page [1mcan't be opened by [0m
+    [1mdouble-clicking [38;5;153mindex.html[0m anymore — browsers block module loads over [38;5;153mfile://[39m, so you'd need [38;5;153mnpx serve[39m or any static
+    server. That's a change to how you run the thing.
+  - [1mSecond [38;5;153m<script>[39m tag, global [38;5;153mwindow.trackLogin[0m — zero friction, still opens from [38;5;153mfile://[39m. Costs you a global and
+    leaves the seam untestable without a DOM harness.
+  - [1mCommonJS + a bundler[0m — matches [38;5;153msrc/[39m, but adds a build step to a repo that currently has none. Overkill for one
+    function.
+
+  [1mRecommendation: ES modules.[0m The [38;5;153mfile://[39m loss is the only real cost and it's small; in exchange the seam is testable,
+  which matters because the whole point of it is that it'll be edited again when the endpoint lands.
+
+  If you take ES modules, I'd also move [38;5;153mlogin[39m into [38;5;153msrc/auth.js[39m and leave [38;5;153mapp.js[39m as DOM wiring only. Not cosmetic: [38;5;153mapp.js
+[39m  calls [38;5;153mdocument.getElementById[39m at top level ([38;5;153mapp.js:17[39m), so it throws the moment anything imports it — [38;5;153mlogin[39m cannot be
+  tested at all while it lives there.
+
+  [1mTooling.[0m This repo has none — [38;5;153mpackage.json[39m has no scripts, no dependencies, no test runner, no linter. Cheapest to set
+  up now, before there's code to retrofit.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Module system [39m[49m ☐ Extract login  ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mHow should the seam module be wired in?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mES modules (Recommended)[39m
+     [38;5;246mscript type=module + import. Testable seam, no build step, no globals. Cost: index.html no longer opens via file://
+[39m     [38;5;246m— needs a static server.[39m
+  [38;5;246m2.[39m Global via second script tag
+     [38;5;246mwindow.trackLogin. Zero friction, still opens from file://. Costs a global; seam not unit-testable without a DOM [39m
+     [38;5;246mharness.[39m
+  [38;5;246m3.[39m CommonJS + bundler
+     [38;5;246mMatches src/. Adds a build step to a repo with no tooling.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

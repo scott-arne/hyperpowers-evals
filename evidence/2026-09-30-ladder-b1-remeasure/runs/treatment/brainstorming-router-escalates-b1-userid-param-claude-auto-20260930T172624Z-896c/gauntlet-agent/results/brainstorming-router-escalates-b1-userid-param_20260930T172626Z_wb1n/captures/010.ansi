@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Next question — the other decision that's hard to walk back.
+
+  [1mThe fork:[0m how long the id outlives the page, and therefore who can read it later. You said "persist," which rules out
+  memory-only; the real choice is the lifetime.
+
+  - [1m[38;5;153msessionStorage[0m — survives reloads and in-tab navigation, dies when the tab closes. Buys persistence across the
+    reloads that actually break things, with a bounded exposure window. Costs: a new tab is a fresh login, and the id is
+    gone after close. Rules out nothing; widening to [38;5;153mlocalStorage[39m later is a one-line change.
+  - [1m[38;5;153mlocalStorage[0m — survives tab close, browser restart, indefinitely, until something explicitly clears it. Buys "log in
+    once." Costs: a stale id can outlive the real session by weeks, so you need explicit invalidation you don't have
+    yet, and any XSS on this page reads it forever rather than for one tab. Narrowing later is technically one line but
+    behaviorally a regression users notice.
+  - [1mCookie[0m — only worth it if the [3mserver[0m needs to see the id on each request. From this app's JS it can't be [38;5;153mHttpOnly[39m,
+    so it's strictly worse than the storage options for client-side reads.
+
+  Worth being plain about one thing: right now this is a tracking id, not a credential — nothing grants access based on
+  it. The moment the backend starts trusting it to identify a caller, its storage lifetime becomes a session lifetime,
+  and that's a security decision. I'd rather pick the conservative default now than inherit a long-lived one when that
+  day comes.
+
+  [1mMy recommendation: [38;5;153msessionStorage[39m,[0m behind a small accessor module rather than direct [38;5;153msessionStorage[39m calls scattered
+  around — so the "other forms" you mentioned consume a function, and changing the lifetime later is one edit in one
+  place.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mHow long should the user id persist?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153msessionStorage (Recommended)[39m
+     [38;5;246mSurvives reloads and navigation; cleared when the tab closes. Bounded exposure, easy to widen later.[39m
+  [38;5;246m2.[39m localStorage
+     [38;5;246mSurvives browser restart indefinitely. 'Log in once', but needs explicit invalidation and has a much larger XSS [39m
+     [38;5;246mexposure window.[39m
+  [38;5;246m3.[39m Cookie
+     [38;5;246mChoose only if the backend must read the id on every request. Cannot be HttpOnly when set from this app's JS.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

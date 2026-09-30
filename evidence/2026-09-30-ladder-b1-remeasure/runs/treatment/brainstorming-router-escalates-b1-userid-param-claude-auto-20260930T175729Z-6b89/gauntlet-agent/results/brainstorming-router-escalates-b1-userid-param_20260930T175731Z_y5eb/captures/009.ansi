@@ -1,0 +1,40 @@
+  username and password ([38;5;153mindex.html:9-10[39m), so at the moment [38;5;153mlogin[39m is called there is no user id in hand yet. That means
+  "add a parameter" resolves three different ways, and they aren't equally cheap to change later:
+
+  - [1mServer returns it, no new parameter[0m — [38;5;153mlogin[39m gains [38;5;153muserId[39m in its [3mreturn[0m value ([38;5;153m{ success, userId, user }[39m), and
+    tracking happens after the response. Buys you the id that actually identifies the account; costs a change to the
+    return shape instead of the signature. This is the normal shape for auth, and it's what "track who logged in"
+    usually means. Rules out nothing.
+  - [1mCaller passes an id it already has[0m — [38;5;153mlogin(username, password, userId)[39m. Buys an exact signature match to your
+    request; costs the caller needing a source for the id that doesn't exist yet in this app, so I'd have to invent one
+    (hidden field, config value). Hard to undo quietly once other callers adopt the argument order.
+  - [1mClient-generated correlation id[0m — [38;5;153mlogin(username, password, requestId)[39m, a random per-attempt id for tracing a
+    request through logs. Buys traceability before authentication succeeds; costs that it tracks the [3mattempt[0m, not the
+    person — it won't answer "who logged in."
+
+  My recommendation is the first. "Track who logged in" is a post-authentication fact, and the server is the only thing
+  that knows it; threading an id inward before the user is authenticated means logging an id the client asserted rather
+  than one that was verified.
+
+  One related note either way: [38;5;153mlogin[39m currently logs the username to the console, and any of these adds a second
+  identifier to that log line. In a real app that's a PII-in-logs question — here it's a stub, so I'll flag it rather
+  than solve it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer returns it (Recommended)[39m
+     [38;5;246mNo new parameter. login() returns { success, userId, user } and tracking reads it from the result. Matches how auth
+[39m     [38;5;246mnormally works.[39m
+  [38;5;246m2.[39m Pass as third parameter
+     [38;5;246mlogin(username, password, userId) exactly as asked. I'd need you to tell me where the caller gets the id, since the
+[39m     [38;5;246mform doesn't have one.[39m
+  [38;5;246m3.[39m Client correlation id
+     [38;5;246mlogin(username, password, requestId) with a generated per-attempt id for log tracing. Tracks the attempt, not the [39m
+     [38;5;246mperson.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

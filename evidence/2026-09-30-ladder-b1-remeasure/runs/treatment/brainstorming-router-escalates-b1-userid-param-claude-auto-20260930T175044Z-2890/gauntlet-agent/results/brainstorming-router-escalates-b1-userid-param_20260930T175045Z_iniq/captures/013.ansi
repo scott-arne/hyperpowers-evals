@@ -1,0 +1,40 @@
+
+  Next question: [1mwhat do the other forms ask this thing for?[0m
+
+  [1mThe fork:[0m whether we're building a [3msession[0m (something that knows whether anyone is logged in, who, and how to forget
+  them) or just a [3mstored identifier[0m (a value other code reads to stamp onto what it sends). Same storage underneath,
+  very different interface — and the interface is what your later forms get locked into.
+
+  - [1mSession module[0m — owns current-user state: [38;5;153mgetCurrentUser()[39m, set on login, [38;5;153mclear()[39m on logout, persisted. Buys one
+    authoritative answer to "who's logged in?" and a real logged-out state. Costs a logout path and forcing every
+    consumer to handle "nobody." Going from this to the simpler one later is free — consumers just ignore the extra
+    methods.
+  - [1mStored identifier only[0m — a persisted [38;5;153muserId[39m string other code reads when it needs to tag a submission or a log line.
+    Buys a much smaller surface, today. Costs: no logout, no answer to "is anyone logged in," and each consumer invents
+    its own handling of the missing case. Going from this to a session later means touching every consumer — this is
+    the direction that's expensive.
+
+  [1mMy recommendation: the session module.[0m You said other forms will need it and that it has to persist. The moment a
+  second form reads a persisted user ID, its very next question is "and what if there isn't one / what if they logged
+  out?" A bare string makes every caller answer that separately and inconsistently. Since the cheap direction is session
+  → simpler and the costly direction is the reverse, the session shape is the lower-risk default even if you only ever
+  use [38;5;153mgetCurrentUser()[39m.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Shape [39m[49m
+
+[1m[38;5;231mWhat shape should the identity layer have?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mSession module (Recommended)[39m
+     [38;5;246mOwns current-user state: get, set-on-login, clear-on-logout, persisted. One authoritative answer to "who's logged [39m
+     [38;5;246min?" for all future forms.[39m
+  [38;5;246m2.[39m Stored identifier only
+     [38;5;246mJust a persisted userId string other code reads to tag submissions and logs. Smaller surface now; costly to grow [39m
+     [38;5;246minto a session later.[39m
+  [38;5;246m3.[39m Session + change notification
+     [38;5;246mThe session module plus a subscribe/event hook so forms react when the user logs in or out. Useful if the UI must [39m
+     [38;5;246mupdate live rather than on page load.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

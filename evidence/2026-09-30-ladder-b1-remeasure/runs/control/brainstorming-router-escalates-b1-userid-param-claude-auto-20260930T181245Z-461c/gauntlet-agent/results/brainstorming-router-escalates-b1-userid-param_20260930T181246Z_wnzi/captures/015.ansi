@@ -1,0 +1,40 @@
+
+  Since both endpoints are fakes, these contracts are [3mmy[0m invention — they're the thing most likely to be wrong when real
+  servers show up, so they're written down explicitly and confined to two files.
+
+  [1mThe flow, on a valid form submit:[0m
+
+  [38;5;153msubmit → validateForm → login(username, password)[39m
+                            [38;5;153m├─ POST config.LOGIN_URL  { username, password }[39m
+                            [38;5;153m├─ response → { success, userId }[39m
+                            [38;5;153m├─ trackLogin(userId)[39m
+                            [38;5;153m│    └─ POST config.ANALYTICS_URL  { event, userId, timestamp }[39m
+                            [38;5;153m└─ return { success, userId }[39m
+
+  [1mContracts:[0m
+
+  - [3mLogin request[0m — [38;5;153mPOST[39m JSON [38;5;153m{ username, password }[39m.
+  - [3mLogin response[0m — JSON [38;5;153m{ success: boolean, userId: string }[39m. [38;5;153muserId[39m is required when [38;5;153msuccess[39m is true; that
+    expectation is asserted, not assumed (Section 3).
+  - [3mAnalytics request[0m — [38;5;153mPOST[39m JSON [38;5;153m{ event: "login", userId, timestamp }[39m, where [38;5;153mtimestamp[39m is an ISO 8601 string.
+    Fire-and-forget: its response is not inspected.
+  - [3m[38;5;153mlogin[39m return value[0m — [38;5;153m{ success, userId }[39m.
+
+  Two notes on that last one. It [1mdrops the existing [38;5;153muser: username[39m field[0m — the only consumer is a [38;5;153mconsole.log[39m in the
+  submit handler, and keeping a field that just echoes an argument invites someone to treat it as server-confirmed
+  identity when it isn't. Say the word if you'd rather keep it. And [38;5;153mlogin[39m is now [1masync[0m, so the handler must [38;5;153mawait[39m; a
+  caller that forgets gets a Promise where it expected a result.
+
+  [1mDependency injection.[0m [38;5;153mlogin(username, password, deps = {})[39m, destructured as [38;5;153m{ fetch = globalThis.fetch, track = [39m
+  [38;5;153mtrackLogin } = deps[39m. Production call sites pass nothing and get real behavior; tests pass fakes. Same shape in
+  [38;5;153mtrackLogin[39m for [38;5;153mfetch[39m. This is what makes the seam testable without a mocking library — which matters, because the repo
+  has no dependencies and I'd like to keep it that way.
+
+  Does the contract shape look right?
+
+[38;5;246m✻[39m [38;5;246mCooked for 15s · done 11:18 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

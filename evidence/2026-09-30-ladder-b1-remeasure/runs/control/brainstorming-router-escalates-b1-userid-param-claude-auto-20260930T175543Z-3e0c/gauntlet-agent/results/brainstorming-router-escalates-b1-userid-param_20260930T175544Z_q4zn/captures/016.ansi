@@ -1,0 +1,40 @@
+
+  [38;5;153mlogin()[39m becomes [38;5;153masync[39m and calls tracking itself, so every caller gets consistent behavior:
+
+  [34masync[39m [34mfunction[39m [33mlogin[39m(username, password) {
+    [34mconst[39m result = [34mawait[39m [33mauthenticate[39m(username, password); [32m// still the stub[39m
+    [34mif[39m (result.success) [34mawait[39m [33mtrack[39m([31m"login.succeeded"[39m, { [36muserId[39m: result.userId });
+    [34melse[39m [34mawait[39m [33mtrack[39m([31m"login.failed"[39m, { username });
+    [34mreturn[39m result;
+  }
+
+  The submit handler gains one [38;5;153mawait[39m. Three honest caveats:
+
+  - The current stub returns [38;5;153m{ success: true, user: username }[39m with [1mno [38;5;153muserId[0m. I'll have it return a clearly-marked
+    placeholder ID until the real API exists — otherwise [38;5;153mlogin.succeeded[39m records [38;5;153mundefined[39m.
+  - The stub [3malways[0m succeeds, so the [38;5;153mlogin.failed[39m path is [1munreachable until the real API lands[0m. I'll build and unit-test
+    it anyway, but it won't be exercised end-to-end.
+  - [1mPasswords never enter an event.[0m Failed attempts record the attempted [38;5;153musername[39m, which is mild PII — say the word if
+    you'd rather hash it or drop it.
+
+  [1m7. Files touched[0m
+
+  [38;5;153msrc/tracking.js[39m (new), [38;5;153mapp.js[39m (login + handler), [38;5;153mindex.html[39m ([38;5;153mtype="module"[39m). [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are
+  untouched.
+
+  One open item: this repo has [1mno[0m test runner, linter, formatter, or build step. Setting that up is cheapest now, before
+  the code exists.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Which tooling should we set up from the start? (These land in the spec's Global Constraints.) → Unit tests [39m
+     [38;5;246m(node:test)[39m
+
+[38;5;231m⏺[39m Design approved with unit tests only (no linter, no e2e). Writing the spec.
+
+[38;5;174m✢[39m [38;5;174mF[38;5;216mlut[38;5;174mtering… [38;5;246m(1m 27s · ↓[39m [38;5;246m5.7k tokens)[39m
+[38;5;246m  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

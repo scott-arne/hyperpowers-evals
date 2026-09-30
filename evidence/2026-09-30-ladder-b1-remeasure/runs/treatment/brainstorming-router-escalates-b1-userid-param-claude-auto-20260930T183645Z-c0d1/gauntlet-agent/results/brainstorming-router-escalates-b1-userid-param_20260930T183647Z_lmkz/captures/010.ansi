@@ -1,0 +1,40 @@
+  The fork: whether we introduce a module system now, or stay with the global-script style [38;5;153mapp.js[39m already uses.
+
+  - [1mGlobal namespace module[0m — a new [38;5;153msession.js[39m loaded before [38;5;153mapp.js[39m, exposing something like [38;5;153mwindow.Session = { [39m
+    [38;5;153msetUserId, getUserId, clear }[39m. Buys one place that owns the storage key and the value's shape, with no build step,
+    and [38;5;153mindex.html[39m still opens directly from disk. Costs a global and an implicit script-tag ordering dependency.
+    Matches what's already in [38;5;153mapp.js[39m.
+  - [1mES modules[0m — [38;5;153m<script type="module">[39m, [38;5;153msession.js[39m exports real functions, [38;5;153mapp.js[39m imports them. Buys proper scoping and
+    no globals. Costs a local dev server: module scripts are blocked over [38;5;153mfile://[39m, so opening [38;5;153mindex.html[39m by
+    double-clicking stops working. That's a new tooling requirement for a repo that currently has none.
+  - [1mNo module — each form touches [38;5;153msessionStorage[39m directly.[0m Buys the least code today. Costs the exact thing you said you
+    wanted to avoid: the key name and the value shape get copy-pasted into every new form, and they drift.
+
+  [1mMy recommendation: the global namespace module.[0m It matches the existing style, keeps the app runnable with no server
+  or build, and still gives you the single owner of the key that "other forms will need it later" is really asking for.
+  ES modules are the better long-term structure, but they only pay for themselves if you expect a build step here anyway
+  — and right now there isn't one to extend.
+
+  Note on the third option: I'm listing it for completeness, not recommending it. It's the status quo scaled up, and
+  it's what your requirement rules out.
+
+  To be clear about what I'm [3mnot[0m touching: [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are a separate CommonJS Node entry point with
+  no connection to the browser app. I'll leave them alone unless you tell me otherwise.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module style [39m[49m
+
+[1m[38;5;231mHow should other forms reach the shared session store?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mGlobal namespace module (Recommended)[39m
+     [38;5;246mNew session.js exposing window.Session, loaded before app.js. No build, matches existing style, index.html still [39m
+     [38;5;246mopens from disk.[39m
+  [38;5;246m2.[39m ES modules
+     [38;5;246mscript type=module with real imports/exports. Cleaner scoping, but requires a local dev server since file:// blocks
+[39m     [38;5;246mmodule scripts.[39m
+  [38;5;246m3.[39m Direct sessionStorage in each form
+     [38;5;246mNo shared module. Least code now, but the key name and value shape get duplicated across every future form.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

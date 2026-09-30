@@ -1,0 +1,40 @@
+  [1mThe fork:[0m what [38;5;153muserId[39m actually [3mis[0m, and therefore whether it can be a parameter at all. Right now the submit handler
+  has two values, both typed into the form. There is no third value to pass.
+
+  - [1mIt's the canonical ID from the auth response.[0m In most apps the server tells you the real user ID [3mafter[0m it verifies
+    credentials. If that's the case, [38;5;153muserId[39m is an [1moutput[0m of [38;5;153mlogin()[39m, not an input — the parameter you asked for can't be
+    filled by the caller, because nobody knows the ID until login succeeds. Tracking would read it off the result.
+  - [1mIt's a caller-supplied identity from elsewhere[0m — an existing session, SSO context, a tenant/account ID. Then a
+    parameter is exactly right, and it flows in from whatever already knows it. Nothing in this repo produces one yet,
+    so we'd be defining where it comes from.
+  - [1mIt's effectively the username.[0m If username is already the unique identifier, a separate [38;5;153muserId[39m adds a second name
+    for one thing, and tracking should just record [38;5;153musername[39m. No new parameter.
+  - [1mIt's a client-generated device/anonymous ID[0m — a stable random ID in [38;5;153mlocalStorage[39m that lets you correlate failed
+    attempts and pre-auth activity, not just successful logins. This one [3mis[0m available at call time and composes well
+    with the other options.
+
+  [1mMy recommendation: treat the authenticated identity as an output of [38;5;153mlogin()[39m, and add a client-generated device ID as [0m
+  [1mthe actual new parameter[0m (or, more cleanly, let the tracking module own it). That gives you "who logged in" for
+  successful logins via the result, [3mand[0m coverage of failed attempts — which a [38;5;153muserId[39m parameter supplied by the caller
+  can't give you, since a failed login has no verified user.
+
+  This is a real departure from "add a [38;5;153muserId[39m parameter," so I want your call rather than quietly redesigning around it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhat is userId, and where does it come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFrom auth response + device ID (Recommended)[39m
+     [38;5;246mAuthenticated identity comes back from login() as a result, not a parameter. Tracking module owns a persistent [39m
+     [38;5;246mclient device ID so failed attempts are tracked too.[39m
+  [38;5;246m2.[39m Caller supplies it
+     [38;5;246muserId is a real parameter passed in from session/SSO/tenant context. We define where that context comes from, [39m
+     [38;5;246msince nothing in the repo produces one today.[39m
+  [38;5;246m3.[39m It is just the username
+     [38;5;246mUsername is already the unique identifier. No new parameter; tracking records username and we skip the userId [39m
+     [38;5;246mconcept entirely.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

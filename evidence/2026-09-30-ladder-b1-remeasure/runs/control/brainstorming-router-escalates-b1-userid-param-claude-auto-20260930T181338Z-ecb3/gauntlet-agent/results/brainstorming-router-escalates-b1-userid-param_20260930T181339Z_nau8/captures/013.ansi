@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should shared code be wired so other forms can reuse it? → ES modules (Recommended)[39m
+
+[38;5;231m⏺[39m Third question — the stub. [38;5;153mlogin()[39m currently returns [38;5;153m{ success: true, user: username }[39m synchronously and never touches
+  [38;5;153mAPI_ENDPOINT[39m. Since the userId is coming from the login response, something has to produce one.
+
+  [1mWhat differs:[0m whether [38;5;153mlogin()[39m becomes asynchronous. That's the most contagious decision left — every present and
+  future caller has to [38;5;153mawait[39m it, and switching a sync function to async later means revisiting each one.
+
+  - [1mKeep the stub, synthesize a userId[0m — the stub returns a fake id (e.g. derived from the username or a UUID). Buys:
+    the whole session layer gets built and tested now, with no backend. Costs: the id isn't real, and you'll do the
+    async conversion later anyway.
+  - [1mMake it a real [38;5;153mfetch[39m, [38;5;153mlogin()[39m becomes async[0m — POSTs to [38;5;153mAPI_ENDPOINT[39m, reads [38;5;153muserId[39m off the response. Buys: the
+    interface is right from the start; callers are written [38;5;153mawait[39m from day one. Costs: [38;5;153mhttps://api.example.com/login[39m
+    doesn't exist, so nothing works end-to-end until a backend does; needs error/network handling now.
+  - [1mAsync signature, stubbed body[0m — [38;5;153mlogin()[39m is [38;5;153masync[39m and returns a synthesized userId without a network call, with the
+    [38;5;153mfetch[39m dropped in later. Buys: the contagious part of the decision is paid once, now, while there's exactly one
+    caller; swapping the body later touches only [38;5;153mlogin()[39m. Costs: slightly odd-looking async function with no await in it
+    today.
+
+  [1mMy recommendation: the third.[0m The expensive, repo-wide part of this choice is the async signature, not the fetch;
+  making it async now while there's a single caller costs one line, and doing it after you've added the other forms
+  costs all of them.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Login stub [39m[49m
+
+[1m[38;5;231mHow should login() produce the userId, given the API is a stub?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mAsync signature, stub body (Recommended)[39m
+     [38;5;246mMake login() async now and synthesize a userId; drop in the real fetch later touching only login().[39m
+  [38;5;246m2.[39m Real fetch now
+     [38;5;246mPOST to API_ENDPOINT and read userId from the response. Correct interface, but nothing works until a backend [39m
+     [38;5;246mexists.[39m
+  [38;5;246m3.[39m Keep it fully synchronous
+     [38;5;246mStub stays sync and returns a fake userId. Simplest today; the async conversion hits every caller later.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

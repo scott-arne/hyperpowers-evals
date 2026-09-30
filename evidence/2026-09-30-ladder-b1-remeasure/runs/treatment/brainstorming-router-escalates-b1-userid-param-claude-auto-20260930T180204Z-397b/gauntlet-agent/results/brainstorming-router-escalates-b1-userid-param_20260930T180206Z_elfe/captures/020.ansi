@@ -1,0 +1,40 @@
+  [38;5;153msetUser[39m, [38;5;153mgetUserId[39m, [38;5;153misLoggedIn[39m, [38;5;153mclear[39m. It owns the storage key, the [38;5;153msessionStorage[39m read/write, and the single
+  definition of "nobody is logged in" ([38;5;153mnull[39m). [38;5;153mlogin[39m returns the userId; the submit handler hands it to [38;5;153mAppSession[39m.
+  Future forms only ever call [38;5;153mAppSession.getUserId()[39m.
+  [3mBuys:[0m one place to change storage, one place for the not-logged-in answer, and consumers that never touch
+  [38;5;153msessionStorage[39m directly. [3mCosts:[0m one new file and a global. [3mComplexity:[0m trivial-to-moderate.
+
+  [1mB. Storage-key convention, no module.[0m Agree the key is [38;5;153mapp.userId[39m; each consumer calls
+  [38;5;153msessionStorage.getItem("app.userId")[39m itself.
+  [3mBuys:[0m zero new files, nothing to learn. [3mCosts:[0m the key is duplicated at every call site, so a typo fails silently as
+  "logged out"; each consumer invents its own missing-value handling; and switching storage later means editing every
+  consumer. [3mComplexity:[0m trivial.
+
+  [1mC. Session module with subscriptions.[0m A, plus [38;5;153mAppSession.subscribe(fn)[39m so already-rendered forms react to login and
+  logout.
+  [3mBuys:[0m correctness for UI that's on screen before login happens. [3mCosts:[0m a pub/sub and teardown story for a need that
+  doesn't exist yet — there is no second form and no logout. [3mComplexity:[0m moderate.
+
+  [1mRecommendation: A.[0m B's cost lands exactly where you said you're heading — "other forms will need it later" is the case
+  where a duplicated string key and per-consumer null handling start biting. C is real engineering for a subscriber
+  that doesn't exist; if a form ever needs to react live, adding [38;5;153msubscribe[39m to A is additive and breaks no caller. A is
+  the smallest thing that makes the [3mnext[0m form easy.
+
+  Three things I'll flag now because they shape the design, not the choice:
+
+  - [1m[38;5;153mlogin[39m is a stub[0m that returns [38;5;153m{ success: true, user: username }[39m and never calls the API. A real userId comes from the
+    server, so the stub has to synthesize one. I'll derive it from the username with an explicit stub marker, so
+    swapping in the real API changes one function body and nothing else.
+  - [1m[38;5;153msessionStorage[39m can throw[0m (disabled storage, some private-browsing modes). Unguarded, that turns a storage problem
+    into a broken login button. The module will catch and fall back to in-memory.
+  - [1mFailure path.[0m The session must only be set when [38;5;153msuccess[39m is true. The stub always succeeds today, so this is
+    currently unreachable code — worth writing correctly anyway rather than retrofitting.
+
+  Does A look right, and are those three flags the behavior you want?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 2m 42s · done 11:08 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

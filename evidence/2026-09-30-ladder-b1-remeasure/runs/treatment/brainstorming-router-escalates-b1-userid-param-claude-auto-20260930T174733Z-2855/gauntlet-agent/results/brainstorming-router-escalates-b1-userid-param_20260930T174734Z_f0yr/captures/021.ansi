@@ -1,0 +1,40 @@
+  [1mError handling[0m splits along one line: programmer errors fail loudly, environment errors degrade quietly.
+
+  - [1m[38;5;153msetUserId[39m with a non-string or empty value throws a [38;5;153mTypeError[39m.[0m Storing [38;5;153mundefined[39m under an identity key is a bug that
+    would surface hours later as a mysterious [38;5;153m"undefined"[39m user; better to blow up at the call site.
+  - [1m[38;5;153msessionStorage[39m itself can throw[0m — disabled by policy, quota exhausted, some private-browsing modes. Reads and writes
+    are wrapped; on failure [38;5;153midentity.js[39m falls back to an in-memory value for the page lifetime and logs once. A storage
+    failure must never break the login flow.
+  - [1mLogin fails ([38;5;153msuccess: false[39m)[0m → [38;5;153mclearUserId()[39m. A stale ID from an earlier login outliving a failed one is the worst
+    outcome here.
+  - [1mLogin succeeds but the response has no [38;5;153muserId[0m → that's a server contract violation: log a warning, clear, store
+    nothing.
+  - [1m[38;5;153mlogin()[39m rejects[0m — impossible against today's stub, but the handler gets a [38;5;153mtry/catch[39m now, since making it async
+    without one would turn a future network error into an unhandled rejection.
+
+  [1mTesting[0m has a snag worth naming. [38;5;153midentity.js[39m is cleanly testable — pure logic over an injected storage object. [38;5;153mlogin()
+[39m  is not, because [38;5;153mapp.js[39m calls [38;5;153mdocument.getElementById(...)[39m at the top level, so importing it in a test runner without
+  a DOM throws immediately. The fix is small and is the kind of cleanup that belongs with this change: move [38;5;153mlogin[39m and
+  [38;5;153mvalidateForm[39m into [38;5;153mauth.js[39m, leaving [38;5;153mapp.js[39m as nothing but DOM wiring. That's one extra file and no behavior change, and
+  without it [38;5;153mlogin()[39m stays untestable no matter what runner we pick. I'd do it, but it is scope beyond what you asked
+  for, so it's your call.
+
+  [1mTooling.[0m This repo has no linter, no formatter, no test runner, and no scripts in [38;5;153mpackage.json[39m. Setting these up is
+  cheapest now, before there's code to retrofit. My picks: unit tests via node's built-in [38;5;153mnode:test[39m (zero dependencies,
+  works with ES modules) and Prettier + ESLint. I'd skip e2e — one form with a stubbed backend doesn't justify a browser
+  harness yet — and skip fuzz/mutation entirely at this size.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ auth.js split [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mSplit login/validateForm into auth.js so they're testable?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, split it (Recommended)[39m
+     [38;5;246mapp.js becomes pure DOM wiring; auth.js holds login/validateForm. One extra file, no behavior change, makes login()
+[39m     [38;5;246mtestable.[39m
+  [38;5;246m2.[39m No, leave app.js as is
+     [38;5;246mSmaller diff. login() stays untestable without a DOM harness; only identity.js gets unit tests.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

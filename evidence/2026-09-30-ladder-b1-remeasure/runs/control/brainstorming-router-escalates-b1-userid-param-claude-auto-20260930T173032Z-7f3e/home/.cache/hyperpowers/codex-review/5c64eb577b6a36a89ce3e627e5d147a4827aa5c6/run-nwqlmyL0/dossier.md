@@ -1,0 +1,320 @@
+# Review dossier
+
+Gate: spec
+
+## Documents under review
+
+### /Users/johnss51/Development/agents/hyperpowers/evals/results/brainstorming-router-escalates-b1-userid-param-claude-auto-20260930T173032Z-7f3e/coding-agent-workdir/docs/hyperpowers/specs/2026-09-30-login-analytics-tracking-design.md
+
+	1	# Login and Form Analytics Tracking — Design
+	2	
+	3	Date: 2026-09-30
+	4	Status: approved, pending implementation plan
+	5	
+	6	## Origin
+	7	
+	8	The request was "add a `userId` parameter to the login function so we can track
+	9	who logged in." Investigation showed the parameter cannot be implemented as
+	10	stated: `login()` is the function that establishes identity, and its only
+	11	caller — the `#login-form` submit handler in `app.js` — has nothing but a
+	12	username and a password. No user ID exists anywhere in this codebase to pass.
+	13	
+	14	Clarification established the actual goal: a **persistent, reusable form-event
+	15	tracking capability for product analytics**, starting with login and usable by
+	16	forms added later.
+	17	
+	18	`login()`'s signature does not change. No `userId` parameter is added.
+	19	
+	20	## Goals
+	21	
+	22	- Record login events durably, surviving page reload.
+	23	- Provide a mechanism other forms can reuse without reimplementing it.
+	24	- Support eventual delivery to an analytics backend that does not exist yet.
+	25	- Never allow tracking to break application behavior.
+	26	- Never store credentials.
+	27	
+	28	## Non-goals
+	29	
+	30	- Standing up an analytics backend, or sending any record anywhere. This change
+	31	  builds the queue and the delivery seam; nothing is transmitted.
+	32	- An audit or security log. The store is client-side and user-modifiable, so it
+	33	  is not trustworthy for that purpose. Rejected explicitly during design.
+	34	- Implementing the real `login()` API call. `login()` remains a stub.
+	35	- Bridging the `src/` CommonJS tree to the browser code. Out of scope.
+	36	- Linting and formatting setup. Offered, declined.
+	37	
+	38	## Global constraints
+	39	
+	40	- Zero runtime dependencies. `package.json` has none and gains none.
+	41	- Tests use Node's built-in `node:test` runner. No test dependencies.
+	42	- Browser code is ES modules, loaded natively. No bundler, no build step.
+	43	- All new browser code must run unmodified in a current browser.
+	44	
+	45	## Architecture
+	46	
+	47	### Files
+	48	
+	49	| File | Change |
+	50	|---|---|
+	51	| `tracker.js` | **New.** The entire capability. |
+	52	| `test/tracker.test.js` | **New.** `node:test` unit tests. |
+	53	| `index.html` | `<script src="app.js">` becomes `<script type="module" src="app.js">`. |
+	54	| `app.js` | Imports `track`; `login()` records its own outcome. |
+	55	| `package.json` | Adds a `test` script. |
+	56	| `src/index.js`, `src/utils.js` | Untouched. |
+	57	
+	58	### Accepted consequence
+	59	
+	60	Native ES modules are blocked over the `file://` scheme, so `index.html` can no
+	61	longer be opened directly from disk. The directory must be served
+	62	(`python3 -m http.server` or equivalent). This is inherent to the chosen module
+	63	approach and was accepted during design.
+	64	
+	65	### Public interface
+	66	
+	67	```js
+	68	// tracker.js
+	69	export async function track(eventName, data)   // append one record; never throws
+	70	export function getEvents()                    // read the queue
+	71	export async function flush(sender)            // drain through a caller-supplied sender
+	72	export function clear()                        // drop the queue
+	73	export function _setStorage(storage)           // test seam; see Testing
+	74	```
+	75	
+	76	`track()` is async because hashing uses `crypto.subtle.digest`. Callers in
+	77	application code do **not** await it — it is fire-and-forget and cannot throw.
+	78	Tests await it.
+	79	
+	80	### Call site
+	81	
+	82	```js
+	83	// app.js
+	84	import { track } from "./tracker.js";
+	85	
+	86	function login(username, password) {
+	87	  console.log("Logging in:", username);
+	88	  // Stub: would POST to API_ENDPOINT in real app
+	89	  const result = { success: true, user: username };
+	90	  track("login", { username, outcome: result.success ? "success" : "failure" });
+	91	  return result;
+	92	}
+	93	```
+	94	
+	95	`track()` is called inside `login()`, not at the call site, so every future
+	96	caller of `login()` is tracked without remembering to do anything. When the real
+	97	API lands and returns a server-side user ID, that ID is added to the record here
+	98	— still without adding a parameter.
+	99	
+	100	## Data model
+	101	
+	102	```js
+	103	{
+	104	  v: 1,
+	105	  event: "login",
+	106	  timestamp: "2026-09-30T14:03:11.204Z",
+	107	  sessionId: "9f2c8a1e-...",
+	108	  data: { user: "sha256:4a7d1ed4...", outcome: "success" }
+	109	}
+	110	```
+	111	
+	112	| Field | Notes |
+	113	|---|---|
+	114	| `v` | Schema version. Present from the start so a backend can parse records written by older builds. |
+	115	| `event` | Caller-supplied event name, required, non-empty string. |
+	116	| `timestamp` | ISO 8601, UTC, generated by the tracker. |
+	117	| `sessionId` | `crypto.randomUUID()`, generated once per tab, held in `sessionStorage` under `app.analytics.session.v1`. Groups a visit's events without an account system. |
+	118	| `data` | Caller-supplied. Shallow, primitive values only. |
+	119	
+	120	### Identity
+	121	
+	122	Usernames are personal data and are never stored raw. The tracker replaces a
+	123	`username` key in `data` with a `user` key holding
+	124	`"sha256:" + hex(SHA-256(salt + username))`, using a per-deployment salt
+	125	constant defined in `tracker.js`.
+	126	
+	127	This is **pseudonymisation, not anonymisation**, and the guarantee is weaker
+	128	here than in a server-side design: the salt is a constant in client-side
+	129	JavaScript, so it is shipped to every browser and is not secret. It raises the
+	130	cost of bulk reversal — an attacker must compute a dictionary against this
+	131	deployment's salt rather than reuse a generic rainbow table — but anyone who
+	132	reads the bundle can confirm whether a given username matches a given digest.
+	133	
+	134	Treat the stored records as reduced-exposure personal data, not as
+	135	de-identified data. They remain in scope for privacy obligations. If that is
+	136	not good enough for a future use, the fix is hashing server-side with a secret
+	137	salt, which requires the backend this design does not have.
+	138	
+	139	### Credential exclusion
+	140	
+	141	Two layers, in order of importance:
+	142	
+	143	1. **Structural.** `track()` receives a caller-constructed `data` object. It
+	144	   never reads the DOM, never touches a form element, never enumerates fields.
+	145	   There is no code path by which it can observe a password. `login()` passes
+	146	   `username` and `outcome`; `password` is never handed over. This is why a
+	147	   delegated auto-tracking design was rejected — reading forms generically puts
+	148	   credentials within reach by construction.
+	149	2. **Defensive.** Any `data` key matching `/pass|secret|token|auth|cred/i` is
+	150	   dropped and a `console.warn` emitted. This guards against a future
+	151	   contributor, not against the current call site.
+	152	
+	153	Non-primitive `data` values are rejected with a warning, keeping records flat
+	154	and preventing an entire form object being passed by accident.
+	155	
+	156	## Persistence
+	157	
+	158	- **Key:** `app.analytics.queue.v1` in `localStorage`, holding a JSON array. The
+	159	  version in the key prevents a future format change colliding with records
+	160	  already in a user's browser.
+	161	- **Cap:** 500 records, oldest-first eviction. `localStorage` allows roughly
+	162	  5 MB; an uncapped queue eventually hits quota. Dropping oldest is correct for
+	163	  analytics — recent behavior is what gets queried, and un-flushed records
+	164	  beyond the newest 500 imply flushing is already broken.
+	165	- **Write serialization:** `track()` is async, so two overlapping calls could
+	166	  interleave read-modify-write and lose a record. All queue mutations pass
+	167	  through a single internal promise chain.
+	168	
+	169	## Flush
+	170	
+	171	```js
+	172	await flush(async (records) => { /* caller sends them */ });
+	173	```
+	174	
+	175	- Snapshots the queue, awaits the sender, and on success removes **exactly the
+	176	  snapshotted records** — not a blind clear. Records can be appended during the
+	177	  await, and clearing the key would silently discard them.
+	178	- On sender failure the queue is left completely intact and `flush` returns
+	179	  `false`.
+	180	- No timers, no retry loop, no backoff. Scheduling belongs to whoever owns the
+	181	  backend.
+	182	- Nothing calls `flush()` in this change. It is the seam only.
+	183	
+	184	## Error handling
+	185	
+	186	**Invariant: tracking never breaks the application.** `track()` is wrapped
+	187	entirely in try/catch and cannot throw under any circumstance.
+	188	
+	189	| Condition | Behavior |
+	190	|---|---|
+	191	| Corrupt or unparseable JSON at the key | Reset to empty array, `console.warn`, continue. |
+	192	| `localStorage` unavailable or quota exceeded | Fall back to an in-memory array, warn once per session, keep tracking. |
+	193	| Invalid arguments (empty event name, non-object data) | Warn, record nothing, return normally. |
+	194	| Any other error | Swallowed and warned. |
+	195	
+	196	A login must never fail because an analytics write did.
+	197	
+	198	## Testing
+	199	
+	200	`node:test`, run via `npm test`. No dependencies, no browser, no jsdom.
+	201	
+	202	`localStorage` is a browser global Node does not reliably provide, so the
+	203	tracker takes its storage as an injectable dependency defaulting to
+	204	`globalThis.localStorage`. Tests inject a `Map`-backed fake. `crypto.subtle` and
+	205	`crypto.randomUUID` are available as globals in supported Node versions and need
+	206	no shim.
+	207	
+	208	Cases to cover:
+	209	
+	210	1. A record is appended with the correct shape and all required fields.
+	211	2. The queue caps at 500 and evicts oldest-first.
+	212	3. A `password` key is dropped and warned; other keys survive.
+	213	4. `username` is replaced by a salted `user` digest; the raw value appears
+	214	   nowhere in stored output.
+	215	5. The same username produces the same digest across calls; different usernames
+	216	   produce different digests.
+	217	6. Corrupt JSON at the key recovers to an empty queue without throwing.
+	218	7. Storage that throws on write falls back to memory without throwing.
+	219	8. `flush` success removes only the snapshotted records and preserves any
+	220	   appended mid-flight.
+	221	9. `flush` failure leaves the queue intact and returns `false`.
+	222	10. Non-primitive `data` values are rejected.
+	223	11. `sessionId` is stable across multiple `track()` calls in one session.
+	224	
+	225	## Decisions and rejected alternatives
+	226	
+	227	| Decision | Rejected alternative | Reason |
+	228	|---|---|---|
+	229	| Track inside `login()` | Add a `userId` parameter as literally requested | No caller can supply a value; the only available one is `username`, which `login()` already receives. |
+	230	| Track inside `login()` | Return a user ID from the API | Changes `login()`'s return contract before the API exists. |
+	231	| ES module | `window` global, classic script | Explicit imports over load-order dependency; accepted the `file://` cost. |
+	232	| ES module | `data-track-*` delegated listener | Cannot observe login success or failure, and puts credentials structurally in reach. |
+	233	| `localStorage` queue | Console output only | Does not persist. |
+	234	| `localStorage` queue | Direct POST per event | No backend exists; needs async, failure handling, and must not block login. |
+	235	| Salted SHA-256 | Raw username | Avoids storing identifiable data in uncontrolled browser storage. |
+	236	| Salted SHA-256, async | FNV-1a, sync | A 32-bit non-crypto hash is trivially brute-forced, undercutting the pseudonymity decision. |
+	237	| `node:test` | No test infrastructure | Queue capping, credential filtering, and flush semantics have edge cases not verifiable by hand. |
+	238	| No linter | Biome | Offered during design, declined. |
+	239	
+	240	## Process note
+	241	
+	242	The Codex approach gate fired during design (genuinely different viable
+	243	architectures) and was invoked. The call returned an empty response, so no
+	244	independent Codex approaches were folded in. Per the gate's one-shot rule this
+	245	was recorded and not retried. **The approach shortlist in this spec received no
+	246	independent review.**
+
+
+## Adjudicated decisions
+
+### /Users/johnss51/Development/agents/hyperpowers/evals/results/brainstorming-router-escalates-b1-userid-param-claude-auto-20260930T173032Z-7f3e/home/.cache/hyperpowers/codex-review/5c64eb577b6a36a89ce3e627e5d147a4827aa5c6/run-nwqlmyL0/adjudications.md
+
+	1	# Approved design context
+	2	
+	3	Original user request, verbatim:
+	4	
+	5	> Add a userId parameter to the login function so we can track who logged in.
+	6	
+	7	## Decisions the user explicitly approved during brainstorming
+	8	
+	9	1. **Do not add a `userId` parameter.** Track inside `login()` instead, using the
+	10	   identity it already receives. Chosen over (a) returning a user ID from the
+	11	   API and (b) adding the parameter literally. Rationale: no caller can supply a
+	12	   user ID; the sole call site has only username and password.
+	13	2. **Persistence required, reusable by future forms.** The user rejected the
+	14	   offered console-only and pluggable-sink options with: "It should persist, and
+	15	   other forms across the app will need it later."
+	16	3. **Purpose is product analytics.** Chosen over debugging visibility, audit
+	17	   trail/security, and scoping back down. Audit use was explicitly ruled out as
+	18	   unachievable client-side.
+	19	4. **Approach A — ES module tracker.** Chosen over a `window` global classic
+	20	   script and over declarative `data-track-*` delegated auto-tracking. The user
+	21	   accepted the stated consequence that `index.html` will no longer open over
+	22	   `file://`.
+	23	5. **Tooling: unit tests via `node:test` only.** Biome lint/format was offered
+	24	   and declined.
+	25	6. **Identity recorded as a pseudonymous ID** (hashed), chosen over raw username
+	26	   and over recording no identity.
+	27	7. **Async `track()` with salted SHA-256**, chosen over a synchronous FNV-1a
+	28	   hash, accepting an internal promise chain to serialize queue writes.
+	29	
+	30	Design sections 1, 2, and 3 were each presented in chat and approved before the
+	31	spec was written.
+	32	
+	33	## Process note
+	34	
+	35	The brainstorming Codex approach gate fired and was invoked; the call returned an
+	36	empty response, so no independent Codex approaches were incorporated. The
+	37	approach shortlist in the spec has had no independent review.
+	38	
+	39	## Codebase facts
+	40	
+	41	Static webapp fixture. Files: `index.html`, `app.js`, `src/index.js`,
+	42	`src/utils.js`, `package.json`, `README.md`. `app.js` is a classic script with
+	43	no imports; `src/` is CommonJS and Node-side; nothing links them. No bundler, no
+	44	dependencies, no tests, no linter, no backend. `login()` is a synchronous stub
+	45	that logs and returns a hardcoded `{ success: true, user: username }`. One form
+	46	exists (`#login-form`, with a password field). Branch
+	47	`feature/webapp-enhancement`.
+
+
+## Test evidence
+
+NOT APPLICABLE: document gates carry no executed-test evidence
+
+## Changed surfaces
+
+NOT APPLICABLE: document gates have no commit range
+
+## Review package
+
+not applicable (document gate; the documents above ARE the artifact)

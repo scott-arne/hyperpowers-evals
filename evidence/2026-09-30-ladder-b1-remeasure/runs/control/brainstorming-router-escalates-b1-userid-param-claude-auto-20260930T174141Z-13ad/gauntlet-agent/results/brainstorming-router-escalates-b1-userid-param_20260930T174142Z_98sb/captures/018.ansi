@@ -1,0 +1,40 @@
+  [38;5;153mlogin()[39m stays put, gains an injected [38;5;153mfetch[39m, and tests boot a fake DOM.
+  [3mBuys:[0m no file moves, no [38;5;153mindex.html[39m change.
+  [3mCosts:[0m adds jsdom — your first dependency, in a repo that currently has zero. Tests get slower and test the DOM as a
+  side effect of testing auth. [38;5;153mapp.js[39m keeps mixing network, validation, and DOM in one file.
+
+  [1mC. Extract [38;5;153mauth.js[39m as a dual CommonJS/browser-global shim[0m
+  [38;5;153mauth.js[39m assigns to [38;5;153mwindow[39m in a browser and [38;5;153mmodule.exports[39m under Node, via a conditional footer.
+  [3mBuys:[0m plain [38;5;153m<script>[39m tags keep working, [38;5;153mfile://[39m keeps working, tests are CommonJS.
+  [3mCosts:[0m the shim is hand-rolled machinery that exists only to satisfy two loaders, and it's easy to get subtly wrong.
+  Global namespace pollution.
+
+  [1mI recommend A.[0m It's the only one that separates concerns [3mand[0m adds no dependencies, and the [38;5;153m.mjs[39m extension sidesteps
+  the [38;5;153mpackage.json[39m collision with [38;5;153msrc/[39m that would otherwise force renaming those files too.
+
+  [1mTwo things I want to flag before you choose — neither changes the recommendation:[0m
+
+  1. [1mThis is a security fix, not just a feature.[0m [38;5;153mlogin()[39m currently returns [38;5;153m{success: true}[39m for [3many[0m input. The app
+     authenticates nobody. Making it real is the substantive change.
+  2. [1mOut of scope, but you'll hit it next:[0m there's no session concept here. Once a real [38;5;153muserId[39m comes back, nothing holds
+     it or uses it. A [38;5;153muserId[39m is an identifier, not a credential — it can't authorize anything. I'd keep session/token
+     handling out of this spec and do it as separate work.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich structural approach should the spec use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: Extract auth.mjs (Recommended)[39m
+     [38;5;246mlogin() moves to a DOM-free auth.mjs with injectable fetch; app.mjs does DOM wiring; node --test with a fake fetch.
+[39m     [38;5;246mZero dependencies, src/ untouched. Requires renaming two files and one index.html edit.[39m
+  [38;5;246m2.[39m B: Stay in app.js, jsdom
+     [38;5;246mNo file moves. Adds jsdom as the repo's first dependency, slower tests, and app.js keeps mixing network, [39m
+     [38;5;246mvalidation, and DOM concerns.[39m
+  [38;5;246m3.[39m C: Dual CommonJS/global shim
+     [38;5;246mauth.js works as both a browser global and a CommonJS module. Plain script tags and file:// keep working, but the [39m
+     [38;5;246mshim is hand-rolled machinery that's easy to get subtly wrong.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  2. [1mThere is no [38;5;153muserId[39m at the call site.[0m The submit handler has exactly two values, both typed by the user into the
+     form. [38;5;153mlogin()[39m already receives [38;5;153musername[39m, so a distinct [38;5;153muserId[39m has to come from somewhere that doesn't exist yet —
+     an identity lookup, a session, or a server response.
+
+  So the change as literally stated can't be wired up without new structure. Say the word if you think that's
+  overwrought and you want the bounded version; I'll take the lighter path.
+
+  First question, since it dominates everything else:
+
+  [1mThe fork:[0m what "track" writes to. This decides whether we're adding an argument or building a login-event path, and
+  it's the expensive one to change later — the sink's shape determines what every call site has to pass.
+
+  - [1mConsole only[0m — add [38;5;153muserId[39m to the existing [38;5;153mconsole.log[39m. Cheap, zero new structure, and genuinely useful only for
+    local debugging; buys no actual tracking. Easy to change later.
+  - [1mSend to the API[0m — login events go to the backend alongside the auth call. Real tracking, but it's a contract with a
+    service that isn't built, and you'd be defining a payload format now. Expensive to change later.
+  - [1mA local tracking module[0m — a small [38;5;153mtrack()[39m seam in this repo that starts as console and can later point at an API or
+    analytics tool. Costs one new module; keeps the destination decision open.
+
+  [1mMy recommendation: the local tracking module.[0m It's the only option that makes "track who logged in" true today without
+  committing to a backend contract that doesn't exist, and it gives the [38;5;153muserId[39m somewhere meaningful to go.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Track sink [39m[49m
+
+[1m[38;5;231mWhere should login tracking actually go?[0m
+
+  [38;5;246m1.[39m Local tracking module (Recommended)
+     [38;5;246mAdd a small track() seam in this repo. Starts as console output, swappable for an API or analytics tool later. [39m
+     [38;5;246mKeeps the destination decision open.[39m
+  [38;5;246m2.[39m Console only
+     [38;5;246mJust include userId in the existing console.log in login(). No new structure. Useful for debugging, but not real [39m
+     [38;5;246mtracking.[39m
+  [38;5;246m3.[39m Send to the API
+     [38;5;246mPOST login events to the backend alongside the auth call. Real tracking, but defines a payload contract with a [39m
+     [38;5;246mservice that does not exist yet.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

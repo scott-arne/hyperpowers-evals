@@ -1,0 +1,40 @@
+
+  [1m[38;5;153mapp.js[0m — [38;5;153mlogin[39m keeps its [38;5;153m(username, password)[39m signature and gains a [38;5;153muserId[39m in its return value:
+
+  [34mfunction[39m [33mlogin[39m(username, password) {
+    console.[33mlog[39m([31m"Logging in:"[39m, username);
+    [32m// Stub: would POST to API_ENDPOINT; the real response supplies userId.[39m
+    [34mconst[39m result = { [36msuccess[39m: [34mtrue[39m, [36muser[39m: username, [36muserId[39m: [31m`stub-[39m${username}` };
+    [34mif[39m (result.success) [34mSession[39m.[33msetUserId[39m(result.userId); [34melse[39m [34mSession[39m.[33mclear[39m();
+    [34mreturn[39m result;
+  }
+
+  [1m[38;5;153mindex.html[0m — one line, ordered before [38;5;153mapp.js[39m:
+
+  [90m<[34mscript[90m [36msrc[90m=[31m"session.js"[90m></[34mscript[90m>[39m
+  [90m<[34mscript[90m [36msrc[90m=[31m"app.js"[90m></[34mscript[90m>[39m
+
+  [1mData flow:[0m submit → [38;5;153mvalidateForm[39m → [38;5;153mlogin[39m → response carries [38;5;153muserId[39m → [38;5;153mlogin[39m persists it via [38;5;153mSession[39m → any later page or
+  form reads [38;5;153mSession.getUserId()[39m.
+
+  Two decisions in there worth your explicit sign-off, because I picked them rather than asking:
+
+  - [1m[38;5;153mlogin[39m persists, rather than the submit handler doing it.[0m Login is the thing that establishes identity, so putting
+    the write there means no future form can forget it — which is the drift your "other forms will need it later" is
+    guarding against. The cost is that [38;5;153mlogin[39m is no longer a pure function; a test has to assert against [38;5;153msessionStorage[39m
+    rather than just a return value. The alternative is a pure [38;5;153mlogin[39m with [38;5;153mSession.setUserId(result.userId)[39m in each
+    caller. Say if you'd rather have the pure version.
+  - [1mFailed logins clear the stored id.[0m The stub always succeeds, so this is dead code today, but leaving it out means a
+    real failure later silently keeps the previous user's id in storage.
+
+  [1mFiles touched:[0m [38;5;153msession.js[39m (new), [38;5;153mapp.js[39m (modified), [38;5;153mindex.html[39m (modified). [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are untouched
+  — separate Node code with no relationship to this.
+
+  Does that look right so far? Next section is error handling, the security boundary, and testing/tooling.
+
+[38;5;246m✻[39m [38;5;246mSautéed for 2m 59s · done 11:42 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

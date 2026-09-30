@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m Server returns it. That settles the signature question: [38;5;153mlogin()[39m keeps [38;5;153m(username, password)[39m.
+
+  Now the second question — the other half of the request, and the reason I called this architectural.
+
+  [1mThe fork:[0m "track who logged in" needs a destination. Right now the only destination in this codebase is [38;5;153mconsole.log[39m,
+  which is not tracking — it's debugging, and it vanishes when the tab closes.
+
+  - [1mKeep it at [38;5;153mconsole.log[39m, just include the userId[0m — zero new structure, stays bounded-sized, and genuinely useful if
+    all you want is visible-in-devtools confirmation while developing. Buys nothing durable; no one can answer "who
+    logged in yesterday."
+  - [1mA small [38;5;153msrc/tracking.js[39m module[0m — one [38;5;153mtrackEvent(name, payload)[39m seam that today writes to console and later points at
+    whatever real backend you pick. New module, but a deliberately thin one. This is the piece the repo doesn't have,
+    and it's why the task escalated. Cheap to change later: the call sites stay stable while the implementation behind
+    them moves.
+  - [1mPOST events to a real analytics/backend endpoint[0m — actually answers "who logged in." Needs an endpoint, error
+    handling for when it fails, and a decision about whether a failed track blocks login. Most work, and it drags in
+    privacy questions (a user ID in an analytics store is personal data).
+
+  [1mMy recommendation: the [38;5;153msrc/tracking.js[39m seam.[0m It's the smallest thing that makes "track" mean something beyond a
+  console line, and it puts the decision about a real backend off until you actually have one — without you having to
+  touch every call site again when that day comes. If this app is a scratch fixture and you just want the ID visible,
+  say so and option one is the right answer.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Destination [39m[49m
+
+[1m[38;5;231mWhere should login events actually go?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mThin tracking module (Recommended)[39m
+     [38;5;246mNew src/tracking.js with trackEvent(name, payload); writes to console today, swappable for a real backend later [39m
+     [38;5;246mwithout touching call sites.[39m
+  [38;5;246m2.[39m Just console.log the userId
+     [38;5;246mNo new structure. Include userId in the existing log line. Useful for dev visibility only; nothing is durable.[39m
+  [38;5;246m3.[39m POST to a real endpoint
+     [38;5;246mSend login events to an analytics/backend URL. Answers "who logged in" for real; needs an endpoint, failure [39m
+     [38;5;246mhandling, and a privacy call.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

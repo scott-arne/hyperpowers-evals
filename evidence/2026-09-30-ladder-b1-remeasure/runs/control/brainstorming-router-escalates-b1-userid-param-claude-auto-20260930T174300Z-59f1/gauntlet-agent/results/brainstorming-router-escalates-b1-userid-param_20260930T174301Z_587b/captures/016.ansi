@@ -1,0 +1,40 @@
+
+  1. [38;5;153midentity.js[39m and [38;5;153mapp.js[39m get a CommonJS export guard at the bottom ([38;5;153mif (typeof module !== "undefined") module.exports
+[39m     [38;5;153m= {...}[39m). [38;5;153msrc/utils.js[39m already uses exactly this idiom, so it follows the local pattern.
+  2. [38;5;153mapp.js[39m's [38;5;153maddEventListener[39m wiring gets wrapped in [38;5;153mif (typeof document !== "undefined")[39m. Without it, requiring [38;5;153mapp.js
+[39m     in Node throws on the top-level [38;5;153mdocument.getElementById[39m. The browser behavior is unchanged.
+
+  Storage is faked in tests by assigning a Map-backed stub to [38;5;153mglobalThis.localStorage[39m before require, so no injection
+  parameter leaks into the public API.
+
+  Cases covered — [38;5;153mtest/identity.test.js[39m: mints and persists on first call; returns the same id on a second call; the
+  written envelope has [38;5;153mv: 1[39m, [38;5;153msource: "client"[39m, and an ISO [38;5;153mcreatedAt[39m; corrupt JSON mints fresh without throwing; an
+  envelope missing [38;5;153muserId[39m mints fresh; a storage that throws on read still returns a usable id; a storage that throws on
+  write still returns an id stable within the page; [38;5;153msetUserId[39m writes [38;5;153msource: "server"[39m; [38;5;153mclearUserId[39m removes it and the
+  next call mints a different id. And [38;5;153mtest/login.test.js[39m: [38;5;153mlogin()[39m returns the [38;5;153muserId[39m it was given; it's pure, so
+  identical arguments produce identical results; plus a regression test that [38;5;153mvalidateForm[39m's existing behavior is
+  untouched.
+
+  [1mScope boundaries — what this design deliberately does not do.[0m [38;5;153mAPI_ENDPOINT[39m stays unwired and [38;5;153mlogin()[39m stays a stub,
+  since the backend is undecided. No [38;5;153muserId[39m input is added to the form; the id is minted, not typed. No analytics or
+  logging subsystem — "track" here means the id is available and returned, and [3mwhere[0m it eventually gets sent is a
+  separate decision I'd want to brainstorm on its own. And [38;5;153msrc/index.js[39m / [38;5;153msrc/utils.js[39m are left alone; that [38;5;153mgreet()[39m
+  sample is unrelated to the webapp.
+
+  [1mFiles touched:[0m new [38;5;153midentity.js[39m; new [38;5;153mtest/identity.test.js[39m and [38;5;153mtest/login.test.js[39m; [38;5;153mindex.html[39m (one script tag); [38;5;153mapp.js[39m
+  (signature, call site, export guard, DOM-wiring guard); [38;5;153mpackage.json[39m (a [38;5;153mscripts.test[39m entry).
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 2 [39m[49m
+
+[1m[38;5;231mDoes section 2 look right? Next step is writing the spec document.[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right, write the spec[39m
+     [38;5;246mI will write docs/hyperpowers/specs/2026-09-30-user-identity-design.md (uncommitted), self-review it, run the Codex
+[39m     [38;5;246mspec gate, then hand it to you to review.[39m
+  [38;5;246m2.[39m Change something
+     [38;5;246mTell me what to revise and I will re-present this section.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

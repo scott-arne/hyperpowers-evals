@@ -1,0 +1,40 @@
+  ├──────────────────┼───────────────────────────────────────────────────────────────────────┼──────────────────────┤
+  │ [38;5;153msrc/config.mjs[39m   │ Both endpoint URLs and nothing else. The single swap point when real  │ —                    │
+  │                  │ endpoints exist.                                                      │                      │
+  ├──────────────────┼───────────────────────────────────────────────────────────────────────┼──────────────────────┤
+  │ [38;5;153msrc/auth.mjs[39m     │ [38;5;153masync login(username, password, deps)[39m — POST credentials, read [38;5;153muserId[39m │ [38;5;153mconfig[39m, injected     │
+  │                  │  from the response, hand it to the tracker, return the result.        │ [38;5;153mfetch[39m + [38;5;153mtrack[39m        │
+  ├──────────────────┼───────────────────────────────────────────────────────────────────────┼──────────────────────┤
+  │ [38;5;153msrc/tracking.mjs[39m │ [38;5;153masync trackLogin(userId, deps)[39m — POST the login event to the          │ [38;5;153mconfig[39m, injected     │
+  │                  │ analytics endpoint.                                                   │ [38;5;153mfetch[39m                │
+  ├──────────────────┼───────────────────────────────────────────────────────────────────────┼──────────────────────┤
+  │ [38;5;153mapp.js[39m           │ DOM only: read the form, call [38;5;153mvalidateForm[39m, [38;5;153mawait login(...)[39m, report. │ [38;5;153msrc/auth.mjs[39m         │
+  │                  │  Keeps [38;5;153mvalidateForm[39m.                                                  │                      │
+  └──────────────────┴───────────────────────────────────────────────────────────────────────┴──────────────────────┘
+
+  [38;5;153mindex.html[39m changes one line: the script tag gets [38;5;153mtype="module"[39m.
+
+  [1mOne decision inside this section: the file extension.[0m The repo has two module systems already — [38;5;153mapp.js[39m is browser
+  globals, [38;5;153msrc/[39m is CommonJS. New code has to be ESM (the browser needs it, and injected deps want real imports). Two
+  ways to get there:
+
+  - [1m[38;5;153m.mjs[39m extensions[0m (what I've written above) — Node and the browser both read these as ESM with no [38;5;153mpackage.json[39m change,
+    and [38;5;153msrc/index.js[39m / [38;5;153msrc/utils.js[39m are never touched. The cost is mixed extensions in one directory.
+  - [1m[38;5;153m"type": "module"[39m in [38;5;153mpackage.json[0m — uniform [38;5;153m.js[39m everywhere, but it reclassifies the whole package, so the existing
+    [38;5;153mgreet[39m demo's [38;5;153mrequire[39m calls break and I'd have to convert those two files too.
+
+  I recommend [38;5;153m.mjs[39m. The [38;5;153mgreet[39m demo is unrelated to this feature, and converting it is exactly the kind of collateral
+  change that makes a diff hard to review. Mixed extensions are ugly but honest about which files are new.
+
+  Also worth flagging: [38;5;153mapp.js[39m currently registers its submit handler at load time with no DOM-ready guard. [38;5;153mtype="module"
+[39m  defers execution until after parsing, so this actually gets [3msafer[0m — but it's a behavior change, and I'd rather name
+  it than have it look accidental.
+
+  Does this layout look right so far?
+
+[38;5;246m✻[39m [38;5;246mChurned for 2m 58s · done 11:18 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

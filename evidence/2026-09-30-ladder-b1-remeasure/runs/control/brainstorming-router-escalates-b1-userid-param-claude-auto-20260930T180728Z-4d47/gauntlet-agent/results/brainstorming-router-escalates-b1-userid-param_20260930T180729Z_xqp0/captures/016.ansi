@@ -1,0 +1,40 @@
+  [3mnot[0m how future forms get at it — they [38;5;153mimport { getUserId }[39m directly rather than routing through login's return value,
+  so a form that has nothing to do with authentication doesn't have to care that login exists.
+
+  [1m[38;5;153mindex.html[0m changes one line: [38;5;153m<script src="app.js">[39m becomes [38;5;153m<script src="app.js" type="module">[39m. The tag is already the
+  last element in [38;5;153m<body>[39m and the form is parsed before it, so module deferral changes nothing observable. [38;5;153mapp.js[39m gains
+  one import at the top.
+
+  [1mData flow:[0m form submit → [38;5;153mvalidateForm[39m → [38;5;153mlogin()[39m → [38;5;153mgetUserId()[39m → memo hit, else [38;5;153mlocalStorage[39m read, else generate +
+  persist → log line carries the id → result object carries the id.
+
+  [1mDeliberately not in scope:[0m no network transport, no [38;5;153mtrack()[39m/event layer, no logout or id rotation, no per-login
+  session id. Each is a clean addition later on top of this boundary, and none of them earn their keep before you have a
+  real endpoint.
+
+  Does this section look right before I move on to error handling, testing, and the tooling question?
+
+[38;5;246m✻[39m [38;5;246mBaked for 3m 26s · done 11:14 AM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231myes, looks right[39m
+[49m
+[38;5;231m⏺[39m [1mDesign — Section 2: error handling, testing, tooling[0m
+
+  [1mCorrection to Section 1 first[0m, because it affects a filename you'd be living with. I said [38;5;153mtracking.js[39m. If we ever want
+  to import that file in Node (for unit tests), plain [38;5;153m.js[39m is a problem: Node reads [38;5;153mpackage.json[39m to decide module
+  format, there's no [38;5;153m"type"[39m field, so [38;5;153m.js[39m means CommonJS and an ESM import fails. Setting [38;5;153m"type": "module"[39m would fix it
+  [3mand break[0m [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m, which are CommonJS and have nothing to do with this work — I'm not touching
+  unrelated files to make my feature convenient. So if we want Node-testable modules, the new files are [1m[38;5;153mtracking.mjs[0m,
+  which Node always treats as ESM and which browsers load fine. The one caveat: [38;5;153m.mjs[39m must be served as JavaScript, which
+  current static servers do but a few older ones don't. Browsers never consult [38;5;153mpackage.json[39m, so the browser path works
+  either way. This choice only matters if you want unit tests — hence the question at the bottom.
+
+  [1mError handling — the governing rule: telemetry must never break login.[0m [38;5;153mgetUserId()[39m never throws. Three failure modes,
+  each handled:
+
+  - [1mStorage unavailable or throwing.[0m [38;5;153mlocalStorage[39m throws in Safari private mode, when site data is blocked, and on quota
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

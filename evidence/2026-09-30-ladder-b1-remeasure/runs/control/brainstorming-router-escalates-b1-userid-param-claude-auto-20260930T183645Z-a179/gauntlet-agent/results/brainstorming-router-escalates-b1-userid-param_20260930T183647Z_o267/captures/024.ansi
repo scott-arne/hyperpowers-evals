@@ -1,0 +1,40 @@
+
+  Presenting in two sections. [1mSection 1 — architecture and module layout.[0m
+
+  [1mAssumed backend contract[0m (out of scope per your scoping, so the spec states it as an assumption the backend must later
+  honor): the client sends [38;5;153mX-Correlation-Id[39m on each request; on successful auth the server returns [38;5;153m{ userId, sessionId [39m
+  [38;5;153m}[39m and writes the authoritative audit record itself, keyed by that correlation id. If the backend team lands something
+  different, this spec's frontend contract changes with it.
+
+  [1mModule system.[0m [38;5;153mapp.js[39m is currently a plain global script, which is untestable — you can't import a global. Since you
+  want unit tests, the new code has to be importable. I'd add the browser modules as [38;5;153m.mjs[39m and load [38;5;153mapp.mjs[39m with [38;5;153m<script
+[39m  [38;5;153mtype="module">[39m, leaving [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m (CommonJS, unrelated Node entry point) untouched. The tradeoff:
+  [38;5;153m.mjs[39m avoids setting [38;5;153m"type": "module"[39m package-wide, which would otherwise break those two existing files; the cost is
+  that some static servers serve [38;5;153m.mjs[39m with the wrong MIME type.
+
+  [1mNew modules[0m, each DOM-free and dependency-injected so they're testable without a browser:
+
+  - [38;5;153msrc/web/correlation.mjs[39m — mints a correlation id per attempt ([38;5;153mcrypto.randomUUID[39m).
+  - [38;5;153msrc/web/session-context.mjs[39m — holds the [38;5;153m{ userId, sessionId }[39m the [3mserver[0m returned; [38;5;153mget[39m/[38;5;153mset[39m/[38;5;153mclear[39m. Never invents an
+    id.
+  - [38;5;153msrc/web/api-request.mjs[39m — [1mthe chokepoint[0m. Takes [38;5;153mfetch[39m as an injected dependency, attaches the correlation id and
+    current identity, and is the only path to the network.
+  - [38;5;153mapp.mjs[39m — [38;5;153mlogin(username, password)[39m becomes async and goes through [38;5;153mapiRequest[39m; the submit handler keeps its current
+    shape.
+
+  [1mOn the original request:[0m [38;5;153mlogin[39m's signature does not gain a [38;5;153muserId[39m parameter. The identity arrives [3mfrom[0m the server
+  after authentication and lands in [38;5;153msession-context[39m; other forms read it there rather than being passed it. That's
+  approach C working as intended, but it is a direct departure from how you first phrased the task, so I want it
+  explicitly on the record rather than buried.
+
+  [1mTest runner:[0m Node's built-in [38;5;153mnode:test[39m + [38;5;153mnode:assert[39m with [38;5;153m"scripts": { "test": "node --test" }[39m — keeps the repo at
+  zero dependencies, which matches how it's set up today. Requires Node 18+.
+
+  Does Section 1 look right so far? In particular the [38;5;153m.mjs[39m choice and the fact that [38;5;153mlogin[39m doesn't take a [38;5;153muserId[39m.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 3m 45s · done 11:44 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

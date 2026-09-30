@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m [1mSection 3 — Testing and the file plan[0m
+
+  [1mRunner:[0m Node's built-in [38;5;153mnode --test[39m. It ships with Node, reads [38;5;153m.mjs[39m natively, and adds zero dependencies — which is
+  why the [38;5;153m.mjs[39m choice in Approach A pays off here. [38;5;153mpackage.json[39m gains one line: [38;5;153m"scripts": { "test": "node --test" }[39m.
+
+  [1mThe one design constraint testing imposes:[0m Node has no [38;5;153msessionStorage[39m, so [38;5;153msession.mjs[39m must read
+  [38;5;153mglobalThis.sessionStorage[39m [3mat call time[0m, not capture it at module load. If it grabbed the reference on import, tests
+  could never swap in a fake. Worth writing down, because it's the kind of detail an implementer "tidies" into a
+  module-level const and quietly breaks every test.
+
+  The fake is a Map-backed [38;5;153mgetItem[39m/[38;5;153msetItem[39m/[38;5;153mremoveItem[39m, plus a throwing variant for the storage-unavailable path.
+
+  [1mCoverage[0m — [38;5;153mtest/session.test.mjs[39m: round-trip; empty storage → [38;5;153mnull[39m; corrupt JSON → [38;5;153mnull[39m [1mand[0m key cleared; valid JSON of
+  the wrong shape → same; [38;5;153msetItem[39m throwing → no throw, still usable; [38;5;153mclearCurrentUser[39m removes. [38;5;153mtest/auth.test.mjs[39m:
+  [38;5;153mlogin[39m resolves with [38;5;153msuccess[39m/[38;5;153muserId[39m/[38;5;153musername[39m; [38;5;153mlogin[39m populates the session; a failed login clears a pre-existing
+  session; [38;5;153mvalidateForm[39m rejects missing fields.
+
+  [1mTwo honest gaps, both deliberate:[0m
+
+  [3mThe failure path isn't reachable.[0m The stub always succeeds, so "failed login clears the session" — the invariant you
+  just approved — can't be tested as written. I'd give the stub one minimal failure condition (blank username or
+  password resolves [38;5;153m{ success: false }[39m) purely so the path exists and the test is real. It's a small addition beyond
+  what you asked for; the alternative is shipping an untestable invariant, which I'd rather not do silently.
+
+  [3m[38;5;153mapp.mjs[39m gets no tests.[0m Unit-testing DOM wiring needs jsdom, a dependency you didn't ask for. The mitigation is keeping
+  [38;5;153mapp.mjs[39m strictly wiring — read inputs, call, log — so there's nothing in it worth testing. If logic accumulates there
+  later, that's the signal to revisit.
+
+  [1mFiles:[0m new — [38;5;153msession.mjs[39m, [38;5;153mauth.mjs[39m, [38;5;153mapp.mjs[39m, [38;5;153mtest/session.test.mjs[39m, [38;5;153mtest/auth.test.mjs[39m. Modified — [38;5;153mindex.html[39m (one
+  [38;5;153m<script>[39m line), [38;5;153mpackage.json[39m (test script). Deleted — [38;5;153mapp.js[39m, its contents split across the three new modules.
+  Untouched — [38;5;153msrc/index.js[39m, [38;5;153msrc/utils.js[39m, [38;5;153mREADME.md[39m.
+
+  Does this look right, including adding the minimal failure condition to the stub?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 22s · done 11:01 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

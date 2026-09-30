@@ -1,0 +1,40 @@
+    exhaustion. Reads and writes get separate [38;5;153mtry[39m/[38;5;153mcatch[39m (a read can succeed where a write fails). On failure, mint an
+    id, keep it in the module-scope memo, and carry on — stable for the page lifetime, just not across reloads.
+  - [1mSilent non-persistence is the real hazard.[0m If writes fail, every page load looks like a brand-new visitor and your
+    "stable per-browser" numbers quietly become garbage. So the fallback path emits a one-time [38;5;153mconsole.warn[39m saying the
+    id could not be persisted. I'm keeping the id itself a clean UUID rather than tagging it with a prefix — nothing
+    parses these yet, and baking a marker into the id format is the kind of thing you can't take back once logs exist.
+  - [1m[38;5;153mcrypto.randomUUID[39m unavailable.[0m It requires a secure context, so plain [38;5;153mhttp://[39m on a LAN IP doesn't have it. Fall back
+    to hex from [38;5;153mcrypto.getRandomValues[39m.
+  - [1mCorrupt stored value.[0m Anything that isn't a non-empty string is treated as absent and regenerated.
+
+  [1mTesting.[0m The behavior worth pinning is exactly the above: same id across repeated calls, id survives a simulated
+  reload (fresh module + populated storage), a new id when storage is empty, no throw when storage throws, and [38;5;153mlogin()[39m
+  returning a result whose [38;5;153muserId[39m matches [38;5;153mgetUserId()[39m. All of it reachable with an injectable storage object and Node's
+  built-in [38;5;153mnode --test[39m — no dependencies. [38;5;153mapp.js[39m's DOM wiring stays untested; it's a stub and an e2e harness for one
+  form isn't worth it yet.
+
+  [1mTooling.[0m This repo has no test runner, no linter, no formatter, no CI, and no [38;5;153mscripts[39m in [38;5;153mpackage.json[39m. Now — before
+  there's code to retrofit — is the cheapest moment to decide. Whatever you pick lands in the spec's Global Constraints
+  so the implementation plan inherits it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Tooling [39m[49m ✔ Submit  →
+
+[2m│[0m [1m[38;5;231mWhich tooling should the design set up from the start? (Your unit-test answer also decides .mjs vs .js.)[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mUnit tests (node --test)[39m
+         [38;5;246mBuilt into Node, zero dependencies. Adds a test script and a first passing fixture. Requires the .mjs naming [39m
+         [38;5;246mdescribed above.[39m
+  [38;5;246m2.[39m [ ] Lint + format (Biome)
+         [38;5;246mSingle dev dependency covering both, replacing the eslint+prettier pair. Adds the repo's first node_modules.[39m
+  [38;5;246m3.[39m [ ] End-to-end tests
+         [38;5;246mBrowser-driven tests of the actual form. Heavier: a real dependency plus a browser download. Probably premature
+[39m         [38;5;246mfor one stub form.[39m
+  [38;5;246m4.[39m [ ] None for now
+         [38;5;246mShip the feature with no tooling; keep the repo dependency-free. Behavior stays unverified except by hand.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+  [1mThe fork:[0m a [38;5;153muserId[39m parameter has to be supplied by the caller, and the only caller doesn't have one. Login is the
+  thing that [3mestablishes[0m who the user is; before it runs, the username is all the identity that exists. So "add a userId
+  parameter" can mean three different things, and they differ in what the interface looks like afterward:
+
+  - [1mReturn a userId instead of taking one[0m — [38;5;153mlogin[39m keeps its [38;5;153m(username, password)[39m signature and the stub returns [38;5;153m{ [39m
+    [38;5;153msuccess, user, userId }[39m. Buys you a real ID to track, costs nothing at the call site, and matches how login actually
+    works. Cheap to change later.
+  - [1mAdd a client-side tracking/correlation ID parameter[0m — [38;5;153mlogin(username, password, trackingId)[39m where the handler
+    generates a per-attempt ID ([38;5;153mcrypto.randomUUID()[39m). Buys you attempt-level tracing that ties the failed and successful
+    attempts together, costs a new value the caller must mint. Useful only if you're correlating logs across a session.
+  - [1mAdd [38;5;153muserId[39m literally as a third parameter[0m — [38;5;153mlogin(username, password, userId)[39m. The handler has nothing to pass, so
+    it'd pass [38;5;153mundefined[39m or a duplicate of the username. Buys a signature that matches the words of the request, costs a
+    dead parameter that every future caller has to reason about. Hardest to remove later, because it's public interface.
+
+  [1mMy recommendation: the first.[0m The tracking goal — "track who logged in" — is about the outcome of a login, not an
+  input to it, and [38;5;153musername[39m is already logged at [38;5;153mapp.js:5[39m. Returning an ID gives you something stable to track by
+  without putting a value at the call site that nobody can fill in.
+
+  Worth saying plainly: the third option is what you asked for verbatim, and if you have a source for [38;5;153muserId[39m outside
+  this repo that I can't see, it's the right one — I just can't wire it up without knowing where the value comes from.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[2m│[0m [1m[38;5;231mWhere should the userId come from, given the form only has username and password?[0m
+
+  [38;5;246m1.[39m Return it from login (Recommended)
+     [38;5;246mKeep login(username, password); stub returns { success, user, userId }. Tracks who logged in without a value the [39m
+     [38;5;246mcaller can't supply.[39m
+  [38;5;246m2.[39m Caller-generated tracking ID
+     [38;5;246mlogin(username, password, trackingId); handler mints a per-attempt UUID. Good for correlating log lines across [39m
+     [38;5;246mattempts.[39m
+  [38;5;246m3.[39m Literal third userId param
+     [38;5;246mlogin(username, password, userId). Matches the request wording; tell me what the caller should pass, since the form
+[39m     [38;5;246mhas no ID.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

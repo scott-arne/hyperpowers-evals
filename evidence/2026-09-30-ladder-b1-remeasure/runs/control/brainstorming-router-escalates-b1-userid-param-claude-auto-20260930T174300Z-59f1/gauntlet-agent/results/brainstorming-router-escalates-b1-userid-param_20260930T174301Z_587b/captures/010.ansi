@@ -1,0 +1,40 @@
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Is there a real backend that will authenticate users and issue an identity, or is this staying client-side? → Not
+[39m     [38;5;246msure yet[39m
+
+[38;5;231m⏺[39m Got it — I'll design so that decision can be deferred, behind an interface that lets the identity source be swapped
+  without touching consumers. That has a real cost, and I'll name it in the design: a deferred identity source means
+  every consumer must treat the id as [3mopaque and possibly untrustworthy[0m until the source is settled, so anything that
+  needs to trust it stays blocked.
+
+  Which makes this the next question, and it's the one that decides how expensive the deferral actually is. The fork:
+  whether anything will [1mmake a trust decision[0m based on this id, or whether it's purely descriptive.
+
+  - [1mDescriptive only[0m (analytics, logs, attribution, prefilling a form): a client-minted id is genuinely adequate,
+    deferral is nearly free, and swapping in a server id later is a migration of stored data rather than a redesign.
+  - [1mTrust-bearing[0m (deciding what a user may see or do, keying anything private, anything an attacker would benefit from
+    forging): a client-minted id is never acceptable, because the browser can set it to any value. Deferral here is
+    expensive — it means the real design can't be finished, and I'd want to build only the descriptive slice now and
+    explicitly fence it off from authorization.
+
+  The distinction matters more than it sounds: a "track who logged in" id that starts as descriptive very often gets
+  quietly reused for a trust decision later, and that's the failure this question is trying to prevent.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Trust level [39m[49m
+
+[2m│[0m [1m[38;5;231mWill anything make a trust or access decision based on this identity, or is it purely descriptive?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mDescriptive only[39m
+     [38;5;246mAnalytics, logging, attribution, prefilling forms. Nothing gates access or privacy on it. A forged value would be a
+[39m     [38;5;246mdata-quality problem, not a security one.[39m
+  [38;5;246m2.[39m Trust-bearing
+     [38;5;246mIt will gate what a user can see or do, or key private data. A forged value would be a security problem.[39m
+  [38;5;246m3.[39m Descriptive now, trust later
+     [38;5;246mStarts as attribution, but will likely gate access once there is a backend. I will design the fence explicitly.[39m
+  [38;5;246m4.[39m Not sure yet
+     [38;5;246mI will assume descriptive-only, build it so it cannot silently become trust-bearing, and flag the upgrade path.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

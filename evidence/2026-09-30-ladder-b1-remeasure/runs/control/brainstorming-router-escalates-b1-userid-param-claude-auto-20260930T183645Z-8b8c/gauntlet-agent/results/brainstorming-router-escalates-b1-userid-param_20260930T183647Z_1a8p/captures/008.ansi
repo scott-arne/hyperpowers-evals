@@ -1,0 +1,40 @@
+[38;5;231m⏺[39m I explored the fixture first. Here's what's there:
+
+  [38;5;153mapp.js:4[39m has the only [38;5;153mlogin[39m function — a stub called from one place, the form submit handler at [38;5;153mapp.js:23[39m:
+
+  [34mfunction[39m [33mlogin[39m(username, password) {
+    console.[33mlog[39m([31m"Logging in:"[39m, username);
+    [34mreturn[39m { [36msuccess[39m: [34mtrue[39m, [36muser[39m: username };
+  }
+
+  [1mClassification: bounded[0m — [38;5;153mlogin[39m and its single call site already exist here, so this is a small change to an existing
+  flow, and I'll present a short design in chat rather than write a spec. Say the word if you'd rather I treat it as
+  bigger.
+
+  But one thing blocks me from just doing it, and it changes what the change looks like.
+
+  [1mThe fork:[0m the login form collects only [38;5;153musername[39m and [38;5;153mpassword[39m ([38;5;153mindex.html[39m → [38;5;153mapp.js:19-20[39m). There is no [38;5;153muserId[39m anywhere
+  in the repo for the caller to pass in. So "add a [38;5;153muserId[39m parameter" can't be satisfied literally without deciding where
+  that value comes from — and the three plausible sources produce three different changes.
+
+  - [1m[38;5;153musername[39m is already the identifier[0m — no new parameter; [38;5;153mlogin[39m logs/returns the username it already has. Cheapest,
+    nothing new to wire, and it's reversible if a real user ID shows up later. But it doesn't give you a stable ID if
+    usernames can change.
+  - [1mThe caller supplies an ID it already holds[0m (session ID, device/anonymous ID, tenant ID) — this is the literal
+    request: new parameter, updated call site, and the submit handler has to get that value from somewhere. Commits the
+    signature to whatever that ID actually is, so it's worth naming before I write it.
+  - [1mThe server returns the ID on success[0m — then it's a return value, not a parameter: [38;5;153mlogin[39m stays two-arg and [38;5;153m{ success,
+[39m    [38;5;153muser, userId }[39m grows a field. This is how auth usually works, but it means the requested parameter is the wrong
+    shape and tracking happens after the response.
+
+  [1mMy recommendation: the third.[0m A user ID is something authentication [3mestablishes[0m, not something the login caller can
+  know — the client doesn't have it before the call. Passing one in would mean the client is asserting an identity the
+  server hasn't verified yet. If you want a client-side correlator instead (to tie the attempt to the outcome, including
+  failures), that's the second option and I'd name the parameter for what it is rather than [38;5;153muserId[39m.
+
+[38;5;246m✻[39m [38;5;246mSautéed for 52s · done 11:38 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

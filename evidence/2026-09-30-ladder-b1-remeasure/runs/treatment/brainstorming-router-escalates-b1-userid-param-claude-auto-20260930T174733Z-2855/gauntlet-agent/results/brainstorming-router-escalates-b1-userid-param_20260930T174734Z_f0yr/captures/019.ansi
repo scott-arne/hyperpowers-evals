@@ -1,0 +1,40 @@
+  identity.
+
+  [34mconst[39m STORAGE_KEY = [31m"app.userId"[39m;
+
+  [34mexport[39m [34mfunction[39m [33msetUserId[39m(userId) { [32m/* validate, write */[39m }
+  [34mexport[39m [34mfunction[39m [33mgetUserId[39m() { [32m/* read, or null */[39m }
+  [34mexport[39m [34mfunction[39m [33mclearUserId[39m() { [32m/* remove */[39m }
+
+  One rule written into that file as a comment, because it's the thing that will get violated later: [1m[38;5;153mgetUserId()[39m [0m
+  [1mreturning a value is not an authentication check.[0m It says "this session previously completed a login," which is not
+  the same as "this request is authorized." Authorization stays the server's job.
+
+  [1m[38;5;153mlogin()[39m becomes async and gains a [38;5;153muserId[39m in its response:[0m
+
+  [34masync[39m [34mfunction[39m [33mlogin[39m(username, password) {
+    [32m// Stub: would POST to API_ENDPOINT and read userId from the response[39m
+    [34mreturn[39m { [36msuccess[39m: [34mtrue[39m, [36muser[39m: username, [36muserId[39m: [31m`stub-[39m${username}` };
+  }
+
+  The stub value is prefixed [38;5;153mstub-[39m deliberately — so if it ever reaches a log or a backend, it's obviously not a real
+  ID. The spec will record the expected real response shape as an assumption to validate against the actual endpoint.
+
+  [1m[38;5;153mapp.js[39m becomes an ES module[0m, imports [38;5;153msetUserId[39m, and stores the ID after a successful login. [1m[38;5;153mindex.html[0m changes one
+  line: [38;5;153m<script type="module" src="app.js"></script>[39m.
+
+  [1mFlow on submit:[0m validate (unchanged) → [38;5;153mawait login(...)[39m → on [38;5;153msuccess[39m with a [38;5;153muserId[39m, [38;5;153msetUserId(result.userId)[39m → on
+  failure, [38;5;153mclearUserId()[39m so a stale ID from an earlier login can't outlive it. Future forms do [38;5;153mimport { getUserId } from
+[39m  [38;5;153m'./identity.js'[39m.
+
+  [1mFiles touched:[0m [38;5;153midentity.js[39m (new), [38;5;153mapp.js[39m, [38;5;153mindex.html[39m. [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are an unrelated CommonJS pair not
+  loaded by the browser — I'm leaving them alone.
+
+  Does this look right before I go on to error handling, testing, and a tooling question?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 4m 4s · done 10:55 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

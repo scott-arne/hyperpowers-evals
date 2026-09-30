@@ -1,0 +1,40 @@
+
+  - [1mUsername is the identifier[0m — [38;5;153mlogin[39m already logs [38;5;153musername[39m; drop the new parameter and improve the tracking around it
+    instead. Costs nothing, rules out nothing, but gives you no stable ID if usernames can change.
+  - [1mCaller-supplied [38;5;153muserId[39m third parameter[0m — matches your literal request, but the only caller has nothing to pass, so
+    it lands as [38;5;153mundefined[39m at every call site until something upstream produces IDs. Cheap to add, awkward to leave
+    half-wired.
+  - [1mClient-generated correlation ID[0m — generate an ID per login attempt and pass it in. Gives you a handle to trace an
+    attempt through logs, but it tracks the [3mattempt[0m, not the person; it is not an identity.
+  - [1mServer returns the ID[0m — the user ID is something auth tells you, so it belongs in [38;5;153mlogin[39m's return value, not its
+    parameters. This is the shape that survives when the stub becomes a real API call; changing it later means touching
+    the signature and every caller again.
+
+  [1mMy recommendation: server returns the ID.[0m "Track who logged in" is knowledge the client doesn't have before
+  authentication succeeds — the client only has a typed-in username. Threading a [38;5;153muserId[39m parameter in now bakes an
+  interface that the real API call will contradict, and parameter shape is the expensive thing to change later; the
+  return shape already exists ([38;5;153m{ success, user }[39m) and extends cleanly.
+
+  If you have context I'm missing — an upstream system that already hands this page a user ID — that changes the answer,
+  and option 2 becomes correct.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the user ID come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer returns it (Recommended)[39m
+     [38;5;246mAdd userId to login's return value rather than its parameters. The client can't know the ID before auth succeeds; [39m
+     [38;5;246mthis shape survives when the stub becomes a real API call.[39m
+  [38;5;246m2.[39m Caller-supplied parameter
+     [38;5;246mAdd userId as a third parameter exactly as asked. The one existing caller has nothing to pass, so it will be [39m
+     [38;5;246mundefined until something upstream supplies IDs.[39m
+  [38;5;246m3.[39m Client correlation ID
+     [38;5;246mGenerate an ID per login attempt and pass it as userId. Traces an attempt through logs, but identifies the attempt
+[39m     [38;5;246mrather than the person.[39m
+  [38;5;246m4.[39m Use username, no new param
+     [38;5;246mTreat username as the identifier and improve the existing logging around it. No signature change at all.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

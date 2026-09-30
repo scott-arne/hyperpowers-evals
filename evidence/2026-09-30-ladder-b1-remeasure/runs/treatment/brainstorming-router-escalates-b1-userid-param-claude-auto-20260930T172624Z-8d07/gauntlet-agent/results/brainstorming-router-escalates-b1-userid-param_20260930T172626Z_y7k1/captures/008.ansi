@@ -1,0 +1,40 @@
+
+  [1mThe fork:[0m whether [38;5;153muserId[39m is data the client already has (so it can be a parameter) or data the server produces (in
+  which case a parameter is the wrong shape and it belongs in the return value instead).
+
+  - [1mIt's the username[0m — cheapest, zero new plumbing, but then [38;5;153mlogin(username, password, userId)[39m is passing the same
+    value twice and "track who logged in" is already satisfied by the existing log line. Cheap to change later.
+  - [1mServer returns it[0m — [38;5;153muserId[39m becomes a field on the return value ([38;5;153m{ success, user, userId }[39m), not a parameter. Correct
+    if the ID is a database key, but it means the request as literally worded ("add a parameter") isn't what gets
+    built. Cheap now, awkward to undo once callers read the field.
+  - [1mClient-generated correlation ID[0m — the handler generates an ID before calling [38;5;153mlogin[39m and passes it in, so the same
+    login attempt can be traced across client and server. This is the only reading where a [3mparameter[0m is genuinely the
+    right shape. Costs a new ID-generation decision and, if it should survive a page reload, storage — which would push
+    this past bounded.
+
+  [1mMy recommendation: the correlation-ID reading[0m, but only if tracing attempts is what you're after. It's the one where a
+  parameter is actually correct rather than redundant or misplaced. If what you want is "know which account logged in,"
+  the server-returns-it option is the honest shape and I'd change the return value instead of the signature.
+
+  One thing worth naming either way: [38;5;153mlogin[39m currently logs the identifier to the console, so whatever [38;5;153muserId[39m holds will
+  end up in browser logs. Fine for an opaque ID, less so if it's an email or anything account-identifying.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere does userId come from, given the form only collects username and password?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mClient correlation ID (Recommended)[39m
+     [38;5;246mHandler generates an ID per login attempt and passes it to login(). The only reading where a parameter is the right
+[39m     [38;5;246mshape. Adds an ID-generation choice.[39m
+  [38;5;246m2.[39m Server returns it
+     [38;5;246muserId is a DB key the backend produces. Becomes a return-value field, not a parameter — the signature stays as-is.
+[39m  [38;5;246m3.[39m It is the username
+     [38;5;246muserId == username. Parameter is redundant with the existing arg; the current log line already tracks it.[39m
+  [38;5;246m4.[39m Something else in the system
+     [38;5;246mThere is an existing user identifier I have not found in this repo — tell me where it lives and I will wire it [39m
+     [38;5;246mthrough.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  test runner in [38;5;153mpackage.json[39m.
+
+  [1mThe fork.[0m Adding a [38;5;153muserId[39m [3mparameter[0m means some caller has to supply it — but the only caller is a pre-authentication
+  form submit, and at that moment nothing in the app knows a user ID. That's the gap I can't resolve from the code.
+  Three readings, and they differ in what the interface looks like afterward:
+
+  - [1m[38;5;153muserId[39m is a return value, not a parameter[0m — the server knows the ID once credentials check out, so [38;5;153mlogin()[39m returns
+    it in the result object and the caller logs it. Matches the stub's existing shape ([38;5;153m{ success, user }[39m); cheap to
+    change later. Costs nothing now, but it's not literally what you asked for.
+  - [1m[38;5;153muserId[39m is a real parameter[0m — signature becomes [38;5;153mlogin(userId, username, password)[39m or an options object. Honest to the
+    request, but the caller has no value to pass, so it'd be [38;5;153mnull[39m/[38;5;153mundefined[39m at the only call site until something
+    upstream produces one. Locks in a signature that other callers would have to satisfy.
+  - [1m[38;5;153musername[39m already is the identifier[0m — skip the parameter and just make the existing [38;5;153mconsole.log[39m a proper tracking
+    call keyed on username. Smallest change; rules out per-user IDs distinct from usernames later.
+
+  [1mMy recommendation: the first.[0m "Track who logged in" is information the login [3mproduces[0m, not information it needs, and
+  the stub already returns a user field — extending the return value is the change that's still correct once this talks
+  to a real API. If you have an upstream source of user IDs I can't see, tell me and the second option becomes right.
+
+  One more thing: if "track" means wiring up actual analytics or an audit log — a new tracking module, persistence, an
+  event schema — that's a new subsystem and I'd re-classify this as architectural and write a spec instead. I'm assuming
+  for now you mean local logging in this stub.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ userId source [39m[49m ☐ Tracking scope  ✔ Submit  →
+
+[1m[38;5;231mWhere should the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn it from login (Recommended)[39m
+     [38;5;246mlogin() keeps its (username, password) signature and returns { success, user, userId }; the submit handler logs the
+[39m     [38;5;246mreturned id. Matches the existing stub shape.[39m
+  [38;5;246m2.[39m Add it as a parameter
+     [38;5;246mSignature becomes login(userId, username, password). Honest to the request, but the only call site has no value to
+[39m     [38;5;246mpass yet.[39m
+  [38;5;246m3.[39m Use username as the id
+     [38;5;246mNo new parameter. Turn the existing console.log into a tracking call keyed on username.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

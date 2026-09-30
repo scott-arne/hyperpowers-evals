@@ -1,0 +1,40 @@
+  3. [38;5;153mconst res = await auth.login(username, password)[39m
+  4. [38;5;153mres.ok === false[39m → report [38;5;153mres.error[39m, [1mleave any existing session untouched[0m
+  5. [38;5;153mres.ok === true[39m → [38;5;153msession.saveSession(res.user)[39m, then report success
+
+  [1m[38;5;153mlogin[39m becomes [38;5;153masync[39m now, while it's still a stub.[0m Real auth is a network call, so if the stub stays synchronous every
+  call site has to change the day [38;5;153mfetch[39m lands. Making it [38;5;153masync[39m today costs one [38;5;153mawait[39m and makes that swap a one-function
+  edit — which was the whole point of the stub-but-real-shaped choice.
+
+  [1mError handling — three real failure modes:[0m
+
+  - [3m[38;5;153msessionStorage[39m throws.[0m It does, genuinely: Safari private browsing and quota-exceeded both throw on write.
+    [38;5;153msaveSession[39m catches, returns [38;5;153mfalse[39m, and the login still succeeds — identity just doesn't persist. Degrading beats a
+    crashed handler.
+  - [3mCorrupt or absent stored JSON.[0m [38;5;153mgetSession()[39m returns [38;5;153mnull[39m for "nothing stored" and, on a [38;5;153mJSON.parse[39m failure, clears
+    the bad key and also returns [38;5;153mnull[39m. Callers get one answer to "am I logged in" and never see a parse exception.
+  - [3mAuth failure.[0m The shape exists ([38;5;153m{ ok: false, error }[39m) though the stub never produces it. Step 4 above is the path,
+    so real auth doesn't arrive to find no handling.
+
+  Reporting stays on [38;5;153mconsole.log[39m/[38;5;153mconsole.error[39m, matching what [38;5;153mapp.js[39m does today — you didn't ask for UI changes, and
+  inventing an error banner is scope I shouldn't take.
+
+  [1mTesting[0m — Node's built-in runner, [38;5;153mnode --test[39m, plus [38;5;153m"scripts": { "test": "node --test" }[39m. Zero dependencies, nothing
+  to install, which keeps the repo's dependency-free character.
+
+  [38;5;153msession.js[39m reads [38;5;153mglobalThis.sessionStorage[39m [3minside[0m each function rather than capturing it at import. That's one small
+  deliberate choice: tests can install a fake storage object on [38;5;153mglobalThis[39m with no dependency-injection plumbing in the
+  production code, and it's the same seam that later lets you swap to [38;5;153mlocalStorage[39m.
+
+  Planned cases: round-trip save → [38;5;153mgetUserId[39m; [38;5;153mgetUserId[39m with nothing stored → [38;5;153mnull[39m; corrupt JSON → [38;5;153mnull[39m [1mand[0m key cleared;
+  [38;5;153mclearSession[39m removes the key; write failure → returns [38;5;153mfalse[39m, doesn't throw; stub [38;5;153mlogin[39m returns the same id twice for
+  one username and different ids across usernames; [38;5;153mvalidateForm[39m rejects each missing field.
+
+  [1mHonest limit:[0m the submit handler itself gets no automated coverage — it needs a DOM, and you declined end-to-end
+  tests. Everything it calls is covered; the wiring between them is verified by hand.
+
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m

@@ -1,0 +1,40 @@
+
+  That means "add a userId parameter" and "track who logged in" are probably two different asks, and which one you mean
+  changes the whole design.
+
+  [1mThe fork[0m
+
+  - [1mTrack using what login already knows[0m — [38;5;153mlogin()[39m records the sign-in itself (username, timestamp, outcome) through a
+    small tracking module. Costs a new module and a decision about where records go. Buys tracking that actually works,
+    and it rules nothing out — you can add a real user ID later once the API returns one. Cheap to change.
+  - [1mReturn a userId from the API[0m — the stubbed [38;5;153mPOST[39m to [38;5;153mAPI_ENDPOINT[39m comes back with the server's user ID, and [38;5;153mlogin()[39m
+    returns it for downstream code to use. Costs making the stub async and defining the response shape. This is the
+    real-app shape, but it's an interface change to [38;5;153mlogin()[39m's return value that any future caller depends on. Harder to
+    undo.
+  - [1mTake userId as a parameter, as literally asked[0m — I add the parameter and thread a value in from the call site. Costs
+    little now, but the call site has no ID to pass, so we'd be passing [38;5;153musername[39m under a second name, or [38;5;153mnull[39m. It rules
+    out little, but it doesn't deliver tracking, and it's the option most likely to need redoing.
+
+  [1mMy recommendation: the first.[0m It's the one that satisfies "so we can track who logged in" with the information the
+  code actually has today, and it doesn't commit you to a response shape before the API exists. The third option is what
+  you asked for literally, and I'll build it if that's genuinely what you want — but I'd be adding a parameter with no
+  caller able to fill it, so I want to flag that rather than quietly ship it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mThe call site has no user ID to pass. Which outcome do you actually want?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mTrack inside login (Recommended)[39m
+     [38;5;246mlogin() records the sign-in itself via a small tracking module, using username + timestamp + outcome. Works with [39m
+     [38;5;246mwhat the code knows today; a real user ID can slot in later.[39m
+  [38;5;246m2.[39m Return userId from API
+     [38;5;246mThe stubbed API call returns a server-side user ID and login() returns it. Realistic shape, but changes login()'s [39m
+     [38;5;246mreturn contract and needs the stub to go async.[39m
+  [38;5;246m3.[39m Add the parameter literally
+     [38;5;246mAdd userId as a parameter as asked. I'd thread username or null in from the form handler, since no real ID exists [39m
+     [38;5;246mat the call site.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

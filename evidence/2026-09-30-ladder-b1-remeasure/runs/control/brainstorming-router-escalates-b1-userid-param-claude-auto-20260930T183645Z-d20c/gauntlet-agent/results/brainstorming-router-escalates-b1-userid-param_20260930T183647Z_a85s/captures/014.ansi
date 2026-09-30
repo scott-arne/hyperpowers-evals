@@ -1,0 +1,40 @@
+
+
+  [38;5;246mRead [1m1[0m[38;5;246m file [39m
+
+[38;5;231m⏺[39m [38;5;153mindex.html:13[39m loads [38;5;153mapp.js[39m as a classic script — no [38;5;153mtype="module"[39m, no bundler — which will constrain how the store is
+  shared. I'll deal with that in the design; it's not a question for you.
+
+  [1mThe fork:[0m "persist" has three different lifetimes, and this one is genuinely hard to change later because it's a
+  stored format — once other forms read the store, changing where it lives means a migration path for users mid-session.
+
+  - [1mIn-memory only[0m — a variable in a shared scope. Zero storage risk, nothing to clean up. But it's lost on every page
+    load, so if your other forms are separate HTML pages, the user is "not logged in" the moment they navigate. Only
+    viable if the whole app is one page.
+  - [1m[38;5;153msessionStorage[0m — survives reload and same-tab navigation, cleared when the tab closes. Matches what a login session
+    normally means, and it's per-tab, so two tabs can't clobber each other. Doesn't survive a browser restart.
+  - [1m[38;5;153mlocalStorage[0m — survives browser restart, so the user stays "logged in" indefinitely until explicitly cleared. Shared
+    across tabs. On a shared machine, the previous user's ID is sitting there for the next person, and stale IDs are
+    the usual source of "wrong user" bugs.
+
+  [1mMy recommendation: [38;5;153msessionStorage[39m.[0m A login result should last as long as the browsing session and no longer, and
+  per-tab isolation avoids the multi-tab clobbering that [38;5;153mlocalStorage[39m invites. It's a user ID rather than a credential,
+  so the exposure is identity info rather than account access — but that's still worth not leaving on a shared machine
+  after the tab closes.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Lifetime [39m[49m
+
+[1m[38;5;231mHow long should the logged-in user persist?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153msessionStorage (Recommended)[39m
+     [38;5;246mSurvives reload and navigation; cleared when the tab closes. Per-tab, so tabs don't clobber each other. Matches [39m
+     [38;5;246mlogin-session semantics.[39m
+  [38;5;246m2.[39m In-memory only
+     [38;5;246mA shared variable, lost on every page load. Zero storage risk, but only workable if the whole app is a single page.
+[39m  [38;5;246m3.[39m localStorage
+     [38;5;246mSurvives browser restart until explicitly cleared. Shared across tabs. Leaves the user ID on shared machines.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

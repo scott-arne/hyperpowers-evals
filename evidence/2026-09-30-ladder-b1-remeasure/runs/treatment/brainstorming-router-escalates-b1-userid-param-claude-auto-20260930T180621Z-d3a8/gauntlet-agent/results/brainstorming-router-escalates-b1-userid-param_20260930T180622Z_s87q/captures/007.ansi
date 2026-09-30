@@ -1,0 +1,40 @@
+
+  One thing I hit immediately while reading the code, and it's the question I need answered before I can write the
+  change:
+
+  [1mThe fork:[0m [38;5;153mlogin(username, password)[39m is called from the form submit handler, which only has the two form field values.
+  There is no [38;5;153muserId[39m anywhere in the codebase for that caller to pass. So "add a [38;5;153muserId[39m parameter" has more than one
+  coherent meaning, and they produce different interfaces:
+
+  - [1m[38;5;153muserId[39m is really the API's response.[0m In most login flows the user's ID is what the server [3mreturns[0m after
+    authenticating — the client can't know it beforehand. This would mean changing the return value ([38;5;153m{ success, user, [39m
+    [38;5;153muserId }[39m) and logging it after the call, not adding a parameter. Buys you a real identity to track; costs nothing at
+    the call site; rules out nothing. Cheap to change later.
+  - [1m[38;5;153muserId[39m is a client-generated correlation ID.[0m The handler generates something ([38;5;153mcrypto.randomUUID()[39m) per attempt and
+    passes it in, so a login attempt can be traced even when it fails. Buys you trace coverage of failed attempts; costs
+    a new ID-generation decision; this is the one that's awkward to change later, since the ID's format becomes part of
+    the log contract.
+  - [1m[38;5;153muserId[39m comes from somewhere I can't see[0m — an existing session, config, or a caller outside this repo. Then I need to
+    know where, and the signature change is genuinely a caller-visible break I'd want to confirm first.
+
+  [1mMy recommendation: the first one.[0m It's what "track who logged in" usually means, [38;5;153musername[39m already identifies the
+  attempt for the logging you have today, and it doesn't put an invented ID into your call signature. But I'd rather
+  hear it from you than guess — if you have a real [38;5;153muserId[39m source in mind, that changes the design.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere does the userId value come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFrom the API response (Recommended)[39m
+     [38;5;246mlogin() returns the userId after authenticating; no new parameter. Log it after the call. The caller has nothing [39m
+     [38;5;246mnew to supply.[39m
+  [38;5;246m2.[39m Client-generated per attempt
+     [38;5;246mThe submit handler generates a correlation ID (e.g. crypto.randomUUID()) and passes it to login(), so failed [39m
+     [38;5;246mattempts are traceable too.[39m
+  [38;5;246m3.[39m An existing source I should find
+     [38;5;246mThere's a session, config, or external caller that already has a userId. Tell me where and I'll wire it through.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

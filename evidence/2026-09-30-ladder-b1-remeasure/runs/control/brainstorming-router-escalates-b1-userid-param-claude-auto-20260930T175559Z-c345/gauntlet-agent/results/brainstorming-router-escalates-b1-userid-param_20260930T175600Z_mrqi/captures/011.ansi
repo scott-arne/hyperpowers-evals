@@ -1,0 +1,40 @@
+
+  Now the question that determines the most downstream:
+
+  [1mThe fork:[0m where a tracking event ends up decides whether the module can be synchronous and fire-and-forget, or has to
+  deal with network failure, retries, and events lost on page unload. This is the expensive one to change later — it
+  sets the module's interface, not just its internals.
+
+  - [1mConsole only[0m — buys you a working seam today with zero infrastructure; the module is pure and trivially testable.
+    Costs: it doesn't actually track anything off the page. Cheap to change later [3mif[0m the interface is async from the
+    start.
+  - [1mPOST to a backend endpoint[0m — buys you real tracking. Costs: you need an endpoint (none exists; [38;5;153mAPI_ENDPOINT[39m at
+    [38;5;153mapp.js:2[39m is an unreachable stub), plus failure handling and an answer for events fired as the page navigates away.
+    Expensive to retrofit onto a sync interface.
+  - [1mThird-party analytics SDK[0m — buys you delivery, retries, and batching for free. Costs: a dependency in a repo that
+    currently has zero, a vendor decision, and privacy questions about shipping user identifiers off-site. Hardest to
+    reverse.
+
+  [1mMy recommendation: a console sink behind an async interface.[0m It keeps this change honest — you get the module, the
+  seam, and the tests now — while making the swap to a real transport a one-file change instead of an interface
+  migration.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Event sink [39m[49m
+
+[1m[38;5;231mWhere should login tracking events actually go?[0m
+
+[38;5;153m❯[38;5;246m 1.[1m[38;5;153m Console, async seam [0m         [38;5;246m┌─────────────────────────────────────────────────────────┐[39m
+    [1m[38;5;153m(Recommended)[0m                 [38;5;246m│ [39m// src/tracking.js[38;5;246m                                      │[39m
+ [38;5;246m 2.[39m POST to backend              [38;5;246m│ [39masync function track(event, payload) {[38;5;246m                  │[39m
+ [38;5;246m 3.[39m Analytics SDK                [38;5;246m│ [39m  await sink({ event, ...payload, at: Date.now() });[38;5;246m    │[39m
+                                  [38;5;246m│ [39m}[38;5;246m                                                       │[39m
+                                  [38;5;246m│ [39m// sink = console today, HTTP later — callers unchanged[38;5;246m │[39m
+                                  [38;5;246m└─────────────────────────────────────────────────────────┘[39m
+
+                                  [38;5;153mNotes:[39m [3m[38;5;246mpress n to add notes[0m
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel[39m

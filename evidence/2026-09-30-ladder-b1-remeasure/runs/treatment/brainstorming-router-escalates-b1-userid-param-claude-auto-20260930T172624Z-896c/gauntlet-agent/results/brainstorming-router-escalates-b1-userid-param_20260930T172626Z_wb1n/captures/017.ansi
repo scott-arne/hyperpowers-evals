@@ -1,0 +1,40 @@
+  [38;5;153msessionStorage[39m reads and writes, and the accessors. Nothing outside it ever touches [38;5;153msessionStorage[39m directly — that's
+  the property that makes the persistence decision cheap to revisit and makes B a later extraction rather than a
+  rewrite.
+
+  Its public surface is three exports:
+
+  - [38;5;153masync login(username, password)[39m — authenticates, persists the returned id, returns the result object.
+  - [38;5;153mgetUserId()[39m — returns the current id, or [38;5;153mnull[39m if nobody is logged in. This is the one function your future forms
+    import.
+  - [38;5;153mclearSession()[39m — removes it.
+
+  [38;5;153mclearSession[39m is the one speculative export: there's no logout UI today. It's three lines and a session store with no
+  way to clear it is a trap, but say the word and I'll cut it under YAGNI.
+
+  [1mThe stub, shaped like the real thing.[0m [38;5;153mlogin[39m is [38;5;153masync[39m and returns [38;5;153m{ success, userId, username }[39m — the shape a real [38;5;153mPOST
+[39m  response would have. The stub body resolves immediately with a fake id of the form [38;5;153mstub-<username>[39m. Two deliberate
+  choices there: it's [3mdeterministic[0m, so the same account yields the same id across logins the way a real backend would
+  (a fresh random UUID per login would quietly model the wrong thing); and it's [3mobviously fake[0m, so a stub id appearing
+  in a log or a bug report can't be mistaken for production data. Swapping in the real backend later replaces one
+  function body and touches no caller.
+
+  [1mData flow.[0m Submit → [38;5;153mvalidateForm[39m (unchanged, stays in [38;5;153mapp.js[39m) → [38;5;153mawait login(...)[39m → [38;5;153mauth.js[39m persists the id → later
+  forms call [38;5;153mgetUserId()[39m. [38;5;153mAPI_ENDPOINT[39m moves out of [38;5;153mapp.js[39m into [38;5;153mauth.js[39m, since it belongs with the code that will
+  eventually use it.
+
+  [1mThe ripple you should know about.[0m Making [38;5;153mlogin[39m async makes its caller async: the submit handler becomes [38;5;153masync (e) => [39m
+  [38;5;153m{...}[39m. That's contained today because there's exactly one caller, which is precisely why doing it now is cheap and
+  doing it after five forms exist is not.
+
+  [38;5;153mapp.js[39m keeps [38;5;153mvalidateForm[39m and the DOM wiring and loses the login logic. [38;5;153mindex.html[39m changes to [38;5;153m<script type="module" [39m
+  [38;5;153msrc="app.js">[39m.
+
+  Does section 1 look right?
+
+[38;5;246m✻[39m [38;5;246mChurned for 3m 55s · done 10:33 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  │ [38;5;153msetItem[39m throws (quota exceeded)                         │ [38;5;153mnull[39m — [1mnot[0m the unpersisted ID               │
+  ├─────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤
+  │ Stored value is empty or whitespace                     │ treat as absent, regenerate                 │
+  ├─────────────────────────────────────────────────────────┼─────────────────────────────────────────────┤
+  │ [38;5;153mcrypto.randomUUID[39m undefined (insecure origin)           │ [38;5;153mMath.random[39m fallback, then persist normally │
+  └─────────────────────────────────────────────────────────┴─────────────────────────────────────────────┘
+
+  The quota row is the one worth pausing on: we generated a perfectly good ID but couldn't store it, so returning it
+  would hand back a value that looks durable and isn't — the exact failure you rejected when you chose explicit [38;5;153mnull[39m
+  over an in-memory substitute. Same principle, applied to a second path.
+
+  [1mTesting.[0m [38;5;153mnode --test[39m (built into Node 18+, zero dependencies), so [38;5;153mpackage.json[39m gains only [38;5;153m"scripts": { "test": "node [39m
+  [38;5;153m--test" }[39m and no [38;5;153mdevDependencies[39m. Tests go in [38;5;153msrc/tracking.test.js[39m, driving [38;5;153mcreateTracker[39m with stub storage:
+
+  1. Empty storage → generates, persists, returns an ID
+  2. Second call returns the [3msame[0m ID (the durability guarantee)
+  3. [38;5;153mgetItem[39m throws → [38;5;153mnull[39m
+  4. [38;5;153msetItem[39m throws → [38;5;153mnull[39m, and nothing is cached in memory
+  5. [38;5;153mclearTrackingId()[39m removes the key; the next call returns a [3mdifferent[0m ID (the reset guarantee)
+  6. Empty stored string → treated as absent
+  7. Injected non-crypto generator → still persists and round-trips
+
+  [1mWhat stays untested, stated plainly:[0m the [38;5;153mindex.html[39m script tag, the script load order, and the handler wiring in
+  [38;5;153mapp.js[39m. There's no DOM harness and I'm not adding jsdom for a fixture this size — those three are manual verification
+  only. The tested surface is [38;5;153msrc/tracking.js[39m alone, which is where the storage and reset guarantees actually live.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 2 [39m[49m
+
+[1m[38;5;231mSection 2 (integration, error handling, testing) — does this look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes — write the spec[39m
+     [38;5;246mApprove the design. I will write it to docs/hyperpowers/specs/, self-review, run the Codex spec gate, then hand it
+[39m     [38;5;246mto you to review.[39m
+  [38;5;246m2.[39m Revise it
+     [38;5;246mSomething in the data flow, error table, or test plan is wrong — tell me what and I will rework this section.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

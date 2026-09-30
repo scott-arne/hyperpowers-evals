@@ -1,0 +1,40 @@
+
+  Next question, and it's the one thing here that's genuinely expensive to change later: [1mwhat value gets stored as the [0m
+  [1midentity?[0m
+
+  Everything else in this design is internal and swappable. The stored shape is not — once other forms are stamping
+  submissions with it, changing it means touching every consumer and invalidating anything already written.
+
+  Right now the only identity in the codebase is the username the user typed. [38;5;153mlogin[39m never calls [38;5;153mAPI_ENDPOINT[39m; it's a
+  stub returning [38;5;153m{ success: true, user: username }[39m. So there is no server-issued id available unless we build that call
+  as part of this.
+
+  - [1mUsername only[0m — store the string. Simplest possible thing, matches "keep it simple" exactly. Costs: when the real
+    API lands and returns an actual user id, every consumer that reads a username has to change.
+  - [1mSmall record, id defaults to username[0m — store [38;5;153m{ id, username }[39m where [38;5;153mid[39m is the username today and becomes the
+    server's id later. Costs one extra field and one line. Buys: consumers read [38;5;153m.id[39m from day one, so the API landing is
+    a change inside the store and nowhere else.
+  - [1mReal server id now[0m — implement the actual [38;5;153mAPI_ENDPOINT[39m call so login returns a true id. Costs: this stops being a
+    small task; you'd be building error handling, network failure states, and probably a mock server for tests.
+
+  [1mI'd recommend the middle one.[0m It's one field of insurance on the only decision here that's costly to reverse, and it
+  doesn't pull the API work into scope. If you'd rather not carry a field you don't use yet, the first option is
+  defensible — just know the consumers are what pay for it later.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Stored shape [39m[49m
+
+[1m[38;5;231mWhat value gets stored as the identity?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mRecord, id = username (Recommended)[39m
+     [38;5;246mStore { id, username }; id is the username now, becomes the server id later. Consumers read .id from day one, so [39m
+     [38;5;246mthe API landing changes only the store.[39m
+  [38;5;246m2.[39m Username only
+     [38;5;246mStore just the string. Simplest thing that works. Every consumer changes when a real user id arrives.[39m
+  [38;5;246m3.[39m Real server id now
+     [38;5;246mImplement the actual API_ENDPOINT call so login returns a true id. Pulls network error handling and test mocking [39m
+     [38;5;246minto scope.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

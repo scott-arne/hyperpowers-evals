@@ -1,0 +1,40 @@
+  at [38;5;153mapi.example.com[39m and [38;5;153mlogin[39m never even calls it. An httpOnly cookie can only be set by a server, and the browser
+  handles the persisting, so the client side of your request is genuinely small; the question is whether the server side
+  is inside this deliverable.
+
+  [1mThe fork:[0m whether this spec commits us to building a backend, or to defining the contract a backend must satisfy and
+  building the client against it. This changes the size of the work by roughly an order of magnitude, and it's cheap to
+  change in one direction only — adding the server later is fine, ripping one out is waste.
+
+  - [1mClient module + written contract + a test fake[0m — we build the identity module, [38;5;153mlogin[39m returning the server's [38;5;153muserId[39m,
+    the tracking hook, and a fake that emulates the cookie so it's all testable today. The spec states exactly what the
+    real backend must do ([38;5;153mSet-Cookie[39m, session lifetime, [38;5;153m/me[39m, logout). Nothing here gets thrown away when the real server
+    arrives. Costs: no true end-to-end proof until it does.
+  - [1mAlso build a minimal auth server here[0m — a small Node/Express service with sessions, so the whole flow really works.
+    You get end-to-end verification. Costs: this repo becomes a full-stack project, and a throwaway auth server is the
+    kind of thing that quietly becomes production.
+  - [1mClient module only, no fake[0m — smallest diff, verification deferred entirely. Costs: nothing is testable, and the
+    contract stays implicit in your head rather than written down, which is what tends to produce mismatches when the
+    backend does land.
+
+  [1mMy recommendation: the first.[0m It gets you everything you actually asked for — persistence, reuse across future forms,
+  tracking — with no discarded work, and the test fake means the module isn't shipped unverified. The second is a real
+  project on its own and I'd rather you choose it deliberately than inherit it from this request.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Scope [39m[49m
+
+[2m│[0m [1m[38;5;231mDoes this work include building the backend, or defining its contract and building the client against it?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mClient + contract + test fake (Recommended)[39m
+     [38;5;246mIdentity module, login returning userId, tracking hook, and a cookie-emulating fake for tests. Spec pins the [39m
+     [38;5;246mbackend contract. No discarded work.[39m
+  [38;5;246m2.[39m Also build a minimal auth server
+     [38;5;246mAdd a small Node/Express session server so the flow works end to end. Real verification, but makes this a [39m
+     [38;5;246mfull-stack project.[39m
+  [38;5;246m3.[39m Client module only, no fake
+     [38;5;246mSmallest diff. Nothing testable until a real backend exists, and the contract stays undocumented.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

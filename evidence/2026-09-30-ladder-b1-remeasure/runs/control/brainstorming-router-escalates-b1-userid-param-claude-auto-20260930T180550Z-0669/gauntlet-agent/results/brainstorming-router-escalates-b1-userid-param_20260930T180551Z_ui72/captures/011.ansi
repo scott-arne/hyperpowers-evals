@@ -1,0 +1,40 @@
+
+  Third question — and "persist" is doing a lot of work in your sentence:
+
+  [1mThe fork:[0m whether the userId has to survive a page reload, or only has to be reachable from anywhere in the app while
+  the page is alive. These need different machinery, and one of them has a security consequence.
+
+  - [1mIn-memory shared module[0m — a session module holding the current userId; any form can read it. Survives navigation
+    [3mwithin[0m a single-page app, does [1mnot[0m survive a reload or a new tab. Buys reuse with no storage and no new risk. Cheap.
+  - [1m[38;5;153msessionStorage[0m — same shared module, backed by per-tab storage. Survives reload, dies when the tab closes. Buys
+    "don't lose the user on refresh" at the cost of identity sitting in storage readable by any script on the page.
+  - [1m[38;5;153mlocalStorage[0m — same, but persists across tabs and browser restarts until explicitly cleared. Buys the longest-lived
+    "stay logged in" feel, and carries the most exposure: a stored user identity that outlives the session and is
+    readable by any script, including an injected one.
+
+  [1mMy recommendation: in-memory shared module now, with the storage read/write isolated behind it.[0m Your stated need is
+  "other forms can get at it", which in-memory fully satisfies. Adding [38;5;153msessionStorage[39m later is a two-line change [3minside[0m
+  the module if the module is the only thing that touches storage — so building the boundary now is what keeps the
+  choice cheap, and you don't take on stored-identity exposure before you need it.
+
+  Worth naming: whichever you pick, a [38;5;153muserId[39m in browser storage is a client-side claim, not proof of identity. It's fine
+  for "which forms prefill for whom" and not fine as an authorization signal — the server has to re-derive identity
+  from the session on every request that matters. That doesn't change the choice below; it changes what the value is
+  allowed to be used for, and I'll write it into the spec.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mHow long does the userId need to survive?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mIn-memory module (Recommended)[39m
+     [38;5;246mShared session module, reachable from any form. Lost on reload. No storage, no new exposure; storage can be added [39m
+     [38;5;246minside it later.[39m
+  [38;5;246m2.[39m sessionStorage (per tab)
+     [38;5;246mSurvives reload, dies with the tab. Identity sits in storage readable by any script on the page.[39m
+  [38;5;246m3.[39m localStorage (across restarts)
+     [38;5;246mSurvives tabs and browser restarts until cleared. Longest-lived, most exposure; needs an explicit clear on logout.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+  question.
+
+  [1mThe fork:[0m where the persisted events physically live. This is the stored-format decision, so it's the one that's
+  genuinely expensive to revisit — it sets the module's API shape (sync vs async), and any events written under one
+  scheme don't migrate to another for free.
+
+  - [1m[38;5;153mlocalStorage[0m — synchronous, ~5MB, survives reload. Cheapest by a wide margin and no service needed. But it's
+    per-browser: cleared with site data, invisible across devices, and trivially editable by anyone at the console.
+  - [1m[38;5;153mIndexedDB[0m — async, much larger, structured queries. Costs you an async API through the whole module (and every
+    caller). Still client-side, so the same trust caveat applies.
+  - [1mBackend endpoint + queue[0m — events POST to a server, with a local buffer for offline/failed sends. The only option
+    that gives you tracking you can actually trust or query centrally. Costs a service that doesn't exist and a payload
+    contract.
+
+  One thing worth saying plainly: if "track who logged in" is for [1mdebugging or product analytics[0m, client-side is fine.
+  If it's for [1msecurity or audit[0m — knowing who accessed an account — client-side storage is worthless, because the person
+  you'd be tracking controls it. That distinction changes the recommendation more than anything else here.
+
+  [1mMy recommendation: [38;5;153mlocalStorage[39m behind the module's API, with the API designed async-friendly (promise-returning) from
+[0m  [1mday one.[0m That gets you persistence now for the analytics/debugging case, and the promise-based signature means
+  swapping in IndexedDB or a backend later doesn't churn every call site.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mWhere should tracked login events be persisted?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mlocalStorage, async API (Recommended)[39m
+     [38;5;246mPersist to localStorage now, but give the module a promise-returning API so IndexedDB or a backend can replace it [39m
+     [38;5;246mlater without changing call sites.[39m
+  [38;5;246m2.[39m IndexedDB
+     [38;5;246mStructured client-side store, much larger capacity, async by nature. More code up front; still client-side so not [39m
+     [38;5;246mtrustworthy for audit.[39m
+  [38;5;246m3.[39m Backend endpoint + local buffer
+     [38;5;246mPOST events to a server with offline buffering. The only trustworthy/queryable option, but requires building a [39m
+     [38;5;246mservice and fixing a payload contract now.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

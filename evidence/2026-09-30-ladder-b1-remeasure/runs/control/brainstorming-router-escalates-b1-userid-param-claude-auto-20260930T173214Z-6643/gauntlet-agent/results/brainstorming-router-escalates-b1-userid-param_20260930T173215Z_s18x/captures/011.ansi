@@ -1,0 +1,40 @@
+  That immediately raises the scope-deciding question, because [38;5;153mlogin()[39m today is a stub that never contacts [38;5;153mAPI_ENDPOINT[39m
+  — it fabricates [38;5;153m{ success: true, user: username }[39m locally. There is no server response for a [38;5;153muserId[39m to come back in.
+
+  [1mThe fork:[0m does [38;5;153mlogin()[39m become a real network call as part of this work, or does it stay a stub whose [3mshape[0m we fix now?
+
+  - [1mMake it a real [38;5;153mfetch[0m: login becomes async, which propagates — the submit handler at [38;5;153mapp.js:17[39m has to [38;5;153mawait[39m or chain,
+    and you need error handling for network failure, non-2xx, and malformed responses. This is the only option that
+    actually produces a real [38;5;153muserId[39m. It's also several times the work of the other two, and needs the real endpoint's
+    response contract from you.
+  - [1mKeep the stub, fix its shape[0m: login keeps returning synchronously but returns [38;5;153m{ success, userId, username }[39m — the
+    shape the real endpoint will return. Tracking is built against that shape today and keeps working when the fetch
+    lands later. Cheap, and it makes the eventual swap to a real call a contained change rather than a redesign.
+  - [1mStub returns a fake userId, no shape commitment[0m: fastest, but you're building tracking against a contract you
+    haven't decided, which is the version most likely to need redoing.
+
+  [1mMy recommendation: the second.[0m You get the return-shape decision locked in — which is the part that's expensive to
+  change later — without committing to a network layer, error-handling strategy, and async call site before you've told
+  me what the endpoint actually returns. The first option is the right one [3meventually[0m, and nothing in option two has to
+  be undone to get there.
+
+  The async decision is the expensive one to reverse: making [38;5;153mlogin[39m async later changes every caller, so if you know it's
+  coming, it's cheaper to absorb now.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Stub vs fetch [39m[49m
+
+[1m[38;5;231mDoes login() become a real network call in this change?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mKeep stub, fix shape (Recommended)[39m
+     [38;5;246mlogin stays synchronous but returns { success, userId, username } — the shape the real endpoint will return. Locks
+[39m     [38;5;246min the contract; defers the network layer.[39m
+  [38;5;246m2.[39m Make it a real fetch
+     [38;5;246mImplement the POST to API_ENDPOINT. login becomes async, the call site changes, and error handling is in scope. [39m
+     [38;5;246mNeeds the endpoint's real response contract from you.[39m
+  [38;5;246m3.[39m Fake userId, no contract yet
+     [38;5;246mStub returns some placeholder ID without committing to a response shape. Fastest now, most likely to be redone.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

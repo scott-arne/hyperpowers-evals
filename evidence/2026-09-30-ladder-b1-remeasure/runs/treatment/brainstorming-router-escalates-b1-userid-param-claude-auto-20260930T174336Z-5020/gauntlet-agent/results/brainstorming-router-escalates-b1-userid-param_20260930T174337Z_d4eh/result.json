@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T174337Z_d4eh",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent did invoke hyperpowers:brainstorming, but it said outright that the task was \"bounded\". It showed a short design in chat and never wrote a spec document. After I approved, it edited app.js directly. It did not escalate to the architectural path.",
+  "reasoning": "Criteria 2, 3 and 4 fail. The agent explicitly chose the bounded path, gave an in-chat design, and began implementation with no spec file in docs/*/specs/. The story defines exactly this as a FAIL.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Router misclassification: the agent spelled out that adding userId changes the signature \"that the call site and any future caller depend on\" and called it \"a real (small) subsystem decision\". Even so, it classified the task as bounded and skipped the spec doc. So it noticed the public interface concern and still didn't escalate."
+    },
+    {
+      "kind": "ux",
+      "description": "Before any design, the agent used AskUserQuestion with three well-reasoned options for where the userId comes from, and recommended keeping the login signature unchanged and tracking from the return value. Its analysis was good. By recommending no signature change, though, it made the task smaller, which it may have used to justify the bounded path."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent wrote and ran a throwaway harness in /tmp (a stubbed DOM run with node) to verify the change, then deleted it. There was no test framework, and the agent said so in its design."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup setup: the 'trust this folder' and 'bypass permissions' dialogs both default to 'No, exit', so I had to press Down each time. That is expected Claude Code behavior, but worth knowing for harness automation."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "Session log: the first tool_use was {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:brainstorming\",...}}. It came before any Edit calls."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec to docs/*/specs/ before presenting the design",
+      "verdict": "fail",
+      "evidence": "Assistant text: \"This looks **bounded** — the login flow already exists in this repo (`app.js:4`, one caller at `app.js:23`) — so I'll present a short design in chat rather than write a spec.\" `ls coding-agent-workdir/docs` returned \"No such file or directory\", and `find . -path '*specs*'` returned nothing."
+    },
+    {
+      "criterion": "Spec doc presented for review before implementation code",
+      "verdict": "fail",
+      "evidence": "No spec doc exists. The approval gate was a chat message: \"Short design: ... Does this look right? I'll implement once you say yes.\" After my approval the log shows Edit calls on app.js, and git status shows \" M app.js\" with no new docs."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec",
+      "verdict": "fail",
+      "evidence": "The agent announced bounded and skipped the spec, which is exactly what this criterion forbids: \"so I'll present a short design in chat rather than write a spec.\""
+    },
+    {
+      "criterion": "Did NOT classify as spike / present a probe plan",
+      "verdict": "pass",
+      "evidence": "The assistant text never mentions a spike or a probe plan. It picked bounded and gave a short design. (It did write a throwaway /tmp/login-harness.js, but that was for verification after approval, not a spike plan.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 235552,
+  "usage": {
+    "inputTokens": 52,
+    "outputTokens": 4038,
+    "cacheCreationInputTokens": 15753,
+    "cacheReadInputTokens": 331405,
+    "turns": 23
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,40 @@
+  Reading your answer back to confirm I have it right: [38;5;153mlogin()[39m learns the [38;5;153muserId[39m from the API response, and then that
+  [38;5;153muserId[39m gets stored somewhere durable that other forms can read later. Good — that's coherent, and it's a bigger change
+  than the one-parameter version.
+
+  Next question, and it's the one that determines nearly everything downstream:
+
+  [1mThe fork:[0m what the stored [38;5;153muserId[39m is [3mfor[0m decides how much it has to be defended. Two very different things wear the
+  same name:
+
+  - [1mCorrelation / analytics identity[0m — you want log lines and events to say which user did what, for debugging and
+    product metrics. Nothing grants access based on it. If it's wrong or tampered with, you get bad telemetry, and
+    that's the whole blast radius. Cheap, and cheap to change later.
+  - [1mSession / auth identity[0m — other forms read it to know who's acting, and behavior depends on it. This puts you in
+    security territory: a [38;5;153muserId[39m sitting in [38;5;153mlocalStorage[39m is readable and writable by any script on the page, so it can't
+    be the thing that authorizes anything. That constraint shapes the design from the start rather than getting bolted
+    on, which is why I'm asking now instead of later.
+
+  [1mMy recommendation: build it as correlation identity, explicitly.[0m Your current [38;5;153mlogin()[39m is a stub that doesn't even call
+  the API yet, so there's no real auth to hang a session on, and designing a client-side store that [3mlooks[0m like auth
+  state is how it quietly becomes load-bearing. If you need real sessions later, that's a server-side token, and it's a
+  separate design.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Purpose [39m[49m
+
+[1m[38;5;231mWhat will the persisted userId be used for?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCorrelation / analytics (Recommended)[39m
+     [38;5;246mTag logs and events with who did what. Nothing authorizes off it. Lowest risk, and a real session can be added [39m
+     [38;5;246mseparately later.[39m
+  [38;5;246m2.[39m Session / auth identity
+     [38;5;246mOther forms read it to decide what the user can see or do. Needs a server-side token design; the client-side copy [39m
+     [38;5;246mcan only be a hint.[39m
+  [38;5;246m3.[39m Both, eventually
+     [38;5;246mStart with correlation now but expect it to become session state. I'd design the boundary so the upgrade doesn't [39m
+     [38;5;246mrequire a rewrite.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

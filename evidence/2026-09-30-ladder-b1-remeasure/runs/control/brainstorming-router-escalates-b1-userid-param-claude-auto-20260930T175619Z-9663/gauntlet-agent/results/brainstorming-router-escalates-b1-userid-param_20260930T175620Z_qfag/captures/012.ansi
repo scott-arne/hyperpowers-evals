@@ -1,0 +1,40 @@
+  [1mThe fork:[0m whether every call site passes identity explicitly, or the tracking module holds the current user and
+  attaches it automatically. This sets the module's public interface, so it's the expensive one to change — it's the
+  signature every future form will be written against.
+
+  - [1mExplicit per call[0m — [38;5;153mtrack('login', { userId })[39m everywhere. Buys a stateless module that's trivial to test and has no
+    hidden dependencies. Costs: every future form has to obtain and plumb a [38;5;153muserId[39m it may not have on hand, which is
+    the same plumbing problem that made the original parameter awkward.
+  - [1mModule holds current user[0m — [38;5;153midentify(userId)[39m once on successful login, then [38;5;153mtrack('form_submit', {...})[39m from
+    anywhere and identity is attached. Buys call sites that don't think about identity at all. Costs module-scoped
+    mutable state, which needs a clear single writer and an explicit clear-on-logout, and makes tests order-dependent
+    unless there's a reset.
+  - [1mRead from session storage[0m — tracking pulls identity from wherever session state already lives. Buys no new state.
+    Costs a dependency on a session layer this repo doesn't have yet — so it's really "build sessions first."
+
+  [1mMy recommendation: module holds current user.[0m It's the standard analytics shape ([38;5;153midentify[39m then [38;5;153mtrack[39m) and it's the one
+  that makes your stated goal — other forms adopting this later — actually cheap. The mutable-state cost is real but
+  contained: login is the only writer, and the spec will require an explicit reset for logout and tests.
+
+  One wrinkle either way, which I'll write into the spec rather than ask about: a [1mfailed[0m login has no [38;5;153muserId[39m —
+  authentication is what produces it. So failed attempts can only be attributed to the attempted username, and the event
+  schema needs identity to be optional. That's worth tracking (failed logins are the interesting audit signal), but it
+  means "track who logged in" has two distinct event shapes, not one.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Identity [39m[49m
+
+[1m[38;5;231mHow does the tracking module learn who the current user is?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153midentify() then track() (Recommended)[39m
+     [38;5;246mLogin calls identify(userId) once; later events attach identity automatically. Cheapest for the future forms you [39m
+     [38;5;246mmentioned. Needs a single writer and an explicit reset.[39m
+  [38;5;246m2.[39m Explicit on every call
+     [38;5;246mEach call passes userId itself. Stateless and easy to test, but every future form must obtain and plumb the ID.[39m
+  [38;5;246m3.[39m Read from a session layer
+     [38;5;246mTracking reads identity from session state. No new state, but this repo has no session layer — it means building [39m
+     [38;5;246msessions first, widening the scope.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

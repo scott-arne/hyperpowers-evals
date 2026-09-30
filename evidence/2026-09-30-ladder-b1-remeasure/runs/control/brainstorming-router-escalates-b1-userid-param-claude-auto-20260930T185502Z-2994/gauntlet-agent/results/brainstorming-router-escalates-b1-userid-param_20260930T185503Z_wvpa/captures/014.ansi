@@ -1,0 +1,40 @@
+
+  Starting the questions. First one is upstream of everything else:
+
+  [1mWhere does the userId come from?[0m Right now nothing in this codebase produces one. The form collects username and
+  password; [38;5;153mlogin[39m is a stub that returns [38;5;153m{ success: true, user: username }[39m without calling the API. So before we can
+  persist a userId, something has to mint it. This choice is expensive to reverse — it sets the shape of what gets
+  stored and what every other form reads, and switching later means migrating whatever's already persisted.
+
+  - [3mServer returns it in the login response[0m — the real API responds with a canonical user id; [38;5;153mlogin[39m reads it off the
+    response. Most correct for an authenticated app, but it means the login stub has to become a real async call (or a
+    fake that mimics one) before any of this is testable.
+  - [3mThe username is the id[0m — no new concept; [38;5;153mlogin[39m already has it at hand. Cheapest by far, and zero new failure modes.
+    But it's wrong the moment usernames are editable or non-unique, and unpicking that later touches every stored
+    record.
+  - [3mGenerated client-side[0m — login mints a UUID per session. Works with the stub as-is and needs no server, but it
+    identifies a [3msession[0m, not a [3mperson[0m, so it can't answer "who logged in" across devices.
+
+  My recommendation is the server-returned id, and the reason is your own framing: you want to track [3mwho[0m logged in and
+  have other forms use it. Only a server-issued identity is stable enough for that. The cost is honest — we'd have to
+  decide what the stub does in the meantime, which I'd handle as an explicit fake that returns a fixed id, so the
+  interface is real even while the backend isn't.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId originate?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFrom login response (Recommended)[39m
+     [38;5;246mThe API returns a canonical user id; login reads it off the response. Stable identity across devices. Requires [39m
+     [38;5;246mdeciding what the current stub returns in the meantime.[39m
+  [38;5;246m2.[39m Use the username as the id
+     [38;5;246mNo new concept, cheapest possible change. Breaks if usernames are ever editable or non-unique, and migrating away [39m
+     [38;5;246mlater touches every stored record.[39m
+  [38;5;246m3.[39m Generate client-side
+     [38;5;246mlogin mints a UUID per session. No server work needed, but identifies a session rather than a person — cannot [39m
+     [38;5;246manswer 'who' across devices.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

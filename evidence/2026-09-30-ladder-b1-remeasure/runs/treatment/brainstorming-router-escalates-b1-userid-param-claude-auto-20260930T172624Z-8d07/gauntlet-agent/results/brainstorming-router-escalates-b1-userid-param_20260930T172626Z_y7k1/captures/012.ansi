@@ -1,0 +1,40 @@
+
+  [1mB. Separate browser global [38;5;153mtracking.js[0m — new top-level file, loaded by a second [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m. Same
+  functions, isolated file.
+  [3mBuys:[0m clear boundary; [38;5;153mapp.js[39m goes back to being about the form. Cheap.
+  [3mCosts:[0m load-order coupling in [38;5;153mindex.html[39m (silent breakage if the tags are reordered), and still no way to test — a
+  browser-global file can't be [38;5;153mrequire[39md.
+  [3mRules out:[0m nothing permanently; C is a later upgrade from here.
+
+  [1mC. [38;5;153msrc/tracking.js[39m as a dual-mode module[0m — CommonJS [38;5;153mmodule.exports[39m for Node, with a browser-global fallback assignment
+  so the [38;5;153m<script>[39m tag still works. Injectable storage so tests can pass a throwing stub.
+  [3mBuys:[0m the storage-failure path becomes testable, which matters because [38;5;153mnull[39m is the branch you can't easily reach by
+  hand and the one carrying the privacy guarantee. Also puts the file where the repo's other reusable code already
+  lives.
+  [3mCosts:[0m ~6 lines of dual-mode boilerplate; bridges two module systems the repo has so far kept apart; only pays off if
+  a test runner is actually added.
+  [3mRules out:[0m nothing.
+
+  [1mRecommendation: C[0m, conditional on adding a test runner. The reason is narrow — you chose explicit [38;5;153mnull[39m specifically so
+  consumers can trust that a missing ID means "storage unavailable" rather than "new browser." That guarantee lives
+  entirely in a branch that's awkward to trigger manually, so it's the one thing here worth being able to assert. If
+  you'd rather not add tooling to a fixture this small, [1mB[0m is the honest choice and I'd take it over C — C without tests
+  is just boilerplate.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Approach [39m[49m ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mC: dual-mode src/tracking.js (Recommended)[39m
+     [38;5;246mCommonJS + browser-global fallback, injectable storage. Makes the null/storage-failure branch testable. Assumes a [39m
+     [38;5;246mtest runner gets added.[39m
+  [38;5;246m2.[39m B: separate tracking.js global
+     [38;5;246mNew top-level file, second script tag. Clean boundary, no tooling needed, no tests. Best if you want zero new [39m
+     [38;5;246mdependencies.[39m
+  [38;5;246m3.[39m A: inline in app.js
+     [38;5;246mSmallest diff, no new files. app.js takes on storage duties; the null path stays manually-verified only.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

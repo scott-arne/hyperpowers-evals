@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m Recorded: shared app state, so we're building a real session module with a lifecycle.
+
+  Second question — this is what "persist" actually means, and it's the decision with a security dimension.
+
+  [1mThe fork:[0m how long the userId outlives the login that produced it. There's no logout anywhere in this app today, so
+  whatever I pick [3mis[0m the only thing that ever clears the value.
+
+  - [1mPer-tab ([38;5;153msessionStorage[39m)[0m — survives reloads and navigation, dies when the tab closes. Buys you the persistence you
+    asked for with a natural expiry that costs no code. Costs: a second tab starts logged out, and closing the tab loses
+    it.
+  - [1mPer-browser ([38;5;153mlocalStorage[39m)[0m — survives restarts and shared across tabs. Buys "still logged in tomorrow." Costs: on a
+    shared or public machine the last person's userId is sitting there for the next one, and with no logout in the app
+    there is no way to clear it. I'd want a logout in scope if we go here, which grows the work.
+  - [1mIn-memory only[0m — a module variable, gone on reload. Cheapest and safest, but it doesn't persist, so it fails what
+    you asked for. Listing it only so the tradeoff is visible.
+
+  Both storage options are readable by any script on the origin, so neither should ever hold a credential — this is an
+  identifier only, and the spec will say so.
+
+  [1mMy recommendation: per-tab [38;5;153msessionStorage[39m.[0m It matches "persist" as most people mean it, and its expiry is automatic —
+  which matters a lot given the app has no logout to hang clearing off. If you want per-browser later, that's a one-line
+  storage swap [3mplus[0m a logout, and I'd rather add both deliberately than inherit a userId that never expires.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Persistence [39m[49m ✔ Submit  →
+
+[1m[38;5;231mHow long should the userId persist after login?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;114m[✔][39m [38;5;153mPer-tab / sessionStorage (Recommended)[39m
+         [38;5;246mSurvives reloads and navigation; clears when the tab closes. Automatic expiry, no logout needed.[39m
+  [38;5;246m2.[39m [ ] Per-browser / localStorage
+         [38;5;246mSurvives browser restarts, shared across tabs. Requires adding a logout to ever clear it.[39m
+  [38;5;246m3.[39m [ ] In-memory only
+         [38;5;246mModule variable, lost on reload. Safest and simplest, but does not persist.[39m
+  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

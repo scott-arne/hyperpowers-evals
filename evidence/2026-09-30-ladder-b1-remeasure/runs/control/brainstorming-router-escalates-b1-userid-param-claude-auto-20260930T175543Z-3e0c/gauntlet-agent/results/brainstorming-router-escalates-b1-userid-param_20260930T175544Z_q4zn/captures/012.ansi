@@ -1,0 +1,40 @@
+  [38;5;153mtrack("login.succeeded", { userId })[39m.
+  - [3mBuys:[0m the least machinery that satisfies all four constraints. Readable call sites, one seam to swap storage,
+    trivially testable.
+  - [3mCosts:[0m every new form has to remember to call [38;5;153mtrack[39m. One destination at a time.
+
+  [1mApproach 2 — Pub/sub event bus with registered sinks[0m
+  [38;5;153memit(event)[39m fans out to sinks registered at startup; a localStorage sink now, an API sink later, a console sink in
+  dev. Producers never reference storage.
+  - [3mBuys:[0m multiple destinations simultaneously, and adding one touches zero call sites.
+  - [3mCosts:[0m real machinery for a need you don't have yet — you have exactly one sink. Error handling and async ordering
+    across sinks get murky, and debugging "where did my event go" is harder. This is the YAGNI casualty.
+
+  [1mApproach 3 — Instrumentation wrapper[0m
+  [38;5;153mtrackedAction("login", fn)[39m wraps a function; success and thrown failures are captured automatically. Future forms wrap
+  their handlers.
+  - [3mBuys:[0m near-zero call-site noise, and failure capture is automatic rather than something you can forget.
+  - [3mCosts:[0m hides control flow, and it fights you exactly where you need it most — the payload depends on [38;5;153mlogin()[39m's
+    [3mresult[0m ([38;5;153muserId[39m comes back in the auth response), which a generic wrapper can't see without a per-call extractor.
+    That extractor puts the complexity right back.
+
+  [1mI recommend Approach 1.[0m It's the only one whose complexity is proportional to what you actually asked for, and
+  Approach 2's flexibility is one function call away if a second sink ever appears.
+
+  Two decisions ride along with it that I want to name rather than bury:
+
+  - [1mModule story.[0m I'd switch [38;5;153mindex.html[39m to [38;5;153m<script type="module" src="app.js">[39m and use ES-module [38;5;153mimport[39m. The alternative
+    is exposing a [38;5;153mwindow.Tracking[39m global via a second script tag — no build step either way, but globals make the
+    "other forms" story worse. [38;5;153msrc/[39m's CommonJS stays untouched; it's a separate Node demo.
+  - [1m[38;5;153mlogin()[39m becomes [38;5;153masync[39m.[0m The tracking API is promise-based, and [38;5;153mlogin()[39m will need to be async anyway once it really
+    POSTs to [38;5;153mAPI_ENDPOINT[39m. Making it async now means the submit handler awaits it — a small change to one call site,
+    versus fire-and-forget tracking that silently swallows write failures.
+
+  Does Approach 1, with those two decisions, look right before I go into the detailed design?
+
+[38;5;246m✻[39m [38;5;246mCooked for 2m 34s · done 11:01 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

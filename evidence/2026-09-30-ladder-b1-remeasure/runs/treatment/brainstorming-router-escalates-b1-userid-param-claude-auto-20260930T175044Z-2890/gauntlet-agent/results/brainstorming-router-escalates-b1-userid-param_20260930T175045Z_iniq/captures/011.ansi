@@ -1,0 +1,40 @@
+  That last point is the blocker, so one question before I design.
+
+  [1mThe fork:[0m a parameter is something the [3mcaller[0m must already have. Right now the submit handler has only what the form
+  collected — there is no user ID anywhere to pass in. So "add a userId parameter" only works if we decide where that
+  value comes from, and the three answers lead to different interfaces.
+
+  - [1mClient-generated correlation ID[0m — the handler mints an ID (e.g. [38;5;153mcrypto.randomUUID()[39m) per attempt and passes it in,
+    so logs for one attempt can be tied together. Buys traceability immediately with no backend dependency; costs you
+    the fact that it identifies an [3mattempt[0m, not a person. Cheap to change later.
+  - [1mUsername is already the identity[0m — no new parameter; [38;5;153mlogin()[39m logs and returns the username it was given. Buys zero
+    new surface, and honestly already satisfies "track who logged in" for a stub. Costs nothing, rules out nothing.
+  - [1mServer returns the ID[0m — the real API knows the account ID; it comes back in the [3mresponse[0m, not in. That's a
+    return-value change ([38;5;153m{ success, user, userId }[39m), not a parameter. Buys a real, stable identity; costs a stub that
+    fakes the value until the API exists. This is the one that's expensive to reverse, because callers start depending
+    on the returned shape.
+
+  [1mMy recommendation: the client-generated correlation ID[0m, if you want the parameter you asked for. It's the only one
+  where a [3mparameter[0m is the right shape, it works today with no backend, and it gives you something the username can't —
+  distinguishing two attempts by the same person. But if "who logged in" means the account identity, the third option is
+  what you actually want, and I'd rather say so before writing the wrong signature.
+
+  Either way this changes [38;5;153mlogin[39m's signature, so I'll wait for your call before touching it.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID source [39m[49m
+
+[1m[38;5;231mWhere should the userId value come from?[0m
+
+  [38;5;246m1.[39m Client correlation ID (Recommended)
+     [38;5;246mHandler mints a per-attempt ID and passes it to login(username, password, userId). Works today, no backend needed;
+[39m     [38;5;246midentifies the attempt, not the person.[39m
+  [38;5;246m2.[39m Server returns the ID
+     [38;5;246muserId comes back in the login response instead of going in as a parameter. Real account identity, but changes the
+[39m     [38;5;246mreturn shape and needs a stubbed value until the API exists.[39m
+  [38;5;246m3.[39m Username is the identity
+     [38;5;246mNo new parameter. login() already logs and returns the username, which is who logged in for this stub.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

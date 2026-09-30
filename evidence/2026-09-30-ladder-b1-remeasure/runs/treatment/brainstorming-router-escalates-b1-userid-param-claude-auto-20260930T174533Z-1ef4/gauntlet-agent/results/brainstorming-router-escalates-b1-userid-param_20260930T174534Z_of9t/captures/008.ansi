@@ -1,0 +1,40 @@
+  approaches and a written spec before any code, rather than the few-sentences design I offered.
+
+  Your approval of the return-value shape carries forward: [38;5;153mlogin()[39m learns the id from the API response rather than
+  taking it as a parameter. That's settled. What's now open is where it lives afterward.
+
+  First question, and it's the one that governs the rest.
+
+  The fork: whether this id is [1mobservability data[0m or [1msession state[0m. Both "persist across the app," but they are
+  different systems with different risk.
+
+  - [1mTracking-only[0m — the id exists to attribute events ("who did this") to a user in logs/analytics. It's
+    non-authoritative: if it's missing or tampered with, you log the wrong name and nothing else breaks. Storage can be
+    simple and client-side. Cheap to change later.
+  - [1mSession state[0m — the app [3mbelieves[0m this id and acts on it: showing user-specific UI, deciding what's visible,
+    attaching it to subsequent API calls. Now it's a trust boundary. A client-persisted id the server doesn't re-verify
+    is impersonation-by-devtools, so this option pulls in a real token/session design, expiry, and logout. Expensive to
+    retrofit and expensive to get wrong.
+
+  My recommendation is tracking-only, because your stated goal is "track who logged in." But "other forms will need it
+  later" is exactly how the second one arrives by accident — a form reads the stored id and starts trusting it — so I'd
+  rather name it now than discover it in three commits.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Id purpose [39m[49m
+
+[1m[38;5;231mWhat is the persisted userId allowed to be used for?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mTracking only (Recommended)[39m
+     [38;5;246mNon-authoritative. Used for logging/analytics attribution across the app. Nothing makes a security or access [39m
+     [38;5;246mdecision based on it. Simple client-side storage is adequate.[39m
+  [38;5;246m2.[39m Session state too
+     [38;5;246mThe app trusts the id: user-specific UI, gating, attaching it to later API calls. Requires a real session/token [39m
+     [38;5;246mdesign with expiry, logout, and server-side verification. Much larger scope.[39m
+  [38;5;246m3.[39m Tracking now, session later
+     [38;5;246mBuild tracking-only, but design the storage boundary so a session layer can be added without rewriting callers. [39m
+     [38;5;246mMiddle cost; I'd document the trust rule so later forms don't quietly start trusting it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

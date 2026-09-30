@@ -1,0 +1,40 @@
+  design in chat, and stop for your yes rather than write a spec.
+
+  One thing to flag before any edit: [38;5;153mlogin(username, password)[39m is a signature, and adding a parameter changes it for its
+  caller (the submit handler at [38;5;153mapp.js:23[39m). Small here — one caller — but I want your yes on the shape before I touch
+  it.
+
+  [1mThe fork:[0m there is no user ID anywhere in this app before login happens. The form collects only username and password
+  ([38;5;153mindex.html[39m), and [38;5;153mlogin[39m is the stub that would establish identity. So "add a userId parameter" needs a source, and the
+  three plausible sources lead to different code:
+
+  - [1mTrack via the returned identity[0m — no new parameter. [38;5;153mlogin[39m already does [38;5;153mconsole.log("Logging in:", username)[39m and
+    returns [38;5;153m{ success: true, user: username }[39m; the tracking hook goes on the result. Cheapest, changes no signature, and
+    is the only option that works if "userId" means "the user who just logged in" — the server assigns it, so it can't
+    be an input. Easy to change later.
+  - [1mClient-generated tracking ID[0m — [38;5;153mlogin(username, password, userId)[39m where the caller mints an anonymous device/session
+    ID. Gives you a correlation key across attempts including failed ones, but it's not a [3muser[0m ID; the name would
+    mislead. Requires deciding where the ID is stored (localStorage vs per-page).
+  - [1mCaller-supplied user ID from elsewhere[0m — [38;5;153mlogin(username, password, userId)[39m fed by a new form field or an upstream
+    system. This is a real interface change: whoever calls [38;5;153mlogin[39m must now have an ID before authenticating, which is
+    unusual. Hardest to walk back once other callers exist.
+
+  [1mMy recommendation:[0m the first. "Track who logged in" is satisfied by the identity login already produces, and passing
+  an ID [3minto[0m authentication inverts the normal direction. If you have an upstream system that already knows the ID, the
+  third is right and I'll do that instead — tell me where the ID comes from.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the user ID come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mFrom login's result (Recommended)[39m
+     [38;5;246mNo signature change. Track the identity login returns/logs. Works today; reversible.[39m
+  [38;5;246m2.[39m Client-generated tracking ID
+     [38;5;246mAdd third param, caller mints an anonymous session/device ID. Correlates attempts, but isn't a real user ID.[39m
+  [38;5;246m3.[39m Caller supplies a real user ID
+     [38;5;246mAdd third param fed by a new form field or upstream system. Tell me the source and I'll wire it.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

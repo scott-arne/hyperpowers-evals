@@ -1,0 +1,40 @@
+
+  [1mThe fork:[0m [38;5;153mlogin(username, password)[39m is the thing that [3mauthenticates[0m. A user's ID is normally something you learn [3mfrom[0m
+  a successful login, not something the caller already knows — right now the form only has a username and password, so
+  there's no [38;5;153muserId[39m in scope at the call site to pass in. So "add a userId parameter" could mean three fairly different
+  changes:
+
+  - [1mCaller supplies it[0m — [38;5;153mlogin(username, password, userId)[39m, and the submit handler passes something it already has (a
+    tenant ID, a device/session ID, an account selector). Cheap, one-line signature change, but I'd need to know what
+    value the caller passes; today the answer is "nothing".
+  - [1mReturn it instead[0m — [38;5;153mlogin()[39m keeps its signature and the result becomes [38;5;153m{ success, user, userId }[39m, with the ID coming
+    back from auth (stubbed for now). Matches how login actually works, but it's not a parameter, so it's not literally
+    what you asked for.
+  - [1mBoth[0m — an optional [38;5;153muserId[39m param that acts as a caller-supplied correlation/trace ID, defaulting to a generated one,
+    logged alongside the username.
+
+  Cheap to change later: the log line's format. Not cheap: the parameter position and whether [38;5;153muserId[39m is an input or an
+  output — that's the callers' contract, and reversing it later means touching every call site.
+
+  [1mMy recommendation is the second option[0m, because the stated goal is "track who logged in" and the authenticating call
+  is the only place that can actually know who that is. But if you have a [38;5;153muserId[39m already in hand at the call site that I
+  can't see in this repo, the first option is right and I'll take it at face value.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere does the userId come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturned from login (Recommended)[39m
+     [38;5;246mKeep login(username, password); add userId to the returned object, stubbed from the auth response. Matches how [39m
+     [38;5;246mlogin actually works, but is not literally a new parameter.[39m
+  [38;5;246m2.[39m Caller passes it in
+     [38;5;246mlogin(username, password, userId) as you asked. I'd need to know what the submit handler should pass — there is no
+[39m     [38;5;246muserId in scope there today.[39m
+  [38;5;246m3.[39m Optional correlation ID
+     [38;5;246mlogin(username, password, userId = generated) — a caller-supplied trace ID, defaulted when absent, logged with the
+[39m     [38;5;246musername.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

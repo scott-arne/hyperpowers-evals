@@ -1,0 +1,40 @@
+  So "shared across the app" has no existing seam to hang off. There's also no test runner and no linter configured.
+  I'll fold the module-format question into the design, but first the decision that constrains everything else.
+
+  [1mThe fork: where tracked events actually live.[0m This is the expensive one to change later — it sets the storage format,
+  whether you need a backend, and what the module's API looks like (fire-and-forget vs. async-and-fallible).
+
+  - [1mBrowser storage ([38;5;153mlocalStorage[39m)[0m — buys you persistence across reloads with zero backend work, and the module stays
+    synchronous and easy to call from any form. Costs: the data is per-device and per-browser, you can't see it
+    server-side, there's a ~5MB ceiling you eventually have to prune, and anything stored is readable by any script on
+    the page — which matters because login events are identity data.
+  - [1mSend to a backend[0m — real tracking you can actually query across users and devices. Costs: [38;5;153mAPI_ENDPOINT[39m is a stub, so
+    this needs an endpoint that doesn't exist yet; the module becomes async and has to define what happens when the
+    request fails or the user is offline. Rules out treating tracking as fire-and-forget.
+  - [1mBuffer locally, flush to backend[0m — the robust answer, and what production analytics does: survives offline, no lost
+    events. Costs: the most machinery by a wide margin — queue, flush trigger, retry, de-duplication. Hard to justify
+    before you have an endpoint at all.
+
+  [1mMy recommendation: browser storage now, with the module's API written so the storage backend can be swapped without [0m
+  [1mtouching call sites.[0m You don't have a backend endpoint yet, and the "other forms will need it later" requirement is
+  really about the [3mcalling interface[0m being stable — that's the part worth designing carefully. Getting the interface
+  right makes the storage choice cheap to revisit; getting it wrong doesn't.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mWhere should tracked login events actually live?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBrowser storage[39m
+     [38;5;246mlocalStorage, behind a swappable interface. No backend needed, synchronous API, easy for other forms to call. [39m
+     [38;5;246mPer-device only, and readable by page scripts.[39m
+  [38;5;246m2.[39m Backend endpoint
+     [38;5;246mPOST events to a server so they're queryable across users. Requires an endpoint that doesn't exist yet; the API [39m
+     [38;5;246mbecomes async and has to handle failures.[39m
+  [38;5;246m3.[39m Buffer then flush
+     [38;5;246mLocal queue that flushes to a backend. Survives offline, loses nothing. Significantly the most machinery to build [39m
+     [38;5;246mand test.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

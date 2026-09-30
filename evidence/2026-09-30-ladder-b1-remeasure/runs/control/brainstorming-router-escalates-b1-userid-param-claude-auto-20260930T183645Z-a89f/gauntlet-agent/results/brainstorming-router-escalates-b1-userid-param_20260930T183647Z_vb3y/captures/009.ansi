@@ -1,0 +1,40 @@
+  Context: [38;5;153mapp.js[39m is a stub — [38;5;153mlogin(username, password)[39m just [38;5;153mconsole.log[39ms and returns [38;5;153m{ success: true, user: username }[39m.
+  The only caller is the form submit handler, which reads [38;5;153musername[39m and [38;5;153mpassword[39m from the DOM. [38;5;153msrc/[39m is unrelated (a
+  [38;5;153mgreet[39m demo).
+
+  One thing blocks me before I can write anything.
+
+  [1mThe fork:[0m the login form only has [38;5;153musername[39m and [38;5;153mpassword[39m, so at the moment [38;5;153mlogin()[39m is called there is no user ID in
+  hand — the thing that assigns a user ID is the authentication that hasn't happened yet. So "userId parameter" can mean
+  three different things, and they differ in what the caller has to produce and what the function signature commits to.
+
+  - [1mClient-generated correlation ID[0m — caller mints an ID (e.g. [38;5;153mcrypto.randomUUID()[39m) per login attempt and passes it in.
+    Buys you traceable attempts including failures; costs a new ID-generation call site. Doesn't identify the human — it
+    identifies the attempt. Cheap to change later.
+  - [1mCaller-supplied account ID[0m — signature becomes [38;5;153mlogin(userId, username, password)[39m and the form must acquire a real
+    account ID from somewhere. Buys a true identity; costs a source that doesn't exist yet (new form field, or a lookup
+    call before login). This is the expensive one and it leaks into the HTML.
+  - [1mServer-assigned ID, returned not passed[0m — [38;5;153mlogin[39m keeps its signature and the returned object gains [38;5;153muserId[39m. Buys
+    correct semantics (IDs come from auth); costs: it is not the parameter you asked for. Changing this later means
+    changing the return contract, which is the one thing callers depend on.
+
+  [1mMy recommendation: the correlation ID.[0m It's the only one of the three that actually works with the data available at
+  call time, it gives you "who attempted to log in, and did it succeed" in the log line, and it doesn't require
+  inventing an identity source in a stub that doesn't authenticate yet.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhat should the userId parameter actually carry?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mClient correlation ID (Recommended)[39m
+     [38;5;246mCaller mints a per-attempt ID and passes it to login(). Works with data available at call time; traces failed [39m
+     [38;5;246mattempts too.[39m
+  [38;5;246m2.[39m Caller-supplied account ID
+     [38;5;246mlogin(userId, username, password). Requires a new source for the real account ID — form field or pre-login lookup.[39m
+  [38;5;246m3.[39m Return it instead
+     [38;5;246mKeep the signature; add userId to login()'s return value, as a server would assign it. Not a parameter.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

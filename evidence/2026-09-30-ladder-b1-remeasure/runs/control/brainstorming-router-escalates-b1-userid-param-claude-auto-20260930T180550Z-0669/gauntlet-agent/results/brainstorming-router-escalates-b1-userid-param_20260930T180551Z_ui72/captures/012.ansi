@@ -1,0 +1,40 @@
+  [1mA. Namespaced global via a second classic script[0m — a new [38;5;153msession.js[39m wraps its state in an IIFE and exposes exactly
+  [38;5;153mgetUserId()[39m / [38;5;153msetSession()[39m / [38;5;153mclear()[39m on a single [38;5;153mwindow.AppSession[39m namespace; [38;5;153mindex.html[39m loads it before [38;5;153mapp.js[39m. [3mBuys:
+[0m  works with the app's existing load mechanism, including opening [38;5;153mindex.html[39m straight off disk. Internals stay private
+  despite the global. [3mCosts:[0m one global name, and load order becomes meaningful. [3mRules out:[0m nothing — the migration in B
+  stays mechanical if callers only ever touch the API.
+
+  [1mB. Convert the page to ES modules[0m — [38;5;153mindex.html[39m gets [38;5;153mtype="module"[39m, and [38;5;153msession.js[39m / [38;5;153mapp.js[39m use real [38;5;153mimport[39m/[38;5;153mexport[39m.
+  [3mBuys:[0m genuine encapsulation, no globals, an explicit dependency graph that scales as forms are added. [3mCosts:[0m ES
+  modules are blocked by CORS over [38;5;153mfile://[39m, so the app can no longer be opened by double-clicking [38;5;153mindex.html[39m — it needs
+  a local static server, which this repo does not have ([38;5;153mpackage.json[39m has no [38;5;153mscripts[39m and no dependencies). [3mRules out:[0m the
+  zero-infrastructure workflow the repo currently has.
+
+  [1mC. Add a bundler[0m — discarded: a build step for one shared value in a six-file repo with no dependencies is cost with
+  no return.
+
+  [1mMy recommendation: A.[0m It's the smallest change that actually delivers what you asked for, and it doesn't make you
+  adopt a dev server before you have any other reason to. The thing that makes B cheap later isn't choosing B now — it's
+  the API boundary, which A gives you: if no caller ever reaches past [38;5;153mAppSession.getUserId()[39m, converting the IIFE to an
+  ES module is a wrapper swap that leaves every call site untouched.
+
+  I'd pick B over A only if you already intend to serve this app over HTTP and add more pages soon; then paying the cost
+  once, now, beats migrating later.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Module wiring [39m[49m
+
+[1m[38;5;231mHow should the shared session be wired into the page?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mNamespaced global (Recommended)[39m
+     [38;5;246mNew session.js as an IIFE exposing window.AppSession. Keeps the current classic-script load, still opens from disk.
+[39m     [38;5;246mMechanical to convert to ES modules later.[39m
+  [38;5;246m2.[39m Convert to ES modules
+     [38;5;246mindex.html gets type="module"; real import/export. Better encapsulation, but needs a local static server since [39m
+     [38;5;246mfile:// breaks.[39m
+  [38;5;246m3.[39m Add a bundler
+     [38;5;246mA real build step. I'd advise against it at this size, but it's your call.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

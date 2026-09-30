@@ -1,0 +1,40 @@
+  logged in" — which is what you described.
+  [3mComplexity: trivial.[0m
+
+  [1mApproach B — Separate session store beneath auth[0m
+  [38;5;153msession.js[39m is a storage-agnostic identity store; [38;5;153mauth.js[39m calls into it. Swapping [38;5;153msessionStorage[39m for [38;5;153mlocalStorage[39m or a
+  cookie later touches one file that knows nothing about login.
+  [3mTrades:[0m the cleanest seam at exactly the point we flagged as likely to move. Costs a second module and an indirection
+  earning nothing today. Wins if you expect the persistence decision to change soon.
+  [3mComplexity: moderate.[0m
+
+  [1mApproach C — Explicit session object, no module state[0m
+  [38;5;153mlogin[39m returns a [38;5;153mSession[39m object; [38;5;153mloadSession()[39m rehydrates from [38;5;153msessionStorage[39m at startup; consumers take the session as
+  an argument.
+  [3mTrades:[0m no hidden global state and trivially testable — and it's the one that literally gives you a parameter, just on
+  the consumers rather than on [38;5;153mlogin[39m. Costs threading the object through every future form, which is real friction at
+  the scale you described. Wins when you need multiple concurrent identities or strict test isolation.
+  [3mComplexity: moderate.[0m
+
+  [1mI recommend A[0m, with the [38;5;153msessionStorage[39m reads and writes isolated inside [38;5;153mauth.js[39m so that B is a later extraction rather
+  than a rewrite. B's seam is worth having eventually; it isn't worth a second module before a second storage backend
+  exists. C's testability argument is weakened by there being no test runner here at all — which is the next thing I
+  need to ask about.
+
+  One tooling question alongside the architecture, since this repo currently has [1mno[0m [38;5;153mscripts[39m, no linter, no formatter,
+  and no test runner — this is the cheapest moment it will ever be to add them:
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Direction [39m[49m ☐ Approach  ☐ Tooling  ✔ Submit  →
+
+[1m[38;5;231mIs making userId an output of login (not an input) the right reading?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mYes, output (Recommended)[39m
+     [38;5;246mlogin authenticates and returns the id; consumers read it via getUserId(). The id is a product of logging in.[39m
+  [38;5;246m2.[39m No, it is an input
+     [38;5;246mThe caller already holds a real account id and passes it in. I'll need you to tell me where that id comes from [39m
+     [38;5;246mbefore designing it.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

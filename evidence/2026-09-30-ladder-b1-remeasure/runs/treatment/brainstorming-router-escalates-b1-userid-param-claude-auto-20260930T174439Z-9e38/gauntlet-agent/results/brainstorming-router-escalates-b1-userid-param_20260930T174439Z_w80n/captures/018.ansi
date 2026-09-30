@@ -1,0 +1,40 @@
+  [1mError handling.[0m [38;5;153msessionStorage[39m is not guaranteed to work. Access to it can throw outright in sandboxed iframes, and
+  writes can throw on quota or when storage is disabled. So the module wraps both the feature detection and every
+  read/write in [38;5;153mtry[39m/[38;5;153mcatch[39m, and falls back to a module-level variable holding the id in memory. The fallback degrades
+  honestly: the id survives navigation within the page's lifetime but not a reload, and [38;5;153mSession.get()[39m returns [38;5;153mnull[39m
+  instead of throwing. No consumer needs to know which mode it's in.
+
+  Two smaller cases: [38;5;153mSession.set[39m ignores [38;5;153mnull[39m/[38;5;153mundefined[39m rather than storing the string [38;5;153m"undefined"[39m, and the submit
+  handler only calls [38;5;153mSession.set[39m when [38;5;153mresult.success[39m is true — today's handler logs the result unconditionally, and I'm
+  not changing that logging, just gating the store on success.
+
+  [1mFiles touched — three, all small:[0m
+
+  - [38;5;153msession.js[39m [3m(new, ~30 lines)[0m — the [38;5;153mSession[39m global, the three functions, the storage fallback.
+  - [38;5;153mapp.js[39m — [38;5;153mlogin[39m returns [38;5;153m{ success, user, userId }[39m with a clearly-marked placeholder id; the submit handler calls
+    [38;5;153mSession.set(result.userId)[39m on success. Signature unchanged, [38;5;153mvalidateForm[39m untouched.
+  - [38;5;153mindex.html[39m — one [38;5;153m<script src="session.js">[39m tag before the existing [38;5;153mapp.js[39m tag. Load order matters: [38;5;153mSession[39m must
+    exist before [38;5;153mapp.js[39m runs.
+
+  [1mVerification.[0m With no test runner, this is manual and I'll say so in the report rather than implying coverage I don't
+  have. Open [38;5;153mindex.html[39m in a browser, submit the form, confirm the console shows the id and that [38;5;153mSession.get()[39m in the
+  console returns it. Reload the page and confirm [38;5;153mSession.get()[39m still returns it — that's the "persists" requirement
+  actually demonstrated. Then [38;5;153mSession.clear()[39m, confirm [38;5;153mget()[39m returns [38;5;153mnull[39m. I can't easily exercise the storage-fallback
+  branch by hand, so that path ships reasoned-about but unverified; that's the concrete cost of skipping the test
+  runner.
+
+  [1mRisk worth naming once:[0m the placeholder id. Until [38;5;153mlogin[39m makes a real call to [38;5;153mAPI_ENDPOINT[39m, every session stores the
+  same fake value, so "track who logged in" won't actually distinguish users yet. The plumbing will be correct and the
+  swap is one line inside [38;5;153mlogin[39m, but the feature isn't truly delivered until the real API call exists. If you'd rather I
+  wire up the actual [38;5;153mfetch[39m to [38;5;153mAPI_ENDPOINT[39m as part of this, say so — that's a larger change and I'd want to design the
+  failure handling for it.
+
+  If this looks right, I'll write it up as a spec at [38;5;153mdocs/hyperpowers/specs/2026-09-30-user-session-store-design.md[39m
+  (uncommitted), run the review gates over it, and hand it to you to read before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 20s · done 10:52 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

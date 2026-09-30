@@ -1,0 +1,40 @@
+
+  [1mA. Plain-script global[0m — new [38;5;153mtracking.js[39m with a [38;5;153m<script>[39m tag in [38;5;153mindex.html[39m before [38;5;153mapp.js[39m, exposing
+  [38;5;153mwindow.Tracking.getUserId()[39m. Matches exactly how [38;5;153mapp.js[39m works today; zero new concepts, zero config. Cost: a global,
+  and it can't be imported by anything in [38;5;153msrc/[39m or tested in Node without a shim. Wins if you want the smallest possible
+  footprint and don't expect this to grow.
+
+  [1mB. Native ES module[0m [3m(recommended)[0m — [38;5;153mtracking.js[39m exports [38;5;153mgetUserId()[39m; [38;5;153mindex.html[39m loads [38;5;153mapp.js[39m with [38;5;153m<script [39m
+  [38;5;153mtype="module">[39m and [38;5;153mapp.js[39m imports from it. No globals, no build step (native ESM is fine in every current browser),
+  and Node can import the same file directly so it's testable without tooling gymnastics. Cost: [38;5;153mapp.js[39m becomes a module,
+  which changes its load semantics (deferred, its functions stop being globals — nothing currently depends on that, I
+  checked), and it means deciding the repo's module story rather than dodging it. Moderate.
+
+  [1mC. Dual CommonJS/global wrapper[0m — one file that detects [38;5;153mmodule.exports[39m and otherwise attaches to [38;5;153mwindow[39m. Testable in
+  Node today, browser stays a plain script tag. Cost: boilerplate wrapper around every shared file, and it entrenches
+  CommonJS in a browser app. Wins only if you specifically want Node tests without touching [38;5;153mindex.html[39m's script tags.
+
+  [1mMy recommendation: B.[0m You told me other forms will consume this, which makes it shared infrastructure rather than a
+  one-off — and shared infrastructure behind a global (A) gets painful about the third consumer, while C pays wrapper
+  boilerplate forever to avoid a one-line change in [38;5;153mindex.html[39m. B is the only one that leaves you with a real module
+  boundary and a straightforward testing story, and the conversion cost is genuinely small at this size. If you'd rather
+  not touch [38;5;153mindex.html[39m's loading at all, A is the honest second choice and I won't pretend it's wrong for a stub this
+  small.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: Native ES module (Recommended)[39m
+     [38;5;246mtracking.js exports getUserId(); app.js becomes a module. Real boundary, no globals, no build step, testable in [39m
+     [38;5;246mNode.[39m
+  [38;5;246m2.[39m A: Plain-script global
+     [38;5;246mwindow.Tracking.getUserId() via a script tag. Smallest footprint, matches current style, but global and hard to [39m
+     [38;5;246mtest.[39m
+  [38;5;246m3.[39m C: Dual CommonJS/global wrapper
+     [38;5;246mOne file works as both. Node-testable without touching index.html, at the cost of wrapper boilerplate.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

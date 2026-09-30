@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m [1mThird question — what [38;5;153muserId[39m actually identifies.[0m The stub at [38;5;153mapp.js:4-8[39m has to produce this value today, and what it
+  produces depends on whether the ID names the person or the login.
+
+  The fork: a stable per-person ID that a real backend owns, versus a fresh ID minted per login attempt.
+
+  - [1mServer-owned, stub returns a stable placeholder[0m — [38;5;153mlogin[39m reads [38;5;153muserId[39m off the response; until there's a real API, the
+    stub derives something deterministic from the username so it's stable across logins. Buys the shape you'll actually
+    want when [38;5;153mAPI_ENDPOINT[39m goes live — the field is just read off the response, no rewrite. Costs a development-only
+    value that isn't opaque (it encodes the username).
+  - [1mClient-generated UUID per login[0m — [38;5;153mcrypto.randomUUID()[39m at login time. Buys an opaque value with no backend
+    dependency. Costs the thing you asked for: it's a [3msession[0m identifier, not a person identifier. The same user gets a
+    different one every login, so it can't answer "who logged in" without the server correlating it to an account
+    anyway.
+  - [1mBoth — stable [38;5;153muserId[39m plus a per-login [38;5;153msessionId[39m.[0m Buys both tracking axes. Costs two concepts, two storage entries,
+    and more surface than today's requirement justifies.
+
+  [1mMy recommendation: the first.[0m "Track who logged in" is a question about the person, and in any real system the
+  person's ID is the server's to assign — the client inventing one produces a number that doesn't match anything in your
+  backend. Designing the stub to [3mstand in for[0m the server's value means the change when the real API arrives is deleting
+  a stub line, not reworking the interface. I'd skip the third option under YAGNI; adding a [38;5;153msessionId[39m later is cheap if
+  you find you need attempt-level correlation.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ ID semantics [39m[49m
+
+[1m[38;5;231mWhat should userId identify?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mServer-owned, stub placeholder (Recommended)[39m
+     [38;5;246mlogin reads userId off the response; stub derives a stable dev value from username. Matches what the real API will
+[39m     [38;5;246mreturn.[39m
+  [38;5;246m2.[39m Client-generated UUID per login
+     [38;5;246mOpaque, no backend needed, but identifies the login attempt rather than the person.[39m
+  [38;5;246m3.[39m Both userId and sessionId
+     [38;5;246mStable person ID plus per-login ID. Covers both, but doubles the surface for a need you don't have yet.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

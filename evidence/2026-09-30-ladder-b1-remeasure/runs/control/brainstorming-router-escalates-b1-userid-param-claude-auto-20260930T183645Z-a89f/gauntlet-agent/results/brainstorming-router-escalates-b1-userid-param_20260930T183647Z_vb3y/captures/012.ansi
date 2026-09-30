@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Good — that keeps the backend contract out of scope.
+
+  Next: [1mhow long the identity survives, and where it lives.[0m This is a storage-format decision, and it's the one that's
+  genuinely expensive to reverse — once IDs are sitting in users' browsers under a given key and shape, changing it
+  means writing migration code for data you can't see.
+
+  - [1m[38;5;153msessionStorage[0m — survives reloads and navigation, dies when the tab closes. Buys "other forms can read it" within a
+    working session; costs a re-login per tab. No cross-tab sharing.
+  - [1m[38;5;153mlocalStorage[0m — survives tab and browser close until explicitly cleared. Buys true "stay logged in"; costs a real
+    logout path (otherwise the ID outlives the user's intent) and it's readable by any script on the origin, so an XSS
+    bug hands over the identity. Shared across tabs.
+  - [1mIn-memory module singleton[0m — a variable other code imports. Buys simplicity and leaks nothing to disk; costs: does
+    not survive a reload, which I think fails your "persist" requirement.
+  - [1mCookie[0m — persists [3mand[0m rides along on requests to the backend automatically. Buys server-side use for free; costs
+    cookie attribute decisions ([38;5;153mSameSite[39m, [38;5;153mSecure[39m, expiry) and it's the wrong tool if only client JS reads it.
+
+  [1mMy recommendation: [38;5;153msessionStorage[39m, with the accessor written so the backing store is swappable.[0m You said persist and
+  cross-app, and [38;5;153msessionStorage[39m delivers both within a session without committing you to a "remember me" feature and its
+  logout/expiry obligations before you've asked for one. If you later want browser-close survival, that's a one-line
+  change behind the accessor — whereas starting at [38;5;153mlocalStorage[39m means shipping a logout story now.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Persistence [39m[49m
+
+[1m[38;5;231mHow long should the stored user identity survive?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153msessionStorage (Recommended)[39m
+     [38;5;246mSurvives reloads, clears when the tab closes. Cross-app within a session, no logout/expiry design needed yet.[39m
+  [38;5;246m2.[39m localStorage
+     [38;5;246mSurvives browser restart until cleared. True 'stay logged in', but needs a logout path and accepts XSS exposure.[39m
+  [38;5;246m3.[39m Cookie
+     [38;5;246mPersists and is sent to the backend automatically. Right choice only if server-side code needs to read it.[39m
+  [38;5;246m4.[39m In-memory only
+     [38;5;246mA shared module variable. Simplest and leaks nothing to disk, but does not survive a page reload.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

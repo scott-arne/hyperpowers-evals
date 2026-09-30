@@ -1,0 +1,40 @@
+  - [38;5;153mAuth.logout()[39m — async. [38;5;153mPOST /logout[39m, then clears the cache and the memo.
+
+  Internal state is two variables: [38;5;153mcachedUser[39m (three states — [38;5;153mundefined[39m for not-yet-determined, [38;5;153mnull[39m for anonymous, an
+  object for known) and the in-flight promise. The three-state cache is what lets [38;5;153mnull[39m mean a real answer instead of
+  "haven't asked yet."
+
+  [1m[38;5;153mapp.js[39m (modified)[0m — the local [38;5;153mlogin[39m stub is deleted; the submit handler becomes [38;5;153masync[39m and awaits [38;5;153mAuth.login(...)[39m.
+  [38;5;153mvalidateForm[39m is untouched. [38;5;153mAPI_ENDPOINT[39m moves into [38;5;153mauth.js[39m to sit with the other two endpoints.
+
+  [1m[38;5;153mindex.html[39m (modified)[0m — one line: [38;5;153m<script src="auth.js"></script>[39m before [38;5;153mapp.js[39m.
+
+  Two invariants worth stating because the whole design rests on them:
+
+  1. [1m[38;5;153muserId[39m is display data, never a credential.[0m The client never sends it to prove identity; the cookie does that. Any
+     future form that starts attaching [38;5;153muserId[39m to a request as authorization has broken the model.
+  2. [1mA successful [38;5;153mlogin[39m overwrites the memo.[0m Otherwise a page that called [38;5;153mgetUser()[39m while logged out caches [38;5;153mnull[39m, and
+     the user stays invisibly anonymous after logging in. This is the one ordering bug that's easy to write and annoying
+     to find.
+
+  [1mSection 2 — Data flow[0m
+
+  1. [1mPage load[0m — nothing fires. [38;5;153m/me[39m is lazy; it happens on the first [38;5;153mAuth.getUser()[39m.
+  2. [1mLogin[0m — submit → [38;5;153mvalidateForm[39m (unchanged) → [38;5;153mawait Auth.login(u, p)[39m → server sets cookie, records the audit entry,
+     returns [38;5;153m{userId, username}[39m → memo updated → handler logs the result.
+  3. [1mReload / other page[0m — first consumer calls [38;5;153mAuth.getUser()[39m → [38;5;153mGET /me[39m carries the cookie → [38;5;153m{userId, username}[39m or [38;5;153m401[39m
+     → memo updated → all waiting consumers resolve.
+  4. [1mLogout[0m — [38;5;153mPOST /logout[39m → server clears the session → memo reset to [38;5;153mnull[39m.
+
+  Cache lifetime is exactly the page's lifetime. Nothing is written to [38;5;153mlocalStorage[39m, [38;5;153msessionStorage[39m, or a readable
+  cookie — which is what keeps the stale-identity failure from section 1's alternative off the table entirely.
+
+  Does this look right so far? Next sections are the backend contract (including one cross-origin wrinkle I want to
+  flag), error handling, and testing + tooling.
+
+[38;5;246m✻[39m [38;5;246mWorked for 4m 25s · done 11:46 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

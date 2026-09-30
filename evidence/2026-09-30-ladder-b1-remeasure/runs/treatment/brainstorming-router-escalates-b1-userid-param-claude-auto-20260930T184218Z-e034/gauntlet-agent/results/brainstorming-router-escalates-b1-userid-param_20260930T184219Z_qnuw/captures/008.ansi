@@ -1,0 +1,40 @@
+
+  [1mThe fork:[0m at the moment [38;5;153mlogin[39m is called, there is no user ID anywhere in the app — the form has only
+  username/password, and the ID of "who logged in" is something a real auth API would hand [3mback[0m, not take in. So "add a
+  userId parameter" can mean three materially different things, and they leave the codebase in different shapes.
+
+  - [1mCaller-supplied tracking ID[0m — [38;5;153mlogin(username, password, userId)[39m where [38;5;153muserId[39m is a correlation/trace ID the caller
+    generates (a UUID, a session key) so you can tie this login attempt to other events. Buys you request correlation
+    even for failed logins. Costs: something has to generate it, and it is not the account identity — don't later
+    conflate the two. Cheap to change now, painful once other code starts reading it as an account ID.
+  - [1mAccount identity, returned not passed[0m — no signature change; the identity comes out in the result ([38;5;153m{ success, user,
+[39m    [38;5;153muserId }[39m) and the handler logs it. Buys you the actual "who logged in" answer with no interface change and no caller
+    work. Costs: it only exists after a successful login, so you can't correlate failures. This is the shape a real
+    auth API gives you.
+  - [1mLiteral third parameter, caller passes it[0m — [38;5;153mlogin(username, password, userId)[39m where the handler reads a [38;5;153muserId[39m the
+    form supplies. Buys you exactly what you asked for. Costs: the form doesn't collect one, so this pulls [38;5;153mindex.html[39m
+    into the change too, and asking a not-yet-authenticated user to type their own ID is usually a smell.
+
+  [1mMy recommendation: the second.[0m You said the goal is "track who logged in," and the identity of who logged in is
+  genuinely output, not input — the first and third options both require the caller to already know the answer the login
+  is supposed to produce. If what you actually want is correlating attempts across logs, the first is right and I'd
+  take it instead.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhat should `userId` actually represent in the login flow?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturn it, don't pass it (Recommended)[39m
+     [38;5;246mNo signature change. login() returns { success, user, userId } and the submit handler logs it. Matches how a real [39m
+     [38;5;246mauth API works: identity is the output of login, not an input.[39m
+  [38;5;246m2.[39m Caller-supplied tracking ID
+     [38;5;246mlogin(username, password, userId) where userId is a correlation/trace ID generated per attempt, so failed logins [39m
+     [38;5;246mare traceable too. Not the account identity.[39m
+  [38;5;246m3.[39m Third param from the form
+     [38;5;246mlogin(username, password, userId) with a new userId field added to index.html for the user to supply. Literally [39m
+     [38;5;246mwhat was asked, but touches the form and asks the user for an ID pre-auth.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

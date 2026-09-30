@@ -1,0 +1,40 @@
+  [1mClassification: bounded[0m — one existing function, one existing call site, no new structure. So I'll present a short
+  design in chat rather than write a spec. One caveat: if "track who logged in" turns out to mean a real tracking
+  subsystem (analytics events, a persisted log), that's new structure and I'll stop and re-classify as architectural.
+
+  Two things are genuinely ambiguous, so I'll take them one at a time.
+
+  [1mFirst: what does "track" mean here?[0m This decides whether we stay bounded. The fork is whether the userId just travels
+  through the existing code, or whether something new receives it. Threading it through is a five-minute change you can
+  redo freely; a tracking module is a new dependency and a new interface that later code will build on, so it's
+  expensive to unwind.
+
+  - [3mConsole log + return value[0m — userId appears in the existing [38;5;153mconsole.log[39m and in the returned object. Nothing new;
+    still bounded.
+  - [3mSend to the API[0m — userId goes into the (currently stubbed) POST body to [38;5;153mAPI_ENDPOINT[39m. Small, but it defines part of
+    a request contract with a server.
+  - [3mA tracking module[0m — a new [38;5;153mtrack()[39m/analytics layer that login calls. This is a new subsystem; I'd re-classify as
+    architectural and we'd do the full spec flow.
+
+  My recommendation is the first. The function is a stub that doesn't call anything yet, so the honest minimal change is
+  to make userId visible where the existing output already goes — and it doesn't commit you to a request contract or a
+  module boundary before there's real code behind either.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Track scope [39m[49m
+
+[1m[38;5;231mWhat should "track who logged in" actually do with the userId?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mConsole log + return (Recommended)[39m
+     [38;5;246muserId is included in the existing console.log line and in login's return object. No new files or layers; stays a [39m
+     [38;5;246mbounded change.[39m
+  [38;5;246m2.[39m Include in API request
+     [38;5;246muserId is added to the payload the stubbed POST to API_ENDPOINT would send. Defines part of a request contract with
+[39m     [38;5;246mthe server.[39m
+  [38;5;246m3.[39m New tracking module
+     [38;5;246mA dedicated analytics/tracking layer that login calls. New subsystem — I would stop and re-classify this as [39m
+     [38;5;246marchitectural and write a spec first.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

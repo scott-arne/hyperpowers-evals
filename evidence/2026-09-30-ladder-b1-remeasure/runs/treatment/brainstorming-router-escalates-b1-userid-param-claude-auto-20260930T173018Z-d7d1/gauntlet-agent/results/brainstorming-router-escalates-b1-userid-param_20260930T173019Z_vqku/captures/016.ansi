@@ -1,0 +1,40 @@
+  [3mComplexity: moderate.[0m
+
+  [1mC. Identity store plus a login event and a separate tracking subscriber[0m
+  As A, but [38;5;153mlogin[39m dispatches [38;5;153mCustomEvent('auth:login', { detail: { userId, correlationId } })[39m and a separate [38;5;153mtracking.js
+[39m  subscribes. Tracking's destination can change without touching login.
+  [3mTrades:[0m the cleanest separation between "who is logged in" and "what we do about it", and it enforces the
+  correlation-vs-auth split in the payload. But it's an extra file and a layer of indirection for an app whose tracking
+  is currently one [38;5;153mconsole.log[39m. Over-built unless tracking becomes real.
+  [3mComplexity: moderate.[0m
+
+  [1mI recommend A.[0m The repo has no build, no dev server, no tests, no dependencies — A is the only option that doesn't
+  change how you develop. More importantly, the expensive-to-reverse decisions here are the [3mstorage[0m ones (which keys,
+  which store, what clears when), and A centralizes those identically to B and C. Module format and eventing can both be
+  retrofitted later without redoing them; that makes A the YAGNI-correct starting point rather than a corner.
+
+  Two things I'd flag before you pick:
+
+  - [1mC's value hinges on a question I haven't asked[0m — where tracking actually sends data. If the answer is "console for
+    now, an analytics endpoint later," C earns its keep. If it's "console, permanently," C is scaffolding for nothing.
+    I'll make that section 2 of the design.
+  - [1mWith no server, [38;5;153mlogin[39m has to invent the auth id.[0m It'll be a generated value marked explicitly as a placeholder,
+    sitting exactly where a server-issued id will later land. That's the seam.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Approach [39m[49m ☐ Tracking dest  ✔ Submit  →
+
+[1m[38;5;231mWhich approach should the design follow?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: global identity.js (Recommended)[39m
+     [38;5;246mOne new file, one script tag per page, all storage centralized behind it. No change to how you develop. Module [39m
+     [38;5;246mformat and eventing stay cheap retrofits.[39m
+  [38;5;246m2.[39m C: store + login event
+     [38;5;246mA plus a CustomEvent and a separate tracking.js subscriber. Worth it if tracking will really go somewhere; [39m
+     [38;5;246mscaffolding if it stays a console.log.[39m
+  [38;5;246m3.[39m B: ES modules
+     [38;5;246mProper import graph and no globals, but requires serving over HTTP to develop and un-globals app.js's functions.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · Tab/Arrow keys to navigate · Esc to cancel[39m

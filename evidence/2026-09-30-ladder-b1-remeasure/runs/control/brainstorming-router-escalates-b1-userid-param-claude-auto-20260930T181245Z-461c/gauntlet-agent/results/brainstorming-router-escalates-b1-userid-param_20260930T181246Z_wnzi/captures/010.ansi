@@ -1,0 +1,40 @@
+  be changing isn't already here to read, which puts it on the full path: questions, approaches, a spec, then a plan.
+
+  If you think I'm overweighting this and you just want the signature changed with a caller passing something you'll
+  wire up later, say so and I'll drop to bounded — a short design in chat and done.
+
+  Assuming architectural, the first fork:
+
+  [1mThe fork:[0m where does [38;5;153muserId[39m come from? Nothing in the repo produces one today, so this decides whether the change is
+  confined to [38;5;153mapp.js[39m or pulls in a server contract.
+
+  - [1mServer returns it on login[0m — the honest shape for real auth: [38;5;153mlogin[39m POSTs to [38;5;153mAPI_ENDPOINT[39m, and the response carries
+    the userId. Buys you an identifier the client can't forge. Costs: [38;5;153mlogin[39m becomes async, the stub has to become a real
+    fetch (or a fakeable one), and every caller changes. Hard to change later — it sets the function's return contract.
+  - [1mCaller passes it in[0m — literally what you asked for: a third parameter. Buys a one-file change. Costs: the submit
+    handler has nothing to pass, so you'd hand it the username or a placeholder, which makes the parameter decorative
+    until something real fills it. Cheap to change later.
+  - [1mClient generates it[0m — a UUID minted at submit, stored locally. Buys per-device tracking with no server work. Costs:
+    it tracks a browser, not a person — it won't answer "who logged in." Cheap to change later.
+
+  [1mMy recommendation: server returns it.[0m "Track who logged in" is a claim about a person's identity, and only the server
+  knows that. The other two produce a [38;5;153muserId[39m that is either the username again or a device tag — you'd ship the
+  parameter and still not have the answer you wanted. The cost is that [38;5;153mlogin[39m has to stop being a stub, which is real
+  work but is work this feature implies either way.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m←  ☒ userId source  ☒ Tracking sink [38;5;16m[48;5;153m ✔ Submit [38;5;246m[49m →[39m
+
+[1m[38;5;231mReview your answers[0m
+
+ ● Where should the userId come from?
+   [38;5;114m→ Server returns it (Recommended)[39m
+ ● What should "track" actually do with it?
+   [38;5;114m→ Send to an analytics endpoint[39m
+
+[38;5;246mReady to submit your answers?[39m
+
+[38;5;153m❯[39m [38;5;246m1. [38;5;153mSubmit answers[39m
+  [38;5;246m2. [39mCancel
+
+

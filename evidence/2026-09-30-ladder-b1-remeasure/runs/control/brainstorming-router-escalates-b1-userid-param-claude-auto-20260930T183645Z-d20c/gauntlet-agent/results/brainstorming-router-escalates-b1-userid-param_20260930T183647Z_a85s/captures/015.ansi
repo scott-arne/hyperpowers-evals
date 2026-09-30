@@ -1,0 +1,40 @@
+  [1mA. Global namespace script ([38;5;153msession.js[39m) — recommended.[0m A new [38;5;153msession.js[39m defines one global, [38;5;153mAppSession[39m, with [38;5;153msetUser()
+[39m  / [38;5;153mgetUser()[39m / [38;5;153mclear()[39m, backed by [38;5;153msessionStorage[39m and read-through on every [38;5;153mgetUser()[39m (no in-memory cache, so two
+  scripts on a page can't disagree). Every page adds one [38;5;153m<script src="session.js">[39m before its own script. [3mBuys:[0m works
+  today, under [38;5;153mfile://[39m as well as a server; zero infrastructure; the idiomatic pattern for a no-build multi-page static
+  site. [3mCosts:[0m a global, and load-order discipline — a page that forgets the tag fails at runtime, not at build.
+  [3mComplexity: trivial.[0m
+
+  [1mB. ES modules.[0m [38;5;153msession.js[39m exports named functions; [38;5;153mindex.html[39m becomes [38;5;153m<script type="module" src="app.js">[39m and [38;5;153mapp.js[39m
+  imports from it. [3mBuys:[0m real module boundaries, no global, explicit dependencies, and it's the same syntax as a bundler
+  later. [3mCosts:[0m modules are fetched with CORS, so opening [38;5;153mindex.html[39m from disk stops working — you'd need a local http
+  server from then on. Also switches scripts to deferred execution. [3mComplexity: trivial-to-moderate,[0m almost all of it in
+  the workflow change, not the code. [3mThis wins if you already serve the app over http and never open the file directly.[0m
+
+  [1mC. Bundler + shared module with [38;5;153msrc/[39m.[0m Add npm tooling (esbuild or similar) and make one module that both the browser
+  app and the CommonJS [38;5;153msrc/[39m tree consume. [3mBuys:[0m one module world instead of today's two. [3mCosts:[0m a build step, a
+  dependency tree, and a watch/rebuild loop for a six-file static page. [3mComplexity: high.[0m I'd rule this out — nothing in
+  the request needs browser/Node code sharing, and YAGNI says don't buy a build system for one store.
+
+  [1mMy recommendation: A.[0m It satisfies every constraint you set with the least machinery, and the upgrade path to B is
+  mechanical — convert the functions to exports and add [38;5;153mtype="module"[39m — so choosing A now doesn't cost you B later. I'd
+  only lead with B if the file-protocol tradeoff is a non-issue for you.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhich approach should the design use?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mA: global namespace (Recommended)[39m
+     [38;5;246msession.js defines a global AppSession, loaded via a script tag on each page. Works under file:// and http, zero [39m
+     [38;5;246minfrastructure, easy to convert to modules later.[39m
+  [38;5;246m2.[39m B: ES modules
+     [38;5;246mNamed exports plus type="module". Cleaner boundaries and no global, but the app must then be served over http; [39m
+     [38;5;246mopening index.html from disk stops working.[39m
+  [38;5;246m3.[39m C: bundler + shared module
+     [38;5;246mAdd npm build tooling and share one module with the CommonJS src/ tree. I recommend against this; nothing here [39m
+     [38;5;246mneeds browser/Node code sharing.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

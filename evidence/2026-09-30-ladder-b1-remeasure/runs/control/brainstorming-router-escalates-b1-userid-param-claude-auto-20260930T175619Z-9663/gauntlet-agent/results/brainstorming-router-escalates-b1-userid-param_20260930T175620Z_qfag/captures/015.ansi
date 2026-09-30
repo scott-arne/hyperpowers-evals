@@ -1,0 +1,40 @@
+  client-set because [38;5;153mkeepalive[39m requests can arrive late, making receipt time unreliable. I deliberately left out an
+  idempotency key — with fire-and-forget and no retry there are no duplicates to guard against.
+
+  [1mTwo calls, not one.[0m [38;5;153mlogin_succeeded[39m carries the [38;5;153muserId[39m; [38;5;153mlogin_failed[39m carries [38;5;153muserId: null[39m plus the attempted username.
+  The failed case is why identity is nullable throughout.
+
+  [1mTwo judgment calls I made rather than asked about[0m — push back on either:
+
+  1. [1mThe tracking calls go inside [38;5;153mlogin[39m, not in the submit handler.[0m Your requirement is "every login is recorded," and
+     putting it in the handler makes that depend on each caller remembering. The cost is that [38;5;153mlogin[39m is no longer purely
+     authentication.
+  2. [1m[38;5;153mlogin[39m stays synchronous.[0m It's still a stub with a [38;5;153mTODO[39m for the real API POST. Making it async is an auth-flow
+     change, and tracking doesn't need it — [38;5;153mtrack[39m is never awaited. Worth doing when the real endpoint lands, but not
+     this change.
+
+  [1mOne assumption you should check.[0m [38;5;153mlogin[39m currently returns [38;5;153m{ success, user }[39m with no user id anywhere in the client. For
+  the flow to work, the stub's return has to gain a [38;5;153muserId[39m field standing in for what the real auth response would
+  carry. That's invented data until the backend exists — the tracking pipeline will be real and testable, but what it
+  reports is a placeholder until both endpoints are built.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Section 1 [39m[49m
+
+[1m[38;5;231mDoes section 1 (interface, wire contract, call placement) look right?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mLooks right — continue[39m
+     [38;5;246mApprove the three-function interface, the nullable-identity event envelope, tracking calls inside login, and login
+[39m     [38;5;246mstaying synchronous. I'll move to error handling, testing, and tooling.[39m
+  [38;5;246m2.[39m Move tracking out of login
+     [38;5;246mKeep login as pure authentication and put identify/track in the form submit handler instead, accepting that future
+[39m     [38;5;246mcallers must opt in themselves.[39m
+  [38;5;246m3.[39m Make login async now
+     [38;5;246mConvert login to async and return a promise as part of this change, so the real API POST slots in later without [39m
+     [38;5;246mtouching call sites again.[39m
+  [38;5;246m4.[39m Something else needs changing
+     [38;5;246mTell me what's wrong with the interface, the wire format, or the assumptions and I'll revise before going further.[39m
+  [38;5;246m5. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

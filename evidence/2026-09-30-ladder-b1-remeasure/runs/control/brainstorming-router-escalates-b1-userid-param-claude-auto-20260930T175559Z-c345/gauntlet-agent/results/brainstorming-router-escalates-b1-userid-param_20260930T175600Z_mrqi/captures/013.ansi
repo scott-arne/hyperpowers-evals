@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m One more question before I lay out approaches.
+
+  [1mThe fork:[0m whether tracking covers only successful logins or also failures changes the module's contract, because a
+  failed login has no [38;5;153muserId[39m to report — the whole point of the identifier you chose. Supporting failures means the
+  event schema has a nullable identity and the module can't assume one. That's a data-model decision, awkward to
+  retrofit once events are being emitted and consumed.
+
+  - [1mSuccesses only[0m — buys you the simplest schema: every event has a real [38;5;153muserId[39m, no null cases, no branching. Costs:
+    you learn nothing about failed attempts, which is usually the signal people actually want from login tracking.
+    Adding failures later means widening the schema and revisiting any consumer.
+  - [1mSuccesses and failures[0m — buys you the security-relevant half (repeated failures, unknown usernames) and matches what
+    "track who logged in" tends to mean in practice. Costs: identity is nullable, you need a failure-reason field, and
+    you must be careful never to put the submitted password anywhere near an event.
+  - [1mEvery attempt, including client-side validation rejects[0m — also captures the [38;5;153mvalidateForm[39m bail at [38;5;153mapp.js:26[39m. Buys you
+    complete funnel visibility. Costs: noisy events that mostly reflect typos, and a third event shape.
+
+  [1mMy recommendation: successes and failures, excluding validation rejects.[0m The nullable identity is a small cost paid
+  once at design time, and a tracker blind to failed logins answers the least interesting version of your question.
+  Validation rejects never reached auth, so they belong to form analytics, not login tracking.
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Event scope [39m[49m
+
+[1m[38;5;231mWhich login events should the tracking module emit?[0m
+
+[38;5;153m❯[38;5;246m 1.[1m[38;5;153m Success + failure [0m           [38;5;246m┌──────────────────────────────────────────────────────────────┐[39m
+    [1m[38;5;153m(Recommended)[0m                 [38;5;246m│ [39mtrack("login.success", { userId, username });[38;5;246m                │[39m
+ [38;5;246m 2.[39m Successes only               [38;5;246m│ [39mtrack("login.failure", { userId: null, username, reason });[38;5;246m  │[39m
+ [38;5;246m 3.[39m Every attempt                [38;5;246m│                                                              │[39m
+                                  [38;5;246m│ [39m// schema: userId is nullable[38;5;246m                                │[39m
+                                  [38;5;246m│ [39m// never include password in any payload[38;5;246m                     │[39m
+                                  [38;5;246m└──────────────────────────────────────────────────────────────┘[39m
+
+                                  [38;5;153mNotes:[39m [3m[38;5;246mpress n to add notes[0m
+
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · n to add notes · Esc to cancel[39m

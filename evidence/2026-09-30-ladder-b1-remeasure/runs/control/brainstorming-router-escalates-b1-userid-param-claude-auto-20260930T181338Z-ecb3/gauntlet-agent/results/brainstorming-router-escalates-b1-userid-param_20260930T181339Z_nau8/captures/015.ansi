@@ -1,0 +1,40 @@
+    doesn't exist, so nothing works end-to-end until a backend does; needs error/network handling now.
+  - [1mAsync signature, stubbed body[0m — [38;5;153mlogin()[39m is [38;5;153masync[39m and returns a synthesized userId without a network call, with the
+    [38;5;153mfetch[39m dropped in later. Buys: the contagious part of the decision is paid once, now, while there's exactly one
+    caller; swapping the body later touches only [38;5;153mlogin()[39m. Costs: slightly odd-looking async function with no await in it
+    today.
+
+  [1mMy recommendation: the third.[0m The expensive, repo-wide part of this choice is the async signature, not the fetch;
+  making it async now while there's a single caller costs one line, and doing it after you've added the other forms
+  costs all of them.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should login() produce the userId, given the API is a stub? → Async signature, stub body (Recommended)[39m
+
+[38;5;231m⏺[39m Last clarifying question before I present the design — what the session module actually needs to do. I want to YAGNI
+  this hard rather than build a speculative auth layer, so I'd rather you tell me than guess.
+
+  Minimum to satisfy what you've described is store-on-login plus read-from-anywhere. Everything beyond that is real
+  work and real edge cases: a clear/logout path needs a UI affordance to trigger it, expiry needs a timestamp and a
+  staleness rule on every read, and cross-tab sync needs a [38;5;153mstorage[39m event listener. Each is cheap to add later on top of
+  a clean module — none of them changes the interface the other forms use, which is why I'm comfortable leaving them out
+  now.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Session scope [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhich capabilities should the session module have in this first pass?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;114m[✔][39m [38;5;153mStore + read userId[39m
+         [38;5;246mThe minimum: save userId on successful login, read it from any form. Recommended as the whole first pass.[39m
+  [38;5;246m2.[39m [ ] Clear / logout
+         [38;5;246mA clearSession() plus a logout control in the UI to call it.[39m
+  [38;5;246m3.[39m [ ] Expiry
+         [38;5;246mStore a timestamp and treat the session as absent past a max age.[39m
+  [38;5;246m4.[39m [ ] Cross-tab sync
+         [38;5;246mListen for the storage event so other open tabs react to login/logout.[39m
+  [38;5;246m5. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  6. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

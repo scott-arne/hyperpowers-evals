@@ -1,0 +1,40 @@
+  Context I found:
+  - [38;5;153mapp.js:4[39m — [38;5;153mlogin(username, password)[39m is a stub that logs and returns [38;5;153m{ success: true, user: username }[39m. No real API
+    call.
+  - [38;5;153mapp.js:23[39m — the only call site, inside the form submit handler.
+  - [38;5;153mindex.html[39m has only [38;5;153musername[39m and [38;5;153mpassword[39m inputs. [1mThere is no [38;5;153muserId[39m anywhere in the repo[0m, and no test
+    infrastructure ([38;5;153mpackage.json[39m has no test script).
+
+  That's the one thing I need from you before designing. The fork: [38;5;153mlogin()[39m gets a [38;5;153muserId[39m parameter, but the only caller
+  has nothing to pass it — so the answer determines whether this stays a one-line signature change or pulls in a new
+  source of identity.
+
+  - [1mClient generates it[0m — the submit handler creates an id (e.g. [38;5;153mcrypto.randomUUID()[39m) and passes it in. Buys you a
+    correlation id for this login attempt today, with no backend dependency. Costs: it identifies the [3mattempt[0m, not the
+    person — two logins from the same human get different ids. Cheap to change later.
+  - [1mComes from the server[0m — the real account id, which only the API knows. That means [38;5;153mlogin()[39m can't take it as an input;
+    it would come back in the response instead. Rules out the parameter shape you asked for, and is the expensive one
+    to get wrong, since anything you log against the client-side id would have to be re-keyed.
+  - [1mCaller supplies it, source TBD[0m — add the parameter, thread it through as optional, leave the call site passing [38;5;153mnull[39m
+    until something upstream produces one. Buys an unblocked signature; costs a parameter that is dead on arrival.
+
+  My recommendation is the first one, given this is a stub with no backend: a client-generated id is the only option
+  that actually works end-to-end today, and it's trivial to swap for a server id once the API is real.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId passed to login() come from?[0m
+
+  [38;5;246m1.[39m Client-generated (Recommended)
+     [38;5;246mSubmit handler generates an id (crypto.randomUUID()) and passes it to login(). Works today with no backend; [39m
+     [38;5;246midentifies the login attempt, not the person.[39m
+  [38;5;246m2.[39m From the server response
+     [38;5;246mThe real account id comes back from the API, so it is a return value rather than a parameter. Changes the shape of
+[39m     [38;5;246mthe ask.[39m
+  [38;5;246m3.[39m Optional param, source TBD
+     [38;5;246mAdd userId as an optional parameter, call site passes null for now until something upstream produces one.[39m
+[38;5;153m❯[39m [38;5;246m4. [7m[39mT[0;2mype something.[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m

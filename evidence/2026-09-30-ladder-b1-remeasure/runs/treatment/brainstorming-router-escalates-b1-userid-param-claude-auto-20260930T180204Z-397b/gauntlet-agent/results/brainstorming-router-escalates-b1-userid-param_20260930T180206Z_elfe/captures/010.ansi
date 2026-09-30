@@ -1,0 +1,40 @@
+  The recommendation itself stands — [38;5;153mlogin[39m returns the userId. What's new is that something has to hold it afterward.
+
+  First question, and it sets the module's whole shape.
+
+  [1mThe fork:[0m what future consumers do with the userId determines what we're building. If they only ever [3mreport[0m it, this
+  is an observability helper and nothing depends on it being correct. If they [3muse[0m it — prefill a field, decide what to
+  show, attach it to an API call — it becomes app state with a lifecycle, and stale or absent values become bugs.
+
+  - [1mReporting only[0m — consumers read it to tag logs/analytics. Buys the simplest thing: a tiny module, a getter, no
+    invalidation story needed. Costs: if a form later needs it for real, you rebuild. Cheap to change now, annoying
+    later.
+  - [1mShared app state[0m — consumers read it to drive behavior. Buys a real session module: set on login, cleared on logout,
+    a defined answer for "not logged in yet." Costs: more design now (the logout/expiry story is the bulk of it). This
+    is the one that's expensive to retrofit.
+  - [1mSent to the server[0m — consumers attach it to outgoing requests. Buys request attribution. Costs: it becomes an
+    interface the backend depends on, and a client-held identifier the server trusts is a security question, not just a
+    plumbing one — I'd want to name that explicitly in the spec.
+
+  [1mMy recommendation: shared app state.[0m You said other forms will need it, which is consumers reading it to do something,
+  not just to log it. Designing the store as reporting-only and discovering in three weeks that a form needs a
+  trustworthy value is the rework this question exists to avoid — and the extra cost today is mostly just deciding when
+  the value goes away.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☐ Consumer use [39m[49m ✔ Submit  →
+
+[1m[38;5;231mWhat will the other forms actually do with the userId?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [ ] [38;5;153mShared app state (Recommended)[39m
+         [38;5;246mForms read it to drive behavior — prefill, show/hide, branch logic. Needs a session module with a defined [39m
+         [38;5;246mlifecycle.[39m
+  [38;5;246m2.[39m [ ] Reporting only
+         [38;5;246mForms read it only to tag logs or analytics. Simplest module; nothing breaks if it's stale.[39m
+  [38;5;246m3.[39m [ ] Sent to the server
+         [38;5;246mForms attach it to outgoing API requests. Becomes a backend-facing interface with a trust question attached.[39m
+  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+     [1mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

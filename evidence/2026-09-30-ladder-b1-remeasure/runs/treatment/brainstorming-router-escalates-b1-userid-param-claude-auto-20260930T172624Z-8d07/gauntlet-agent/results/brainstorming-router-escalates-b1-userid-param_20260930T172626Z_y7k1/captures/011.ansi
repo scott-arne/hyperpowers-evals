@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m [38;5;153mpackage.json[39m has no scripts, no dependencies, and no test runner; there's no linter or build step. [38;5;153msrc/[39m is CommonJS
+  Node and unrelated to the login path — [38;5;153mapp.js[39m is plain browser globals loaded by a [38;5;153m<script>[39m tag. So the storage code
+  has to work as a browser global with no module system, and there is currently no way to test it. I'll fold a tooling
+  question into the design section.
+
+  Next clarifying question.
+
+  [1mThe fork:[0m what [38;5;153mlogin[39m receives when [38;5;153mlocalStorage[39m isn't usable. This is not a corner case here — the app is a bare
+  [38;5;153mindex.html[39m, so it will often be opened over [38;5;153mfile://[39m, and private-browsing modes and storage-disabled settings both
+  make [38;5;153mlocalStorage[39m access throw rather than return null. Whatever I pick becomes the value analysis sees.
+
+  - [1mIn-memory fallback[0m — generate a UUID for the page session and use it. [38;5;153mlogin[39m always gets a well-formed ID, nothing
+    branches. Cost: the ID [3mlooks[0m persistent but isn't, so any "how many attempts from returning browsers" question
+    silently counts these as new browsers every time. The corruption is invisible.
+  - [1mExplicit [38;5;153mnull[0m — pass [38;5;153mnull[39m and let consumers see that no durable ID was available. Honest data; costs a null branch
+    in [38;5;153mlogin[39m and in anything downstream. Hard to change later once consumers assume non-null.
+  - [1mBlock login[0m — don't call [38;5;153mlogin[39m without an ID. I'd rule this out: never fail authentication because a tracking
+    identifier is unavailable.
+
+  My recommendation is [1mexplicit [38;5;153mnull[0m. The whole point of the persistent choice was linking attempts across page loads;
+  an in-memory ID quietly claims to do that and doesn't, and silently wrong analytics is worse than a visible gap. It
+  also keeps the privacy posture clean — no ID gets invented for users who've deliberately disabled storage.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Storage fallback [39m[49m
+
+[2m│[0m [1m[38;5;231mWhat should login() receive when localStorage is unavailable (file://, private browsing, storage disabled)?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mExplicit null (Recommended)[39m
+     [38;5;246mPass null so consumers can tell no durable ID existed. Honest data; costs a null branch downstream.[39m
+  [38;5;246m2.[39m In-memory session ID
+     [38;5;246mGenerate a per-page-load UUID. login() always gets an ID, but it silently looks persistent when it isn't, skewing [39m
+     [38;5;246mreturning-browser analysis.[39m
+  [38;5;246m3.[39m Block the login attempt
+     [38;5;246mRefuse to call login() without an ID. I recommend against this — it fails auth over telemetry.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

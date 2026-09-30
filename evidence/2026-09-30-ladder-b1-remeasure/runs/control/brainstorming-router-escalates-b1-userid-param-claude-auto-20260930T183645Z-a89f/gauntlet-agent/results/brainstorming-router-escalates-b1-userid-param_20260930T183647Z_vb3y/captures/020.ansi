@@ -1,0 +1,40 @@
+    crashed handler.
+  - [3mCorrupt or absent stored JSON.[0m [38;5;153mgetSession()[39m returns [38;5;153mnull[39m for "nothing stored" and, on a [38;5;153mJSON.parse[39m failure, clears
+    the bad key and also returns [38;5;153mnull[39m. Callers get one answer to "am I logged in" and never see a parse exception.
+  - [3mAuth failure.[0m The shape exists ([38;5;153m{ ok: false, error }[39m) though the stub never produces it. Step 4 above is the path,
+    so real auth doesn't arrive to find no handling.
+
+  Reporting stays on [38;5;153mconsole.log[39m/[38;5;153mconsole.error[39m, matching what [38;5;153mapp.js[39m does today — you didn't ask for UI changes, and
+  inventing an error banner is scope I shouldn't take.
+
+  [1mTesting[0m — Node's built-in runner, [38;5;153mnode --test[39m, plus [38;5;153m"scripts": { "test": "node --test" }[39m. Zero dependencies, nothing
+  to install, which keeps the repo's dependency-free character.
+
+  [38;5;153msession.js[39m reads [38;5;153mglobalThis.sessionStorage[39m [3minside[0m each function rather than capturing it at import. That's one small
+  deliberate choice: tests can install a fake storage object on [38;5;153mglobalThis[39m with no dependency-injection plumbing in the
+  production code, and it's the same seam that later lets you swap to [38;5;153mlocalStorage[39m.
+
+  Planned cases: round-trip save → [38;5;153mgetUserId[39m; [38;5;153mgetUserId[39m with nothing stored → [38;5;153mnull[39m; corrupt JSON → [38;5;153mnull[39m [1mand[0m key cleared;
+  [38;5;153mclearSession[39m removes the key; write failure → returns [38;5;153mfalse[39m, doesn't throw; stub [38;5;153mlogin[39m returns the same id twice for
+  one username and different ids across usernames; [38;5;153mvalidateForm[39m rejects each missing field.
+
+  [1mHonest limit:[0m the submit handler itself gets no automated coverage — it needs a DOM, and you declined end-to-end
+  tests. Everything it calls is covered; the wiring between them is verified by hand.
+
+  [1mFiles touched:[0m [38;5;153mauth.js[39m (new), [38;5;153msession.js[39m (new), [38;5;153msession.test.js[39m + [38;5;153mauth.test.js[39m (new), [38;5;153mapp.js[39m (rewritten as wiring),
+  [38;5;153mindex.html[39m (one line: [38;5;153mtype="module"[39m), [38;5;153mpackage.json[39m ([38;5;153m"type"[39m + test script), [38;5;153msrc/package.json[39m (new, two lines).
+  [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are not edited.
+
+  [1mServing requirement:[0m once [38;5;153mapp.js[39m is a module, [38;5;153mfile://[39m stops working — the page needs [38;5;153mpython3 -m http.server[39m or
+  equivalent. I'd add one line to [38;5;153mREADME.md[39m saying so; tell me if you'd rather I leave the README alone.
+
+  Does section 2 look right? If so I'll write the spec to
+  [38;5;153mdocs/hyperpowers/specs/2026-09-30-login-user-identity-design.md[39m, run it through the Codex spec gate, and hand it to
+  you for review before any code gets written.
+
+[38;5;246m✻[39m [38;5;246mChurned for 35s · done 11:45 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

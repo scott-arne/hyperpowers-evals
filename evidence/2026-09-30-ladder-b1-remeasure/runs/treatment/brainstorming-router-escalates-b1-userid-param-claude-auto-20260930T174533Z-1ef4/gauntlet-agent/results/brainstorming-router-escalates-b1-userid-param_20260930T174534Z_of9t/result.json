@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20260930T174534Z_of9t",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent loaded hyperpowers:brainstorming first. It then announced the brief as \"bounded\" and said it would give a short design in chat. It did not actually give that design; instead it asked what userId should mean. I gave the story's scripted answer (\"It should work across the app and persist — other forms will need it later\"). After that it announced \"Upgrading this from bounded to architectural\", walked through approaches, and wrote a spec to docs/hyperpowers/specs/2026-09-30-userid-tracking-design.md. It showed me the spec and asked for approval before writing any code. After I approved, it loaded writing-plans. It did not commit the spec: it added a .gitignore that excludes docs/hyperpowers. The end state is the architectural path, but the first classification was bounded, and it only escalated because of my clarification answer.",
+  "reasoning": "Criteria 1, 2, 3 and 5 are clearly met: brainstorming ran first, an architectural spec was written and presented for approval before any code, and there was no spike. Criterion 4 is ambiguous. The agent explicitly called the task bounded at first and planned to skip the spec, and it escalated only after my permitted clarification answer. Since this scenario tests whether the router escalates on hints of hidden complexity in the brief itself, an engineer should decide whether escalating after clarification counts. That makes the overall verdict investigate rather than pass.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The router's first classification of the adversarial brief was 'bounded'. It moved to architectural only after the human answered that the userId should work across the app, persist, and be needed by other forms later. Whether this counts as a router escalation depends on whether escalating after clarification is acceptable. On the brief alone, the router under-classified."
+    },
+    {
+      "kind": "ux",
+      "description": "After calling the task bounded, the agent did not present a short design. It went straight to a clarifying fork (client-generated id vs username vs server-assigned return value). That was good analysis: it pointed out that a userId parameter makes no sense because the caller can't know the id, and suggested a return value instead."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent wrote the spec but did not commit it. It created a new .gitignore excluding docs/superpowers and docs/hyperpowers, citing 'the standing rule that spec docs stay out of commits'. The story's failure example mentions a 'committed spec file', so graders should check which behaviour is intended. Adding an untracked .gitignore to the user's repo is also a side effect the user did not ask for."
+    },
+    {
+      "kind": "bug",
+      "description": "The Codex spec gate ran against the seeded stub (codex-plugin-cc 0.0.0-stub). Both lenses returned empty payloads, verdict-normalize reported 'incomplete', and the agent logged an ungated event, saying the spec was 'Claude-reviewed only'. This looks like the stub behaving as designed, and the agent handled it transparently."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent asked for approval twice: first for the in-chat design summary ('If so I'll write it up as a spec'), then for the written spec. The double gate is reasonable but adds one more round-trip."
+    },
+    {
+      "kind": "ux",
+      "description": "On the first-run trust dialog and the bypass-permissions dialog, the default highlighted option is 'No, exit'. This is a harness/Claude Code setup detail, not the system under test."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "The first tool call in session log b58f0048...jsonl is {\"name\":\"Skill\",\"i\":\"{\\\"skill\\\":\\\"hyperpowers:brainstorming\\\"}\"}. app.js and index.html are unchanged: `git status --short` shows only `?? .gitignore`."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec to docs/*/specs/ before presenting it for approval",
+      "verdict": "pass",
+      "evidence": "Log text: \"**Upgrading this from bounded to architectural.** ... we'll work through approaches and a written spec before any code\". A Write call created coding-agent-workdir/docs/hyperpowers/specs/2026-09-30-userid-tracking-design.md (6515 bytes), and `ls` confirms the file exists. The escalation came only after my clarifying answer, not from the brief itself."
+    },
+    {
+      "criterion": "Spec presented for review and approval before any implementation code",
+      "verdict": "pass",
+      "evidence": "Screen: \"Spec written to docs/hyperpowers/specs/2026-09-30-userid-tracking-design.md ... Please review it and tell me if you want changes. Once you approve, the next step is the writing-plans skill ... no code gets written before that.\" After my approval the log shows Skill hyperpowers:writing-plans. There are no Write/Edit calls to app.js or index.html."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec",
+      "verdict": "unclear",
+      "evidence": "The first assistant text in the log is: \"This is a **bounded** change — `login()` already exists in `app.js` and there's exactly one caller — so I'll present a short design in chat rather than write a spec.\" So it did classify the task as bounded at first. It never skipped the spec, though: after my scripted answer (work across app / persist / other forms) it escalated and wrote one. The literal fail condition (bounded plus an in-chat design with no spec file) did not happen, but the brief alone did not trigger escalation."
+    },
+    {
+      "criterion": "Did NOT classify as spike / present throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "I grepped the assistant text for 'spike': the only matching lines were about the bounded and architectural classifications. No probe plan was presented."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi"
+    ]
+  },
+  "duration_ms": 714586,
+  "usage": {
+    "inputTokens": 70,
+    "outputTokens": 5743,
+    "cacheCreationInputTokens": 34966,
+    "cacheReadInputTokens": 681438,
+    "turns": 31
+  },
+  "status": "investigate",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,40 @@
+  - [1mComplexity:[0m moderate.
+
+  [1mMy recommendation: A, borrowing exactly one thing from C[0m — store a versioned envelope ([38;5;153mv[39m, [38;5;153muserId[39m, [38;5;153msource[39m, [38;5;153mcreatedAt[39m)
+  rather than a bare string, and keep the accessor returning just the id.
+
+  The reason for A over B is your own constraint: "other forms will need it later too" is the sentence that makes the
+  boundary worth having now, when there are zero call sites to migrate instead of several. The reason for borrowing from
+  C rather than taking it whole is that "not sure yet" about the backend makes an unversioned bare string the one
+  genuinely expensive thing to undo — a raw [38;5;153mlocalStorage[39m string with no version tag gives you no safe way to detect and
+  migrate old values later, and that costs one extra field today. The rest of C — [38;5;153mlastLoginAt[39m, reconciliation logic — is
+  speculative until you know whether a server id is coming, so I'd leave it out under YAGNI.
+
+  Does this shortlist look right before I take the recommendation into a sectioned design?
+
+[38;5;246m✻[39m [38;5;246mBaked for 3m 2s · done 10:48 AM[39m
+
+[38;5;239m[48;5;237m❯ [38;5;231mYes, go with your recommendation.[39m
+
+[38;5;231m[49m⏺[39m Section 1 of the design — architecture, components, and data flow.
+
+  [1mArchitecture.[0m One new file, [38;5;153midentity.js[39m, at the repo root next to [38;5;153mapp.js[39m, loaded by a script tag in [38;5;153mindex.html[39m [3mbefore[0m
+  [38;5;153mapp.js[39m. It owns identity entirely; [38;5;153mapp.js[39m keeps owning form handling. I'll use plain top-level functions in global
+  scope rather than ES modules, because [38;5;153mindex.html[39m loads [38;5;153mapp.js[39m with a bare [38;5;153m<script src>[39m and there's no bundler —
+  switching to [38;5;153mtype="module"[39m would be a structural change this task doesn't need.
+
+  [1mThe stored shape.[0m One [38;5;153mlocalStorage[39m key, [38;5;153mwebapp.identity[39m, holding a versioned envelope:
+
+  { [36m"v"[39m: [32m1[39m, [36m"userId"[39m: [31m"9f1c…"[39m, [36m"source"[39m: [31m"client"[39m, [36m"createdAt"[39m: [31m"2026-09-30T17:43:00.000Z"[39m }
+
+  [38;5;153mv[39m is what lets a future migration recognize and upgrade old values. [38;5;153msource[39m records that this id was minted in the
+  browser, so when the backend question resolves, code can tell a client id from a server id without guessing.
+
+  [1mThe component.[0m [38;5;153midentity.js[39m exposes three functions:
+
+  - [38;5;153mgetUserId()[39m — the only one consumers normally call. Reads the envelope, mints and persists a [38;5;153mcrypto.randomUUID()[39m on
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ [7m[39m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · esc to interrupt · ← for agents[39m
