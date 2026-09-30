@@ -209,8 +209,10 @@ GREP_HIT_RE = re.compile(r"(?m)^(?:\S*/)?greet\.test\.js(?::|$)")
 READ_VERBS = frozenset({"cat", "head", "tail", "sed", "awk", "less", "more", "nl", "bat"})
 TEST_FILE_WORD_RE = re.compile(r"\bgreet\.test\.js\b")
 # Commands that run the rest of their words as a command, each with the options
-# whose value is the next word. Other option words are skipped alone, but a long
-# option without `=` may own the next word, so it leaves the command unsettled.
+# whose value is the next word. A short cluster is read letter by letter, so in
+# `-iu me` the value of -u is `me`, and in `-n1` it is `1`. Other option words
+# are skipped alone, but a long option without `=` may own the next word, so it
+# leaves the command unsettled.
 WRAPPERS: dict[str, frozenset[str]] = {
     "env": frozenset({"-u", "-C"}),
     "command": frozenset(),
@@ -1443,9 +1445,12 @@ def simple_commands(command: str) -> list[list[str]] | None:
     whose group or substitution closes before its body, or a newline inside a
     group or substitution while an enclosing line has a heredoc open; ``case``
     or the ``function`` keyword; any other ``(``, as in an array, a process
-    substitution or an extended glob; a shell that reads commands from
-    standard input; a re-read string that is itself unsettled; or nesting too
-    deep to read.
+    substitution or an extended glob; a wrapper's long option without ``=``,
+    or ``env -S``; a shell that reads commands from standard input; a re-read
+    string that is itself unsettled; or nesting too deep to read.
+    :func:`shell_roles` also leaves a command unsettled when a read, grep or
+    ``git`` word sits behind a command word the reader does not know
+    (:func:`hides_verb`).
 
     :param command: A ``Bash`` tool call's command.
     :returns: Each simple command's words, or ``None`` when the command is unsettled.
@@ -1461,7 +1466,9 @@ def command_words(words: list[str]) -> list[str]:
     """A simple command's words from its command word on, past ``NAME=value`` assignments and :data:`WRAPPERS`.
 
     After a wrapper its option words are skipped, with the value of those it
-    lists, and after ``timeout`` its duration too.
+    lists, and after ``timeout`` its duration too. A short option cluster is
+    read letter by letter: the first listed letter takes the letters after it
+    as its value, or the next word when it ends the cluster (``sudo -iu me``).
 
     :param words: The simple command's words.
     :returns: The command word and the words after it, or ``[]`` when there is none.
@@ -1488,7 +1495,14 @@ def command_words(words: list[str]) -> list[str]:
                 raise Unsettled(f"a {name} long option that may take the next word as its value")
             if name == "env" and ENV_SPLIT_RE.match(option):
                 raise Unsettled("env -S, which splits a string into the command it runs")
-            index += 2 if option in valued else 1
+            index += 1
+            if not option.startswith("--"):
+                for place, letter in enumerate(option[1:], 2):
+                    if f"-{letter}" in valued:
+                        # Letters after it are its value; when it ends the cluster, the next word is.
+                        if place == len(option):
+                            index += 1
+                        break
         if name == "timeout":
             index += 1
     return []
@@ -1522,18 +1536,46 @@ def shell_role(words: list[str]) -> str:
     return ""
 
 
+def hides_verb(words: list[str]) -> bool:
+    """Whether a simple command whose role is ``""`` holds a read, grep or ``git`` word that would have a role.
+
+    Its command word may be a wrapper the reader does not know (``stdbuf -oL``)
+    or the value of an option :data:`WRAPPERS` does not list (``sudo -T 10``),
+    so the reader cannot tell whether the shell runs that verb. ``echo`` and
+    ``printf`` print their words and never run them.
+
+    :param words: The simple command's words, as :func:`simple_commands` gives them.
+    :returns: True when a later word, compared by basename, is a read verb, a
+        grep verb or ``git``, and :func:`shell_role` of the words from it on is not ``""``.
+    :raises Unsettled: As :func:`command_words` does.
+    """
+
+    words = command_words(words)
+    if not words or words[0].rsplit("/", 1)[-1] in ("echo", "printf"):
+        return False
+    for place, word in enumerate(words[1:], 1):
+        verb = word.rsplit("/", 1)[-1]
+        if (verb in READ_VERBS or verb in GREP_VERBS or verb == "git") and shell_role(words[place:]):
+            return True
+    return False
+
+
 def shell_roles(command: str) -> list[str] | None:
     """The :func:`shell_role` of each simple command a ``Bash`` command runs, in order.
 
     :param command: A ``Bash`` tool call's command.
-    :returns: The roles, or ``None`` when :func:`simple_commands` cannot settle the command.
+    :returns: The roles, or ``None`` when :func:`simple_commands` cannot settle the
+        command or a simple command whose role is ``""`` :func:`hides_verb`.
     """
 
     commands = simple_commands(command)
     if commands is None:
         return None
     try:
-        return [shell_role(words) for words in commands]
+        roles = [shell_role(words) for words in commands]
+        if any(not role and hides_verb(words) for words, role in zip(commands, roles, strict=True)):
+            return None
+        return roles
     except Unsettled:
         # A redirection target, appended after the words, can reach a wrapper's options here.
         return None
@@ -2936,6 +2978,69 @@ def self_test() -> int:
             ) or note_names(result[2], "shell-read-unparsed", f"controller Bash at {stamp(BASE_EPOCH + 110)}",
                             "could not be parsed", command)
 
+        def wrapper_cluster_commit() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # In `-iu me`, -u is the cluster's last letter, so `me` is its value and git is the command word.
+            command = "sudo -iu me git commit -am 'fix: greet'"
+            call = trial.use(110, "Bash", {"command": command})
+            trial.commit(110, "fix: greet", {"progress.md": "Task 1: gate finding declined.\n"})
+            trial.result(110.5, call, "[feature/plan-execution 1a2b3c4] fix: greet\n 1 file changed")
+            late = trial.use(115, "Read", {"file_path": f"{trial.workdir}/greet.test.js"})
+            trial.result(115.1, late, TEST_SINGLE)
+            trial.say(120, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="no", disposition="refuted", notes=["refuted-by"]) or note_names(
+                result[2], "refuted-by", "controller text", stamp(BASE_EPOCH + 120), "no-bound")
+
+        def wrapper_cluster_read() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            call = trial.use(110, "Bash", {"command": "xargs -0n 1 cat greet.test.js"})
+            trial.result(110.1, call, TEST_SINGLE)
+            trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="yes", disposition="refuted", notes=["refuted-by"]) or note_names(
+                result[2], "refuted-by", "controller text", "no-bound")
+
+        def unknown_wrapper_read_unsettled() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # stdbuf is not a known wrapper, but the read verb behind it would read the file.
+            command = "stdbuf -oL cat greet.test.js"
+            call = trial.use(110, "Bash", {"command": command})
+            trial.result(110.1, call, TEST_SINGLE)
+            trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(
+                result, verified="yes", disposition="refuted", notes=["shell-read-unparsed", "refuted-by"],
+            ) or note_names(result[2], "shell-read-unparsed", f"controller Bash at {stamp(BASE_EPOCH + 110)}",
+                            "could not be parsed", command)
+
+        def echo_prose_not_unsettled() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # echo prints its words and never runs them, so the unquoted cat is prose, not a hidden read.
+            command = "echo next: cat greet.test.js >> progress.md"
+            trial.result(110.1, trial.use(110, "Bash", {"command": command}), "")
+            trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(
+                result, verified="no", disposition="refuted", notes=["read-candidate", "refuted-by"],
+            ) or note_names(result[2], "read-candidate", f"controller Bash at {stamp(BASE_EPOCH + 110)}: {command}")
+
+        def wrapper_without_command() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # The redirection target reaches nohup's options only in shell_role, whose Unsettled shell_roles catches.
+            trial.result(105.1, trial.use(105, "Bash", {"command": "nohup >--log"}), "")
+            read = trial.use(110, "Read", {"file_path": f"{trial.workdir}/greet.test.js"})
+            trial.result(110.1, read, TEST_SINGLE)
+            trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="yes", disposition="refuted", notes=["refuted-by"]) or note_names(
+                result[2], "refuted-by", "controller text", "no-bound")
+
         cases: tuple[tuple[str, Callable[[], str]], ...] = (
             ("applicable_refuted", applicable_refuted),
             ("applicable_spurious", applicable_spurious),
@@ -2978,6 +3083,11 @@ def self_test() -> int:
             ("xargs_read", xargs_read),
             ("wrapper_long_option_unsettled", wrapper_long_option_unsettled),
             ("env_split_string_unsettled", env_split_string_unsettled),
+            ("wrapper_cluster_commit", wrapper_cluster_commit),
+            ("wrapper_cluster_read", wrapper_cluster_read),
+            ("unknown_wrapper_read_unsettled", unknown_wrapper_read_unsettled),
+            ("echo_prose_not_unsettled", echo_prose_not_unsettled),
+            ("wrapper_without_command", wrapper_without_command),
         )
         for name, body in cases:
             try:
