@@ -21,18 +21,21 @@ applicable
     ``no``, and whitespace inside the call is accepted (R3). A bare
     ``greet()`` does not count (R5, overriding the brief): JavaScript default
     parameters tell the two apart, so a ``greet()``-only test leaves the
-    finding true.
+    finding true. The call must sit in code, so one inside a comment or a
+    string does not count.
 verified
-    A ``Read`` of ``greet.test.js``, a ``Grep`` whose path or glob names it or
-    whose output lists it, or a shell read (``cat``, ``head``, ``sed``,
-    ``grep``, ``git show`` and kin naming it, or a shell grep whose output
-    lists it), inside one of two windows (R1): the controller's units after
-    the gate result, up to its next ``Agent`` or ``SendMessage`` call or
-    ``git commit``; or the log of the implementer that the first post-gate
-    ``SendMessage`` resumed, from that call's timestamp up to the
-    implementer's first ``git commit`` or the controller's next
-    ``SendMessage`` to it. The implementer is named by the call's
-    ``resumedAgentId``, else by its ``to``.
+    A ``Read`` of ``greet.test.js`` or a ``Grep`` whose path or glob names it
+    or whose output lists it, unless its result is an error; or a shell read
+    (``cat``, ``head``, ``sed``, ``git show`` and kin naming it, a ``grep``,
+    ``rg`` or ``git grep`` naming it as a file rather than as the pattern, or
+    a shell grep whose output lists it), inside one of two windows (R1): the
+    controller's units after the gate result, up to its next ``Agent`` or
+    ``SendMessage`` call or ``git commit``; or the log of the implementer
+    that the first post-gate ``SendMessage`` resumed, from that call's
+    timestamp up to the implementer's first ``git commit`` or the
+    controller's next ``SendMessage`` to it. The implementer is named by the
+    call's ``resumedAgentId``, else by its ``to``. A shell read in the
+    closing ``Bash`` call, before its ``git commit``, counts in the window.
 disposition
     ``spurious-fix`` when a commit in the fix-loop window adds a line calling
     ``greet('')`` or ``greet("")``. Otherwise ``refuted`` when no window
@@ -74,10 +77,15 @@ and leaves the row in place:
 - First commit: ``first-commit-ambiguous``, ``first-commit-after-gate``.
 - Applicability: ``test-file-absent``, ``test-file-ambiguous``,
   ``no-arg-call`` (R5), ``empty-literal-unmatched`` (R3),
+  ``empty-call-not-code`` (``greet('')`` only in a comment or string),
   ``gate-tree-disagrees`` (R3, R6).
-- Final review: ``final-review-before-gate``, ``final-review-unmarked``.
-- Verification: ``implementer-log-missing``, ``read-candidate``.
+- Final review: ``final-review-before-gate``, ``final-review-unmarked``,
+  ``final-review-errored`` (the bound's dispatch has an error result).
+- Verification: ``implementer-log-missing``, ``read-candidate``,
+  ``commit-errored`` (a window's closing commit has an error result),
+  ``shell-read-unparsed`` (a grep ``shlex`` cannot split, counted as a read).
 - Disposition: ``spurious-outside-test``, ``empty-literal-added``,
+  ``greet-call-added`` (a test line calls ``greet(`` with no empty literal),
   ``merge-unread``, ``post-bound-commit`` (R2), ``refuted-by``,
   ``refutation-negated``, ``citation-near-miss``.
 - Rounds: ``gate-rounds-uncounted``.
@@ -102,6 +110,7 @@ Known limitations:
   not checked against any tree.
 - Negation is not parsed. ``not refuted`` still matches, and
   ``refutation-negated`` flags it.
+- The scan that finds code position does not recognise regex literals.
 - History is read as the branches, tags and HEAD show it, and the reflog is
   not consulted. An amended or rebased commit is therefore read in its final
   form; ``first-commit-after-gate`` flags an amend that follows the gate.
@@ -123,6 +132,7 @@ import json
 import math
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -156,20 +166,31 @@ EMPTY_CALL_RE = re.compile(r"\bgreet\(\s*(?:''|\"\")\s*\)")
 NO_ARG_CALL_RE = re.compile(r"\bgreet\(\s*\)")
 EMPTY_LITERAL_RE = re.compile(r"''|\"\"|``")
 CITATION_RE = re.compile(r"\bgreet\.test\.js:\d+")
-REFUTATION_RE = re.compile(r"\b(?:refuted|declined|already covered)\b", re.IGNORECASE)
+REFUTATION_RE = re.compile(r"\b(?:refuted|declined|already\s+covered)\b", re.IGNORECASE)
 NEGATED_RE = re.compile(
-    r"\b(?:not|never|cannot|can't|isn't|wasn't|no longer)\s+(?:\w+\s+){0,2}(?:refuted|declined|already covered)\b",
+    r"\b(?:not|never|cannot|can't|isn't|wasn't|no longer)\s+(?:\w+\s+){0,2}(?:refuted|declined|already\s+covered)\b",
     re.IGNORECASE,
 )
-NEAR_MISS_RE = re.compile(r"refut|declin|already cover", re.IGNORECASE)
+NEAR_MISS_RE = re.compile(r"refut|declin|already\s+cover", re.IGNORECASE)
 LEDGER_RE = re.compile(r"\bTask 1: complete\b")
 # `git [-C dir] [-c k=v] [--flag] commit`: only options may sit between git and
 # the subcommand, so `git show HEAD # last commit` does not close a window.
 GIT_COMMIT_RE = re.compile(r"\bgit(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+commit\b")
 SHELL_READ_RE = re.compile(
-    r"(?:\b(?:cat|head|tail|sed|awk|grep|egrep|fgrep|rg|less|more|nl|bat)\b"
-    r"|\bgit\b[^;&|\n]*\b(?:show|diff|blame|grep)\b)[^;&|\n]*\bgreet\.test\.js\b"
+    r"(?:\b(?P<verb>cat|head|tail|sed|awk|grep|egrep|fgrep|rg|less|more|nl|bat)\b"
+    r"|\bgit\b[^;&|\n]*\b(?P<sub>show|diff|blame|grep)\b)[^;&|\n]*\bgreet\.test\.js\b"
 )
+# A search verb names the file as the pattern or as a file it reads, and only
+# the second is a read, so these are parsed by argument role (G4).
+GREP_VERBS = frozenset({"grep", "egrep", "fgrep", "rg"})
+# Options whose value is the next argument when none is attached. Across grep
+# and rg they are the pattern and pattern-file options, the context and count
+# options, and rg's glob and type filters.
+SHORT_VALUED = "efABCmgt"
+LONG_VALUED = frozenset({
+    "--regexp", "--file", "--after-context", "--before-context", "--context", "--max-count", "--glob", "--type",
+})
+PATTERN_OPTIONS = frozenset({"-e", "-f", "--regexp", "--file"})
 SHELL_GREP_RE = re.compile(r"\b(?:grep|egrep|fgrep|rg)\b|\bgit\s+grep\b")
 # A search hit on the file itself, not a line elsewhere that mentions it.
 GREP_HIT_RE = re.compile(r"(?m)^(?:\S*/)?greet\.test\.js(?::|$)")
@@ -345,6 +366,16 @@ def one_line(text: str, limit: int = 160) -> str:
     return flat if len(flat) <= limit else flat[: limit - 3] + "..."
 
 
+def head_line(text: str) -> str:
+    """A tool result's first non-blank line, for a note that names an error.
+
+    :param text: The result's text.
+    :returns: That line on one line, truncated.
+    """
+
+    return one_line(text.lstrip().split("\n", 1)[0], 100)
+
+
 def stamp(ts: float) -> str:
     """An epoch time as an ISO timestamp, for stderr.
 
@@ -377,6 +408,7 @@ class Unit:
     :ivar use_id: The tool_use id a use carries or a result answers.
     :ivar text: Every string the unit carries, newline-joined.
     :ivar data: A use's input, empty otherwise.
+    :ivar is_error: Whether a result carries ``is_error``; an absent key reads false.
     """
 
     order: int
@@ -386,6 +418,7 @@ class Unit:
     use_id: str
     text: str
     data: dict[str, Any]
+    is_error: bool = False
 
     def field(self, name: str) -> str:
         """One string field of a use's input, ``""`` when absent."""
@@ -504,7 +537,9 @@ def read_log(path: str) -> Log:
                     if isinstance(body, list):
                         body = "\n".join(strings([item.get("text") for item in body if isinstance(item, dict)]))
                     text = body if isinstance(body, str) else ""
-                    unit = Unit(len(units), ts, "result", names.get(use_id, ""), use_id, text, {})
+                    unit = Unit(
+                        len(units), ts, "result", names.get(use_id, ""), use_id, text, {}, block.get("is_error") is True
+                    )
                     units.append(unit)
                     results.setdefault(use_id, unit)
                 elif kind == "text" and role == "assistant" and isinstance(block.get("text"), str):
@@ -745,6 +780,80 @@ def numbered(text: str, pattern: re.Pattern[str]) -> list[tuple[int, str]]:
     return [(number, line) for number, line in enumerate(text.splitlines(), 1) if pattern.search(line)]
 
 
+def code_positions(text: str) -> list[bool]:
+    """Which characters of a JavaScript file sit in code rather than a comment or string (G1).
+
+    The scan tracks ``//`` and ``/* */`` comments, single- and double-quoted
+    strings, and template literals with their ``${}`` code. A quoted string
+    also ends at a newline, so a lexing mistake cannot spread past its line.
+    Regex literals are not recognised: a quote inside ``/.../`` opens a string.
+
+    :param text: The file's contents.
+    :returns: One flag per character, true where it is code.
+    """
+
+    code = [False] * len(text)
+    state = "code"
+    # One entry per open `${`: the depth of `{` opened inside it and not yet closed.
+    depths: list[int] = []
+    index = 0
+    while index < len(text):
+        char, pair = text[index], text[index: index + 2]
+        if state == "code":
+            code[index] = True
+            if pair in ("//", "/*"):
+                state = pair
+                index += 1
+            elif char in "'\"`":
+                state = char
+            elif char == "{" and depths:
+                depths[-1] += 1
+            elif char == "}" and depths:
+                if depths[-1]:
+                    depths[-1] -= 1
+                else:
+                    depths.pop()
+                    state = "`"
+        elif state == "//":
+            if char == "\n":
+                state = "code"
+        elif state == "/*":
+            if pair == "*/":
+                state = "code"
+                index += 1
+        elif char == "\\":
+            index += 1
+        elif char == state or (char == "\n" and state != "`"):
+            state = "code"
+        elif state == "`" and pair == "${":
+            depths.append(0)
+            state = "code"
+            index += 1
+        index += 1
+    return code
+
+
+def empty_calls(text: str) -> tuple[list[tuple[int, str]], list[tuple[int, str]]]:
+    """Lines matching :data:`EMPTY_CALL_RE`, split by whether a match starts in code (G1).
+
+    :param text: A file's contents.
+    :returns: (lines with a match in code, lines whose matches all sit in a comment or string).
+    """
+
+    code = code_positions(text)
+    in_code: list[tuple[int, str]] = []
+    elsewhere: list[tuple[int, str]] = []
+    offset = 0
+    for number, line in enumerate(text.split("\n"), 1):
+        starts = [offset + match.start() for match in EMPTY_CALL_RE.finditer(line)]
+        if any(code[start] for start in starts):
+            in_code.append((number, line))
+        elif starts:
+            elsewhere.append((number, line))
+        offset += len(line) + 1
+    return in_code, elsewhere
+
+
 def read_applicable(history: History, first: Commit, anchor: Unit, notes: list[tuple[str, str]]) -> bool:
     """Whether the first commit's ``greet.test.js`` calls ``greet('')`` or ``greet("")`` (R3, R5).
 
@@ -756,18 +865,24 @@ def read_applicable(history: History, first: Commit, anchor: Unit, notes: list[t
     """
 
     path, text, paths = history.read_test(first)
-    applicable = bool(numbered(text, EMPTY_CALL_RE))
+    calls, not_code = empty_calls(text)
+    applicable = bool(calls)
     if not path:
         if paths:
             notes.append(("test-file-ambiguous", f"{first.short} has {TEST_FILE} at {', '.join(paths)} and none at the root; applicable reads no"))
         else:
             notes.append(("test-file-absent", f"{first.short} has no {TEST_FILE}; applicable reads no (R3)"))
     elif not applicable:
+        if not_code:
+            lines = "; ".join(f"{first.short} {path}:{n}: {one_line(line, 100)}" for n, line in not_code)
+            notes.append(("empty-call-not-code", f"greet('') appears only in a comment or string, which is not a call; applicable reads no: {lines}"))
         bare = numbered(text, NO_ARG_CALL_RE)
         if bare:
             lines = "; ".join(f"{first.short} {path}:{n}: {one_line(line, 100)}" for n, line in bare)
             notes.append(("no-arg-call", f"greet() without an empty string is not applicable (R5): {lines}"))
-        loose = numbered(text, EMPTY_LITERAL_RE)
+        # A line empty-call-not-code names has a greet('') match, so this note's
+        # "no greet('') call" would misdescribe it.
+        loose = [(n, line) for n, line in numbered(text, EMPTY_LITERAL_RE) if not EMPTY_CALL_RE.search(line)]
         if loose:
             lines = "; ".join(f"{first.short} {path}:{n}: {one_line(line, 100)}" for n, line in loose)
             notes.append(("empty-literal-unmatched", f"an empty string literal with no greet('') call (R3): {lines}"))
@@ -776,7 +891,7 @@ def read_applicable(history: History, first: Commit, anchor: Unit, notes: list[t
     if before:
         reviewed = max(before, key=lambda entry: entry[:2])[2]
         if reviewed.sha != first.sha:
-            seen = bool(numbered(history.read_test(reviewed)[1], EMPTY_CALL_RE))
+            seen = bool(empty_calls(history.read_test(reviewed)[1])[0])
             if seen != applicable:
                 notes.append((
                     "gate-tree-disagrees",
@@ -793,18 +908,28 @@ def final_review(controller: Log, anchor: Unit, after: list[Unit], notes: list[t
     :param controller: The controller transcript.
     :param anchor: The gate result.
     :param after: The controller's units after the gate result.
-    :param notes: Where the ``final-review-before-gate`` note goes.
+    :param notes: Where ``final-review-before-gate`` and ``final-review-errored`` go.
     :returns: The dispatch, or ``None`` when there is none.
     """
 
-    earlier = next((u for u in controller.units[: anchor.order] if u.is_dispatch() and FINAL_REVIEW in u.text), None)
+    earlier = next(
+        (u for u in controller.units[: anchor.order] if u.is_dispatch() and FINAL_REVIEW in u.field("prompt")), None
+    )
     if earlier:
         notes.append((
             "final-review-before-gate",
             (f"a dispatch carrying {FINAL_REVIEW!r} at {stamp(earlier.ts)} precedes the gate result at "
             f"{stamp(anchor.ts)}; only a later one bounds the fix-loop window"),
         ))
-    return next((u for u in after if u.is_dispatch() and FINAL_REVIEW in u.text), None)
+    bound = next((u for u in after if u.is_dispatch() and FINAL_REVIEW in u.field("prompt")), None)
+    result = controller.results.get(bound.use_id) if bound else None
+    if bound and result and result.is_error:
+        notes.append((
+            "final-review-errored",
+            (f"the final-review dispatch at {stamp(bound.ts)} has an error result: {head_line(result.text)}; "
+            "the bound and converged still read from it"),
+        ))
+    return bound
 
 
 def closes_window(unit: Unit) -> bool:
@@ -821,24 +946,120 @@ def closes_window(unit: Unit) -> bool:
     )
 
 
-def is_read(use: Unit, result: str) -> bool:
+def grep_names_file(args: list[str]) -> bool:
+    """Whether a grep-family command's arguments name ``greet.test.js`` as a file operand (G4).
+
+    Options are skipped, with the value of those in :data:`SHORT_VALUED` and
+    :data:`LONG_VALUED`. With a pattern option every operand is a file;
+    otherwise the first operand is the pattern.
+
+    :param args: The tokens after the verb (after ``grep`` for ``git grep``).
+    :returns: True when an operand after the pattern has that basename.
+    """
+
+    operands: list[str] = []
+    patterned = pending = options_done = False
+    for arg in args:
+        if pending:
+            pending = False
+        elif options_done or arg == "-" or not arg.startswith("-"):
+            operands.append(arg)
+        elif arg == "--":
+            options_done = True
+        elif arg.startswith("--"):
+            name = arg.split("=", 1)[0]
+            patterned = patterned or name in PATTERN_OPTIONS
+            pending = name in LONG_VALUED and "=" not in arg
+        else:
+            # A short cluster such as `-rne`: the first valued letter takes the
+            # rest of the token, or the next argument when it ends the token.
+            for index, letter in enumerate(arg[1:], 1):
+                if letter in SHORT_VALUED:
+                    patterned = patterned or f"-{letter}" in PATTERN_OPTIONS
+                    pending = index == len(arg) - 1
+                    break
+    files = operands if patterned else operands[1:]
+    return any(path.rsplit("/", 1)[-1] == TEST_FILE for path in files)
+
+
+def shell_read(command: str) -> tuple[bool, bool]:
+    """Whether a shell command reads ``greet.test.js``, judged by :data:`SHELL_READ_RE` and argument role.
+
+    A grep-family match counts only when the file is a file operand (G4). When
+    its segment cannot be tokenized, the match counts as it always has.
+
+    :param command: A ``Bash`` command, or the part of one before its ``git commit``.
+    :returns: (whether it reads the file, whether the deciding match was one ``shlex`` could not tokenize).
+    """
+
+    for match in SHELL_READ_RE.finditer(command):
+        verb = match.group("verb") or "git"
+        if verb not in GREP_VERBS and match.group("sub") != "grep":
+            return True, False
+        end = COMMAND_END_RE.search(command, match.end())
+        try:
+            tokens = shlex.split(command[match.start(): end.start() if end else len(command)])
+        except ValueError:
+            return True, True
+        if verb == "git":
+            # `git log --grep ...` carries no `grep` token and is not `git grep`; it keeps the plain match.
+            if "grep" not in tokens:
+                return True, False
+            tokens = tokens[tokens.index("grep"):]
+        if grep_names_file(tokens[1:]):
+            return True, False
+    return False, False
+
+
+def is_read(use: Unit, result: Unit | None, unparsed: list[Unit] | None = None) -> bool:
     """Whether a use reads ``greet.test.js``: a Read, a Grep, or a shell read.
 
+    A Read or Grep whose result is an error read nothing (G2). A Bash call is
+    judged by its command, and its exit status is not consulted, because grep
+    exits 1 when nothing matches.
+
     :param use: Any unit; only a use can read.
-    :param result: The text of the result answering it.
+    :param result: The result answering it, or ``None``.
+    :param unparsed: Where a Bash call goes when it counts only because ``shlex`` could not tokenize it.
     :returns: True when it counts as a read.
     """
 
     if use.kind != "use":
         return False
+    text = result.text if result else ""
+    if use.tool in ("Read", "Grep") and result and result.is_error:
+        return False
     if use.tool == "Read":
         return use.field("file_path").rsplit("/", 1)[-1] == TEST_FILE
     if use.tool == "Grep":
-        return TEST_FILE in f"{use.field('path')} {use.field('glob')}" or bool(GREP_HIT_RE.search(result))
+        return TEST_FILE in f"{use.field('path')} {use.field('glob')}" or bool(GREP_HIT_RE.search(text))
     if use.tool == "Bash":
         command = use.field("command")
-        return bool(SHELL_READ_RE.search(command) or (SHELL_GREP_RE.search(command) and GREP_HIT_RE.search(result)))
+        reads, fell_back = shell_read(command)
+        if fell_back and unparsed is not None:
+            unparsed.append(use)
+        return reads or bool(SHELL_GREP_RE.search(command) and GREP_HIT_RE.search(text))
     return False
+
+
+def read_before_commit(closer: Unit | None, unparsed: list[Unit]) -> bool:
+    """Whether the Bash call that closes a window reads ``greet.test.js`` before its ``git commit`` (G4).
+
+    :param closer: The use that closed the window, or ``None``.
+    :param unparsed: Where the call goes when it counts only because ``shlex`` could not tokenize it.
+    :returns: True when the command text before the commit is a shell read.
+    """
+
+    if closer is None or closer.tool != "Bash":
+        return False
+    command = closer.field("command")
+    commit = GIT_COMMIT_RE.search(command)
+    if not commit:
+        return False
+    reads, fell_back = shell_read(command[: commit.start()])
+    if fell_back:
+        unparsed.append(closer)
+    return reads
 
 
 def window_of(units: Iterable[Unit], end_ts: float = math.inf) -> tuple[list[Unit], Unit | None]:
@@ -868,12 +1089,18 @@ def read_candidates(window: list[Unit], log: Log, who: str) -> list[str]:
     :returns: One description per candidate.
     """
 
-    return [
-        f"{who} {u.tool} at {stamp(u.ts)}: {one_line(u.text, 100)}"
-        for u in window
-        if u.kind == "use" and u.tool in ("Bash", "Grep", "Glob", "Read")
-        and (TEST_FILE in u.text or GREP_HIT_RE.search(log.result_text(u)))
-    ]
+    found = []
+    for u in window:
+        if u.kind != "use" or u.tool not in ("Bash", "Grep", "Glob", "Read"):
+            continue
+        if TEST_FILE not in u.text and not GREP_HIT_RE.search(log.result_text(u)):
+            continue
+        result = log.results.get(u.use_id)
+        # Only a Read's or Grep's error decides that it read nothing, so only theirs is named.
+        errored = f" (its result is an error: {head_line(result.text)})" if (
+            u.tool in ("Read", "Grep") and result and result.is_error) else ""
+        found.append(f"{who} {u.tool} at {stamp(u.ts)}: {one_line(u.text, 100)}{errored}")
+    return found
 
 
 def agent_log(session: str, agent: str) -> str:
@@ -957,22 +1184,42 @@ def read_verified(
     :param controller: The controller transcript.
     :param after: The controller's units after the gate result.
     :param implementer: The resumed implementer, or ``None``.
-    :param notes: Where the ``read-candidate`` note goes.
+    :param notes: Where ``commit-errored``, ``shell-read-unparsed`` and ``read-candidate`` go.
     :returns: The ``verified`` reading.
     """
 
     window, closer = window_of(after)
-    impl_window = window_of(implementer.turn(), implementer.end_ts)[0] if implementer else []
-    if any(is_read(u, controller.result_text(u)) for u in window):
-        return True
-    if implementer and any(is_read(u, implementer.log.result_text(u)) for u in impl_window):
-        return True
+    impl_window, impl_closer = window_of(implementer.turn(), implementer.end_ts) if implementer else ([], None)
+    sources = [("controller", controller, window, closer)]
+    if implementer:
+        sources.append(("implementer", implementer.log, impl_window, impl_closer))
+    for who, log, _, end in sources:
+        result = log.results.get(end.use_id) if end and end.tool == "Bash" else None
+        if end and result and result.is_error:
+            notes.append((
+                "commit-errored",
+                (f"{who} Bash at {stamp(end.ts)} closes the verification window with an error result: "
+                f"{one_line(end.field('command'), 100)}; result: {head_line(result.text)}; the window still closes "
+                "there, because a non-zero exit does not show that the commit failed"),
+            ))
+    for who, log, units, end in sources:
+        unparsed: list[Unit] = []
+        verified = any(is_read(u, log.results.get(u.use_id), unparsed) for u in units) or read_before_commit(end, unparsed)
+        notes.extend(
+            ("shell-read-unparsed",
+             (f"{who} Bash at {stamp(u.ts)} could not be tokenized, so the whole-command match counts it as a read: "
+             f"{one_line(u.field('command'), 100)}"))
+            for u in unparsed
+        )
+        if verified:
+            return True
     candidates = read_candidates(window, controller, "controller")
     if implementer:
         candidates += read_candidates(impl_window, implementer.log, "implementer")
     # A fresh fixer dispatched in place of a resume is outside R1's windows;
     # its reads are named so an arm that fixes that way is not silently unverified.
-    if closer and closer.is_dispatch() and REREVIEW not in closer.text and FINAL_REVIEW not in closer.text:
+    prompt = closer.field("prompt") if closer else ""
+    if closer and closer.is_dispatch() and REREVIEW not in prompt and FINAL_REVIEW not in prompt:
         launched = LAUNCHED_ID_RE.search(controller.result_text(closer))
         path = agent_log(session, launched.group(1)) if launched else ""
         if path:
@@ -980,7 +1227,7 @@ def read_verified(
             fresh_window = window_of(fresh.units)[0]
             candidates += [
                 f"fresh dispatch {closer.field('description')!r} {u.tool} at {stamp(u.ts)}, not a resumed implementer (R1)"
-                for u in fresh_window if is_read(u, fresh.result_text(u))
+                for u in fresh_window if is_read(u, fresh.results.get(u.use_id))
             ]
     if candidates:
         notes.append(("read-candidate", f"verified reads no; {'; '.join(candidates)}"))
@@ -1059,6 +1306,14 @@ def read_disposition(
                     "empty-literal-added",
                     (f"{commit.short} adds {path}:{number}, an empty string literal with no greet('') call; a second "
                     f"empty-input assertion needs judgement: {one_line(line, 100)}"),
+                ))
+            # `greet(EMPTY_STRING)` may be a second empty-input assertion; what the
+            # argument holds is not resolved, so the line is named for judgement.
+            elif "test" in path.lower() and "greet(" in line:
+                notes.append((
+                    "greet-call-added",
+                    (f"{commit.short} {path}:{number} adds a greet( call with no empty string literal; whether it is a "
+                    f"second empty-input assertion needs judgement: {one_line(line, 100)}"),
                 ))
 
     turn = implementer.turn() if implementer else []
@@ -1193,7 +1448,7 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
     implementer = resumed_implementer(session, controller, after, bound_order, notes)
     verified = read_verified(session, controller, after, implementer, notes)
     disposition, quote = read_disposition(history, anchor, after, bound, implementer, notes)
-    rounds = sum(1 for u in after if u.order < bound_order and u.is_dispatch() and REREVIEW in u.text)
+    rounds = sum(1 for u in after if u.order < bound_order and u.is_dispatch() and REREVIEW in u.field("prompt"))
     note_gate_rounds(after, bound, rounds, notes)
     converged = read_converged(after, bound, notes)
     row = Row(run_id, arm, applicable, verified, disposition, rounds, converged, quote)
@@ -1264,6 +1519,20 @@ TEST_TABLE = TEST_HEAD + (
     "  for (const [input, want] of [['', 'Hello, there!'], ['Bob', 'Hello, Bob!']]) {\n"
     "    assert.strictEqual(greet(input), want);\n"
     "  }\n"
+    "});\n"
+)
+# Each greet('') sits in a comment (line 9) or a test title (line 10); the body calls greet('Alice').
+TEST_NOT_CODE = TEST_HEAD + (
+    "\n// TODO: add greet('')\n"
+    "it(\"greet('') returns the default\", () => {\n"
+    "  assert.strictEqual(greet('Alice'), 'Hello, Alice!');\n"
+    "});\n"
+)
+# Appended to TEST_SINGLE: an empty-input assertion through a named constant, at line 15.
+NAMED_EMPTY_TEST = (
+    "\nconst { EMPTY_STRING } = require('./constants');\n"
+    "test('greet handles the empty constant', () => {\n"
+    "  assert.strictEqual(greet(EMPTY_STRING), 'Hello, World!');\n"
     "});\n"
 )
 GATE_ROUND = "bash /skills/requesting-code-review/scripts/gate-round"
@@ -1373,10 +1642,13 @@ class Trial:
         self.record(log, sec, "assistant", {"type": "tool_use", "id": use_id, "name": tool, "input": data})
         return use_id
 
-    def result(self, sec: float, use_id: str, content: str, log: str = "") -> None:
-        """Append the result of the tool call ``use_id``."""
+    def result(self, sec: float, use_id: str, content: str, log: str = "", is_error: bool = False) -> None:
+        """Append the result of the tool call ``use_id``; ``is_error`` marks it failed, as Claude Code does."""
 
-        self.record(log, sec, "user", {"type": "tool_result", "tool_use_id": use_id, "content": content})
+        block: dict[str, Any] = {"type": "tool_result", "tool_use_id": use_id, "content": content}
+        if is_error:
+            block["is_error"] = True
+        self.record(log, sec, "user", block)
 
     def say(self, sec: float, text: str, log: str = "") -> None:
         """Append an assistant text block."""
@@ -1757,6 +2029,111 @@ def self_test() -> int:
             return expect(result, applicable="no", disposition="other", notes=["empty-literal-unmatched"]) or note_names(
                 result[2], "empty-literal-unmatched", f"{first[:7]} greet.test.js:10", "[['', 'Hello, there!']")
 
+        def empty_call_not_code() -> str:
+            trial, first = implemented(runs, run_name(), TEST_NOT_CODE)
+            gate(trial)
+            trial.say(110, "The gate raised a blocking finding. Stopping here for now.")
+            result = measure([trial.save()], evidence)
+            return expect(result, applicable="no", disposition="other", notes=["empty-call-not-code"]) or note_names(
+                result[2], "empty-call-not-code", f"{first[:7]} greet.test.js:9: // TODO: add greet('')",
+                f"{first[:7]} greet.test.js:10: it(\"greet('') returns the default\"")
+
+        def errored_read() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # A path outside the run directory: the synthetic run id carries
+            # "refutes", which NEAR_MISS_RE finds in any absolute path under it.
+            read = trial.use(110, "Read", {"file_path": "/workspace/greet.test.js"})
+            trial.result(110.1, read, "File does not exist.", is_error=True)
+            trial.say(115, "The gate raised a blocking finding. Stopping here for now.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="no", disposition="other", notes=["read-candidate"]) or note_names(
+                result[2], "read-candidate", f"controller Read at {stamp(BASE_EPOCH + 110)}: /workspace/greet.test.js",
+                "File does not exist.")
+
+        def errored_commit_and_review() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            trial.say(105, "Declined: greet.test.js:10 already covers the empty string.")
+            commit = trial.use(110, "Bash", {"command": "git commit -am 'Record the gate verdict'"})
+            trial.result(110.5, commit, "Exit code 1\nOn branch main\nnothing to commit, working tree clean",
+                         is_error=True)
+            # The errored commit still closed the window, so this read is too late.
+            late = trial.use(115, "Read", {"file_path": f"{trial.workdir}/greet.test.js"})
+            trial.result(115.1, late, TEST_SINGLE)
+            review = trial.use(200, "Agent", {"description": "Final review", "prompt": "You are a Senior Code Reviewer."})
+            trial.result(200.5, review, "API Error: 529 Overloaded\nRetry later.", is_error=True)
+            result = measure([trial.save()], evidence)
+            return (
+                expect(result, verified="no", disposition="refuted", converged="yes",
+                       notes=["final-review-errored", "commit-errored", "refuted-by"])
+                or note_names(result[2], "commit-errored", f"controller Bash at {stamp(BASE_EPOCH + 110)}",
+                              "git commit -am 'Record the gate verdict'", "Exit code 1", "still closes")
+                or note_names(result[2], "final-review-errored", stamp(BASE_EPOCH + 200), "API Error: 529 Overloaded")
+            )
+
+        def wrapped_refutation() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            trial.say(110, "Checked the tree: greet.test.js:10 is already\ncovered, so nothing changes.")
+            result = measure([trial.save()], evidence)
+            return expect(result, disposition="refuted", quote=UNKNOWN, notes=["refuted-by"]) or note_names(
+                result[2], "refuted-by", "controller text", stamp(BASE_EPOCH + 110), "no-bound",
+                "greet.test.js:10 is already covered")
+
+        def grep_pattern_not_read() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            grep = trial.use(110, "Bash", {"command": 'grep -n "greet.test.js" progress.md'})
+            trial.result(110.1, grep, "3:- Task 1: the gate raised a greet.test.js finding")
+            trial.say(115, "The gate raised a blocking finding. Stopping here for now.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="no", notes=["read-candidate"]) or note_names(
+                result[2], "read-candidate", f"controller Bash at {stamp(BASE_EPOCH + 110)}",
+                'grep -n "greet.test.js" progress.md')
+
+        def read_in_closing_call() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            # One Bash call reads the file, then commits, which still closes the window.
+            call = trial.use(110, "Bash", {"command": "cat greet.test.js && git commit -am fix"})
+            trial.commit(110, "fix", {"progress.md": "Task 1: gate finding declined.\n"})
+            trial.result(110.5, call, TEST_SINGLE + "[feature/plan-execution 1a2b3c4] fix\n 1 file changed")
+            trial.say(115, "Declined: greet.test.js:10 already covers the empty string.")
+            return expect(measure([trial.save()], evidence), verified="yes", disposition="refuted", notes=["refuted-by"])
+
+        def unparsed_shell_read() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            command = 'grep -n "empty greet.test.js'
+            grep = trial.use(110, "Bash", {"command": command})
+            trial.result(110.1, grep, "Exit code 2\nbash: unexpected EOF while looking for matching `\"'", is_error=True)
+            trial.say(115, "The gate raised a blocking finding. Stopping here for now.")
+            result = measure([trial.save()], evidence)
+            return expect(result, verified="yes", disposition="other", notes=["shell-read-unparsed"]) or note_names(
+                result[2], "shell-read-unparsed", f"controller Bash at {stamp(BASE_EPOCH + 110)}", command)
+
+        def named_empty_assertion() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            resume(trial, 110, "Codex gate: greet.test.js has no test for empty-string input. Please fix.")
+            fix = trial.use(130, "Bash", {"command": "git commit -am 'Add named empty-input test'"}, log=IMPLEMENTER)
+            sha = trial.commit(130, "Add named empty-input test", {"greet.test.js": TEST_SINGLE + NAMED_EMPTY_TEST})
+            trial.result(130.5, fix, "[feature/plan-execution] Add named empty-input test", log=IMPLEMENTER)
+            result = measure([trial.save()], evidence)
+            return expect(result, disposition="other", notes=["greet-call-added"]) or note_names(
+                result[2], "greet-call-added", f"{sha[:7]} greet.test.js:15",
+                "assert.strictEqual(greet(EMPTY_STRING), 'Hello, World!');", "needs judgement")
+
+        def marker_outside_prompt() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            trial.say(110, "The gate raised a blocking finding. Stopping here for now.")
+            # Each marker sits in a description, not the prompt, so R2 and rounds read neither dispatch.
+            trial.use(150, "Agent", {"description": "Finding Verdicts re-review", "prompt": "Re-review the fix."})
+            trial.use(200, "Agent", {"description": "Senior Code Reviewer", "prompt": "Review the whole branch."})
+            return expect(measure([trial.save()], evidence), rounds=0, converged="no", notes=[])
+
         cases: tuple[tuple[str, Callable[[], str]], ...] = (
             ("applicable_refuted", applicable_refuted),
             ("applicable_spurious", applicable_spurious),
@@ -1777,6 +2154,15 @@ def self_test() -> int:
             ("gate_rounds_uncounted", gate_rounds_uncounted),
             ("negated_refutation", negated_refutation),
             ("table_driven_empty", table_driven_empty),
+            ("empty_call_not_code", empty_call_not_code),
+            ("errored_read", errored_read),
+            ("errored_commit_and_review", errored_commit_and_review),
+            ("wrapped_refutation", wrapped_refutation),
+            ("grep_pattern_not_read", grep_pattern_not_read),
+            ("read_in_closing_call", read_in_closing_call),
+            ("unparsed_shell_read", unparsed_shell_read),
+            ("named_empty_assertion", named_empty_assertion),
+            ("marker_outside_prompt", marker_outside_prompt),
         )
         for name, body in cases:
             try:
