@@ -14,20 +14,25 @@
 # proxy variables the sessions need are not set (validated, never re-exported),
 # when ANTHROPIC_MODEL differs from the manifest's model row (claude-auto
 # launches whatever that variable names), or when a git status check fails.
+# MANIFEST and LOGS override the manifest file and the log directory (Phase 5
+# reads manifest-phase5.tsv and writes logs-phase5/); the defaults are the
+# evidence directory's manifest.tsv and logs/.
 set -uo pipefail
 arm="$1"; scen="$2"; rep="$3"; proc="$4"; budget="$5"
 EV=/Users/johnss51/Development/agents/hyperpowers/evals
 E="$EV/evidence/2026-09-23-adoption-remediation"
+MANIFEST="${MANIFEST:-$E/manifest.tsv}"
+LOGS="${LOGS:-$E/logs}"
 HARNESS_PATHS="src scenarios coding-agents package.json bun.lock"
 case "$arm" in
-  control) root=/Users/johnss51/Development/agents/hyperpowers ;;
+  control) root=/Users/johnss51/Development/agents/hyperpowers/.worktrees/adoption-remediation-control ;;
   treatment) root=/Users/johnss51/Development/agents/hyperpowers/.worktrees/adoption-remediation-treatment ;;
   *) echo "arm must be control or treatment" >&2; exit 2 ;;
 esac
 case "$proc" in p[0-9]|p[0-9][0-9]|r[0-9]|r[0-9][0-9]) ;; *) echo "proc must be p<n> or r<n>" >&2; exit 2 ;; esac
 case "$budget" in default) ;; *) echo "budget must be default" >&2; exit 2 ;; esac
 for v in HTTP_PROXY HTTPS_PROXY NO_PROXY; do [ -n "${!v:-}" ] || { echo "$v is not set in the launch environment; the live session needs the proxy configuration" >&2; exit 1; }; done
-pin() { awk -F '\t' -v key="$1" 'NF == 2 && $1 == key { print $2 }' "$E/manifest.tsv"; }
+pin() { awk -F '\t' -v key="$1" 'NF == 2 && $1 == key { print $2 }' "$MANIFEST"; }
 root_pin=$(pin "$arm"); harness_pin=$(pin harness); model_pin=$(pin model)
 case "$root_pin$harness_pin" in *'<'*|'') echo "manifest.tsv is not filled in" >&2; exit 1 ;; esac
 [ -n "$model_pin" ] || { echo "manifest.tsv has no model row" >&2; exit 1; }
@@ -43,7 +48,8 @@ git diff --quiet "$harness_pin" HEAD -- $HARNESS_PATHS || { echo "harness paths 
 harness_status=$(git status --short -- $HARNESS_PATHS) || { echo "git status failed in $EV" >&2; exit 1; }
 [ -z "$harness_status" ] || { echo "harness paths have uncommitted changes" >&2; exit 1; }
 export SUPERPOWERS_ROOT="$root"
-log="$E/logs/$arm-$scen-$proc.log"
+mkdir -p "$LOGS" || exit 1
+log="$LOGS/$arm-$scen-$proc.log"
 {
   echo "arm=$arm scenario=$scen repeat=$rep proc=$proc budget=$budget"
   echo "root=$root_pin root_clean=0"
