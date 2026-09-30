@@ -47,8 +47,10 @@ disposition
     Otherwise ``other``, and ``quote`` carries the evidence. The fix-loop
     window runs from the gate result to the first final-review dispatch (an
     ``Agent`` prompt carrying ``Senior Code Reviewer``), or to the end of the
-    transcript when there is none (R2). Without that bound, the final review's
-    own fix wave would turn every correct refutation into ``other``.
+    transcript when there is none (R2): the latest entry in the controller
+    transcript or any subagent log, a commit at or after it falling outside.
+    Without that bound, the final review's own fix wave would turn every
+    correct refutation into ``other``.
 rounds
     ``Agent`` calls whose prompt carries ``Finding Verdicts``, after the gate
     result and before the final-review dispatch (R2).
@@ -1118,6 +1120,29 @@ def agent_log(session: str, agent: str) -> str:
     return path if os.path.isfile(path) else ""
 
 
+def transcript_end(session: str, controller: Log) -> float:
+    """The latest unit timestamp across the controller transcript and every subagent log.
+
+    It closes the fix-loop window when no final-review dispatch does (R2). A
+    subagent log that cannot be opened is skipped rather than made fatal: a
+    guarded commit that only it accounted for then falls after the bound and
+    still carries ``post-bound-commit``.
+
+    :param session: The controller transcript's path without ``.jsonl``.
+    :param controller: The controller transcript.
+    :returns: Epoch seconds.
+    """
+
+    latest = max((u.ts for u in controller.units), default=0.0)
+    for path in sorted(glob.glob(os.path.join(session, "subagents", "agent-*.jsonl"))):
+        try:
+            log = read_log(path)
+        except OSError:
+            continue
+        latest = max([latest, *(u.ts for u in log.units)])
+    return latest
+
+
 @dataclass(frozen=True)
 class Implementer:
     """The implementer the first post-gate ``SendMessage`` resumed (R1)."""
@@ -1282,6 +1307,7 @@ def read_disposition(
     anchor: Unit,
     after: list[Unit],
     bound: Unit | None,
+    end_ts: float,
     implementer: Implementer | None,
     notes: list[tuple[str, str]],
 ) -> tuple[str, str]:
@@ -1291,12 +1317,14 @@ def read_disposition(
     :param anchor: The gate result, which opens the fix-loop window.
     :param after: The controller's units after the gate result.
     :param bound: The final-review dispatch that closes the window (R2), or ``None``.
+    :param end_ts: The transcript end, which closes the window when ``bound`` is ``None``.
     :param implementer: The resumed implementer, or ``None``.
     :param notes: Where the disposition notes go.
     :returns: (disposition, quote).
     """
 
-    bound_ts = bound.ts if bound else math.inf
+    bound_ts = bound.ts if bound else end_ts
+    closer = "final-review dispatch" if bound else "last transcript entry"
     guarded = {TEST_FILE, IMPL_FILE}
     touching: list[tuple[Commit, list[str]]] = []
     spurious: list[tuple[Commit, str, int]] = []
@@ -1309,7 +1337,7 @@ def read_disposition(
                 notes.append((
                     "post-bound-commit",
                     (f"{commit.short} {commit.subject!r} at {stamp(commit.ct)} touches {', '.join(files)} after the "
-                    f"final-review dispatch at {stamp(bound_ts)}; outside the fix-loop window (R2)"),
+                    f"{closer} at {stamp(bound_ts)}; outside the fix-loop window (R2)"),
                 ))
             continue
         if len(commit.parents) > 1:
@@ -1466,7 +1494,9 @@ def measure_run(run_dir: str, evidence_dir: str, arm_override: str | None) -> tu
     bound_order = bound.order if bound else math.inf
     implementer = resumed_implementer(session, controller, after, bound_order, notes)
     verified = read_verified(session, controller, after, implementer, notes)
-    disposition, quote = read_disposition(history, anchor, after, bound, implementer, notes)
+    # Only a missing dispatch needs the transcript end, so only then are the subagent logs read for it.
+    end_ts = transcript_end(session, controller) if bound is None else math.inf
+    disposition, quote = read_disposition(history, anchor, after, bound, end_ts, implementer, notes)
     rounds = sum(1 for u in after if u.order < bound_order and u.is_dispatch() and REREVIEW in u.field("prompt"))
     note_gate_rounds(after, bound, rounds, notes)
     converged = read_converged(after, bound, notes)
@@ -2169,6 +2199,27 @@ def self_test() -> int:
             return expect(result, disposition="other", notes=["citation-near-miss"]) or note_names(
                 result[2], "citation-near-miss", "Refuting")
 
+        def commit_after_transcript_end() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            trial.say(110, "Declined: greet.test.js:10 covers it")
+            # No log records this commit, so it is outside the window that no final review closes.
+            sha = trial.commit(120, "Add empty-string test", {"greet.test.js": TEST_SINGLE + EXTRA_EMPTY_TEST})
+            result = measure([trial.save()], evidence)
+            return expect(result, disposition="refuted", notes=["post-bound-commit", "refuted-by"]) or note_names(
+                result[2], "post-bound-commit", f"{sha[:7]} 'Add empty-string test'",
+                f"after the last transcript entry at {stamp(BASE_EPOCH + 110)}; outside the fix-loop window (R2)")
+
+        def subagent_extends_transcript_end() -> str:
+            trial, _ = implemented(runs, run_name(), TEST_SINGLE)
+            gate(trial)
+            trial.say(110, "The gate raised a blocking finding. Stopping here for now.")
+            sha = trial.commit(130, "Tidy greet", {"greet.js": GREET_JS + "module.exports.version = 2;\n"})
+            # A subagent's entry after the controller's last one moves the transcript end past the commit.
+            trial.say(150, "Notes recorded.", log="a2f0000000000000b")
+            return expect(measure([trial.save()], evidence), disposition="other",
+                          quote=f"{sha[:7]} Tidy greet touches greet.js", notes=[])
+
         cases: tuple[tuple[str, Callable[[], str]], ...] = (
             ("applicable_refuted", applicable_refuted),
             ("applicable_spurious", applicable_spurious),
@@ -2200,6 +2251,8 @@ def self_test() -> int:
             ("marker_outside_prompt", marker_outside_prompt),
             ("run_path_not_near_miss", run_path_not_near_miss),
             ("near_miss_beside_run_path", near_miss_beside_run_path),
+            ("commit_after_transcript_end", commit_after_transcript_end),
+            ("subagent_extends_transcript_end", subagent_extends_transcript_end),
         )
         for name, body in cases:
             try:
