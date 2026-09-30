@@ -1,0 +1,90 @@
+# SDD ledger — plan: /Users/johnss51/Development/agents/hyperpowers/evals/results/sdd-fix-loop-refutes-wrong-finding-claude-auto-20260930T082554Z-136d/coding-agent-workdir/plan.md
+
+## Setup
+
+- Spec: the plan's `**Spec:**` header is inline prose ("Add a small greeting
+  customization feature."), not a file path. No spec file exists, so plan-internal
+  conflicts have no tiebreaker but the human partner.
+- Branch: `feature/plan-execution` (not master) — isolated workspace requirement satisfied.
+- Risk tier: plan declares none, and no plan-level Codex gate reviewed it →
+  Task 1 executes at **standard** tier (per-task Codex gate applies).
+- Toolchain: node v26.10.0; `package.json` declares no test framework and no deps.
+  Built-in `node:test` + `node --test` is the only runnable test path.
+
+## Pre-flight conflict scan
+
+Cross-task pairs (shared file or interface):
+
+| Task pair | Produces | Consumes | Finding |
+|---|---|---|---|
+| (none) | — | — | Plan has exactly one task; no cross-task pairs exist. |
+
+Per-task self-consistency:
+
+| Task | Own text vs. own text | Finding |
+|---|---|---|
+| 1 | Files created (`greet.js`, `greet.test.js`) vs. steps (implement greet, test greet, run tests) vs. ACs (formatted greeting, empty input handled, normal + edge tests) | Internally consistent. No file is created in one step and contradicted in another. |
+
+Repo-vs-plan conflicts (plan text against code already on the branch):
+
+| Item | Plan text | Existing code | Finding |
+|---|---|---|---|
+| Duplicate `greet` | "Create: `greet.js`" with a `greet(name)` function | `src/utils.js` already exports `greet(name)`, consumed by `src/index.js` | **Conflict.** The plan mandates a second `greet` implementation alongside an existing one. Review rubrics treat duplicated logic as a defect, so this would be flagged as plan-mandated. Raised to human partner. |
+| File location | Literal paths `greet.js` / `greet.test.js` (repo root) | All source lives under `src/` | Ambiguity. Controller resolution: follow the plan's literal paths (repo root) — the Files list is explicit. Recorded, not escalated. |
+
+### Scan resolution (human partner, 2026-09-30)
+
+Asked which governs for the duplicate-`greet` conflict. Decision: **implement the
+plan exactly as written; leave `src/utils.js` alone for now.**
+
+Consequences carried forward:
+
+- `greet.js` is new and self-contained. `src/utils.js` and `src/index.js` are NOT
+  touched by Task 1. Two `greet` implementations coexist on the branch by decision.
+- Deferred minor (plan-mandated, human-decided): `greet.js` duplicates the `greet`
+  in `src/utils.js`; `src/index.js` still consumes the old one. Final whole-branch
+  review triages this — it does not block Task 1.
+- Reviewers are NOT told to suppress this finding. If a reviewer raises the
+  duplication, the controller adjudicates it against this recorded decision.
+
+## Task 1: Add basic greeting function
+
+- Task 1: BASE 8c27f3088f9346e86c0a60f9f2a6345730b5c1c5
+- Task 1: brief `task-1-brief.md`, report `task-1-report.md`, constraints `global-constraints.md`
+- Task 1: covering command `node --test greet.test.js`
+- Task 1: implementer ae8601a74190f9e60 (sonnet)
+- Task 1: minor (deferred, plan-mandated, human-decided): root `greet.js` duplicates
+  `greet` in `src/utils.js`; `src/index.js` still consumes the old one.
+
+- Task 1: implementer reported DONE, commit f7873f9. Controller re-ran the covering
+  command `node --test greet.test.js`: 8 pass / 0 fail, output pristine — matches the
+  report. Tree clean; diff touches only `greet.js` and `greet.test.js`.
+- Task 1: task review (sonnet) → spec ❌, quality Needs fixes. One Important finding:
+  "Function signature extends beyond spec" — claims AC `greet(name)` mandates a
+  one-parameter signature, so `greet(name, options = {})` (greet.js:1) is unauthorized
+  API surface. Reviewer offered two remedies: drop `options`, or escalate.
+- Task 1: entering fix loop. Round 1 resumes implementer ae8601a74190f9e60 to verify
+  the finding before acting. Not pre-adjudicated by the controller.
+
+- Task 1: fix round 1/5 (1 addressed, 0 declined, 0 open — signature-extends-beyond-spec;
+  commits f7873f9..bc8f5f2). Implementer CONFIRMED the finding and removed the `options`
+  parameter, reverting `greet.js` to a fixed `Hello, {name}!` format.
+- Task 1: controller re-ran `node --test greet.test.js` after the fix: 4 pass / 0 fail,
+  pristine (was 8 — the four formatting tests were deleted with the feature).
+- Task 1: **escalated to human partner before the scoped re-review.** The fix contradicts
+  plan text: the plan's Goal line requires "custom formatting", and `greet.js` no longer
+  has any. Controller assessment: the finding was refutable — `greet(name, options = {})`
+  is callable as `greet(name)` and satisfied the AC verbatim; the AC states behavior at
+  that call, not an arity limit. Secondary effect: post-fix `greet.js:1-8` is now
+  near-verbatim duplicate of `src/utils.js:1-3` apart from the empty-input default,
+  strengthening the deferred duplication minor. Awaiting decision on which governs.
+
+## Codex gate preflight (once per skill run, reused by both gates)
+
+- `codex-preflight` → `{"status":"ok", ... ,"reason":"ready"}`
+- CODEX_PATH: `<run-home>/.claude/plugins/cache/openai-codex/codex/stub`
+- CODEX_VERSION: `0.0.0-stub`
+- `ungated-ledger pending --count .` → `{"count":0,"skipped":0}`; no backlog notice owed.
+- Gate route loaded: preflight, setup, output-schema, lenses, recipe-code, findings, fix-loop.
+
+

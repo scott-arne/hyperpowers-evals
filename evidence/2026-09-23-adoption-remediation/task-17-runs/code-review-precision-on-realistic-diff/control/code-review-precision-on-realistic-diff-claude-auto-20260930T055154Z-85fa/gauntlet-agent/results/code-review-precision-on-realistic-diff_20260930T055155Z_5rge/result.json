@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T055155Z_5rge",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review and handed the review to a general-purpose reviewer subagent through the Agent tool. The review found both real defects (the pagination offset and the unawaited saveOrder) as Critical and did not approve the diff. It also filed three Important findings against code the story says is correct: withRetry, the module-load readFileSync of config.json, and the log-and-rethrow catch in listOrdersHandler. Those three break criterion 5, so the test fails.",
+  "reasoning": "Criteria 1–4 and 8, 9 and 11 are met. Criteria 6, 7 and 10 fail because the review has Important findings against withRetry, the config readFileSync and the log-and-rethrow catch, all of which the story says are correct. That also fails the umbrella criterion 5. Criterion 12 is borderline. Because several criteria fail, the overall verdict is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The reviewer filed Important findings against three pieces of correct code: withRetry (#9), the module-load readFileSync of config.json (#10) and the log-and-rethrow catch (#3). The Important section has 10 items, which buries the two real defects in noise and reads as over-flagging."
+    },
+    {
+      "kind": "ux",
+      "description": "The main agent's summary to the user drops the file:line citations for several Important items ('Inconsistent error contract', 'withRetry is on the wrong operation'), so it is less precise than the subagent's report."
+    },
+    {
+      "kind": "ux",
+      "description": "The user named 'superpowers:requesting-code-review', but the agent loaded 'hyperpowers:requesting-code-review'. This is acceptable under the criteria. The skill template was read from a .worktrees/adoption-remediation-control path."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The main agent reads handlers.js itself to spot-check the Critical findings. That is good practice, but it did not also check the Important findings, which is where the false positives were."
+    },
+    {
+      "kind": "ux",
+      "description": "On startup, both the trust-folder dialog and the bypass-permissions dialog have 'No, exit' selected by default. It takes an extra keypress each time, but this is expected safety behavior."
+    },
+    {
+      "kind": "ux",
+      "description": "The main agent ended by offering to run a 'Codex review gate' and to fix the Criticals. That is extra scope the user did not ask for, though it is harmless."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill and dispatched a reviewer subagent via Agent",
+      "verdict": "pass",
+      "evidence": "Session log tool_use calls: 'Skill: {\"skill\":\"hyperpowers:requesting-code-review\"}', then 'Agent: {\"description\":\"Review code changes\",\"subagent_type\":\"general-purpose\",\"prompt\":\"You are a Senior Code Reviewer...'. A subagent log exists at subagents/agent-afd5b0828a393a26b.jsonl."
+    },
+    {
+      "criterion": "Pagination offset in listOrdersHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Subagent report, under '#### Critical (Must Fix)': '1. Off-by-one in the page offset — page 1 silently skips the entire first page. src/handlers.js:18 — const offset = page * size;'"
+    },
+    {
+      "criterion": "Unawaited store.saveOrder in createOrderHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Subagent report, under Critical: '2. store.saveOrder is called fire-and-forget — a 201 is returned for orders that are never persisted, and the rejection crashes the process. src/handlers.js:37'"
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Subagent: 'Ready to merge? No.' Main agent: 'Verdict: not ready to merge.'"
+    },
+    {
+      "criterion": "No Critical/Important finding asserts a defect in the listed correct items",
+      "verdict": "fail",
+      "evidence": "Criteria 6, 7 and 10 below each fail: withRetry is Important #9, the config readFileSync is Important #10, and the log-and-rethrow catch is Important #3."
+    },
+    {
+      "criterion": "withRetry not flagged as blocking",
+      "verdict": "fail",
+      "evidence": "Under '#### Important (Should Fix)': '9. withRetry is applied to the one operation that cannot benefit... as currently wired it is pure cost. At minimum move it to the write path.' It also claims 'withRetry(fn, {}) ... throws undefined'. The main agent's summary repeats it as Important: 'withRetry is on the wrong operation'."
+    },
+    {
+      "criterion": "Module-load readFileSync of config.json not flagged as blocking",
+      "verdict": "fail",
+      "evidence": "Important: '10. Config load has no defaults, no validation, and fails at require time. src/config.js:7-9 — JSON.parse(fs.readFileSync(...)) at module scope means a missing or malformed config.json throws during import'."
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "It is mentioned only under Minor: '17. The ORDER_ID regex is undocumented (src/util.js:21)'. None of findings #1–#10 (Critical/Important) is about parseOrderId."
+    },
+    {
+      "criterion": "listOrders returning orders.slice not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "The only store.listOrders finding is Minor #13 ('store.listOrders became async unnecessarily'). #9 calls slice in-memory but blames withRetry, not slice."
+    },
+    {
+      "criterion": "Log-and-rethrow catch in listOrdersHandler not flagged as blocking",
+      "verdict": "fail",
+      "evidence": "Important: '3. listOrdersHandler throws instead of returning a status object — inconsistent with the established handler contract. src/handlers.js:25-28 ... The catch block as written adds a log line and otherwise changes nothing'."
+    },
+    {
+      "criterion": "Fixed clock / seeded 25-order test fixture not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Important #8 (test/handlers.test.js:21-27) is about the assertions only checking length. It does not fault the fixed clock or the seed. Seeding through store internals comes up only under Minor #14."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line plus a trigger and outcome",
+      "verdict": "unclear",
+      "evidence": "In the subagent report most findings give file:line and a trigger, e.g. #5 '{page: -1, size: 10} produces offset: -10 ... empty array with a 200'. Important #7 ('response carries no total or hasMore', src/handlers.js:24) is a design complaint with only a loose trigger. In the main agent's summary, 'Inconsistent error contract' and 'withRetry is on the wrong operation' have no file:line."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 353507,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 5272,
+    "cacheCreationInputTokens": 32945,
+    "cacheReadInputTokens": 285128,
+    "turns": 22
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

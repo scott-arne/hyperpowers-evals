@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T060421Z_pqr7",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "I sent the exact prompt from the story. The agent loaded hyperpowers:requesting-code-review, read the code-reviewer.md template, and handed the review to a general-purpose subagent through the Agent tool. That reviewer reported both real defects as Critical and confirmed each by running code: the pagination offset at handlers.js:18 and the unawaited saveOrder at handlers.js:37. It said \"Ready to merge? No\", and it filed no blocking finding against any of the six pieces of code the story marks as correct. The agent then checked both findings itself and told the user \"Don't merge as-is.\"",
+  "reasoning": "All acceptance criteria were checked against the session log and the subagent's log, and all pass. The review was done by a subagent the agent dispatched with the template, not inline. Both planted defects are Critical findings with a file:line, a concrete trigger and the resulting outcome, each confirmed by running code. The diff was not approved. The code the story marks as correct shows up only under Strengths or Minor.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The startup 'trust this folder' and 'Bypass Permissions' dialogs both have 'No, exit' selected by default, so each needs Down+Enter. That is a sensible safe default, but it is one extra step when launching through a script."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent loaded hyperpowers:requesting-code-review even though the user named the superpowers: variant. The story allows this, but the agent never mentioned the substitution to the user."
+    },
+    {
+      "kind": "ux",
+      "description": "The final report includes a long Codex-gate notice ('codex-plugin-cc is not available ... /plugin marketplace add openai/codex-plugin-cc') and a mention of an 'ungated-review ledger' entry. This is noise the user never asked for, and it writes to a ledger during a review the user wanted as report-only."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the subagent returned, the agent ran scratch node scripts to reproduce both findings itself (via receiving-code-review). That is good diligence, and it added to the total time (about 4m19s)."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's summary quietly drops several of the reviewer's Minor nits ('I discounted several of the reviewer's remaining nits as speculative'). That is reasonable, but it means the user never sees the reviewer's full list unless they go looking for it."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked requesting-code-review and dispatched a reviewer subagent via Agent tool",
+      "verdict": "pass",
+      "evidence": "Tool calls in the session log: Skill {\"skill\":\"hyperpowers:requesting-code-review\"}, then a Read of .../requesting-code-review/code-reviewer.md, then Agent {subagent_type: general-purpose, description: \"Review code changes\", prompt: \"You are a Senior Code Reviewer...\"}. The subagent's log is subagents/agent-a80019813c63bd46b.jsonl."
+    },
+    {
+      "criterion": "Flags pagination offset in listOrdersHandler under Critical/Important",
+      "verdict": "pass",
+      "evidence": "Under 'Critical (Must Fix)' in the subagent output: 'C1. src/handlers.js:18 — off-by-one offset makes the first page of orders permanently unreachable.'"
+    },
+    {
+      "criterion": "Flags unawaited store.saveOrder in createOrderHandler under Critical/Important",
+      "verdict": "pass",
+      "evidence": "Under Critical: 'C2. src/handlers.js:37 — saveOrder is not awaited: the handler returns 201 for orders that were rejected, and the unhandled rejection crashes the process.'"
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Subagent: '**Ready to merge?** No — blocked on C1 and C2.' Final message from the agent: '**Don't merge as-is.**'"
+    },
+    {
+      "criterion": "No Critical/Important finding asserts a defect in the listed correct code (header)",
+      "verdict": "pass",
+      "evidence": "The only Critical/Important findings are C1 and C2 (the real defects), I3 (the pagination test checks page length but not which orders come back) and I4 (no test for successful order creation). None of them targets the listed correct code; see the entries below."
+    },
+    {
+      "criterion": "withRetry not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Listed under Strengths ('src/util.js:7-19 — withRetry is correct'). It appears only once more, as a Minor note that it is dead scaffolding around an in-memory slice."
+    },
+    {
+      "criterion": "module-load readFileSync of config.json not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Mentioned only under Minor: 'src/config.js:7-9 — ... Fail-fast at startup is a defensible choice, but there is no schema validation'."
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Mentioned only under Minor: 'src/util.js:24 — ORDER_ID.test(s) string-coerces ... hence Minor'. The ^...$ anchoring is listed under Strengths."
+    },
+    {
+      "criterion": "listOrders returning orders.slice not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Listed under Strengths: 'src/store.js:5-7 — listOrders now returns orders.slice(...) ... genuine encapsulation improvement'."
+    },
+    {
+      "criterion": "catch that logs and rethrows not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Listed under Strengths: 'src/handlers.js:25-28 — the catch logs *and* rethrows rather than swallowing'."
+    },
+    {
+      "criterion": "fixed clock and seeded 25-order list in tests not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Important items I3 and I4 are about assertions and tests that are missing, not about the fixed clock or the seed data. The seed data comes up only under Minor ('seed() is called only in the first test ... use beforeEach'). The fixed clock is never called a defect."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line and trigger + outcome",
+      "verdict": "pass",
+      "evidence": "C1: handlers.js:18, input {page:1,size:10} with 25 orders gives first=ord_00000010 and 15 of 25 orders reachable. C2: handlers.js:37, input {id:'ord_abcd1234', total:0} returns 201 and then the process exits on an unhandled rejection. I3: test/handlers.test.js:21-27, the buggy slice(10,20) still returns 10 rows, so the test passes. I4: test/handlers.test.js line 29, the only creation test exercises the rejection branch, so saveOrder is never reached."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 404736,
+  "usage": {
+    "inputTokens": 42,
+    "outputTokens": 4463,
+    "cacheCreationInputTokens": 24597,
+    "cacheReadInputTokens": 245005,
+    "turns": 19
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

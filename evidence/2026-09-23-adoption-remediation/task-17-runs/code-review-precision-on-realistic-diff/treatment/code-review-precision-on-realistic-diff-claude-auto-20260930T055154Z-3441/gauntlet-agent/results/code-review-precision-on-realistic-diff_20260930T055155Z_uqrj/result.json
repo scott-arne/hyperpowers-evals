@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T055155Z_uqrj",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "I sent the scripted prompt. The agent loaded hyperpowers:requesting-code-review, read the code-reviewer.md template and dispatched a general-purpose reviewer subagent with the Agent tool. The review came back \"Not ready to merge\". It has two Critical findings: the pagination off-by-one at src/handlers.js:18 and the unawaited saveOrder at src/handlers.js:37. None of the six code areas the story lists as correct got a blocking finding. The agent asked no follow-up questions, so no scripted answers were needed.",
+  "reasoning": "Every acceptance criterion is met. The skill loaded, the reviewer went out through the Agent tool with the template, and both seeded defects came back as Critical with file:line, a concrete input and its outcome. The review does not approve the change. None of the code areas the story lists as correct got a Critical or Important finding. The only criticisms of withRetry, config.json and the fixture are under Minor, which the story allows.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "In the parent's summary to the user, file:line references were dropped for Important #4 (no line) and #6 (\"this file\", no line). The subagent's full review had them (test/handlers.test.js:29-32 and src/handlers.js:15-16). The user sees a less precise version than the reviewer wrote."
+    },
+    {
+      "kind": "bug",
+      "description": "Side effect outside the workdir: the agent ran `cd /Users/johnss51/Development/agents/hyperpowers && bash skills/requesting-code-review/scripts/codex-preflight` and then `... scripts/ungated-ledger append --class degraded-gate ...`. That writes ledger state into the main hyperpowers repo, not the project under review. The skill also resolved its files from the .worktrees/adoption-remediation-treatment plugin dir, yet the scripts ran from the repo root, which may be a different checkout."
+    },
+    {
+      "kind": "performance",
+      "description": "While the reviewer subagent ran in the background, the parent polled with `sleep 60` and then `sleep 120` Bash calls instead of waiting for a completion notification. The whole run took about 4m45s."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent printed an unprompted Codex install nag (\"/plugin marketplace add openai/codex-plugin-cc ...\") in the middle of the review, which adds noise for the user."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Some Important findings could reasonably be Minor, especially #5 (fractional/negative page validation) and #7 (client-supplied createdAt). The ranking stays sensible because the parent says only 1–4 block the merge."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch, both the workspace-trust and bypass-permissions dialogs default to \"No, exit\", so each needs Down+Enter. This is expected Claude Code behavior, noted only for harness authors."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill and dispatched reviewer subagent via Agent tool",
+      "verdict": "pass",
+      "evidence": "Session log tool_use sequence: `Skill {\"skill\":\"hyperpowers:requesting-code-review\"}`, then Read of skills/requesting-code-review/code-reviewer.md, then `Agent {\"subagent_type\":\"general-purpose\",\"description\":\"Review code changes\",\"prompt\":\"You are a Senior Code Reviewer...`. A subagent log was created at subagents/agent-ad77b24baa28f240d.jsonl."
+    },
+    {
+      "criterion": "Pagination offset in listOrdersHandler flagged Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final report, under Critical: \"1. Off-by-one makes page 1 unreachable — src/handlers.js:18 ... const offset = page * size; // treats it as 0-based ... {page: 1, size: 10} returns ord_00000010..019 instead of 000..009\""
+    },
+    {
+      "criterion": "Unawaited store.saveOrder in createOrderHandler flagged Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final report, under Critical: \"2. saveOrder never awaited — src/handlers.js:37 ... the client gets 201 Created for an order that was never stored, and the unhandled rejection takes the Node process down\""
+    },
+    {
+      "criterion": "Review does not approve",
+      "verdict": "pass",
+      "evidence": "Parent: \"## Reviewer verdict: **Not ready to merge**\". Subagent: \"**Ready to merge?** No\""
+    },
+    {
+      "criterion": "No blocking finding against the listed correct-as-written items (header)",
+      "verdict": "pass",
+      "evidence": "Criteria 6–11 below each pass. The listed items appear only under Minor or Strengths, never under Critical or Important."
+    },
+    {
+      "criterion": "withRetry not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Only Minor mentions: \"8. retryAttempts: 0 throws undefined. src/util.js:8-18\" and \"9. Retry wraps an operation that cannot fail transiently\". The Strengths section says \"withRetry backoff is correctly implemented with the original error preserved\"."
+    },
+    {
+      "criterion": "config.js readFileSync not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Mentioned only under Minor: \"10. Moving config into config.json is unrelated to both stated requirements. src/config.js:3-9\"."
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "No finding targets parseOrderId. The Strengths section says \"ORDER_ID is properly anchored\"."
+    },
+    {
+      "criterion": "store.listOrders slice not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "No finding calls store.js listOrders wrong. It comes up only in Minor #9 (\"store.listOrders is an in-memory slice; it has no transient failure mode\"). Minor #11 cites store.js:16, but that is about duplicate ids."
+    },
+    {
+      "criterion": "Log-and-rethrow catch in listOrdersHandler not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "None of the Critical/Important findings 1–7 targets the catch. Minor #8 mentions that line 27 rethrows a non-Error only in the retryAttempts:0 case."
+    },
+    {
+      "criterion": "Fixed clock and seeded 25-order fixture not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Important #3 criticizes the assertion (\"asserts only the *count*\"), not the fixture, and says \"The fixture was deliberately seeded with identifiable ids\". The fixture is praised in Strengths. Seeding is mentioned only in Minor #12 (test-order coupling)."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line and states a trigger and outcome",
+      "verdict": "pass",
+      "evidence": "Subagent review: #1 handlers.js:18, {page:1,size:10} gives 010..019. #2 handlers.js:37, non-positive total gives 201 and an unhandled rejection. #3 test/handlers.test.js:21-27, slice(10,20) passes green. #4 test/handlers.test.js:29-32, an await-and-assert-persisted test fails against current code. #5 handlers.js:16-18, {page:-1} gives 200 with an empty list. #6 handlers.js:15-16, listOrdersHandler() throws TypeError. #7 handlers.js:32,36, createdAt:\"whenever\" is accepted with 201. Caveat: the parent's condensed summary dropped the line numbers for #4 and #6."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 434371,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 5959,
+    "cacheCreationInputTokens": 34558,
+    "cacheReadInputTokens": 300546,
+    "turns": 22
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

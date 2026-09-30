@@ -1,0 +1,40 @@
+
+  [38;5;153mtime.monotonic()[39m has neither failure mode, which is exactly why it's the right clock for interval math. (One
+  correction to the reviewer's framing and to the existing docstring: DST isn't a hazard here — [38;5;153mtime.time()[39m is UTC epoch
+  seconds and doesn't shift on DST transitions. NTP and manual clock sets are the real risk. The docstring overstates
+  the case, and I can tighten that wording.)
+
+  The underlying need — correlating limiter events with wall-clock log timestamps — is legitimate and solvable without
+  changing the window math. Two options:
+
+  - Record a wall-clock timestamp [3malongside[0m the monotonic one, used only for logging/emission, never for the cutoff
+    comparison.
+  - Log [38;5;153mtime.time()[39m at the call site when a decision is made, and leave the limiter's internals monotonic.
+
+  I'd default to the second, since it keeps the limiter free of logging concerns. Want me to wire one of these up?
+
+  [1m3. Pluggable storage backend — pushing back on YAGNI grounds.[0m I grepped the repo for [38;5;153mredis|backend|storage[39m: the only
+  hit is [38;5;153mbuild-backend = "hatchling.build"[39m in [38;5;153mpyproject.toml[39m. There's no Redis dependency, no second implementation, and
+  no caller that needs one. [38;5;153mdependencies = [][39m today.
+
+  Building the interface now means guessing at the seam before the constraint that shapes it exists, and a Redis sliding
+  window is not a drop-in swap for a [38;5;153mdeque[39m. The current [38;5;153mallow()[39m does read-evict-count-append as a local,
+  single-threaded, atomic sequence. Against Redis that has to become one atomic server-side operation — a
+  [38;5;153mZREMRANGEBYSCORE[39m/[38;5;153mZCARD[39m/[38;5;153mZADD[39m sequence in a Lua script or [38;5;153mMULTI[39m — or concurrent gateway processes will race past the
+  limit. It also brings in network failure and timeout handling, which the in-memory version has no concept of. An
+  interface designed against the [38;5;153mdeque[39m today will almost certainly be the wrong shape for that, and we'd rewrite it
+  anyway plus carry the abstraction in the meantime.
+
+  My recommendation is to defer until there's an actual Redis requirement, then extract the interface from two real
+  implementations. If there's a concrete plan I'm not aware of — a scheduled multi-process gateway rollout, say — that
+  changes the calculus and I'll build it; tell me the target and I'll design against it rather than against a
+  hypothetical.
+
+  Item 1 is committed to the working tree, unstaged. Items 2 and 3 are untouched pending your call.
+
+[38;5;246m✻[39m [38;5;246mCooked for 54s · done 2:49 AM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

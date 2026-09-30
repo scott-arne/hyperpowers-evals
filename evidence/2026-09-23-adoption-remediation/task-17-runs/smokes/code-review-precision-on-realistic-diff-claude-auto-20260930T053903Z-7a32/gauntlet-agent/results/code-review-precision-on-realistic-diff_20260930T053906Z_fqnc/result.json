@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T053906Z_fqnc",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review and sent a general-purpose reviewer subagent to review 7c6900d..97dc661 using the skill's template. It checked the reviewer's claims itself, then reported \"do not merge\". Both real defects came back as Critical, each with a line number, a trigger input, and the outcome. The run still fails: one Important finding (I7, src/handlers.js:27) calls the log-and-rethrow catch in listOrdersHandler a defect. The story lists that catch as correct code that must not get a blocking finding, and the agent repeated it under Important in its own report.",
+  "reasoning": "Criteria 1-4, 6-9, 11 and 12 pass: correct skill, the reviewer ran as a subagent, both real defects came back as Critical with triggers and outcomes, and the review did not approve the diff. Criterion 10 fails, and criterion 5 fails with it. The story lists the catch in listOrdersHandler that logs and rethrows as correct and says a blocking finding about it is a failure. The review has exactly that: Important finding I7 at src/handlers.js:27, which the main agent kept under Important in its final report. Since an overall pass needs every criterion to pass, the verdict is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The reviewer put the intentional log-and-rethrow catch in listOrdersHandler (src/handlers.js:25-27) under Important as \"two incompatible error contracts\". The main agent said it independently verified the Critical and Important claims, but still carried this one into its final report under Important instead of downgrading it."
+    },
+    {
+      "kind": "ux",
+      "description": "The Important section is inflated to six items. Several are scope or design opinions (unvalidated page/size, client-supplied createdAt, a zero-arg call break that the agent itself says breaks nothing in-repo) rather than defects in the diff. That dilutes the two real Criticals."
+    },
+    {
+      "kind": "ux",
+      "description": "The Claude Code first-run dialogs (workspace trust, bypass permissions) both default to \"No, exit\", so a tester has to press Down before Enter at each one."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The skill printed a banner telling the user to install codex-plugin-cc and appended to an 'ungated-review ledger'. This is noise for a user who only asked for a review, and it writes state the user didn't request."
+    },
+    {
+      "kind": "ux",
+      "description": "The reviewer subagent ran in the background. The parent screen showed 'Waiting for 1 background agent to finish' for about 4 minutes and the full run took 4m18s. It worked, but there was little progress detail beyond the agent status line."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked requesting-code-review and dispatched a reviewer subagent via the Agent tool",
+      "verdict": "pass",
+      "evidence": "Session log tool calls: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, then Read of skills/requesting-code-review/code-reviewer.md, then {\"name\":\"Agent\",\"subagent_type\":\"general-purpose\",\"prompt\":\"You are a Senior Code Reviewer...\"}. A subagent log exists at subagents/agent-a2d1b2b4d92dbb3c4.jsonl."
+    },
+    {
+      "criterion": "Pagination offset in listOrdersHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final report, under Critical: \"1. src/handlers.js:18 — off-by-one: the first page of orders is unreachable... const offset = page * size; // minimum offset is size, never 0 ... Fix: (page - 1) * size\""
+    },
+    {
+      "criterion": "Unawaited store.saveOrder in createOrderHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final report, under Critical: \"2. src/handlers.js:31-38 — saveOrder is neither awaited nor caught: false 201, then the process dies... {id: 'ord_abcd1234', total: -5} returns 201 Created, stores nothing, and the unhandled rejection terminates the process\""
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Final report: \"## Verdict: do not merge\". Subagent output: \"Ready to merge? No\"."
+    },
+    {
+      "criterion": "No Critical/Important finding asserts a defect in any of the listed correct code",
+      "verdict": "fail",
+      "evidence": "Fails because sub-item 10 fails: an Important finding targets the catch in listOrdersHandler (see criterion 10). The other listed items only got Minor findings or none."
+    },
+    {
+      "criterion": "withRetry not blocked",
+      "verdict": "pass",
+      "evidence": "Mentioned only under Minor (M10: \"withRetry wraps an in-memory array slice that cannot fail transiently... Defensible as forward-looking scaffolding\"). The agent adds: \"The reviewer also praised withRetry (src/util.js:7-19) as correctly implemented\"."
+    },
+    {
+      "criterion": "Module-load readFileSync of config.json not blocked",
+      "verdict": "pass",
+      "evidence": "Mentioned only under Minor (M11: \"config.json externalization... has no error handling on readFileSync/JSON.parse\"). There is no Critical or Important finding about it."
+    },
+    {
+      "criterion": "parseOrderId not blocked",
+      "verdict": "pass",
+      "evidence": "No finding against it. The subagent's assessment says \"The surrounding design (store-level offset/limit, withRetry, parseOrderId) is sound\"."
+    },
+    {
+      "criterion": "listOrders returning orders.slice not blocked",
+      "verdict": "pass",
+      "evidence": "No finding against store.listOrders. Its only mention is in M10 (Minor), as context for withRetry. The agent calls the store-level offset/limit seam \"the right place to put pagination\"."
+    },
+    {
+      "criterion": "catch in listOrdersHandler that logs and rethrows not blocked",
+      "verdict": "fail",
+      "evidence": "Subagent, under \"#### Important (Should Fix)\": \"I7. src/handlers.js:27 — listOrdersHandler throws on failure while createOrderHandler returns a status object, so the module has two incompatible error contracts... Fix: pick one contract.\" The agent repeats it under Important in its final report: \"src/handlers.js:27 — listOrdersHandler throws on failure while createOrderHandler returns {status}. Two incompatible error contracts in one module\". handlers.js lines 25-27 are that catch: `} catch (err) { log.error('list failed', err); throw err; }`."
+    },
+    {
+      "criterion": "Fixed clock and seeded 25-order list in the test not blocked",
+      "verdict": "pass",
+      "evidence": "I4 (Important) at test/handlers.test.js:26 criticizes the weak assertion (length only, never ids), not the fixed clock or the seeded fixture. The fixture is described neutrally: \"seeds 25 deterministically-ordered ids\". M12 (Minor) is about shared-state reset."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line and a trigger plus the outcome",
+      "verdict": "pass",
+      "evidence": "Every Critical and Important item cites a file and line and gives a trigger with its outcome. Examples: I3 \"listOrdersHandler() THREW: TypeError\"; I6 \"{page: -1} returns 200 OK with page: -1 and an empty array\"; I7 a caller that inspects res.status gets an exception instead; I8 a client-supplied createdAt lets clients backdate orders."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 420486,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 5248,
+    "cacheCreationInputTokens": 36859,
+    "cacheReadInputTokens": 321394,
+    "turns": 20
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

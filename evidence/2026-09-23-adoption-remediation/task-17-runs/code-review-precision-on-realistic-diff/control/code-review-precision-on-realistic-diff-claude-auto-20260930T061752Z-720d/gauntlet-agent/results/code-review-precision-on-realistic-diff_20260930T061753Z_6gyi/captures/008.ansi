@@ -1,0 +1,40 @@
+  - [1m[38;5;153mlistOrdersHandler()[39m now throws when called with no args[0m — it's the package [38;5;153mmain[39m, so this is the public surface.
+  - [1mTwo incompatible error contracts in one module[0m — [38;5;153mlistOrders[39m rethrows, [38;5;153mcreateOrder[39m returns [38;5;153m{status: 400}[39m.
+  - [1m[38;5;153mwithRetry[39m wraps an in-memory [38;5;153mArray.slice[0m — can't help (no transient failure mode), but [3mdoes[0m retry programming bugs:
+    a [38;5;153mTypeError[39m is retried 3× over 154ms before surfacing.
+  - [1m[38;5;153mwithRetry[39m throws literal [38;5;153mundefined[39m when [38;5;153mattempts <= 0[0m — now reachable because [38;5;153mattempts[39m comes from a user-editable
+    JSON file.
+  - [1m[38;5;153mconfig.json[39m externalization is unvalidated[0m — a typo like [38;5;153mretryAttempts[39m instead of [38;5;153mpageSize[39m makes [38;5;153mslice(offset, [39m
+    [38;5;153mundefined)[39m return [3mevery[0m row, silently disabling pagination. A missing file throws raw [38;5;153mENOENT[39m at import time.
+
+  [1mAnd the reason this all shipped green:[0m [38;5;153mtest/handlers.test.js:21-27[39m asserts only [38;5;153mres.orders.length === 10[39m, which holds
+  for any offset within a 25-row fixture. The test cannot fail when the feature is broken. There's no success-path test
+  for [38;5;153mcreateOrderHandler[39m at all — which is exactly why #2 escaped.
+
+  [1mScope flag[0m
+
+  [38;5;153mconfig.json[39m + [38;5;153msrc/config.js[39m and the [38;5;153mwithRetry[39m wrapper serve neither stated requirement, and both carry defects. The
+  reviewer asks you to confirm whether they were intentional or split them out.
+
+  ---
+
+  Note [status: not-installed]: codex-plugin-cc is not available, so this review ran without an additional Codex review.
+  Install it for an extra review gate:
+  [38;5;153m/plugin marketplace add openai/codex-plugin-cc[39m
+  [38;5;153m/plugin install codex@openai-codex[39m
+  [38;5;153m/reload-plugins[39m
+  [38;5;153m/codex:setup[39m
+  I recorded the ungated range in this repo's sweep ledger ([38;5;153m20260930T062200Z-20423-3568[39m) so it can be picked up later.
+
+  I've made no changes — you asked for findings before merge. If you want me to act on them, the reviewer's suggested
+  order is: fix #1 and #2, add the content-asserting and creation-success tests [3mand watch them fail first[0m, then decide
+  on [38;5;153mconfig.json[39m/[38;5;153mwithRetry[39m. I'd use [38;5;153mhyperpowers:receiving-code-review[39m for that pass, since these are claims to evaluate
+  rather than a work order — in particular #7 (duplicate IDs) and #8 (breaking signature) predate or may be intentional
+  for a pre-1.0 in-memory service.
+
+[38;5;246m✻[39m [38;5;246mWorked for 3m 51s · done 11:22 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

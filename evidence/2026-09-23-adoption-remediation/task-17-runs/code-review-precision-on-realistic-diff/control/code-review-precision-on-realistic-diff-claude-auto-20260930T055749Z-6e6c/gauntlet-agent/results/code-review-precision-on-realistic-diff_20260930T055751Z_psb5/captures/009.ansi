@@ -1,0 +1,40 @@
+
+  - [1mContract break for existing callers[0m ([38;5;153msrc/handlers.js:15[39m): [38;5;153mlistOrdersHandler[39m went from [38;5;153m()[39m to [38;5;153m(query)[39m, sync to async,
+    and all-orders to one-page — no default, no shim, [38;5;153mversion[39m still [38;5;153m0.1.0[39m. [38;5;153mpackage.json[39m names [38;5;153msrc/handlers.js[39m as [38;5;153mmain[39m,
+    so these are public exports; calling it with no argument now throws. Worth confirming whether out-of-tree consumers
+    exist.
+  - [1m[38;5;153mpage[39m/[38;5;153msize[39m unvalidated[0m ([38;5;153m:16-18[39m): [38;5;153msize[39m is unbounded ([38;5;153msize: 1000000[39m accepted), negative [38;5;153mpage[39m silently returns nothing
+    via [38;5;153mslice[39m's negative-index semantics, non-integers pass through, and [38;5;153mNumber('abc') || default[39m turns garbage into a
+    silent 200 instead of a 400.
+  - [1mNo pagination metadata in the response[0m — no [38;5;153mtotal[39m/[38;5;153mhasMore[39m, so clients can't detect the last page.
+  - [1mTests assert length, not identity[0m ([38;5;153mtest/handlers.test.js:21-27[39m): [38;5;153massert.strictEqual(res.orders.length, 10)[39m passes
+    while returning the wrong ten rows. The seed builds ordered, identifiable ids and the test never looks at them —
+    that's precisely why bug 1 survived to review.
+  - [1m[38;5;153mnpm test[39m isn't wired up[0m — [38;5;153mnpm error Missing script: "test"[39m. The suite does pass when run directly ([38;5;153mnode --test test/
+[39m    → 2/2). Pre-existing, not a regression from this commit.
+  - [1m[38;5;153mwithRetry[39m on a hot in-memory read[0m ([38;5;153m:20[39m) can't help a [38;5;153mslice[39m that has no transient failure mode, and it has a latent
+    [38;5;153mthrow undefined[39m when [38;5;153mattempts[39m is 0 or missing.
+
+  [1mMinor[0m
+
+  [38;5;153mparseOrderId[39m accepts a single-element array (regex coerces to string and the function returns the input unnormalized);
+  [38;5;153mcreatedAt[39m is client-controlled while the purpose-built [38;5;153mnowIso(clock)[39m sits unused; duplicate order ids are accepted;
+  [38;5;153msrc/config.js[39m parses [38;5;153mconfig.json[39m at module scope with no try/catch and no schema check (a missing [38;5;153mpageSize[39m makes every
+  listing silently return zero orders with a 200); log-and-rethrow in [38;5;153mlistOrdersHandler[39m vs. status-object returns in
+  [38;5;153mcreateOrderHandler[39m are two error conventions in one module.
+
+  One reviewer claim I'd temper: it praises [38;5;153mlistOrders[39m for returning a copy, but [38;5;153msrc/store.js:20[39m still exports the raw
+  [38;5;153morders[39m array, so the encapsulation is only partial.
+
+  Three points the reviewer flagged as ambiguous rather than assuming, which are yours to answer: whether the
+  [38;5;153mlistOrdersHandler[39m contract break is coordinated with external callers, whether [38;5;153mcreatedAt[39m was meant to be
+  server-stamped, and whether externalizing config was in scope for this commit.
+
+  I haven't changed anything. Want me to fix the two Criticals plus the test assertions?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 4m 22s · done 11:02 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+
+  - [38;5;153msrc/handlers.js:19-28[39m — [38;5;153mwithRetry[39m wraps [38;5;153mstore.listOrders[39m, whose body is a synchronous [38;5;153mslice[39m with no failure mode.
+    The retry, catch, and log are unreachable. The helper itself ([38;5;153msrc/util.js:7-19[39m) is well written; it's the wiring
+    that's dead.
+  - [38;5;153msrc/handlers.js:36[39m — [38;5;153mcreatedAt[39m is taken verbatim from the body and never validated (persists [38;5;153mundefined[39m; clients can
+    backdate). [38;5;153mnowIso[39m exists in [38;5;153msrc/util.js:3[39m and I confirmed it's exported but called nowhere — it looks like the
+    intended source.
+  - [38;5;153msrc/config.js:7-9[39m — a missing or malformed [38;5;153mconfig.json[39m throws a bare [38;5;153mENOENT[39m/[38;5;153mSyntaxError[39m at require time.
+  - [38;5;153mtest/handlers.test.js:10-19[39m — [38;5;153mseed()[39m mutates the shared store singleton with no teardown; harmless today, but it
+    starts mattering once the test from #4 exists.
+
+  [1mWhat was done well[0m
+
+  The config extraction is a clean, value-preserving refactor (I diffed [38;5;153mconfig.json[39m against the old literals —
+  identical). [38;5;153mwithRetry[39m gets the usual traps right: no sleep after the final attempt, rethrows the original error.
+  [38;5;153mparseOrderId[39m returning [38;5;153mnull[39m and safely coercing non-strings means the [38;5;153mid === null[39m guard can't be bypassed. And [38;5;153mslice[39m
+  in the store incidentally stops the list handler from leaking the live [38;5;153morders[39m array.
+
+  [1mCodex gate[0m
+
+  Preflight returned [38;5;153mnot-installed[39m:
+
+  [2m▎[0m [3mNote [status: not-installed]: codex-plugin-cc is not available, so this review will run without an additional Codex
+[0m  [2m▎[0m [3mreview. Install it for an extra review gate:[0m
+  [2m▎[0m [3m[38;5;153m/plugin marketplace add openai/codex-plugin-cc[39m → [38;5;153m/plugin install codex@openai-codex[39m → [38;5;153m/reload-plugins[39m → [38;5;153m/codex:setup
+[0m
+  Recorded as an ungated-review ledger event for the range so the sweep can pick it up later.
+
+  ---
+
+  I've changed nothing — you asked for a review, not fixes. Worth fixing the two test gaps (#3, #4) alongside the two
+  Criticals; the tests are why a green suite shipped both bugs, so fixing only the code leaves the same blind spot. Say
+  the word and I'll do it.
+
+[38;5;246m✻[39m [38;5;246mChurned for 4m 19s · done 11:22 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

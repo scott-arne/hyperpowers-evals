@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T060638Z_vuvr",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review, sent a reviewer subagent through the Agent tool, found both planted defects (the pagination offset and the unawaited saveOrder) as Critical, and said the commit is not ready to merge. The run still fails. The reviewer also filed a Critical finding against parseOrderId, which is correct as written for this codebase. The agent's final report kept that finding as a blocking Important. The reviewer also rated the withRetry wrapping at its read call site as Important. The agent pushed that one down to Minor in its final summary.",
+  "reasoning": "Criteria 1–4 pass. Criterion 8 fails: parseOrderId (src/util.js:23-25) got a Critical finding from the reviewer and an Important one in the agent's final summary. The story lists it as correct code that must not get a blocking finding. Its one caller returns 400 on null. The claimed trigger is an object, or an array, whose string form matches the regex. Criterion 6 is unclear: the reviewer's Important #7 says the retry around the read \"reads as cargo-culted resilience\" and that withRetry \"retries every error\". The agent then demoted this to Minor. The other correct-code items were either praised or only raised as Minor.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The reviewer subagent rated parseOrderId (correct for this codebase: it returns null on no match and the caller returns 400) as Critical, using an object/array whose string form matches the regex. The main agent 'verified' this and kept it as a blocking Important. That is a false blocking finding."
+    },
+    {
+      "kind": "bug",
+      "description": "The reviewer rated the withRetry wrapping of a read as Important ('cargo-culted resilience'). The main agent correctly pushed it down to Minor in its final summary, but the subagent's calibration was off."
+    },
+    {
+      "kind": "ux",
+      "description": "The reviewer's list of Important findings is long, 9 items. Several are speculative or scope-creep for this diff, e.g. #6 'add total/hasMore', #11 duplicate-id protection, #12 server-assigned createdAt. They dilute the two real defects."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent ran hyperpowers:receiving-code-review and checked the reviewer's claims against the code, pushing back on some. That is good behaviour, though it still confirmed the parseOrderId false positive."
+    },
+    {
+      "kind": "ux",
+      "description": "The final report adds a 'Codex gate' section telling the user to install codex-plugin-cc, and writes an entry to a 'ledger'. This is noise the user never asked for."
+    },
+    {
+      "kind": "ux",
+      "description": "In the startup trust dialog and the bypass-permissions dialog, 'No, exit' is selected by default."
+    },
+    {
+      "kind": "ux",
+      "description": "The user asked for superpowers:requesting-code-review and the agent loaded the hyperpowers: variant. The story allows this, but the rename is silent."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill and dispatched a reviewer subagent via Agent tool",
+      "verdict": "pass",
+      "evidence": "Tool calls in session log a3341f62...jsonl, in order: Skill hyperpowers:requesting-code-review, Read (template), Bash, Agent 'Review code changes'. The subagent log agent-aff8a8b01f71bf1c5.jsonl holds the review."
+    },
+    {
+      "criterion": "Flags pagination offset in listOrdersHandler as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Reviewer: 'Critical (Must Fix) 1. Off-by-one in the page offset silently hides the first page of data — src/handlers.js:18 ... page 1 → ord_00000010–19'. The final report repeats it under 'Confirmed Critical'."
+    },
+    {
+      "criterion": "Flags unawaited store.saveOrder in createOrderHandler as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Reviewer: 'Critical 2. saveOrder is never awaited: invalid orders return 201 and crash the process — src/handlers.js:37'. Verified: total:-5 → 201, store size 0, UNHANDLED REJECTION."
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Reviewer: 'Ready to merge? No'. Final report: 'Verdict: not ready to merge.'"
+    },
+    {
+      "criterion": "No Critical/Important finding asserts a defect in the listed correct code (header)",
+      "verdict": "fail",
+      "evidence": "parseOrderId got a blocking finding (see the criterion 8 entry). withRetry's usage got an Important finding (see the criterion 6 entry)."
+    },
+    {
+      "criterion": "withRetry in src/util.js not flagged as blocking",
+      "verdict": "unclear",
+      "evidence": "The reviewer's Strengths section says 'The withRetry helper itself is correctly written'. But Important #7 says 'Retry wraps an operation that cannot fail transiently — src/handlers.js:20-23 ... reads as cargo-culted resilience. Relatedly, withRetry retries every error'. The agent's final report demoted this: 'Where I'd push back on the reviewer ... this is Minor'."
+    },
+    {
+      "criterion": "config.js module-load readFileSync not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Raised only under Minor: '13. Config load has no error handling — src/config.js:7-9', '14. config.json is not declared', '15. ...override'. The final report says to drop 14/15."
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking",
+      "verdict": "fail",
+      "evidence": "Reviewer: 'Critical (Must Fix) ... 3. parseOrderId returns unvalidated non-string input — src/util.js:23-25'. Final report: '3. parseOrderId returns the uncoerced input ... I'd calibrate this one as Important rather than Critical'. So it stays a blocking finding."
+    },
+    {
+      "criterion": "store.listOrders returning orders.slice not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "The reviewer praises it in Strengths ('store.listOrders was correctly changed to take (offset, limit)'). Minor #17 only suggests a comment explaining why it is async."
+    },
+    {
+      "criterion": "catch in listOrdersHandler that logs and rethrows not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Strengths: 'Error logging on the list path doesn't swallow (src/handlers.js:25-28) — it logs and rethrows ... correct pattern'."
+    },
+    {
+      "criterion": "Fixed clock and seeded 25-order list in tests not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Strengths: 'The test seeds a realistic 25-row fixture with a fixed clock ... instinct ... is right'. Important #9/#10 criticize what the tests assert, not the fixture."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line and a trigger plus outcome",
+      "verdict": "pass",
+      "evidence": "Findings cite locations such as src/handlers.js:17 with concrete triggers: 'size: 1e9 accepted', 'page:-1 → slice(-10,0) → 200 empty', 'no-arg call → TypeError', 'creating ord_cccccccc twice leaves two entries'. #6 (no total) is the weakest: it describes a client state (on the last page) and the result (cannot tell)."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 395188,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 5596,
+    "cacheCreationInputTokens": 30175,
+    "cacheReadInputTokens": 374365,
+    "turns": 22
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

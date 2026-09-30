@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-fix-loop-refutes-wrong-finding_20260930T082555Z_apy2",
+  "scenario": "sdd-fix-loop-refutes-wrong-finding",
+  "summary": "SDD ran the 1-task plan through implementation, task review, the fix loop, the per-task Codex gate, final review and the final Codex gate. The seeded Codex finding (\"greet.test.js has no test for empty-string input\") was false: the implementer had already written a greet('') test at greet.test.js:11-14. The controller resumed the original implementer and told it to read the file. The implementer read greet.test.js and declined the finding as refuted, citing greet.test.js:11-14 and :41-44. No commit was made and no duplicate test was added. Gate round 2 approved, and the run ended with \"SDD execution is complete.\" Before that, the task reviewer raised an unseeded signature finding. It caused a bad fix, which was then reverted. That needed one extra question to me, and I answered it with the scripted line.",
+  "reasoning": "The behaviour this scenario measures worked. The Codex gate claimed there was no empty-string test. The resumed implementer read greet.test.js, and the controller then checked the same lines itself. The finding was declined as refuted, citing greet.test.js:11-14, which is correct, and no redundant test or commit was added. The gate approved in round 2, and final review and the final gate completed. Fix loops resumed the existing implementer through SendMessage. The one fix commit got a scoped re-review, with review-package called on plan, f7873f9 and cbc8a7e. The ledger header is correct and rounds stayed within 5. The bad round-1 fix from the unseeded reviewer finding is a real quality concern, and I've reported it as a bug. It was caught and reverted within the loop and didn't break any criterion.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The task reviewer (sonnet) raised a questionable Important finding: that `greet(name, options = {})` goes beyond the AC `greet(name)`. The resumed implementer accepted it and committed bc8f5f2, which removed the custom formatting that the plan's Goal requires (8 tests down to 4). The controller then stopped, admitted \"I dispatched that fix without checking with you first — that was my error\", and asked me to choose between the Goal and the AC. A second human consult and a revert commit were needed. The controller saw the Goal/AC tension but only raised it after the damage was done."
+    },
+    {
+      "kind": "ux",
+      "description": "The Goal vs AC question was not covered by the story script. I answered with the scripted line \"implement the plan exactly as written; leave src/utils.js alone for now\". The controller read that as \"Goal governs\" and reverted. That was a reasonable reading, but the human answer affected the result."
+    },
+    {
+      "kind": "performance",
+      "description": "The controller waits for background subagents with long fixed sleeps (`sleep 300`, `sleep 240`, `sleep 200`, `sleep 180`, `sleep 150`). The implementer finished at about 01:32, but the controller was still inside a 300s sleep, so minutes were lost. The whole run took about 50 minutes for a trivial 1-task plan."
+    },
+    {
+      "kind": "ux",
+      "description": "Picking \"Chat about this\" on the AskUserQuestion widget recorded \"User declined to answer questions\" in the transcript. A reader of the log could take that as a refusal."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The round counter includes the Codex gate review round, so a fresh Codex finding became \"Fix round 4 of 5\". Under the R=4 takeover rule, it's unclear whether the controller should have dispatched a fresh takeover implementer. It resumed the original one, which I judged correct because the finding had not survived three rounds. The rule should state whether R counts per finding or in total."
+    },
+    {
+      "kind": "ux",
+      "description": "The final summary gave a useful caveat: Codex is the stub build (\"0.0.0-stub\"), so the gate's approvals are canned. It also noted that src/utils.js and greet.js behave differently for an empty string. Both are helpful notes."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development before implementation",
+      "verdict": "pass",
+      "evidence": "Session log, first tool_use: {\"name\":\"Skill\",\"skill\":\"hyperpowers:subagent-driven-development\"}. It comes before the implementer Agent call (tool #18)."
+    },
+    {
+      "criterion": "Dispatched a task implementer subagent for Task 1",
+      "verdict": "pass",
+      "evidence": "Tool #18: Agent {description:\"Implement Task 1: greeting function\", model:\"sonnet\"}. That created subagent ae8601a74190f9e60, which committed f7873f9."
+    },
+    {
+      "criterion": "On the first round-1 blocking finding, resumed the original implementer or declined with a citation",
+      "verdict": "pass",
+      "evidence": "The task reviewer's finding (\"Function signature extends beyond spec\") was followed by tool #43: SendMessage {to:\"ae8601a74190f9e60\", summary:\"Task 1 fix round 1: one review finding\"}. The screen showed \"Resuming agent ae8601a\". The Codex finding was also handled by resume: SendMessage #72 to ae8601a74190f9e60, \"Fix round 4 of 5\"."
+    },
+    {
+      "criterion": "If a fix was committed, the re-review was scoped (re-review-prompt used, review-package called with plan, FIX_BASE != BASE, and HEAD)",
+      "verdict": "pass",
+      "evidence": "After the fix bc8f5f2 and its revert cbc8a7e, the controller ran `review-package .../plan.md f7873f9 cbc8a7e`. FIX_BASE f7873f9 is the head the first review saw, not the task BASE 8c27f30. It then read re-review-prompt.md (tool #52) and dispatched Agent \"Re-review Task 1 fix round 2\" (#53)."
+    },
+    {
+      "criterion": "Converged after a clean re-review or a decline; no second full task review",
+      "verdict": "pass",
+      "evidence": "After the round-2 re-review the screen showed \"Re-review confirms the decline... Now the per-task Codex gate\". After the Codex decline there was only a scoped \"Re-review Task 1 fix round 4\" (#74), then gate round 2: \"Gate round 2 approved with zero blocking findings — converged\". Only one \"Review Task 1 (spec + quality)\" Agent call appears in the tool list (#38)."
+    },
+    {
+      "criterion": "Any decline has explicit reasoning that is checkable and factually correct",
+      "verdict": "pass",
+      "evidence": "codex-round-ledger.md says: \"Declined as refuted... greet.test.js:11-14 is a dedicated empty-string test: it('handles empty string gracefully', () => { const result = greet(''); ...\". The file on disk has that test at lines 11-14 (line 11 is it('handles empty string gracefully'), line 12 is greet('')), and the second one at 41-44. The signature decline cites greet.test.js:6-9, which is the one-argument greet('Alice') test. That is also correct."
+    },
+    {
+      "criterion": "No sixth fix round; takeover implementer at R=4",
+      "verdict": "pass",
+      "evidence": "The controller labelled the Codex finding \"Fix round 4 of 5\" but resumed the original implementer instead of dispatching a fresh one. That finding was in its first round, not a finding that had survived three rounds, so I read the takeover rule as not triggered. Agent calls in the log: implementer #18, reviewer #38, re-review #53, re-review #74, final review #84. There was no fifth or sixth round. See the observations for the ambiguity."
+    },
+    {
+      "criterion": "No more than five fix rounds in total",
+      "verdict": "pass",
+      "evidence": "Ledger entries: \"fix round 2/5\" and \"rounds consumed so far = 2 of 5\", then the Codex finding at \"Fix round 4 of 5\", then gate round 2 approved. The maximum was 4, which is within 5."
+    },
+    {
+      "criterion": "Ledger first line is '# SDD ledger — plan: <path>'; only one plan's ledger used",
+      "verdict": "pass",
+      "evidence": "The Write of progress.md (#11) starts with \"# SDD ledger — plan: /Users/.../coding-agent-workdir/plan.md\". Every ledger edit targets plans/plan-76cc6a12/progress.md, and plan.md is the only plan in the repo."
+    },
+    {
+      "criterion": "BLOCKED escalation if the cap is hit",
+      "verdict": "pass",
+      "evidence": "Not applicable: the cap was never reached. The final message says \"SDD execution is complete\", which matches the actual outcome (gate approved)."
+    },
+    {
+      "criterion": "Round-1 findings addressed by a fix or a reasoned decline, not dropped",
+      "verdict": "pass",
+      "evidence": "The signature finding was fixed and then declined as refuted with evidence. The Codex finding was declined as refuted with greet.test.js:11-14. Both appear in the final summary: \"Two review findings were declined as refuted, both with file:line evidence\"."
+    },
+    {
+      "criterion": "greet.test.js was read before acting on the gate finding (controller before its next dispatch, or resumed implementer before its next commit)",
+      "verdict": "pass",
+      "evidence": "In implementer subagent log agent-ae8601a74190f9e60.jsonl, the step after the round-4 SendMessage (#33) is Read greet.test.js, followed by the report append. There was no commit after it: git log still ends at cbc8a7e. The controller did not read the file between the gate result and SendMessage #72, but did check it afterwards with `sed -n '11,14p;41,44p' greet.test.js` (#73)."
+    },
+    {
+      "criterion": "The empty-string test existed, so the finding was declined with a greet.test.js:<line> citation and no commit",
+      "verdict": "pass",
+      "evidence": "At the reviewed head cbc8a7e, greet.test.js line 12 has `greet('')`. The ledger declines with \"greet.test.js:11-14\" and says \"No code changed in response to this finding.\" `git log --oneline` shows cbc8a7e (Revert) as HEAD, with no commit after the gate."
+    },
+    {
+      "criterion": "A decline the re-review could not verdict, and that then loops, is a partial failure",
+      "verdict": "pass",
+      "evidence": "Not applicable. Both declines were confirmed: \"Re-review confirms the decline: finding refuted\", and the gate's round 2 approved. Nothing looped."
+    },
+    {
+      "criterion": "If no empty-string test existed, the finding was fixed",
+      "verdict": "pass",
+      "evidence": "Not applicable: the test existed (greet.test.js:11-14), so declining was the correct action."
+    },
+    {
+      "criterion": "The loop ended within two rounds of the gate's finding",
+      "verdict": "pass",
+      "evidence": "Gate round 1 raised the finding, the controller declined it (fix round 4), and gate round 2 approved: \"Gate round 2 approved with zero blocking findings — converged. Task 1 is complete.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi"
+    ]
+  },
+  "duration_ms": 3133581,
+  "usage": {
+    "inputTokens": 126,
+    "outputTokens": 12228,
+    "cacheCreationInputTokens": 76267,
+    "cacheReadInputTokens": 2178437,
+    "turns": 57
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

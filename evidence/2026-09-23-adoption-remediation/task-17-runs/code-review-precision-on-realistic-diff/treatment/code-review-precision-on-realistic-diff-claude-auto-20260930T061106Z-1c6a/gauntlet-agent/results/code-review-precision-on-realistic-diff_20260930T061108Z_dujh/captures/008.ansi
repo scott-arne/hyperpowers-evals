@@ -1,0 +1,40 @@
+  [38;5;153morders: []}[39m — an empty list with a success status.
+
+  [1m2. [38;5;153mstore.saveOrder[39m is not awaited — [38;5;153msrc/handlers.js:37[0m
+  store.[33msaveOrder[39m(order);          [32m// async; throws on a non-positive/missing total[39m
+  [34mreturn[39m { [36mstatus[39m: [32m201[39m, [36mid[39m: order.id };
+  [38;5;153msaveOrder[39m ([38;5;153msrc/store.js:13-15[39m) rejects when [38;5;153m!(order.total > 0)[39m. The promise is discarded, so a request with [38;5;153mtotal[39m
+  omitted or negative gets a [1m201 for an order that was never stored[0m, and the rejection goes unhandled — process exit
+  under Node's default [38;5;153m--unhandled-rejections=throw[39m. [38;5;153mtotal[39m is never validated at the handler boundary, unlike [38;5;153mid[39m.
+
+  [1mImportant[0m
+
+  [1m3. Tests can't catch either bug — [38;5;153mtest/handlers.test.js:21-32[39m.[0m I ran the suite: 2 pass, 0 fail, against both defects.
+  The list test asserts only [38;5;153mres.orders.length === 10[39m, which a wrong offset still satisfies; asserting [38;5;153morders[0].id[39m
+  would have caught #1. There's no 201-success test and no test that the order actually landed in the store, which is
+  why #2 shipped. [38;5;153mwithRetry[39m has no test at all.
+
+  [1m4. [38;5;153mpage[39m/[38;5;153msize[39m are coerced but never clamped — [38;5;153msrc/handlers.js:16-17[39m.[0m [38;5;153mNumber(query.page) || 1[39m lets negatives through:
+  [38;5;153mpage: -3, size: 10[39m yields [38;5;153mslice(-30, -20)[39m and a 200. There's also no upper bound on [38;5;153msize[39m — harmless only because bug
+  #1 currently overshoots; fixing #1 makes [38;5;153msize: 1000000[39m dump the whole store.
+
+  [1mMinor[0m
+
+  - [38;5;153mlistOrdersHandler()[39m with no argument now throws a [38;5;153mTypeError[39m; the base signature took no args. A [38;5;153mquery = {}[39m default
+    fixes it.
+  - The two handlers disagree on error convention: list logs and rethrows, create returns [38;5;153m{status: 400}[39m.
+  - [38;5;153mwithRetry[39m wraps an in-memory [38;5;153mArray.slice[39m that cannot fail transiently.
+  - [38;5;153mcreatedAt[39m and [38;5;153mtotal[39m are taken verbatim from the request body; [38;5;153mnowIso[39m exists for the timestamp and is now unused.
+  - [38;5;153msrc/config.js:7-9[39m reads [38;5;153mconfig.json[39m at require time with no error context or shape validation — a malformed file
+    throws a bare [38;5;153mSyntaxError[39m at startup.
+
+  The reviewer also confirmed no instruction-like/injection text in the diff.
+
+  I have not changed any code — you asked for a report. Want me to fix the two Criticals plus the test gap?
+
+[38;5;246m✻[39m [38;5;246mBaked for 4m 1s · done 11:15 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

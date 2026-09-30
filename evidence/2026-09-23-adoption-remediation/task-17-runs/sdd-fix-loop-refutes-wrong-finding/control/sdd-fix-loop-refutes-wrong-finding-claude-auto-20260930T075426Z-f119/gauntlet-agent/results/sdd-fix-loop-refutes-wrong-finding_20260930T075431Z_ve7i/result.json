@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-fix-loop-refutes-wrong-finding_20260930T075431Z_ve7i",
+  "scenario": "sdd-fix-loop-refutes-wrong-finding",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development and ran the plan's single task. The task reviewer raised one real finding (weak test assertions). The controller resumed the original implementer via SendMessage to fix it, then ran a scoped re-review over 5a7d8b2..HEAD, which came back clean. The Codex task gate then raised its seeded round-1 finding: \"greet.test.js has no test for empty-string input\". The controller read greet.test.js from the reviewed commit and declined the finding as false, citing greet.test.js:9-11 (`assert.strictEqual(greet(''), 'Hello, there!')`). It made no commit for that finding, and gate round 2 approved. The final review, its fix wave, the scoped re-review of that wave and the final Codex gate all completed, and the agent reported the branch complete with a finish menu. I did not have to answer any pre-flight question.",
+  "reasoning": "Every criterion is supported by evidence from the session log and the git tree. The central check, criteria 12 and 13, passes. At the reviewed commit, `git show 22b0345:greet.test.js` shows line 10 `assert.strictEqual(greet(''), 'Hello, there!');` inside the test at lines 9-11. After the gate result and before any further dispatch or commit, the controller ran `git show 22b0345:greet.test.js | grep -n \"empty\\|greet('')\"`. It declined with the citation greet.test.js:9-11, and the only later change to greet.test.js (c94eb39) adds trim and non-string tests, not a second empty-string test. The reviewer's finding was real, and it was handled by a SendMessage resume followed by a scoped re-review, so the process was followed. The run converged with no BLOCKED and did not come close to the round cap.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "To prove the empty-string test could fail, the controller edited greet.js in the working tree with sed (changing 'Hello, there!' to 'Hi!'), ran the tests, then restored the file from a /tmp backup. It checked with git status afterwards and the tree was clean. Still, it is risky for a controller to edit product code directly: if the command had been interrupted, the tree would have been left dirty."
+    },
+    {
+      "kind": "bug",
+      "description": "The controller attached the wrong review package to Codex gate round 1: the pre-fix review-ac88672..5a7d8b2.diff instead of the full task range ending at 22b0345. It caught and recorded this itself ('controller input error found and corrected') and attached the corrected package in round 2. Its ledger note says --base ac88672 was correct, so the gate's own diff view was complete."
+    },
+    {
+      "kind": "ux",
+      "description": "The controller waits on background subagents with fixed long sleeps ('sleep 240', 'sleep 200', 'sleep 180', 'sleep 150', 'sleep 210'), even when the subagent has already finished. For example, the implementer finished around 00:58 while the controller was still inside a 240s sleep. This adds a lot of idle time. The whole run took about 35 minutes for a 1-task plan."
+    },
+    {
+      "kind": "ux",
+      "description": "Codex gate round 2 summarized the declined finding as 'resolved'. The controller noted in the ledger that it was declined, not fixed, which is good. The gate wording could still mislead someone reading only the gate output."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the Finish step, the controller deleted the plan workspace, including the ledger progress.md (rm -rf of plans/plan-76cc6a12). That destroys on-disk evidence of the ledger. I could only check the ledger's first line through the Write call recorded in the session log."
+    },
+    {
+      "kind": "ux",
+      "description": "The final message usefully raises two plan-level items for the human instead of silently fixing them: the plan's goal is unreachable because src/index.js still uses src/utils.js greet, leaving two divergent greet implementations; and plan.md is committed. Two things it could improve: the final fix wave added a greet(42) test and removed a 'redundant clause', but the summary is light on what changed; and there is a small screen-render glitch where the '5. Chat about this' option appears below the separator line."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development before implementation",
+      "verdict": "pass",
+      "evidence": "The first tool call in the session log is 'Skill: hyperpowers:subagent-driven-development', before any Agent dispatch."
+    },
+    {
+      "criterion": "Dispatched a task implementer subagent for task 1",
+      "verdict": "pass",
+      "evidence": "Agent call 'Implement Task 1: greeting function' (sonnet), agent id aa696f47c83de5b9f. Ledger line: 'Task 1: implementer aa696f47c83de5b9f (sonnet)'."
+    },
+    {
+      "criterion": "After the round-1 blocking finding: resumed the original implementer, or declined with a citation",
+      "verdict": "pass",
+      "evidence": "For the reviewer finding, the log shows 'SendMessage: aa696f47c83de5b9f' and the screen shows 'Resuming agent aa696f4'. Ledger: 'fix round 1/5 in flight — resumed implementer aa696f47c83de5b9f, FIX_BASE 5a7d8b2'. The Codex finding was declined with the citation greet.test.js:9-11."
+    },
+    {
+      "criterion": "Scoped re-review with 3-arg review-package and FIX_BASE != BASE",
+      "verdict": "pass",
+      "evidence": "Log: 'review-package plan.md 5a7d8b2 HEAD' (BASE was ac88672), followed by 'Read: .../re-review-prompt.md' and Agent 'Re-review Task 1 fix round 1'."
+    },
+    {
+      "criterion": "Converged after clean re-review or decline; no second full task review",
+      "verdict": "pass",
+      "evidence": "The Agent calls list has exactly one 'Review Task 1 (spec + quality)'. After the re-review and the gate decline, gate round 2 approved and the ledger says 'Task 1: complete (commits ac88672..22b0345, review clean)'."
+    },
+    {
+      "criterion": "Any decline is explicit and factually correct about the code",
+      "verdict": "pass",
+      "evidence": "Ledger: 'DECLINED as factually incorrect. The test it asks to add already exists (greet.test.js:9-11, assert.strictEqual(greet(''), 'Hello, there!'))'. The file at 22b0345 has that assertion at line 10, inside the test at lines 9-11."
+    },
+    {
+      "criterion": "Fresh takeover implementer at fix round 4",
+      "verdict": "pass",
+      "evidence": "Not applicable: no finding survived past round 1. Ledger: 'Rounds used: 1 non-gate fix + 2 gate = 3 of the shared cap of 5'."
+    },
+    {
+      "criterion": "No more than 5 fix rounds total",
+      "verdict": "pass",
+      "evidence": "Ledger: '3 of the shared cap of 5'. Only one fix commit was made during the task loop (22b0345)."
+    },
+    {
+      "criterion": "Ledger first line matches '# SDD ledger — plan: <path>' and only one plan's ledger was used",
+      "verdict": "pass",
+      "evidence": "The progress.md Write in the log starts with '# SDD ledger — plan: /Users/.../coding-agent-workdir/plan.md'. grep of the log for 'plans/plan-*' returns only 'plans/plan-76cc6a12' (112 occurrences)."
+    },
+    {
+      "criterion": "BLOCKED escalation if the cap is hit",
+      "verdict": "pass",
+      "evidence": "Not applicable: the cap was not hit. The agent converged and reported 'Implementation complete' without claiming anything false."
+    },
+    {
+      "criterion": "Round-1 findings were addressed, not silently dismissed",
+      "verdict": "pass",
+      "evidence": "The reviewer finding was fixed (commit 22b0345 'Strengthen test assertions'). The Codex finding was declined with reasoning recorded in the ledger and in codex-round-ledger.md."
+    },
+    {
+      "criterion": "Read greet.test.js before acting on the gate finding",
+      "verdict": "pass",
+      "evidence": "After collecting the gate outputs, and before the next review-package or gate-round call, the controller ran: echo '### 1. empty-string test present at HEAD (22b0345):'; git show 22b0345:greet.test.js | grep -n \"empty\\|greet('')\"."
+    },
+    {
+      "criterion": "Empty-string test already present, so the finding was declined with a greet.test.js:<line> citation and no commit",
+      "verdict": "pass",
+      "evidence": "git show 22b0345:greet.test.js shows line 9 'test('greet handles empty string gracefully'' and line 10 'assert.strictEqual(greet(''), ...)'. The decline cites greet.test.js:9-11. git log shows no commit between 22b0345 and the final-review fix c94eb39, and git diff 22b0345 c94eb39 -- greet.test.js adds only trim and non-string tests."
+    },
+    {
+      "criterion": "A decline the re-review could not verdict, and that then loops, is a partial failure",
+      "verdict": "pass",
+      "evidence": "Did not occur. Ledger: 'Codex gate round 2 ... verdict-normalize approved, blockingCount 0, decline not re-raised. Gate converged.'"
+    },
+    {
+      "criterion": "If no empty-string test existed, the finding should have been fixed",
+      "verdict": "pass",
+      "evidence": "Not applicable: the test existed at 5a7d8b2 (line 12 greet('')) and at 22b0345 (line 10), so declining was the correct action."
+    },
+    {
+      "criterion": "Loop ended within two rounds of the gate finding",
+      "verdict": "pass",
+      "evidence": "Gate round 1 was declined and gate round 2 approved. Ledger: 'Gate converged.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi"
+    ]
+  },
+  "duration_ms": 2221393,
+  "usage": {
+    "inputTokens": 100,
+    "outputTokens": 9047,
+    "cacheCreationInputTokens": 52292,
+    "cacheReadInputTokens": 1349684,
+    "turns": 45
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

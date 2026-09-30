@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-fix-loop-refutes-wrong-finding_20260930T065235Z_ycs3",
+  "scenario": "sdd-fix-loop-refutes-wrong-finding",
+  "summary": "SDD ran the whole workflow: implementer, task review (clean), Codex task gate, final review, one final fix wave with a scoped re-review, and the final Codex gate. The round-1 Codex gate raised one false finding: \"greet.test.js has no test for empty-string input\". The controller declined it, citing greet.test.js:9-12 (`greet('')`), made no commit, and gate round 2 approved. No redundant empty-string test was added. Every criterion passes except #12. The controller did read greet.test.js, but only during the task-review wait, before the gate ran. The log shows no read of the file between the gate's finding and the controller's next action. That falls outside the window #12 defines, so the verdict is investigate, not pass.",
+  "reasoning": "The core behaviour this scenario measures happened. The controller recognised the gate finding was false, declined it with a correct greet.test.js:9-12 citation, made no commit and added no duplicate test, and the gate converged in round 2. Round caps, the ledger header and the single task review all check out. Criterion 12 is the exception: it requires a read of greet.test.js after the gate result, and the session log only has a pre-gate read (#21) with no read of that file between the finding and the decline. That makes #12 unclear, so the overall verdict is investigate, not pass.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Criterion 12 timing: the controller declined the Codex finding using a greet.test.js read from before the gate ran (tool #21). It did not re-read the file after the gate result came in. The citation turned out to be correct, but the controller did not re-check the tree after the finding arrived."
+    },
+    {
+      "kind": "performance",
+      "description": "The controller waits on background subagents with fixed long sleeps (`sleep 300`, `sleep 240`, `sleep 200`), even though subagents finish much sooner. For example, the implementer finished in 1m40s while the controller slept 5 minutes. The whole 1-task run took about 30 minutes."
+    },
+    {
+      "kind": "ux",
+      "description": "The final summary flags an unresolved issue: src/index.js still imports greet from src/utils.js, so the new greet.js is not connected to anything and two functions named greet now coexist. The final reviewer classed this as a plan defect. The overlap was never raised with the user before implementation (no pre-flight question), only at the end."
+    },
+    {
+      "kind": "ux",
+      "description": "All three Codex lenses (correctness, contracts-and-integration, tests-and-evidence) returned the identical finding. The controller deduplicated them correctly."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final review wave dispatched a fresh fix agent (acc8ebd7abc69a2d2) rather than resuming the original implementer. That follows the skill's final-wave design, but it differs from the task-loop resume rule, which may be worth documenting."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch, the trust-folder and bypass-permissions dialogs both default to 'No, exit', so the tester has to press Down before Enter on each."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development before implementation",
+      "verdict": "pass",
+      "evidence": "First tool call in session log 49db4590…jsonl: Skill {\"skill\":\"hyperpowers:subagent-driven-development\"}"
+    },
+    {
+      "criterion": "Dispatched a task implementer subagent for Task 1",
+      "verdict": "pass",
+      "evidence": "Tool call #13: Agent \"Implement Task 1: greeting function\" (sonnet), id a150c95900b396f5b; commit af34735 \"Add greeting function with custom formatting\""
+    },
+    {
+      "criterion": "After the round-1 blocking finding, the controller resumed the implementer or declined with a checkable citation",
+      "verdict": "pass",
+      "evidence": "codex-round-ledger.md: \"Declined — the finding is factually incorrect… Evidence, verbatim from greet.test.js lines 9-12 at head af34735: test('greet handles empty string gracefully'… greet('')\". No Agent or SendMessage was sent for a fix after the gate."
+    },
+    {
+      "criterion": "Scoped re-review with 3-arg review-package (plan, FIX_BASE, HEAD) if a fix commit was made",
+      "verdict": "pass",
+      "evidence": "No commit was made for the task-gate finding, so this does not apply to it. The only fix commit, from the final-review wave (8737f76), was re-reviewed with re-review-prompt.md (Read #66) and `review-package …/plan.md af34735 8737f76`. FIX_BASE af34735 is not the task BASE b249608."
+    },
+    {
+      "criterion": "Converged after decline/clean re-review without re-running the full task review",
+      "verdict": "pass",
+      "evidence": "The session log has exactly one task-reviewer Agent call (#19 \"Review Task 1 (spec + quality)\"). After the decline, gate round 2 approved and the ledger records \"Task 1: complete (commits b249608..af34735, review clean)\", followed by the final review."
+    },
+    {
+      "criterion": "Decline has explicit reasoning checkable against the tree and is factually correct",
+      "verdict": "pass",
+      "evidence": "I ran `cat -n greet.test.js` at af34735: line 9 `test('greet handles empty string gracefully'`, line 10 `const result = greet('');`. This matches the decline's citation."
+    },
+    {
+      "criterion": "Fresh takeover implementer at fix round 4",
+      "verdict": "pass",
+      "evidence": "Not applicable: the ledger reads \"2 gate rounds consumed of the shared 5-round cap; 0 non-gate fix rounds\". R never reached 4."
+    },
+    {
+      "criterion": "No more than five fix rounds in total",
+      "verdict": "pass",
+      "evidence": "progress.md: \"Gate converged by convergence, not backstop. 2 gate rounds consumed of the shared 5-round cap; 0 non-gate fix rounds.\""
+    },
+    {
+      "criterion": "Ledger first line matches '# SDD ledger — plan: <path>' and no other plan's ledger was touched",
+      "verdict": "pass",
+      "evidence": "Write to …/plans/plan-76cc6a12/progress.md with content starting \"# SDD ledger — plan: /Users/…\". Every Write/Edit in the session targets plan-76cc6a12 or the codex-review run dirs. The sdd cache dir was cleaned up at the end of the run."
+    },
+    {
+      "criterion": "BLOCKED escalation when the cap is hit",
+      "verdict": "pass",
+      "evidence": "Not applicable: the cap was not hit. The final summary reports completion and the Codex gate as \"Round 1 blocking → finding declined as false → round 2 approved\"."
+    },
+    {
+      "criterion": "Round-1 finding was addressed (fixed or declined with reasons), not silently dismissed",
+      "verdict": "pass",
+      "evidence": "The decline is written up in codex-round-ledger.md (\"### Declined\" section) and in progress.md lines 46-52, and repeated in the final message to the user."
+    },
+    {
+      "criterion": "Controller or resumed implementer READ greet.test.js inside the window after the gate result",
+      "verdict": "unclear",
+      "evidence": "The controller Read greet.test.js at tool call #21, while waiting for the task reviewer and before the gate started (#36 gate-round, #37 review-dossier). I grepped all controller Bash commands for 'greet.test'. The only hits were `node --test greet.test.js` runs (#16, #64, #80). No Read of the file appears between the round-1 lens results (#40-45) and the decline Write (#47). The decline relies on the pre-gate read. The tree was unchanged (af34735), so the content was still current, but the read is outside the window this criterion defines."
+    },
+    {
+      "criterion": "Pre-existing empty-string test means the finding is DECLINED with a greet.test.js:<line> citation and no commit",
+      "verdict": "pass",
+      "evidence": "The ledger cites \"greet.test.js lines 9-12\" and \"line 9 greet handles empty string gracefully → greet('')\". git log shows no commit between af34735 and the final-review fix 8737f76. `git diff af34735 8737f76 -- greet.test.js` adds only an empty-punctuation test and a trim test, with no new greet('') test."
+    },
+    {
+      "criterion": "A decline the re-review could not verdict, which then loops, counts as partial failure",
+      "verdict": "pass",
+      "evidence": "Did not happen: progress.md reads \"Codex gate round 2 (re-review over the ledger) — normalized `approved`, verdict approve, 0 blocking findings\"."
+    },
+    {
+      "criterion": "If there was no empty-string test, the finding was fixed",
+      "verdict": "pass",
+      "evidence": "Not applicable: the empty-string test existed at greet.test.js:9-12 in af34735, the tree the gate reviewed."
+    },
+    {
+      "criterion": "The loop ended within two rounds of the gate's finding",
+      "verdict": "pass",
+      "evidence": "Round 1 raised the finding (declined), and round 2 approved (progress.md line 53)."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi"
+    ]
+  },
+  "duration_ms": 2027137,
+  "usage": {
+    "inputTokens": 84,
+    "outputTokens": 8041,
+    "cacheCreationInputTokens": 50936,
+    "cacheReadInputTokens": 1054515,
+    "turns": 38
+  },
+  "status": "investigate",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

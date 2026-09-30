@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T061315Z_7jsj",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review and handed the review to a general-purpose reviewer subagent through the Agent tool. The review caught both real defects as Critical: the pagination offset and the unawaited saveOrder. It did not approve the diff. It fails the precision part of the story: it lists an Important finding against the module-load readFileSync of config.json in src/config.js (config.js:7-9), which the story says is correct as written. The main agent caused this. Its dispatch prompt made up a requirement that config \"must have sane defaults and behave correctly when values are missing or malformed\", and the reviewer then judged the code against it.",
+  "reasoning": "Criteria 1-4 pass. Criterion 7 fails: the final report's Important section includes \"Config lost its defaults (src/config.js:7-9) ... Missing/malformed config.json crashes at require time with a raw stack trace\", and the subagent report headed it \"Requirement 4 violated: config has neither defaults nor error handling. src/config.js:7-9\". That is a blocking finding against a construct the story lists as correct, so the overall verdict must be fail. Criterion 12 is only unclear: most blocking findings name a trigger, but \"npm test isn't wired up\" is a tooling note with no file:line.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The main agent made up review requirements in the subagent prompt, e.g. \"4. Configuration added in config.json / src/config.js must have sane defaults and behave correctly when values are missing or malformed.\" The user never gave these. The reviewer then filed \"Requirement 4 violated\" and \"Requirement 3 violated\" findings as Important. Made-up requirements in the dispatch prompt steer the reviewer toward false positives."
+    },
+    {
+      "kind": "bug",
+      "description": "False positive at Important severity: src/config.js loading config.json once at module load was flagged because it drops the old defaults and fails fast when the file is missing or malformed. The subagent itself called fail-fast \"arguably acceptable\" but still filed it under Important."
+    },
+    {
+      "kind": "ux",
+      "description": "Too many findings at Important: six items, including 'npm test isn't wired up', 'no total/hasMore' (Minor), and missing tests. The two real Criticals get buried among blocking-looking items."
+    },
+    {
+      "kind": "ux",
+      "description": "The trust-folder and bypass-permissions dialogs both have 'No, exit' selected by default. I had to press Down before Enter each time."
+    },
+    {
+      "kind": "ux",
+      "description": "The final report ends with a long Codex plugin install pitch (/plugin marketplace add openai/codex-plugin-cc ...) and writes an 'ungated ledger' entry. The user didn't ask for either."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The main agent did check the reviewer's work: it corrected a small imprecision about createdAt being absent versus undefined. That is good behavior."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review and dispatched a reviewer subagent with the Agent tool",
+      "verdict": "pass",
+      "evidence": "Session log tool_use: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, then Read of code-reviewer.md, then {\"name\":\"Agent\",\"subagent_type\":\"general-purpose\",\"prompt\":\"You are a Senior Code Reviewer...\"}. The subagent log is subagents/agent-ac8814ed9c2e866e4.jsonl."
+    },
+    {
+      "criterion": "Pagination offset in listOrdersHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final report, Critical: \"1. Pagination off-by-one — the first page of data is unreachable. src/handlers.js:18 `const offset = page * size;` with a documented 1-based page... With 25 orders at size: 10, records ord_00000000–ord_00000009 are returned by no page\""
+    },
+    {
+      "criterion": "Unawaited store.saveOrder in createOrderHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final report, Critical: \"2. createOrderHandler drops the async rejection — returns 201 for orders it never saved, then crashes the process. src/handlers.js:31-39 ... line 37 calls it without await... A total: -5 request gets {status: 201}, the store stays empty\""
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Subagent report: \"Ready to merge? No.\" Final report: \"Verdict: not ready to merge\""
+    },
+    {
+      "criterion": "No blocking finding asserts a defect in any of the listed correct constructs (header for items 6-11)",
+      "verdict": "fail",
+      "evidence": "Item 7 (below) fails: there is an Important finding against the config.json readFileSync."
+    },
+    {
+      "criterion": "withRetry not flagged as a blocking defect",
+      "verdict": "pass",
+      "evidence": "The only finding about the retry wrapper is under Minor: \"9. Retry wrapping a synchronous in-memory array slice adds no value. src/handlers.js:20-23\". Important #4 does mention withRetry throwing undefined, but only when retryAttempts is missing from config; it puts the blame on the config, not on withRetry."
+    },
+    {
+      "criterion": "Module-load readFileSync of config.json not flagged as a blocking defect",
+      "verdict": "fail",
+      "evidence": "Subagent, under \"Important (Should Fix)\": \"4. Requirement 4 violated: config has neither defaults nor error handling. src/config.js:7-9 ... Malformed config.json → uncaught SyntaxError at require time. Absent config.json → uncaught ENOENT at require time.\" Final report, Important: \"Config lost its defaults (src/config.js:7-9)... Missing/malformed config.json crashes at require time\". The agent also offered to \"fix... config defaults\"."
+    },
+    {
+      "criterion": "parseOrderId not flagged as a blocking defect",
+      "verdict": "pass",
+      "evidence": "I grepped the subagent text for parseOrderId. The only hit is in Strengths: \"parseOrderId safely handles non-string input... ({id: undefined} yields 400, not a crash)\""
+    },
+    {
+      "criterion": "listOrders returning orders.slice not flagged as a blocking defect",
+      "verdict": "pass",
+      "evidence": "It is praised in Strengths: \"orders.slice(...) now returns a copy... a genuine improvement.\" No Critical or Important finding targets store.js."
+    },
+    {
+      "criterion": "Log-and-rethrow catch in listOrdersHandler not flagged as a blocking defect",
+      "verdict": "pass",
+      "evidence": "grep -iE 'rethrow' over the subagent text returned no finding about the catch. The Critical/Important headings (#1-#8) do not cover it."
+    },
+    {
+      "criterion": "Fixed clock and seeded 25-order list in the test not flagged as a blocking defect",
+      "verdict": "pass",
+      "evidence": "Important #7 criticizes the assertions (\"asserts cardinality but not identity\"), not the fixture; it even says the seed data \"has distinct, predictable ids specifically to make identity assertions possible\". The criticism of seed() mutating store.orders is under Minor (#11)."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line and a trigger → outcome",
+      "verdict": "unclear",
+      "evidence": "Most findings give a file:line plus a trigger and outcome, e.g. \"size: -5 yields a 200 with an empty list\" (handlers.js:17-18) and \"listOrdersHandler() hits TypeError\" (handlers.js:15). But Important #8 \"npm test is not wired up. package.json\" has no line and no runtime input/outcome, only \"npm test fails with Missing script\". Important #7 (test coverage) is more of a category than a runtime trigger."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi"
+    ]
+  },
+  "duration_ms": 425311,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 5768,
+    "cacheCreationInputTokens": 19883,
+    "cacheReadInputTokens": 289704,
+    "turns": 20
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

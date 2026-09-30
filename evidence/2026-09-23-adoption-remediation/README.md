@@ -137,3 +137,77 @@ sandbox refusing writes into a destination path containing `.git`:
 - `.git/hooks/*.sample` is omitted. Those are git's own templates, identical in
   every run and reinstalled by `git init`; `config`, `HEAD`, `index`, `logs/`,
   `objects/`, `refs/`, and `COMMIT_EDITMSG` are all archived.
+
+## Phase 5: Two-Arm Measurement (Task 17, 2026-09-30)
+
+Phase 5 measures two retained changes against `main`, one new scenario each:
+`code-review-precision-on-realistic-diff` (spec 4.1, A1 core) and
+`sdd-fix-loop-refutes-wrong-finding` (spec 4.2, A3). Unlike Phase 3, both arms
+run, so every Phase 5 verdict compares cells measured at one version under one
+grader.
+
+### Pins
+
+| Item | Value |
+|---|---|
+| Date | 2026-09-30 |
+| Claude Code | 2.1.284 in every Phase 5 transcript |
+| Coding-Agent model | `claude-opus-5` through `claude-auto`, budget `default` |
+| Gauntlet-Agent model | `claude-opus-5-5` (`GAUNTLET_AGENT_MODEL`); Phase 3 graded with `claude-opus-5` |
+| evals HEAD (harness pin) | `ad2b5d532f9fefc16098477f33d22e05aae228d8`, verified by every launch |
+| control root | `main` at `3bdb5b2eaff30088e483fea3eae9a8c8b7d7e650`, `.worktrees/adoption-remediation-control` (detached) |
+| treatment root | `external-workflow-adoption` at `4128e19a4e15842f5dd07bbd80ed354ebad992b6`, `.worktrees/adoption-remediation-treatment` (detached) |
+
+`manifest-phase5.tsv` carries the pins and eight rows: 2 scenarios x 2 arms x
+2 procs x 5 repeats. `logs/measure-launch.sh` launches one row; the per-row
+logs, `launch-all.out` and `sentinel-run-all.out` are in `logs-phase5/`. Four
+rows ran at a time, outside the sandbox for the git-template EPERM recorded
+above.
+
+### Session Count
+
+- 40 measured sessions, 05:51:54Z to 09:44:34Z: 20 precision (all determinate
+  at first launch) and 20 fix-loop, every one a grader pass.
+- 2 fix-loop sessions replaced and not scored, under
+  `task-17-runs/sdd-fix-loop-refutes-wrong-finding/replaced/`:
+  - `…065234Z-972a` (control) is a real indeterminate. The grader completed with
+    `investigate` because the controller did not re-read `greet.test.js`
+    between the finding and its decline. Under the one-rerun rule its rerun
+    `…085315Z-2f70` stands.
+  - `…081231Z-833c` (control) is void: Gauntlet exited 1 without writing a
+    result. `…091614Z-e8da` replaced it. Void count 1 of cap 3.
+- 4 smoke sessions before the manifest, under `task-17-runs/smokes/`, outside
+  the measurement.
+- 11 sentinel sessions at the treatment head, batch
+  `batch-20260930T094725Z-6158` (`sentinel-batch-phase5.txt`), all 11 passing
+  on their first session.
+
+### Mutation Checks
+
+Four checks against the stamp `1790747502` (`logs-phase5/batch-window-start.txt`):
+before the batch, after the measured sessions (09:47Z), after the sentinel
+batch, and after archiving. The last two covered every file in both worktrees
+outside `.git`. Every one found no newer file. Both worktrees stayed at their
+pins with `git status --short` empty.
+
+### Measurement Output
+
+`task-17-runs/measure/` holds each script's stdout TSV and stderr, verbatim:
+`precision-{control,treatment}` from `measure-code-review-precision.py` at
+`73a8672`, and `fix-loop-{control,treatment}` plus `fix-loop-972a-replaced`
+from `measure-fix-loop-refutation.py` at `4845e14`. Each script was run with
+an explicit `--arm`. Re-running both scripts over a scratch copy of the
+archive, with each `git-dir` renamed back to `.git`, reproduces every row and
+every stderr line; the only difference is row order, which follows the glob.
+
+### Archived Runs
+
+- `task-17-runs/<scenario>/<arm>/<run>/`: the 40 measured sessions, with the
+  two replaced ones under `replaced/` and the smokes under `smokes/`.
+- `task-17-sentinel-runs/<scenario>/<run>/`: the 11 sentinel sessions, plus the
+  batch metadata at `task-17-sentinel-runs/batch-20260930T094725Z-6158/`.
+
+The archive departs from a byte-exact copy in the same two ways as Phase 3:
+`coding-agent-workdir/.git` is stored as `git-dir` (and the
+`worktree-no-drift-to-main` pointer file as `git-file`), and
+`.git/hooks/*.sample` is omitted.

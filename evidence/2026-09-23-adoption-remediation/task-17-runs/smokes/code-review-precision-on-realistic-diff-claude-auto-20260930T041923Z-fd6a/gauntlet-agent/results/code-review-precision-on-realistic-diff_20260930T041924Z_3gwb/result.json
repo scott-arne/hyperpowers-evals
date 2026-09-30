@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T041924Z_3gwb",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The review caught both real defects (the pagination offset and the unawaited saveOrder) and recommended not merging. It still fails two criteria. First, the agent did not use hyperpowers/superpowers:requesting-code-review and did not call the Agent tool. It ran Claude Code's built-in forked \"code-review\" skill instead. Second, it flagged withRetry, which is correct code, as a defect in its \"Worth fixing before merge\" tier, which sits between \"Blockers\" and \"Minor\" and works as the Important level.",
+  "reasoning": "Criteria 2, 3, 4 and 12 pass. Criterion 1 fails: no requesting-code-review skill was used and there was no Agent tool call. Criterion 6 fails: withRetry was flagged in the pre-merge Important-equivalent tier. Because criterion 6 fails, the umbrella criterion 5 fails too. An overall pass needs every criterion to pass, so the result is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent chose Claude Code's built-in 'code-review' forked skill over hyperpowers:requesting-code-review, even though the plugin skill was listed as available. So the plugin's review workflow (dispatching a reviewer with the Agent tool) was never used."
+    },
+    {
+      "kind": "bug",
+      "description": "False positive: withRetry was flagged as 'worth fixing before merge' because attempts=0/undefined gives an undefined rejection. That is a hypothetical config shape, and the code is correct for this codebase."
+    },
+    {
+      "kind": "ux",
+      "description": "The review's severity headings (Blockers / Worth fixing before merge / Minor) don't line up with the Critical/Important/Minor scheme, so it's unclear whether the middle tier blocks merging."
+    },
+    {
+      "kind": "ux",
+      "description": "The trust-folder and bypass-permissions dialogs both default to 'No, exit', so you have to press Down before confirming. This is expected, but easy to get wrong."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The reviewer actually ran the code to confirm the blockers (node -e checks and node --test), which gave its findings concrete evidence."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:requesting-code-review and dispatched a reviewer subagent with the Agent tool",
+      "verdict": "fail",
+      "evidence": "The session log's only Skill call is {\"skill\":\"code-review\",\"args\":\"HEAD\"}. The tool result was \"Skill \\\"code-review\\\" launched (forked execution, running in the background)\". \"hyperpowers:requesting-code-review\" shows up in the log only in the list of available skills. The only match for grep '\"name\":\"Agent\"' is the tool-schema definition, not an Agent tool_use call. The review ran as the forked skill subagent agent-aaaf8bc748c5b84b1."
+    },
+    {
+      "criterion": "Flags pagination offset in listOrdersHandler under Critical/Important",
+      "verdict": "pass",
+      "evidence": "Under the \"## Blockers\" heading: \"1. Off-by-one in pagination — page 1 skips the first page entirely (src/handlers.js:18) const offset = page * size; ... Fix: const offset = (page - 1) * size;\""
+    },
+    {
+      "criterion": "Flags unawaited store.saveOrder in createOrderHandler under Critical/Important",
+      "verdict": "pass",
+      "evidence": "Under Blockers: \"2. saveOrder is never awaited — false 201s plus a process crash (src/handlers.js:37) ... a POST with total: 0 ... returns {status: 201} ... and takes the process down via unhandled rejection\""
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "\"My recommendation: don't merge until #1 and #2 are fixed\""
+    },
+    {
+      "criterion": "No blocking finding asserts a defect in the listed correct code (header)",
+      "verdict": "fail",
+      "evidence": "withRetry was flagged in the Important-equivalent tier (see the next criterion)."
+    },
+    {
+      "criterion": "withRetry not flagged as blocking",
+      "verdict": "fail",
+      "evidence": "Under \"## Worth fixing before merge\": \"3. withRetry rejects with undefined when attempts is 0/negative/undefined (src/util.js:7-18) ... Guard the count or validate the config.\" The review has three tiers: Blockers, Worth fixing before merge, Minor. Anything labelled \"worth fixing before merge\" is effectively Important."
+    },
+    {
+      "criterion": "config.js module-load readFileSync not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "This only appears under \"## Minor\": \"src/config.js:7 reads and parses config.json at require time with no error handling\"."
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "No finding mentions parseOrderId. The closest is the Minor note that \"body.id ... dereference without a guard\", which is about the body, not parseOrderId."
+    },
+    {
+      "criterion": "listOrders slice not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "No finding in the final review text targets store.listOrders or slice."
+    },
+    {
+      "criterion": "catch-log-rethrow in listOrdersHandler not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "No finding in the final review text targets the catch block."
+    },
+    {
+      "criterion": "Fixed clock / seeded 25 orders in test not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Finding #6 (Worth fixing) is about the test asserting only length and about seed() sharing module-level state. It does not claim the fixed clock or the 25-order seed is wrong. This is borderline, but it doesn't target the listed items."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line and states trigger and outcome",
+      "verdict": "pass",
+      "evidence": "Every numbered finding cites a location (src/handlers.js:18, :37, src/util.js:7-18, src/handlers.js:16-17, :36, test/handlers.test.js:23) and gives a trigger and outcome, e.g. \"?page=-1 produces a negative offset and silently returns []\" and \"{page: 1, size: 10} returns ids starting at the 11th row\"."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 251628,
+  "usage": {
+    "inputTokens": 42,
+    "outputTokens": 4903,
+    "cacheCreationInputTokens": 31798,
+    "cacheReadInputTokens": 295030,
+    "turns": 19
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

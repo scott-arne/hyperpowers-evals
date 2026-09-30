@@ -1,0 +1,40 @@
+  make the handler [38;5;153masync[39m, [38;5;153mawait[39m, map store validation errors to 400.
+
+  [1mImportant[0m
+
+  3. [38;5;153mlistOrdersHandler()[39m with no argument now throws ([38;5;153mhandlers.js:15[39m) — regresses the zero-arg contract from the base
+     commit; the defaulting logic on lines 16–17 clearly intends to support it. Use [38;5;153mquery = {}[39m.
+  4. No [38;5;153mtotal[39m/[38;5;153mhasMore[39m in the pagination response ([38;5;153mhandlers.js:24[39m) — clients can't build a pager or distinguish "past the
+     end" from "empty".
+  5. Handlers disagree on error reporting — list [1mrethrows[0m ([38;5;153m:27[39m), create [1mreturns[0m [38;5;153m{status:400}[39m ([38;5;153m:34[39m). No dispatcher can
+     handle both.
+  6. Pagination params silently coerced: [38;5;153mpage=-1[39m → 200 with empty list, [38;5;153mpage=abc[39m → 1, [38;5;153msize[39m unbounded.
+  7. Creation accepts duplicate IDs and a client-supplied, unvalidated [38;5;153mcreatedAt[39m ([38;5;153m:36[39m) — omit it and the order persists
+     with [38;5;153mundefined[39m. [38;5;153mnowIso()[39m already exists in [38;5;153msrc/util.js:3[39m and is now unused.
+  8. Test gaps conceal both Criticals: the listing test asserts only [38;5;153morders.length === 10[39m, never [3mwhich[0m orders; the
+     creation happy path has no test at all. Also shared [38;5;153mstore.orders[39m with no teardown, and no [38;5;153mscripts.test[39m in
+     [38;5;153mpackage.json[39m.
+  9. Scope creep worth confirming as intentional: config moved to unguarded runtime [38;5;153mJSON.parse(readFileSync())[39m, and
+     [38;5;153mwithRetry[39m now wraps an in-memory [38;5;153mArray.slice[39m — no transient failure mode, but it retries genuine errors 3× with
+     backoff before surfacing them.
+
+  [1mMinor[0m
+
+  [38;5;153mwithRetry[39m throws [38;5;153mundefined[39m when [38;5;153mattempts <= 0[39m ([38;5;153mutil.js:7-18[39m); [38;5;153mstore.listOrders[39m made [38;5;153masync[39m without being asynchronous;
+  [38;5;153mparseOrderId[39m leans on regex coercion for non-strings.
+
+  [1mCodex gate status[0m
+
+  The skill's Codex gate runs after the Claude findings are acted on. Codex is installed here, but running it now would
+  review code that's about to change on two Critical fixes, so I've held it. I have not modified anything — you asked
+  for the review, not the fixes.
+
+  Want me to fix the two Criticals (test-first, so each failing assertion is visible before the fix), then re-run the
+  Claude reviewer and the Codex gate?
+
+[38;5;246m✻[39m [38;5;246mCrunched for 3m 51s · done 11:08 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

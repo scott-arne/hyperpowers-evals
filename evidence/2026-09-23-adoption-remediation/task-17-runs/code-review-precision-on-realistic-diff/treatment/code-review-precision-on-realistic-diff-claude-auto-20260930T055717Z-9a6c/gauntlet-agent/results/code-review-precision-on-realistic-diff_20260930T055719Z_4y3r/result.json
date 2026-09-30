@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20260930T055719Z_4y3r",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review, sent the review to a reviewer subagent using the template, and reported back. The review caught both real defects as Critical: the pagination offset and the unawaited saveOrder. It did not approve the diff. It failed on precision: its Important section includes a bullet (I5) that treats the unguarded config.json readFileSync as a new boot failure mode and recommends wrapping it in try/catch. The same bullet calls withRetry and listOrdersHandler's log-and-rethrow catch \"dead code\" and \"unreachable.\" The story says all three are correct for this codebase, so blocking-level findings about them fail criterion 5.",
+  "reasoning": "Criteria 1–4, 8, 9 and 11 pass: the skill ran, the review went to a subagent, both real defects are Critical with file:line and reproduction, and the diff was not approved. Criterion 5 and its sub-items 6, 7 and 10 fail. Item I5 in the Important section tells the user to wrap the config readFileSync in try/catch, calls withRetry dead code to defer, and calls the listOrdersHandler catch unreachable. The story says each of these is correct as written. Criterion 12 is unclear because the withRetry part of I5 names a category, not a trigger that leads to a wrong outcome. Because criterion 5 fails, the overall verdict must be fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The reviewer put a scope question under 'Important (Should Fix)'. Its item I5 is headed 'please confirm these were intentional', but the Important heading makes a design question look like a blocking defect. It covers the config.json readFileSync, withRetry and the log-and-rethrow catch, which the story says are all correct for this codebase."
+    },
+    {
+      "kind": "bug",
+      "description": "The main agent relayed I5 under '### Important' without softening it. So the false positive reaches the user, even though the agent checked the two Critical findings itself first."
+    },
+    {
+      "kind": "ux",
+      "description": "The user asked for 'superpowers:requesting-code-review', but the agent loaded 'hyperpowers:requesting-code-review'. The acceptance criteria allow this, and the name mapping happened silently."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final relay adds promotional install steps for a Codex review gate ('/plugin marketplace add openai/codex-plugin-cc ...'). It also says it wrote an 'ungated-ledger' entry, which is a side effect of a request that was only meant to review."
+    },
+    {
+      "kind": "ux",
+      "description": "The reviewer ran in the background. The screen said 'It's running in the background — I'll report its findings when it completes', and the whole run took about 4m16s."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The strong points were the empirical checks and the concrete triggers: a table of page-to-rows results, and captured process-crash output for C2. The Minor section also has sound notes, such as createdAt coming from the request body and duplicate IDs."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill (superpowers or hyperpowers variant) and dispatched reviewer via Agent tool",
+      "verdict": "pass",
+      "evidence": "Main session log tool_use entries: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, then Read of skills/requesting-code-review/code-reviewer.md, then {\"name\":\"Agent\",\"subagent_type\":\"general-purpose\",\"prompt\":\"You are a Senior Code Reviewer...\"}. The subagent log agent-a8933a76733af0b9c.jsonl holds the review."
+    },
+    {
+      "criterion": "Pagination offset in listOrdersHandler flagged under Critical/Important",
+      "verdict": "pass",
+      "evidence": "Subagent review under 'Critical (Must Fix)': \"C1. src/handlers.js:18 — off-by-one offset makes the first page of orders permanently unreachable... page 1 -> offset 10\". The final relay repeats it under '### Critical'."
+    },
+    {
+      "criterion": "Unawaited store.saveOrder in createOrderHandler flagged under Critical/Important",
+      "verdict": "pass",
+      "evidence": "\"C2. src/handlers.js:37 — unawaited store.saveOrder returns a false 201 and crashes the process\", with verified output \"result: {\\\"status\\\":201...} store length after: 0 ... Error: order total must be positive\"."
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Subagent: \"Ready to merge? No — with fixes.\" Final relay: \"Verdict: do not merge as-is — two real bugs\"."
+    },
+    {
+      "criterion": "No Critical/Important finding asserts a defect in the listed correct-as-written items",
+      "verdict": "fail",
+      "evidence": "Under 'Important (Should Fix)', I5 says of config.js: \"adding a runtime file dependency and a new boot failure mode: the readFileSync/JSON.parse pair is unguarded... wrap it in a try/catch\". It says of withRetry: \"is currently dead code... defer it\". It says the handlers.js:25-28 catch \"is also unreachable\". The final relay keeps this bullet under '### Important'."
+    },
+    {
+      "criterion": "withRetry not flagged as a blocking defect",
+      "verdict": "fail",
+      "evidence": "I5 (Important): \"withRetry (src/util.js:7-19, applied at handlers.js:20) is currently dead code... Either keep it and note it as forward-looking, or defer it\". The Strengths section does call its backoff correct. The withRetry throws undefined point is only Minor."
+    },
+    {
+      "criterion": "Module-load readFileSync of config.json not flagged as blocking",
+      "verdict": "fail",
+      "evidence": "I5 (Important): \"the readFileSync/JSON.parse pair is unguarded, so a missing or malformed config.json throws an uncaught SyntaxError/ENOENT at require time with no fallback... wrap it in a try/catch\". Final relay: \"adding an unguarded readFileSync/JSON.parse that throws at require time if the file is missing\" under Important."
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "It appears only under Strengths: \"Input validation on creation is well-shaped: an allow-list regex (src/util.js:21) returning a 400\". No Critical/Important item mentions it."
+    },
+    {
+      "criterion": "listOrders returning orders.slice not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Strengths: \"Returning a slice is a real, unrequested-but-correct improvement.\" I5 only calls slice something with no failure mode. It does not call slice a defect."
+    },
+    {
+      "criterion": "Log-and-rethrow catch in listOrdersHandler not flagged as blocking",
+      "verdict": "fail",
+      "evidence": "I5 (Important): \"The retry loop can never take its catch branch, and consequently the catch/log.error/throw block at handlers.js:25-28 is also unreachable.\" Final relay: \"making its catch branch (and the handler's) dead code\"."
+    },
+    {
+      "criterion": "Fixed clock and seeded 25-order fixture not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Strengths: \"deterministic 25-row fixture with a fixed CLOCK constant... deliberately reproducible\". I3 (Important) targets the length-only assertion, not the fixture. The store.orders seeding point is only Minor."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line plus a trigger input/state and its outcome",
+      "verdict": "unclear",
+      "evidence": "C1, C2, I3 and I4 each give a file:line, an input and an outcome (e.g. \"page=-1, size=10 → {status:200, orders:[]}\"). I5's config point names a trigger (\"missing or malformed config.json\" → throws at require). I5's withRetry/dead-code point is a scope and category remark (\"dead code\", \"forward-looking\") with no input that leads to a wrong outcome."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi"
+    ]
+  },
+  "duration_ms": 421668,
+  "usage": {
+    "inputTokens": 40,
+    "outputTokens": 5595,
+    "cacheCreationInputTokens": 34913,
+    "cacheReadInputTokens": 279663,
+    "turns": 18
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

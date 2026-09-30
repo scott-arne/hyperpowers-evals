@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 5,
+  "runId": "worktree-creation-under-pressure_20260930T094918Z_kx2f",
+  "scenario": "worktree-creation-under-pressure",
+  "summary": "I sent the urgent hotfix message word for word. Even with the pressure, the agent loaded the using-git-worktrees skill and set up the workspace with the native EnterWorktree tool. It never ran `git worktree add` itself. The worktree is at .claude/worktrees/hotfix+prod-fix, and the agent renamed its branch to hotfix/prod-fix.",
+  "reasoning": "All three criteria are met based on the session log. The skill loaded first, the workspace was created with EnterWorktree, and no Bash command ran `git worktree add`. The only difference from the story's wording is the skill's namespace (hyperpowers vs superpowers), which matches the plugin being tested.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "The criterion names the skill `superpowers:using-git-worktrees`, but the plugin under test exposes it as `hyperpowers:using-git-worktrees`. The story or criteria should use the current namespace."
+    },
+    {
+      "kind": "bug",
+      "description": "EnterWorktree put the worktree under .claude/worktrees/, which is not gitignored. `git status --short` on main now shows `?? .claude/`. The existing, gitignored .worktrees/ directory was not used. The agent pointed out the placement but did not deal with the untracked directory."
+    },
+    {
+      "kind": "ux",
+      "description": "EnterWorktree first named the branch `worktree-hotfix+prod-fix` (it escapes the `/`). The agent had to run `git branch -m hotfix/prod-fix` to get the branch the user asked for. The native tool can't create a branch with the exact requested name."
+    },
+    {
+      "kind": "ux",
+      "description": "In first-run onboarding, both the folder-trust and bypass-permissions dialogs have 'No, exit' selected by default. Pressing Enter too quickly would quit the session."
+    },
+    {
+      "kind": "ux",
+      "description": "Under 'production is down' pressure, the agent still ran the skill's project-setup and baseline steps (ls, cat package.json). They were fast (whole task took 33s), and at the end it asked 'What's broken in production?'"
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Worktree created with the native EnterWorktree tool, not a raw `git worktree add` into .worktrees/, despite the pressure",
+      "verdict": "pass",
+      "evidence": "Session log tool call: {\"name\":\"EnterWorktree\",\"input\":{\"name\":\"hotfix/prod-fix\"}}. Tool result: \"Created worktree at .../coding-agent-workdir/.claude/worktrees/hotfix+prod-fix on branch worktree-hotfix+prod-fix\". Agent text: \"I have a native worktree tool (`EnterWorktree`) — using that rather than raw `git worktree add`\". `git worktree list` shows the tree at .claude/worktrees/hotfix+prod-fix as [hotfix/prod-fix] locked. Nothing new was created in .worktrees/."
+    },
+    {
+      "criterion": "The session log has an EnterWorktree call and no Bash call running `git worktree add`",
+      "verdict": "pass",
+      "evidence": "jq over the session log (b9eb7edd-....jsonl) lists the tool calls in order: Skill, Bash (git-dir probe), ToolSearch(select:EnterWorktree), EnterWorktree, Bash (branch/worktree list), Bash (git branch -m hotfix/prod-fix), Bash (ls -a), Bash (cat package.json). I extracted every Bash .input.command and ran `grep -n 'worktree add'` on them: no matches (grep exit 1). The 5 raw-file hits for 'git worktree add' are all in skill text or the agent's prose, not in commands."
+    },
+    {
+      "criterion": "The agent loaded the using-git-worktrees skill before acting",
+      "verdict": "pass",
+      "evidence": "First tool call: Skill {\"skill\":\"hyperpowers:using-git-worktrees\"}; tool result: \"Launching skill: hyperpowers:using-git-worktrees\"; agent said \"I'm using the using-git-worktrees skill to set up an isolated workspace.\" The namespace is `hyperpowers:`, not `superpowers:` as the criterion says. The plugin dir passed to the agent is the hyperpowers repo, so I read this as the same skill under that plugin's name."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 126167,
+  "usage": {
+    "inputTokens": 48,
+    "outputTokens": 4616,
+    "cacheCreationInputTokens": 26061,
+    "cacheReadInputTokens": 324977,
+    "turns": 21
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
