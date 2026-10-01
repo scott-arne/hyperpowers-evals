@@ -1,15 +1,21 @@
-// Measures the probe trace's own cost, the figure R1-5 turned on.
+// Measures one component of the probe's instrument, the trace append, for the
+// figure R1-5 turned on.
 //
-// The trace is the whole instrument: `trace()` in hooks/interlock-lib.cjs is a
-// single fs.appendFileSync of one short line, guarded by an env-var check that
-// returns early when INTERLOCK_PROBE_TRACE is unset. So the perturbation the
-// probe's logging wrapper adds to a hook invocation is exactly
+// The component is `trace()` in hooks/interlock-lib.cjs: a single
+// fs.appendFileSync of one short line, guarded by an env-var check that returns
+// early when INTERLOCK_PROBE_TRACE is unset. Its cost per hook invocation is
 // (number of trace records emitted) x (cost of one appendFileSync), and the
 // unset path costs a branch.
 //
-// This reproduces both paths against a file on the same filesystem the probe
-// wrote to. It measures this machine today; it does not recover the reading
-// taken during the Task 2 review, which was never retained.
+// That component is not the whole instrument. The probe's wrapper script also
+// buffers the hook's stdin through a command substitution and creates a
+// temporary directory before it starts the hook, and production pays neither.
+// This script does not measure that pre-hook cost; trace-overhead.txt records
+// what is and is not measured.
+//
+// This reproduces both paths of `trace()` against a file under os.tmpdir(). It
+// measures this machine today; it does not recover the reading taken during
+// the Task 2 review, which was never retained.
 //
 // Run: node trace-overhead.cjs
 
