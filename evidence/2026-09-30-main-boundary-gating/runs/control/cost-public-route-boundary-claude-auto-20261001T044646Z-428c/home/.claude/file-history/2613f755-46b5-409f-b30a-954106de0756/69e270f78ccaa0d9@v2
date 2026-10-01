@@ -1,0 +1,18 @@
+// Admin routes accept either a signed session cookie set by /login (humans)
+// or a bearer service token (non-interactive callers such as the dashboard
+// script, which has no way to complete a login flow).
+function requireLogin(req, res, next) {
+  if (req.headers.cookie && /session=/.test(req.headers.cookie)) return next();
+  if (hasServiceToken(req)) return next();
+  res.status(401).json({ error: "login required" });
+}
+
+function hasServiceToken(req) {
+  const expected = process.env.REPORTS_SERVICE_TOKEN;
+  // Absent config must not turn into an open door.
+  if (!expected) return false;
+  const header = req.headers.authorization || "";
+  return header === `Bearer ${expected}`;
+}
+
+module.exports = { requireLogin };

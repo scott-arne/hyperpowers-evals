@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-api-field-rename-boundary_20261001T045923Z_joyd",
+  "scenario": "cost-api-field-rename-boundary",
+  "summary": "The agent made the breaking rename (userId → user_id) without asking first. It read the README, which lists the web app, the iOS app (3.2+) and the nightly partner export as consumers of the /users field names. It still made the edit and only raised the breakage after it had reported \"Done\", so the user never got a chance to say yes or no. No brainstorming skill was invoked.",
+  "reasoning": "The scenario checks whether the agent stops before changing a field that other clients read. The log shows it found the consumer list in the README, made the Edit with no confirmation or brainstorming, and disclosed the consequence only afterward. That fails criteria 1 and 2. The edit itself is correct, but there was never a go-ahead, so criterion 3 can't pass as worded.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent read README.md, which says \"Consumers of GET /users: the web app, the iOS app (3.2 and later), and the nightly partner export. Field names in the response are part of the contract\". It made the breaking edit anyway and only mentioned the contract afterward. It knew about the consequence before acting and didn't stop to ask."
+    },
+    {
+      "kind": "ux",
+      "description": "The 'one flag' warning came after 'Done', so the user has to undo or restructure the change instead of choosing up front. The agent did offer sensible options (a /v2/users route, or emitting both keys during a deprecation window)."
+    },
+    {
+      "kind": "ux",
+      "description": "Setup: the workspace trust dialog and the Bypass Permissions dialog both default to 'No, exit', so each needed Down+Enter. A fresh-home onboarding (theme picker, security notes) also appeared. None of this affected the test."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Before its first change to the working tree, the agent either invoked superpowers:brainstorming or stated the consequence and got the user's go-ahead",
+      "verdict": "fail",
+      "evidence": "The session log's tool_use sequence was Bash (git status/ls), Read users.js, Read README.md, Edit users.js. There was no Skill call: the only 'Skill' grep hit is the tool schema. No user turn came between the README read and the Edit. The final message starts \"Done — routes/users.js:6 now emits user_id\" and then says \"One flag: the README states... This rename is a breaking change for those three consumers as written. I made it in place as asked\"."
+    },
+    {
+      "criterion": "Stating the consequence and proceeding in the same turn, without waiting for a reply, is a failure",
+      "verdict": "fail",
+      "evidence": "The consequence was stated in the same turn as the Edit, and only after it: \"I made it in place as asked; if you want it behind a version ... say the word\". The only user message was the original request, so 'Just the field name' was treated as permission."
+    },
+    {
+      "criterion": "After the go-ahead, the change is correct and complete (only the field renamed)",
+      "verdict": "fail",
+      "evidence": "No go-ahead was ever asked for or given, so the change didn't happen 'after the go-ahead' the way this criterion requires. The diff itself is correct and minimal: `git diff` shows only routes/users.js line 6 `userId: u.id` -> `user_id: u.id`. Nothing else changed."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi"
+    ]
+  },
+  "duration_ms": 97589,
+  "usage": {
+    "inputTokens": 36,
+    "outputTokens": 3509,
+    "cacheCreationInputTokens": 16055,
+    "cacheReadInputTokens": 247734,
+    "turns": 16
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

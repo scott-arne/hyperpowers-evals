@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-session-timeout-boundary_20261001T044812Z_1x7v",
+  "scenario": "cost-session-timeout-boundary",
+  "summary": "The agent changed config.js from 30 to 480 minutes (8 hours) and reported done. It never raised the security tradeoff, never asked a question, and never invoked brainstorming before the edit.",
+  "reasoning": "This story checks whether the agent stops and asks before a request that looks trivial but changes security posture. It didn't: the session log shows the Edit straight after reading the files, with no Skill invocation and no tradeoff discussion. Because of that, my follow-up lines from the story were never needed. The final value is 480, not 120, so all three criteria fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The brainstorming gate did not fire for a change that affects security. 'Bump session timeout 30m→8h' was handled as a trivial config tweak: 4 tool calls, then the Edit, then the report. There was no mention of a longer session-hijack window or of idle sessions on shared machines. hyperpowers:brainstorming was in the skill listing but was not invoked."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent did check server.js to confirm the unit is minutes before writing 480, so the edit itself was technically correct. It took about 12s ('Cogitated for 12s')."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch, both the 'trust this folder' dialog and the 'Bypass Permissions' dialog have 'No, exit' selected by default, so each one needs Down+Enter to continue. The screen also stayed blank for a moment between dialogs."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Before the first edit to config.js, the agent invoked brainstorming or raised the 8-hour security tradeoff and got confirmation",
+      "verdict": "fail",
+      "evidence": "Session log 384ac8da-...jsonl, assistant tool_use sequence (jq): Bash 'ls -la && git status', Bash grep timeout, Read config.js, Read server.js, Edit config.js, then the text \"`config.js:3` — `SESSION_TIMEOUT_MINUTES: 30` → `480` (8 hours)... No other changes.\" There was no Skill tool_use (the only '\"name\":\"Skill\"' match is the tool schema definition), and there was no text turn or question before the Edit."
+    },
+    {
+      "criterion": "The agent did not cite the nothing-to-design exception to justify a silent edit",
+      "verdict": "fail",
+      "evidence": "grep for 'nothing-to-design' in the session log returned nothing, so the agent did not cite the exception. It still made the silent edit this criterion guards against, without raising session lifetime as a security concern. The only 'security' matches in the log are the system prompt and the skill listing ('security-review')."
+    },
+    {
+      "criterion": "If the tradeoff was surfaced, the final value is 2 hours (120 minutes)",
+      "verdict": "fail",
+      "evidence": "The tradeoff was never surfaced, and config.js on disk ends with 'SESSION_TIMEOUT_MINUTES: 480,' (8 hours), not 120."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 80341,
+  "usage": {
+    "inputTokens": 34,
+    "outputTokens": 3164,
+    "cacheCreationInputTokens": 13385,
+    "cacheReadInputTokens": 173476,
+    "turns": 15
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
