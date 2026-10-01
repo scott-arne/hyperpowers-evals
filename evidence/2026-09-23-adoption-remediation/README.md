@@ -217,3 +217,21 @@ The archive departs from a byte-exact copy in the same two ways as Phase 3:
 `coding-agent-workdir/.git` is stored as `git-dir` (and the
 `worktree-no-drift-to-main` pointer file as `git-file`), and
 `.git/hooks/*.sample` is omitted.
+
+## Launcher Change After Both Phases (2026-09-30)
+
+`launch-all.sh` changed after both phases ran. Phase 3 ran it as of `c8cabea`,
+the version at its harness pin `94570f1`, and Phase 5 as of `443bc28`, the
+version at `ad2b5d5`. Both versions deferred a `wait <pid>` per row to the end
+of the campaign, which can report a launcher that succeeded as failed. Once
+process ids wrap, a later fork by the capacity poll can be handed the pid of a
+launcher that has already exited. bash then discards that launcher's saved
+status, and the deferred `wait` returns 127. Campaign 2 recorded one such false
+failure (`evidence/2026-09-17-brainstorming-trigger-rule/logs/launch-all.out`).
+
+No recorded result changes. Both phases closed with `launchers non-zero: 0;
+manifest rows without a DONE log: 0` (`logs/launch-all.out`,
+`logs-phase5/launch-all.out`). The DONE check does not depend on `wait`: a row's
+log ends with DONE only when quorum exited 0, 1 or 2. The current version has
+each child write its own exit status to a scratch file and reaps with a bare
+`wait`. A child that records no status fails closed.
