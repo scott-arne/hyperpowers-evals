@@ -12,6 +12,14 @@
 # logs/measure-launch.sh beside the manifest. The manifest is exported to the
 # launcher as MANIFEST so its pins come from the same file; LOGS names the log
 # directory both scripts use (default logs/ beside the manifest).
+#
+# Each child writes its own exit status to a scratch file and the final reap is
+# a bare `wait`. The capacity poll forks for as long as the campaign runs, and
+# once process ids wrap, one of those forks can be handed the pid of a launcher
+# that has already exited. bash then discards that launcher's saved status, so
+# a `wait <pid>` deferred to the end returns 127 ("not a child of this shell")
+# for a launcher that succeeded. Campaign 2 recorded exactly that false failure
+# (evidence/2026-09-17-brainstorming-trigger-rule/logs/launch-all.out).
 set -uo pipefail
 manifest="$1"; max="${2:-8}"
 case "$max" in ''|*[!0-9]*) echo "max-concurrent must be a positive integer, got '$max'" >&2; exit 2 ;; esac
@@ -46,17 +54,23 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < "$manifest"
 [ "$bad" -eq 0 ] || { echo "manifest has malformed rows; nothing was launched" >&2; exit 1; }
 [ "${#arms[@]}" -gt 0 ] || { echo "manifest has no launch rows" >&2; exit 1; }
-rows=(); pids=(); labels=()
+tmp="${TMPDIR:-/tmp}"
+status_dir=$(mktemp -d "${tmp%/}/launch-all.XXXXXX") || { echo "cannot create a status directory; nothing was launched" >&2; exit 1; }
+trap 'rm -rf "$status_dir"' EXIT
+rows=(); labels=()
 for i in "${!arms[@]}"; do
   arm="${arms[$i]}"; scen="${scens[$i]}"; rep="${reps[$i]}"; proc="${procs[$i]}"; budget="${budgets[$i]}"
   rows+=("$arm-$scen-$proc")
   while [ "$(jobs -rp | wc -l | tr -d ' ')" -ge "$max" ]; do sleep 15; done
-  bash "$launcher" "$arm" "$scen" "$rep" "$proc" "$budget" &
-  pids+=("$!"); labels+=("$arm $scen x$rep $proc $budget"); echo "started $arm $scen x$rep $proc $budget ($(date -u +%H:%M:%SZ))"
+  ( bash "$launcher" "$arm" "$scen" "$rep" "$proc" "$budget"; echo "$?" > "$status_dir/$i" ) &
+  labels+=("$arm $scen x$rep $proc $budget"); echo "started $arm $scen x$rep $proc $budget ($(date -u +%H:%M:%SZ))"
 done
+wait
 failed_children=0
-for i in "${!pids[@]}"; do
-  if ! wait "${pids[$i]}"; then echo "launcher exited non-zero: ${labels[$i]}" >&2; failed_children=$((failed_children + 1)); fi
+for i in "${!labels[@]}"; do
+  status=$(cat "$status_dir/$i" 2>/dev/null)
+  # A missing file means the child died before recording a status; that fails closed too.
+  [ "$status" = 0 ] || { echo "launcher exited non-zero: ${labels[$i]} (status ${status:-unrecorded})" >&2; failed_children=$((failed_children + 1)); }
 done
 missing=0
 for row in "${rows[@]}"; do
