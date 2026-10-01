@@ -1,0 +1,40 @@
+  unhandled rejection (exit 9 under Node's default). A single malformed [38;5;153mtotal[39m kills the process, and [38;5;153mstore.js[39m's total
+  validation — the only one in the codebase — is entirely bypassed.
+
+  [1mAlso Critical, and the reason this was about to merge:[0m the pagination test ([38;5;153mtest/handlers.test.js:21-27[39m) asserts only
+  [38;5;153mres.orders.length === 10[39m. [38;5;153mslice(10,20)[39m satisfies that as happily as the correct [38;5;153mslice(0,10)[39m, so the test passes
+  [3mbecause of[0m bug #1. The suite is green (2/2) and that green means nothing here. Asserting returned IDs instead of a
+  count would have caught it.
+
+  [1mImportant (7)[0m
+
+  - [1m[38;5;153mcreateOrderHandler(undefined)[39m throws a raw TypeError[0m — no [38;5;153mbody = {}[39m default, unlike the list handler's [38;5;153mquery = {}[39m.
+    Empty POST body is routine traffic.
+  - [1m[38;5;153msize[39m is unbounded[0m — [38;5;153m?size=1000000[39m accepted; cheap DoS. Also [38;5;153mpage=-1[39m silently returns empty, [38;5;153mpage=0[39m/[38;5;153msize=0[39m silently
+    become 1/default.
+  - [1m[38;5;153mwithRetry[39m wraps an in-memory [38;5;153mslice[0m — no transient failure mode to retry; turns bugs into 150ms-slower bugs. Flagged
+    as an unplanned deviation from your two stated goals.
+  - [1m[38;5;153mconfig.json[39m externalization[0m — also unplanned; unguarded [38;5;153mJSON.parse[39m at module scope, lives outside [38;5;153msrc/[39m with no [38;5;153mfiles
+[39m    array in [38;5;153mpackage.json[39m (reviewer reproduced an ENOENT by packaging only [38;5;153msrc/[39m), and a missing [38;5;153mretryAttempts[39m makes
+    [38;5;153mwithRetry[39m [38;5;153mthrow undefined[39m.
+  - [1mInconsistent error contracts[0m — list throws, create returns [38;5;153m{status:400}[39m; callers need both [38;5;153mtry/catch[39m and status
+    inspection.
+  - [1m[38;5;153mcreatedAt[39m and [38;5;153mtotal[39m taken unvalidated from the body[0m — clients can backdate orders; [38;5;153mtotal: "500"[39m passes [38;5;153m> 0[39m as a
+    string. The existing [38;5;153mnowIso(clock)[39m convention is now used by nothing.
+  - [1mTest gaps[0m — no happy-path create test (that's what would have caught #2), no coverage for [38;5;153mwithRetry[39m/[38;5;153mparseOrderId[39m,
+    tests share mutable global store state.
+
+  Five Minor items too (unnecessary [38;5;153masync[39m on [38;5;153mlistOrders[39m, no [38;5;153mtotal[39m/[38;5;153mhasMore[39m in the response, duplicate IDs accepted,
+  missing create-failure logging, undocumented breaking signature change on [38;5;153mlistOrdersHandler[39m).
+
+  I've applied no fixes — you asked for a review and a report. Say the word and I'll work the findings through
+  [38;5;153mhyperpowers:receiving-code-review[39m (they're claims to evaluate, not a to-do list — #6 and #7 in particular are worth
+  your call on intent rather than mine), then run the Codex review gate over the same range before calling the review
+  complete.
+
+[38;5;246m✻[39m [38;5;246mChurned for 3m 41s · done 6:17 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

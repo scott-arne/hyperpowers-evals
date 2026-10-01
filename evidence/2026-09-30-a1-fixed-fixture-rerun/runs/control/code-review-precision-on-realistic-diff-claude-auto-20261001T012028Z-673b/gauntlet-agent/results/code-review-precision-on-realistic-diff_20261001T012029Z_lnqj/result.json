@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20261001T012029Z_lnqj",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review and handed the review to a general-purpose subagent using the skill's template. The reviewer found both real defects (the pagination offset and the unawaited saveOrder), marked both Critical with evidence it reproduced, and said \"Ready to merge? No.\" But it also put two pieces of correct code under its Important (Should Fix) heading: withRetry (#9) and the config.json load in src/config.js (#10). The parent agent later moved those two out of its Important list in its summary to the user. Even so, the reviewer's report has blocking findings against code the story lists as correct, so this is a fail.",
+  "reasoning": "Criteria 1–4, 8–12 pass. Criteria 5, 6 and 7 fail. The reviewer's Important heading includes \"#9 src/handlers.js:20-23 — withRetry wraps a synchronous in-memory array slice … Either drop it\" and \"#10 src/config.js / config.json — unrelated scope creep that adds a startup failure mode\". The story says both are correct and must not be blocking findings. Under its own heading, \"Where I'd adjust the reviewer's calibration\", the parent agent called these two not pre-merge blocking. That still means the reviewer subagent, which is the review being tested, got its severity wrong.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The reviewer subagent marked two findings Important that should be Minor at most: withRetry wrapping an in-memory read (#9) and the config.json extraction (#10). Its severity is too high on correct code, even though the parent agent later corrected it."
+    },
+    {
+      "kind": "ux",
+      "description": "The parent agent re-ranked findings in its report to the user: it listed reviewer Important items #3–#7, put #9 and #10 under 'Where I'd adjust the reviewer's calibration', and dropped #8 into a test-gaps section. This was useful, but it means the user sees a different severity breakdown than the reviewer produced. Each item is not clearly labelled as the reviewer's call or the parent's."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent reviewed the range 12f35a8..d9a8a04 and explained it as 'the branch point here (not an arbitrary HEAD~1 on a multi-commit stack)'. In this repo that is the same as HEAD~1..HEAD, but the explanation is confusing for a user who asked for 'the last commit'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The review ended with a long advert for the Codex plugin, including install commands and a note that a 'review ledger' entry had been written. This is noise in a review the user asked for."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch, the 'trust this folder' and bypass-permissions dialogs both default to 'No, exit'. For the trust prompt this contradicts the launcher's comment that provisioning suppresses it. I had to press Down and Enter to get past each one."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The reviewer ran throwaway probe scripts in /tmp to confirm each defect. The output is strong evidence for the findings. It took about 4.5 minutes in total."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill and dispatched a reviewer subagent via Agent tool",
+      "verdict": "pass",
+      "evidence": "Session log tool_use list: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, then {\"name\":\"Agent\",\"subagent_type\":\"general-purpose\",\"description\":\"Review code changes\",\"prompt\":\"You are a Senior Code Reviewer...\"}. Subagent log subagents/agent-a6ae80ee94aa32332.jsonl exists."
+    },
+    {
+      "criterion": "Flags pagination offset in listOrdersHandler under Critical/Important",
+      "verdict": "pass",
+      "evidence": "Reviewer output, Critical: \"1. src/handlers.js:18 — off-by-one in the offset: page 1 silently skips the first page of data\"; \"Fix: const offset = (page - 1) * size;\""
+    },
+    {
+      "criterion": "Flags unawaited store.saveOrder in createOrderHandler under Critical/Important",
+      "verdict": "pass",
+      "evidence": "Reviewer output, Critical: \"2. src/handlers.js:37 — store.saveOrder is async and is never awaited: the handler returns 201 for orders it did not save, and crashes the process\" (it showed UNHANDLED REJECTION in a probe it ran)."
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Reviewer: \"Ready to merge? No.\" Parent: \"Not ready to merge.\""
+    },
+    {
+      "criterion": "No Critical/Important finding asserts a defect in the listed correct items",
+      "verdict": "fail",
+      "evidence": "Reviewer Important #9 is about withRetry and Important #10 is about the config.json load (details in the next two entries)."
+    },
+    {
+      "criterion": "withRetry not flagged as blocking",
+      "verdict": "fail",
+      "evidence": "Reviewer under '#### Important (Should Fix)': \"9. src/handlers.js:20-23 — withRetry wraps a synchronous in-memory array slice… withRetry (src/util.js:7-19) retries every error indiscriminately… Either drop it… or give it a predicate\". The parent's summary said: \"the reviewer flagged it Important… not pre-merge blocking\"."
+    },
+    {
+      "criterion": "config.js module-load readFileSync not flagged as blocking",
+      "verdict": "fail",
+      "evidence": "Reviewer under Important: \"10. src/config.js / config.json — unrelated scope creep that adds a startup failure mode… if config.json is absent or malformed, require('./config') throws at import time\". The parent's summary moved it to its 'adjust calibration' section."
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Reviewer Strengths: \"parseOrderId (src/util.js:21-24) is a genuinely good validator\". No Critical/Important item is about it."
+    },
+    {
+      "criterion": "listOrders slice not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Reviewer Strengths: \"The store API change is the right shape… (src/store.js:5-7)\". No blocking finding is about it."
+    },
+    {
+      "criterion": "catch that logs and rethrows not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Reviewer Strengths: \"Error logging preserves the exception. listOrdersHandler logs and then re-throws (src/handlers.js:25-28)\"."
+    },
+    {
+      "criterion": "Fixed clock / seeded 25 orders in tests not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Reviewer Strengths praises the \"real seeded fixtures with a frozen CLOCK\". The only related point is Minor #14 (shared mutable state). Important #8 is about missing assertions, not the clock or seed."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line and an input/state → outcome",
+      "verdict": "pass",
+      "evidence": "Each Critical/Important item #1–#10 gives a file:line and a trigger with its outcome. Examples: #1 page=1 → returns ord_00000010..19; #3 createOrderHandler() → TypeError; #6 same id posted twice → two rows; #10 config.json absent → ENOENT at require. #5 (no total/hasMore) is the weakest but still names src/handlers.js:24 and the outcome for the client."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 422208,
+  "usage": {
+    "inputTokens": 54,
+    "outputTokens": 5943,
+    "cacheCreationInputTokens": 27935,
+    "cacheReadInputTokens": 446082,
+    "turns": 24
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

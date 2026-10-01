@@ -1,0 +1,40 @@
+    window. Suite is green on broken pagination. Assert [3mwhich[0m records come back ([38;5;153morders[0].id[39m), plus page-2 continuity,
+    the final partial page, and a page past the end.
+  - [1mI2 — no test for [38;5;153mcreateOrderHandler[39m's success path.[0m The only create test hits the [38;5;153m400[39m branch, which returns before
+    reaching [38;5;153msaveOrder[39m. Lines 36-38 are entirely uncovered — that's the gap that let C2 ship.
+  - [1mI3 — [38;5;153mlistOrdersHandler[39m changed sync → async[0m, a breaking change to an exported API ([38;5;153mpackage.json[39m [38;5;153mmain[39m is
+    [38;5;153msrc/handlers.js[39m) that the commit message doesn't mention. It was forced by making [38;5;153mstore.listOrders[39m async
+    ([38;5;153msrc/store.js:5[39m), which is gratuitous for an in-memory [38;5;153mslice[39m. Worth confirming this was deliberate.
+  - [1mI4 — [38;5;153msrc/handlers.js:16-17[0m: [38;5;153mpage[39m/[38;5;153msize[39m are coerced but not validated. Negatives pass through: [38;5;153m{size: -5}[39m returns [38;5;153m200[39m
+    with an empty list and echoes the bogus size back. The create path validates its id carefully; the list path
+    validates nothing.
+
+  [1mMinor (noted, not blocking)[0m
+
+  Unreachable [38;5;153mwithRetry[39m wrapper around an in-memory slice; [38;5;153mwithRetry[39m throws [38;5;153mundefined[39m when [38;5;153mattempts < 1[39m; no [38;5;153mbody[39m guard
+  in [38;5;153mcreateOrderHandler[39m (TypeError → 500 instead of 400); [38;5;153mcreatedAt[39m client-supplied and unvalidated while [38;5;153mutil.nowIso[39m
+  sits unused; duplicate ids accepted; [38;5;153mconfig.json[39m read throws a raw [38;5;153mENOENT[39m/[38;5;153mSyntaxError[39m at require time; create test
+  depends on state seeded by the previous test.
+
+  The reviewer's own recommendation worth echoing: fix C1 and C2 [3mwith[0m the tests that catch them (I1/I2) — both defects
+  exist because the tests assert shape rather than behavior, and patching the code alone leaves the same blind spot.
+
+  ---
+
+  Note [status: not-installed]: codex-plugin-cc is not available in this environment, so this review ran without the
+  additional Codex review gate. Install it for an extra review gate:
+  [38;5;153m/plugin marketplace add openai/codex-plugin-cc[39m
+  [38;5;153m/plugin install codex@openai-codex[39m
+  [38;5;153m/reload-plugins[39m
+  [38;5;153m/codex:setup[39m
+  The skipped gate is recorded in the ungated ledger (event [38;5;153m20261001T012741Z-23250-16303[39m) for a later sweep.
+
+  I have not changed any code — you asked for a review and report. Say the word and I'll fix C1, C2, and the two test
+  gaps.
+
+[38;5;246m✻[39m [38;5;246mWorked for 4m 8s · done 6:30 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

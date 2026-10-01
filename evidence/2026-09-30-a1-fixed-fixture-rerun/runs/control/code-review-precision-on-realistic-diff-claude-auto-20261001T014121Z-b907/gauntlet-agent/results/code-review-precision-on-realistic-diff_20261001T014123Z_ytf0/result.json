@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20261001T014123Z_ytf0",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review and handed the review to a general-purpose reviewer subagent built from the template. The review caught both real defects (the pagination offset and the unawaited saveOrder) as Critical and returned \"Not ready to merge\". But two of its Important findings call correct code defective: withRetry \"throws undefined if attempts is missing\" (only if config.json were misspelled), and listOrders \"silently changed contract\" for a no-argument call that no code makes. That breaks the precision criteria (5, 6, 9). One Important item, \"No happy-path create test\", also cites no file or line.",
+  "reasoning": "The agent used the skill and the reviewer subagent, found both seeded defects as Critical, and did not approve the diff. The precision criteria failed, though. Two Important findings call correct code defective: withRetry, which depends on a config.json typo that isn't there, and listOrders, which depends on a no-argument call that no code makes. One Important finding also has no file:line or trigger. The criteria for these (5, 6, 9 and 12) fail, so the overall result is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Precision failure: the reviewer raised an Important finding against withRetry that depends on a hypothetical misspelling in config.json. The real config has retryAttempts: 3."
+    },
+    {
+      "kind": "bug",
+      "description": "Precision failure: the reviewer raised an Important finding against store.listOrders for a no-argument call. No such call exists; the only call site is handlers.js:20, which passes (offset, size)."
+    },
+    {
+      "kind": "ux",
+      "description": "The parent agent did check the subagent's work: it re-read the source to confirm both blockers and rejected a wrong suggested fix (total: orders.length). But it passed along the spurious Important items without challenging them."
+    },
+    {
+      "kind": "ux",
+      "description": "The final report lists 3 Critical items, but its headline says \"2 blockers\". It then offers to \"fix the three Critical items\". The count is inconsistent."
+    },
+    {
+      "kind": "ux",
+      "description": "The final report ends with a long note about installing codex-plugin-cc (the Codex review gate) and recording the skipped gate in an ungated ledger. The user didn't ask for this, and it pads the review."
+    },
+    {
+      "kind": "ux",
+      "description": "During startup, the workspace-trust and bypass-permissions dialogs both default the highlighted choice to \"No, exit\"."
+    },
+    {
+      "kind": "suggestion",
+      "description": "\"Scope creep worth your confirmation\" is a non-standard section label. It is unclear whether its items (retry wrapper, config.js) count as blocking."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Used requesting-code-review and dispatched a reviewer subagent via the Agent tool",
+      "verdict": "pass",
+      "evidence": "Session log tool_use: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, then {\"name\":\"Agent\",\"subagent_type\":\"general-purpose\",\"description\":\"Review code changes\",\"prompt\":\"You are a Senior Code Reviewer...\"}. A subagent log appeared at subagents/agent-a085a9a666b00843e.jsonl."
+    },
+    {
+      "criterion": "Pagination offset flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final message, under ### Critical: \"1. Pagination offset is off by one page ... src/handlers.js:18 — const offset = page * size; but the JSDoc at src/handlers.js:12 declares page as 1-based. So page=1 returns records 10–19\""
+    },
+    {
+      "criterion": "Unawaited store.saveOrder flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Under ### Critical: \"2. store.saveOrder is async but never awaited. src/handlers.js:31-39 ... client gets 201 Created for a write that didn't happen ... the unhandled rejection kills the Node process\""
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "\"## Reviewer verdict: **Not ready to merge** — 2 blockers\""
+    },
+    {
+      "criterion": "No Critical/Important finding asserts a defect in the listed correct items",
+      "verdict": "fail",
+      "evidence": "Under ### Important: \"withRetry throws undefined if attempts is missing (util.js:7-19 ...)\" and \"listOrders() silently changed contract (store.js:5-7): a no-arg call now returns []\". Both items are on the do-not-block list (see criteria 6 and 9)."
+    },
+    {
+      "criterion": "withRetry not flagged as a blocking defect",
+      "verdict": "fail",
+      "evidence": "Important: \"withRetry throws undefined if attempts is missing (util.js:7-19, lastErr only assigned in catch). Now reachable because attempts comes from parsed JSON — misspell retryAttempts in config.json and every list request fails\". config.json actually contains \"retryAttempts\": 3 (cat config.json), so this only happens with a hypothetical misconfiguration."
+    },
+    {
+      "criterion": "config.js module-load readFileSync not flagged as a blocking defect",
+      "verdict": "pass",
+      "evidence": "The config.js point (\"adds an import-time crash if config.json is missing or malformed\") is under \"### Scope creep worth your confirmation\", not under Critical or Important, so it is not a blocking finding."
+    },
+    {
+      "criterion": "parseOrderId not flagged as a blocking defect",
+      "verdict": "pass",
+      "evidence": "The final review text never mentions parseOrderId as a finding (checked the full final assistant message pulled from the session log with jq)."
+    },
+    {
+      "criterion": "store.listOrders returning orders.slice not flagged as a blocking defect",
+      "verdict": "fail",
+      "evidence": "Important: \"listOrders() silently changed contract (store.js:5-7): a no-arg call now returns [] instead of all orders\". grep -rn \"listOrders(\" src test finds only one call site, src/handlers.js:20, which passes (offset, size). No caller makes a no-argument call."
+    },
+    {
+      "criterion": "listOrdersHandler log-and-rethrow catch not flagged as a blocking defect",
+      "verdict": "pass",
+      "evidence": "The final review does not criticize the catch. It suggests mirroring it: \"mirroring the try/catch already in listOrdersHandler\"."
+    },
+    {
+      "criterion": "Fixed clock / seeded 25 orders in tests not flagged as a blocking defect",
+      "verdict": "pass",
+      "evidence": "The Important item on test/handlers.test.js:21-27 says the length-only assertion cannot catch the offset bug. It does not call the fixed clock or the seed data a defect."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites a file:line plus a trigger and its outcome",
+      "verdict": "fail",
+      "evidence": "Important bullet \"No happy-path create test — which is why bug 2 ships undetected.\" cites no file or line and names no input with its outcome. The other findings do cite file:line and a trigger (e.g. \"?size=10000000 slices the whole store\", \"createOrderHandler(undefined) throws a TypeError\")."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 411995,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 5250,
+    "cacheCreationInputTokens": 23766,
+    "cacheReadInputTokens": 264404,
+    "turns": 20
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

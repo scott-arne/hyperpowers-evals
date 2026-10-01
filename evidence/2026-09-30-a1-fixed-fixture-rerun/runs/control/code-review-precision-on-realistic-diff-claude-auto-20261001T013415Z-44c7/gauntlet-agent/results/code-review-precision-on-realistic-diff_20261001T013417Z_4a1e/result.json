@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20261001T013417Z_4a1e",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review and handed the review to a general-purpose subagent using the code-reviewer.md template. The reviewer found both real defects (the page offset and the unawaited saveOrder), marked them Critical, and checked both by running code. It said \"Ready to merge? No\". But it also raised blocking (Important) findings against code the story says is correct: the module-load readFileSync of config.json (Important #13) and the log-and-rethrow catch in listOrdersHandler (Important #7). Several Important findings also don't name an input and the outcome it causes.",
+  "reasoning": "Criteria 1–4 pass: the skill was invoked, a reviewer subagent was dispatched, both defects were found and verified by running code as Critical, and the diff was not approved. Criterion 5 fails because the reviewer raised Important (blocking) findings against two items the story lists as correct: the config.json readFileSync (sub-item 7) and the catch that logs and rethrows (sub-item 10). Criterion 12 also fails because several Important findings name a category instead of an input and the outcome it causes, and some relayed bullets have no file:line. So the review is not precise enough, and the overall result is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The reviewer ranks the deliberate module-load config read (src/config.js readFileSync) as an Important / should-fix defect, although it is correct for this codebase."
+    },
+    {
+      "kind": "bug",
+      "description": "The reviewer ranks listOrdersHandler's log-and-rethrow catch as Important ('inconsistent error contract'). That is a style or design preference raised to blocking severity."
+    },
+    {
+      "kind": "ux",
+      "description": "Severity is inflated: the reviewer lists 11 Important items. Several are feature requests (total/hasMore in the response, a size cap, server-stamped createdAt) or pre-existing issues (npm test script, duplicate IDs in saveOrder). This buries the two real Criticals. The main agent caught some of this in its 'calibration' section but still relayed most of them as Important."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The main agent re-checked the reviewer's claims and moved the config.json and npm test points out of blocking, which helped. But the relayed list does not match the reviewer's own severities, so the user gets two different rankings."
+    },
+    {
+      "kind": "ux",
+      "description": "Both the workspace-trust dialog and the bypass-permissions dialog in Claude Code default to 'No, exit'. One wrong Enter keypress ends the session."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the review, the skill also ran a Codex gate preflight and printed instructions to install the Codex plugin. It recorded the range as 'not-installed' in an 'ungated ledger'. This adds noise to a review the user asked for."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent and the subagent wrote probe scripts to /tmp and used sed -i to rewrite their paths. The git working tree stayed clean (git status --short returned nothing)."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill and dispatched a reviewer subagent via Agent tool",
+      "verdict": "pass",
+      "evidence": "Session log tool_use sequence: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, then Read of skills/requesting-code-review/code-reviewer.md, then {\"name\":\"Agent\",\"subagent_type\":\"general-purpose\",\"prompt\":\"You are a Senior Code Reviewer...\"}. The subagent log is subagents/agent-a744b80e8e44e4237.jsonl."
+    },
+    {
+      "criterion": "Flags the listOrdersHandler pagination offset as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Subagent review, under Critical: \"1. Off-by-one in the page offset — the first page of orders is permanently unreachable. src/handlers.js:18 ... page=1 size=10 -> ord_00000010 .. ord_00000019 (expected ord_00000000..09)\""
+    },
+    {
+      "criterion": "Flags the unawaited store.saveOrder as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Subagent review, under Critical: \"2. store.saveOrder is never awaited ... src/handlers.js:37 ... returned {\\\"status\\\":201...}, orders stored: 0 -> UNHANDLED REJECTION\""
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Subagent: \"Ready to merge? No\". Main agent: \"Verdict: Do not merge.\""
+    },
+    {
+      "criterion": "No Critical/Important finding against the listed correct items (header)",
+      "verdict": "fail",
+      "evidence": "Sub-items 7 (config readFileSync) and 10 (catch that rethrows) are hit by Important findings #13 and #7; see below."
+    },
+    {
+      "criterion": "withRetry not flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "withRetry appears only under Minor: \"14. withRetry wraps an operation that cannot fail transiently\" and \"15. withRetry throws undefined when attempts <= 0\". It is also praised under Strengths."
+    },
+    {
+      "criterion": "Module-load readFileSync of config.json not flagged as Critical/Important",
+      "verdict": "fail",
+      "evidence": "Subagent, under Important (Should Fix): \"13. A malformed or missing config.json crashes at import with an opaque error. src/config.js:7-9 — readFileSync + JSON.parse at module scope with no try/catch...\". The main agent moved this to a 'calibration/scope' note, but the reviewer's own report ranks it Important."
+    },
+    {
+      "criterion": "parseOrderId not flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Listed under Strengths: \"parseOrderId is a good shape (src/util.js:21-25)\". No blocking finding targets it."
+    },
+    {
+      "criterion": "listOrders returning orders.slice not flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Listed under Strengths: \"store.listOrders now returns a copy (src/store.js:6)\". Minor #16 is about the exported live array, not the slice."
+    },
+    {
+      "criterion": "catch that logs and rethrows in listOrdersHandler not flagged as Critical/Important",
+      "verdict": "fail",
+      "evidence": "Subagent, under Important: \"7. Inconsistent error contract between the two handlers. src/handlers.js:25-28 vs :33-35 — listOrdersHandler logs and rethrows; createOrderHandler returns a {status, error} object... Pick one convention\". The main agent's final report repeats this under Important: \"Inconsistent error contract — listOrdersHandler logs and rethrows...\""
+    },
+    {
+      "criterion": "Fixed clock and seeded 25-order test list not flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "The seed is praised under Strengths (\"25 rows, i.e. a deliberate non-multiple of the page size\"). Important #10 criticizes the count-only assertion, not the fixed clock or the seed."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line and a concrete trigger plus outcome",
+      "verdict": "fail",
+      "evidence": "Several Important findings name a category, not an input and its outcome. Important #8: \"The pagination response carries no total count or next-page indicator. src/handlers.js:24\" (a missing feature, no trigger). Important #7: inconsistent error contract (a design complaint, no input that leads to a wrong outcome). Important #3: \"total and createdAt are unvalidated\" (category). In the main agent's relayed report, the 'Inconsistent error contract' and 'Duplicate order IDs' bullets have no file:line at all."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi"
+    ]
+  },
+  "duration_ms": 424128,
+  "usage": {
+    "inputTokens": 38,
+    "outputTokens": 5454,
+    "cacheCreationInputTokens": 20495,
+    "cacheReadInputTokens": 223367,
+    "turns": 17
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
