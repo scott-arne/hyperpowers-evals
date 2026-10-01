@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20261001T012024Z_gvl3",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review, sent a general-purpose reviewer subagent off with the template, and reported back. Both planted defects were found as Critical: the pagination offset at src/handlers.js:18 and the unawaited saveOrder at src/handlers.js:37. The verdict was \"not ready to merge\", and none of the six correct-as-written items got a blocking finding. One criterion failed: Important finding #5 (\"no success-path test for createOrderHandler\") cites only test/handlers.test.js with no line number and names no concrete input or state. In the agent's own summary to the user it has no file reference at all.",
+  "reasoning": "Criteria 1–11 are met. The skill was invoked, the subagent was dispatched with the template, both planted defects are Critical with reproduced evidence, merge was not approved, and none of the correct items got a blocking finding. Criterion 12 requires every Critical or Important finding to cite a file and line and state a trigger and outcome. Important #5 cites only a file (no line), names a category (\"no success-path test\"), and gives no concrete input→outcome. By the criterion's own wording, that is a failure. Because one criterion failed, the overall verdict is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Important finding #5 (missing success-path test) is a category-level finding with no line number and no concrete trigger. That breaks the reviewer template's requirement that blocking findings be specific. It should arguably be Minor, or be folded into #3."
+    },
+    {
+      "kind": "bug",
+      "description": "Wrong detail in the agent's summary: it says \"the 20 oldest orders are invisible to every client\", but the subagent's report says \"the 20 most recent orders are silently invisible\". The summary changed the meaning of the subagent's finding."
+    },
+    {
+      "kind": "ux",
+      "description": "When relaying, the agent shortened the Important findings and dropped file references (Important #5 has none in the summary). A user reading only the summary loses precision the subagent provided."
+    },
+    {
+      "kind": "ux",
+      "description": "Both the workspace trust dialog and the Bypass Permissions dialog default to \"No, exit\", so first-time setup takes a Down+Enter on each. This is probably intentional on Claude Code's side."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The review closed with a long note about codex-plugin-cc not being installed, including install commands, and an ungated-ledger entry. It is useful process info but takes up a lot of space in a review the user asked for."
+    },
+    {
+      "kind": "performance",
+      "description": "The review took about 3m19s end to end, including the subagent running empirical probes to reproduce both bugs. That is reasonable and gave strong evidence (measured outputs)."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review and dispatched a reviewer subagent via Agent",
+      "verdict": "pass",
+      "evidence": "Session log tool calls: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, then Read of code-reviewer.md, then {\"name\":\"Agent\",\"subagent_type\":\"general-purpose\",\"description\":\"Review code changes\",\"prompt\":\"You are a Senior Code Reviewer...\"}. A subagent log exists at subagents/agent-a696edd6199a968d3.jsonl."
+    },
+    {
+      "criterion": "Pagination offset in listOrdersHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Critical #1: \"src/handlers.js:18 — pagination offset is off by one full page... page 1 -> offset 20, not 0\". Fix given as (page - 1) * size."
+    },
+    {
+      "criterion": "Unawaited store.saveOrder in createOrderHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Critical #2: \"src/handlers.js:37 — store.saveOrder is async but not awaited: invalid orders return 201 while persisting nothing, and the unhandled rejection terminates the process.\""
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Subagent: \"Ready to merge? No\". Agent's summary on screen: \"Verdict: not ready to merge.\""
+    },
+    {
+      "criterion": "No blocking finding about any of the listed correct-as-written items (header)",
+      "verdict": "pass",
+      "evidence": "Critical/Important findings #1–#5 cover the pagination offset, saveOrder, the test asserting length only, split validation, and the missing success-path test. None of the listed items appears among them (see the items below)."
+    },
+    {
+      "criterion": "withRetry not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "withRetry is mentioned only in Strengths (\"backoff math is correct\") and in Minor #9 (\"dead machinery... attempts: 0 throws undefined\"). Minor is allowed."
+    },
+    {
+      "criterion": "config.json readFileSync not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Mentioned only in Minor #10 (\"externalizing config is scope creep... adds a new startup failure mode\")."
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Appears only in Strengths: \"parseOrderId is a clean parse-don't-validate boundary (src/util.js:21-25)\"."
+    },
+    {
+      "criterion": "listOrders returning orders.slice not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Appears in Strengths: \"store.listOrders no longer leaks the live array... Returning orders.slice(offset, offset + limit) fixes a real encapsulation hole\"."
+    },
+    {
+      "criterion": "catch in listOrdersHandler that logs and rethrows not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "The only mention is inside Critical #2, which notes createOrderHandler has no try/catch \"unlike listOrdersHandler, which does\". Nothing says that catch is a defect."
+    },
+    {
+      "criterion": "Fixed clock and seeded 25-order list in tests not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Strengths praise the fixture: \"The test seeds realistic fixture data (25 records across a page boundary)\". Important #3 is about the assertion (length rather than identity), not about the clock or the seed."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file+line and states a trigger and outcome",
+      "verdict": "fail",
+      "evidence": "Criticals #1 and #2 and Importants #3 and #4 cite file:line with a trigger (e.g. \"input: createOrderHandler({ id: 'ord_abc12345' })... handler returned 201, orders persisted: 0, EXIT CODE 1\"). Important #5 reads \"test/handlers.test.js — no success-path test for createOrderHandler\": no line number and no concrete input/state→outcome. In the agent's summary to the user it is \"5. No success-path test for createOrderHandler — only the 400 case.\" with no file at all."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 331211,
+  "usage": {
+    "inputTokens": 42,
+    "outputTokens": 4809,
+    "cacheCreationInputTokens": 22180,
+    "cacheReadInputTokens": 255663,
+    "turns": 19
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

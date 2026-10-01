@@ -191,4 +191,89 @@ empty.
 
 ## Results
 
-Pending.
+All 20 sessions ran on Claude Code 2.1.284 and were determinate. No attempt
+was void, so nothing was replaced or re-run. `logs/launch-all.out` records the
+four launches at 01:13:19-21Z and no non-zero launcher. The mutation checks
+passed before the batch, after the counted sessions and after archiving (stamp
+1790817163, 01:12:43Z): no file newer than the stamp in either worktree outside
+`.git`, each `HEAD` at its pin, and `git status --short` empty.
+
+The scorer exited non-zero for the planned reason only: `proof-sidecar-missing`
+for every run, no other `DESIGN ERROR`, and a row for every run.
+
+### As Scored
+
+Per-row scores are in `measure/precision-control.tsv` and
+`measure/precision-treatment.tsv`.
+
+| | control (3bdb5b2) | treatment (677c649) |
+|---|---|---|
+| recall 2 of 2 | 10/10 | 9/10 (`013521Z-fade`: 0) |
+| accepted | 0/10 [0.000, 0.278] | 4/10 [0.168, 0.687] |
+| blocking findings on clean hunks, sum and mean | 22, 2.2 | 8, 0.8 |
+| grader pass (not part of spec 5.1) | 0/10 | 5/10 |
+
+Wilson 95% intervals, z = 1.96. Reading: **Worse.** Treatment recall falls
+below 2 of 2 in one determinate trial while control holds 2 of 2 in all ten.
+
+### Hand-check
+
+`measure/handcheck.md` reads every Critical and Important finding the scorer
+placed on a clean hunk in either arm (8 counts in treatment, 22 in control),
+not only the stderr disagreement lines, because fade's recall decides between
+Worse and the rest.
+
+- **fade.** The reviewer read the files with `cat` and numbered
+  `src/handlers.js` one line short. Its Critical on the page offset cites
+  `handlers.js:17` (the planted line is 18) and cites `store.js:5-7` only to
+  say the store is correct; citation-first placement puts it on `store_slice`.
+  Its Critical on the unawaited save cites `handlers.js:36` (the planted line
+  is 37) and names `parseOrderId` in passing, so the name tier is contested
+  and the finding is unattributed. Both quote the planted line and give the
+  right fix, and the grader credits both. A separate Important asserts a
+  defect in `store.listOrders` that no caller triggers, so fade keeps 1
+  blocking finding and is not accepted under any reading.
+- **Other treatment counts not supported:** `115f` on `log_rethrow` (3 becomes
+  2); `870d` and `f0fd` on `test_fixture`, both the sixth known limit (each 1
+  becomes 0, so both rows are accepted as read).
+- **Control counts not supported:** `fff2` on `test_fixture` (4 becomes 3) and
+  `3df6` on `test_fixture` (the sixth known limit). `3df6` on `parse_order_id`
+  is arguable: a design finding about client-supplied ids, placed by name.
+  Read as not supported, `3df6` is accepted.
+
+| | treatment as read | control as read |
+|---|---|---|
+| recall 2 of 2 | 10/10 | 10/10 |
+| accepted | 6/10 [0.313, 0.832] | 0/10 [0.000, 0.278] or 1/10 [0.018, 0.404] |
+| blocking findings on clean hunks, sum and mean | 5, 0.5 | 20 or 19, 2.0 or 1.9 |
+
+### Readings
+
+- **As scored: Worse.**
+- **fade's misplaced finding corrected only** (the Scorer section's both-ways
+  clause): **Worse.** fade's recall is 1.
+- **As read: no reading.** Not Worse: recall is 2 of 2 in every trial of both
+  arms and the treatment mean is below control's. Not separated does not apply:
+  6/10 misses the absolute bar, and the means are 1.4 or 1.5 apart. Advantage
+  does not apply: 6/10 is below 8/10. The Decision Rule makes this the human
+  partner's call.
+
+### Decision
+
+The human partner decided on the hand-read result: **A1 core stays.** This
+departs, for this one decision, from the Scorer section's rule that the
+scorer's count governs. The scored Worse reading rests on one trial whose
+recall of 0 comes from the reviewer's line miscount, and the grader and the
+hand-read both credit that trial with both planted defects. The consequence
+applied is Not separated's: A1 core stays as cheap guidance whose effect this
+fixture could not show at the 8/10 bar, the evidence note says so, and no
+further change is made in this plan.
+
+Under every reading, treatment raised fewer blocking findings on clean hunks
+than control (0.8 or 0.5 against 2.2 or 1.9-2.0), and its acceptance lower
+bound sits above control's point estimate. Under none does it reach 8/10.
+Phase 5's unambiguous advantage does not survive the fixed fixture. Control
+matches Phase 5 (0/10, mean 2.2). Treatment accepted 4/10 as scored and 6/10
+as read, against Phase 5's 8/10 [0.490, 0.943]. The intervals overlap, so
+this campaign does not show that treatment got worse. It shows that 8/10 does
+not reproduce.

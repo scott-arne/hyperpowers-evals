@@ -1,0 +1,40 @@
+  - [38;5;153mtest/handlers.test.js:26[39m asserts only [38;5;153mres.orders.length === 10[39m. With 25 records, the buggy [38;5;153mslice(10,20)[39m and the
+    correct [38;5;153mslice(0,10)[39m both return 10 rows. The seed builds identifiable ids ([38;5;153mord_00000000[39m…) but nothing ever asserts
+    on one.
+  - The only create test covers the 400 branch. Nothing asserts a valid order is persisted, so #2 is invisible.
+
+  Worth fixing these first — write the identity assertion and the persistence assertion, watch both fail, then fix the
+  handlers.
+
+  [1mAlso worth fixing (not blocking)[0m
+
+  - [1m[38;5;153mhandlers.js:36[0m — [38;5;153mcreatedAt[39m comes from the client and is [38;5;153mundefined[39m when omitted (verified). [38;5;153mnowIso()[39m already exists
+    in [38;5;153msrc/util.js:3[39m and is unused; generate it server-side. Currently a client can backdate an order.
+  - [1m[38;5;153mhandlers.js:16-17[0m — [38;5;153mpage[39m/[38;5;153msize[39m unvalidated. [38;5;153mpage: -1[39m returns 200 with an empty array instead of 400; [38;5;153msize[39m has no
+    upper bound, so [38;5;153msize: 1000000[39m is accepted.
+
+  Minor notes (reviewer's, I spot-checked them): no [38;5;153mtotal[39m/[38;5;153mhasMore[39m in the paginated response; [38;5;153mwithRetry[39m throws [38;5;153mundefined[39m
+  if [38;5;153mattempts[39m is 0 — unreachable at [38;5;153mretryAttempts: 3[39m, one config edit away; the retry wraps a synchronous [38;5;153mArray.slice[39m
+  with no transient failure mode; [38;5;153mlistOrders()[39m with no args now returns [38;5;153m[][39m rather than erroring, which is silently
+  breaking for any out-of-repo caller.
+
+  [1mVerdict: not ready to merge.[0m Both criticals are small fixes; the test gaps are the deeper issue.
+
+  One process note: the Codex review gate the skill calls for could not run — preflight returned [38;5;153mnot-installed[39m ("plugin
+  registry not found"), so this commit got one review seat instead of two. I logged the ungated range to the ledger. To
+  enable it next time:
+
+  [38;5;153m/plugin marketplace add openai/codex-plugin-cc[39m
+  [38;5;153m/plugin install codex@openai-codex[39m
+  [38;5;153m/reload-plugins[39m
+  [38;5;153m/codex:setup[39m
+
+  I haven't changed any code — you asked for a review and a report. Want me to apply the two critical fixes plus the
+  failing-first tests?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 4m 18s · done 6:36 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

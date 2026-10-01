@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20261001T012733Z_lmlz",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review, sent the template to a general-purpose reviewer subagent through the Agent tool, and reported that the commit is not ready to merge. Both real defects (the pagination offset and the unawaited saveOrder) were rated Critical with file:line and a trigger. The review still fails precision: the module-load readFileSync/JSON.parse in src/config.js is filed as an Important defect, both in the subagent's report (#9) and in the agent's final report. The subagent also filed withRetry use as Important (#6); the final report only softened it to a \"judgment call\". Several Important items don't name a concrete input and outcome.",
+  "reasoning": "The workflow is right (skill loaded, reviewer dispatched with the Agent tool), both real defects were rated Critical with concrete triggers, and the diff was not approved. Precision fails: a blocking (Important) finding claims a defect in the config.js readFileSync, which the story lists as correct code, so criteria 5 and 7 fail. The subagent also filed withRetry use as Important, which leaves criterion 6 unclear. Criterion 12 fails because several Important items don't name a concrete input and outcome.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The reviewer filed the intentional module-load readFileSync of config.json (src/config.js:7-9) as an Important defect. The main agent kept it as Important in the report the user saw."
+    },
+    {
+      "kind": "bug",
+      "description": "The reviewer subagent filed withRetry use as Important (#6, 'abstraction bought ahead of need'). The main agent demoted it in its summary, so the subagent's report and the user-facing report don't match on severity."
+    },
+    {
+      "kind": "ux",
+      "description": "The Important list is padded with feature requests and process items: no total/hasMore, scope creep, an unbounded size, and test-structure concerns. That dilutes the two real blockers. The subagent's report had 18 findings."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final report ends with a long plug for installing codex-plugin-cc ('Note [status: not-installed]...'), which is noise in the review output."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch, the workspace trust dialog and the bypass-permissions dialog both default to 'No, exit'. That's expected for safety, but worth noting for the harness."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Good: the subagent ran the code to confirm both real defects, showing the unhandled rejection crash and the 201 response. The main agent also checked the two Criticals against the source itself."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill and dispatched reviewer subagent via Agent tool",
+      "verdict": "pass",
+      "evidence": "Session log tool calls: `Skill {\"skill\":\"hyperpowers:requesting-code-review\"}`, Read code-reviewer.md, then `Agent {\"subagent_type\":\"general-purpose\",\"description\":\"Review code changes\",\"prompt\":\"You are a Senior Code Reviewer...` The subagent log exists at subagents/agent-a5a7bc549129b217e.jsonl."
+    },
+    {
+      "criterion": "Pagination offset in listOrdersHandler flagged Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final report, under '## Critical (merge blockers)': '**1. Pagination off-by-one — the entire first page is unreachable.** `src/handlers.js:18` ... page 1 → offset 10, not 0'"
+    },
+    {
+      "criterion": "Unawaited store.saveOrder in createOrderHandler flagged Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final report, under Critical: '**2. `store.saveOrder` is async and is neither awaited nor caught.** `src/handlers.js:37` ... The client gets `201 Created` for an order that was never stored. The rejected promise is unhandled...'"
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Final report: '**Verdict: not ready to merge.**'. Subagent: '**Ready to merge?** No'"
+    },
+    {
+      "criterion": "No Critical/Important finding asserts a defect in the listed correct code",
+      "verdict": "fail",
+      "evidence": "Fails because sub-criterion 7 fails (config.js readFileSync is filed as Important). Sub-criterion 6 (withRetry) is also unclear. See those entries."
+    },
+    {
+      "criterion": "withRetry not flagged as blocking defect",
+      "verdict": "unclear",
+      "evidence": "Subagent report under '#### Important (Should Fix)': '**6. `src/handlers.js:20-23` — the retry wrapper is applied to the one operation that cannot fail transiently...** a deterministic read error now takes 150ms of pointless backoff'. The main agent's final report moved this out of Important: 'Two findings are judgment calls rather than defects ... the reviewer argues `withRetry` is wrapping `listOrders`...'. The withRetry attempts<1 item is Minor."
+    },
+    {
+      "criterion": "Module-load readFileSync of config.json not flagged as blocking defect",
+      "verdict": "fail",
+      "evidence": "Final report under '## Important': '**Unguarded `readFileSync`/`JSON.parse` at module load** (`src/config.js:7-9`) — a config missing `pageSize` fails silently'. Subagent Important #9 says the same thing, and #10 calls the config change scope creep, also under Important."
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking defect",
+      "verdict": "pass",
+      "evidence": "No Critical/Important item targets parseOrderId. The subagent only mentions it under test gaps ('No direct tests for `withRetry` or `parseOrderId`'), and #12 refers to 'parseOrderId-based lookups' while being about duplicate ids."
+    },
+    {
+      "criterion": "listOrders returning orders.slice not flagged as blocking defect",
+      "verdict": "pass",
+      "evidence": "Subagent Important #13 is about the incompatible change of listOrders' signature (callers using the old zero-arg form), not about slice itself. It is not in the final report. The async-ness of slice is Minor #17. Borderline but not a defect claim about slice."
+    },
+    {
+      "criterion": "catch in listOrdersHandler that logs and rethrows not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Subagent puts it under Minor: '**16. `src/handlers.js:26` — log-and-rethrow double-reports'. Final report: 'Minor items: ... `log.error` drops the stack trace.'"
+    },
+    {
+      "criterion": "Fixed clock and seeded 25-order list in tests not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "The Important test findings are about length-only assertions (#7) and the shared store singleton/reset (#8). Neither claims the fixed clock or the 25-order seed is wrong."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line and a concrete trigger plus outcome",
+      "verdict": "fail",
+      "evidence": "All items cite file:line, but some Important items name a category with no trigger or outcome. Examples from the final report: '**No `total` or `hasMore` in the response** (`handlers.js:24`) — clients can't know how many pages exist; arguably half the pagination feature is missing' and '**Tests share the store singleton** ... order-dependent the moment a create-happy-path test is added' (hypothetical). Subagent #10 'config externalization is scope creep' names no input."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 402187,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 5140,
+    "cacheCreationInputTokens": 19977,
+    "cacheReadInputTokens": 273574,
+    "turns": 20
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

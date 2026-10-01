@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20261001T013908Z_njo3",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review and sent the review to a reviewer subagent using the template. The review found both real defects (the pagination offset and the unawaited saveOrder) as Critical and said not to merge. It also put the module-load readFileSync of config.json in src/config.js under Important (#6). The story says that code is correct, so criterion 7 fails.",
+  "reasoning": "Both real defects were found as Critical, with file:line, trigger and outcome, and the review said not to merge. The skill path and the subagent dispatch were both correct. But the review put a blocking-level (Important) finding against the module-load readFileSync in src/config.js, which the story lists as correct code, so criteria 5 and 7 fail. The overall result is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The reviewer subagent put the config.json readFileSync at module load (src/config.js:3-9) under Important #6, mostly on scope and taste grounds plus a 'startup crash path'. The scenario says this code is correct. The parent agent noticed the finding was weak ('Treat it as optional-or-split rather than blocking') but still listed it under Important and called it 'a genuine regression'."
+    },
+    {
+      "kind": "ux",
+      "description": "The Important section has several debatable design items (unbounded size, missing total/hasMore, client-supplied createdAt) next to real issues. That waters down the signal compared with the two true Criticals."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch, the workspace-trust and bypass-permissions dialogs both default to 'No, exit', so you need extra keypresses to get started. This is expected Claude Code onboarding, not the SUT skill."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The skill loaded as 'hyperpowers:requesting-code-review' even though the user asked for 'superpowers:'. The criteria allow either. The review also includes a Codex gate 'not-installed' notice with install instructions, which is noise in the user-facing review."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill and dispatched reviewer subagent via Agent tool",
+      "verdict": "pass",
+      "evidence": "Main session log: `TOOL: Skill {\"skill\":\"hyperpowers:requesting-code-review\"}`, then it read code-reviewer.md, then `TOOL: Agent {\"description\":\"Review code changes\",\"subagent_type\":\"general-purpose\",\"prompt\":\"You are a Senior Code Reviewer...`. A subagent log appeared at subagents/agent-ac4c33404cf5503ea.jsonl."
+    },
+    {
+      "criterion": "Pagination offset in listOrdersHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Final output: \"Off-by-one in pagination — src/handlers.js:18 `const offset = page * size;` ... Page 1 produces offset 10, so the first size records are returned by no page\". The agent put it under 'Two merge-blockers' and the subagent put it under Critical."
+    },
+    {
+      "criterion": "Unawaited store.saveOrder in createOrderHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "\"Unawaited store.saveOrder — src/handlers.js:37 ... the client gets 201 Created for an order that was never persisted; the rejection escapes as an unhandled rejection\". This is a Critical in the subagent output."
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "Subagent: \"Ready to merge? No\". Agent: \"Do not merge as-is.\""
+    },
+    {
+      "criterion": "No blocking finding against the listed correct items (header)",
+      "verdict": "fail",
+      "evidence": "Fails because of sub-item 7: the config.js readFileSync is reported under Important."
+    },
+    {
+      "criterion": "withRetry not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "withRetry is only mentioned under Minor (#9 retry asymmetry, #10 throws undefined when attempts<1)."
+    },
+    {
+      "criterion": "Module-load readFileSync of config.json not flagged as blocking",
+      "verdict": "fail",
+      "evidence": "Subagent's Important (Should Fix) section: \"6. src/config.js:3-9 — externalizing config to a runtime file read is unrequested scope, and it adds a startup crash path ... require('./config') can now throw\". The agent repeated it under Important and called it \"a genuine regression\", although it added \"Treat it as optional-or-split rather than blocking.\""
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "parseOrderId does not appear in any Critical or Important finding in the subagent output or the final summary."
+    },
+    {
+      "criterion": "listOrders returning orders.slice not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "slice comes up only in Minor #9 (\"Array.prototype.slice ... has no failure mode\") and as context in the pagination finding. No finding calls it a defect."
+    },
+    {
+      "criterion": "catch-log-rethrow in listOrdersHandler not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "No Critical or Important finding is about the catch. The subagent cites it as a pattern to copy (\"mirroring the try/catch/log.error shape already used in listOrdersHandler\")."
+    },
+    {
+      "criterion": "Fixed clock and seeded 25-order list in tests not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Important #3 is about the assertion checking only row count (\"asserts only res.orders.length === 10\"), not about the fixed clock or the seeded fixture. It uses the 25 seeded records as context."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file:line plus a trigger and outcome",
+      "verdict": "pass",
+      "evidence": "Each one has a file:line and a trigger: handlers.js:18 (page=1 gives offset 10), handlers.js:37 (total:-5 gives 201 and an unhandled rejection), test:21-27 (buggy slice(10,20) still returns 10 rows), handlers.js:17 (size=1e7 accepted), handlers.js:36 (createdAt:{} stored), config.js:3-9 (missing config.json gives ENOENT at import), handlers.js:24 (an out-of-range page looks the same as the last page)."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 400057,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 4548,
+    "cacheCreationInputTokens": 22056,
+    "cacheReadInputTokens": 262124,
+    "turns": 20
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

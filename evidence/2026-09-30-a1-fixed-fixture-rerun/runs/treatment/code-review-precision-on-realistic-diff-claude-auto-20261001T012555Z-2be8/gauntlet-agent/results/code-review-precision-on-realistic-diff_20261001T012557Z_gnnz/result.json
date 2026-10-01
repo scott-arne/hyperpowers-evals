@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 5,
+  "runId": "code-review-precision-on-realistic-diff_20261001T012557Z_gnnz",
+  "scenario": "code-review-precision-on-realistic-diff",
+  "summary": "The agent loaded hyperpowers:requesting-code-review, sent the review to a general-purpose subagent using the code-reviewer.md template, and reported back. The review correctly found both real defects as Critical (C1: pagination offset at handlers.js:18; C2: unawaited saveOrder at handlers.js:37) and said the diff is not ready to merge. None of the six correct-as-written items got a blocking finding. It fails on criterion 12: two of the four Important findings don't give a concrete input and outcome. I3 names a category (\"breaking change to an exported API\") with no trigger, and I2 cites \"Lines 36-38\" without naming a file.",
+  "reasoning": "Criteria 1-11 all pass: the skill and subagent path were used, both planted defects were flagged as Critical with correct analysis, the diff was not approved, and the correct-as-written code drew only Minor remarks. Criterion 12 needs every Critical/Important finding to give a file, a line and a trigger→outcome. I3 states only a category ('breaking change to an exported API') with no concrete trigger, and I2 has no file name or input→outcome. Because criterion 12 fails, the overall verdict is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Important finding I3 (sync→async exported API change) is a category-only finding: it has no concrete trigger or outcome and ends with 'Worth confirming this was deliberate'. That is a question, not a blocking defect, so it probably belongs under Minor or a separate questions section."
+    },
+    {
+      "kind": "bug",
+      "description": "Important finding I2 cites 'Lines 36-38' but never names the file, so it doesn't fully meet the file+line citation standard."
+    },
+    {
+      "kind": "ux",
+      "description": "The user asked for superpowers:requesting-code-review, but the agent loaded hyperpowers:requesting-code-review. The criteria allow this, but the namespace swap happened silently."
+    },
+    {
+      "kind": "ux",
+      "description": "The review output ends with a long promotional block about installing codex-plugin-cc plus a ledger event ID. That is noise for a user who only asked for a review."
+    },
+    {
+      "kind": "ux",
+      "description": "Both startup dialogs (workspace trust and bypass-permissions) default to 'No, exit', so an extra Down keypress was needed each time. This is environment setup, not the product under test."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Good behavior: the orchestrator checked the reviewer's two Critical claims against src/handlers.js and src/store.js itself before passing them on, and it made no code changes."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked requesting-code-review skill and dispatched reviewer via Agent tool",
+      "verdict": "pass",
+      "evidence": "Session log tool_use: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:requesting-code-review\"}}, then Read of skills/requesting-code-review/code-reviewer.md, then {\"name\":\"Agent\",\"subagent_type\":\"general-purpose\",\"description\":\"Review code changes\",\"prompt\":\"You are a Senior Code Reviewer...\"}. A subagent log appeared under subagents/agent-a5cee3a55c52dc8c7.jsonl. On screen: 'Agent \"Review code changes\" finished · 2m 57s'"
+    },
+    {
+      "criterion": "Pagination offset in listOrdersHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Under the ### Critical heading: 'C1 — src/handlers.js:18: pagination off by one page; the first page is unreachable... page 1 -> offset 20... Fix: const offset = (page - 1) * size;'"
+    },
+    {
+      "criterion": "Unawaited store.saveOrder in createOrderHandler flagged as Critical/Important",
+      "verdict": "pass",
+      "evidence": "Under the ### Critical heading: 'C2 — src/handlers.js:37: store.saveOrder is async but not awaited... total: -5 → 201, zero orders saved... Node ≥15 throws on unhandled rejections'"
+    },
+    {
+      "criterion": "Review does not approve the diff",
+      "verdict": "pass",
+      "evidence": "'## Verdict: not ready to merge — 2 Critical, 4 Important'"
+    },
+    {
+      "criterion": "No blocking finding against the correct items (header)",
+      "verdict": "pass",
+      "evidence": "None of items 6-11 below appears under Critical or Important. Critical/Important findings are C1, C2, I1 (test assertions), I2 (create success path has no test), I3 (sync→async API change), I4 (page/size not validated)."
+    },
+    {
+      "criterion": "withRetry not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Only under Minor: 'Unreachable withRetry wrapper around an in-memory slice; withRetry throws undefined when attempts < 1'"
+    },
+    {
+      "criterion": "config.json readFileSync not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Only under Minor: 'config.json read throws a raw ENOENT/SyntaxError at require time'"
+    },
+    {
+      "criterion": "parseOrderId not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "Only mentioned approvingly: 'map validation errors to 400 like the parseOrderId branch at lines 32-35'. No finding against it."
+    },
+    {
+      "criterion": "listOrders returning orders.slice not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "I3 says making store.listOrders async was 'gratuitous for an in-memory slice', but the finding is about the exported handler's sync→async API change. It does not say the slice return is wrong. C1 says the store 'applies the offset verbatim', which puts the blame on the handler."
+    },
+    {
+      "criterion": "catch-log-rethrow in listOrdersHandler not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "No finding in the final review text mentions the catch/rethrow (checked the full final assistant text pulled from the session log with jq)."
+    },
+    {
+      "criterion": "Fixed clock / seeded 25 orders in test not flagged as blocking",
+      "verdict": "pass",
+      "evidence": "I1 criticizes the assertion 'orders.length === 10' at test/handlers.test.js:21-27, not the fixed clock or the seed data. The only test-state note is under Minor ('create test depends on state seeded by the previous test')."
+    },
+    {
+      "criterion": "Every Critical/Important finding cites file+line and a trigger→outcome",
+      "verdict": "fail",
+      "evidence": "C1, C2, I1 and I4 meet the bar (for example I4: 'src/handlers.js:16-17... {size: -5} returns 200 with an empty list'). I3: 'listOrdersHandler changed sync → async, a breaking change to an exported API... Worth confirming this was deliberate'. It names a category and gives no input or caller scenario with a resulting outcome. I2: 'no test for createOrderHandler's success path... Lines 36-38 are entirely uncovered'. It gives no file name and no input→outcome."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 353614,
+  "usage": {
+    "inputTokens": 42,
+    "outputTokens": 4961,
+    "cacheCreationInputTokens": 22957,
+    "cacheReadInputTokens": 242727,
+    "turns": 19
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
