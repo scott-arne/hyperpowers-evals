@@ -33,3 +33,5 @@ In order:
    `result.json`, and there are no gitlinks.
 
 Commit ids cited in the evidence before 2026-09-16 may predate a history rewrite of the then-unpushed range (session key files removed); `history-rewrite-2026-09-16.tsv` maps old ids to new.
+
+Commit ids cited before 2026-10-01 may predate a second rewrite (the operator's private instruction text redacted from archived transcripts); `history-rewrite-2026-10-01.tsv` maps old ids to new. The hyperpowers commits pinned in manifests changed in the same rewrite and resolve through `docs/hyperpowers/history-rewrite-2026-10-01.tsv` in that repository; only one plan document differs at the new ids, so an analyzer re-runs with each pin replaced by its mapped id.
