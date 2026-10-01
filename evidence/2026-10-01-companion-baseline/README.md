@@ -175,4 +175,79 @@ archiving. Each time:
 
 ## Results
 
-Pending.
+**The scenario does not reproduce the field failure.** The shipping head
+started the companion in 10 of 10 sessions. Against the best a fix could do,
+10 of 10, the one-sided Fisher p is 1.000. No skill change follows from this
+campaign. Per the pre-registered consequence, the next step is a scenario
+built on field conditions, with its own pre-registration.
+
+| Shipping head | Started (`tool-arg-match`) | Composed final | `brainstorming` skill-called | Reading |
+|---|---|---|---|---|
+| `brainstorming-bounded-fires-visual-companion` | 10/10 | 10/10 | 10/10 | does not reproduce |
+
+**Hand-read.** None. Every session started the companion, so no session
+qualified and no `handread.md` was written.
+
+**How the sessions reached the companion.** All ten took the same route:
+1. invoked `brainstorming` through the Skill tool;
+2. read the fixture (`git ls-files`, then `settings.html`, `settings.css`,
+   `settings.js`, `README.md`, `package.json`);
+3. read `visual-companion.md`;
+4. ran `start-server.sh`, in the first turn, before any question or other
+   message to the user beyond a one-line "Using brainstorming" preamble in
+   six sessions;
+5. put three layout sketches on screen (the same four groups in each, laid
+   out differently) and asked which one in chat;
+6. implemented the chosen layout after the Gauntlet-Agent's answer.
+
+Each session had two user turns: the brief and the answer.
+
+**Readouts, with no reading attached.**
+- No session sent a Deciding Together comparison or called
+  `AskUserQuestion` before its first `start-server.sh`. No session called
+  `AskUserQuestion` at all.
+- No session announced a path. None of the words spike, bounded or
+  architectural appears in any session's messages, although the skill says
+  to state the classification before the first question.
+- Every counted session ran Claude Code 2.1.284 on `claude-opus-5-5` alone.
+
+**Why this scenario and the field differ.** This is an observation for the
+next scenario's design. The reading does not depend on it. In this scenario the
+layout question is the opening brief, and the first visual question arrives
+before any other question. In the field brainstorms, each visual question
+arrived several questions into an architectural design conversation in an
+existing application, after other choices had already gone through
+`AskUserQuestion`. The next scenario should reproduce that order.
+
+**Host instruction files in the sessions.** Every session's transcript
+records three host `CLAUDE.md` files in context:
+- `/Users/johnss51/.claude/CLAUDE.md`, the human partner's private global
+  file;
+- the hyperpowers repository's `CLAUDE.md`;
+- the evals repository's `CLAUDE.md`.
+
+The session's working directory is under the evals clone, which is under the
+human partner's home. The same three files appear in every archived
+transcript under `evidence/` from `2026-09-17-first-edit-interlock` (Claude
+Code 2.1.276) onward. Transcripts from earlier campaigns (2.1.261) record no
+`CLAUDE.md` at all, so whether those sessions loaded the files cannot be read
+from them. `docs/eval-harness-portfolio.md` states that the private file does
+not leak because `CLAUDE_CONFIG_DIR` suppresses it. For these runs that is no
+longer true.
+
+The field sessions ran with the global file too, so it does not separate
+this scenario from the field. The two repository files are eval-only. Neither
+mentions the visual companion. This is reported for the harness, not read
+against the result.
+
+**Runs.**
+- One batch: 2 rows of `--repeat 5`, 10 sessions, 2 concurrent.
+- The stamp was written at 07:50:36Z, the rows launched at 07:50:50Z, and the
+  last `DONE` came at 08:07:58Z.
+- No extension: the count did not land on 7 of 10.
+- There were no grader voids, no setup voids and no indeterminates, so
+  `superseded.txt` was not written.
+- The mutation checks passed before the batch, after the counted sessions and
+  after archiving. No file in the worktree outside `.git` was newer than the
+  stamp, `HEAD` stayed at 4fe932e, and `git status --short` stayed empty.
+- `tally.txt` is `tally.py` over the archive.
