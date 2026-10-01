@@ -43,6 +43,18 @@ function nodeTest(dir: string, ...args: string[]) {
   return spawnSync('node', ['--test', ...args], { cwd: dir, encoding: 'utf8' });
 }
 
+// Runs from the realistic-diff fixture's workdir at HEAD. An array whose
+// string form matches ORDER_ID must not pass as an id, and the zero-argument
+// listing call commit 1's test made must still succeed.
+const REALISTIC_DIFF_TRIGGER_PROBE = `
+const { parseOrderId } = require('./src/util');
+const { listOrdersHandler } = require('./src/handlers');
+listOrdersHandler().then((res) => {
+  const arrayId = parseOrderId(['ord_abcdefgh']);
+  console.log(JSON.stringify({ arrayId, noArgStatus: res.status }));
+});
+`;
+
 // These fixtures build real git repositories, and the slowest case has been
 // measured past Bun's 5 s default under a full parallel run.
 setDefaultTimeout(30000);
@@ -121,6 +133,20 @@ describe('behavior fixtures', () => {
       // running rather than by reading, and it is itself a blocking finding
       // outside the planted set.
       expect(nodeTest(dir, 'test/handlers.test.js').status).toBe(0);
+
+      // A blocking finding that names a real trigger is right. In a clean hunk
+      // the measure scores it as a false positive; elsewhere it gives the diff
+      // a defect beyond the two planted ones. Reviewers in the 2026-09-30
+      // campaign named both of these triggers, so they are executed.
+      const probe = spawnSync('node', ['-e', REALISTIC_DIFF_TRIGGER_PROBE], {
+        cwd: dir,
+        encoding: 'utf8',
+      });
+      expect(probe.stderr).toBe('');
+      expect(JSON.parse(probe.stdout)).toEqual({
+        arrayId: null,
+        noArgStatus: 200,
+      });
       expect(run.calls.length).toBe(0); // no venv
     } finally {
       rmSync(dir, { recursive: true, force: true });
