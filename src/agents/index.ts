@@ -203,6 +203,35 @@ const ClaudeJsonSchema = z
   .object({ projects: z.record(z.unknown()).optional() })
   .passthrough();
 
+/** The `settings.json` surface quorum writes: the `claudeMdExcludes` glob list.
+ *  Everything else (claude writes theme and prompt flags here) passes through. */
+const ClaudeSettingsSchema = z
+  .object({ claudeMdExcludes: z.array(z.string()).optional() })
+  .passthrough();
+
+// The instruction files Claude Code loads from each ancestor of its cwd. Kept
+// as plain globs: a `**` inside a brace group is not a globstar to every
+// matcher, so `{...,.claude/rules/**}` can miss nested rule files.
+const ANCESTOR_CLAUDE_MD_GLOBS = [
+  'CLAUDE.md',
+  'CLAUDE.local.md',
+  '.claude/CLAUDE.md',
+  '.claude/rules/**',
+];
+
+function ancestorClaudeMdExcludes(workdir: string): string[] {
+  const excludes: string[] = [];
+  let dir = dirname(resolve(workdir));
+  for (;;) {
+    excludes.push(...ANCESTOR_CLAUDE_MD_GLOBS.map((glob) => join(dir, glob)));
+    const parent = dirname(dir);
+    if (parent === dir) {
+      return excludes;
+    }
+    dir = parent;
+  }
+}
+
 /** Declarative agents whose provisioning is fully driven by YAML. Just creates
  *  the isolated config dir; the agent finds it via its $HOME default. */
 class DefaultAgent implements CodingAgent {
@@ -250,6 +279,28 @@ class ClaudeAgent implements CodingAgent {
     writeFileSync(
       claudeJsonPath,
       `${JSON.stringify({ ...claudeJson, projects }, null, 2)}\n`,
+    );
+
+    // Claude Code loads CLAUDE.md files from every ancestor of its cwd as
+    // project instructions. Run dirs sit under the operator's home, so the
+    // host's ~/.claude/CLAUDE.md and the parent repos' files would reach the
+    // subject agent. The throwaway HOME does not stop that walk; excluding every
+    // ancestor of the workdir does, and leaves the fixture's own files loaded.
+    const settingsPath = join(configDir, 'settings.json');
+    const settings = existsSync(settingsPath)
+      ? ClaudeSettingsSchema.parse(
+          JSON.parse(readFileSync(settingsPath, 'utf8')),
+        )
+      : ClaudeSettingsSchema.parse({});
+    const claudeMdExcludes = [
+      ...new Set([
+        ...(settings.claudeMdExcludes ?? []),
+        ...ancestorClaudeMdExcludes(workdir),
+      ]),
+    ];
+    writeFileSync(
+      settingsPath,
+      `${JSON.stringify({ ...settings, claudeMdExcludes }, null, 2)}\n`,
     );
 
     // Seed the per-run auth env-file the launcher sources. Mutually exclusive

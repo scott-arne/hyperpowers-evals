@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import {
   anchorAwsTokenCaches,
   detectClaudeProvider,
@@ -102,6 +102,101 @@ test('provision writes all four trust keys including the external-includes warni
         hasClaudeMdExternalIncludesApproved: true,
         hasClaudeMdExternalIncludesWarningShown: true,
       });
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+// Claude Code loads CLAUDE.md files from every ancestor of its cwd as project
+// instructions, and run dirs sit under the operator's home, so without excludes
+// the host's ~/.claude/CLAUDE.md and the parent repos' CLAUDE.md files reach the
+// subject agent. Bun.Glob stands in for the picomatch matching claude applies.
+function excludedBy(excludes: readonly string[], path: string): boolean {
+  return excludes.some((pattern) => new Bun.Glob(pattern).match(path));
+}
+
+function readExcludes(configDir: string): string[] {
+  const settings: { claudeMdExcludes: string[] } = JSON.parse(
+    readFileSync(join(configDir, 'settings.json'), 'utf8'),
+  );
+  return settings.claudeMdExcludes;
+}
+
+test('provision excludes the CLAUDE.md files of every workdir ancestor', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv({ ANTHROPIC_API_KEY: API_KEY }, () => {
+      resolveAgent(claudeConfig()).provision(home, undefined as never);
+      const excludes = readExcludes(home.configDir);
+
+      let dir = dirname(resolve(home.workdir));
+      for (;;) {
+        for (const rel of [
+          'CLAUDE.md',
+          'CLAUDE.local.md',
+          '.claude/CLAUDE.md',
+          '.claude/rules/style.md',
+          '.claude/rules/nested/style.md',
+        ]) {
+          expect(excludedBy(excludes, join(dir, rel))).toBe(true);
+        }
+        if (dirname(dir) === dir) break;
+        dir = dirname(dir);
+      }
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+// The fixture's own instructions are part of the scenario and must still load.
+test('provision does not exclude CLAUDE.md files inside the workdir', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv({ ANTHROPIC_API_KEY: API_KEY }, () => {
+      resolveAgent(claudeConfig()).provision(home, undefined as never);
+      const excludes = readExcludes(home.configDir);
+
+      const workdir = resolve(home.workdir);
+      for (const rel of [
+        'CLAUDE.md',
+        'CLAUDE.local.md',
+        '.claude/CLAUDE.md',
+        '.claude/rules/style.md',
+        'packages/app/CLAUDE.md',
+      ]) {
+        expect(excludedBy(excludes, join(workdir, rel))).toBe(false);
+      }
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+test('provision keeps existing settings.json keys when adding the excludes', () => {
+  const { home, cleanup } = makeTempHome();
+  mkdirSync(home.configDir, { recursive: true });
+  writeFileSync(
+    join(home.configDir, 'settings.json'),
+    JSON.stringify({
+      theme: 'dark',
+      claudeMdExcludes: ['/elsewhere/CLAUDE.md'],
+    }),
+  );
+  try {
+    withEnv({ ANTHROPIC_API_KEY: API_KEY }, () => {
+      resolveAgent(claudeConfig()).provision(home, undefined as never);
+      const settings: { theme: string; claudeMdExcludes: string[] } =
+        JSON.parse(readFileSync(join(home.configDir, 'settings.json'), 'utf8'));
+      expect(settings.theme).toBe('dark');
+      expect(settings.claudeMdExcludes).toContain('/elsewhere/CLAUDE.md');
+      expect(
+        excludedBy(
+          settings.claudeMdExcludes,
+          join(dirname(resolve(home.workdir)), 'CLAUDE.md'),
+        ),
+      ).toBe(true);
     });
   } finally {
     cleanup();
