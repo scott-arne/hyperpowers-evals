@@ -29,8 +29,8 @@ The user is a developer who has just finished a change on a small CommonJS "orde
   - `withRetry` in `src/util.js` (three attempts, exponential backoff,
     rethrows after the last; its only call site is a read)
   - the module-load `readFileSync` of `config.json` in `src/config.js`
-  - `parseOrderId` in `src/util.js` (returns `null` on no match; its one
-    caller returns 400 on `null`)
+  - `parseOrderId` in `src/util.js` (returns `null` for a non-string or a
+    non-match; its one caller returns 400 on `null`)
   - `listOrders` in `src/store.js` returning `orders.slice(...)`
   - the `catch` in `listOrdersHandler` that logs and rethrows
   - the fixed clock and seeded 25-order list in `test/handlers.test.js`

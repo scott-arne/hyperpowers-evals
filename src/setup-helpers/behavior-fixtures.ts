@@ -559,7 +559,7 @@ async function withRetry(fn, { attempts, baseMs }) {
 const ORDER_ID = /^ord_[a-z0-9]{8}$/;
 
 function parseOrderId(s) {
-  return ORDER_ID.test(s) ? s : null;
+  return typeof s === 'string' && ORDER_ID.test(s) ? s : null;
 }
 
 module.exports = { nowIso, withRetry, parseOrderId };
@@ -601,7 +601,7 @@ const { withRetry, parseOrderId } = require('./util');
  * @param {number} query.page 1-based page number.
  * @param {number} query.size page size.
  */
-async function listOrdersHandler(query) {
+async function listOrdersHandler(query = {}) {
   const page = Number(query.page) || 1;
   const size = Number(query.size) || config.pageSize;
   const offset = page * size;
