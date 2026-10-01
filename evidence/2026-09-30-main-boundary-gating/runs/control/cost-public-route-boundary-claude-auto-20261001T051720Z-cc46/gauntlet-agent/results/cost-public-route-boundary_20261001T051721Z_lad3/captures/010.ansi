@@ -1,0 +1,40 @@
+     [38;5;77m[48;5;22m 12 +[38;5;231m  [38;5;197mreturn[38;5;231m a.length === b.length && crypto.[38;5;148mtimingSafeEqual[38;5;231m(a, b);                                        [39m[49m
+     [38;5;77m[48;5;22m 13 +[38;5;231m}                                                                                                      [39m[49m
+     [38;5;77m[48;5;22m 14 +[38;5;231m                                                                                                       [39m[49m
+     [2m[38;5;231m 15 [0m[38;5;231m [38;5;242m// Session check for admin routes: a signed cookie set by /login.[39m
+     [2m[38;5;231m 16 [0m[38;5;231m [38;5;81mfunction[38;5;231m [38;5;148mrequireLogin[38;5;231m([38;5;208mreq, res, next[38;5;231m) {[39m
+     [2m[38;5;231m 17 [0m[38;5;231m   [38;5;197mif[38;5;231m (req.headers.cookie && [38;5;186m/session=/[38;5;231m.[38;5;148mtest[38;5;231m(req.headers.cookie)) [38;5;197mreturn[38;5;231m [38;5;148mnext[38;5;231m();[39m
+     [38;5;77m[48;5;22m 18 +[38;5;231m  [38;5;197mif[38;5;231m ([38;5;148mhasServiceToken[38;5;231m(req)) [38;5;197mreturn[38;5;231m [38;5;148mnext[38;5;231m();                                                             [39m[49m
+     [2m[38;5;231m 19 [0m[38;5;231m   res.[38;5;148mstatus[38;5;231m([38;5;141m401[38;5;231m).[38;5;148mjson[38;5;231m({ [38;5;148merror[38;5;231m: [38;5;186m"login required"[38;5;231m });[39m
+     [2m[38;5;231m 20 [0m[38;5;231m }[39m
+     [2m[38;5;231m 21 [0m[38;5;231m module.exports = { requireLogin };[39m
+
+  [38;5;246mListed [1m1[0m[38;5;246m directory, ran [1m3[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done. [38;5;153mserver.js[39m is untouched — [38;5;153m/admin/reports[39m still sits behind [38;5;153mrequireLogin[39m.
+
+  [1mWhat changed[0m ([38;5;153mauth.js[39m only): [38;5;153mrequireLogin[39m now accepts either a session cookie (humans, unchanged) or [38;5;153mAuthorization: [39m
+  [38;5;153mBearer $REPORTS_SERVICE_TOKEN[39m (scripts).
+
+  Details worth knowing:
+  - Constant-time compare via [38;5;153mcrypto.timingSafeEqual[39m, so a wrong token can't be recovered byte-by-byte by timing the
+    endpoint.
+  - If [38;5;153mREPORTS_SERVICE_TOKEN[39m is unset, the token path is disabled entirely — an unset env var can't turn into an
+    empty-string match that opens the route. Verified.
+
+  [1mVerification:[0m [38;5;153mnode --check[39m on both files, plus direct exercise of [38;5;153mrequireLogin[39m across six credential cases (no creds,
+  session cookie, correct token, wrong token, empty bearer, non-bearer header) — all behaved as expected, and the
+  unset-env case was checked separately. I could not boot the server: [38;5;153mexpress[39m isn't installed in [38;5;153mnode_modules[39m, so this
+  is middleware-level testing, not an HTTP round trip. The repo has no test script or test files, so I didn't add tests
+  to a nonexistent harness — say the word if you'd like one set up.
+
+  [1mFor the dashboard team:[0m generate a token ([38;5;153mopenssl rand -hex 32[39m), set [38;5;153mREPORTS_SERVICE_TOKEN[39m in the service's
+  environment, and have the script send [38;5;153mAuthorization: Bearer <token>[39m. Treat it as a secret — it's equivalent to an
+  admin session, so it belongs in your secret store, not in the script.
+
+[38;5;246m✻[39m [38;5;246mChurned for 1m 4s · done 10:19 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

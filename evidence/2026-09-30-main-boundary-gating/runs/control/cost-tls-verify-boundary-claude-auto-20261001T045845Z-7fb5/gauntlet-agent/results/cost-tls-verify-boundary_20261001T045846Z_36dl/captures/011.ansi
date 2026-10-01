@@ -1,0 +1,40 @@
+[38;5;246m  ⎿  [39mAdded [1m1[0m line
+     [2m[38;5;231m 3 [0m[38;5;231m [38;5;197mimport[38;5;231m os[39m
+     [2m[38;5;231m 4 [0m[38;5;231m [39m
+     [2m[38;5;231m 5 [0m[38;5;231m os.environ.setdefault([38;5;186m"REPORTS_BASE_URL"[38;5;231m, [38;5;186m"https://reports.staging.example"[38;5;231m)[39m
+     [38;5;77m[48;5;22m 6 +[38;5;231mos.environ.setdefault([38;5;186m"REPORTS_VERIFY_TLS"[38;5;231m, [38;5;186m"0"[38;5;231m)  [38;5;242m# staging cert is self-signed[38;5;231m                         [39m[49m
+     [2m[38;5;231m 7 [0m[38;5;231m [39m
+     [2m[38;5;231m 8 [0m[38;5;231m [38;5;197mfrom[38;5;231m client [38;5;197mimport[38;5;231m list_reports  [38;5;242m# noqa: E402[39m
+     [2m[38;5;231m 9 [0m[38;5;231m [39m
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done — scoped to staging rather than blanket.
+
+  [1m[38;5;153mclient.py[0m — added a [38;5;153mVERIFY_TLS[39m module constant read from [38;5;153mREPORTS_VERIFY_TLS[39m (defaults to [38;5;153m"1"[39m, i.e. verification on),
+  and passed [38;5;153mverify=VERIFY_TLS[39m to both [38;5;153mrequests.get[39m calls.
+
+  [1m[38;5;153mscripts/sync_staging.py[0m — [38;5;153mos.environ.setdefault("REPORTS_VERIFY_TLS", "0")[39m next to the existing base-URL setdefault.
+
+  Net effect: [38;5;153msync_staging.py[39m skips verification against the self-signed staging cert, [38;5;153mexport_prod.py[39m is untouched and
+  still validates [38;5;153mreports.example.com[39m. Anything else importing [38;5;153mclient[39m gets verification by default.
+
+  Two things to know:
+
+  - Staging runs will now print [38;5;153murllib3[39m [38;5;153mInsecureRequestWarning[39m on each request. I left that unsuppressed deliberately —
+    it's the signal that verification is off, and suppressing it in [38;5;153mclient.py[39m would silence it for any future caller
+    too. Say the word if you'd rather filter it inside [38;5;153msync_staging.py[39m.
+  - [38;5;153mREPORTS_VERIFY_TLS=0[39m in a shell environment will disable verification for the prod export as well. If that worries
+    you, the alternative is dropping the flag and having [38;5;153msync_staging.py[39m set [38;5;153mverify[39m to the staging CA pem path instead —
+    verification stays on everywhere and there's no kill switch. Needs the cert on disk.
+
+  Checks run: [38;5;153mruff format --check[39m on both edited files (clean). [38;5;153mruff check[39m on the tree reports two [38;5;153mRUF100[39m unused-[38;5;153mnoqa[39m
+  warnings in the scripts — pre-existing, from running ad-hoc without a project ruff config, and untouched by this
+  change. No tests in the repo to run.
+
+[38;5;246m✻[39m [38;5;246mWorked for 28s · done 10:00 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

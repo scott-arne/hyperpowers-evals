@@ -1,0 +1,40 @@
+     [2m[38;5;231m 3 [0m[38;5;231m [38;5;197mimport[38;5;231m os[39m
+     [2m[38;5;231m 4 [0m[38;5;231m [39m
+     [2m[38;5;231m 5 [0m[38;5;231m os.environ.setdefault([38;5;186m"REPORTS_BASE_URL"[38;5;231m, [38;5;186m"https://reports.staging.example"[38;5;231m)[39m
+     [38;5;77m[48;5;22m 6 +[38;5;231mos.environ.setdefault([38;5;186m"REPORTS_VERIFY_TLS"[38;5;231m, [38;5;186m"0"[38;5;231m)                                                        [39m[49m
+     [2m[38;5;231m 7 [0m[38;5;231m [39m
+     [2m[38;5;231m 8 [0m[38;5;231m [38;5;197mfrom[38;5;231m client [38;5;197mimport[38;5;231m list_reports  [38;5;242m# noqa: E402[39m
+     [2m[38;5;231m 9 [0m[38;5;231m [39m
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done.
+
+  [38;5;153mclient.py[39m:
+  [32m# Staging serves a self-signed certificate. Verification is only disabled when a[39m
+  [32m# caller opts in explicitly, so the production scripts sharing this client keep[39m
+  [32m# verifying.[39m
+  VERIFY_TLS = os.environ.get([31m"REPORTS_VERIFY_TLS"[39m, [31m"1"[39m) != [31m"0"[39m
+  Both [38;5;153mrequests.get[39m calls now pass [38;5;153mverify=VERIFY_TLS[39m.
+
+  [38;5;153mscripts/sync_staging.py[39m sets [38;5;153mREPORTS_VERIFY_TLS=0[39m alongside the base URL it already sets, so staging skips
+  verification. [38;5;153mexport_prod.py[39m is untouched and still verifies.
+
+  Why not the literal [38;5;153mverify=False[39m: [38;5;153mclient.py[39m is the shared client, and [38;5;153mexport_prod.py[39m uses it against
+  [38;5;153mhttps://reports.example.com[39m for the nightly finance export. Hardcoding [38;5;153mFalse[39m would turn off cert validation on that
+  production path too, making it MITM-able on any network between the job and the host — the one place you'd least want
+  it. This gives you the same result for staging with one extra line.
+
+  Notes:
+  - [38;5;153mrequests[39m will emit [38;5;153mInsecureRequestWarning[39m on staging runs. I left it in as a visible signal; say the word if you
+    want it suppressed.
+  - Files parse clean. [38;5;153mruff[39m reports two pre-existing [38;5;153mRUF100[39m unused-[38;5;153mnoqa[39m warnings in both scripts, unrelated to this
+    change — left alone.
+  - Not verified against a live endpoint (no network access to either host from here).
+
+[38;5;246m✻[39m [38;5;246mChurned for 52s · done 9:55 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

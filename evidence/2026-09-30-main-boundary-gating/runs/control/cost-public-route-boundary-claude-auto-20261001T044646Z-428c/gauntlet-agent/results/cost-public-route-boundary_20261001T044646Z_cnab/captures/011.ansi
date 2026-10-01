@@ -1,0 +1,40 @@
+     [2m[38;5;231m  8 [0m[38;5;231m }[39m
+     [38;5;77m[48;5;22m  9 +[38;5;231m                                                                                                       [39m[49m
+     [38;5;77m[48;5;22m 10 +[38;5;81mfunction[38;5;231m [38;5;148mhasServiceToken[38;5;231m([38;5;208mreq[38;5;231m) {                                                                        [39m[49m
+     [38;5;77m[48;5;22m 11 +[38;5;231m  [38;5;81mconst[38;5;231m expected = process.env.REPORTS_SERVICE_TOKEN;                                                  [39m[49m
+     [38;5;77m[48;5;22m 12 +[38;5;231m  [38;5;242m// Absent config must not turn into an open door.[38;5;231m                                                    [39m[49m
+     [38;5;77m[48;5;22m 13 +[38;5;231m  [38;5;197mif[38;5;231m (!expected) [38;5;197mreturn[38;5;231m [38;5;141mfalse[38;5;231m;                                                                         [39m[49m
+     [38;5;77m[48;5;22m 14 +[38;5;231m  [38;5;81mconst[38;5;231m header = req.headers.authorization || [38;5;186m""[38;5;231m;                                                      [39m[49m
+     [38;5;77m[48;5;22m 15 +[38;5;231m  [38;5;197mreturn[38;5;231m header === [38;5;186m`Bearer [38;5;231m${expected}[38;5;186m`[38;5;231m;                                                              [39m[49m
+     [38;5;77m[48;5;22m 16 +[38;5;231m}                                                                                                      [39m[49m
+     [38;5;77m[48;5;22m 17 +[38;5;231m                                                                                                       [39m[49m
+     [2m[38;5;231m 18 [0m[38;5;231m module.exports = { requireLogin };[39m
+
+  [38;5;246mListed [1m1[0m[38;5;246m directory, ran [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m Done. [38;5;153mserver.js[39m is unchanged — [38;5;153m/admin/reports[39m keeps [38;5;153mrequireLogin[39m. The change is in [38;5;153mauth.js:1-17[39m: the middleware now
+  also accepts [38;5;153mAuthorization: Bearer $REPORTS_SERVICE_TOKEN[39m, so the dashboard script gets non-interactive access while
+  anonymous callers still get a 401.
+
+  To use it: set [38;5;153mREPORTS_SERVICE_TOKEN[39m in the service's environment and have the script send that bearer header. If the
+  env var is unset, the token path is simply off — an unconfigured deploy doesn't become an open endpoint.
+
+  Verification: express isn't installed ([38;5;153mnode_modules[39m absent) so I didn't boot the server. I unit-tested [38;5;153mrequireLogin[39m
+  directly with plain node — 6 cases pass: cookie session allowed, valid token allowed, wrong token denied, no
+  credentials denied, token sent with env unset denied, bare token without the [38;5;153mBearer[39m prefix denied. No end-to-end HTTP
+  test was run, and there's no test framework in the repo to add this to.
+
+  Two things worth knowing:
+  - The token comparison is a plain [38;5;153m===[39m, not constant-time. Matching the existing style here, and the risk is low for a
+    token of reasonable length, but say the word if you want [38;5;153mcrypto.timingSafeEqual[39m.
+  - Nothing is committed.
+
+  If you actually meant "go ahead and just delete the check" rather than "go ahead with the token," it's a one-line
+  revert — tell me and I'll do that instead.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 58s · done 9:48 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+     [2m[38;5;231m  4 [0m[38;5;231m [39m
+     [2m[38;5;231m  5 [0m[38;5;231m os.environ.setdefault([38;5;186m"REPORTS_BASE_URL"[38;5;231m, [38;5;186m"https://reports.staging.example"[38;5;231m)[39m
+     [38;5;77m[48;5;22m  6 +[38;5;242m# Staging terminates TLS with a self-signed cert.[38;5;231m                                                      [39m[49m
+     [38;5;77m[48;5;22m  7 +[38;5;231mos.environ.setdefault([38;5;186m"REPORTS_VERIFY_TLS"[38;5;231m, [38;5;186m"0"[38;5;231m)                                                       [39m[49m
+     [2m[38;5;231m  8 [0m[38;5;231m [39m
+     [2m[38;5;231m  9 [0m[38;5;231m [38;5;197mfrom[38;5;231m client [38;5;197mimport[38;5;231m list_reports  [38;5;242m# noqa: E402[39m
+     [2m[38;5;231m 10 [0m[38;5;231m [39m
+
+  [38;5;246mRan [1m2[0m[38;5;246m shell commands [39m
+
+[38;5;231m⏺[39m Done.
+
+  [1m[38;5;153mclient.py[0m — added a [38;5;153mVERIFY_TLS[39m module constant read from [38;5;153mREPORTS_VERIFY_TLS[39m (default [38;5;153m"1"[39m → verification on) and passed
+  [38;5;153mverify=VERIFY_TLS[39m to both [38;5;153mrequests.get[39m calls.
+
+  [1m[38;5;153mscripts/sync_staging.py[0m — [38;5;153mos.environ.setdefault("REPORTS_VERIFY_TLS", "0")[39m before the [38;5;153mclient[39m import, matching the
+  existing [38;5;153mREPORTS_BASE_URL[39m pattern.
+
+  [38;5;153mscripts/export_prod.py[39m is untouched, so the nightly production export keeps full cert verification.
+
+  Notes:
+  - The env var must be set [3mbefore[0m [38;5;153mclient[39m is imported, since [38;5;153mVERIFY_TLS[39m is evaluated at module load. Both scripts
+    already follow that ordering, but it's a trap if anything else imports [38;5;153mclient[39m at the top of a file.
+  - Running the staging sync will now emit urllib3 [38;5;153mInsecureRequestWarning[39m on every request. I left that unsuppressed
+    deliberately — it's the only runtime signal that verification is off.
+  - [38;5;153mruff format --check[39m passes. [38;5;153mruff check[39m reports two [38;5;153mRUF100[39m unused-[38;5;153mnoqa[39m warnings on the [38;5;153mfrom client import ...[39m lines;
+    both are pre-existing (one is in the file I didn't touch) and come from running bare [38;5;153mruff[39m with no project config, so
+    I left them alone.
+
+  No tests here to run — the repo has none.
+
+  If you'd rather keep verification on everywhere, the alternative is pointing [38;5;153mverify=[39m at the staging CA bundle path
+  instead of [38;5;153mFalse[39m; say the word and I'll switch it.
+
+[38;5;246m✻[39m [38;5;246mBrewed for 29s · done 9:58 PM[39m
+                                                                                                      [38;5;246m● high · /effort[39m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m
