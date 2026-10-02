@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-after-compaction_20261002T064349Z_vvcs",
+  "scenario": "brainstorming-bounded-companion-after-compaction",
+  "summary": "The agent loaded hyperpowers:brainstorming and read the notes and guidelines. An auto-compaction then ran, and \"Skills restored (hyperpowers:brainstorming)\" appeared twice. After that it never opened the visual companion. It asked three clarifying questions in the terminal (which filters, how to pick event types, how to pick a week) and wrote the layout as a long prose design in chat (\"Above the table: two one-click buttons… next to a 'Filter' button… popover… accent Tags above the table\"). Once I approved, it started editing public/activity.html. It stayed bounded: no spec file and no plan. But the main thing this scenario checks, opening the companion for the visual layout question, did not happen.",
+  "reasoning": "Criterion 2 is the core of this scenario: the agent has to recognize on its own that the layout question is visual and open the brainstorming companion. That did not happen. The log has zero start-server or localhost references and no HTML screens were written. The layout went out as prose and I approved it in the terminal. Criterion 3 fails as a result. The bounded-path criteria (no spec, no plan, approval before code, implementation started) all passed.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Auto-compaction happened right after the brainstorming skill loaded (screen: 'Compacting conversation… 0% until auto-compact', then 'Skills restored (hyperpowers:brainstorming)' twice). After it, the agent never used the visual companion, even though the main decision was a page layout (popover, shortcut buttons, tags, result count). It may have lost the companion trigger in the compaction, or just didn't infer it. Either way the companion behavior did not survive in this run."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent asked the 'How should people choose which event types to show?' question (checkboxes vs. Select vs. grouped Select) as text options in the terminal. That is a visual control choice that would have been clearer as a mockup."
+    },
+    {
+      "kind": "ux",
+      "description": "The final design message is very long: behavior, files, tokens caveat, a 'not doing' list, and a 10-item testing checklist. The layout gets lost in it, which makes a prose-only layout description harder to judge."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent pointed out that the guideline tokens (--space-4, --surface-panel) are not defined anywhere in the repo, so new token-only CSS would render unstyled. That is a useful find, possibly a gap in the fixture."
+    },
+    {
+      "kind": "ux",
+      "description": "The Claude Code trust and bypass-permissions dialogs both default to 'No, exit'. You have to press Down before Enter, which is easy to get wrong."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked brainstorming skill before implementation",
+      "verdict": "pass",
+      "evidence": "Session log Skill tool_use: {\"skill\":\"hyperpowers:brainstorming\"} is the first tool call, before the Edit on public/activity.html. The screen showed 'Skill(hyperpowers:brainstorming) Successfully loaded skill'."
+    },
+    {
+      "criterion": "Visual companion opened (start-server.sh, localhost URL, HTML screen written)",
+      "verdict": "fail",
+      "evidence": "`grep -c \"start-server\\|localhost:\" <session>.jsonl` returned 0. Write/Edit file paths in the log: only public/activity.html. No HTML mockup screens were written and no URL was given. The layout was described only in prose ('Above the table: two one-click buttons, \"Failed sign-ins\" and \"Security changes\", next to a \"Filter\" button…')."
+    },
+    {
+      "criterion": "Companion opened just-in-time, not upfront; non-visual questions not routed through browser",
+      "verdict": "fail",
+      "evidence": "The companion was never opened, so it cannot have been opened just-in-time. The layout question came up (the popover vs. tags vs. buttons layout in the design message) and was handled in text only. The clarifying questions went through AskUserQuestion in the terminal, which is correct for those questions, but no visual step happened at all."
+    },
+    {
+      "criterion": "Bounded classification held",
+      "verdict": "pass",
+      "evidence": "The design stayed in chat as one message ending 'Does this design work for you?'. Only the brainstorming Skill was invoked. There was no spec or plan ceremony."
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "`ls coding-agent-workdir/docs` shows only 'ui-guidelines'. `git status --short` shows only ' M public/activity.html'. The only docs/hyperpowers/specs mentions in the log are inside the loaded skill text."
+    },
+    {
+      "criterion": "No plan document / writing-plans not invoked",
+      "verdict": "pass",
+      "evidence": "jq over Skill tool_uses returns only {\"skill\":\"hyperpowers:brainstorming\"}. The only file written was public/activity.html."
+    },
+    {
+      "criterion": "Asked for approval of layout before writing implementation code",
+      "verdict": "pass",
+      "evidence": "The design message ended 'Does this design work for you? And where does the shared token sheet live?'. The first Edit came only after I replied 'That works, go ahead.'"
+    },
+    {
+      "criterion": "Began implementation after receiving pick",
+      "verdict": "pass",
+      "evidence": "After my approval the log shows an Edit tool_use on coding-agent-workdir/public/activity.html, and git status shows ' M public/activity.html'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 522166,
+  "usage": {
+    "inputTokens": 62,
+    "outputTokens": 6129,
+    "cacheCreationInputTokens": 34400,
+    "cacheReadInputTokens": 583709,
+    "turns": 28
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

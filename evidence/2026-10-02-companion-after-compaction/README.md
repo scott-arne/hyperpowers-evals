@@ -298,4 +298,83 @@ archiving. Each time:
 
 ## Results
 
-Pending.
+**The scenario reproduces the failure.** The shipping head started the
+companion in 5 of 10 sessions. Against the best a fix could do, 10 of 10, the
+one-sided Fisher p is 0.016. Per the pre-registered consequence, the
+default-window twin runs next at the same pins, under its own
+pre-registration, to separate the compaction from the brief and the handoff
+note. A candidate fix follows under `hyperpowers:writing-skills`, measured on
+the scenario that fails, with this arm as its control.
+
+| Shipping head | Started (`tool-arg-match`) | Composed final | `brainstorming` skill-called | Reading |
+|---|---|---|---|---|
+| `brainstorming-bounded-companion-after-compaction` | 5/10 | 5/10 | 10/10 | reproduces |
+
+The composed final matched the started count session for session: every
+started session passed and every other session failed.
+
+**Readouts, with no reading attached.** From `tally.txt`:
+- An auto-compaction landed in the window in all 10 sessions.
+- The last summary before the decision point named the visual companion in
+  all 10, started and not started alike.
+- `visual-companion.md` was read in 5 of the 5 started sessions and in none
+  of the 5 others.
+- All 5 started sessions called `AskUserQuestion` before their first
+  `start-server.sh`. In each, the first question was which filters to build.
+- Two sessions announced a path, both "bounded": `064239Z-5e52` (not started)
+  and `065232Z-639f` (started). The other eight named none.
+- Every counted session ran Claude Code 2.1.287 on `claude-opus-5-5` alone.
+
+**Hand-read** (`handread.md`). Of the five sessions that did not start the
+companion, three are (c) and two are (a); none is (b) or (d).
+- **(c), three sessions.** `062340Z-d34d` and `064239Z-5e52` asked nothing
+  and sent a single in-chat design. `063315Z-00fe` asked four non-visual
+  questions through `AskUserQuestion`, then sent its design. Each design put
+  the filters above the table without offering the placement as a choice.
+- **(a), two sessions.** `064345Z-bff1` and `065311Z-201e` sent the
+  event-type control question (checkboxes, a select, or radio buttons)
+  through `AskUserQuestion`, with no Deciding Together comparison before it.
+  That question picks the control, not its placement. The Pilots section
+  reads pilot 2's same question as the visual one, and the hand-read keeps
+  that reading.
+- **Started sessions, for contrast.** Four named or showed the placement as
+  its own question. `070058Z-f309` sent the control question to
+  `AskUserQuestion` first, as bff1 did, got the same answer from the
+  operator, and then opened the companion.
+
+**What this changes in the Question's account.** The Question names two ways
+a compaction can lose the companion. The second, the summary dropping the
+step, did not happen here. In every session the last summary before the
+decision point carried it, in close to the skill's own conditional wording
+(for example "Open the visual companion only if a question is genuinely
+visual"), and half the sessions still did not open it. So the
+failure reproduces with the summary intact. This campaign cannot say whether
+the compaction contributes. The default-window twin measures that: the same
+fixture, without the settings file that shrinks the window.
+
+The failure's shape here also differs from the field. In the field, the
+first question was the visual one and it went to `AskUserQuestion`, which is
+class (a). Here the first question was always non-visual, and three of the
+five failures never offered a layout choice at all.
+
+**Grader correction.** The Pins section says the grader ran on
+`claude-opus-5-5` as Gauntlet's default, with `GAUNTLET_AGENT_MODEL` unset.
+The model is right and the mechanism is wrong. Gauntlet's in-code default is
+`claude-sonnet-4-6`. The launch environment set
+`GAUNTLET_AGENT_MODEL=claude-opus-5-5`, and both rows inherited it. The row
+logs do not record that variable. Each archived `result.json` records the
+grader model under `config.model`: `claude-opus-5-5` in all 10 counted runs,
+in both pilots that wrote one, and in all 10 baseline runs.
+
+**Runs.**
+- One batch: 2 rows of `--repeat 5`, 10 sessions, 2 concurrent. The rows'
+  `trials:` lines read `FPFFP` (p1) and `PFFPP` (p2).
+- The stamp was written at 06:23:29Z, the rows launched at 06:23:40Z, and the
+  last `DONE` came at 07:15:59Z.
+- No extension: the count did not land on 7 of 10.
+- There were no grader voids, setup voids, version voids or indeterminates,
+  so `superseded.txt` was not written.
+- The mutation checks passed before the batch, after the counted sessions and
+  after archiving. No file in the worktree outside `.git` was newer than the
+  stamp, `HEAD` stayed at 5f4ab78, and `git status --short` stayed empty.
+- `tally.txt` is `tally.py` over the archive.

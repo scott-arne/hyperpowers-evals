@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-after-compaction_20261002T062342Z_on5n",
+  "scenario": "brainstorming-bounded-companion-after-compaction",
+  "summary": "Claude loaded hyperpowers:brainstorming and read NOTES.md and the four UI guideline docs. Partway through, an auto-compaction ran (\"Compacting conversation…\", then \"Skills restored (hyperpowers:brainstorming)\"). It then wrote one full design in chat as prose and asked me to approve it. It never opened the visual companion, never gave me a localhost URL, and never wrote an HTML screen of layout options. It kept the task bounded (no spec, no plan) and started implementation once I approved. The main thing this scenario tests is whether the agent opens the companion for a visual layout question, and that did not happen.",
+  "reasoning": "The core criterion failed: the visual companion was never started (0 matches for start-server in the session log, no HTML screens, no localhost URL), even though the main design question was a layout. Criterion 3 fails as a result. The bounded path held: there were no spec or plan files, approval was requested before any code, and implementation began after I approved. Because criteria 2 and 3 failed, the overall verdict is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "An auto-compaction landed between the skill load and the design ('Compacting conversation…', then 'Skills restored (hyperpowers:brainstorming)'). Afterwards the agent never treated the layout as a visual question. It went straight to one prose design with no options to compare and no companion. The visual-companion step seems to be lost or ignored after compaction (or is never triggered on the bounded path)."
+    },
+    {
+      "kind": "ux",
+      "description": "Before proposing a design, the agent asked no clarifying questions, for example which events users care about. It filled in requirements itself, such as 'Security asked for these to be easy to find', and decided on its own to leave out a date range. When I answered later, users actually wanted to look at one particular week."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent ran shell commands with `cd ..` (e.g. 'cd .. && git ls-files', 'cd .. && cat docs/ui-guidelines/...'). The earlier `cd public` seems to have left its shell one directory down, so it had to navigate back up each time. This is fragile working-directory handling."
+    },
+    {
+      "kind": "performance",
+      "description": "After I approved the design, the agent re-read all four guideline docs, which it had already read before compaction (there are duplicate Read calls in the log). That cost extra tokens and time."
+    },
+    {
+      "kind": "ux",
+      "description": "The design proposed a new public/tokens.css and a skip link, which goes beyond 'add a way to narrow it down'. It was disclosed in the design, but it is scope creep for a bounded task."
+    },
+    {
+      "kind": "ux",
+      "description": "The Claude Code first-run trust and bypass-permission dialogs default to 'No, exit'. I had to press Down before confirming each one."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "Session log 5b82917e…jsonl: the first tool_use is `Skill: {\"skill\":\"hyperpowers:brainstorming\"}`. The screen showed \"Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Visual companion opened (start-server.sh, localhost URL, HTML screen)",
+      "verdict": "fail",
+      "evidence": "`grep -c \"start-server\" *.jsonl` returned 0. Listing every tool_use in the log shows only Skill, Bash (cat/find/git ls-files/grep/sed) and Read calls: no server start and no HTML file written. The design arrived as prose: \"A small filter form goes above the table… Event type: a dropdown… Search: a search box…\""
+    },
+    {
+      "criterion": "Companion opened just-in-time, not upfront",
+      "verdict": "fail",
+      "evidence": "The companion was never opened, so it could not have been opened at the right moment. When the layout question came up (where the filter form sits relative to the table), the agent settled it in prose itself: \"A small filter form goes above the table.\""
+    },
+    {
+      "criterion": "Bounded classification held",
+      "verdict": "pass",
+      "evidence": "The agent's design message began: \"This is a short design in chat. I won't write any code until you say yes.\" The design stayed in chat and the ceremony was not escalated."
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "In the workdir, `ls docs` returned only `ui-guidelines`, and `find . -path '*specs*' -o -path '*plans*' | grep -v .git` returned nothing. No Write tool calls appear in the log."
+    },
+    {
+      "criterion": "No plan document / writing-plans not invoked",
+      "verdict": "pass",
+      "evidence": "The tool_use list contains only one Skill call (hyperpowers:brainstorming), with no writing-plans. The find for '*plans*' returned nothing."
+    },
+    {
+      "criterion": "Asked for approval of the layout before implementation code",
+      "verdict": "pass",
+      "evidence": "Final line of the design message: \"Should I go ahead with this design, or do you want any of the left-out items back in?\" No edits were made before I replied, and `git status --short` was empty."
+    },
+    {
+      "criterion": "Began implementation after receiving pick",
+      "verdict": "pass",
+      "evidence": "After I replied, the agent wrote \"Proceeding. Before writing anything I'm re-reading the guidelines and the page files, so I have the exact token values and component specs.\" It then started reading files to prepare the implementation. I ended the session before any code edits landed."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 470340,
+  "usage": {
+    "inputTokens": 48,
+    "outputTokens": 4702,
+    "cacheCreationInputTokens": 35048,
+    "cacheReadInputTokens": 356059,
+    "turns": 21
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
