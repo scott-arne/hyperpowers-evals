@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-after-compaction_20261002T064244Z_pegr",
+  "scenario": "brainstorming-bounded-companion-after-compaction",
+  "summary": "The agent loaded hyperpowers:brainstorming, read NOTES.md and all four UI guideline docs, called the task bounded and kept the design in chat. It never opened the visual companion. It described the filter-bar layout only in prose. It then asked for approval and started implementation. No spec or plan file was created. The criteria for the visual companion opening, and for it opening just-in-time, both fail.",
+  "reasoning": "Criterion 2 is the core of the scenario and it failed: the agent never ran scripts/start-server.sh, never gave a localhost URL, and never wrote an HTML screen. It presented the layout only as prose in the terminal, which the story card names as the failure mode. Criterion 3 fails because it depends on the companion opening. The other criteria passed: the skill was invoked, the task was treated as bounded with no spec and no plan, approval came before any code, and implementation began.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Main finding: the layout question was inherently visual (where the filter controls go and how the results are arranged), but the brainstorming skill never opened its visual companion. The agent described the filter bar, select, search box, count line and empty state entirely in prose."
+    },
+    {
+      "kind": "ux",
+      "description": "When I answered with plain context (failed sign-ins, security settings changes, one particular week), the agent rightly re-opened the design: checkboxes instead of a select, shortcut buttons, a date range. This was a second chance to show the layouts visually, and it again used prose."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In its first design the agent left out a date range filter on its own judgement (\"90 days newest-first is already short\"). It did not ask which searches users actually need, so it had to revise once I gave that context. Asking one clarifying question about user needs first would have saved a round of revision."
+    },
+    {
+      "kind": "performance",
+      "description": "Auto-compaction happened twice in the session, as expected for this scenario (log shows compact_boundary events). After the second one, the agent spent extra turns re-reading the guideline docs and source files before writing code."
+    },
+    {
+      "kind": "ux",
+      "description": "The setup screens (trust folder, bypass permissions) highlight 'No, exit' by default. I had to press Down then Enter to continue. This is host setup, not the agent under test."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's proposal was very long and process-heavy (VoiceOver and Safari/Firefox manual checks, commit splitting, a 300-line budget) for a bounded filter task. It also raised several pre-existing issues (page empty without JavaScript, no token sheet, date format) and asked for scope decisions on them."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "Session log b22957f4-….jsonl: first tool_use is {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:brainstorming\"}}. Its first text was \"Using brainstorming to shape the filter design.\""
+    },
+    {
+      "criterion": "Visual companion opened (start-server.sh run, localhost URL given, HTML screen written)",
+      "verdict": "fail",
+      "evidence": "`jq … .input.command | grep -c start-server` on Bash tool calls returned 0. Tool-use totals were 17 Bash, 5 Read, 1 Skill, with no Write of any HTML screen. Every 'localhost' or 'start-server' string I grepped came from the injected skill text, not from tool calls. The layout was only described in prose: \"Filter bar above the table… Event type: a Select (md)… Search: a type=search input…\"."
+    },
+    {
+      "criterion": "Companion opened just-in-time, not upfront, and non-visual questions not routed through it",
+      "verdict": "fail",
+      "evidence": "The companion never opened, so there was no just-in-time opening to see. The agent asked its non-visual questions in chat: the token sheet and fixes to the existing page in its first design message, and 'Settings updated' in its revised design. It did not open the companion upfront either."
+    },
+    {
+      "criterion": "Bounded classification held",
+      "verdict": "pass",
+      "evidence": "Agent text: \"This is bounded: the page and how it renders already exist, so I'll put a short design here instead of writing a spec.\""
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "`find coding-agent-workdir/docs` lists only docs/ui-guidelines/01-04. `find . -path '*specs*' -o -path '*plans*'` (excluding .git) returned nothing."
+    },
+    {
+      "criterion": "No plan document / writing-plans not invoked",
+      "verdict": "pass",
+      "evidence": "Only one Skill tool_use in the log (hyperpowers:brainstorming). No plans directory or plan file exists, and git status is clean."
+    },
+    {
+      "criterion": "Asked for approval of layout before writing implementation code",
+      "verdict": "pass",
+      "evidence": "\"Is this design approved, and how do you want to handle those two points?\" and later \"Is the revised design approved?\" No Edit or Write tool calls before approval. git status was clean at that point."
+    },
+    {
+      "criterion": "After pick, began implementation",
+      "verdict": "pass",
+      "evidence": "After 'Yes, approved…' the agent re-read the source files and posted \"Status: guideline specs read; checking exact token names in 01 before writing `public/tokens.css`.\" No files had been changed yet when I ended the session."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 627317,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 5896,
+    "cacheCreationInputTokens": 39957,
+    "cacheReadInputTokens": 509156,
+    "turns": 25
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
