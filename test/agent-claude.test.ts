@@ -908,7 +908,7 @@ test('resolveClaudeAutoModel resolves from ANTHROPIC_MODEL, then provider defaul
     },
   );
   withEnv({ ...PROVIDER_ENV_CLEARED, CLAUDE_CODE_USE_VERTEX: '1' }, () => {
-    expect(resolveClaudeAutoModel()).toBe('claude-opus-4-8');
+    expect(resolveClaudeAutoModel()).toBe('claude-opus-5-5');
   });
   withEnv({ ...PROVIDER_ENV_CLEARED, CLAUDE_CODE_USE_BEDROCK: '1' }, () => {
     expect(resolveClaudeAutoModel()).toBe('us.anthropic.claude-opus-4-8');

@@ -145,7 +145,7 @@ export function detectClaudeProvider(): ClaudeProvider | null {
  *  differently: a Bedrock inference profile, a Vertex publisher model, and the
  *  Anthropic API alias. */
 const AUTO_MODEL_BY_PROVIDER: Record<ClaudeProvider, string> = {
-  vertex: 'claude-opus-4-8',
+  vertex: 'claude-opus-5-5',
   bedrock: 'us.anthropic.claude-opus-4-8',
   'api-key': 'opus',
 };
