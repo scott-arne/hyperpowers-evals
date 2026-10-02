@@ -94,8 +94,9 @@ failure stays unexplained. No skill change comes from this campaign.
 - **The whole version differs.** A separation would have pointed at the
   version, not at Grounding. The null result likewise covers all 312
   commits together.
-- **One field version.** The field also ran 6.2.1, 6.6.1 and 6.9.2. Only
-  6.12.0 ran here.
+- **One field version.** The field also ran 6.2.1, 6.6.1 and 6.9.2, and
+  from 2026-09-29 a branch with Grounding (see Correction). Only 6.12.0
+  ran here.
 - **Different windows.** The head's sessions ran in the baseline's window,
   starting about 75 minutes earlier, at the same pins.
 - **Plain functions, plans only.** Angular components are not tested, and
@@ -104,3 +105,13 @@ failure stays unexplained. No skill change comes from this campaign.
   (one-sided 95%). At a rate of 0.8, 10 of 10 would still occur with
   probability 0.11.
 - **Scope.** One scenario, one model, one Claude Code version, one fixture.
+
+**Correction (2026-10-02).** The Hypothesis says the field sessions loaded
+writing-plans only from 6.2.1, 6.6.1, 6.9.2 and 6.12.0. From
+2026-09-29T07:39Z the predict-before-structure session loaded hyperpowers
+from the `external-workflow-adoption` worktree, whose writing-plans has
+Grounding and the Mirror line. Its 2026-09-29 predictions-browse plan
+still hand-rolls a sort toggle mirrored from an existing page and never
+names the library's toggle group. The verdict stands; "Grounding fixed it"
+does not hold as a field explanation. Details in the evidence README's
+Correction section.

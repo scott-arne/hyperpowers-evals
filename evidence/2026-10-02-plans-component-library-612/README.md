@@ -474,7 +474,8 @@ the mutation checks).
   this says nothing about Grounding either way. Telling them apart needs a
   fixture where 6.12.0 fails.
 - **Other field versions.** The field sessions also ran 6.2.1, 6.6.1 and
-  6.9.2. Only 6.12.0 ran here.
+  6.9.2, and from 2026-09-29 a branch with Grounding (see Correction).
+  Only 6.12.0 ran here.
 - **Different windows.** The head's 10 sessions ran in the baseline's
   window, starting at 20:58Z, about 75 minutes before this batch, at the
   same pins. No extension ran, so no head session ran alongside v612.
@@ -483,3 +484,23 @@ the mutation checks).
 - **Power.** 10 of 10 excludes 6.12.0 library-use rates below 74%. At a
   rate of 0.8, 10 of 10 would still occur with probability 0.11.
 - **Scope.** One scenario, one model, one Claude Code version, one fixture.
+
+## Correction (2026-10-02)
+
+The Question and Limits sections say the field sessions behind BACKLOG
+item 2 loaded writing-plans from 6.2.1, 6.6.1, 6.9.2 and 6.12.0, "and from
+no later version". That is wrong. The predict-before-structure session's
+skill-load records show that from 2026-09-29T07:39Z it loaded every
+hyperpowers skill from the `external-workflow-adoption` worktree, and the
+writing-plans text it loaded there has the Grounding section and the
+Mirror line. The plans that session wrote on 2026-09-29, 2026-09-30 and
+2026-10-01 ran under Grounding.
+
+The pre-registered text above stays as committed. The reading does not
+change: both arms are at the ceiling on this fixture. What changes is the
+"Grounding fixed it" explanation in the Question. The field has a library
+miss under Grounding. The 2026-09-29 predictions-browse plan extracts a
+hand-rolled sort toggle (`role="group"` with `aria-pressed` buttons) into
+a shared component. Its Mirror lines point at the existing page the toggle
+came from, and it never names the library's toggle group, which no page
+in that app uses.
