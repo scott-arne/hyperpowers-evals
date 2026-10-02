@@ -31,6 +31,7 @@ import { repoRoot } from '../src/paths.ts';
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'brainstorming-asks-tooling-question',
   'brainstorming-bounded-companion-after-compaction',
+  'brainstorming-bounded-companion-closed-cli-output',
   'brainstorming-bounded-companion-default-window',
   'brainstorming-bounded-fires-approach-gate',
   'brainstorming-bounded-fires-visual-companion',
