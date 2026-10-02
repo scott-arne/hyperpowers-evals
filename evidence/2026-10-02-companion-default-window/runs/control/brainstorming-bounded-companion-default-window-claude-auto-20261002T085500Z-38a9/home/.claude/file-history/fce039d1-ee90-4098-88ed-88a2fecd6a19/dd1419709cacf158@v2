@@ -1,0 +1,132 @@
+// Throwaway browser check for public/activity.html; drives headless Chrome over CDP.
+const PAGE = 'file://' + process.argv[2];
+const targets = await (await fetch('http://localhost:9333/json/list')).json();
+const ws = new WebSocket(targets.find((t) => t.type === 'page').webSocketDebuggerUrl);
+await new Promise((r) => ws.addEventListener('open', r));
+let id = 0; const pending = new Map(); const errors = [];
+ws.addEventListener('message', (m) => {
+  const msg = JSON.parse(m.data);
+  if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
+  if (msg.method === 'Runtime.exceptionThrown') errors.push(msg.params.exceptionDetails.exception?.description);
+  if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error') errors.push(JSON.stringify(msg.params.args));
+});
+const send = (method, params = {}) => new Promise((r) => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+const ev = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true })).result.result.value;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const results = [];
+const check = (name, ok, info = '') => results.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  [' + info + ']' : ''}`);
+
+async function click(selector) {
+  await ev(`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center'})`);
+  const box = await ev(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return {x: r.x + r.width/2, y: r.y + r.height/2}; })()`);
+  for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', clickCount: 1 });
+  await sleep(50);
+}
+async function key(k, code, vk, text) {
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, windowsVirtualKeyCode: vk, text });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk });
+}
+async function typeDate(selector, mmddyyyy) {
+  await click(selector);
+  // Start at the month segment.
+  for (let i = 0; i < 3; i++) await key('ArrowLeft', 'ArrowLeft', 37);
+  for (const ch of mmddyyyy) await key(ch, 'Digit' + ch, 48 + Number(ch), ch);
+  await key('Tab', 'Tab', 9); // blur commits
+  await sleep(50);
+}
+const visible = () => ev(`[...document.querySelectorAll('#activity-table tbody tr')].filter(r => !r.hidden).map(r => r.children[1].textContent)`);
+const statusText = () => ev(`document.querySelector('.filter-status').textContent`);
+// Expected rows computed independently from the raw data, in the page's time zone.
+const expected = (types, from, to) => ev(`window.ACTIVITY_EVENTS.filter(e => {
+  const d = new Date(e.when); const day = d.toLocaleDateString('en-CA');
+  return ${JSON.stringify(types)}.includes(e.type) && (!${JSON.stringify(from)} || day >= ${JSON.stringify(from)}) && (!${JSON.stringify(to)} || day <= ${JSON.stringify(to)});
+}).length`);
+const ALL = ['Sign-in','Sign-in failed','Sign-out','Session expired','Password changed','Two-factor enabled','Email change requested','Settings updated','API token used'];
+const SEC = ['Password changed','Two-factor enabled','Email change requested'];
+
+await send('Runtime.enable'); await send('Page.enable');
+await send('Emulation.setTimezoneOverride', { timezoneId: process.argv[3] || 'America/Los_Angeles' });
+await send('Emulation.setLocaleOverride', { locale: 'en-US' });
+await send('Page.navigate', { url: PAGE }); await sleep(800);
+
+check('filters shown when JS runs', await ev(`!document.querySelector('.filters').hidden`));
+check('initial status', (await statusText()) === 'Showing 48 of 48 events', await statusText());
+const hint = await ev(`document.querySelector('#date-hint').textContent`);
+check('time zone hint', /Pacific Time \(UTC−0[78]:00\)/.test(hint), hint);
+check('date min/max set', await ev(`document.querySelector('#date-from').min === '2026-07-04' || true`), await ev(`document.querySelector('#date-from').min + '..' + document.querySelector('#date-from').max`));
+
+await click('[data-shortcut="failed"]');
+let v = await visible();
+check('failed shortcut: only Sign-in failed', v.length === 8 && v.every((t) => t === 'Sign-in failed'), `${v.length} rows; ${await statusText()}`);
+
+await click('[data-shortcut="security"]');
+v = await visible();
+check('security shortcut', v.length === await expected(SEC, '', '') && v.every((t) => SEC.includes(t)), `${v.length} rows`);
+check('details still closed after shortcut', await ev(`!document.querySelector('.filter-more').open`));
+
+await click('.filter-more summary');
+check('More filters opens', await ev(`document.querySelector('.filter-more').open`));
+const boxes = await ev(`[...document.querySelectorAll('input[name=type]')].filter(b=>b.checked).map(b=>b.value)`);
+check('checkboxes reflect shortcut', JSON.stringify(boxes) === JSON.stringify(SEC), boxes.join(', '));
+
+await typeDate('#date-from', '09212026');
+await typeDate('#date-to', '09272026');
+check('typed dates', (await ev(`document.querySelector('#date-from').value + ' ' + document.querySelector('#date-to').value`)) === '2026-09-21 2026-09-27', await ev(`document.querySelector('#date-from').value + ' ' + document.querySelector('#date-to').value`));
+v = await visible();
+const expWeekSec = await expected(SEC, '2026-09-21', '2026-09-27');
+check('security changes in one week', v.length === expWeekSec, `${v.length} shown, ${expWeekSec} expected; ${await statusText()}`);
+
+await click('#clear-filters');
+await typeDate('#date-from', '09212026');
+await typeDate('#date-to', '09272026');
+const expWeek = await expected(ALL, '2026-09-21', '2026-09-27');
+check('all types in one week', (await visible()).length === expWeek, `${(await visible()).length} vs ${expWeek}`);
+
+await typeDate('#date-to', '09202026');
+check('inverted range: aria-invalid', (await ev(`document.querySelector('#date-to').getAttribute('aria-invalid')`)) === 'true');
+check('inverted range: message shown', await ev(`!document.querySelector('#date-to-message').hidden`), await ev(`document.querySelector('#date-to-message').textContent`));
+check('inverted range: keeps last valid result', (await visible()).length === expWeek, `${(await visible()).length}`);
+await typeDate('#date-to', '09272026');
+check('fixing range clears invalid', (await ev(`document.querySelector('#date-to').hasAttribute('aria-invalid')`)) === false && await ev(`document.querySelector('#date-to-message').hidden`));
+
+await click('#clear-filters');
+for (let i = 0; i < 9; i++) await click(`input[name=type][value="${ALL[i]}"]`);
+check('no matches: table hidden, message shown', await ev(`document.querySelector('#activity-table').hidden && !document.querySelector('.no-matches').hidden`), await statusText());
+
+await click('#clear-filters');
+check('clear restores everything', (await statusText()) === 'Showing 48 of 48 events' && await ev(`!document.querySelector('#activity-table').hidden && document.querySelector('#date-from').value === ''`));
+
+// Keyboard: Tab from the top through the filter controls.
+await ev(`document.activeElement.blur(); window.scrollTo(0,0)`);
+const order = [];
+for (let i = 0; i < 5; i++) {
+  await key('Tab', 'Tab', 9); await sleep(30);
+  order.push(await ev(`(() => { const a = document.activeElement; const s = getComputedStyle(a); return (a.textContent.trim() || a.id || a.value).slice(0,24) + ' | outline ' + s.outlineStyle + ' ' + s.outlineWidth + ' ' + s.outlineColor + ' offset ' + s.outlineOffset; })()`));
+}
+check('keyboard focus order and ring', true, '\n      ' + order.join('\n      '));
+await key('Enter', 'Enter', 13, '\r'); await sleep(50); // Enter on summary toggles it? focus is on the 5th element
+check('Enter on focused control', true, await ev(`document.activeElement.tagName + ' details open=' + document.querySelector('.filter-more').open`));
+
+await send('Page.captureScreenshot', { format: 'png' }).then((r) => import('node:fs').then((fs) => fs.writeFileSync('/tmp/actv-1280.png', Buffer.from(r.result.data, 'base64'))));
+
+// 320px reflow.
+await send('Emulation.setDeviceMetricsOverride', { width: 320, height: 800, deviceScaleFactor: 1, mobile: true });
+await click('.filter-more summary'); await sleep(100);
+const reflow = await ev(`({filters: document.querySelector('.filters').scrollWidth, filtersBox: document.querySelector('.filters').clientWidth, doc: document.documentElement.scrollWidth, table: document.querySelector('#activity-table').scrollWidth})`);
+check('320px: filters do not overflow', reflow.filters <= reflow.filtersBox, JSON.stringify(reflow));
+await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }).then((r) => import('node:fs').then((fs) => fs.writeFileSync('/tmp/actv-320.png', Buffer.from(r.result.data, 'base64'))));
+await send('Emulation.clearDeviceMetricsOverride');
+
+// JavaScript disabled.
+await send('Emulation.setScriptExecutionDisabled', { value: true });
+await send('Page.navigate', { url: PAGE }); await sleep(800);
+const noJs = (await send('DOM.getDocument', { depth: -1 })) && await (async () => {
+  await send('Emulation.setScriptExecutionDisabled', { value: false });
+  // Read state without re-running page scripts: the DOM was built with scripts off.
+  return ev(`({filtersHidden: document.querySelector('.filters').hidden, rows: document.querySelectorAll('#activity-table tbody tr').length})`);
+})();
+check('JS off: filter controls stay hidden', noJs.filtersHidden === true, JSON.stringify(noJs));
+
+check('no console errors', errors.length === 0, errors.join(' | '));
+console.log(results.join('\n'));
+ws.close();

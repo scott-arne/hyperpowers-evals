@@ -1,0 +1,94 @@
+// Throwaway checks for the activity filter logic. Not committed.
+// Loads the real page scripts into a VM with an inert DOM stub.
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+const path = require('path');
+
+const pub = process.argv[2];
+const inert = new Proxy(function () {}, {
+  get: (t, k) => (k === Symbol.iterator ? [][Symbol.iterator].bind([]) : k === Symbol.toPrimitive ? () => '' : inert),
+  set: () => true,
+  apply: () => inert,
+});
+const ctx = { document: inert, navigator: { language: 'en-US' }, Intl, Date, console };
+ctx.window = ctx;
+vm.createContext(ctx);
+for (const f of ['activity-data.js', 'activity.js']) {
+  vm.runInContext(fs.readFileSync(path.join(pub, f), 'utf8'), ctx, { filename: f });
+}
+
+let failed = 0;
+function test(name, fn) {
+  try { fn(); console.log('ok   ' + name); }
+  catch (e) { failed++; console.log('FAIL ' + name + '\n     ' + e.message); }
+}
+const ev = (type, when = '2026-09-28T12:00Z') => ({ type, when });
+
+test('empty type filter matches every type', () => {
+  assert.ok(ctx.eventMatchesType(ev('Sign-out'), ''));
+});
+test('failed sign-ins shortcut matches only Sign-in failed', () => {
+  assert.ok(ctx.eventMatchesType(ev('Sign-in failed'), 'failed-sign-ins'));
+  assert.ok(!ctx.eventMatchesType(ev('Sign-in'), 'failed-sign-ins'));
+});
+test('security changes shortcut matches the three agreed types only', () => {
+  for (const t of ['Password changed', 'Two-factor enabled', 'Email change requested'])
+    assert.ok(ctx.eventMatchesType(ev(t), 'security-changes'), t);
+  for (const t of ['Settings updated', 'Sign-in', 'Sign-in failed', 'API token used'])
+    assert.ok(!ctx.eventMatchesType(ev(t), 'security-changes'), t);
+});
+test('a single type filter matches that exact type', () => {
+  assert.ok(ctx.eventMatchesType(ev('Sign-in'), 'Sign-in'));
+  assert.ok(!ctx.eventMatchesType(ev('Sign-in failed'), 'Sign-in'));
+});
+test('EVENT_TYPES lists the nine API types', () => {
+  assert.deepStrictEqual(Array.from(vm.runInContext('EVENT_TYPES', ctx)), [
+    'Sign-in', 'Sign-in failed', 'Sign-out', 'Session expired', 'Password changed',
+    'Two-factor enabled', 'Email change requested', 'Settings updated', 'API token used',
+  ]);
+});
+test('startOfWeek with Monday start goes back to local Monday midnight', () => {
+  const s = ctx.startOfWeek(new Date(2026, 9, 2, 15, 30), 1); // Fri Oct 2
+  assert.strictEqual(s.getTime(), new Date(2026, 8, 28).getTime());
+});
+test('startOfWeek with Sunday start goes back to local Sunday midnight', () => {
+  const s = ctx.startOfWeek(new Date(2026, 9, 2, 15, 30), 7);
+  assert.strictEqual(s.getTime(), new Date(2026, 8, 27).getTime());
+});
+test('startOfWeek on the first day itself stays on that day', () => {
+  const s = ctx.startOfWeek(new Date(2026, 8, 27, 0, 0), 7);
+  assert.strictEqual(s.getTime(), new Date(2026, 8, 27).getTime());
+});
+test('weeksInWindow is newest first and covers the 90-day window', () => {
+  const now = new Date(2026, 9, 2, 12);
+  const weeks = ctx.weeksInWindow(now, 1);
+  assert.strictEqual(weeks[0].start.getTime(), new Date(2026, 8, 28).getTime());
+  assert.strictEqual(weeks[0].end.getTime(), new Date(2026, 9, 5).getTime());
+  const oldest = weeks[weeks.length - 1];
+  const windowStart = new Date(2026, 9, 2, 12); windowStart.setDate(windowStart.getDate() - 90);
+  assert.ok(oldest.start <= windowStart && oldest.end > windowStart, 'oldest week contains window start');
+  for (let i = 1; i < weeks.length; i++)
+    assert.strictEqual(weeks[i].end.getTime(), weeks[i - 1].start.getTime(), 'contiguous');
+});
+test('eventInWeek uses half-open week bounds; null week matches all', () => {
+  const week = { start: new Date(2026, 8, 21), end: new Date(2026, 8, 28) };
+  assert.ok(ctx.eventInWeek({ when: new Date(2026, 8, 21).toISOString() }, week));
+  assert.ok(!ctx.eventInWeek({ when: new Date(2026, 8, 28).toISOString() }, week));
+  assert.ok(ctx.eventInWeek({ when: '2020-01-01T00:00Z' }, null));
+});
+test('formatWeek labels a same-month week with an en dash range', () => {
+  const label = ctx.formatWeek({ start: new Date(2026, 8, 21), end: new Date(2026, 8, 28) }, 'en-US');
+  assert.ok(/^Sep 21\s?–\s?27, 2026$/.test(label), JSON.stringify(label));
+});
+test('formatWeek labels a month-crossing week with both months', () => {
+  const label = ctx.formatWeek({ start: new Date(2026, 8, 28), end: new Date(2026, 9, 5) }, 'en-US');
+  assert.ok(/^Sep 28\s?–\s?Oct 4, 2026$/.test(label), JSON.stringify(label));
+});
+test('firstDayOfWeek: en-US is Sunday, en-GB is Monday', () => {
+  assert.strictEqual(ctx.firstDayOfWeek('en-US'), 7);
+  assert.strictEqual(ctx.firstDayOfWeek('en-GB'), 1);
+});
+
+process.exitCode = failed ? 1 : 0;
+console.log(failed ? `${failed} failed` : 'all passed');

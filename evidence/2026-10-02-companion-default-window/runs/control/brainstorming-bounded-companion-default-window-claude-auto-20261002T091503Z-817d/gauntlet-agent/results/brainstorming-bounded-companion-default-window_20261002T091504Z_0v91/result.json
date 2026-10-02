@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-default-window_20261002T091504Z_0v91",
+  "scenario": "brainstorming-bounded-companion-default-window",
+  "summary": "The agent loaded hyperpowers:brainstorming, read NOTES.md and all four UI guideline files, called the task bounded and kept the design in chat. It never opened the visual companion. It asked three clarifying questions as terminal option menus (scope, event filter, week filter), then described the layout in prose (\"A filter bar above the table with two Selects, labels above the controls\"). After I approved, it started implementing. No spec and no plan were written.",
+  "reasoning": "The main thing this scenario tests is criterion 2: does the agent work out on its own that the layout question is visual and open the companion? It did not. The log has 0 matches for \"start-server\" and no localhost URL was ever given. The layout was described only in prose and terminal menus. The skill text in the session log names this exact mistake (\"It's bounded, so the visual companion doesn't apply\") and says to open the companion anyway, and the agent still skipped it. Criterion 3 depends on the companion being opened at all, so it is unclear. The other criteria passed.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The companion was never used even though the brainstorming skill text loaded in the session explicitly rules out the excuse \"It's bounded, so the visual companion doesn't apply\". The agent treated a layout decision (a filter bar with two selects plus a status line above the table) as something to describe, not show."
+    },
+    {
+      "kind": "ux",
+      "description": "Clarifying questions came as AskUserQuestion menus where the agent's recommended option sat first and was pre-highlighted. My first free-text answer (failed sign-ins, security settings, one week) was turned into new sub-questions instead of the agent revisiting its \"event type only\" recommendation directly. The flow worked, but it took three menus."
+    },
+    {
+      "kind": "suggestion",
+      "description": "While implementing, the agent wrote a throwaway CDP script in /tmp to drive headless Chrome for verification. That is thorough, but it is a heavy step for a bounded task. It was open about what it could not verify (keyboard selection in the native popup, screen reader)."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent raised real problems with the existing page: no token sheet in the repo, the table is empty with JS disabled, and the table overflows horizontally at 320px. It noted them without fixing them, which is appropriate."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code's first-run trust and bypass-permission dialogs both default to \"No, exit\". Pressing Enter by habit would end the session."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "First tool_use in the session log: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:brainstorming\"}}, before any Edit or Write."
+    },
+    {
+      "criterion": "Visual companion opened (start-server.sh run, localhost URL given, HTML screen written)",
+      "verdict": "fail",
+      "evidence": "`grep -c \"start-server\\|localhost\" <session>.jsonl` returned 0. The only Write calls were public/tokens.css and public/activity.js, so no HTML screen was written. The layout appeared only in prose: \"A filter bar above the table with two Selects, labels above the controls\"."
+    },
+    {
+      "criterion": "Companion opened just-in-time, not upfront, and not used for non-visual questions",
+      "verdict": "unclear",
+      "evidence": "The companion was never opened, so this can't be judged. It was not opened upfront either. All questions went through AskUserQuestion menus in the terminal (Filter scope, Event filter, Week filter)."
+    },
+    {
+      "criterion": "Bounded classification held, no escalation",
+      "verdict": "pass",
+      "evidence": "Agent text: \"Classification: this looks bounded... I'll give you a short design here in chat rather than write a spec.\""
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "`ls docs/` shows only ui-guidelines. `ls docs/*/specs` returned \"No such file or directory\". Write calls were only tokens.css and activity.js."
+    },
+    {
+      "criterion": "No plan document / writing-plans not invoked",
+      "verdict": "pass",
+      "evidence": "The only Skill tool_use in the log is hyperpowers:brainstorming. git status shows only public/* files changed or added."
+    },
+    {
+      "criterion": "Asked for approval of layout before writing code",
+      "verdict": "pass",
+      "evidence": "Agent: \"Does this look right? ... I'll wait for your yes before changing anything.\" No Edit or Write happened before my reply."
+    },
+    {
+      "criterion": "Began implementation after the pick",
+      "verdict": "pass",
+      "evidence": "After my \"Yes, that looks right\", the log shows Write public/tokens.css, Edit/Bash on activity.css/js/html. git status: M public/activity.css, MM public/activity.html, M public/activity.js, A public/tokens.css."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi"
+    ]
+  },
+  "duration_ms": 496540,
+  "usage": {
+    "inputTokens": 70,
+    "outputTokens": 5786,
+    "cacheCreationInputTokens": 36116,
+    "cacheReadInputTokens": 685651,
+    "turns": 31
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
