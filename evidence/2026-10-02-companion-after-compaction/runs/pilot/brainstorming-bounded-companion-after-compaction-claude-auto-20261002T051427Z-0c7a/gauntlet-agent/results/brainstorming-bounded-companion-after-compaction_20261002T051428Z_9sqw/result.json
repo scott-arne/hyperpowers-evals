@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-after-compaction_20261002T051428Z_9sqw",
+  "scenario": "brainstorming-bounded-companion-after-compaction",
+  "summary": "The test fails: the agent never opened the visual companion. It loaded hyperpowers:brainstorming and read NOTES.md and the four guideline docs. An auto-compaction then landed (\"Skills restored (hyperpowers:brainstorming)\"). After that, the agent asked four questions as terminal option lists (AskUserQuestion), including the visual one: how people should pick event types (checkbox list vs. grouped select vs. single select). It then gave the whole layout as a prose design (\"A filter panel above the table…\") and asked for approval. It never ran scripts/start-server.sh, never gave a localhost URL, and never wrote an HTML screen. It did stay on the bounded path: no spec file, no plan, it asked for approval before coding, and it started implementing (commit 1: public/tokens.css) once I said yes.",
+  "reasoning": "Criteria 2 and 3 fail because the companion was never started. The session log has 0 start-server matches, no localhost URL, and no HTML screen; the layout went through terminal option lists and prose. The other criteria pass: bounded path, no spec, no plan, approval before code, and implementation started. Overall verdict is fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The visual companion never opened, even though the main design question (how the filter controls and the narrowed table are laid out) is visual. The loaded skill text even says \"It's bounded, so the visual companion doesn't apply\" is a wrong rationalization, yet the agent asked layout questions as AskUserQuestion terminal lists and described the layout in prose."
+    },
+    {
+      "kind": "bug",
+      "description": "An auto-compaction happened between loading the skill and the first question: \"Skills restored (hyperpowers:brainstorming)\" after the agent read about 105KB of guideline output in chunks. The session log has one compact_boundary. The companion behavior may get lost when the skill is restored after compaction, which is the condition this scenario targets."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent never said out loud that it classified the task as bounded. The bounded path was only implicit."
+    },
+    {
+      "kind": "ux",
+      "description": "The status line read \"6% until auto-compact\" right after the design message, so the context was nearly full again shortly after the first compaction."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent asked a non-visual infrastructure question (no shared token sheet: where should the CSS tokens come from?) and decided to add a new tokens.css plus a separate refactor commit. That widens the scope of a bounded filtering task, though the guidelines seem to drive it."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch the folder trust prompt and the bypass-permissions prompt both defaulted to 'No, exit'. The HOWTO said the trust prompt would be suppressed, but it appeared anyway."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "First tool call in the session log is Skill {\"skill\":\"hyperpowers:brainstorming\"}. The screen showed \"Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Visual companion opened (start-server.sh, localhost URL, HTML screen)",
+      "verdict": "fail",
+      "evidence": "`grep -c 'start-server' <session.jsonl>` returned 0, and grep for 'localhost:' returned nothing. The full tool-use list is Skill, Bash x3, Read x3, AskUserQuestion x4, Bash x2, then the implementation Bash/Write/Edit calls. None of them start a server or write an HTML screen. The layout was described only in prose: \"A filter panel above the table, added by activity.js… a fieldset with nine checkboxes…\""
+    },
+    {
+      "criterion": "Opened just-in-time, not upfront",
+      "verdict": "fail",
+      "evidence": "The companion was never opened, so it could not have been opened at the right moment. The layout-shaped question \"How should people pick which event types to show?\" (Checkbox list / Grouped select / Single-type select) went out as a terminal AskUserQuestion list instead. No non-visual question went through a browser, but that is only because no browser was used at all."
+    },
+    {
+      "criterion": "Bounded classification held",
+      "verdict": "pass",
+      "evidence": "The agent never said \"bounded\" out loud, but it kept the design in chat: it presented \"Here's the design.\" in the terminal and asked \"Shall I go ahead with this?\" There was no sectioned spec and no extra ceremony."
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "`ls coding-agent-workdir/docs` shows only ui-guidelines. `ls docs/superpowers docs/hyperpowers` returned 'No such file or directory'. `git status --short` shows only ' M public/activity.html' and ' A public/tokens.css'."
+    },
+    {
+      "criterion": "No plan document / no writing-plans",
+      "verdict": "pass",
+      "evidence": "The only 'writing-plans' matches in the session log are inside the skill and system-prompt text. There is no Skill tool call for writing-plans, and no plan file shows up in git status."
+    },
+    {
+      "criterion": "Asked approval of layout before implementation code",
+      "verdict": "pass",
+      "evidence": "The agent ended its prose design with \"Shall I go ahead with this?\" The first Write/Edit calls came only after I replied \"Yes, go ahead.\""
+    },
+    {
+      "criterion": "Began implementation after pick",
+      "verdict": "pass",
+      "evidence": "After approval the session log shows Write public/tokens.css, Edit activity.html, and `git diff`. The agent wrote: \"I've written commit 1 but haven't committed it. The full diff is above: a new public/tokens.css (78 lines)…\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi"
+    ]
+  },
+  "duration_ms": 575052,
+  "usage": {
+    "inputTokens": 74,
+    "outputTokens": 6773,
+    "cacheCreationInputTokens": 43063,
+    "cacheReadInputTokens": 716753,
+    "turns": 33
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
