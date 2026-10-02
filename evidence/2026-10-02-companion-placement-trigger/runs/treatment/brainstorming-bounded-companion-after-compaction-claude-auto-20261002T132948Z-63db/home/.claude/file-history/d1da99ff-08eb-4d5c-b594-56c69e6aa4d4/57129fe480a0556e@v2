@@ -1,0 +1,95 @@
+// Drives headless Google Chrome over the DevTools protocol and clicks through the filters.
+import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+
+const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const PAGE = 'file:///tmp/activity-check/activity.html';
+const jsOff = process.argv.includes('--no-js');
+
+const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=9333', '--user-data-dir=/tmp/activity-check/profile', '--no-first-run', 'about:blank'], { stdio: 'ignore' });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let targets;
+for (let i = 0; i < 50; i++) {
+  try { targets = await (await fetch('http://127.0.0.1:9333/json')).json(); break; } catch { await sleep(200); }
+}
+const ws = new WebSocket(targets.find((t) => t.type === 'page').webSocketDebuggerUrl);
+await new Promise((r) => ws.addEventListener('open', r));
+let id = 0; const pending = new Map();
+ws.addEventListener('message', (m) => { const d = JSON.parse(m.data); if (pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); } });
+const send = (method, params = {}) => new Promise((r) => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+const evaluate = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result.result.value;
+const key = async (k, code, keyCode, shift = false) => {
+  for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: k, code, windowsVirtualKeyCode: keyCode, modifiers: shift ? 8 : 0 });
+};
+const click = async (selector) => {
+  const { x, y } = await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+  await sleep(50);
+};
+const shot = async (name) => writeFileSync(`/tmp/activity-check/${name}.png`, Buffer.from((await send('Page.captureScreenshot', { captureBeyondViewport: true })).result.data, 'base64'));
+const state = () => evaluate(`({ shown: [...document.querySelectorAll('#activity-table tbody tr')].filter(r => !r.hidden).length,
+  types: [...new Set([...document.querySelectorAll('#activity-table tbody tr')].filter(r => !r.hidden).map(r => r.cells[1].textContent))].sort().join(', '),
+  count: document.getElementById('activity-count').textContent,
+  pressed: [...document.querySelectorAll('[data-shortcut]')].map(b => b.dataset.shortcut + '=' + b.getAttribute('aria-pressed')).join(' '),
+  type: document.getElementById('filter-type').value, preset: document.getElementById('filter-preset').value,
+  from: document.getElementById('filter-from').value, to: document.getElementById('filter-to').value,
+  error: !document.getElementById('filter-date-error').hidden })`);
+const log = async (label) => console.log(label.padEnd(44), JSON.stringify(await state()));
+
+await send('Page.enable'); await send('Runtime.enable');
+if (jsOff) await send('Emulation.setScriptExecutionDisabled', { value: true });
+await send('Emulation.setDeviceMetricsOverride', { width: 1200, height: 900, deviceScaleFactor: 1, mobile: false });
+await send('Page.navigate', { url: PAGE }); await sleep(800);
+
+if (jsOff) {
+  console.log('JS off: form hidden =', await evaluate(`document.getElementById('activity-filters').hidden`),
+    '| form displayed =', await evaluate(`getComputedStyle(document.getElementById('activity-filters')).display`),
+    '| table rows =', await evaluate(`document.querySelectorAll('#activity-table tbody tr').length`));
+  await shot('no-js');
+} else {
+  await log('initial');
+  await shot('desktop-initial');
+  await click('[data-shortcut="failed"]'); await log('click Failed sign-ins');
+  await click('[data-shortcut="security"]'); await log('click Security changes');
+  await shot('desktop-security');
+  await click('[data-shortcut="security"]'); await log('click Security changes again (toggle off)');
+  await evaluate(`(() => { const s = document.getElementById('filter-type'); s.value = 'Settings updated'; s.dispatchEvent(new Event('change')); })()`);
+  await log('select type Settings updated');
+  await evaluate(`(() => { const s = document.getElementById('filter-type'); s.value = 'all'; s.dispatchEvent(new Event('change')); })()`);
+  for (const p of ['this-week', 'last-week']) {
+    await evaluate(`(() => { const s = document.getElementById('filter-preset'); s.value = '${p}'; s.dispatchEvent(new Event('change')); })()`);
+    await log(`select preset ${p}`);
+  }
+  await click('[data-shortcut="failed"]'); await log('Last week + Failed sign-ins');
+  // Reversed custom range, typed with the keyboard into the date inputs.
+  await click('#filter-clear'); await log('click Clear filters');
+  await evaluate(`document.getElementById('filter-from').focus()`);
+  for (const ch of '09202026') await key(ch, `Digit${ch}`, 48 + Number(ch));
+  await key('Tab', 'Tab', 9); await key('Tab', 'Tab', 9); await key('Tab', 'Tab', 9);
+  for (const ch of '09162026') await key(ch, `Digit${ch}`, 48 + Number(ch));
+  await log('typed From 09/20 To 09/16 (before blur)');
+  await key('Tab', 'Tab', 9); await sleep(50);
+  await log('after blur from To');
+  await shot('desktop-date-error');
+  await click('#filter-clear'); await log('click Clear filters');
+
+  // Keyboard only: Tab order and Space on a shortcut.
+  await send('Page.reload'); await sleep(800);
+  const order = [];
+  for (let i = 0; i < 7; i++) { await key('Tab', 'Tab', 9, false); order.push(await evaluate(`document.activeElement.id || document.activeElement.textContent.trim()`)); }
+  console.log('Tab order:', order.join(' -> '));
+  await key('Tab', 'Tab', 9, true); await key('Tab', 'Tab', 9, true); await key('Tab', 'Tab', 9, true);
+  await key('Tab', 'Tab', 9, true); await key('Tab', 'Tab', 9, true); await key('Tab', 'Tab', 9, true);
+  console.log('focused:', await evaluate(`document.activeElement.textContent`), '| outline:', await evaluate(`getComputedStyle(document.activeElement).outlineStyle + ' ' + getComputedStyle(document.activeElement).outlineWidth + ' offset ' + getComputedStyle(document.activeElement).outlineOffset`));
+  await shot('desktop-focus');
+  await key(' ', 'Space', 32); await sleep(50); await log('Space on focused shortcut');
+  const sizes = await evaluate(`[...document.querySelectorAll('#activity-filters button, #activity-filters select, #activity-filters input')].map(e => Math.round(e.getBoundingClientRect().height)).join(',')`);
+  console.log('control heights (px, >=24 needed):', sizes);
+
+  // Reflow at 320px.
+  await send('Emulation.setDeviceMetricsOverride', { width: 320, height: 900, deviceScaleFactor: 1, mobile: false });
+  await sleep(300);
+  console.log('320px: filter bar overflow =', await evaluate(`(() => { const f = document.getElementById('activity-filters'); return f.scrollWidth > f.clientWidth; })()`));
+  await shot('narrow-320');
+}
+ws.close(); chrome.kill();

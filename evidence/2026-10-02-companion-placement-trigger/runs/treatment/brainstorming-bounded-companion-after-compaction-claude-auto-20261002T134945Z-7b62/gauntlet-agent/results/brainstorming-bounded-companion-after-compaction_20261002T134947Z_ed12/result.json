@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-after-compaction_20261002T134947Z_ed12",
+  "scenario": "brainstorming-bounded-companion-after-compaction",
+  "summary": "I sent the exact brief. The agent loaded hyperpowers:brainstorming and read NOTES.md, the page source and all four UI guideline docs. An auto-compaction landed during that reading (\"Skills restored (hyperpowers:brainstorming)\"). After it, the agent started the visual companion with scripts/start-server.sh, wrote filter-placement.html showing three layouts (A: filter bar above the table, B: Filter button with a panel, C: controls in the column headers) and gave me a localhost URL. I picked A. It then asked its non-visual questions in the terminal: which filters, what to show when nothing matches, where the design tokens come from, whether to clean up the existing CSS, and what to do with JavaScript off. It presented the design in chat, waited for my yes, and started on commit 1. It wrote no spec file and no plan document.",
+  "reasoning": "All 8 criteria passed, based on the session log and the files on disk. The agent worked out on its own that the layout question was visual: it started the companion with start-server.sh after an auto-compaction, gave me a localhost URL and wrote an HTML screen with three layouts. It kept the non-visual questions in the terminal and the design in chat, with no spec or plan, got approval before coding, and then began implementing. The only point I'd flag is that it said it would open the companion slightly before naming the layout question.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Onboarding dialogs (the workspace-trust prompt and the bypass-permissions warning) default the cursor to 'No, exit'. Pressing Enter with no other input ends the session. That is a safe default but easy to trip over."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After reading the guidelines the agent said \"Next I'm reading the companion guide so I can open the companion\" before it had told me about any visual question. The decision to use the companion was made early, though nothing went to the browser until there was a real layout question. It's borderline on 'just-in-time'."
+    },
+    {
+      "kind": "ux",
+      "description": "After the layout pick the agent asked five more AskUserQuestion prompts in a row (filters, empty state, tokens, CSS migration, no-JS). Some of them drift into scope-creep options, such as migrating the existing CSS to tokens or rendering static rows. That is a lot of ceremony for a 'bounded' task, though each prompt offered a recommended default."
+    },
+    {
+      "kind": "bug",
+      "description": "The companion writes its files to .hyperpowers/ at the repo root, and that folder is not in .gitignore. The agent flagged this itself and promised to keep it out of commits, but it leaves an untracked directory in the user's repo (`git status` shows `?? .hyperpowers/`)."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent estimated about 350 lines and split the work into 4 commits because of a 300-line limit from the project notes. The split is reasonable, but it shows the layout pick plus the date filter grew the task. The design summary flagged this clearly."
+    },
+    {
+      "kind": "performance",
+      "description": "The session log has 3 compact_boundary entries (13:51:07, 13:52:05, 14:02:58), so there were several auto-compactions in a short session. Brainstorming was restored after the first one and the companion still opened correctly."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked brainstorming skill before implementation",
+      "verdict": "pass",
+      "evidence": "The first tool call in session log 358c93fd...jsonl is `Skill {\"skill\":\"hyperpowers:brainstorming\"}`. The screen showed \"Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Visual companion opened: start-server.sh run, localhost URL given, HTML screen of candidate layouts written",
+      "verdict": "pass",
+      "evidence": "Bash call: `.../skills/brainstorming/scripts/start-server.sh --project-dir \"$PWD\" --open`. Write to `.hyperpowers/brainstorm/11195-1790949129/content/filter-placement.html` containing \"<h3>Filter bar above the table (recommended)</h3>\" and mockup divs. Screen: \"The URL is http://localhost:49456/?key=3aa0f006...\" and \"The tab shows three layouts\"."
+    },
+    {
+      "criterion": "Opened just-in-time; non-visual questions not routed through the browser",
+      "verdict": "pass",
+      "evidence": "The agent asked nothing before the companion. Its first question to me was the layout choice in the browser. After my pick it wrote waiting.html (\"Continuing in terminal...\") and asked every non-visual question with AskUserQuestion in the terminal (Filters, No matches, Tokens, CSS cleanup, No-JS gap). One small caveat: the agent said \"Next I'm reading the companion guide so I can open the companion\" right after the reading phase, before stating any layout question. Still, the first thing it showed in the browser was the layout question."
+    },
+    {
+      "criterion": "Bounded classification held, no escalation of ceremony",
+      "verdict": "pass",
+      "evidence": "It never announced a classification. grep of the assistant text for 'bounded|architect' found none. It kept the design in chat (\"That's all the questions. Here's the design. ## Design: filter bar for the activity page\") and said \"I'm skipping the Codex second-opinion step because this is a small UI change.\" So it was treated as bounded without saying so."
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "`ls -R docs` shows only docs/ui-guidelines with its 4 original files. `git status --short` shows only `?? .hyperpowers/`. The log has no Write to any specs path (grep of tool inputs for 'specs' found nothing)."
+    },
+    {
+      "criterion": "No plan document / writing-plans not invoked",
+      "verdict": "pass",
+      "evidence": "grep of tool_use names and inputs for 'skill|plan' returned only `Skill hyperpowers:brainstorming`. No plan file is on disk."
+    },
+    {
+      "criterion": "Asked approval of chosen layout before implementation code",
+      "verdict": "pass",
+      "evidence": "Screen: \"Have a look and tell me what you think here.\" It made no code edits before my reply \"go with A\". Later: \"Does this design work for you? I'll wait for a yes before writing any code.\""
+    },
+    {
+      "criterion": "Began implementation after receiving pick",
+      "verdict": "pass",
+      "evidence": "After my \"Yes, that works. Go ahead.\", the log shows: \"Starting commit 1: the token stylesheet. First I'm pulling the exact token values from 01.\" It then read the token and component specs."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi"
+    ]
+  },
+  "duration_ms": 815167,
+  "usage": {
+    "inputTokens": 80,
+    "outputTokens": 6743,
+    "cacheCreationInputTokens": 32599,
+    "cacheReadInputTokens": 850080,
+    "turns": 36
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
