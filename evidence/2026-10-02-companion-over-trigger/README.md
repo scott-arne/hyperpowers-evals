@@ -311,4 +311,90 @@ Each check:
 
 ## Results
 
-Pending.
+**The companion stayed closed.** With db33b7e, no counted session started
+it: 0 of 10, which holds. Every composed final passed and every session
+loaded brainstorming. Per the pre-registered consequence, a fast-forward of
+`external-workflow-adoption` from 5f4ab78 to db33b7e is proposed with the
+drafted 6.15.0 CHANGELOG bullet, and BACKLOG item 1 closes when the human
+partner approves it.
+
+| Treatment, db33b7e | Started (`tool-arg-match`) | Composed final | `brainstorming` skill-called | Reading |
+|---|---|---|---|---|
+| `brainstorming-bounded-companion-closed-cli-output` | 0/10 | 10/10 | 10/10 | holds: the companion stayed closed |
+
+No extension: the count was not 1 of 10, so `manifest-extend.tsv` was not
+written. Every start was read from its post-check record; none needed the
+transcript.
+
+**Validity.** All 10 sessions carry the `skill-called` record, so the
+reading stands.
+
+**Pilot.** `190709Z-a6eb`, at the control. The instrument check passed:
+setup and every pre-check passed, the post phase held a usable start record
+and a `skill-called` record, and the Gauntlet-Agent wrote a result. By hand,
+the operator sent the brief exactly, gave no cue in either direction, and
+the session reached a pick. It did not start the companion; that carries no
+reading.
+
+**Readouts, with no reading attached.** From `tally.txt`:
+- The one-sided 95% upper bound on the start rate is 0.259.
+- Record and main transcript agree on every session.
+- No session compacted.
+- No session read `visual-companion.md`, wrote an `.html` file, or named a
+  `localhost` or `127.0.0.1` port.
+- 9 of 10 sessions called `AskUserQuestion`, once each.
+- No composed final failed, so no failure hand-read was needed.
+- Every counted session ran Claude Code 2.1.287 on `claude-opus-5-5` alone.
+
+**By hand** (`handread.md`).
+- **Classes.** (a) 1, (b) 9, (c) 0, (d) 0. Seven of the nine (b) sessions
+  put text samples in chat before the question; `191809Z-f758` put them only
+  in the question's previews; `191046Z-ab35` showed none.
+- **Browser.** No session offered the companion or a browser. Seven said
+  they were not opening it, each because the output is terminal text: "I'm
+  not opening the visual companion, because this is terminal output and
+  plain text in chat shows it exactly as it will look" (`192132Z-b821`).
+- **Path.** Eight announced bounded before the question; `ab35` and `f758`
+  named none. All ten presented a design and waited for a yes before code.
+- **Not pre-registered.** Five sessions put the question as where the
+  health information goes, the treatment's wording, and still kept it in the
+  terminal. With one control session, this campaign cannot say the treatment
+  caused that framing.
+
+**Grader.** Both row logs and the pilot's log record
+`gauntlet_agent_model=claude-opus-5-5`. Each archived `result.json` records
+`config.model` as `claude-opus-5-5`, in all 10 counted runs and the pilot.
+
+**Host state outside the run directory.** No counted session's transcript
+names `/tmp/`.
+
+**Runs.**
+- **Pilot:** the stamp was written at 19:06:58Z, the row launched at
+  19:07:08Z, and its `DONE` came at 19:10:02Z. `trials: P`.
+- **Batch:** 2 rows of `--repeat 5`, 10 sessions, 2 concurrent. The stamp
+  was written at 19:10:37Z, both rows launched at 19:10:45Z, and the last
+  `DONE` came at 19:28:42Z. Both rows' `trials:` lines read `PPPPP`, and
+  both row logs record `claude_version_after=2.1.287`.
+- There were no grader voids, setup voids, version voids or indeterminates,
+  in the pilot or the batch, so no replacement rows ran.
+- The mutation checks passed at all five points in
+  `logs/mutation-checks.txt`: before and after the pilot against 5f4ab78,
+  and before the batch, after the counted sessions and after archiving
+  against db33b7e. No file in either worktree outside `.git` was newer than
+  its stamp, `HEAD` stayed at its pin, and `git status --short` stayed
+  empty.
+- `tally.txt` is `tally.py` over the archive.
+
+**What this does not show.** The Limits above stand. Concretely:
+- One shape of change with no page, a terminal table. Back-end and
+  configuration changes are not tested.
+- No session compacted. In a compacted session, the re-attached `SKILL.md`
+  keeps the new sentence and loses the per-question test, the place
+  `SKILL.md` sends text content to the terminal. That matches the reason
+  seven sessions gave for keeping the companion closed. A compacted session
+  may still open it.
+- 0 of 10 excludes start rates above 26%. A rate near 10% would hold with
+  probability 0.48, so it is not ruled out.
+- No session asked permission to open the companion, so the operator's
+  standing yes was never tested.
+- One scenario, one model, one Claude Code version, one fixture.

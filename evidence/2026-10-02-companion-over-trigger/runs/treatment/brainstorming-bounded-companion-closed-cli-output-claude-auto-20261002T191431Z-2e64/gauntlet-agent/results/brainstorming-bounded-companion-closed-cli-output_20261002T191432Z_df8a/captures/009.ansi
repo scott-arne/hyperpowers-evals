@@ -1,0 +1,40 @@
+  [1mC: a summary in the heading plus a short column[0m
+  [38;5;153mproduction: 10 services, 3 failing health checks, as of 2026-09-30 08:12 UTC[39m
+  [38;5;153m...                                                    HEALTH[39m
+  [38;5;153mbilling         4.2.3     2/3     2026-09-28 17:40   failing[39m
+  This is the most compact, but you still can't see which check failed or why.
+
+  Any of these is cheap to change later because it's display-only. The snapshot format and the CLI interface stay the
+  same. Each option changes the expected table in the existing test.
+
+  [1mI recommend B.[0m "Failing" is only useful if you can see why, and the [38;5;153mdetail[39m strings are too long to put inside table
+  rows.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should health status appear in `svc status` output? → B: column + details (Recommended)[39m
+
+[38;5;231m⏺[39m We'll go with B. Here's the design:
+
+  [1mApproach:[0m All changes are in [38;5;153msrc/status.js[39m.
+  - Add a last column, [38;5;153mHEALTH[39m, to [38;5;153mCOLUMNS[39m. It shows [38;5;153mok[39m when every check passes and [38;5;153mN failing[39m otherwise. Because it's the
+    last column it isn't padded, so lines still never end in spaces.
+  - After the table, when any check is failing, add a blank line, then [38;5;153mFailing checks:[39m, then one indented row per
+    failing check, aligned the same way as the main table: service, check name, detail. Rows follow the snapshot's order
+    of services and checks. A missing [38;5;153mdetail[39m prints as blank. When nothing is failing, the section is left out, so a
+    healthy environment's output is the table plus the new column.
+  - [38;5;153mbin/svc.js[39m, [38;5;153msrc/load.js[39m and the snapshot format stay the same. I'll add one line to the README's Usage section
+    describing the new column and section.
+
+  [1mTesting (TDD):[0m First I'll update the expected output in [38;5;153mtest/status.test.js[39m to include the HEALTH column and the
+  failing-checks section for [38;5;153mbilling[39m. Then I'll add a test that an all-passing snapshot prints no section, and a test
+  for a service with several failing checks. I'll run them and watch them fail, then implement until [38;5;153mnpm test[39m passes.
+  Last, I'll run [38;5;153mnode bin/svc.js status[39m against the real snapshot to check the output by eye.
+
+  Should I go ahead?
+
+[38;5;246m✻[39m [38;5;246mSautéed for 30s · done 12:16 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

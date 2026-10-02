@@ -1,0 +1,40 @@
+  [1mC: Detail lines indented under each failing row.[0m Everything about a service stays in one place, but the table is no
+  longer one line per service, which makes it harder to scan and to [38;5;153mgrep[39m.
+
+  [1mMy recommendation is B.[0m It answers "which services are failing" at a glance, keeps the reasons that let you act on a
+  failure, and keeps the table one line per service. Optionally, the heading could also count unhealthy services
+  ([38;5;153mproduction: 10 services, 3 unhealthy, as of …[39m).
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should `svc status` show failing health checks? → B: column + section (Recommended)[39m
+
+[38;5;231m⏺[39m Here's the design for option B. I won't start until you approve it.
+
+  [1mApproach (all in [38;5;153msrc/status.js[39m):[0m
+  - Add a fifth column, [38;5;153mHEALTH[39m, at the end of [38;5;153mCOLUMNS[39m. It shows [38;5;153mok[39m when every check passes, otherwise [38;5;153mN failing[39m. The
+    existing rule that the last column isn't padded still applies, so no line ends in spaces.
+  - If any check is failing, add a blank line and then [38;5;153mFailing checks:[39m after the table. It lists one line per failing
+    check (service, check name, detail), aligned, in snapshot order. If nothing is failing, the section doesn't appear
+    and the output looks the same as today apart from the new column.
+  - Add the unhealthy count to the heading: [38;5;153mproduction: 10 services, 3 unhealthy, as of 2026-09-30 08:12 UTC[39m. I'll leave
+    out [38;5;153m0 unhealthy[39m when everything is healthy. Tell me if you'd rather skip the heading change.
+  - If a failing check has no [38;5;153mdetail[39m, its line just ends after the check name.
+  - [38;5;153mbin/svc.js[39m and [38;5;153msrc/load.js[39m stay as they are. I'll add one line to the README describing the new column and section.
+
+  [1mTesting (TDD, [38;5;153mtest/status.test.js[39m):[0m
+  - Update the existing exact-output test to include the HEALTH column, the heading count, and the failing-checks
+    section for [38;5;153mbilling[39m.
+  - Add tests for:
+    - an all-healthy snapshot (no section, no count)
+    - a service with several failing checks
+    - a failing check with no detail
+  - Run [38;5;153mnpm test[39m, then [38;5;153mnode bin/svc.js status[39m against the real snapshot.
+
+  Does this look right? Say yes and I'll implement it.
+
+[38;5;246m✻[39m [38;5;246mWorked for 27s · done 12:12 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  - [1mB[0m keeps the table narrow and one row per service, and still shows every detail. The cost is a second block to read.
+    Its two parts can change independently later.
+  - [1mC[0m keeps everything about a service together. But it breaks one-row-per-service, which hurts [38;5;153mgrep[39m/[38;5;153mawk[39m, and the
+    existing "keeps the snapshot order" test assumes that layout.
+
+  All three are cheap to change later, since this is output only. The exception is if someone starts scripting against
+  the format.
+
+  [1mMy recommendation: B.[0m The [38;5;153mdetail[39m text ("91% used", "timeout after 5s") is what tells you what to do next, so it should
+  show up. B shows it without making the table wider or breaking the one-row-per-service layout.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should health status go in `svc status` output? → A: single column[39m
+
+[38;5;231m⏺[39m Going with A. Here's the short design:
+
+  [1mWhat [38;5;153msvc status[39m will show[0m
+  - A new last column, [38;5;153mHEALTH[39m. It shows [38;5;153mok[39m when every check passes, or [38;5;153mfailing: <name>, <name>[39m listing the failing
+    checks in snapshot order. Since it's the last column it isn't padded, so long values don't add trailing spaces.
+  - The heading also counts unhealthy services: [38;5;153mproduction: 10 services, 3 failing health checks, as of …[39m. When nothing
+    is failing, it keeps the current wording.
+  - Sort order, the other columns, and the exit code all stay the same. Making it exit non-zero when something is
+    failing would change behaviour for anyone scripting against it, so I'm leaving that out unless you want it.
+
+  [1mFiles[0m
+  - [38;5;153msrc/status.js[39m: add the [38;5;153mHEALTH[39m column to [38;5;153mCOLUMNS[39m and the count to the heading.
+  - [38;5;153mREADME.md[39m: one line under Usage describing the column.
+  - [38;5;153mtest/status.test.js[39m: written first (TDD). Update the expected table and heading in the existing test, and add cases
+    for a service with several failing checks and for an all-passing snapshot (the heading keeps its current wording).
+
+  The existing "keeps the snapshot order" test still holds, since there's still one row per service.
+
+  Should I go ahead and implement this?
+
+[38;5;246m✻[39m [38;5;246mWorked for 34s · done 12:26 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m
