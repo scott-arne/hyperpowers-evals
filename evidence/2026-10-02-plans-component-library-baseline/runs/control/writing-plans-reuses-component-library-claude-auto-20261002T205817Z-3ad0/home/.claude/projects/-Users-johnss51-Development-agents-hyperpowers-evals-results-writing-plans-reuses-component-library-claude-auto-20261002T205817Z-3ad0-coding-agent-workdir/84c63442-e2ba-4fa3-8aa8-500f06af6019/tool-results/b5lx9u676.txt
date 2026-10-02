@@ -1,0 +1,690 @@
+=== README.md
+     1	# Harbor
+     2	
+     3	Ops dashboard for the services we run. It renders pages on the server from
+     4	the snapshots the deploy pipeline writes to `data/` every minute; it never
+     5	talks to the services itself.
+     6	
+     7	## Running
+     8	
+     9	    npm start        # http://localhost:3000
+    10	    npm test
+    11	
+    12	No dependencies; Node 20 or later.
+    13	
+    14	## Layout
+    15	
+    16	- `src/server.js` routes requests and wraps each page in `src/layout.js`.
+    17	- `src/pages/` has one module per page.
+    18	- `src/ui/` is the component library from the Harbor admin template the
+    19	  dashboard was started from.
+    20	- `public/` holds the template's stylesheet and script (`harbor.css`,
+    21	  `harbor.js`) and the dashboard's own stylesheet (`app.css`).
+    22	- `data/` holds the pipeline's snapshots.
+=== package.json
+     1	{
+     2	  "name": "harbor",
+     3	  "version": "0.7.0",
+     4	  "description": "Ops dashboard for the services we run",
+     5	  "private": true,
+     6	  "type": "module",
+     7	  "engines": {
+     8	    "node": ">=20"
+     9	  },
+    10	  "scripts": {
+    11	    "start": "node src/server.js",
+    12	    "test": "node --test"
+    13	  }
+    14	}
+=== .gitignore
+     1	node_modules/
+     2	docs/hyperpowers/
+=== data/deploys.json
+     1	{
+     2	  "generatedAt": "2026-10-01T09:30:00Z",
+     3	  "deploys": [
+     4	    { "id": "d-1042", "service": "search", "version": "1.23.0-rc.1", "environment": "staging", "status": "in-progress", "startedAt": "2026-10-01T09:05:00Z", "finishedAt": null, "author": "priya" },
+     5	    { "id": "d-1041", "service": "notifications", "version": "0.9.4", "environment": "production", "status": "succeeded", "startedAt": "2026-10-01T08:50:00Z", "finishedAt": "2026-10-01T08:54:12Z", "author": "marco" },
+     6	    { "id": "d-1040", "service": "notifications", "version": "0.9.3", "environment": "production", "status": "rolled-back", "startedAt": "2026-10-01T08:10:00Z", "finishedAt": "2026-10-01T08:31:40Z", "author": "marco" },
+     7	    { "id": "d-1039", "service": "api-gateway", "version": "3.15.0-rc.1", "environment": "staging", "status": "succeeded", "startedAt": "2026-10-01T07:20:00Z", "finishedAt": "2026-10-01T07:26:05Z", "author": "dana" },
+     8	    { "id": "d-1038", "service": "billing", "version": "2.9.0-rc.3", "environment": "staging", "status": "failed", "startedAt": "2026-10-01T06:45:00Z", "finishedAt": "2026-10-01T06:47:30Z", "author": "sam" },
+     9	    { "id": "d-1037", "service": "api-gateway", "version": "3.14.2", "environment": "production", "status": "succeeded", "startedAt": "2026-09-30T16:05:00Z", "finishedAt": "2026-09-30T16:12:48Z", "author": "dana" },
+    10	    { "id": "d-1036", "service": "billing", "version": "2.9.0-rc.2", "environment": "staging", "status": "succeeded", "startedAt": "2026-09-30T14:00:00Z", "finishedAt": "2026-09-30T14:04:21Z", "author": "sam" },
+    11	    { "id": "d-1035", "service": "search", "version": "1.22.2", "environment": "production", "status": "failed", "startedAt": "2026-09-30T10:30:00Z", "finishedAt": "2026-09-30T10:33:02Z", "author": "priya" },
+    12	    { "id": "d-1034", "service": "billing", "version": "2.8.0", "environment": "production", "status": "succeeded", "startedAt": "2026-09-29T11:40:00Z", "finishedAt": "2026-09-29T11:49:55Z", "author": "sam" },
+    13	    { "id": "d-1033", "service": "search", "version": "1.22.1", "environment": "production", "status": "succeeded", "startedAt": "2026-09-28T09:15:00Z", "finishedAt": "2026-09-28T09:19:37Z", "author": "priya" }
+    14	  ]
+    15	}
+=== data/services.json
+     1	{
+     2	  "generatedAt": "2026-10-01T09:30:00Z",
+     3	  "services": [
+     4	    { "name": "api-gateway", "version": "3.14.2", "environment": "production", "health": "passing", "deployedAt": "2026-09-30T16:05:00Z" },
+     5	    { "name": "billing", "version": "2.8.0", "environment": "production", "health": "degraded", "deployedAt": "2026-09-29T11:40:00Z" },
+     6	    { "name": "notifications", "version": "0.9.4", "environment": "production", "health": "failing", "deployedAt": "2026-10-01T08:50:00Z" },
+     7	    { "name": "search", "version": "1.22.1", "environment": "production", "health": "passing", "deployedAt": "2026-09-28T09:15:00Z" },
+     8	    { "name": "api-gateway", "version": "3.15.0-rc.1", "environment": "staging", "health": "passing", "deployedAt": "2026-10-01T07:20:00Z" },
+     9	    { "name": "billing", "version": "2.9.0-rc.2", "environment": "staging", "health": "passing", "deployedAt": "2026-09-30T14:00:00Z" },
+    10	    { "name": "search", "version": "1.23.0-rc.1", "environment": "staging", "health": "failing", "deployedAt": "2026-10-01T09:05:00Z" }
+    11	  ]
+    12	}
+=== public/app.css
+     1	/* Harbor dashboard styles that are not part of the template */
+     2	.filters { margin-bottom: 1rem; }
+     3	.filters select { margin-left: .5rem; }
+     4	.services { width: 100%; border-collapse: collapse; }
+     5	.services th, .services td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #ddd; }
+     6	.pill { display: inline-block; padding: 0 .5rem; border-radius: 1rem; font-size: .75rem; color: #fff; }
+     7	.pill-green { background: #2da44e; }
+     8	.pill-amber { background: #bf8700; }
+     9	.pill-red { background: #cf222e; }
+    10	.muted { color: #6e7781; }
+=== public/harbor.css
+     1	/* Harbor admin template */
+     2	:root { --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --info: #0969da; --muted: #57606a; }
+     3	body { margin: 0; font: 14px/1.5 system-ui, sans-serif; color: #1f2328; }
+     4	.ui-nav { display: flex; gap: 1rem; padding: .75rem 1.5rem; background: #24292f; }
+     5	.ui-nav a { color: #f6f8fa; text-decoration: none; }
+     6	.ui-nav a[aria-current="page"] { font-weight: 600; text-decoration: underline; }
+     7	.ui-main { padding: 1.5rem; }
+     8	.ui-page-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1rem; }
+     9	.ui-page-header h1 { margin: 0; font-size: 1.5rem; }
+    10	.ui-muted { color: var(--muted); margin: 0; }
+    11	.ui-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 1rem; }
+    12	.ui-card { border: 1px solid #d0d7de; border-radius: 6px; padding: 1rem; }
+    13	.ui-card__title { margin: 0 0 .5rem; font-size: 1rem; text-transform: capitalize; }
+    14	.ui-card__footer { margin-top: .75rem; }
+    15	.ui-table { width: 100%; border-collapse: collapse; }
+    16	.ui-table th, .ui-table td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #d0d7de; }
+    17	.ui-table th a { color: inherit; }
+    18	.ui-filter-bar { display: flex; gap: 1rem; margin-bottom: 1rem; }
+    19	.ui-field { display: flex; flex-direction: column; gap: .25rem; }
+    20	.ui-field__label { font-size: .75rem; color: var(--muted); }
+    21	.ui-select { padding: .25rem .5rem; }
+    22	.ui-chip { display: inline-block; padding: 0 .5rem; border-radius: 1rem; font-size: .75rem; color: #fff; }
+    23	.ui-chip--ok { background: var(--ok); }
+    24	.ui-chip--warn { background: var(--warn); }
+    25	.ui-chip--bad { background: var(--bad); }
+    26	.ui-chip--info { background: var(--info); }
+    27	.ui-chip--muted { background: var(--muted); }
+    28	.ui-empty { padding: 2rem; text-align: center; color: var(--muted); }
+    29	.ui-empty__title { font-weight: 600; margin: 0; }
+=== public/harbor.js
+     1	// Submits a filter bar's form when one of its auto-submit fields changes.
+     2	document.addEventListener('change', (event) => {
+     3	  const field = event.target.closest('[data-autosubmit]');
+     4	  if (field && field.form) field.form.submit();
+     5	});
+=== src/data.js
+     1	import { readFile } from 'node:fs/promises';
+     2	import { join } from 'node:path';
+     3	import { fileURLToPath } from 'node:url';
+     4	
+     5	const DATA_DIR = fileURLToPath(new URL('../data/', import.meta.url));
+     6	
+     7	// The deploy pipeline writes these snapshots every minute; the dashboard only
+     8	// reads them.
+     9	export async function readSnapshot(name, dir = DATA_DIR) {
+    10	  return JSON.parse(await readFile(join(dir, `${name}.json`), 'utf8'));
+    11	}
+=== src/layout.js
+     1	import { esc } from './ui/index.js';
+     2	
+     3	const NAV = [
+     4	  { href: '/', label: 'Overview' },
+     5	  { href: '/services', label: 'Services' },
+     6	];
+     7	
+     8	export function layout({ title, active, body }) {
+     9	  const nav = NAV.map((item) => {
+    10	    const current = item.href === active ? ' aria-current="page"' : '';
+    11	    return `<a href="${item.href}"${current}>${esc(item.label)}</a>`;
+    12	  }).join('');
+    13	  return `<!doctype html>
+    14	<html lang="en">
+    15	<head>
+    16	<meta charset="utf-8">
+    17	<title>${esc(title)} · Harbor</title>
+    18	<link rel="stylesheet" href="/public/harbor.css">
+    19	<link rel="stylesheet" href="/public/app.css">
+    20	<script src="/public/harbor.js" defer></script>
+    21	</head>
+    22	<body>
+    23	<nav class="ui-nav">${nav}</nav>
+    24	<main class="ui-main">
+    25	${body}
+    26	</main>
+    27	</body>
+    28	</html>`;
+    29	}
+=== src/server.js
+     1	import { readFile } from 'node:fs/promises';
+     2	import { createServer } from 'node:http';
+     3	import { extname, join } from 'node:path';
+     4	import { fileURLToPath } from 'node:url';
+     5	import { readSnapshot } from './data.js';
+     6	import { layout } from './layout.js';
+     7	import { renderOverview } from './pages/overview.js';
+     8	import { renderServices } from './pages/services.js';
+     9	import { pageHeader } from './ui/index.js';
+    10	
+    11	const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
+    12	const TYPES = { '.css': 'text/css', '.js': 'text/javascript' };
+    13	
+    14	const ROUTES = {
+    15	  '/': { title: 'Overview', snapshot: 'services', render: renderOverview },
+    16	  '/services': { title: 'Services', snapshot: 'services', render: renderServices },
+    17	};
+    18	
+    19	// Resolves one request to a response. Kept apart from the http server so
+    20	// tests can call it directly.
+    21	export async function handle(url, { dataDir } = {}) {
+    22	  const { pathname, searchParams } = new URL(url, 'http://harbor.local');
+    23	  if (pathname.startsWith('/public/')) return serveStatic(pathname.slice('/public/'.length));
+    24	  const route = ROUTES[pathname];
+    25	  if (!route) return page(404, 'Not found', '<h1>Not found</h1>', pathname);
+    26	  let snapshot;
+    27	  try {
+    28	    snapshot = await readSnapshot(route.snapshot, dataDir);
+    29	  } catch {
+    30	    // The pipeline rewrites snapshots in place, so a read can fail for a
+    31	    // moment. Say so instead of crashing; the next refresh usually works.
+    32	    const body = pageHeader({
+    33	      title: route.title,
+    34	      subtitle: 'Snapshot unavailable, try again in a minute.',
+    35	    });
+    36	    return page(503, route.title, body, pathname);
+    37	  }
+    38	  return page(200, route.title, route.render(snapshot, Object.fromEntries(searchParams)), pathname);
+    39	}
+    40	
+    41	function page(status, title, body, active) {
+    42	  return { status, type: 'text/html; charset=utf-8', body: layout({ title, active, body }) };
+    43	}
+    44	
+    45	async function serveStatic(name) {
+    46	  const type = TYPES[extname(name)];
+    47	  if (name.includes('..') || !type) return { status: 404, type: 'text/plain', body: 'Not found' };
+    48	  try {
+    49	    return { status: 200, type, body: await readFile(join(PUBLIC_DIR, name), 'utf8') };
+    50	  } catch {
+    51	    return { status: 404, type: 'text/plain', body: 'Not found' };
+    52	  }
+    53	}
+    54	
+    55	if (process.argv[1] === fileURLToPath(import.meta.url)) {
+    56	  const port = Number(process.env.PORT ?? 3000);
+    57	  createServer(async (req, res) => {
+    58	    const out = await handle(req.url);
+    59	    res.writeHead(out.status, { 'content-type': out.type });
+    60	    res.end(out.body);
+    61	  }).listen(port, () => console.log(`harbor on http://localhost:${port}`));
+    62	}
+=== src/pages/overview.js
+     1	import { card, pageHeader, statusChip } from '../ui/index.js';
+     2	
+     3	// One card per environment, counting the services that are not passing their
+     4	// health checks.
+     5	export function renderOverview(snapshot) {
+     6	  const environments = [...new Set(snapshot.services.map((s) => s.environment))].sort();
+     7	  const cards = environments.map((env) => {
+     8	    const services = snapshot.services.filter((s) => s.environment === env);
+     9	    const unhealthy = services.filter((s) => s.health !== 'passing').length;
+    10	    const chip =
+    11	      unhealthy === 0
+    12	        ? statusChip('all passing', 'ok')
+    13	        : statusChip(`${unhealthy} not passing`, 'bad');
+    14	    return card({
+    15	      title: env,
+    16	      body: `<p>${services.length} services</p>${chip}`,
+    17	      footer: `<a href="/services?env=${encodeURIComponent(env)}">View services</a>`,
+    18	    });
+    19	  });
+    20	  return `${pageHeader({ title: 'Overview', subtitle: `Snapshot ${snapshot.generatedAt}` })}
+    21	<div class="ui-grid">
+    22	${cards.join('\n')}
+    23	</div>`;
+    24	}
+=== src/pages/services.js
+     1	// Services list. Filter with ?env=production|staging, sort with
+     2	// ?sort=name|deployedAt (newest deploy first).
+     3	const ENVIRONMENTS = ['production', 'staging'];
+     4	
+     5	export function renderServices(snapshot, query) {
+     6	  const env = ENVIRONMENTS.includes(query.env) ? query.env : 'all';
+     7	  const sort = query.sort === 'deployedAt' ? 'deployedAt' : 'name';
+     8	
+     9	  let services = snapshot.services;
+    10	  if (env !== 'all') services = services.filter((s) => s.environment === env);
+    11	  services = [...services].sort(
+    12	    sort === 'name'
+    13	      ? (a, b) => a.name.localeCompare(b.name) || a.environment.localeCompare(b.environment)
+    14	      : (a, b) => b.deployedAt.localeCompare(a.deployedAt),
+    15	  );
+    16	
+    17	  const options = ['all', ...ENVIRONMENTS]
+    18	    .map((e) => {
+    19	      const selected = e === env ? ' selected' : '';
+    20	      return `<option value="${e}"${selected}>${e === 'all' ? 'All environments' : e}</option>`;
+    21	    })
+    22	    .join('');
+    23	
+    24	  const rows = services
+    25	    .map(
+    26	      (s) => `<tr>
+    27	  <td>${escapeHtml(s.name)}</td>
+    28	  <td>${escapeHtml(s.version)}</td>
+    29	  <td>${escapeHtml(s.environment)}</td>
+    30	  <td><span class="pill ${healthClass(s.health)}">${escapeHtml(s.health)}</span></td>
+    31	  <td>${escapeHtml(s.deployedAt)}</td>
+    32	</tr>`,
+    33	    )
+    34	    .join('\n');
+    35	
+    36	  const list =
+    37	    services.length === 0
+    38	      ? '<p class="muted">No services in this environment.</p>'
+    39	      : `<table class="services">
+    40	<thead><tr>
+    41	  <th><a href="?env=${env}&amp;sort=name">Name</a></th>
+    42	  <th>Version</th>
+    43	  <th>Environment</th>
+    44	  <th>Health</th>
+    45	  <th><a href="?env=${env}&amp;sort=deployedAt">Deployed</a></th>
+    46	</tr></thead>
+    47	<tbody>
+    48	${rows}
+    49	</tbody>
+    50	</table>`;
+    51	
+    52	  return `<h1>Services</h1>
+    53	<form method="get" action="/services" class="filters">
+    54	  <label>Environment
+    55	    <select name="env" onchange="this.form.submit()">${options}</select>
+    56	  </label>
+    57	  <input type="hidden" name="sort" value="${sort}">
+    58	</form>
+    59	${list}`;
+    60	}
+    61	
+    62	function healthClass(health) {
+    63	  if (health === 'passing') return 'pill-green';
+    64	  if (health === 'degraded') return 'pill-amber';
+    65	  return 'pill-red';
+    66	}
+    67	
+    68	function escapeHtml(value) {
+    69	  return String(value)
+    70	    .replace(/&/g, '&amp;')
+    71	    .replace(/</g, '&lt;')
+    72	    .replace(/>/g, '&gt;')
+    73	    .replace(/"/g, '&quot;');
+    74	}
+=== src/ui/card.js
+     1	import { esc } from './escape.js';
+     2	
+     3	/**
+     4	 * Content card.
+     5	 *
+     6	 * @param {{title: string, body: string, footer?: string}} opts `body` and
+     7	 *   `footer` are trusted HTML.
+     8	 * @returns {string}
+     9	 */
+    10	export function card({ title, body, footer = '' }) {
+    11	  const foot = footer ? `<footer class="ui-card__footer">${footer}</footer>` : '';
+    12	  return `<section class="ui-card"><h2 class="ui-card__title">${esc(title)}</h2><div class="ui-card__body">${body}</div>${foot}</section>`;
+    13	}
+=== src/ui/chip.js
+     1	import { esc } from './escape.js';
+     2	
+     3	const TONES = new Set(['ok', 'warn', 'bad', 'info', 'muted']);
+     4	
+     5	/**
+     6	 * Status chip. Map your domain's states to a tone at the call site.
+     7	 *
+     8	 * @param {string} label
+     9	 * @param {'ok' | 'warn' | 'bad' | 'info' | 'muted'} [tone]
+    10	 * @returns {string}
+    11	 */
+    12	export function statusChip(label, tone = 'muted') {
+    13	  const t = TONES.has(tone) ? tone : 'muted';
+    14	  return `<span class="ui-chip ui-chip--${t}">${esc(label)}</span>`;
+    15	}
+=== src/ui/empty-state.js
+     1	import { esc } from './escape.js';
+     2	
+     3	/**
+     4	 * Placeholder for a list or panel with nothing to show.
+     5	 *
+     6	 * @param {{title: string, body?: string}} opts `body` is trusted HTML.
+     7	 * @returns {string}
+     8	 */
+     9	export function emptyState({ title, body = '' }) {
+    10	  const more = body ? `<div class="ui-empty__body">${body}</div>` : '';
+    11	  return `<div class="ui-empty"><p class="ui-empty__title">${esc(title)}</p>${more}</div>`;
+    12	}
+=== src/ui/escape.js
+     1	// Escapes text for HTML element content and quoted attribute values.
+     2	export function esc(value) {
+     3	  return String(value ?? '')
+     4	    .replaceAll('&', '&amp;')
+     5	    .replaceAll('<', '&lt;')
+     6	    .replaceAll('>', '&gt;')
+     7	    .replaceAll('"', '&quot;')
+     8	    .replaceAll("'", '&#39;');
+     9	}
+=== src/ui/filter-bar.js
+     1	import { esc } from './escape.js';
+     2	
+     3	/**
+     4	 * A GET form for a page's filters. `fields` is trusted HTML, usually
+     5	 * `selectField` output; public/harbor.js submits the form when a field marked
+     6	 * `data-autosubmit` changes. `keep` carries query state the bar should not
+     7	 * drop, such as the current sort.
+     8	 *
+     9	 * @param {object} opts
+    10	 * @param {string} opts.action
+    11	 * @param {string[]} opts.fields
+    12	 * @param {Record<string, string | undefined>} [opts.keep]
+    13	 * @returns {string}
+    14	 */
+    15	export function filterBar({ action, fields, keep = {} }) {
+    16	  const hidden = Object.entries(keep)
+    17	    .filter(([, v]) => v !== undefined && v !== '')
+    18	    .map(([k, v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`)
+    19	    .join('');
+    20	  return `<form class="ui-filter-bar" method="get" action="${esc(action)}">${fields.join('')}${hidden}</form>`;
+    21	}
+=== src/ui/index.js
+     1	// Harbor admin template components, vendored from the template. Keep local
+     2	// edits small so template updates still apply.
+     3	export { card } from './card.js';
+     4	export { statusChip } from './chip.js';
+     5	export { emptyState } from './empty-state.js';
+     6	export { esc } from './escape.js';
+     7	export { filterBar } from './filter-bar.js';
+     8	export { pageHeader } from './page-header.js';
+     9	export { selectField } from './select.js';
+    10	export { dataTable } from './table.js';
+=== src/ui/page-header.js
+     1	import { esc } from './escape.js';
+     2	
+     3	/**
+     4	 * Page title row.
+     5	 *
+     6	 * @param {{title: string, subtitle?: string, actions?: string}} opts
+     7	 *   `actions` is trusted HTML.
+     8	 * @returns {string}
+     9	 */
+    10	export function pageHeader({ title, subtitle = '', actions = '' }) {
+    11	  const sub = subtitle ? `<p class="ui-muted">${esc(subtitle)}</p>` : '';
+    12	  const act = actions ? `<div class="ui-page-header__actions">${actions}</div>` : '';
+    13	  return `<header class="ui-page-header"><div><h1>${esc(title)}</h1>${sub}</div>${act}</header>`;
+    14	}
+=== src/ui/select.js
+     1	import { esc } from './escape.js';
+     2	
+     3	/**
+     4	 * Labeled select. Inside a `filterBar`, changing it submits the bar's form.
+     5	 *
+     6	 * @param {object} opts
+     7	 * @param {string} opts.name Query parameter name.
+     8	 * @param {string} opts.label
+     9	 * @param {Array<{value: string, label: string}>} opts.options
+    10	 * @param {string} [opts.value] The selected value.
+    11	 * @returns {string}
+    12	 */
+    13	export function selectField({ name, label, options, value }) {
+    14	  const items = options
+    15	    .map((o) => {
+    16	      const selected = o.value === value ? ' selected' : '';
+    17	      return `<option value="${esc(o.value)}"${selected}>${esc(o.label)}</option>`;
+    18	    })
+    19	    .join('');
+    20	  return `<label class="ui-field"><span class="ui-field__label">${esc(label)}</span><select name="${esc(name)}" class="ui-select" data-autosubmit>${items}</select></label>`;
+    21	}
+=== src/ui/table.js
+     1	import { esc } from './escape.js';
+     2	
+     3	/**
+     4	 * Data table.
+     5	 *
+     6	 * @param {object} opts
+     7	 * @param {Array<{key: string, label: string, sortable?: boolean,
+     8	 *   render?: (row: object) => string, value?: (row: object) => unknown}>} opts.columns
+     9	 *   `render` returns trusted HTML for the cell; without it the cell shows the
+    10	 *   escaped `row[key]`. `value` is what sorting compares (default `row[key]`).
+    11	 * @param {object[]} opts.rows
+    12	 * @param {{key: string, dir: 'asc' | 'desc'}} [opts.sort] The active sort; rows
+    13	 *   are sorted by it.
+    14	 * @param {(key: string, dir: 'asc' | 'desc') => string} [opts.sortHref] Link for
+    15	 *   a sortable header. Without it, headers are plain text.
+    16	 * @param {string} [opts.empty] Trusted HTML shown instead of the table when
+    17	 *   there are no rows.
+    18	 * @returns {string}
+    19	 */
+    20	export function dataTable({
+    21	  columns,
+    22	  rows,
+    23	  sort,
+    24	  sortHref,
+    25	  empty = '<p class="ui-muted">Nothing to show.</p>',
+    26	}) {
+    27	  if (rows.length === 0) return empty;
+    28	  const sorted = sort ? sortRows(rows, columns, sort) : rows;
+    29	  const head = columns.map((col) => headerCell(col, sort, sortHref)).join('');
+    30	  const body = sorted
+    31	    .map((row) => {
+    32	      const cells = columns
+    33	        .map((col) => `<td>${col.render ? col.render(row) : esc(row[col.key])}</td>`)
+    34	        .join('');
+    35	      return `<tr>${cells}</tr>`;
+    36	    })
+    37	    .join('\n');
+    38	  return `<table class="ui-table">
+    39	<thead><tr>${head}</tr></thead>
+    40	<tbody>
+    41	${body}
+    42	</tbody>
+    43	</table>`;
+    44	}
+    45	
+    46	function headerCell(col, sort, sortHref) {
+    47	  const label = esc(col.label);
+    48	  if (!col.sortable || !sortHref) return `<th>${label}</th>`;
+    49	  const active = sort?.key === col.key;
+    50	  const next = active && sort.dir === 'asc' ? 'desc' : 'asc';
+    51	  const arrow = active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+    52	  const aria = active
+    53	    ? ` aria-sort="${sort.dir === 'asc' ? 'ascending' : 'descending'}"`
+    54	    : '';
+    55	  return `<th${aria}><a href="${esc(sortHref(col.key, next))}">${label}${arrow}</a></th>`;
+    56	}
+    57	
+    58	function sortRows(rows, columns, sort) {
+    59	  const col = columns.find((c) => c.key === sort.key);
+    60	  if (!col) return rows;
+    61	  const get = col.value ?? ((row) => row[col.key]);
+    62	  const factor = sort.dir === 'desc' ? -1 : 1;
+    63	  return [...rows].sort((a, b) => factor * compare(get(a), get(b)));
+    64	}
+    65	
+    66	function compare(a, b) {
+    67	  if (typeof a === 'number' && typeof b === 'number') return a - b;
+    68	  return String(a ?? '').localeCompare(String(b ?? ''));
+    69	}
+=== test/server.test.js
+     1	import assert from 'node:assert/strict';
+     2	import { test } from 'node:test';
+     3	import { fileURLToPath } from 'node:url';
+     4	import { handle } from '../src/server.js';
+     5	
+     6	test('renders the services page inside the layout', async () => {
+     7	  const res = await handle('/services?env=production');
+     8	  assert.equal(res.status, 200);
+     9	  assert.match(res.body, /<title>Services · Harbor<\/title>/);
+    10	  assert.match(res.body, /aria-current="page">Services</);
+    11	  assert.match(res.body, /<td>notifications<\/td>/);
+    12	});
+    13	
+    14	test('answers 503 when the snapshot cannot be read', async () => {
+    15	  const dataDir = fileURLToPath(new URL('./no-such-dir/', import.meta.url));
+    16	  const res = await handle('/', { dataDir });
+    17	  assert.equal(res.status, 503);
+    18	  assert.match(res.body, /Snapshot unavailable/);
+    19	});
+    20	
+    21	test('answers 404 for an unknown path', async () => {
+    22	  assert.equal((await handle('/nope')).status, 404);
+    23	});
+    24	
+    25	test('serves the template assets', async () => {
+    26	  const res = await handle('/public/harbor.css');
+    27	  assert.equal(res.status, 200);
+    28	  assert.equal(res.type, 'text/css');
+    29	});
+=== test/pages/overview.test.js
+     1	import assert from 'node:assert/strict';
+     2	import { test } from 'node:test';
+     3	import { renderOverview } from '../../src/pages/overview.js';
+     4	
+     5	const snapshot = {
+     6	  generatedAt: '2026-10-01T09:30:00Z',
+     7	  services: [
+     8	    { name: 'a', version: '1', environment: 'production', health: 'failing', deployedAt: '2026-09-01T00:00:00Z' },
+     9	    { name: 'b', version: '1', environment: 'production', health: 'passing', deployedAt: '2026-09-01T00:00:00Z' },
+    10	    { name: 'a', version: '2', environment: 'staging', health: 'passing', deployedAt: '2026-09-02T00:00:00Z' },
+    11	  ],
+    12	};
+    13	
+    14	test('counts the services not passing in each environment', () => {
+    15	  const html = renderOverview(snapshot);
+    16	  assert.match(html, /ui-chip--bad">1 not passing</);
+    17	  assert.match(html, /ui-chip--ok">all passing</);
+    18	  assert.match(html, /href="\/services\?env=staging"/);
+    19	});
+=== test/pages/services.test.js
+     1	import assert from 'node:assert/strict';
+     2	import { test } from 'node:test';
+     3	import { renderServices } from '../../src/pages/services.js';
+     4	
+     5	const snapshot = {
+     6	  generatedAt: '2026-10-01T09:30:00Z',
+     7	  services: [
+     8	    { name: 'billing', version: '2.8.0', environment: 'production', health: 'failing', deployedAt: '2026-09-29T11:40:00Z' },
+     9	    { name: 'api', version: '3.1.0', environment: 'production', health: 'passing', deployedAt: '2026-09-30T16:05:00Z' },
+    10	  ],
+    11	};
+    12	
+    13	test('lists services by name by default', () => {
+    14	  const html = renderServices(snapshot, {});
+    15	  assert.ok(html.indexOf('<td>api</td>') < html.indexOf('<td>billing</td>'));
+    16	});
+    17	
+    18	test('sorts newest deploy first', () => {
+    19	  const html = renderServices(snapshot, { sort: 'deployedAt' });
+    20	  assert.ok(html.indexOf('<td>api</td>') < html.indexOf('<td>billing</td>'));
+    21	  assert.match(html, /<input type="hidden" name="sort" value="deployedAt">/);
+    22	});
+    23	
+    24	test('colors health', () => {
+    25	  assert.match(renderServices(snapshot, {}), /<span class="pill pill-red">failing<\/span>/);
+    26	});
+    27	
+    28	test('filters by environment and says when none match', () => {
+    29	  const html = renderServices(snapshot, { env: 'staging' });
+    30	  assert.match(html, /<option value="staging" selected>/);
+    31	  assert.match(html, /No services in this environment\./);
+    32	  assert.doesNotMatch(html, /<table/);
+    33	});
+    34	
+    35	test('falls back to all environments for an unknown env', () => {
+    36	  assert.match(renderServices(snapshot, { env: 'moon' }), /<option value="all" selected>/);
+    37	});
+=== test/ui/chip.test.js
+     1	import assert from 'node:assert/strict';
+     2	import { test } from 'node:test';
+     3	import { emptyState, statusChip } from '../../src/ui/index.js';
+     4	
+     5	test('statusChip uses the tone class', () => {
+     6	  assert.equal(statusChip('ok', 'ok'), '<span class="ui-chip ui-chip--ok">ok</span>');
+     7	});
+     8	
+     9	test('statusChip falls back to muted for an unknown tone', () => {
+    10	  assert.match(statusChip('x', 'purple'), /ui-chip--muted/);
+    11	});
+    12	
+    13	test('emptyState escapes its title', () => {
+    14	  assert.match(emptyState({ title: 'a < b' }), /a &lt; b/);
+    15	});
+=== test/ui/select.test.js
+     1	import assert from 'node:assert/strict';
+     2	import { test } from 'node:test';
+     3	import { filterBar, selectField } from '../../src/ui/index.js';
+     4	
+     5	test('marks the selected option', () => {
+     6	  const html = selectField({
+     7	    name: 'env',
+     8	    label: 'Environment',
+     9	    options: [
+    10	      { value: '', label: 'All' },
+    11	      { value: 'staging', label: 'staging' },
+    12	    ],
+    13	    value: 'staging',
+    14	  });
+    15	  assert.match(html, /<select name="env" class="ui-select" data-autosubmit>/);
+    16	  assert.match(html, /<option value="staging" selected>staging<\/option>/);
+    17	  assert.match(html, /<option value="">All<\/option>/);
+    18	});
+    19	
+    20	test('filterBar carries kept query values in hidden inputs', () => {
+    21	  const html = filterBar({ action: '/x', fields: ['<i>f</i>'], keep: { sort: 'name', dir: '' } });
+    22	  assert.match(html, /^<form class="ui-filter-bar" method="get" action="\/x"><i>f<\/i>/);
+    23	  assert.match(html, /<input type="hidden" name="sort" value="name">/);
+    24	  assert.doesNotMatch(html, /name="dir"/);
+    25	});
+=== test/ui/table.test.js
+     1	import assert from 'node:assert/strict';
+     2	import { test } from 'node:test';
+     3	import { dataTable } from '../../src/ui/table.js';
+     4	
+     5	const columns = [
+     6	  { key: 'name', label: 'Name', sortable: true },
+     7	  { key: 'count', label: 'Count', sortable: true },
+     8	];
+     9	const rows = [
+    10	  { name: 'beta', count: 2 },
+    11	  { name: 'alpha', count: 10 },
+    12	];
+    13	
+    14	test('sorts rows by the active sort', () => {
+    15	  const html = dataTable({ columns, rows, sort: { key: 'count', dir: 'desc' } });
+    16	  assert.ok(html.indexOf('alpha') < html.indexOf('beta'));
+    17	});
+    18	
+    19	test('links sortable headers and flips the active direction', () => {
+    20	  const html = dataTable({
+    21	    columns,
+    22	    rows,
+    23	    sort: { key: 'name', dir: 'asc' },
+    24	    sortHref: (key, dir) => `?sort=${key}&dir=${dir}`,
+    25	  });
+    26	  assert.match(html, /<th aria-sort="ascending"><a href="\?sort=name&amp;dir=desc">Name ▲<\/a><\/th>/);
+    27	  assert.match(html, /<a href="\?sort=count&amp;dir=asc">Count<\/a>/);
+    28	});
+    29	
+    30	test('shows the empty content instead of a table when there are no rows', () => {
+    31	  assert.equal(dataTable({ columns, rows: [], empty: '<p>none</p>' }), '<p>none</p>');
+    32	});
+    33	
+    34	test('escapes cell text unless the column renders it', () => {
+    35	  const html = dataTable({
+    36	    columns: [
+    37	      { key: 'name', label: 'Name' },
+    38	      { key: 'n', label: 'N', render: (r) => `<b>${r.n}</b>` },
+    39	    ],
+    40	    rows: [{ name: '<script>', n: 1 }],
+    41	  });
+    42	  assert.match(html, /&lt;script&gt;/);
+    43	  assert.match(html, /<b>1<\/b>/);
+    44	});
