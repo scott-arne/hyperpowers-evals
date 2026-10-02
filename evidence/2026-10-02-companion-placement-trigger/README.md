@@ -293,4 +293,91 @@ archiving. Each time:
 
 ## Results
 
-Pending.
+**The fix holds.** With db33b7e, every session started the companion: 10 of
+10, against stage 1's 5 of 10 (one-sided Fisher p 0.016). The composed final
+was also 10 of 10, so the guard separates as well (p 0.016). Per the
+pre-registered consequence, db33b7e is proposed for the release branch
+`external-workflow-adoption` with this evidence, and BACKLOG item 1 closes
+when the human partner approves it.
+
+| Treatment, db33b7e | Started (`tool-arg-match`) | Composed final | `brainstorming` skill-called | Compaction in the window | Reading |
+|---|---|---|---|---|---|
+| `brainstorming-bounded-companion-after-compaction` | 10/10 | 10/10 | 10/10 | 10/10 | separates from stage 1: the fix holds |
+
+No extension: the count did not land on 7, 8 or 9 of 10, and
+`manifest-extend.tsv` was not written.
+
+**Manipulation check.** A compaction landed in the window in all 10
+sessions, each of which compacted two or three times in all. None missed, so
+the reading stands.
+
+**Readouts, with no reading attached.** From `tally.txt`:
+- The last summary before the decision point named the companion in 10 of
+  10, as in stage 1.
+- `visual-companion.md` was read in 10 of 10.
+- 1 of 10 called `AskUserQuestion` before its first `start-server.sh`:
+  `132948Z-63db`, which asked what the table should be narrowed by, then
+  opened the companion on placements.
+- Every counted session ran Claude Code 2.1.287 on `claude-opus-5-5` alone.
+
+**By hand** (`handread.md`).
+- **First screens.** Every first screen asked where the filters go, as three
+  or four wireframed placements. Eight showed placements only. Two
+  (`134009Z-bd65`, `140808Z-e4f1`) also offered the first placement again
+  with a "Failed sign-ins" shortcut added, so they show both. None showed
+  controls alone. Several said outright that the controls are held fixed:
+  "Only where they sit changes" (`134945Z-7b62`), "the question is
+  placement" (`140323Z-8135`).
+- **Path.** Nine announced the bounded path: two before the start, seven in
+  the turn that started the companion, all before the operator's first
+  reply. `134945Z-7b62` named none. In stage 1, two of ten announced a path.
+- **Permission.** No session asked permission to open the companion. The
+  only human message before each start was the brief.
+- Nine of the ten made the placement their first question.
+
+**What this changes in the Question's account.** The two sentences changed
+which question the sessions posed first. In stage 1, the five failures
+placed the filters without offering the placement as a choice. Here, every
+session put the placement on screen before presenting a design. The
+never-open and asks-to-stop rules stayed inside the re-attach, but this
+campaign does not exercise them: no session was asked to stop, and the
+change always puts something on a page.
+
+**Grader.** Both row logs record `gauntlet_agent_model=claude-opus-5-5`.
+Each archived `result.json` records `config.model` as `claude-opus-5-5`, in
+all 10 counted runs.
+
+**Host state outside the run directory.** The host `/tmp` listing taken
+before the batch was compared with one taken after it. Eight new entries:
+- `/tmp/activity-check` (`132948Z-63db`) and `/tmp/actcheck`
+  (`132948Z-d94d`), headless Chrome checks of the built page. Each was
+  first used at 13:38Z to 13:39Z, after its session's companion start
+  (13:33:16Z and 13:31:18Z). They are not archived.
+- `verify-static.out`, `test-policy.out`, `vs2.out`, `tp2.out` and
+  `proxy_check.mjs`: output from an unrelated project's test runs on the
+  same host. No run archive names them.
+- `zeb_def_ipc_94812`: an IPC socket, named by no run archive.
+
+No session touched the host `/tmp` before its decision point, so the primary
+measure is not affected. No session left a Chrome profile in its throwaway
+home.
+
+**Runs.**
+- One batch: 2 rows of `--repeat 5`, 10 sessions, 2 concurrent. Both rows'
+  `trials:` lines read `PPPPP`.
+- The stamp was written at 13:29:36Z, the rows launched at 13:29:47Z, and
+  the last `DONE` came at 14:23:59Z. Both row logs record
+  `claude_version_after=2.1.287`.
+- There were no grader voids, setup voids, version voids or indeterminates,
+  so no replacement rows ran.
+- The mutation checks passed before the batch, after the counted sessions and
+  after archiving. No file in the worktree outside `.git` was newer than the
+  stamp, `HEAD` stayed at db33b7e, and `git status --short` stayed empty.
+- `tally.txt` is `tally.py` over the archive.
+
+**What this does not show.** The Limits above stand. Over-triggering is
+unmeasured: whether the new sentence opens the companion on a change that
+puts nothing on a page, or on a command-line tool's output, is not tested.
+The default window is not re-measured, so whether the fix also lifts the
+twin's 4 of 10 is not known. The control is historical (stage 1, about six
+hours earlier on the same pins).
