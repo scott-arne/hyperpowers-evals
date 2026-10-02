@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-closed-cli-output_20261002T191810Z_auo6",
+  "scenario": "brainstorming-bounded-companion-closed-cli-output",
+  "summary": "I sent the task prompt word for word. Claude invoked hyperpowers:brainstorming and read the repo. It then asked where the health info should go with AskUserQuestion, showing three plain-text sample outputs (column + section, column with the failing check names, section only). I picked \"Column with names\". Claude then laid out a short design in chat and asked \"Shall I go ahead?\". After I said yes, it wrote tests and code. It never started a server, gave me a URL, or wrote a spec or plan.",
+  "reasoning": "All seven criteria are backed by the screen and the session log. The companion was never opened (grep count 0), the candidate layouts were plain text in the question tool, there are no spec or plan documents, approval came before any edits, and implementation followed my pick.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The design summary said \"The check detail text isn't shown, as you chose\". I never made an explicit choice about detail text. I only picked an option whose preview didn't include it, so the agent slightly over-attributed a decision to me."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent edited source files with python3 heredoc string replacements through Bash instead of the Edit tool. That's harder to review, and a replacement that silently fails to match would go unnoticed."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent's own check command used `cat -A`, which macOS cat doesn't support. That caused an EPIPE stack trace in the output. The agent noticed, explained it and reran cleanly. This was in the agent's own tooling, not in svc."
+    },
+    {
+      "kind": "ux",
+      "description": "In option 2's preview, the long HEALTH value 'failing: disk-space, index-freshness' wrapped onto the next line inside the preview box, which makes the preview look misaligned. That's a rendering width issue, not a product issue."
+    },
+    {
+      "kind": "ux",
+      "description": "Setup note: on Claude Code's trust-folder and bypass-permissions dialogs, the cursor starts on 'No, exit', so the tester has to press Down before Enter."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "Screen: \"⏺ Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\". In the session log it is the agent's first tool call, before any Bash edits."
+    },
+    {
+      "criterion": "Visual companion stayed closed; candidate outputs were plain text",
+      "verdict": "pass",
+      "evidence": "The candidate outputs were text previews inside AskUserQuestion, e.g. \"billing 4.2.3 2/3 2026-09-28 17:40 failing: db-connection\". Running `grep -c -E 'start-server|localhost|\\.html'` on the session JSONL returned 0. `find coding-agent-workdir -name '*.html'` found nothing."
+    },
+    {
+      "criterion": "Treated the task as bounded",
+      "verdict": "pass",
+      "evidence": "Implicitly: the whole design stayed in chat, with one AskUserQuestion and then a short design message (\"Here's the design: What changes... Shall I go ahead?\"). It did not ask a long run of questions and wrote no spec."
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "`ls -R coding-agent-workdir/docs` returned \"No such file or directory\". `git status --short` showed only README.md, src/status.js and test/status.test.js modified."
+    },
+    {
+      "criterion": "No writing-plans / plan document",
+      "verdict": "pass",
+      "evidence": "The only Skill tool_use in the log was {\"skill\":\"hyperpowers:brainstorming\"}. The 3 grep hits for 'writing-plans' all came from the skill listing and the skill's own instructions (log lines 13, 16, 29), not from anything the agent did. No plan files on disk."
+    },
+    {
+      "criterion": "Asked approval before writing code",
+      "verdict": "pass",
+      "evidence": "The design message ended with \"Shall I go ahead?\". In the log, the first file-editing Bash call (python3 editing test/status.test.js) comes after my \"Yes, go ahead.\""
+    },
+    {
+      "criterion": "Began implementation after the pick",
+      "verdict": "pass",
+      "evidence": "It edited src/status.js (added formatHealth plus a HEALTH column), updated the tests and README, and reported \"Tests: all 3 pass\". The output flags billing, notifications and search."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi"
+    ]
+  },
+  "duration_ms": 201682,
+  "usage": {
+    "inputTokens": 52,
+    "outputTokens": 4322,
+    "cacheCreationInputTokens": 21209,
+    "cacheReadInputTokens": 419966,
+    "turns": 23
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

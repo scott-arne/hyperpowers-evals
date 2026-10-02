@@ -1,0 +1,40 @@
+    [38;5;153msearch   index-freshness   last update 47 min ago[39m
+  The table stays narrow and you get the full details. The output is longer, but only when something is failing.
+
+  [1mC. Details on indented lines under each failing row[0m
+  Everything sits next to its service, but rows stop being one line each, which makes the table harder to scan and to
+  [38;5;153mgrep[39m.
+
+  [1mMy recommendation is B.[0m The column answers "which services are failing?" at a glance, and the detail is what you need
+  next. Whichever you choose, the snapshot order stays the same and the existing columns don't change.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should health-check failures appear in `svc status`? → A: column with check names[39m
+
+[38;5;231m⏺[39m Going with A. Here's the design:
+
+  [1mApproach:[0m In [38;5;153msrc/status.js[39m, add a fifth [38;5;153mHEALTH[39m column to [38;5;153mCOLUMNS[39m. It shows [38;5;153mok[39m when every check is passing. Otherwise
+  it shows [38;5;153mfailing: [39m followed by the failing check names, comma-separated, in snapshot order. Because HEALTH becomes the
+  last column, the existing rule that the last column isn't padded still keeps lines free of trailing spaces. Rows stay
+  in snapshot order, and the heading and other columns don't change.
+
+  [1mEdge case:[0m if a service has no [38;5;153mhealth[39m or an empty [38;5;153mchecks[39m list, the column shows [38;5;153munknown[39m rather than [38;5;153mok[39m, so a missing
+  result never looks healthy.
+
+  [1mFiles touched:[0m
+  - [38;5;153msrc/status.js[39m: the new column plus a small helper.
+  - [38;5;153mtest/status.test.js[39m: I'll update the expected table first so it fails before the change (TDD). The new rows will be
+    [38;5;153mauth … ok[39m and [38;5;153mbilling … failing: db-connection[39m. I'll also add tests for several failing checks and for missing or
+    empty health.
+  - [38;5;153mREADME.md[39m: one line under Usage saying what the HEALTH column shows.
+
+  [1mTesting:[0m [38;5;153mnpm test[39m, then [38;5;153mnode bin/svc.js status[39m on the real snapshot to check the output.
+
+  Shall I go ahead?
+
+[38;5;246m✻[39m [38;5;246mCooked for 25s · done 12:23 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

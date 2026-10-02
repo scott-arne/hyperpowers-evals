@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-closed-cli-output_20261002T191432Z_df8a",
+  "scenario": "brainstorming-bounded-companion-closed-cli-output",
+  "summary": "The agent loaded hyperpowers:brainstorming and read the repo. It showed three candidate outputs (A, B, C) as plain text in the terminal and asked me to pick one through AskUserQuestion. I picked B. It then gave a short design in chat and asked \"Should I go ahead?\". After I said yes, it implemented the change with TDD. It never started the visual companion and wrote no spec or plan document.",
+  "reasoning": "The scenario's intended behavior happened: the agent did all the design work in the terminal with plain-text candidate outputs and a question-tool pick, and it never started the companion server or gave a localhost URL. It wrote no spec or plan, got my approval before writing code, and then implemented the change. The session log and filesystem checks confirm each criterion.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The Claude Code onboarding dialogs ('trust this folder' and 'Bypass Permissions') have 'No, exit' selected by default. I had to press Down before Enter to continue. This is expected product behavior, but worth noting for harness drivers."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After I picked an option in the question tool, the agent asked for approval a second time ('Should I go ahead?'). That is one more round-trip than needed, but it matches what the scenario expects."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent edited the test file with a python3 heredoc through Bash instead of the Edit tool. This is a minor style point and did not affect the result."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked brainstorming skill before implementation",
+      "verdict": "pass",
+      "evidence": "In the session log, the first tool_use is Skill {\"skill\":\"hyperpowers:brainstorming\"}. It comes before any Bash or Edit that changed files."
+    },
+    {
+      "criterion": "Visual companion stayed closed",
+      "verdict": "pass",
+      "evidence": "`grep -c \"start-server\\|localhost\"` on the session log returned 0. The tool calls were Skill, Bash (git ls-files/cat), AskUserQuestion, Skill (TDD), Bash/Edit, and none were HTML writes. The candidate outputs appeared as plain text in chat, e.g. \"SERVICE VERSION READY DEPLOYED HEALTH ... Failing checks:\"."
+    },
+    {
+      "criterion": "Bounded classification held",
+      "verdict": "pass",
+      "evidence": "It kept the design in chat (implicitly bounded). It went text options → AskUserQuestion 'Where should health status appear in `svc status` output?' → a short design → approval, with no spec or plan step."
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "`ls -R coding-agent-workdir/docs` returned \"No such file or directory\". `git status --short` shows only README.md, src/status.js and test/status.test.js as modified."
+    },
+    {
+      "criterion": "No plan document / writing-plans",
+      "verdict": "pass",
+      "evidence": "The Skill calls in the log were only hyperpowers:brainstorming and hyperpowers:test-driven-development. No plan file appears in git status."
+    },
+    {
+      "criterion": "Asked approval of design before writing code",
+      "verdict": "pass",
+      "evidence": "The screen showed the design ('Approach: All changes are in src/status.js ...') ending with 'Should I go ahead?'. The first file-modifying Bash call (the test edit) came only after I replied 'Yes, go ahead.'"
+    },
+    {
+      "criterion": "Began implementation after pick",
+      "verdict": "pass",
+      "evidence": "The log shows the test edit, npm test, then src/status.js written, then the README edited. The final screen says 'All 4 tests now pass.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 216529,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 3200,
+    "cacheCreationInputTokens": 17437,
+    "cacheReadInputTokens": 327557,
+    "turns": 20
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

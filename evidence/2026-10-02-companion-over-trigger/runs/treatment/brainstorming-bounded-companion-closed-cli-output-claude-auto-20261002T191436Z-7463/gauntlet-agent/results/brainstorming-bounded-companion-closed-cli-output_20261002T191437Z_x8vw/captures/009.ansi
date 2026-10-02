@@ -1,0 +1,40 @@
+    [38;5;153mnotifications   queue-depth       12408 messages waiting[39m
+    [38;5;153msearch          disk-space        91% used[39m
+    [38;5;153msearch          index-freshness   last update 47 min ago[39m
+
+  [1mC: Everything inline.[0m The column holds names and details: [38;5;153mfailing: db-connection (timeout after 5s)[39m. Nothing is
+  hidden, but rows get long and wrap in normal-width terminals.
+
+  [1mMy recommendation is B.[0m You can see at a glance which services are unhealthy, and the next question, "why?", is
+  answered in the same output without making the table hard to read. In every option the heading would also get a count,
+  e.g. [38;5;153m10 services, 3 failing health checks[39m.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should `svc status` show failing health checks? → B: column + list (Recommended)[39m
+
+[38;5;231m⏺[39m Here's the design for option B:
+
+  - [1m[38;5;153msrc/status.js[39m:[0m
+    - Add a fifth column, [38;5;153mHEALTH[39m, which shows [38;5;153mok[39m when every check passes and [38;5;153mN failing[39m otherwise. It's the last column,
+      so it stays unpadded and no line ends in spaces.
+    - Add [38;5;153mservices, N failing health checks[39m to the heading. When nothing is failing it reads [38;5;153m..., all healthy[39m.
+    - When any check is failing, add a blank line and a [38;5;153mFailing checks:[39m section after the table. It has one aligned row
+      per failing check (service, check, detail), in snapshot order. With no failures, the section is left out entirely.
+  - [1m[38;5;153mtest/status.test.js[39m:[0m
+    - Write the new tests first: the updated table and heading, the failing-checks section using the existing [38;5;153mbilling[39m
+      fixture, the section being left out when everything passes, and a service with two failing checks.
+    - Update the existing expected output to match.
+  - [1m[38;5;153mREADME.md[39m:[0m add one line saying what the HEALTH column and the failing-checks list show.
+
+  The CLI interface stays the same: no new flags and no change to the exit code. One assumption: per the README, every
+  service has a [38;5;153mhealth.checks[39m array. I won't add handling for it being missing. Showing stale results (an old [38;5;153mcheckedAt[39m)
+  is also out of scope.
+
+  Shall I go ahead and implement this?
+
+[38;5;246m✻[39m [38;5;246mChurned for 27s · done 12:16 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m
