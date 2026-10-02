@@ -41,6 +41,8 @@ No session called `AskUserQuestion`, and none sent a Deciding Together compariso
 
 **Why the scenario and the field differ.** In this scenario the layout question is the opening brief. In the field, each visual question came several questions into an architectural brainstorm in an existing application, after other choices had already gone through `AskUserQuestion`. A scenario that reproduces that order is the next step.
 
+**Correction (2026-10-02).** The paragraph above is wrong about the first visual question of each field brainstorm. In each one, the first question after the skill load was the visual one, and an auto-compaction landed between the skill load and that question. Only the later visual questions came after other `AskUserQuestion` choices. `evidence/2026-10-02-companion-after-compaction/` gives the timeline.
+
 **A harness observation.** Every transcript records three host `CLAUDE.md` files in context:
 - the human partner's private `~/.claude/CLAUDE.md`;
 - the hyperpowers repository's file;
@@ -51,5 +53,5 @@ The run directory sits under the evals clone, inside the human partner's home. T
 **Limits.**
 - **Scope.** One model, one Claude Code version, one scenario.
 - **Ceiling.** At 10 of 10 the scenario has no room for a fix to show an effect. It cannot be the failing test for this failure.
-- **What it does not test.** Whether the companion opens when the visual question arrives late, inside an architectural brainstorm, after `AskUserQuestion` has become the session's habit.
+- **What it does not test.** Whether the companion opens when the visual question arrives late, inside an architectural brainstorm, after `AskUserQuestion` has become the session's habit. (Corrected 2026-10-02: the field condition this scenario lacks is an auto-compaction between the skill load and the first visual question. See the correction above.)
 - **Earlier transcripts.** Campaigns on 2.1.261 recorded no `CLAUDE.md` in their transcripts, so whether they loaded host files cannot be read from them.

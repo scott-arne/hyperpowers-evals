@@ -219,6 +219,14 @@ arrived several questions into an architectural design conversation in an
 existing application, after other choices had already gone through
 `AskUserQuestion`. The next scenario should reproduce that order.
 
+**Correction (2026-10-02).** The paragraph above is wrong about the first
+visual question of each field brainstorm. In B, C and D the first question
+after the skill load was the visual one ("Layout", "Chain layout", "Grid
+layout"), and an auto-compaction landed between the skill load and that
+question. Only the later visual questions came after other
+`AskUserQuestion` choices. `../2026-10-02-companion-after-compaction/` gives
+the timeline and builds its scenario on that order.
+
 **Host instruction files in the sessions.** Every session's transcript
 records three host `CLAUDE.md` files in context:
 - `/Users/johnss51/.claude/CLAUDE.md`, the human partner's private global
