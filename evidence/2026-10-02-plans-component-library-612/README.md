@@ -344,4 +344,142 @@ Each check:
 
 ## Results
 
-Pending.
+**Not separated.** On 6.12.0, every counted session built the Deploys
+page's table and filter from the library: all 10 plans call both
+`dataTable(` and `selectField(` in their fenced code, the same as the
+release head's 10 of 10. The one-sided Fisher p is 1.0. That is the "not
+separated" band, and 10 of 10 excludes 6.12.0 library-use rates below 74%
+(one-sided 95%). Per the pre-registered consequence, this fixture cannot
+reproduce the field failure, and the baseline's 10 of 10 says nothing about
+whether Grounding helps. No skill change comes from this campaign. The
+human partner decides whether a harder fixture is worth building or whether
+the plan-writing part of BACKLOG item 2 closes.
+
+| Arm | Used the library (both records) | Composed final | writing-plans skill-called | Plan written | Arm check |
+|---|---|---|---|---|---|
+| v612, 871cee9 (this campaign) | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 |
+| head, c89a2b7 (baseline window) | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 |
+
+No extension: the v612 count was not 7 or 8 of 10, so `manifest-extend.tsv`
+was not written and no head session ran here. Every v612 session was read
+from its post-check records, none needed the plan-file fallback, and the
+records and plan files agree on every session.
+
+**Validity.** All 10 v612 sessions carry the `skill-called` record and
+wrote a plan, so the reading stands.
+
+**Arm check.** All 10 v612 sessions loaded writing-plans from
+`.worktrees/plans-ui-612/skills/writing-plans`, and none carries the
+Grounding instruction. `tally.py` reran the check over the baseline's 10
+head sessions: each loaded writing-plans from `plans-ui-baseline` and
+carries the instruction.
+
+**Pilot.** `221024Z-386a`. The instrument check passed: setup and every
+pre-check passed, the post phase held both library records, the plan record
+and a `skill-called` record, and the Gauntlet-Agent wrote a result. The arm
+check passed: writing-plans loaded from `plans-ui-612`, with no Grounding
+instruction. By hand, the operator sent the brief exactly in one turn with
+no cue, and the session wrote a plan. It used the library; that carries no
+reading.
+
+**Readouts, with no reading attached.** From `tally.txt`, v612 first and
+head second:
+- Plan code calls each of `dataTable(`, `selectField(`, `statusChip(`,
+  `emptyState(` and `filterBar(`: 10 of 10 in both arms.
+- Plan code writes `<table`: 10 of 10 in both. `<select`: 10 of 10 and 6 of
+  10. By hand, every one of those lines is a test assertion, not page code
+  (below).
+- Plans naming `src/ui` and `services.js`: 10 of 10 in both.
+- Grounding sections: none in v612; in the head, all 10 cite both `src/ui`
+  and `services.js`. `**Mirror:**` lines: 0 of 10 and 10 of 10. This is the
+  version difference showing up in the plan text, as expected; it did not
+  change the count.
+- Sessions that read a `src/ui/` file: 10 of 10 in both. Sessions that read
+  `services.js`, now counting a `src/` glob that expands to it: 10 of 10 in
+  both, which matches the baseline's hand count.
+- Skill calls: `hyperpowers:writing-plans` 10 in each arm. No
+  `AskUserQuestion`, no Agent dispatch, no auto compaction in either.
+- No session in either arm changed source, test, data or public files. No
+  composed final failed, so no failure hand-read was needed.
+- Every counted v612 session ran Claude Code 2.1.287 on `claude-opus-5-5`
+  alone.
+
+**By hand** (`handread.md`).
+- **Classes.** None: every v612 session used the library.
+- **Read.** All 10 read the README, every `src/ui/` file and both pages in
+  one call, before writing, the same reading pattern as the head.
+- **Grounding and Mirror.** No v612 plan has a Grounding section, a
+  `**Mirror:**` line or a `file:line` citation of a page or library file.
+  Each instead lists the library components under Task 1's `Consumes:`
+  slot, "from `src/ui/index.js`". That slot is in both versions' templates,
+  and the head's plans fill it the same way.
+- **The model page.** Three of 10 v612 plans name `overview.js` as the page
+  the new one follows (`6c13`, `ee38`, `753e`); the head's page-module
+  Mirror is `overview.js` in 10 of 10. Three v612 plans add a table mapping
+  each spec need to a library component.
+- **Services.** All 10 v612 plans tell the implementer not to copy
+  `services.js` because it predates the library, as all 10 head plans do.
+  Without Grounding, the plans still name the split.
+- **Operator and execution.** No session asked the operator anything, and
+  none began executing.
+- **Raw markup.** Every v612 plan's two raw-markup lines are test
+  assertions: the library's own `ui-select` output, copied from the
+  fixture's `test/ui/select.test.js`, and `doesNotMatch(html, /<table/)` in
+  the empty-state test.
+- **What led there.** No session names a cue. The README, the Overview page
+  and the library arrive in the same read. No plan cites the README.
+- **Not pre-registered.** Every counted session ran its plan code in a
+  `mktemp -d` scratch copy and ran the tests before handing the plan over,
+  as every head session did. Every session found codex-plugin-cc not
+  installed at 6.12.0's plan-review gate, and nine logged the skipped gate.
+
+**Grader.** All three row logs record `gauntlet_agent_model=claude-opus-5-5`.
+Each archived `result.json` records `config.model` as `claude-opus-5-5`, in
+all 10 counted runs and the pilot.
+
+**Host state outside the run directory.** No counted session wrote outside
+its run directory except through `mktemp`. The pilot wrote
+`/tmp/harbor-scratch`, `/tmp/d.js`, `/tmp/deploys.js` and
+`/tmp/deploys.test.js` in the host's `/tmp`. It moved `/tmp/d.js` into its
+scratch copy; the other three were still there after the batch. The pilot
+ran alone, so no counted session shared them. No worktree file changed (see
+the mutation checks).
+
+**Runs.**
+- **Pilot:** the stamp was written at 22:10:16Z, the row launched at
+  22:10:24Z, and it finished at 22:14:49Z. `trials: P`.
+- **Batch:** 2 rows of `--repeat 5`, 10 sessions, 2 concurrent. The stamp
+  was written at 22:15:13Z, both rows launched at 22:15:19Z, and the last
+  row finished at 22:40:45Z. Both rows' `trials:` lines read `PPPPP`, and
+  both row logs record `claude_version_after=2.1.287`.
+- There were no grader voids, setup voids, version voids or indeterminates,
+  in the pilot or the batch, so no replacement rows ran and
+  `superseded.txt` was not written.
+- The mutation checks passed at all five points in
+  `logs/mutation-checks.txt`: before and after the pilot, before the batch,
+  after the counted sessions and after archiving. No file in
+  `.worktrees/plans-ui-612` outside `.git` was newer than its stamp, `HEAD`
+  stayed at 871cee9, and `git status --short` stayed empty. No extension
+  ran, so `.worktrees/plans-ui-baseline` was not checked.
+- `tally.txt` is `tally.py` over both campaigns' archives.
+
+**What this does not show.** The Limits above stand. Concretely:
+- **Why the field failed.** On this fixture, 6.12.0's writing-plans finds
+  and uses the library every time. The field failure is not explained by
+  the 6.12.0 skill text alone on a small repository. What separates the
+  field from this fixture is untested: the field's Angular template is
+  larger, with its library spread across modules, and Harbor's library
+  arrives in the first read.
+- **Whether Grounding helps.** Both versions are at the ceiling here, so
+  this says nothing about Grounding either way. Telling them apart needs a
+  fixture where 6.12.0 fails.
+- **Other field versions.** The field sessions also ran 6.2.1, 6.6.1 and
+  6.9.2. Only 6.12.0 ran here.
+- **Different windows.** The head's 10 sessions ran in the baseline's
+  window, starting at 20:58Z, about 75 minutes before this batch, at the
+  same pins. No extension ran, so no head session ran alongside v612.
+- **Scope of the artifact.** Plain functions, not Angular components. Plans
+  only, not implementation or review.
+- **Power.** 10 of 10 excludes 6.12.0 library-use rates below 74%. At a
+  rate of 0.8, 10 of 10 would still occur with probability 0.11.
+- **Scope.** One scenario, one model, one Claude Code version, one fixture.

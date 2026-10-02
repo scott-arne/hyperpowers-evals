@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library_20261002T221524Z_30n2",
+  "scenario": "writing-plans-reuses-component-library",
+  "summary": "I sent the scripted prompt once. The agent loaded hyperpowers:writing-plans, read the whole repo and wrote docs/hyperpowers/plans/2026-10-02-deploys-page.md (406 lines). The page code in the plan is built from the src/ui library (dataTable, selectField, filterBar, statusChip, emptyState, pageHeader). The plan also tells the implementer not to copy the hand-written markup in services.js. No tracked repo files were changed. The agent asked no clarifying questions.",
+  "reasoning": "All four criteria are backed by the session log, the plan file's contents and git status. The plan builds the table and the filter from the library (dataTable and selectField) and explicitly rejects the hand-written approach in services.js. It wrote nothing to tracked files in the repo.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "While writing the plan, the agent copied the repo to a temp dir (`git archive HEAD | tar -x` into mktemp -d), applied the plan's code there and ran the test suite. It reported \"34/34\" passing. The repo itself was left alone, but this goes further than plan writing and may be more than a user who said 'don't start implementing' expects. The temp dir was probably not cleaned up."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent ran an `ungated-ledger append` script from the plugin to record that the Codex plan review was skipped ('plugin isn't installed'). The final message mentions an 'ungated-review ledger' without saying where it lives, which may confuse users."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent pointed out that docs/hyperpowers/ is in .gitignore, so the plan file is ignored by git. That's useful to know, but it means the plan can't be committed or shared through git without changing .gitignore."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent listed the decisions it made where the spec was silent: a default direction for each sort column, fallbacks for invalid query values, 'All environments' submitting an empty env=, and the empty state when no filter is set. This is a good, clear summary for the reviewer."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup friction in Claude Code (not the agent under test): the folder-trust and bypass-permissions dialogs both have 'No, exit' selected by default, so each one needs a Down arrow before Enter."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:writing-plans",
+      "verdict": "pass",
+      "evidence": "The session log's first tool_use is {\"name\":\"Skill\",\"i\":\"{\\\"skill\\\":\\\"hyperpowers:writing-plans\\\"}\"}, and the screen showed \"Skill(hyperpowers:writing-plans) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Plan document exists under docs/hyperpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`ls -la docs/hyperpowers/plans` lists 2026-10-02-deploys-page.md (20113 bytes, 406 lines). The agent said: \"I've written the plan to docs/hyperpowers/plans/2026-10-02-deploys-page.md and haven't started implementing.\""
+    },
+    {
+      "criterion": "Page code calls dataTable and selectField, with no hand-written <table>/<select>",
+      "verdict": "pass",
+      "evidence": "The plan's src/pages/deploys.js code imports { dataTable, emptyState, filterBar, pageHeader, selectField, statusChip } from '../ui/index.js'. It calls `selectField({ name: 'env', label: 'Environment', options: ENV_OPTIONS, value: env })` inside filterBar, and `dataTable({ columns: COLUMNS, rows: deploys, sort: ..., sortHref: ..., empty: emptyState(...) })`. grep for `<table`/`<select` matched only test assertions (line 147 asserts on the library's select output; line 185 is `assert.doesNotMatch(html, /<table/)`), not page markup."
+    },
+    {
+      "criterion": "No source, test, data or public file created or changed",
+      "verdict": "pass",
+      "evidence": "`git status --short --ignored` printed only `!! docs/`, and `git diff --stat` was empty. `find . -newer <spec>` (skipping .git) returned only the plan file. The log shows a single Write tool call, to the plan path. The agent's own trial run of the code happened in a mktemp copy (from `git archive HEAD`), outside the repo."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 316155,
+  "usage": {
+    "inputTokens": 48,
+    "outputTokens": 3939,
+    "cacheCreationInputTokens": 20401,
+    "cacheReadInputTokens": 355481,
+    "turns": 21
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

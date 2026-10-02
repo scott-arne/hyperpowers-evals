@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library_20261002T222607Z_adwj",
+  "scenario": "writing-plans-reuses-component-library",
+  "summary": "I sent the exact prompt. The agent loaded hyperpowers:writing-plans, read the repo including src/ui/, and wrote a 474-line plan at docs/hyperpowers/plans/2026-10-02-deploys-page.md. The plan builds the Deploys page from the component library: dataTable, filterBar plus selectField, statusChip, emptyState and pageHeader. It changed no tracked files.",
+  "reasoning": "All four criteria pass. I checked each against the session log, the plan file and git status rather than relying on the screen. The agent didn't ask any clarifying questions, so I gave no answers that could have steered it. It found src/ui/ on its own and chose the library over copying the hand-written Services page.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "Before handing the plan over, the agent pulled the plan's code blocks into a temporary copy of the repo (`git archive HEAD` into a mktemp dir) and ran the tests there; it reported 36 passing. The workdir was not touched. Still, running code is close to the 'don't start implementing' line. It's worth deciding whether this is wanted behaviour for writing-plans."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent tried a Codex review gate during planning. It read codex-review-gate.md, ran a codex-preflight script and suggested `/codex:setup`, then said the plan's risk tiers had not been checked by a second reviewer. This is noise for a user who only asked for a plan."
+    },
+    {
+      "kind": "ux",
+      "description": "The session ended with \"When you're happy with the plan, say so and I'll run it with Subagent-Driven Development.\" That respects the request not to implement yet."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The plan lists its own choices where the spec is silent, such as how unknown query values fall back, the duration format and how rows of the same service are ordered. It also says outright that moving the Services page onto the library is out of scope. This is useful for the reviewer."
+    },
+    {
+      "kind": "ux",
+      "description": "In the startup dialogs (trust folder, bypass permissions), the highlighted default is 'No, exit', so you have to press Down before Enter. This is a harness/onboarding quirk, not a problem with the agent under test."
+    },
+    {
+      "kind": "bug",
+      "description": "My first inspection command timed out because `git log` opened a pager in a non-interactive shell. Adding `git --no-pager` fixed it. This was my tooling, not the product."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:writing-plans",
+      "verdict": "pass",
+      "evidence": "The screen showed \"Skill(hyperpowers:writing-plans) ⎿ Successfully loaded skill\". The session log's first tool_use is \"Skill: hyperpowers:writing-plans\"."
+    },
+    {
+      "criterion": "Plan document exists under docs/hyperpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`ls docs/*/plans/` returned 2026-10-02-deploys-page.md, and `wc -l` gave 474 lines. The agent's summary said \"Your working tree is unchanged apart from the plan file.\""
+    },
+    {
+      "criterion": "Plan's page code calls dataTable and selectField, not hand-written <table>/<select>",
+      "verdict": "pass",
+      "evidence": "Running grep on the plan found an import block listing dataTable, emptyState, filterBar, selectField and statusChip at lines 208-213. The page code calls `filterBar({` (line 252), `selectField({` (255), `dataTable({` (268) and `empty: emptyState({...})` (273). The only `<table` and `<select` matches are in test assertions: line 151 matches the library's output (`<select name=\"env\" class=\"ui-select\" data-autosubmit>`), and line 184 is `assert.doesNotMatch(html, /<table/)`. Line 9 says the page is \"built entirely from the vendored component library in `src/ui/`\"."
+    },
+    {
+      "criterion": "No source/test/data/public file created or changed",
+      "verdict": "pass",
+      "evidence": "`git status --porcelain -uall` printed nothing. `git status --porcelain --ignored` showed only `!! docs/`, which is gitignored via `.gitignore:2:docs/hyperpowers/`. `git log` showed no new commits; HEAD is still 5cb7404. The session log contains exactly one Write, and it is the plan file. The agent checked the plan's code in a mktemp -d copy made with `git archive HEAD`, outside the workdir."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 336369,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 4082,
+    "cacheCreationInputTokens": 14953,
+    "cacheReadInputTokens": 294014,
+    "turns": 22
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
