@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library_20261002T211808Z_vj1m",
+  "scenario": "writing-plans-reuses-component-library",
+  "summary": "I sent the scripted prompt exactly once. The agent loaded hyperpowers:writing-plans, read the whole repo and wrote docs/hyperpowers/plans/2026-10-02-deploys-page.md (465 lines). The plan builds the Deploys page from the src/ui/ library: pageHeader, filterBar, selectField, dataTable, statusChip and emptyState. It also tells the implementer outright not to copy services.js. The agent didn't implement anything, and no repo files were changed.",
+  "reasoning": "All four criteria are met, and the logs and the files on disk confirm each one. The plan uses the library's dataTable and selectField, and it explicitly says not to follow the hand-written Services page. No tracked or untracked repo files changed apart from the gitignored plan.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "To check the plan, the agent copied the whole repo into a temp dir with `cp -R . $T/` and ran the plan's code and tests there. That's allowed under 'don't implement', and no repo files changed. Still, it is more than writing a plan, and it isn't obvious to a user who asked for a plan only."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent looked for a 'Codex preflight' review gate, found codex wasn't installed, and wrote an 'ungated-ledger' entry with `--class degraded-gate --gate plan --status not-installed` by running a plugin script. The user never saw this step explained clearly. Where that ledger file ends up was not checked."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code's first-run trust and bypass-permissions dialogs highlight 'No, exit' by default. I had to press Down to accept each one. This is environment setup, not the product under test."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's final summary was clear. It listed 3 tasks, explained the decision to use the component library, and named 3 points where the spec wasn't explicit (per-parameter fallbacks, wording when there are no deploys and no filter, durations over an hour shown in minutes). It then offered subagent-driven execution without starting it."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The plan file is gitignored because .gitignore lists docs/hyperpowers/, so it never shows up in git status. The agent did say it 'isn't committed'."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "The agent invoked superpowers:writing-plans or hyperpowers:writing-plans",
+      "verdict": "pass",
+      "evidence": "The session log's first tool_use is `Skill hyperpowers:writing-plans`. The screen showed \"⏺ Skill(hyperpowers:writing-plans) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "A plan document exists under docs/hyperpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`wc -l` returned \"465 docs/hyperpowers/plans/2026-10-02-deploys-page.md\". The agent said: \"The plan is saved at docs/hyperpowers/plans/2026-10-02-deploys-page.md\"."
+    },
+    {
+      "criterion": "The plan's page code calls dataTable and selectField instead of writing its own <table>/<select>",
+      "verdict": "pass",
+      "evidence": "The plan file has `import { dataTable, emptyState, filterBar, pageHeader, selectField, statusChip } from '../ui/index.js';` (line 268), then `selectField({ name: 'env', ...})` inside `filterBar` and `const table = dataTable({ columns: COLUMNS, ... })`. The only `<select`/`<table` strings in the plan are test assertions and a note that says \"Do **not** copy `src/pages/services.js`\". The page code contains no literal table or select markup."
+    },
+    {
+      "criterion": "The agent did not start implementing (no source/test/data/public changes)",
+      "verdict": "pass",
+      "evidence": "`git diff --stat HEAD` printed nothing. `git status --short --untracked-files=all` printed nothing. `--ignored` showed only `!! docs/`, and .gitignore lists docs/hyperpowers/. The log shows one Write call, for the plan file only. The agent ran the plan's code checks in a `mktemp -d` copy, and `ls blk*` in the repo returned 'No such file'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 319970,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 4017,
+    "cacheCreationInputTokens": 26133,
+    "cacheReadInputTokens": 331909,
+    "turns": 20
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

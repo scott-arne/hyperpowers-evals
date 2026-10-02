@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library_20261002T211415Z_v7gr",
+  "scenario": "writing-plans-reuses-component-library",
+  "summary": "I sent the exact prompt and nothing else. The agent loaded hyperpowers:writing-plans, read the repo and wrote docs/hyperpowers/plans/2026-10-02-deploys-page.md. The plan's code for the page builds the table and environment filter with the library's dataTable and selectField from src/ui/index.js, and it says outright that it isn't copying services.js. The agent asked no questions, said the plan was written, and didn't implement anything: git status shows no tracked or untracked changes outside the ignored docs/ folder.",
+  "reasoning": "All four criteria are met, with evidence from the session log, the plan file and git status. The agent did try its code in a scratch copy in /tmp, but it deleted that copy and never touched the repo's source, test, data or public files.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "On the folder-trust and bypass-permissions screens, 'No, exit' is selected by default, so I had to press Down before Enter on each. That's normal Claude Code behaviour, but it's a trap for anyone automating this."
+    },
+    {
+      "kind": "suggestion",
+      "description": "To check its code before writing the plan, the agent copied the whole repo to /tmp/harbor-probe, wrote the deploys page there and patched server.js with a python script. It deleted the copy afterwards and the repo was untouched, but someone asking only for a plan may not expect implementation code to be written and run anywhere. It's a grey area: the agent reported it openly ('I checked every code block by applying it to a throwaway copy of the repo')."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After writing the plan, the agent ran plugin-internal scripts from a hard-coded worktree path (/Users/.../hyperpowers/.worktrees/plans-ui-baseline/skills/requesting-code-review/scripts/codex-preflight and ungated-ledger append --class degraded-gate --gate plan). These look like a plan-review gate that fell back to a 'degraded' mode, which probably means Codex was unavailable. Whatever the ledger wrote went outside the repo; an engineer may want to confirm this is intended behaviour and that the absolute path is right."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent noted that docs/hyperpowers/ is gitignored in this repo, so the plan file can't be committed. It flagged this clearly, which was helpful."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The summary was good. It explained why it chose the library over copying services.js and listed the decisions the spec left open (sort fallback, raw ISO timestamps, how short durations display, the empty-state wording) so the reviewer can change them."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked writing-plans skill",
+      "verdict": "pass",
+      "evidence": "The first tool_use in the session log is {\"name\":\"Skill\",\"input\":\"{\\\"skill\\\":\\\"hyperpowers:writing-plans\\\"}\"}, and the screen showed 'Skill(hyperpowers:writing-plans) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "Plan document exists under docs/hyperpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`ls docs/hyperpowers/plans` returns 2026-10-02-deploys-page.md (413 lines). The agent said: 'The plan is written to docs/hyperpowers/plans/2026-10-02-deploys-page.md'."
+    },
+    {
+      "criterion": "Plan's page code uses dataTable and selectField from src/ui/, not hand-written <table>/<select>",
+      "verdict": "pass",
+      "evidence": "In the plan, the code for src/pages/deploys.js has `import { dataTable, emptyState, filterBar, pageHeader, selectField, statusChip } from '../ui/index.js';`, then `selectField({ name: 'env', label: 'Environment', ...})` and `const table = dataTable({ columns: [...], rows: deploys, sort, sortHref, empty: emptyState(...) })`. Grepping the plan for '<table' finds only a test assertion (`assert.doesNotMatch(html, /<table/)` on line 163, used for the empty state). The page code contains no <table> or <select> markup."
+    },
+    {
+      "criterion": "No source/test/data/public file created or changed",
+      "verdict": "pass",
+      "evidence": "After the run, `git status --short --ignored` shows only `!! docs/` (the ignored folder that holds the plan). `git diff --stat` and `git status --porcelain --untracked-files=all` both print nothing. The scratch copy /tmp/harbor-probe is gone: `ls` reports 'No such file or directory'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 289450,
+  "usage": {
+    "inputTokens": 48,
+    "outputTokens": 3864,
+    "cacheCreationInputTokens": 15720,
+    "cacheReadInputTokens": 275265,
+    "turns": 21
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

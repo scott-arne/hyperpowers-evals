@@ -341,4 +341,109 @@ Each check:
 
 ## Results
 
-Pending.
+**Does not reproduce.** At the release head c89a2b7, every counted session
+built the Deploys page's table and filter from the library: all 10 plans
+call both `dataTable(` and `selectField(` in their fenced code. That is the
+"does not reproduce" band, and 10 of 10 excludes library-use rates below 74%
+(one-sided 95%). Per the pre-registered consequence, no skill change comes
+from this campaign. The human partner decides whether a harder fixture is
+worth building or whether the plan-writing part of BACKLOG item 2 closes.
+
+| Control, c89a2b7 | Used the library (both records) | Composed final | writing-plans skill-called | Plan written | Reading |
+|---|---|---|---|---|---|
+| `writing-plans-reuses-component-library` | 10/10 | 10/10 | 10/10 | 10/10 | does not reproduce |
+
+No extension: the count was not 7 or 8 of 10, so `manifest-extend.tsv` was
+not written. Every session was read from its post-check records, none needed
+the plan-file fallback, and the records and plan files agree on every
+session.
+
+**Validity.** All 10 sessions carry the `skill-called` record and wrote a
+plan, so the reading stands.
+
+**Pilot.** `205233Z-d29f`. The instrument check passed: setup and every
+pre-check passed, the post phase held both library records, the plan record
+and a `skill-called` record, and the Gauntlet-Agent wrote a result. By hand,
+the operator sent the brief exactly in one turn with no cue, and the session
+wrote a plan. It used the library; that carries no reading.
+
+**Readouts, with no reading attached.** From `tally.txt`:
+- The one-sided Fisher p for a perfect fix against 10 of 10 is 1.0: on this
+  fixture a fix has no room to show.
+- Plan code calls each of `dataTable(`, `selectField(`, `statusChip(`,
+  `emptyState(` and `filterBar(` in 10 of 10.
+- Plan code writes `<table` in 10 of 10 and `<select` in 6 of 10. By hand,
+  every one of those lines is a test assertion, not page code (below).
+- Every plan names `src/ui` and `services.js`, and every Grounding section
+  cites both.
+- 10 of 10 sessions read a `src/ui/` file. `tally.py` finds `services.js`
+  read in 7 of 10 because it does not expand the `src/pages/*.js` glob; by
+  hand, all 10 read it.
+- Skill calls: `hyperpowers:writing-plans` 10. No `AskUserQuestion`, no
+  Agent dispatch, no auto compaction.
+- No session changed source, test, data or public files. No composed final
+  failed, so no failure hand-read was needed.
+- Every counted session ran Claude Code 2.1.287 on `claude-opus-5-5` alone.
+
+**By hand** (`handread.md`).
+- **Classes.** None: every session used the library.
+- **Read.** All 10 read the README, every `src/ui/` file and both pages in
+  one call, before writing.
+- **Grounding and Mirror.** All 10 Grounding sections cite `overview.js` as
+  the page built from the library, and the `src/ui/` file for each control.
+  All 10 also cite `services.js`, each time limited to its query parsing,
+  its naming or its header comment. Every page-module Mirror is
+  `overview.js`.
+- **Services.** All 10 plans tell the implementer not to copy `services.js`,
+  because it predates the library.
+- **Operator and execution.** No session asked the operator anything, and
+  none began executing.
+- **Raw markup.** The 10 `<table` lines are
+  `assert.doesNotMatch(html, /<table/)` in the empty-state test. The 6
+  `<select` lines assert the library's own `ui-select` output.
+- **What led there.** No session names a cue. The README, the Overview page
+  and the file listing arrive in the same read and cannot be told apart. No
+  plan cites the README's Layout section.
+- **Not pre-registered.** Every session, pilot included, dry-ran its plan
+  code in a scratch copy and ran the tests before handing the plan over.
+
+**Grader.** Both row logs and the pilot's log record
+`gauntlet_agent_model=claude-opus-5-5`. Each archived `result.json` records
+`config.model` as `claude-opus-5-5`, in all 10 counted runs and the pilot.
+
+**Host state outside the run directory.** Five counted sessions wrote
+scratch files in the host's `/tmp`: four `/tmp/harbor-*` copies, and one set
+of `/tmp/blk*.js` blocks. The rest used `mktemp -d`. After the batch, no
+`harbor-*` or `blk*` entry remained in `/tmp`. No worktree file changed (see
+the mutation checks).
+
+**Runs.**
+- **Pilot:** the stamp was written at 20:52:25Z, the row launched at
+  20:52:32Z, and it finished at 20:57:25Z. `trials: P`.
+- **Batch:** 2 rows of `--repeat 5`, 10 sessions, 2 concurrent. The stamp
+  was written at 20:58:10Z, both rows launched at 20:58:16Z, and the last
+  row finished at 21:24:07Z. Both rows' `trials:` lines read `PPPPP`, and
+  both row logs record `claude_version_after=2.1.287`.
+- There were no grader voids, setup voids, version voids or indeterminates,
+  in the pilot or the batch, so no replacement rows ran.
+- The mutation checks passed at all five points in
+  `logs/mutation-checks.txt`: before and after the pilot, before the batch,
+  after the counted sessions and after archiving. No file in the worktree
+  outside `.git` was newer than its stamp, `HEAD` stayed at c89a2b7, and
+  `git status --short` stayed empty.
+- `tally.txt` is `tally.py` over the archive.
+
+**What this does not show.** The Limits above stand. Concretely:
+- **The fixture is easier than the field.** Harbor is small enough to read
+  whole in one call, its file listing shows `src/ui/`, and the Overview page
+  already uses the library. Every session read all of it before writing. A
+  larger repository, where the library is not in the first read, is not
+  tested.
+- **Only the release head ran.** The field failure was on 6.12.0, whose
+  writing-plans has no Grounding section. With no 6.12.0 arm, this campaign
+  cannot tell "Grounding fixed it" from "the fixture is too easy".
+- **Scope of the artifact.** Plain functions, not Angular components. Plans
+  only, not implementation or review.
+- **Power.** 10 of 10 excludes library-use rates below 74%. At a rate of
+  0.8, 10 of 10 would still occur with probability 0.11.
+- **Scope.** One scenario, one model, one Claude Code version, one fixture.

@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library_20261002T210834Z_dvs2",
+  "scenario": "writing-plans-reuses-component-library",
+  "summary": "I sent the scripted message once and the agent asked no questions. It loaded hyperpowers:writing-plans, read the repo, and tried out its code in a throwaway copy at /tmp/harbor-proto, which it then deleted. It wrote docs/hyperpowers/plans/2026-10-02-deploys-page.md. The plan builds the page only from the src/ui components, including dataTable and selectField. It also says outright that the Services page's hand-built table and select are not the pattern to follow. The working tree had no changes.",
+  "reasoning": "All four criteria are backed by what I saw. The skill load is in the session log. The plan file exists on disk. Its page code imports dataTable and selectField from src/ui and calls both. git status shows no tracked or untracked changes outside the gitignored docs folder.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "On both the workspace-trust and bypass-permissions screens, Claude Code's default selection is 'No, exit', so a tester has to press Down before Enter. This is not caused by the plugin."
+    },
+    {
+      "kind": "suggestion",
+      "description": "While writing the plan, the agent built a full working prototype in /tmp/harbor-proto and ran the test suite there. It deleted the copy afterwards and the repo was not touched. Still, writing implementation code outside the repo goes further than the user's 'don't start implementing yet'. It also runs `cp -R .` of the whole repo into /tmp. Reviewers may want to decide whether that is acceptable."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent mentioned that the plan isn't committed because docs/hyperpowers/ is gitignored. It also said the Codex plan-review gate was skipped because codex-plugin-cc isn't installed, and that it logged the skip in an 'ungated ledger'. That's useful to know, but the ledger detail is jargon to an ordinary user."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In its summary the agent listed the gaps it filled in the spec (default sort directions, empty value for 'All environments', no sorting on Duration, 'No deploys' wording). This helps the reviewer. It closed by offering to run Subagent-Driven Development without pushing to start."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:writing-plans",
+      "verdict": "pass",
+      "evidence": "Session log 8e872821-....jsonl, first tool_use: {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:writing-plans\"}}. The screen showed \"Skill(hyperpowers:writing-plans) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Plan document exists under docs/hyperpowers/plans/ or docs/superpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`ls docs/hyperpowers/plans` → 2026-10-02-deploys-page.md (19986 bytes, 381 lines). The agent said: \"I've written the plan and saved it to docs/hyperpowers/plans/2026-10-02-deploys-page.md\"."
+    },
+    {
+      "criterion": "Plan's page code calls dataTable and selectField (no hand-written <table>/<select>)",
+      "verdict": "pass",
+      "evidence": "Plan line 193: `import { dataTable, emptyState, filterBar, pageHeader, selectField, statusChip } from '../ui/index.js';`. Line 218: `const envField = selectField({`. Line 230: `${dataTable({`. Running grep for '<table|<select' found only line 31 (the note that services.js's hand-built `<table>` 'is **not** the pattern to follow') and line 173, a test asserting `doesNotMatch(html, /<table/)` for the empty state. The page code has no raw table or select markup."
+    },
+    {
+      "criterion": "No source/test/data/public files created or changed",
+      "verdict": "pass",
+      "evidence": "`git status --porcelain --untracked-files=all` printed nothing. `--ignored` showed only `!! docs/`, which is gitignored and holds the plan. The prototype went to /tmp/harbor-proto (log: `cp -R . /tmp/harbor-proto && cd /tmp/harbor-proto ...`), and `ls /tmp/harbor-proto` now returns 'No such file or directory'. The only Write call in the log is the plan file."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 284832,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 3893,
+    "cacheCreationInputTokens": 26936,
+    "cacheReadInputTokens": 335180,
+    "turns": 20
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

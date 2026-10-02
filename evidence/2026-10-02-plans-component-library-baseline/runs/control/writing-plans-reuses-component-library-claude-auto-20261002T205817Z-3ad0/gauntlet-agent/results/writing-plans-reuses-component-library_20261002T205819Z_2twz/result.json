@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library_20261002T205819Z_2twz",
+  "scenario": "writing-plans-reuses-component-library",
+  "summary": "I sent the exact prompt from the story with no hints. The agent loaded hyperpowers:writing-plans, read the repo, tried the planned code in a scratch copy at /tmp/harbor-plan (outside the repo), and wrote docs/hyperpowers/plans/2026-10-02-deploys-page.md. The plan builds the page from src/ui/: dataTable, selectField, filterBar, statusChip, emptyState and pageHeader. It tells the implementer not to copy the hand-written Services page. It asked no clarifying questions, did not implement anything, and asked me to review the plan before execution.",
+  "reasoning": "All four criteria are backed by the session log, the plan file's contents and git status. Without any prompting, the plan built the page from the repo's own component library instead of copying the hand-written Services page, and the repo was left untouched.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "The agent made a full copy of the repo at /tmp/harbor-plan and ran the planned code and tests there before writing the plan. That is outside the repo and it says it deleted the copy, but this is a lot of side activity for a 'plan only' request. Some users may not expect code to be written and run anywhere at this stage."
+    },
+    {
+      "kind": "ux",
+      "description": "After writing the plan, the agent read the hyperpowers requesting-code-review files (codex-review-gate.md, gate-preflight.md) and ran a codex-preflight script. This extra review-gate work during planning wasn't visible as a clear step on screen."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent noted that .gitignore excludes docs/hyperpowers/, so neither the plan nor the spec is tracked by git. That may surprise a user who expects the plan to be committed."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch, the 'trust this folder' and 'Bypass Permissions' onboarding dialogs both have 'No, exit' selected by default, so pressing Enter by reflex would exit. This is a minor harness/onboarding friction, not part of the product being tested."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The plan clearly lists the decisions the spec left open: Service sort defaults to A→Z, each query value falls back independently, the first click on a sort header goes ascending because of dataTable, and Started shows the raw timestamp. That makes it easy to review."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked writing-plans skill",
+      "verdict": "pass",
+      "evidence": "The session log's first tool_use is {\"name\":\"Skill\",\"i\":\"{\\\"skill\\\":\\\"hyperpowers:writing-plans\\\"}\"}, and the screen showed \"Skill(hyperpowers:writing-plans) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Plan document exists under docs/hyperpowers/plans/ or docs/superpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`ls docs/hyperpowers/plans` shows 2026-10-02-deploys-page.md (24950 bytes, 504 lines)."
+    },
+    {
+      "criterion": "Plan's page code calls dataTable and selectField and writes no <table>/<select> markup of its own",
+      "verdict": "pass",
+      "evidence": "grep on the plan finds line 140 `import { dataTable, pageHeader, statusChip } from '../ui/index.js';`, line 156 `const table = dataTable({`, line 312 `selectField({` inside `filterBar({` at line 309, and line 330 `empty: emptyState(...)`. Line 27 says: \"Use the `src/ui/` components, not hand-rolled markup... do not copy it\" (about services.js). The only `<table` match is a test assertion: line 248 `assert.doesNotMatch(html, /<table/);`. The plan's page code has no `<select` at all."
+    },
+    {
+      "criterion": "No source/test/data/public file created or changed",
+      "verdict": "pass",
+      "evidence": "After the run, `git status --porcelain --ignored` in the workdir printed only `!! docs/` (an ignored path where the plan lives). No tracked file was modified and no untracked file outside docs/ appeared. In the session log, the code was written only under /tmp/harbor-plan, and the only Write/Edit calls were for the plan file."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 374098,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 3823,
+    "cacheCreationInputTokens": 20229,
+    "cacheReadInputTokens": 339508,
+    "turns": 20
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
