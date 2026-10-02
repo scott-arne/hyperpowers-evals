@@ -30,6 +30,8 @@ import { repoRoot } from '../src/paths.ts';
 // nothing and score it as a failure.
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'brainstorming-asks-tooling-question',
+  'brainstorming-bounded-companion-after-compaction',
+  'brainstorming-bounded-companion-default-window',
   'brainstorming-bounded-fires-approach-gate',
   'brainstorming-bounded-fires-visual-companion',
   'brainstorming-router-escalates-b1-userid-param',
