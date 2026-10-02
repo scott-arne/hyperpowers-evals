@@ -1,0 +1,39 @@
+// Throwaway check, not committed. Run with TZ set to exercise local weeks.
+const assert = require('node:assert/strict');
+const path = process.argv[2];
+const f = require(path + '/public/activity-filters.js');
+global.window = {};
+require(path + '/public/activity-data.js');
+const events = window.ACTIVITY_EVENTS;
+
+const count = (e, w) => events.filter((ev) => f.matches(ev, e, w)).length;
+
+assert.equal(count('all', 'any'), events.length);
+assert.equal(count('group:failed', 'any'), events.filter((e) => e.type === 'Sign-in failed').length);
+assert.equal(count('type:Sign-in failed', 'any'), count('group:failed', 'any'));
+const sec = ['Password changed', 'Two-factor enabled', 'Email change requested'];
+assert.equal(count('group:security', 'any'), events.filter((e) => sec.includes(e.type)).length);
+assert.equal(count('type:Settings updated', 'any'), 4);
+
+assert.equal(f.firstDayOfWeek('en-US'), 0);
+assert.equal(f.firstDayOfWeek('en-GB'), 1);
+
+// Monday-start weeks: Sep 21 00:00 local starts a week.
+const weeks = f.weeksInWindow(new Date(2026, 9, 2, 12), 90, 1);
+assert.equal(weeks[0].key, '2026-09-28');
+assert.ok(weeks.length >= 13 && weeks.length <= 14, String(weeks.length));
+assert.ok(weeks.every((w, i) => i === 0 || weeks[i - 1].start > w.start));
+
+// Each event lands in exactly one listed week; week counts sum to the total.
+const total = weeks.reduce((n, w) => n + count('all', w.key), 0);
+assert.equal(total, events.length);
+
+// Boundary: an event at local week start is in that week, not the previous one.
+const boundary = { when: new Date(2026, 8, 21, 0, 0).toISOString(), type: 'Sign-in' };
+assert.ok(f.matches(boundary, 'all', '2026-09-21'));
+assert.ok(!f.matches(boundary, 'all', '2026-09-14'));
+
+// Combined filters.
+assert.equal(count('group:failed', '2026-09-21'),
+  events.filter((e) => e.type === 'Sign-in failed' && f.matches(e, 'all', '2026-09-21')).length);
+console.log(process.env.TZ, 'ok', { failed: count('group:failed', 'any'), security: count('group:security', 'any'), weeks: weeks.length });

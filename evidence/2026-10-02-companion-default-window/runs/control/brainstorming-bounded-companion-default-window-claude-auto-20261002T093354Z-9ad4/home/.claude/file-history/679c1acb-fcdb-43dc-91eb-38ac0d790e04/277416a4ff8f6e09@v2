@@ -1,0 +1,90 @@
+// Throwaway browser pass over the activity page via the DevTools protocol.
+import { spawn } from 'node:child_process';
+import { writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const page = 'file://' + process.argv[2] + '/public/activity.html';
+const out = '/tmp/activity-shots';
+const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
+  '--headless=new', '--remote-debugging-port=9333', '--no-first-run',
+  `--user-data-dir=${mkdtempSync(join(tmpdir(), 'cdp-'))}`, 'about:blank',
+], { stdio: 'ignore' });
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let targets;
+for (let i = 0; i < 50; i++) {
+  try { targets = await (await fetch('http://127.0.0.1:9333/json')).json(); break; } catch { await sleep(200); }
+}
+const ws = new WebSocket(targets.find((t) => t.type === 'page').webSocketDebuggerUrl);
+await new Promise((r) => ws.addEventListener('open', r));
+let id = 0; const pending = new Map(); const logs = [];
+ws.addEventListener('message', (m) => {
+  const msg = JSON.parse(m.data);
+  if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
+  if (msg.method === 'Runtime.exceptionThrown') logs.push('EXCEPTION ' + JSON.stringify(msg.params.exceptionDetails.exception?.description));
+  if (msg.method === 'Runtime.consoleAPICalled') logs.push('console ' + msg.params.args.map((a) => a.value).join(' '));
+});
+const send = (method, params = {}) => new Promise((r) => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+const evalJs = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true })).result.result.value;
+const shot = async (name) => { const r = await send('Page.captureScreenshot', { captureBeyondViewport: true }); writeFileSync(`${out}/${name}.png`, Buffer.from(r.result.data, 'base64')); };
+const key = async (k, code, keyCode) => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: k, code, windowsVirtualKeyCode: keyCode }); };
+const load = async () => { await send('Page.navigate', { url: page }); await sleep(800); };
+const state = () => evalJs(`({status: document.getElementById('activity-status').textContent,
+  visible: [...document.querySelectorAll('tbody tr')].filter(r => !r.hidden).map(r => r.cells[0].textContent.slice(0,10) + ' ' + r.cells[1].textContent), week: document.getElementById('filter-week').value,
+  formHidden: document.getElementById('activity-filters').hidden,
+  weeks: [...document.getElementById('filter-week').options].map(o => o.value + ' ' + o.text).slice(0,4)})`);
+const pick = (sel, value) => evalJs(`(() => { const s = document.getElementById('${sel}'); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event('change', {bubbles: true})); return s.value; })()`);
+
+await send('Page.enable'); await send('Runtime.enable');
+await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+await send('Emulation.setTimezoneOverride', { timezoneId: 'Europe/Lisbon' });
+await send('Emulation.setLocaleOverride', { locale: 'en-GB' });
+await load();
+
+const report = {};
+report.initial = await state();
+await shot('1-initial');
+await pick('filter-event', 'group:failed'); report.failed = await state(); await shot('2-failed');
+await pick('filter-event', 'group:security'); report.security = await state();
+await pick('filter-week', '2026-09-21'); report.securityWeek = await state(); await shot('3-security-week');
+await pick('filter-week', '2026-08-03'); report.emptyWeek = await state(); await shot('4-empty-week');
+await pick('filter-event', 'type:API token used'); await pick('filter-week', 'any'); report.apiType = await state();
+
+// Keyboard only: fresh load, Tab to the event select, arrow down twice (All -> Failed -> Security).
+await load();
+await key('Tab', 'Tab', 9);
+report.focus1 = await evalJs('document.activeElement.id + " focus-visible=" + document.activeElement.matches(":focus-visible") + " outline=" + getComputedStyle(document.activeElement).outlineStyle + " " + getComputedStyle(document.activeElement).outlineWidth + " " + getComputedStyle(document.activeElement).outlineColor');
+await shot('5-keyboard-focus');
+await key('ArrowDown', 'ArrowDown', 40); await sleep(100);
+report.afterArrow = await evalJs('document.getElementById("filter-event").value + " | " + document.getElementById("activity-status").textContent');
+await key('Escape', 'Escape', 27);
+await key('Tab', 'Tab', 9);
+report.focus2 = await evalJs('document.activeElement.id');
+await key('Tab', 'Tab', 9);
+report.focus3 = await evalJs('document.activeElement.id || document.activeElement.tagName');
+
+// Accessibility tree for the selects and status.
+const ax = await send('Accessibility.getFullAXTree');
+report.ax = ax.result.nodes.filter((n) => ['combobox', 'status', 'LabelText'].includes(n.role?.value) || n.name?.value === 'Event' || n.name?.value === 'Week')
+  .map((n) => `${n.role?.value}: ${n.name?.value ?? ''}`).filter((v, i, a) => a.indexOf(v) === i);
+
+// 200% zoom equivalent and 320px reflow.
+await send('Emulation.setDeviceMetricsOverride', { width: 640, height: 450, deviceScaleFactor: 2, mobile: false });
+await load(); await shot('6-zoom-200');
+await send('Emulation.setDeviceMetricsOverride', { width: 320, height: 640, deviceScaleFactor: 1, mobile: false });
+await load();
+report.reflow320 = await evalJs(`(() => { const f = document.getElementById('activity-filters').getBoundingClientRect(); return {formRight: f.right, docWidth: document.documentElement.scrollWidth, tableWidth: document.getElementById('activity-table').getBoundingClientRect().width}; })()`);
+await shot('7-width-320');
+
+// JavaScript disabled.
+await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+await send('Emulation.setScriptExecutionDisabled', { value: true });
+await load();
+await send('Emulation.setScriptExecutionDisabled', { value: false });
+report.noJs = await evalJs(`({formVisible: getComputedStyle(document.getElementById('activity-filters')).display, rows: document.querySelectorAll('tbody tr').length, statusText: document.getElementById('activity-status').textContent})`);
+await shot('8-no-js');
+
+report.logs = logs;
+console.log(JSON.stringify(report, null, 1));
+ws.close(); chrome.kill();

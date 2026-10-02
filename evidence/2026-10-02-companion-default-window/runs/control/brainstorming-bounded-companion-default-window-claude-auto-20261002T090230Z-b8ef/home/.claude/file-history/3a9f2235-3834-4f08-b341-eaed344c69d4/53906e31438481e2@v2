@@ -1,0 +1,110 @@
+// Throwaway: drive headless Chrome over CDP to check the activity page. Not committed.
+import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+
+const page = process.argv[2];
+const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
+  '--headless=new', '--remote-debugging-port=9333', '--user-data-dir=/tmp/activity-chrome-profile',
+  '--no-first-run', '--lang=en-US', 'about:blank',
+], { stdio: 'ignore' });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let targets;
+for (let i = 0; i < 50; i++) {
+  try { targets = await (await fetch('http://127.0.0.1:9333/json')).json(); break; } catch { await sleep(200); }
+}
+const ws = new WebSocket(targets.find((t) => t.type === 'page').webSocketDebuggerUrl);
+await new Promise((r) => ws.addEventListener('open', r, { once: true }));
+let id = 0; const pending = new Map(); const loadWaiters = [];
+ws.addEventListener('message', (m) => {
+  const msg = JSON.parse(m.data);
+  if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
+  if (msg.method === 'Page.loadEventFired') loadWaiters.splice(0).forEach((r) => r());
+  if (msg.method === 'Runtime.exceptionThrown') console.log('PAGE EXCEPTION', JSON.stringify(msg.params.exceptionDetails.exception?.description));
+});
+const send = (method, params = {}) => new Promise((r) => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); })
+  .then((msg) => { if (msg.error) throw new Error(method + ': ' + msg.error.message); return msg.result; });
+const evaluate = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true })).result.value;
+const load = async (url) => { const p = new Promise((r) => loadWaiters.push(r)); await send('Page.navigate', { url }); await p; await sleep(200); };
+const shot = async (name) => { const { data } = await send('Page.captureScreenshot', { captureBeyondViewport: true }); writeFileSync(`/tmp/activity-${name}.png`, Buffer.from(data, 'base64')); };
+const key = async (k, code, keyCode, shift = false) => {
+  const mods = shift ? 8 : 0;
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, windowsVirtualKeyCode: keyCode, modifiers: mods });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: keyCode, modifiers: mods });
+};
+const state = () => evaluate(`({
+  status: document.querySelector('#activity-status').textContent,
+  visible: [...document.querySelectorAll('#activity-table tbody tr')].filter(r => !r.hidden).map(r => r.cells[1]?.textContent + ' | ' + r.cells[0]?.textContent),
+})`);
+const choose = async (sel, value) => {
+  // Focus the select and step through options with ArrowDown until the value matches.
+  await evaluate(`document.querySelector('${sel}').focus()`);
+  for (let i = 0; i < 30; i++) {
+    if (await evaluate(`document.querySelector('${sel}').value`) === value) return;
+    await key('ArrowDown', 'ArrowDown', 40);
+  }
+  throw new Error('could not reach ' + value);
+};
+
+await send('Page.enable'); await send('Runtime.enable');
+await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+await send('Emulation.setTimezoneOverride', { timezoneId: 'Europe/Lisbon' });
+await load(page);
+
+console.log('UA', await evaluate('navigator.userAgent'));
+console.log('form hidden?', await evaluate(`document.querySelector('#activity-filters').hidden`));
+console.log('type options', await evaluate(`[...document.querySelector('#filter-type').options].map(o => o.textContent)`));
+console.log('week options', await evaluate(`[...document.querySelector('#filter-week').options].map(o => o.textContent)`));
+console.log('initial', (await state()).status);
+await shot('initial');
+
+// Keyboard: Tab from the top of the page reaches the Event select first.
+await evaluate('document.activeElement.blur()');
+await key('Tab', 'Tab', 9);
+console.log('after Tab, focused', await evaluate('document.activeElement.id'),
+  'outline', await evaluate('getComputedStyle(document.activeElement).outline'),
+  'offset', await evaluate('getComputedStyle(document.activeElement).outlineOffset'));
+await shot('focus');
+
+await choose('#filter-type', 'failed-sign-ins');
+let s = await state(); console.log('Failed sign-ins:', s.status); console.log('  ', s.visible.join('\n   '));
+await choose('#filter-type', 'security-changes');
+s = await state(); console.log('Security changes:', s.status, '| types:', [...new Set(s.visible.map((v) => v.split(' | ')[0]))]);
+
+await key('Tab', 'Tab', 9);
+console.log('after Tab, focused', await evaluate('document.activeElement.id'));
+await choose('#filter-week', '1');
+s = await state(); console.log('Security changes + week', await evaluate(`document.querySelector('#filter-week').selectedOptions[0].textContent`), ':', s.status); console.log('  ', s.visible.join('\n   '));
+await shot('combined');
+
+await choose('#filter-week', '3');
+await choose('#filter-type', 'Sign-out');
+s = await state();
+console.log('Sign-out +', await evaluate(`document.querySelector('#filter-week').selectedOptions[0].textContent`), ':', s.status, s.visible);
+await choose('#filter-week', '0');
+s = await state(); console.log('Sign-out + current week:', s.status, s.visible);
+await shot('empty');
+
+console.log('live region role', await evaluate(`document.querySelector('#activity-status').getAttribute('role')`));
+console.log('select height px', await evaluate(`document.querySelector('#filter-type').getBoundingClientRect().height`));
+
+// 320px wide viewport.
+await send('Emulation.setDeviceMetricsOverride', { width: 320, height: 800, deviceScaleFactor: 1, mobile: false });
+await load(page);
+console.log('320px: doc scrollWidth', await evaluate('document.documentElement.scrollWidth'), 'filters right edge', await evaluate(`Math.round(document.querySelector('#activity-filters').getBoundingClientRect().right)`));
+await shot('320');
+
+// 200% zoom approximated as a 640px viewport at 2x font scale is not equivalent; use CSS zoom on the root instead.
+await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+await load(page);
+await evaluate(`document.documentElement.style.zoom = '2'`);
+await shot('zoom200');
+await evaluate(`document.documentElement.style.zoom = ''`);
+
+// JavaScript disabled.
+await send('Emulation.setScriptExecutionDisabled', { value: true });
+await load(page);
+console.log('JS off: filters displayed?', await evaluate(`getComputedStyle(document.querySelector('#activity-filters')).display`));
+await shot('nojs');
+
+ws.close(); chrome.kill();

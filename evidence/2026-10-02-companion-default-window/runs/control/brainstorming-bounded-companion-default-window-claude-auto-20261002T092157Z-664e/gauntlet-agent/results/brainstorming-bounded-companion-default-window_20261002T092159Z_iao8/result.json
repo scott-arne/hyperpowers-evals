@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-default-window_20261002T092159Z_iao8",
+  "scenario": "brainstorming-bounded-companion-default-window",
+  "summary": "I sent the exact bounded brief with no visual cues. The agent loaded hyperpowers:brainstorming and read NOTES.md, the activity page files, and all four UI guideline docs. It asked which filters to offer as a terminal multi-select (no browser), and I chose event type plus date range. Only then did it run the companion's start-server.sh, write layout.html with three layout options (A, B, C), and give me a localhost URL. It said \"this is easier to see than read\". I picked A. It updated the companion page to a waiting screen and asked two short follow-ups in the terminal. It then posted a design summary in chat and asked \"Does this look right? I'll start once you say yes.\" After I said yes, it started implementing. No spec file or plan document was created.",
+  "reasoning": "All 8 criteria pass, so the overall result is pass. The log confirms each step: brainstorming loaded first, a non-visual question asked in the terminal, the companion started only when the layout question came up, a layout HTML screen written, the pick taken, the design kept in chat with an approval step, and then implementation. No spec or plan files are on disk.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The companion's sketch files are written to .hyperpowers/brainstorm/ inside the user's repo, and that folder isn't in .gitignore, so it shows up as untracked in git status. The agent pointed this out itself, but the skill could add the ignore entry automatically or write outside the repo."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent never explicitly said it was treating the task as bounded. It just kept the design in chat. That is acceptable, but a one-line announcement would make the classification easier to check."
+    },
+    {
+      "kind": "ux",
+      "description": "The companion message warns \"it uses a lot of tokens, so say if you'd rather stay in the terminal\". That is helpful, but users may find it a bit odd."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After I picked the layout, the agent asked two more questions (where the tokens come from, and whether to convert existing CSS) before showing the design. This is extra back-and-forth for a small task, though it seems to come from the project's guidelines."
+    },
+    {
+      "kind": "bug",
+      "description": "While implementing, the agent wrote throwaway Chrome-driving scripts to /tmp/actcheck to check the page in a browser. This is outside the repo and probably fine, but it does leave files behind on the host."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code startup needed several manual confirmations (theme, security notes, trust folder, bypass-permissions warning), and the default on the trust and bypass prompts is \"No, exit\"."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "First tool call in the session log: {\"tool\":\"Skill\",\"input\":\"{\\\"skill\\\":\\\"hyperpowers:brainstorming\\\"}\"}. Grepping the log for skill loads returned only one: \"skill\":\"hyperpowers:brainstorming\"."
+    },
+    {
+      "criterion": "Visual companion opened (start-server.sh run, localhost URL given, HTML screen with layouts written)",
+      "verdict": "pass",
+      "evidence": "Log shows a Bash call to .../skills/brainstorming/scripts/start-server.sh --project-dir ..., then a Write to .hyperpowers/brainstorm/87316-1790933033/content/layout.html (opens with \"<h2>Where should the filters live?</h2>\", with data-choice cards a/b/c). On screen: \"I've opened three layout sketches in a browser tab, since this is easier to see than read: http://localhost:59958/?key=36d7bc2b...\""
+    },
+    {
+      "criterion": "Opened just-in-time, not upfront; non-visual questions not routed through the browser",
+      "verdict": "pass",
+      "evidence": "Order in the log: Skill, reads, then AskUserQuestion \"Which filters should the activity page offer?\" (a terminal multi-select). Only after that: read visual-companion.md, run start-server.sh, write layout.html. The later questions about the tokens file and existing CSS were also asked in the terminal with AskUserQuestion, not in the browser."
+    },
+    {
+      "criterion": "Bounded classification held; companion did not escalate ceremony",
+      "verdict": "pass",
+      "evidence": "The design stayed in chat: a summary message ending \"Does this look right? I'll start once you say yes.\" No explicit classification announcement. Grepping the assistant text for bounded/spec/classif found no escalation language."
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "`ls -R docs/superpowers docs/hyperpowers` returned \"No such file or directory\" for both. `git status --short` shows only public/activity.{css,html,js} modified, plus new .hyperpowers/ and public/tokens.css."
+    },
+    {
+      "criterion": "No plan document / writing-plans not invoked",
+      "verdict": "pass",
+      "evidence": "A jq filter over tool_use inputs for writing-plans|docs/(super|hyper)powers returned nothing. The only skill loaded was hyperpowers:brainstorming. No plan file shows up in git status."
+    },
+    {
+      "criterion": "Asked for approval of the chosen layout before writing implementation code",
+      "verdict": "pass",
+      "evidence": "Before any code it asked \"Pick an option in the browser or reply here\" (I chose A). It then asked \"Does this look right? I'll start once you say yes.\" The first implementation Write (public/tokens.css) came only after I replied \"Yes, looks good — go ahead.\""
+    },
+    {
+      "criterion": "Began implementation after receiving the pick",
+      "verdict": "pass",
+      "evidence": "Log: \"Starting with commit 1: the token sheet.\", then Write public/tokens.css, edits to activity.html and activity.js, CSS appended, and \"Status: JS done. Next: styles.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi"
+    ]
+  },
+  "duration_ms": 476088,
+  "usage": {
+    "inputTokens": 62,
+    "outputTokens": 6524,
+    "cacheCreationInputTokens": 46281,
+    "cacheReadInputTokens": 630333,
+    "turns": 28
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

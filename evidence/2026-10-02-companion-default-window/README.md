@@ -239,4 +239,103 @@ archiving. Each time:
 
 ## Results
 
-Pending.
+**The failure reproduces without the compaction.** At Claude Code's default
+window, the shipping head started the companion in 4 of 10 sessions, and no
+session compacted. That is not more often than stage 1's 5 of 10 (one-sided
+Fisher p 0.815). Against the best a fix could do, 10 of 10, p is 0.005. Per
+the pre-registered consequence, the fix targets the trigger: it makes where
+things sit on the page an explicit visual question. Bringing `SKILL.md`
+under the re-attach cap is not pursued as the fix on its own. The fix is
+written under `hyperpowers:writing-skills` and measured on the compaction
+scenario, with stage 1 as its control and its own pre-registration. This
+reading does not rule out a smaller contribution from the compaction.
+
+| Shipping head, default window | Started (`tool-arg-match`) | Composed final | `brainstorming` skill-called | Compaction in the window | Reading |
+|---|---|---|---|---|---|
+| `brainstorming-bounded-companion-default-window` | 4/10 | 4/10 | 10/10 | 0/10 | reproduces without the compaction |
+
+The composed final matched the started count session for session: every
+started session passed and every other session failed.
+
+**Manipulation check.** No compaction landed in the window, and none landed
+anywhere in any session. The reading stands.
+
+**Readouts, with no reading attached.** From `tally.txt`:
+- No session compacted, so the summary readout has no sessions.
+- `visual-companion.md` was read in 4 of the 4 started sessions and in none
+  of the 6 others.
+- 3 of the 4 started sessions called `AskUserQuestion` before their first
+  `start-server.sh`. The fourth, `092955Z-f2d8`, asked its two questions in
+  chat.
+- Nine sessions announced the bounded path: all six that did not start the
+  companion, and `091214Z-ae41`, `092955Z-f2d8` and `085500Z-38a9`.
+  `092157Z-664e` named none. In stage 1, two of ten announced a path.
+- Every counted session ran Claude Code 2.1.287 on `claude-opus-5-5` alone.
+
+**Hand-read** (`handread.md`). All six sessions that did not start the
+companion are (a); none is (b), (c) or (d).
+- Each sent a control question through `AskUserQuestion`, with no Deciding
+  Together comparison before it: four the event-type control, two only the
+  week control (a week select or a date range). Stage 1's README treats the
+  week picker as the same kind of question as the type picker, and the
+  hand-read keeps that reading.
+- Each design put the filters above the table (two of them between the
+  intro and the table) without offering the placement as a choice, and the
+  operator approved it.
+- `093354Z-9ad4` is the only session in either campaign whose visible text
+  weighs the companion and declines it: "The layout is two dropdowns above
+  the table, which is simple enough to describe in text, so I'm not opening a
+  browser mockup."
+- **Started sessions, for contrast.** All four opened with three candidate
+  layouts. `085500Z-38a9` sent the event-type control question to
+  `AskUserQuestion` first, as four of the failures did, after a comparison in
+  chat, and then opened the companion on layouts that "use the same controls
+  and differ only in placement".
+
+**What this changes in the Question's account.** Stage 1 could not say
+whether the compaction contributes, because every session compacted. Here no
+session compacted, and the count did not rise. So the truncated re-attach is
+not needed for the failure. Stage 1 had already shown that the summary
+dropping the step is not needed either: the summary named the companion in
+all 10 sessions. What the failures share across both campaigns is the
+trigger. In all 11 (five in stage 1, six here), the design placed the
+filters without offering the placement as a choice. The started sessions
+made layout its own question: here all four opened with three candidate
+layouts, and in stage 1 four of the five named the placement as the next
+question or put it on screen directly.
+
+The class mix differs from stage 1: there, three failures never asked a
+control question (c) and two did (a); here all six did. This campaign was
+not sized to compare class mixes, and no reading is attached.
+
+**Grader.** Both row logs record `gauntlet_agent_model=claude-opus-5-5`.
+Each archived `result.json` records `config.model` as `claude-opus-5-5`, in
+all 10 counted runs.
+
+**Host state outside the run directory.** Nine of the ten sessions, after the
+design was approved, drove headless Chrome over the DevTools protocol to
+check the page. They wrote their scripts, screenshots and Chrome profiles to
+literal paths under the host `/tmp`, outside the run directory, and those
+files are not archived. Four sessions (`091214Z-ae41`, `091503Z-817d`,
+`092157Z-664e`, `092321Z-6d1b`) used `/tmp/actcheck`, which a stage 1
+session had created at 07:14Z. The concurrent pair ae41 and 817d used it at
+overlapping times (09:21:22Z to 09:21:46Z). In every session the first host
+`/tmp` use came after the design approval or the companion start, so the
+primary measure is not affected. Run `093354Z-9ad4` also left two Chrome
+profiles in its throwaway home (`home/.tmp/cdp-hBPHZj` and
+`home/.tmp/cdp-01v0Bq`, 18 MB of caches and icons). They were removed from
+the archive copy only, and `results/` keeps them.
+
+**Runs.**
+- One batch: 2 rows of `--repeat 5`, 10 sessions, 2 concurrent. The rows'
+  `trials:` lines read `FFPPP` (p1) and `PFFFF` (p2).
+- The stamp was written at 08:54:49Z, the rows launched at 08:54:59Z, and
+  the last `DONE` came at 09:41:31Z.
+- No extension: the count did not land on 7, 8 or 9 of 10, and
+  `manifest-extend.tsv` was not written.
+- There were no grader voids, setup voids, version voids or indeterminates,
+  so `superseded.txt` was not written.
+- The mutation checks passed before the batch, after the counted sessions and
+  after archiving. No file in the worktree outside `.git` was newer than the
+  stamp, `HEAD` stayed at 5f4ab78, and `git status --short` stayed empty.
+- `tally.txt` is `tally.py` over the archive.
