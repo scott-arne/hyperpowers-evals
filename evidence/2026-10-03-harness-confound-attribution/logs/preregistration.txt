@@ -1,0 +1,78 @@
+Pre-registration: 2026-10-03 harness-confound attribution for the over-trigger floor
+
+Background. The 2026-10-03 paired control (evidence/2026-10-03-release-6150-paired-control)
+put cost-checkbox-over-trigger at 0 of 10 for both v6.14.0 and v6.15.0 on Claude
+Code 2.1.287; every session called Skill(hyperpowers:brainstorming) first. Those
+sessions loaded hyperpowers/AGENTS.md and evals/AGENTS.md and inherited the
+operator session's Claude env, including CLAUDE_CODE_ENTRYPOINT=sdk-ts. Harness
+commits fc42537c5 (AGENTS.md excluded) and be020f0d0 (clean launcher env)
+remove both. One run on the fixed harness passed
+(cost-checkbox-over-trigger-claude-auto-20261003T180729Z-3d43, not counted).
+
+Questions and rules. Every comparison is a two-sided Fisher exact test on pass
+counts; "separated" means p < 0.05.
+  Q1  Was the 0 of 10 a harness artifact? Arm A against the paired-control
+      treatment (0 of 10, same root 5bef46c, same Claude Code version, harness
+      f6b13d56c with both leaks).
+  Q2  Do the versions differ on the clean harness? Arm A against arm B.
+  Q3  Which leak drives the over-trigger? Arm C against A, and arm D against A.
+      A leak drives it when its arm is separated below A.
+
+What follows for hyperpowers BACKLOG item 1 (the brainstorming over-trigger):
+  - A not separated from 0 of 10: the over-trigger is real in a clean session;
+    item 1 proceeds, measured on the clean harness.
+  - A separated and C separated below A: item 1 proceeds, measured with the
+    sdk-ts entrypoint, because the operator's own sessions run as sdk-ts.
+  - A separated, D separated below A, C not: the trigger came from the
+    repository instruction text; item 1 closes as a harness artifact.
+  - A separated, neither C nor D separated: the old floor needs both leaks
+    together or another inherited variable; no item 1 decision, follow-up
+    proposed.
+
+Config.
+  Scenario   cost-checkbox-over-trigger, unchanged.
+  Model      claude-opus-5-5 via claude-auto, Claude Code 2.1.287, default
+             listing budget; Gauntlet-Agent on claude-opus-5-5 (host
+             GAUNTLET_AGENT_MODEL).
+  Arm A      hyperpowers 5bef46ceba1f3dfdbd817332a10c5fc9684f8287 (v6.15.0,
+             primary checkout); evals be020f0d0 (primary clone, clean).
+  Arm B      hyperpowers 0634a8ef0d734091be4d2e68b6e1c7af7b953947 (v6.14.0,
+             detached worktree .cache/hyperpowers/harness-attr/hp-6140);
+             evals be020f0d0 (primary clone).
+  Arm C      hyperpowers 5bef46c; evals 5f2bc248e (branch
+             attr/entrypoint-sdk-ts: be020f0d0 plus CLAUDE_CODE_ENTRYPOINT=sdk-ts
+             on the launcher's exec line), worktree
+             .cache/hyperpowers/harness-attr/evals-entrypoint.
+  Arm D      hyperpowers 5bef46c; evals 50858a29d (branch attr/agents-md-loaded:
+             be020f0d0 with fc42537c5 reverted), worktree
+             .cache/hyperpowers/harness-attr/evals-agentsmd.
+  Results    every arm writes to the primary clone's results/ (--out-root), so
+             each run directory has the same ancestors as the paired control's.
+  Launch     four `quorum run cost-checkbox-over-trigger --coding-agent
+             claude-auto --repeat 10` processes, concurrent, outside the
+             operator's command sandbox; 10 sessions per arm.
+
+Voids. A grader exit without a result is void and replaced, at most 3 per arm.
+A harness setup failure is void and relaunched. A coding-agent failure is a
+trial.
+
+Manipulation checks, read per run from the launch record and the main
+transcript: plugin root and model in the launch record; Claude Code version;
+entrypoint (A, B, D: cli; C: sdk-ts); instruction files loaded (A, B, C: none;
+D: hyperpowers/AGENTS.md and evals/AGENTS.md); task tools offered (none in any
+arm); whether the listing carries the brainstorming description; first tool
+call. A run that fails its arm's manipulation check is reported and excluded
+from the counts.
+
+Mutation check. git status of skills/ and hooks/ in both hyperpowers roots, and
+HEAD plus status of the three evals trees, before launch and after the last
+verdict.
+
+Known limits, stated before launch.
+  - The fourth corner (both leaks) is the paired control's treatment: earlier
+    the same day, harness f6b13d56c, and its inherited env also carried the
+    task-tools opt-in and other session variables.
+  - Arm C restores only the entrypoint, not the other inherited identity
+    variables (CLAUDECODE was stripped then too; CLAUDE_CODE_CHILD_SESSION,
+    the session id and the messaging socket are not restored).
+  - n = 10 per arm, one scenario, one model, one Claude Code version.
