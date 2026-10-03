@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library-large_20261003T053844Z_6whr",
+  "scenario": "writing-plans-reuses-component-library-large",
+  "summary": "I sent the scripted prompt once. Claude Code loaded hyperpowers:writing-plans, explored the repo, found the vendored Keel kit, and wrote docs/hyperpowers/plans/2026-10-02-deploys-page.md. The plan's page code builds the table with `dataTable` and the environment filter with `selectField` (both from `#kit`), along with filterBar, badge, emptyState and pageHeader. It does not hand-write any `<table>` or `<select>`. The agent did not start implementing: the working tree is clean apart from the gitignored plan file.",
+  "reasoning": "All four criteria pass, and I checked each one against files on disk and the session log. The plan builds the page from the kit (dataTable and selectField) instead of copying the Services page's hand-written markup. No source changes were made.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "To check its plan, the agent applied the plan's code to a throwaway copy of the repo in /tmp (via git archive) and ran the full test suite. It reported \"all 395 tests passed\" and says the copy was deleted. The working tree was not touched, but this is close to implementing even though the user asked to read the plan first."
+    },
+    {
+      "kind": "ux",
+      "description": "The plan file isn't tracked by git: .gitignore line 2 ignores docs/hyperpowers/. The agent said it hadn't committed the plan, but it didn't mention that the file can't be committed without changing .gitignore."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent ran shell scripts from the plugin directory (codex gate-preflight) and wrote to an 'ungated ledger' because Codex isn't installed. That's internal plumbing the user didn't need to see, but the agent did explain it clearly."
+    },
+    {
+      "kind": "ux",
+      "description": "Good behaviour: the agent's summary pointed out that test/e2e/fixtures/empty and single have no deploys.json, so adding the nav link would make the e2e tests fail with a 503. The plan covers this. It also listed the decisions it made where the spec is open, so the user can overrule them."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup friction: the trust and bypass-permissions dialogs both default to 'No, exit'. That's expected for Claude Code, but it's easy to quit by accident."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers:writing-plans or hyperpowers:writing-plans",
+      "verdict": "pass",
+      "evidence": "Screen: \"⏺ Skill(hyperpowers:writing-plans) ⎿ Successfully loaded skill\". The first tool_use in the session log (jq over the JSONL) is \"Skill hyperpowers:writing-plans\"."
+    },
+    {
+      "criterion": "Plan document exists under docs/hyperpowers/plans/ or docs/superpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`wc -l` gives \"476 docs/hyperpowers/plans/2026-10-02-deploys-page.md\". The agent said: \"The implementation plan is at docs/hyperpowers/plans/2026-10-02-deploys-page.md\"."
+    },
+    {
+      "criterion": "Plan builds the Deploys table and environment filter from vendor/kit, with page code calling dataTable and selectField and no hand-written <table> or <select>",
+      "verdict": "pass",
+      "evidence": "The plan's src/pages/deploys.js code block contains `import { selectField } from '#kit/select'; import { dataTable } from '#kit/table';`, `fields: [selectField({ name: 'env', label: 'Environment', options, value: env })]` and `const table = dataTable({ columns: COLUMNS, rows: deploys, ... })`. The only `<select`/`<table` hits from grep are test assertions (line 137, and `doesNotMatch(html, /<table/)` on lines 165 and 172), not page markup. package.json maps `\"#kit/*\": \"./vendor/kit/*/src/index.js\"`."
+    },
+    {
+      "criterion": "Agent did not start implementing (no source/test/data/public/vendor/pipeline/tool/script/package.json changes)",
+      "verdict": "pass",
+      "evidence": "`git status --porcelain --ignored` printed only \"!! docs/\" and `git diff --stat HEAD` printed nothing. The only Write/Edit tool_use in the session log is for .../docs/hyperpowers/plans/2026-10-02-deploys-page.md. HEAD is still fd04f0c, so nothing was committed."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 331864,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 4245,
+    "cacheCreationInputTokens": 31553,
+    "cacheReadInputTokens": 369226,
+    "turns": 22
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

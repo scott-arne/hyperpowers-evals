@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library-large_20261003T060146Z_e0sa",
+  "scenario": "writing-plans-reuses-component-library-large",
+  "summary": "I sent the exact prompt. Claude loaded hyperpowers:writing-plans, found the vendored kit even though the git ls-files output was too long to show it, and wrote docs/hyperpowers/plans/2026-10-02-deploys-page.md (446 lines). The plan builds the page from #kit components (dataTable, selectField, filterBar, badge, emptyState, pageHeader) rather than copying the hand-written markup in services.js. Claude tested the plan's code in throwaway git worktrees that it then deleted, and the repo was left clean. It asked no clarifying questions, so I sent no follow-up messages.",
+  "reasoning": "All four criteria are met, based on the session log, the plan file on disk and git state. The agent found the kit even though the file listing was truncated, used dataTable and selectField in the page code, and did not implement anything in the repo.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "Claude checked the plan by running `git worktree add` with mktemp dirs several times (about 5 attempts in the log) and applying the plan's code there. They were all cleaned up and the repo stayed untouched, but running the code under a 'don't start implementing' instruction comes close to the line. A user might be surprised that it ran its own implementation and the full test suite (395 tests) before handing over the plan."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude's final message says it logged a skipped plan review because the codex review gate was unavailable (\"Without it, no one has checked the plan's risk tiers\"). That is reasonable disclosure, but the user didn't ask about it, and it lists /reload-plugins and /codex:setup commands, which is noise."
+    },
+    {
+      "kind": "ux",
+      "description": "The summary was clear: it explained why it chose the kit over copying services.js, flagged the e2e fixtures it needed to add, and listed decisions the spec leaves open (direction for an edited sort URL, empty-snapshot wording, time formats)."
+    },
+    {
+      "kind": "ux",
+      "description": "On first launch, the folder-trust and bypass-permissions dialogs both default to 'No, exit', so each needs Down+Enter. This is a harness/onboarding detail, not part of the product under test."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The plan file lands under docs/hyperpowers/, which this repo's .gitignore ignores, so `git status` never shows it. Worth knowing when you check for artifacts."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:writing-plans",
+      "verdict": "pass",
+      "evidence": "The session log's first tool_use is {\"name\":\"Skill\",\"input\":\"{\\\"skill\\\":\\\"hyperpowers:writing-plans\\\"}\"}. The screen showed \"Skill(hyperpowers:writing-plans) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Plan document exists under docs/hyperpowers/plans/ or docs/superpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`ls docs/*/plans/` returned 2026-10-02-deploys-page.md, and `wc -l` gives 446 lines for docs/hyperpowers/plans/2026-10-02-deploys-page.md."
+    },
+    {
+      "criterion": "Plan's page code builds the table and env filter with kit dataTable and selectField, with no hand-written <table>/<select>",
+      "verdict": "pass",
+      "evidence": "Step 3 of the plan creates src/pages/deploys.js with `import { selectField } from '#kit/select'; import { dataTable } from '#kit/table';` and then calls `selectField({ name: 'env', label: 'Environment', ... })` inside `filterBar(...)` and `const table = dataTable({ columns: [...], rows: deploys, sort, sortHref, empty: emptyState(...) })`. The only `<table` hits from grep are the test assertions `assert.doesNotMatch(html, /<table/)` (lines 160 and 167). grep found no `<select` anywhere in the plan."
+    },
+    {
+      "criterion": "No source/test/data/public/vendor/pipeline/tool/script/package.json changes",
+      "verdict": "pass",
+      "evidence": "`git status --porcelain --untracked-files=all` printed nothing. `git status --ignored` shows only `!! docs/` (docs/hyperpowers/ is gitignored, per .gitignore:2). `git worktree list` shows only the main worktree, so the temporary worktrees Claude used to check the plan were removed. HEAD is still 55cd751. In the log, Claude's only Write call is to the plan file."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 393705,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 3930,
+    "cacheCreationInputTokens": 28396,
+    "cacheReadInputTokens": 333386,
+    "turns": 20
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

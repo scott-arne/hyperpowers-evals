@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library-large_20261003T060530Z_cr22",
+  "scenario": "writing-plans-reuses-component-library-large",
+  "summary": "I sent the scripted prompt once. Claude loaded hyperpowers:writing-plans, explored the repo, found vendor/kit even though the file listing was too long to show at once, and wrote docs/hyperpowers/plans/2026-10-02-deploys-page.md. The plan's page code builds the table with dataTable and the dropdown with selectField from #kit. It also uses filterBar, badge, emptyState and pageHeader. It says outright that it uses the kit instead of copying services.js. The working tree was still clean afterward. Claude asked no clarifying questions.",
+  "reasoning": "All four criteria pass, based on the session log, the plan file and git state. The agent got past the size of the repo (it filtered pipeline/ and data/ out of the listing and ran `ls vendor/kit`), read the relevant kit components, and its plan builds the page from dataTable and selectField instead of copying the Services page's markup. Nothing in the repo was created or changed except the plan in the gitignored docs/ directory. The temporary worktree was outside the repo and was removed.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "To check its plan, the agent made a temporary detached git worktree in a mktemp dir, ran the plan's code and tests there (it reports 391/391 passing), then deleted the worktree. Nothing was left in the repo. Still, the user said \"don't start implementing yet\", and the agent wrote and ran implementation code anyway, just outside the working tree. Some users might count that as implementing. The agent did say it had done this in its summary."
+    },
+    {
+      "kind": "ux",
+      "description": "After writing the plan, the agent read the Codex review-gate docs, ran codex-preflight and appended a 'degraded-gate' entry to an 'ungated-ledger' outside the repo, because Codex isn't installed. None of this was shown clearly on screen, and it added time to a plan-only request."
+    },
+    {
+      "kind": "ux",
+      "description": "The plan file is named 2026-10-02 but the spec is dated 2026-10-01. That's probably just today's date, but it may look odd next to the spec."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent's final message was clear. It explained choosing the kit over copying Services, the 2-task breakdown, and the decisions for the user to check: the default sort, the timestamp format being different from Services, and empty-state wording the spec doesn't cover."
+    },
+    {
+      "kind": "ux",
+      "description": "The repo was checked out on branch feature/deploys-page (main also exists). docs/ is gitignored, so the plan doesn't show up in git status. A user might not realise the plan isn't tracked."
+    },
+    {
+      "kind": "ux",
+      "description": "On the first-launch dialogs (trust folder and bypass permissions), 'No, exit' is selected by default, so pressing Enter exits. I had to press Down first. This is setup friction only."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:writing-plans",
+      "verdict": "pass",
+      "evidence": "Session log tool_use: {\"name\":\"Skill\",\"input\":\"{\\\"skill\\\":\\\"hyperpowers:writing-plans\\\"}\"}. The screen showed \"Skill(hyperpowers:writing-plans) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Plan document exists under docs/hyperpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`ls docs/hyperpowers/plans` → 2026-10-02-deploys-page.md (439 lines). On screen the agent said: \"The plan is ready to read at docs/hyperpowers/plans/2026-10-02-deploys-page.md\"."
+    },
+    {
+      "criterion": "Plan builds the table and env filter with kit dataTable and selectField, not its own <table>/<select>",
+      "verdict": "pass",
+      "evidence": "Step 3 of the plan creates src/pages/deploys.js with `import { selectField } from '#kit/select'; import { dataTable } from '#kit/table';` and calls `selectField({ name: 'env', ... })` and `dataTable({ columns, rows: deploys, sort, sortHref, empty })`. Grepping the plan for '<table' or '<select' finds only test assertions (`assert.doesNotMatch(staging, /<table/)`) and nothing in the page code. Line 50 of the plan: \"Kit over hand-rolled markup.\""
+    },
+    {
+      "criterion": "Agent did not start implementing (no source/test/data/public/vendor/pipeline/tool/script/package.json changes)",
+      "verdict": "pass",
+      "evidence": "After the run, `git status --short --untracked-files=all` and `git diff --stat` printed nothing. `git status --ignored` showed only `!! docs/`, which holds the plan. HEAD is still d1ad2e4. `git worktree list` shows only the main workdir, so the agent's temporary worktree (git worktree add in a mktemp dir, removed with `git worktree remove --force`) is gone. `git stash list` is empty."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 317980,
+  "usage": {
+    "inputTokens": 48,
+    "outputTokens": 4822,
+    "cacheCreationInputTokens": 25616,
+    "cacheReadInputTokens": 363316,
+    "turns": 21
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
