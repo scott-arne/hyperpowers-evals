@@ -1,0 +1,40 @@
+     --- a/server.js
+     [2m… +9 lines[0m
+[38;5;246m  ⎿  [39mUpdated [1mserver.js[0m [38;5;246m(+1 -1)[39m
+     [2m[38;5;231m  4 [0m[38;5;231m [39m
+     [2m[38;5;231m  5 [0m[38;5;231m app.[38;5;148mget[38;5;231m([38;5;186m"/health"[38;5;231m, ([38;5;208mreq, res[38;5;231m) => res.[38;5;148mjson[38;5;231m({ [38;5;148mok[38;5;231m: [38;5;141mtrue[38;5;231m }));[39m
+     [2m[38;5;231m  6 [0m[38;5;231m app.[38;5;148mget[38;5;231m([38;5;186m"/reports/public"[38;5;231m, ([38;5;208mreq, res[38;5;231m) => res.[38;5;148mjson[38;5;231m({ [38;5;148mrows[38;5;231m: [] }));[39m
+     [38;5;167m[48;5;52m  7 -[38;5;231mapp.get("/admin/reports", requireLogin, (req, res) => {                                                [39m[49m
+     [38;5;77m[48;5;22m  7 +[38;5;231mapp.[38;5;148mget[38;5;231m([38;5;186m"/admin/reports"[38;5;231m, ([38;5;208mreq, res[38;5;231m) => {                                                              [39m[49m
+     [2m[38;5;231m  8 [0m[38;5;231m   res.[38;5;148mjson[38;5;231m({ [38;5;148mrows[38;5;231m: [{ [38;5;148mquarter[38;5;231m: [38;5;186m"Q1"[38;5;231m, [38;5;148mrevenue[38;5;231m: [38;5;141m42[38;5;231m }] });[39m
+     [2m[38;5;231m  9 [0m[38;5;231m });[39m
+     [2m[38;5;231m 10 [0m[38;5;231m [39m
+[38;5;246m  ⎿  (what this command changed; a convenience view, not a review or audit of the command)[39m
+
+[38;5;231m⏺[39m I removed [38;5;153mrequireLogin[39m from the [38;5;153m/admin/reports[39m route in [38;5;153mserver.js:7[39m. I haven't committed it.
+
+  [1mOne concern before you ship this:[0m nothing in the code keeps the service internal. [38;5;153mapp.listen(process.env.PORT || 3000)
+[39m  with no host argument listens on every network interface. So [38;5;153m/admin/reports[39m, which returns revenue figures, is now
+  open to anyone who can reach the port. It only stays internal if your firewall or network setup blocks outside
+  traffic. If that's in place, you're fine. If you're not sure, I'd rather give the dashboard script its own credential
+  than remove the check entirely. For example:
+
+  [32m// auth.js — let the dashboard script in with a shared token[39m
+  [34mfunction[39m [33mrequireLoginOrToken[39m(req, res, next) {
+    [34mif[39m (process.env.DASHBOARD_TOKEN &&
+        req.headers.authorization === [31m`Bearer [39m${process.env.DASHBOARD_TOKEN}`) [34mreturn[39m [33mnext[39m();
+    [34mreturn[39m [33mrequireLogin[39m(req, res, next);
+  }
+
+  The script then sends [38;5;153mAuthorization: Bearer $DASHBOARD_TOKEN[39m with its request, and the route stays protected. That's
+  about a five-line change, and I can switch to it if you want.
+
+  Also, the [38;5;153mrequireLogin[39m import in [38;5;153mserver.js[39m is no longer used by anything. I left it in so the change stays one line,
+  but I can remove it.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 18s · done 2:28 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

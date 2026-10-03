@@ -1,0 +1,40 @@
+
+
+[38;5;231m⏺[39m Thanks, that's enough to suggest approaches. One thing limits the options: [38;5;153mapp.js[39m is a plain [38;5;153m<script>[39m tag with no
+  bundler or modules, and the [38;5;153msrc/[39m folder is separate Node code the page doesn't use.
+
+  [1mWhere should the shared userId logic live?[0m
+
+  1. [1mA new [38;5;153muser-id.js[39m script loaded before [38;5;153mapp.js[39m (recommended).[0m It exposes one global, [38;5;153mgetUserId()[39m. On the first call
+     it creates an ID with [38;5;153mcrypto.randomUUID()[39m, saves it in [38;5;153mlocalStorage[39m, and returns the saved ID every time after
+     that. Any future form can call it. This fits the current no-build setup and needs one extra [38;5;153m<script>[39m tag.
+  2. [1mSwitch to ES modules[0m ([38;5;153m<script type="module">[39m, [38;5;153mimport { getUserId } from './user-id.js'[39m). Cleaner dependencies with
+     no globals. But it changes how [38;5;153mapp.js[39m loads, and module scripts don't run when [38;5;153mindex.html[39m is opened directly from
+     disk ([38;5;153mfile://[39m), so you'd always need a local server. Cheap to move to later.
+  3. [1mPut the helper inside [38;5;153mapp.js[39m.[0m The smallest change, but future forms on other pages couldn't reuse it, which goes
+     against your requirement. I'd rule this out.
+
+  [1mProposed design (with option 1):[0m
+
+  - [1m[38;5;153muser-id.js[39m (new):[0m [38;5;153mgetUserId()[39m reads [38;5;153mlocalStorage["userId"][39m. If it's missing, it creates a UUID, stores it, and
+    returns it. If [38;5;153mlocalStorage[39m is unavailable (some private-browsing modes, or storage turned off), it falls back to a
+    per-page-load ID kept in memory, so login never breaks just because tracking can't persist.
+  - [1m[38;5;153mapp.js[39m:[0m the signature becomes [38;5;153mlogin(username, password, userId)[39m. It logs [38;5;153mLogging in: <username> (userId: <id>)[39m and
+    returns [38;5;153m{ success: true, user: username, userId }[39m. The submit handler passes [38;5;153mgetUserId()[39m. [38;5;153mvalidateForm[39m stays the
+    same, since the userId isn't user input.
+  - [1m[38;5;153mindex.html[39m:[0m add [38;5;153m<script src="user-id.js"></script>[39m before [38;5;153mapp.js[39m.
+  - [1mTesting:[0m the repo has no test setup. I'd add a small Node test file that uses Node's built-in [38;5;153mnode:test[39m runner (no
+    new dependencies) and a fake [38;5;153mlocalStorage[39m. It would check that the ID is created once and then reused, that it
+    survives a "reload" (same storage, fresh call), the fallback when storage throws, and that [38;5;153mlogin()[39m returns the
+    userId. To make that work, [38;5;153muser-id.js[39m would also export the function with [38;5;153mmodule.exports[39m when that exists, the same
+    way [38;5;153msrc/utils.js[39m does.
+
+  Does this look right, both option 1 and the design? Once you approve, I'll write it up as a short spec in
+  [38;5;153mdocs/hyperpowers/specs/[39m (not committed) for you to review before planning the implementation.
+
+[38;5;246m✻[39m [38;5;246mSautéed for 51s · done 2:34 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

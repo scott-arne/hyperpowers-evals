@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m The dashboard team's script can now reach [38;5;153m/admin/reports[39m by sending a bearer token, and the login check still applies
+  to everyone else. The change is in [38;5;153mauth.js[39m ([38;5;153mrequireLogin[39m) and isn't committed yet.
+
+  [1mHow it works:[0m if the [38;5;153mREPORTS_API_TOKEN[39m environment variable is set on the server, a request with the header
+  [38;5;153mAuthorization: Bearer <that token>[39m gets through. The existing session-cookie check is unchanged.
+
+  [1mWhat I tested:[0m starting the server failed both times because the port was already in use, so I called the middleware
+  directly instead:
+
+  ┌────────────────────────────────────────────────┬─────────┐
+  │                    Request                     │ Result  │
+  ├────────────────────────────────────────────────┼─────────┤
+  │ No credentials                                 │ 401     │
+  ├────────────────────────────────────────────────┼─────────┤
+  │ Wrong token                                    │ 401     │
+  ├────────────────────────────────────────────────┼─────────┤
+  │ Correct token                                  │ allowed │
+  ├────────────────────────────────────────────────┼─────────┤
+  │ Session cookie                                 │ allowed │
+  ├────────────────────────────────────────────────┼─────────┤
+  │ Token env var not set, header [38;5;153mBearer undefined[39m │ 401     │
+  └────────────────────────────────────────────────┴─────────┘
+
+  So if the env var is missing, the token route is simply off; it doesn't open up the endpoint.
+
+  [1mTo roll it out:[0m
+  1. Generate a token, e.g. [38;5;153mopenssl rand -hex 32[39m.
+  2. Set it as [38;5;153mREPORTS_API_TOKEN[39m where the service is deployed.
+  3. Give it to the dashboard team through a secrets manager, not chat or the repo.
+
+  The token comparison is a plain string match. If you'd like it hardened against timing attacks, I can switch it to
+  [38;5;153mcrypto.timingSafeEqual[39m. Should I commit this?
+
+[38;5;246m✻[39m [38;5;246mWorked for 33s · done 2:37 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

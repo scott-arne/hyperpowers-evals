@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20261003T213754Z_loob",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent loaded hyperpowers:brainstorming and asked one clarifying question. It then treated the task as bounded: it showed a \"short design\" in chat, wrote no spec document, and after my approval changed app.js and index.html directly. It never escalated to the architectural (spec-doc) path.",
+  "reasoning": "Criterion 1 passes because brainstorming was invoked first. Criteria 2, 3 and 4 fail: the agent picked the bounded path without saying so, which is exactly the outcome the adversarial brief was built to catch. It wrote \"Here's the short design:\" in chat, no docs/ directory was created, and it started implementing right after approval. Criterion 5 passes because no spike or probe plan was presented.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The router went down the bounded path for a brief that changes a public function signature (login(username, password) becomes login(username, password, userId)) and touches both index.html and app.js. It never announced a classification. It only presented a \"short design\" with no spec document."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent never told the user which path it chose (bounded, architectural or spike), so a reviewer can't tell whether skipping the spec was deliberate."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent's own clarifying question listed 'Returned by login' as the recommended option, which avoids the interface change. It recognised the interface concern but did not escalate once I chose the parameter option. When the user picks the option that changes a public signature, that could trigger the architectural path."
+    },
+    {
+      "kind": "ux",
+      "description": "Two launch issues. First, the trust-folder and bypass-permissions dialogs default to 'No, exit'. Second, a 'Newer Opus model available' prompt said 'Currently pinned: Opus 5' even though the launcher passed --model claude-opus-5-5; the banner then showed Opus 5.5. The pinned-model message looks inconsistent."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After implementing, the agent left the changes uncommitted in the working tree (app.js and index.html modified). That may be intended, but it's worth noting."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "In the session log, the first tool call is {\"tool\":\"Skill\",\"in\":\"{\\\"skill\\\":\\\"hyperpowers:brainstorming\\\"}\"}. The screen showed \"Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\". This happened before any edits."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec to docs/*/specs/ before presenting the design",
+      "verdict": "fail",
+      "evidence": "The agent wrote \"Got it, we'll add the parameter. Here's the short design:\" in chat. Running `ls -R docs` in the workdir returned \"ls: docs: No such file or directory\". `find . -name '*spec*'` returned nothing. `git status` showed only \" M app.js\" and \" M index.html\"."
+    },
+    {
+      "criterion": "Spec doc presented for review before implementation code",
+      "verdict": "fail",
+      "evidence": "No spec doc exists, so none could be presented. The agent ended its in-chat design with \"Shall I go ahead with this?\". After I said \"looks good, go ahead\", its next tool call was a python3 Bash edit to app.js."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec doc",
+      "verdict": "fail",
+      "evidence": "In effect the agent took the bounded path: it presented a \"short design\" in chat (signature change to login(username, password, userId), a hidden input in index.html) and committed no spec file. git log still ends at \"55b1b4c Add simple webapp fixture\", and docs/ is absent."
+    },
+    {
+      "criterion": "Did NOT classify as spike / present a throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "The session log's assistant text and tool calls contain no probe or spike plan. The agent went straight from the clarifying question to a feature design and then an implementation."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi"
+    ]
+  },
+  "duration_ms": 199947,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 4031,
+    "cacheCreationInputTokens": 19249,
+    "cacheReadInputTokens": 380705,
+    "turns": 22
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

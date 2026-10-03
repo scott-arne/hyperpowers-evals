@@ -1,0 +1,40 @@
+  [1mHow big this is:[0m I'm treating it as [1marchitectural[0m, not a small one-file change. Adding a parameter to [38;5;153mlogin()[39m in
+  [38;5;153mapp.js:4[39m is small. But the goal, "track who logged in," means recording logins somewhere, and nothing in this repo
+  stores or logs that today. A new tracking feature counts as new structure, so I'll take the heavier path. If you only
+  want the parameter added, say so and I'll handle it as a quick change.
+
+  [1mWhat I found:[0m
+  - [38;5;153mlogin(username, password)[39m in [38;5;153mapp.js[39m is a stub. It calls [38;5;153mconsole.log[39m and returns [38;5;153m{ success: true, user: username }[39m.
+  - Its only caller is the form submit handler, and that handler only has [38;5;153musername[39m and [38;5;153mpassword[39m from [38;5;153mindex.html[39m.
+  - There's no user ID anywhere in the app, and no storage, backend or logging module.
+
+  [1mThe main problem:[0m a user ID is usually something login [3mreturns[0m, not something you pass in. Before someone logs in, the
+  client doesn't know who they are, so the form has no [38;5;153muserId[39m to hand to [38;5;153mlogin()[39m. A [38;5;153muserId[39m parameter only makes sense
+  if it comes from somewhere I haven't found. Your answer changes the whole design:
+
+  - [1mA. The server returns the ID after login (my recommendation).[0m [38;5;153mlogin()[39m keeps its current parameters. The response
+    includes a [38;5;153muserId[39m, and we record that. This is the usual pattern and the ID can be trusted. The cost is that the
+    stub has to fake a server response for now.
+  - [1mB. Add a [38;5;153muserId[39m parameter, as you asked.[0m The caller supplies it, from a cookie, a saved session or a new form field.
+    Changing the function this way is cheap, but whoever calls it then has to find an ID. If it comes from the client,
+    it can be spoofed, so it can't be trusted for an audit trail.
+  - [1mC. Track by [38;5;153musername[39m.[0m No new ID at all: we record the username we already have. This is the simplest option, but it
+    breaks if users can rename themselves.
+
+  I recommend [1mA[0m. The client asserting who it is (B) can't be trusted for tracking.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId used for tracking come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturned by login (Recommended)[39m
+     [38;5;246mServer returns userId on success; login() signature unchanged; we record that ID.[39m
+  [38;5;246m2.[39m Passed in as a parameter
+     [38;5;246mAdd userId param as requested; caller supplies it (cookie/session/field) — client-asserted.[39m
+  [38;5;246m3.[39m Track by username
+     [38;5;246mNo new ID; record the username we already have.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

@@ -1,0 +1,40 @@
+
+  [1mRunner:[0m Node's built-in [38;5;153mnode:test[39m and [38;5;153mnode:assert[39m, with no dependencies. You have Node v26 locally. I'll add
+  [38;5;153m"scripts": { "test": "node --test" }[39m to [38;5;153mpackage.json[39m.
+
+  [1mModule format note:[0m [38;5;153msrc/index.js[39m and [38;5;153msrc/utils.js[39m are CommonJS, so I [1mwon't[0m set [38;5;153m"type": "module"[39m in [38;5;153mpackage.json[39m. That
+  would break them. Node 26 detects ESM syntax in the new [38;5;153m.js[39m files on its own, and browsers load them as modules
+  because of [38;5;153mtype="module"[39m. The cost is a one-time [38;5;153mMODULE_TYPELESS_PACKAGE_JSON[39m warning when tests run. I'll accept that
+  rather than restructure [38;5;153msrc/[39m.
+
+  [1mTests ([38;5;153mtest/*.test.js[39m):[0m
+  - [1m[38;5;153mapi.test.js[0m stubs [38;5;153mglobalThis.fetch[39m. It checks:
+    - the request goes to the correct URL with the correct method, headers and JSON body
+    - a 200 response returns [38;5;153m{ userId }[39m
+    - a 401 throws using the server's error message
+    - a network rejection throws
+    - a 200 response without a string [38;5;153muserId[39m throws "Malformed login response"
+  - [1m[38;5;153msession.test.js[0m uses a small in-memory fake of [38;5;153msessionStorage[39m. It checks:
+    - set and get round-trip correctly
+    - [38;5;153mgetUserId()[39m returns [38;5;153mnull[39m when nothing is set
+    - [38;5;153mclearSession()[39m removes the ID
+    - [38;5;153msessionStorage[39m that throws or is missing degrades to no-op and [38;5;153mnull[39m
+  - [1m[38;5;153mapp.test.js[0m tests login handling in [38;5;153mapp.js[39m. To make that importable, I'll pull it out into an exported
+    [38;5;153mhandleLogin(username, password)[39m that does validate → login → store or clear. The DOM wiring will only run when
+    [38;5;153mdocument[39m exists, so Node can import the file. It checks:
+    - success stores the userId
+    - a failed login clears any previous userId and doesn't store a new one
+    - a validation failure sends no request
+
+  I'll do it test-first (write each test, watch it fail, then implement).
+
+  That covers the whole design. If you're happy with this section, I'll write the spec to
+  [38;5;153mdocs/hyperpowers/specs/2026-10-03-login-userid-session-design.md[39m (uncommitted). I'll check it myself and run it past
+  Codex for review before handing it to you.
+
+[38;5;246m✻[39m [38;5;246mBaked for 16s · done 2:40 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m
