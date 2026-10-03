@@ -93,3 +93,13 @@ pass this scenario on 2.1.287; 0 of 10 excludes pass rates above 26% per arm
   control root's mutation check is transcribed from the operator session
   because that worktree was removed before archiving.
 - **Scope.** One scenario, one model, one Claude Code version, n=10 per arm.
+
+**Correction (2026-10-03).** The 0 of 10 floor belongs to the harness, not
+to Claude Code 2.1.287. On the clean harness
+(`2026-10-03-harness-confound-attribution`), v6.14.0 and v6.15.0 each passed
+10 of 10 with brainstorming's description listed in every session. Loading
+`AGENTS.md` again took v6.15.0 to 0 of 10. "Neither arm can pass this
+scenario on 2.1.287" holds only with the repository instruction text loaded.
+"The listing changed" is not the whole cause either: the description alone
+passed 30 of 30. The verdict stands, since both arms shared the leak. Details
+in the evidence README's Correction section.

@@ -168,3 +168,33 @@ Read from the transcripts (`tally.txt`, plus the 2026-09-30 sentinel's
 - `runs/side/`: side runs C (`8395`) and D (`6439`).
 - `runs/sentinel/`: the sentinel's failure (`7629`) and indeterminate
   (`0176`).
+
+## Correction (2026-10-03)
+
+Three readings above do not hold on a clean harness.
+`../2026-10-03-harness-confound-attribution/` re-ran this scenario after
+`fc42537c5`, which excludes `AGENTS.md`, and `be020f0d0`, which gives the
+agent under test a clean Claude environment. v6.14.0 and v6.15.0 each
+passed 10 of 10, and every session listed brainstorming's full description.
+Putting back only the `AGENTS.md` load took v6.15.0 to 0 of 10, failing
+the way this campaign's sessions did. Putting back only the `sdk-ts`
+entrypoint left it at 10 of 10.
+
+- **The floor is the instruction text's.** "Neither arm can pass this
+  scenario on 2.1.287" holds only while the repository instruction text is
+  loaded. Without it, both versions pass.
+- **The listing is not the whole cause.** "What changed between 2.1.284 and
+  2.1.287" puts the difference on the listing, with the repository text the
+  same in both windows. On 2.1.287 the listed description passed 30 of 30
+  without that text. Together with the 2026-09-30 pass, which had the text
+  and a bare name, the record fits a failure that needs both. No run
+  on 2.1.287 has the text without the description.
+- **The 2026-09-16 measurement cannot be read for the global file.** The
+  first Limit says the operator's global instructions reached both of its
+  arms. It ran on 2.1.261, whose transcripts record no instruction files
+  (`2026-10-01-companion-baseline` in the experiment log), so that cannot be
+  read from them.
+
+The pre-registered text above stays as committed, and the decision stands:
+both arms ran under the same leak, and on the clean harness they are again
+equal.
