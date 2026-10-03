@@ -1,0 +1,1 @@
+The repo is on `master`. That comes from the git status snapshot taken when this session started. The only commit is `fc54d1c initial`, and the working tree was clean.

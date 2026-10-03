@@ -1,0 +1,1 @@
+The repo is on `master`, and the working tree was clean at the start of this session.
