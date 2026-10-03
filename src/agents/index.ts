@@ -209,14 +209,17 @@ const ClaudeSettingsSchema = z
   .object({ claudeMdExcludes: z.array(z.string()).optional() })
   .passthrough();
 
-// The instruction files Claude Code loads from each ancestor of its cwd. Kept
-// as plain globs: a `**` inside a brace group is not a globstar to every
-// matcher, so `{...,.claude/rules/**}` can miss nested rule files.
+// The instruction files Claude Code loads from each ancestor of its cwd,
+// AGENTS.md included. Kept as plain globs: a `**` inside a brace group is not a
+// globstar to every matcher, so `{...,.claude/rules/**}` can miss nested rule
+// files.
 const ANCESTOR_CLAUDE_MD_GLOBS = [
   'CLAUDE.md',
   'CLAUDE.local.md',
   '.claude/CLAUDE.md',
   '.claude/rules/**',
+  'AGENTS.md',
+  '.claude/AGENTS.md',
 ];
 
 function ancestorClaudeMdExcludes(workdir: string): string[] {

@@ -123,6 +123,9 @@ function readExcludes(configDir: string): string[] {
   return settings.claudeMdExcludes;
 }
 
+// Claude Code also reads AGENTS.md as project instructions, and both parent
+// repos track an AGENTS.md symlinked to their CLAUDE.md, so a fixture without
+// its own CLAUDE.md would otherwise load them.
 test('provision excludes the CLAUDE.md files of every workdir ancestor', () => {
   const { home, cleanup } = makeTempHome();
   try {
@@ -138,6 +141,8 @@ test('provision excludes the CLAUDE.md files of every workdir ancestor', () => {
           '.claude/CLAUDE.md',
           '.claude/rules/style.md',
           '.claude/rules/nested/style.md',
+          'AGENTS.md',
+          '.claude/AGENTS.md',
         ]) {
           expect(excludedBy(excludes, join(dir, rel))).toBe(true);
         }
@@ -165,6 +170,8 @@ test('provision does not exclude CLAUDE.md files inside the workdir', () => {
         '.claude/CLAUDE.md',
         '.claude/rules/style.md',
         'packages/app/CLAUDE.md',
+        'AGENTS.md',
+        '.claude/AGENTS.md',
       ]) {
         expect(excludedBy(excludes, join(workdir, rel))).toBe(false);
       }
