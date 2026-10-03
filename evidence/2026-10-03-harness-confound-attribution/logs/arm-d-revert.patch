@@ -1,0 +1,57 @@
+diff --git a/src/agents/index.ts b/src/agents/index.ts
+index 1040f83f8..509ff93d7 100644
+--- a/src/agents/index.ts
++++ b/src/agents/index.ts
+@@ -269,17 +269,14 @@ const ClaudeSettingsSchema = z
+   .object({ claudeMdExcludes: z.array(z.string()).optional() })
+   .passthrough();
+ 
+-// The instruction files Claude Code loads from each ancestor of its cwd,
+-// AGENTS.md included. Kept as plain globs: a `**` inside a brace group is not a
+-// globstar to every matcher, so `{...,.claude/rules/**}` can miss nested rule
+-// files.
++// The instruction files Claude Code loads from each ancestor of its cwd. Kept
++// as plain globs: a `**` inside a brace group is not a globstar to every
++// matcher, so `{...,.claude/rules/**}` can miss nested rule files.
+ const ANCESTOR_CLAUDE_MD_GLOBS = [
+   'CLAUDE.md',
+   'CLAUDE.local.md',
+   '.claude/CLAUDE.md',
+   '.claude/rules/**',
+-  'AGENTS.md',
+-  '.claude/AGENTS.md',
+ ];
+ 
+ function ancestorClaudeMdExcludes(workdir: string): string[] {
+diff --git a/test/agent-claude.test.ts b/test/agent-claude.test.ts
+index 75cb88f7d..3b22ef059 100644
+--- a/test/agent-claude.test.ts
++++ b/test/agent-claude.test.ts
+@@ -123,9 +123,6 @@ function readExcludes(configDir: string): string[] {
+   return settings.claudeMdExcludes;
+ }
+ 
+-// Claude Code also reads AGENTS.md as project instructions, and both parent
+-// repos track an AGENTS.md symlinked to their CLAUDE.md, so a fixture without
+-// its own CLAUDE.md would otherwise load them.
+ test('provision excludes the CLAUDE.md files of every workdir ancestor', () => {
+   const { home, cleanup } = makeTempHome();
+   try {
+@@ -141,8 +138,6 @@ test('provision excludes the CLAUDE.md files of every workdir ancestor', () => {
+           '.claude/CLAUDE.md',
+           '.claude/rules/style.md',
+           '.claude/rules/nested/style.md',
+-          'AGENTS.md',
+-          '.claude/AGENTS.md',
+         ]) {
+           expect(excludedBy(excludes, join(dir, rel))).toBe(true);
+         }
+@@ -170,8 +165,6 @@ test('provision does not exclude CLAUDE.md files inside the workdir', () => {
+         '.claude/CLAUDE.md',
+         '.claude/rules/style.md',
+         'packages/app/CLAUDE.md',
+-        'AGENTS.md',
+-        '.claude/AGENTS.md',
+       ]) {
+         expect(excludedBy(excludes, join(workdir, rel))).toBe(false);
+       }

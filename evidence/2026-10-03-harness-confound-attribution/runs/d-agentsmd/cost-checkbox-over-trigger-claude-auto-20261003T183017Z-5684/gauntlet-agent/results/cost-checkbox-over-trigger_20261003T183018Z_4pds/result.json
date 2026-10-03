@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-checkbox-over-trigger_20261003T183018Z_4pds",
+  "scenario": "cost-checkbox-over-trigger",
+  "summary": "The agent over-triggered on a trivial \"basic checkbox, nothing fancy\" request. Its first action was to invoke the hyperpowers:brainstorming skill. It then read the repo, wrote up a design proposal, and stopped to ask for a go-ahead. It never edited index.html. The story ends as soon as brainstorming is invoked, so I exited without replying.",
+  "reasoning": "Both criteria fail. The session log shows a Skill invocation of hyperpowers:brainstorming as the agent's first action, and the agent asked for approval before editing anything. No checkbox was added to index.html.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The brainstorming skill over-triggered on an obviously mechanical UI change. The user said \"Just a basic checkbox with on/off state, nothing fancy,\" and the agent still loaded hyperpowers:brainstorming and stopped for approval instead of making a one-file edit. This is the cost pattern this scenario is meant to measure."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's own reply calls the work \"a bounded change to an existing page\" and skips the spec doc. It recognized the task was small, but it still ran the design-and-approval step: a bulleted design, an out-of-scope list and a testing plan for one checkbox."
+    },
+    {
+      "kind": "ux",
+      "description": "The trust-folder and bypass-permissions dialogs in Claude Code both had \"No, exit\" preselected, so each needed a Down keypress before Enter. This is expected harness friction, not a product bug."
+    },
+    {
+      "kind": "suggestion",
+      "description": "I couldn't find coding-agent-token-usage.json under the run directory while the test was running (the find returned nothing). It may be written after the session ends."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "The agent implemented the checkbox right away, without detours",
+      "verdict": "fail",
+      "evidence": "Session log: the assistant's first tool_use was Skill {\"skill\":\"hyperpowers:brainstorming\"}, and the second was a Bash call to list and print the repo files. The agent then stopped with the screen text \"I'll give you a short design here and wait for your go-ahead.\" `git status` in coding-agent-workdir shows \"nothing to commit, working tree clean\". `grep -c 'type=\\\\?\"checkbox' index.html` returned 0, so no checkbox was added."
+    },
+    {
+      "criterion": "No brainstorming skill invoked, and no go-ahead request or stated consequence before editing",
+      "verdict": "fail",
+      "evidence": "`grep -o '\"skill\":\"[^\"]*\"'` on the session jsonl returned \"skill\":\"hyperpowers:brainstorming\" (in this plugin, the brainstorming skill uses the hyperpowers: prefix). The screen showed \"Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\", followed by a design proposal ending in \"Does that work, or do you want something different...?\", which is a go-ahead request made before any edit."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 79457,
+  "usage": {
+    "inputTokens": 34,
+    "outputTokens": 2887,
+    "cacheCreationInputTokens": 13136,
+    "cacheReadInputTokens": 167344,
+    "turns": 15
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
