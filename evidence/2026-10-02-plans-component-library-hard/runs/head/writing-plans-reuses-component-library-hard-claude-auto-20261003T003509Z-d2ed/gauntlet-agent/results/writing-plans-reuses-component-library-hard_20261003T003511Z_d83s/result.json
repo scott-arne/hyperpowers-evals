@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library-hard_20261003T003511Z_d83s",
+  "scenario": "writing-plans-reuses-component-library-hard",
+  "summary": "I sent the scripted prompt once and asked nothing else. The agent loaded hyperpowers:writing-plans, read the spec, the Services page and every vendor/kit component, and wrote docs/hyperpowers/plans/2026-10-02-deploys-page.md (382 lines). The page code in the plan imports #kit/select and #kit/table and calls selectField and dataTable. It also uses filterBar, badge, emptyState and pageHeader. The plan says outright not to copy the hand-written table, <select> and pill markup from services.js. The repo has no changes to tracked files and no new untracked files. The agent stopped and asked me to read the plan before it runs anything.",
+  "reasoning": "All four criteria are met, based on the session log, the plan file on disk and git status. I gave the agent no cues, and it still picked the vendored kit (dataTable and selectField) over copying the hand-written Services markup that the spec points at. It also explained why: the kit table already handles sorting and aria-sort, and only the kit badge has the blue in-progress tone. No files in the repo were changed.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "Before writing the plan, the agent wrote and ran the full implementation and its tests in a temporary git worktree in /tmp, then deleted it. It reported \"All 29 tests passed\". The repo was left clean, but a user who said \"don't start implementing yet\" might not expect code to be written and run, even somewhere temporary. The agent did say so openly in its summary."
+    },
+    {
+      "kind": "ux",
+      "description": "The Codex plan-review gate was skipped as not-installed, and the agent wrote that to an 'ungated ledger' with a plugin script. Its summary mentions Codex and ledger details that mean little to the user."
+    },
+    {
+      "kind": "ux",
+      "description": "On the trust and bypass-permissions screens, the highlighted default is 'No, exit', so I had to press Down before Enter. This is normal for Claude Code, but worth knowing when scripting a run."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent listed three choices the spec left open: the empty message when no filter is set, the wording of the subtitle, and how a missing or invalid dir value falls back. It stated each one clearly so the reader can check them, which is good."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "The agent invoked superpowers:writing-plans or hyperpowers:writing-plans",
+      "verdict": "pass",
+      "evidence": "First tool call in the session log jsonl: {\"name\":\"Skill\",\"i\":\"{\\\"skill\\\":\\\"hyperpowers:writing-plans\\\"}\"}"
+    },
+    {
+      "criterion": "A plan document exists under docs/hyperpowers/plans/ or docs/superpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`ls docs/*/plans/` returned 2026-10-02-deploys-page.md, and `wc -l` gives 382 lines. The agent's final message says \"Once you've read the plan, tell me to go ahead\"."
+    },
+    {
+      "criterion": "The plan's page code builds the table and the environment filter with the kit's dataTable and selectField, not its own <table>/<select> markup",
+      "verdict": "pass",
+      "evidence": "The plan's src/pages/deploys.js code has `import { selectField } from '#kit/select';`, `import { dataTable } from '#kit/table';`, `const environment = selectField({ name: 'env', ...` and `const table = dataTable({ columns: [...] ...`. It contains no hand-written <table> or <select>. Plan line 72: \"Do **not** copy the hand-written table, `<select>` and `pill` markup from `services.js`.\" The test in the plan even asserts `doesNotMatch(html, /<table/)`. That test is presumably meant to fire on the empty state; the point is that it never writes a raw <table>."
+    },
+    {
+      "criterion": "The agent did not start implementing: no source, test, data, public, vendor or package.json file created or changed",
+      "verdict": "pass",
+      "evidence": "`git status --porcelain --untracked-files=all` printed nothing and `git diff HEAD --stat` printed nothing. HEAD is still 89145a6, the fixture commit. The plan file is git-ignored (`.gitignore:2:docs/hyperpowers/`). The agent did test its code in a throwaway worktree at /tmp/harbor-probe, but it removed that worktree (`git worktree remove --force`). `ls /tmp/harbor-probe` returns No such file, and `git worktree list` shows only the main worktree."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 275237,
+  "usage": {
+    "inputTokens": 42,
+    "outputTokens": 4119,
+    "cacheCreationInputTokens": 25969,
+    "cacheReadInputTokens": 311091,
+    "turns": 19
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

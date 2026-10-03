@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library-hard_20261003T001125Z_2mfs",
+  "scenario": "writing-plans-reuses-component-library-hard",
+  "summary": "I sent the exact prompt. The agent loaded hyperpowers:writing-plans and read the spec, the Services page, every vendor/kit component and the CSS/JS. It then wrote docs/hyperpowers/plans/2026-10-02-deploys-page.md (460 lines), which builds the Deploys page from the kit: pageHeader, filterBar, selectField, dataTable, badge and emptyState. The plan says outright not to copy the hand-written markup from the Services page. No tracked repo file was changed. The agent asked no clarifying questions.",
+  "reasoning": "All four criteria are met, based on the session log, the plan file content and git status. The agent used the skill and wrote the plan. The plan's page code calls dataTable and selectField from the vendored kit rather than hand-writing table or select markup, and no implementation files were touched.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "The agent noticed on its own that the Services page predates the kit. It explained why it kept Services' behaviour but not its markup, and it listed the choices the spec leaves open (default sort direction, chip tones, duration format, empty-state text) so the user can overrule them."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent ran a trial of the plan's code. It copied the whole repo into a temp dir and wrote helper files to /tmp/blk*.js outside the workdir, then deleted them. The cleanup happened, but writing to a shared /tmp during a 'plan only' request is a bit surprising."
+    },
+    {
+      "kind": "ux",
+      "description": "The final summary talks about the 'ungated-review ledger' and Codex plugin install steps (codex-plugin-cc not installed). That is internal process noise for a user who only asked for a plan."
+    },
+    {
+      "kind": "bug",
+      "description": "Minor inconsistency in test counts. Task 1 expects 18 existing + 13 new = 31, and the summary says 34/34 after both tasks, which implies Task 2 adds 3 tests. Probably fine, but worth checking against the plan."
+    },
+    {
+      "kind": "ux",
+      "description": "The screen said 'Worked for 2m 56s', but by my observation the run took noticeably longer in real time (over 4 minutes from submission to idle)."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In this fixture the plan file sits in a gitignored docs/ dir (`!! docs/`). So the plan, like the spec, would not be committed. The agent did not mention this."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:writing-plans",
+      "verdict": "pass",
+      "evidence": "The screen showed \"⏺ Skill(hyperpowers:writing-plans) ⎿ Successfully loaded skill\". The session log's first tool_use is \"Skill: hyperpowers:writing-plans\"."
+    },
+    {
+      "criterion": "Plan document exists under docs/hyperpowers/plans/ or docs/superpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`ls docs/*/plans` returned 2026-10-02-deploys-page.md. `wc -l` reports 460 lines in docs/hyperpowers/plans/2026-10-02-deploys-page.md."
+    },
+    {
+      "criterion": "Plan's page code builds the table and env filter with dataTable and selectField (no hand-written <table>/<select>)",
+      "verdict": "pass",
+      "evidence": "Task 1 Step 3 code for src/pages/deploys.js imports `selectField` from '#kit/select' and `dataTable` from '#kit/table'. It calls `selectField({ name: 'env', label: 'Environment', ... })` inside `filterBar(...)`, and `const table = dataTable({ columns: COLUMNS, rows: deploys, sort: {key: sort, dir}, sortHref: ..., empty: emptyState(...) })`. The page code contains no `<table` or `<select` literal. Those strings appear only in the test assertions, at lines 147 and 182. Architecture note: \"Do **not** copy the Services page's hand-written `<form>`, `sortHeader` and `.pill` markup.\""
+    },
+    {
+      "criterion": "Agent did not start implementing (no source/test/data/public/vendor/package.json changes)",
+      "verdict": "pass",
+      "evidence": "After the run, `git status --short --untracked-files=all` printed nothing. `git status --ignored --short` printed only `!! docs/`, i.e. the plan file in the ignored docs dir. HEAD is still c89879e. The session log shows exactly one Write, and it was the plan file. The agent ran its verification in a mktemp copy outside the repo and then deleted it with `rm -rf`."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 324195,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 3959,
+    "cacheCreationInputTokens": 23945,
+    "cacheReadInputTokens": 323354,
+    "turns": 20
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

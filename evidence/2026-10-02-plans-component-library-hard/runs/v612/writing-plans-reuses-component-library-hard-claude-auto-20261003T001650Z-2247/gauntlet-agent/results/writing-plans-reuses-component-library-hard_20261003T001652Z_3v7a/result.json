@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library-hard_20261003T001652Z_3v7a",
+  "scenario": "writing-plans-reuses-component-library-hard",
+  "summary": "I sent the scripted request. The agent loaded hyperpowers:writing-plans, read the spec, the source, the Services page and every vendor/kit component, then wrote docs/hyperpowers/plans/2026-10-02-deploys-page.md (411 lines). The page code in the plan is built from the kit: it imports pageHeader, filterBar, selectField, dataTable, badge and emptyState through #kit/* imports and contains no hand-written <table> or <select>. No repo files were changed apart from the new plan. The agent asked no clarifying questions and stopped to wait for my review.",
+  "reasoning": "All four criteria pass based on what I checked on disk and in the session log. The agent invoked the skill, wrote the plan in the right place, and found and used the vendored kit's dataTable and selectField even though the spec pointed it at the hand-written Services page. It did not change any repo files.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "The agent says outright why it chose the kit: \"It doesn't copy the hand-written markup in services.js... the kit already does exactly that\". It listed the decisions the spec leaves open in the plan (for example, an unknown dir falls back to desc, unlike Services, which falls back to asc; and the kit's amber badge doesn't match the Services amber). It also noted that it made no CSS change for that colour difference, which is a small visual inconsistency worth knowing about."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent ran the plan's code in a temporary scratch copy of the repo and reported that '29 tests passed'. That is a lot of checking for a planning-only request, but it happened outside the workdir, so nothing in the repo changed."
+    },
+    {
+      "kind": "ux",
+      "description": "The Codex review gate was skipped ('Codex plugin isn't installed'). The agent recorded the skip in a ledger by running a plugin script (ungated-ledger append). Nothing new appeared in the workdir afterwards, so the ledger seems to live outside the repo."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code onboarding: in both the trust-folder prompt and the bypass-permissions prompt, 'No, exit' is selected by default, so I had to press Down before Enter each time."
+    },
+    {
+      "kind": "ux",
+      "description": "The docs/ directory is gitignored in the fixture, so the new plan doesn't show up in plain `git status`. A user looking for it there could miss it."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:writing-plans",
+      "verdict": "pass",
+      "evidence": "Screen: \"⏺ Skill(hyperpowers:writing-plans) ⎿ Successfully loaded skill\". This is also the first tool_use in the session JSONL: \"Skill hyperpowers:writing-plans\"."
+    },
+    {
+      "criterion": "Plan document exists under docs/hyperpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`ls docs/hyperpowers/plans` → 2026-10-02-deploys-page.md. Screen: \"Wrote 411 lines to docs/hyperpowers/plans/2026-10-02-deploys-page.md\"."
+    },
+    {
+      "criterion": "The plan's page code builds the table and env filter with the kit's dataTable and selectField, with no hand-written <table>/<select>",
+      "verdict": "pass",
+      "evidence": "Step 3 of the plan, 'Create src/pages/deploys.js', contains `import { selectField } from '#kit/select'; import { dataTable } from '#kit/table';`, then `selectField({ name: 'env', label: 'Environment', ... })` inside `filterBar({...})`, then `const table = dataTable({ columns: [...], rows: deploys, sort: {key: sort, dir}, ... })`. The only <select> and <table> strings in the plan are in test assertions (line 142 assert.match on the kit-select output; line 151 assert.doesNotMatch(html, /<table/)). Neither is in the page code."
+    },
+    {
+      "criterion": "Agent did not start implementing (no source, test, data, public, vendor or package.json changes)",
+      "verdict": "pass",
+      "evidence": "`git status --short --untracked-files=all` printed nothing. `git status --ignored` shows only `!! docs/`. `find . -type f -not -path './.git/*' -newermt '2026-10-02 17:17'` → only ./docs/hyperpowers/plans/2026-10-02-deploys-page.md. The agent's check run used a mktemp scratch copy (`S=$(mktemp -d); git archive HEAD | tar -x -C $S`) outside the workdir."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 284225,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 4200,
+    "cacheCreationInputTokens": 21594,
+    "cacheReadInputTokens": 382913,
+    "turns": 22
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
