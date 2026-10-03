@@ -292,7 +292,8 @@ test('provision does not duplicate an already-approved fingerprint', () => {
 test('provision re-enforces 0600 on a pre-existing looser-perm .claude-env', () => {
   const { home, cleanup } = makeTempHome();
   try {
-    withEnv({ ANTHROPIC_API_KEY: API_KEY }, () => {
+    // Cleared so a host alias pin or gateway URL does not join the exact body.
+    withEnv({ ...PROVIDER_ENV_CLEARED, ANTHROPIC_API_KEY: API_KEY }, () => {
       // Pre-create configDir and a world-readable .claude-env.
       mkdirSync(home.configDir, { recursive: true });
       const envFile = join(home.configDir, '.claude-env');
@@ -668,6 +669,12 @@ const PROVIDER_ENV_CLEARED: Record<string, string | undefined> = {
   AWS_ACCESS_KEY_ID: undefined,
   AWS_SECRET_ACCESS_KEY: undefined,
   AWS_SESSION_TOKEN: undefined,
+  ANTHROPIC_DEFAULT_OPUS_MODEL: undefined,
+  ANTHROPIC_DEFAULT_SONNET_MODEL: undefined,
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: undefined,
+  ANTHROPIC_BASE_URL: undefined,
+  ANTHROPIC_VERTEX_BASE_URL: undefined,
+  ANTHROPIC_BEDROCK_BASE_URL: undefined,
 };
 
 // Vertex: the env-file exports the three provider vars, anchors ADC via the
@@ -717,6 +724,168 @@ test('provision (vertex) writes Vertex env-file with ADC anchor and no API key',
     );
   } finally {
     cleanup();
+  }
+});
+
+// The launcher drops every inherited ANTHROPIC_* var, so the model each alias
+// names (`model: sonnet` on a subagent) comes from the env-file alone. On
+// Vertex, Claude Code's own fallback for `sonnet` is an older model, so the
+// env-file pins all three aliases.
+const VERTEX_ENV: Record<string, string | undefined> = {
+  ...PROVIDER_ENV_CLEARED,
+  CLAUDE_CODE_USE_VERTEX: '1',
+  CLOUD_ML_REGION: 'global',
+  ANTHROPIC_VERTEX_PROJECT_ID: 'proj-example',
+  GOOGLE_APPLICATION_CREDENTIALS: '/tmp/fake-adc.json',
+};
+
+test('provision (vertex) pins the opus, sonnet and haiku aliases', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv(VERTEX_ENV, () => {
+      resolveAgent(vertexConfig()).provision(home, undefined as never);
+      const body = readFileSync(join(home.configDir, '.claude-env'), 'utf8');
+      expect(body).toContain(
+        "export ANTHROPIC_DEFAULT_OPUS_MODEL='claude-opus-5-5'",
+      );
+      expect(body).toContain(
+        "export ANTHROPIC_DEFAULT_SONNET_MODEL='claude-sonnet-5-5'",
+      );
+      expect(body).toContain(
+        "export ANTHROPIC_DEFAULT_HAIKU_MODEL='claude-haiku-4-5@20251001'",
+      );
+    });
+  } finally {
+    cleanup();
+  }
+});
+
+// The same rule ANTHROPIC_MODEL follows for `model: auto`: a host value is
+// already in the host provider's naming scheme, so it wins over the pin.
+test('provision (vertex) forwards a host alias pin over the default', () => {
+  const { home, cleanup } = makeTempHome();
+  try {
+    withEnv(
+      { ...VERTEX_ENV, ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-5' },
+      () => {
+        resolveAgent(vertexConfig()).provision(home, undefined as never);
+        const body = readFileSync(join(home.configDir, '.claude-env'), 'utf8');
+        expect(body).toContain(
+          "export ANTHROPIC_DEFAULT_SONNET_MODEL='claude-sonnet-5'",
+        );
+        expect(body).not.toContain('claude-sonnet-5-5');
+        expect(body).toContain(
+          "export ANTHROPIC_DEFAULT_OPUS_MODEL='claude-opus-5-5'",
+        );
+      },
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+// Bedrock has no verified pin set and API-key aliases resolve natively, so
+// those modes carry a host alias pin when one is set and nothing otherwise.
+test('provision (bedrock, api-key) forwards host alias pins without adding defaults', () => {
+  for (const [config, vars] of [
+    [
+      bedrockConfig(),
+      {
+        ...PROVIDER_ENV_CLEARED,
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        AWS_REGION: 'us-east-1',
+        AWS_ACCESS_KEY_ID: 'AKIAEXAMPLE',
+        AWS_SECRET_ACCESS_KEY: 'secret123',
+      },
+    ],
+    [claudeConfig(), { ...PROVIDER_ENV_CLEARED, ANTHROPIC_API_KEY: API_KEY }],
+  ] as const) {
+    const unset = makeTempHome();
+    try {
+      withEnv(vars, () => {
+        resolveAgent(config).provision(unset.home, undefined as never);
+        const body = readFileSync(
+          join(unset.home.configDir, '.claude-env'),
+          'utf8',
+        );
+        expect(body).not.toContain('ANTHROPIC_DEFAULT_');
+      });
+    } finally {
+      unset.cleanup();
+    }
+    const pinned = makeTempHome();
+    try {
+      withEnv(
+        { ...vars, ANTHROPIC_DEFAULT_HAIKU_MODEL: 'host-haiku-id' },
+        () => {
+          resolveAgent(config).provision(pinned.home, undefined as never);
+          const body = readFileSync(
+            join(pinned.home.configDir, '.claude-env'),
+            'utf8',
+          );
+          expect(body).toContain(
+            "export ANTHROPIC_DEFAULT_HAIKU_MODEL='host-haiku-id'",
+          );
+          expect(body).not.toContain('ANTHROPIC_DEFAULT_OPUS_MODEL');
+          expect(body).not.toContain('ANTHROPIC_DEFAULT_SONNET_MODEL');
+        },
+      );
+    } finally {
+      pinned.cleanup();
+    }
+  }
+});
+
+// A gateway setup routes through a base URL the launcher would otherwise drop
+// with the rest of the ANTHROPIC_* env.
+test('provision forwards gateway base URLs that are set, in every mode', () => {
+  const gateways = {
+    ANTHROPIC_BASE_URL: 'https://gw.example/anthropic',
+    ANTHROPIC_VERTEX_BASE_URL: 'https://gw.example/vertex',
+    ANTHROPIC_BEDROCK_BASE_URL: 'https://gw.example/bedrock',
+  };
+  for (const [config, vars] of [
+    [vertexConfig(), VERTEX_ENV],
+    [
+      bedrockConfig(),
+      {
+        ...PROVIDER_ENV_CLEARED,
+        CLAUDE_CODE_USE_BEDROCK: '1',
+        AWS_REGION: 'us-east-1',
+        AWS_ACCESS_KEY_ID: 'AKIAEXAMPLE',
+        AWS_SECRET_ACCESS_KEY: 'secret123',
+      },
+    ],
+    [claudeConfig(), { ...PROVIDER_ENV_CLEARED, ANTHROPIC_API_KEY: API_KEY }],
+  ] as const) {
+    const unset = makeTempHome();
+    try {
+      withEnv(vars, () => {
+        resolveAgent(config).provision(unset.home, undefined as never);
+        const body = readFileSync(
+          join(unset.home.configDir, '.claude-env'),
+          'utf8',
+        );
+        expect(body).not.toContain('BASE_URL');
+      });
+    } finally {
+      unset.cleanup();
+    }
+    const set = makeTempHome();
+    try {
+      withEnv({ ...vars, ...gateways }, () => {
+        resolveAgent(config).provision(set.home, undefined as never);
+        const body = readFileSync(
+          join(set.home.configDir, '.claude-env'),
+          'utf8',
+        );
+        for (const [key, value] of Object.entries(gateways)) {
+          expect(body).toContain(`export ${key}='${value}'`);
+        }
+      });
+    } finally {
+      set.cleanup();
+    }
   }
 });
 

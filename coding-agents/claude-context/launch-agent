@@ -4,8 +4,7 @@
 # The cd, Claude auth env, throwaway-$HOME pin, plugin-dir, and flags are baked
 # in here so the QA agent launches Claude with ONE token and cannot skip the
 # prepared workdir. quorum substitutes the $… values below at runtime, so the
-# installed copy contains literal absolute paths (no env inheritance needed —
-# tmux strips env from new sessions).
+# installed copy contains literal absolute paths (no env inheritance needed).
 #
 # No CLAUDE_CONFIG_DIR is set: the launcher pins HOME to the throwaway home via
 # $QUORUM_HOME_ENV, and provisioning seeds the config INTO <HOME>/.claude
@@ -13,22 +12,26 @@
 # writes its transcript under its $HOME/.claude default, so the config dir need
 # not be threaded through the launcher.
 #
-# `env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID` strips the launching Claude Code
-# session's identity. Claude Code (>=2.1.166) skips writing its session
-# transcript when it detects a nested interactive session via those inherited
-# vars; stripping them lets the eval run from inside a Claude Code session while
-# the agent under test still persists its transcript (so capture sees real tool
-# calls). If capture ever comes back empty anyway, claude is a strict-capture
-# target, so the run is a loud indeterminate(stage=capture), never a silent pass.
+# The launcher does inherit the environment of whatever started quorum: a run
+# launched from a Claude Code session handed the agent under test that
+# session's identity (CLAUDECODE, CLAUDE_CODE_SESSION_ID,
+# CLAUDE_CODE_CHILD_SESSION, CLAUDE_CODE_ENTRYPOINT), its opt-ins
+# (CLAUDE_CODE_ENABLE_TODO_TOOLS turns the task tools on, BASH_*_TIMEOUT_MS,
+# ENABLE_PROMPT_CACHING_1H) and its ANTHROPIC_DEFAULT_*_MODEL alias pins, so
+# results depended on where quorum was started. Before sourcing the env-file,
+# the launcher drops every inherited CLAUDE*/ANTHROPIC* var and those three
+# others; the env-file then carries everything Claude-specific on purpose.
 #
-# As of claude 2.1.176 the env-strip alone is insufficient: nested detection
-# gained additional signals (e.g. CLAUDE_CODE_CHILD_SESSION) that the strip does
-# not cover. CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 is the authoritative
-# override — it forces transcript persistence regardless of nested-session
-# detection, so capture stays robust across claude versions.
+# Dropping the parent session's identity also matters for capture: Claude Code
+# (>=2.1.166) skips writing its session transcript when it detects a nested
+# interactive session. As of 2.1.176 nested detection has signals beyond the
+# environment, so CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 stays as the
+# authoritative override. If capture ever comes back empty anyway, claude is a
+# strict-capture target, so the run is a loud indeterminate(stage=capture),
+# never a silent pass.
 #
-# Equivalent manual command (for debugging):
-#   cd "$QUORUM_AGENT_CWD" && set -a && source "$CLAUDE_ENV_FILE" && set +a && env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID HOME="$QUORUM_AGENT_HOME" CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --dangerously-skip-permissions --plugin-dir "$SUPERPOWERS_ROOT" --model "$CLAUDE_MODEL"
+# Equivalent manual command (for debugging), from a shell without Claude env:
+#   cd "$QUORUM_AGENT_CWD" && set -a && source "$CLAUDE_ENV_FILE" && set +a && env HOME="$QUORUM_AGENT_HOME" CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --dangerously-skip-permissions --plugin-dir "$SUPERPOWERS_ROOT" --model "$CLAUDE_MODEL"
 #
 # Auth is carried entirely by $CLAUDE_ENV_FILE, which provision() writes per run
 # in one of three modes (pinned by the agent config's required_env, or detected
@@ -50,9 +53,16 @@
 # never-onboarded config, so claude comes up "Not logged in" — reproduced 2/2.)
 set -euo pipefail
 cd "$QUORUM_AGENT_CWD" || { echo "launch-agent: cannot cd to $QUORUM_AGENT_CWD" >&2; exit 1; }
+# Drop the inherited Claude env before the env-file sets it (see above).
+for name in $(compgen -e); do
+  case "$name" in
+    CLAUDE*|ANTHROPIC*|BASH_DEFAULT_TIMEOUT_MS|BASH_MAX_TIMEOUT_MS|ENABLE_PROMPT_CACHING_1H)
+      unset "$name" ;;
+  esac
+done
 # Auto-export every var the env-file sets (it uses explicit `export`, but `set -a`
 # is belt-and-braces) so the sourced auth reaches the exec'd child.
 set -a
 source "$CLAUDE_ENV_FILE"
 set +a
-exec env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID $QUORUM_HOME_ENV CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --dangerously-skip-permissions --plugin-dir "$SUPERPOWERS_ROOT" --model "$CLAUDE_MODEL" "$@"
+exec env $QUORUM_HOME_ENV CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1 claude --dangerously-skip-permissions --plugin-dir "$SUPERPOWERS_ROOT" --model "$CLAUDE_MODEL" "$@"
