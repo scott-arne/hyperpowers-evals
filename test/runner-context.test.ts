@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
@@ -99,10 +100,9 @@ test('populateContextDir substitutes every placeholder in the claude context', (
   // The HOWTO points at the generated launcher's absolute path.
   expect(howto).toContain(join(ctxDir, 'launch-agent'));
 
-  // Nested-session capture defenses survive substitution (oracle da4846d/ea6a231).
-  // The launcher both strips the nested-detection env (env -u …) AND forces
-  // transcript persistence; losing either empties capture -> indeterminate(capture).
-  expect(launcher).toContain('env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID');
+  // Nested-session capture defense survives substitution (oracle ea6a231):
+  // losing the forced persistence empties capture -> indeterminate(capture).
+  // The env strip it pairs with is exercised by running the launcher below.
   expect(launcher).toContain('CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1');
 
   // Throwaway-$HOME isolation: HOME + the XDG dirs are pinned under <runDir>/home
@@ -118,6 +118,102 @@ test('populateContextDir substitutes every placeholder in the claude context', (
   // The shebang'd launcher is executable after substitution (mode & 0o111).
   const mode = statSync(join(ctxDir, 'launch-agent')).mode;
   expect(mode & 0o111).not.toBe(0);
+});
+
+// The launcher runs inside whatever environment launched quorum. When that is
+// a Claude Code session, its identity, opt-ins (task tools, Bash timeouts,
+// prompt caching) and alias pins would otherwise reach the agent under test,
+// so results would depend on where quorum was started. The launcher drops
+// them before sourcing the env-file, which then sets the Claude env alone.
+test('the claude launcher drops the inherited Claude env and keeps the env-file', () => {
+  const runDir = mkdtempSync(join(tmpdir(), 'run-'));
+  const configDir = join(runDir, 'coding-agent-config');
+  const launchCwd = join(runDir, 'coding-agent-workdir');
+  const stubDir = join(runDir, 'stub-bin');
+  mkdirSync(configDir, { recursive: true });
+  mkdirSync(launchCwd, { recursive: true });
+  mkdirSync(stubDir, { recursive: true });
+  populateContextDir({
+    codingAgentsDir: REAL_CODING_AGENTS,
+    codingAgent: 'claude',
+    runDir,
+    substitutions: claudeSubstitutions({
+      launchCwd,
+      configDir,
+      runDir,
+      superpowersRoot: '/tmp/sproot',
+      model: 'opus',
+    }),
+    required: true,
+    forbiddenPlaceholders: ['$CLAUDE_MODEL'],
+  });
+  writeFileSync(
+    join(configDir, '.claude-env'),
+    "export CLAUDE_CODE_USE_VERTEX='1'\n" +
+      "export ANTHROPIC_DEFAULT_SONNET_MODEL='from-env-file'\n",
+  );
+  // A stand-in claude that records the environment it was started with.
+  const dump = join(runDir, 'claude-env.txt');
+  writeFileSync(
+    join(stubDir, 'claude'),
+    `#!/bin/sh\n/usr/bin/env > '${dump}'\n`,
+    { mode: 0o755 },
+  );
+
+  const result = spawnSync(
+    join(runDir, 'gauntlet-agent', 'context', 'launch-agent'),
+    [],
+    {
+      env: {
+        PATH: `${stubDir}:/usr/bin:/bin`,
+        CLAUDECODE: '1',
+        CLAUDE_CODE_SESSION_ID: 'parent-session',
+        CLAUDE_CODE_CHILD_SESSION: '1',
+        CLAUDE_CODE_ENTRYPOINT: 'sdk-ts',
+        CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+        CLAUDE_EFFORT: 'xhigh',
+        ANTHROPIC_API_KEY: 'host-key',
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'host-sonnet',
+        BASH_DEFAULT_TIMEOUT_MS: '600000',
+        BASH_MAX_TIMEOUT_MS: '600000',
+        ENABLE_PROMPT_CACHING_1H: '1',
+        HTTPS_PROXY: 'http://proxy.example:8080',
+      },
+      encoding: 'utf8',
+    },
+  );
+  expect(result.stderr).toBe('');
+  expect(result.status).toBe(0);
+
+  const env = new Map(
+    readFileSync(dump, 'utf8')
+      .trimEnd()
+      .split('\n')
+      .map((line) => {
+        const eq = line.indexOf('=');
+        return [line.slice(0, eq), line.slice(eq + 1)] as const;
+      }),
+  );
+  for (const name of [
+    'CLAUDECODE',
+    'CLAUDE_CODE_SESSION_ID',
+    'CLAUDE_CODE_CHILD_SESSION',
+    'CLAUDE_CODE_ENTRYPOINT',
+    'CLAUDE_CODE_ENABLE_TODO_TOOLS',
+    'CLAUDE_EFFORT',
+    'ANTHROPIC_API_KEY',
+    'BASH_DEFAULT_TIMEOUT_MS',
+    'BASH_MAX_TIMEOUT_MS',
+    'ENABLE_PROMPT_CACHING_1H',
+  ]) {
+    expect(env.has(name)).toBe(false);
+  }
+  expect(env.get('CLAUDE_CODE_USE_VERTEX')).toBe('1');
+  expect(env.get('ANTHROPIC_DEFAULT_SONNET_MODEL')).toBe('from-env-file');
+  expect(env.get('CLAUDE_CODE_FORCE_SESSION_PERSISTENCE')).toBe('1');
+  expect(env.get('HOME')).toBe(join(runDir, 'home'));
+  // Network config is not Claude env and must still reach the agent.
+  expect(env.get('HTTPS_PROXY')).toBe('http://proxy.example:8080');
 });
 
 test('populateContextDir raises when a required context dir is missing', () => {

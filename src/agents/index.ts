@@ -170,6 +170,66 @@ export function resolveClaudeAutoModel(): string {
   return AUTO_MODEL_BY_PROVIDER[provider];
 }
 
+/** The env vars that map the model aliases a session hands its subagents
+ *  (`model: sonnet`) to concrete model ids. */
+const CLAUDE_ALIAS_MODEL_ENV = [
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+] as const;
+
+/** Vertex alias pins. Claude Code's own Vertex fallback for `sonnet` is Sonnet
+ *  4.5, so without a pin a subagent's tier depends on whether the operator's
+ *  shell happens to set one. Bedrock has no verified set, and API-key aliases
+ *  resolve natively. The haiku id is the one Claude Code's model table uses on
+ *  Vertex. */
+const VERTEX_ALIAS_MODELS: Record<
+  (typeof CLAUDE_ALIAS_MODEL_ENV)[number],
+  string
+> = {
+  ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-opus-5-5',
+  ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-5-5',
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5@20251001',
+};
+
+/** Gateway routing a host may set, forwarded so a gateway setup survives the
+ *  launcher dropping every inherited ANTHROPIC_* var. */
+const CLAUDE_GATEWAY_ENV = [
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_VERTEX_BASE_URL',
+  'ANTHROPIC_BEDROCK_BASE_URL',
+];
+
+/**
+ * The .claude-env lines every provider mode shares. The launcher sources the
+ * env-file only after dropping the inherited Claude env, so anything Claude
+ * Code should see from the host has to be written here. A host alias pin wins
+ * over the Vertex default, the same rule ANTHROPIC_MODEL follows for
+ * `model: auto`.
+ */
+function claudeSharedEnvLines(provider: ClaudeProvider): string[] {
+  const lines: string[] = [];
+  for (const key of CLAUDE_ALIAS_MODEL_ENV) {
+    const hostValue = getEnv(key) ?? '';
+    const value =
+      hostValue !== ''
+        ? hostValue
+        : provider === 'vertex'
+          ? VERTEX_ALIAS_MODELS[key]
+          : '';
+    if (value !== '') {
+      lines.push(`export ${key}=${shellSingleQuote(value)}`);
+    }
+  }
+  for (const key of CLAUDE_GATEWAY_ENV) {
+    const value = getEnv(key) ?? '';
+    if (value !== '') {
+      lines.push(`export ${key}=${shellSingleQuote(value)}`);
+    }
+  }
+  return lines;
+}
+
 /**
  * Build the GOOGLE_APPLICATION_CREDENTIALS export line for Vertex Claude auth.
  * google-auth-library resolves Application Default Credentials via
@@ -377,10 +437,11 @@ class ClaudeAgent implements CodingAgent {
     // so a pre-placed symlink at the destination cannot redirect the API key.
     // `export` so the sourced value reaches the launcher's `exec env … claude`
     // child (the Bedrock branch exports its vars the same way).
-    writePrivateFileNoFollow(
-      envFile,
-      `export ANTHROPIC_API_KEY=${shellSingleQuote(apiKey)}\n`,
-    );
+    const lines = [
+      `export ANTHROPIC_API_KEY=${shellSingleQuote(apiKey)}`,
+      ...claudeSharedEnvLines('api-key'),
+    ];
+    writePrivateFileNoFollow(envFile, `${lines.join('\n')}\n`);
     approveClaudeApiKey(claudeJsonPath, apiKey);
   }
 
@@ -425,6 +486,7 @@ class ClaudeAgent implements CodingAgent {
         lines.push(`export ${key}=${shellSingleQuote(value)}`);
       }
     }
+    lines.push(...claudeSharedEnvLines('vertex'));
     return `${lines.join('\n')}\n`;
   }
 
@@ -478,6 +540,7 @@ class ClaudeAgent implements CodingAgent {
         lines.push(`export ${key}=${shellSingleQuote(value)}`);
       }
     }
+    lines.push(...claudeSharedEnvLines('bedrock'));
     return `${lines.join('\n')}\n`;
   }
 }
