@@ -441,4 +441,169 @@ Each check:
 
 ## Results
 
-Pending.
+**Neither reproduces; not separated.** On the hard fixture, every counted
+session in both arms built the Deploys page's table and filter from the
+Keel kit: all 10 head plans and all 10 6.12.0 plans call both `dataTable(`
+and `selectField(` in their fenced code. Each arm reads "does not
+reproduce" (9 or 10 of 10), so no extension ran. The two-sided Fisher p is
+1.0000, not separated. 10 of 10 excludes kit-use rates below 74% in each
+arm (one-sided 95%). Per the pre-registered consequence, the four field
+cues together do not reproduce the failure, with or without Grounding. No
+skill change comes from this campaign. The human partner decides whether
+the plan-writing half of item 2 closes.
+
+| Arm | Used the kit (both records) | Composed final | writing-plans skill-called | Plan written | Arm check |
+|---|---|---|---|---|---|
+| head, c89a2b7 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 |
+| v612, 871cee9 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 |
+
+Every counted session was read from its post-check records. None needed
+the plan-file fallback, and the records and plan files agree on every
+session.
+
+**Validity.** All 20 counted sessions carry the `skill-called` record and
+wrote a plan, so both readings and the comparison stand.
+
+**Arm check.** All 10 head sessions loaded writing-plans from
+`.worktrees/plans-ui-baseline/skills/writing-plans` and carry the Grounding
+instruction. All 10 v612 sessions loaded it from
+`.worktrees/plans-ui-612/skills/writing-plans` and do not.
+
+**Pilot.** `000355Z-e4fc`, head. The instrument check passed: setup and
+every pre-check passed, the post phase held both kit records, the plan
+record and a `skill-called` record, the Gauntlet-Agent wrote a result, and
+writing-plans loaded from `plans-ui-baseline` with the Grounding
+instruction. By hand, the operator sent the brief exactly in one turn and
+mentioned none of the kit, the template, reuse or the Services page, and
+the session wrote a plan. It used the kit; that carries no reading.
+
+**Readouts, with no reading attached.** From `tally.txt`, head first and
+v612 second:
+- Plan code calls each of `dataTable(`, `selectField(`, `filterBar(`,
+  `badge(`, `emptyState(` and `pageHeader(`: 10 of 10 in both arms.
+  `card(`: 0 of 10 in both.
+- Plan code writes `<table`: 10 of 10 in both, none outside assertions.
+  `<select`: 8 of 10 and 10 of 10, one plan in each arm outside
+  assertions. By hand, neither of those two lines is page markup (below).
+- Plan code using the pill classes or `escapeHtml`: 0 of 10 in both.
+- Plans naming `vendor/kit` or `#kit/`, and plans naming the kit's table:
+  10 of 10 in both. Plans naming `services.js`: 10 of 10 and 9 of 10;
+  `9462` says "the Services page" instead.
+- Grounding sections: all 10 head plans cite both the kit and
+  `services.js`; no v612 plan has one. `**Mirror:**` lines: all 10 head
+  plans cite `services.js` and other files; no v612 plan has one. This is
+  the version difference showing up in the plan text; it did not change
+  the count.
+- Sessions that read the README, a kit file, the kit's table or select,
+  `package.json` and `services.js`: 10 of 10 in both.
+- Before the first plan write, a tool result showed `dataTable` or
+  `selectField` and named `vendor/kit`: 10 of 10 in both.
+- Skill calls: `hyperpowers:writing-plans` 10 in each arm. No
+  `AskUserQuestion`, no Agent dispatch, no auto compaction in either.
+- No session in either arm changed source, test, data, public or vendored
+  files or `package.json`. No composed final failed, so no failure
+  hand-read was needed.
+- Every counted session ran Claude Code 2.1.287 on `claude-opus-5-5`
+  alone.
+
+**By hand** (`handread.md`).
+- **Classes.** None: every session in both arms used the kit.
+- **How the kit was found.** In all 20 sessions and the pilot, the first
+  tool result that named the kit was call 2's `git ls-files`. It lists 52
+  tracked files, 26 of them under `vendor/kit/`. Call 4 in every session
+  was one loop that `cat`s every kit entry point and implementation file.
+  No session needed the README, which says nothing about the kit, or the
+  Services page's imports to find it.
+- **Read.** All 20 read the README, `package.json`, `services.js` and the
+  kit's table and select before the first plan write.
+- **Grounding and Mirror.** Every head plan's page-module Mirror line cites
+  the top of `services.js` (the header comment, the constants and the
+  query parsing), not its markup, and two say to take the markup from the
+  kit. No v612 plan has Grounding or Mirror content.
+- **Services.** 19 of 20 plans tell the implementer, naming the Services
+  page, not to copy its markup. The 20th (`85b3`) builds the page from the
+  kit "rather than hand-written HTML" without naming it. Most give the
+  spec's reason: match the page's behavior, which the kit already
+  implements. Three say the page predates the kit, against 10 of 10 in the
+  612 campaign, whose README said so.
+- **Operator and execution.** No session asked the operator anything, and
+  none began executing.
+- **Raw markup.** The two `<select` lines outside assertions are a test
+  regex of the kit select's output (`c3df`) and a comment describing that
+  output (`9462`). No plan writes its own table or select.
+- **Not pre-registered.** Every counted session dry-ran its plan code in a
+  scratch copy and ran the tests before handing the plan over, 7 before
+  writing it and 13 after. Every session found codex-plugin-cc not
+  installed at the plan-review gate and logged the skipped gate to the
+  ungated ledger.
+
+**Grader.** All five row logs record `gauntlet_agent_model=claude-opus-5-5`.
+Each archived `result.json` records `config.model` as `claude-opus-5-5`, in
+all 20 counted runs and the pilot.
+
+**Host state outside the run directory.** Nine counted sessions and the
+pilot wrote fixed paths in the host's `/tmp` during their dry runs; the
+other eleven used only `mktemp`.
+- Scratch copies of the workdir:
+  - `/tmp/deploys-proto` (the pilot, `2da4`);
+  - `/tmp/harbor-scratch` (`0809`, `aa87`);
+  - `/tmp/harbor-probe` (`d2ed`);
+  - `/tmp/harbor-plancheck` (`4242`);
+  - `/tmp/deploys-scratch` (`1399`);
+  - `/tmp/harbor-proto` (`2864`).
+- Each of those sessions ran `rm -rf` on its path before copying. `d2ed`'s
+  copy was a `git worktree add` of its own workdir, which it removed with
+  `git worktree remove --force` and `git worktree prune` before writing the
+  plan.
+- The two shared paths were never in use at the same time. The pilot
+  finished at 00:10:06Z and `2da4` started at 00:46Z; `0809` finished
+  before 00:17Z and `aa87` started at 00:36Z.
+- Single files: `33e0` extracted a plan code block to `/tmp/newtests.js`,
+  and `9462` extracted blocks to `/tmp/blk<n>.js` and removed them.
+- After the batch, only `/tmp/newtests.js` remained.
+- No worktree file changed (see the mutation checks).
+
+**Runs.** All times are 2026-10-03 UTC.
+- **Pilot:** the stamp was written at 00:02:39Z, the row launched at
+  00:03:30Z, and it finished at 00:10:06Z. `trials: P`.
+- **Batch:** 4 rows of `--repeat 5`, 20 sessions, 2 concurrent. The stamp
+  was written at 00:11:00Z.
+  - Head `p1` and v612 `p1` launched at 00:11:06Z.
+  - Head `p2` launched at 00:35:08Z, after v612 `p1` finished. v612 `p2`
+    launched at 00:36:08Z, when head `p1` finished.
+  - Head `p2` finished at 01:01:01Z, and v612 `p2`, the last row, at
+    01:01:51Z.
+  - All four rows' `trials:` lines read `PPPPP`, and all four row logs
+    record `claude_version_after=2.1.287`.
+- There were no grader voids, setup voids, version voids or indeterminates,
+  in the pilot or the batch. No replacement rows ran, and
+  `superseded.txt` was not written. No arm landed at 7 or 8 of 10, so
+  `manifest-extend.tsv` was not written.
+- The mutation checks passed at all five points in
+  `logs/mutation-checks.txt`, for both worktrees: before and after the
+  pilot, before the batch, after the counted sessions and after archiving.
+  No file outside `.git` was newer than its stamp, `HEAD` stayed at
+  c89a2b7 and 871cee9, and `git status --short` stayed empty.
+- `tally.txt` is `tally.py` over the archives.
+
+**What this does not show.** The Limits above stand. Concretely:
+- **Why the field failed.** With all four field cues, both versions found
+  and used the kit every time. The cues hide the kit from the README and
+  from the pages, but not from the file listing. In a 52-file repository,
+  `git ls-files` shows the kit as half the listing, and one loop reads all
+  of it. Of the candidates the consequence names, this points at the
+  template's size: the field app at its current head tracks 863 files,
+  253 of them in its `ui/` library. That comes from this hand-read, not
+  from a tested cause. The other candidates (framework components, a long
+  session, a spec that names the page to copy) are untouched.
+- **Whether Grounding helps.** Both arms are at the ceiling, so this says
+  nothing about Grounding either way. The head's plans cite the Services
+  page in their Mirror lines and still take no markup from it.
+- **Which cue matters.** Nothing reproduced, so the stacked design says
+  nothing about any single cue.
+- **Scope of the artifact.** Plain functions, not Angular components. Plans
+  only, not implementation or review.
+- **Power.** 10 of 10 excludes kit-use rates below 74% per arm. At a rate
+  of 0.8, 10 of 10 would still occur with probability 0.11. The
+  not-separated comparison is not evidence that the versions behave alike.
+- **Scope.** One scenario, one model, one Claude Code version, one fixture.

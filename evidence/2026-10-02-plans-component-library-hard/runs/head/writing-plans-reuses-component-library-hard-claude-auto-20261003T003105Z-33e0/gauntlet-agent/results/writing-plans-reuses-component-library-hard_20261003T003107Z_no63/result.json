@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 5,
+  "runId": "writing-plans-reuses-component-library-hard_20261003T003107Z_no63",
+  "scenario": "writing-plans-reuses-component-library-hard",
+  "summary": "Claude loaded hyperpowers:writing-plans and read the spec, the Services page and every vendored kit component. It then wrote docs/hyperpowers/plans/2026-10-02-deploys-page.md. The plan builds the Deploys page from the kit's pageHeader, filterBar, selectField, dataTable, badge and emptyState rather than copying the Services page's hand-written markup. Claude did not start implementing. It tested the plan's code in a throwaway temp copy of the repo, and the working tree is unchanged apart from the plan file.",
+  "reasoning": "All four criteria pass based on the session log, the plan file's contents, and git/find checks on the working directory.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The setup prompts default to \"No, exit\" (folder trust and bypass-permissions). Pressing Enter by habit would quit."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In its summary Claude raised the kit-vs-Services choice itself, saying it matched Services' behaviour \"but not by copying services.js\". It also listed two choices the spec left open for the user to check. Both are good transparency."
+    },
+    {
+      "kind": "ux",
+      "description": "The final message has a block about a Codex plugin not being installed (\"/plugin install codex@openai-codex ...\"), plus a note that the skipped review was logged to an \"ungated ledger\". This is noise for a user who only asked for a plan."
+    },
+    {
+      "kind": "bug",
+      "description": "Possible problem: Claude ran an `ungated-ledger append` script from the plugin, which writes state somewhere outside the repo (no file in the workdir changed). Its first attempt also used `ls ~/.claude/plugins/cache/...` to find the plugin root, which failed before it fell back to the plugin dir path. Worth checking where that ledger goes."
+    },
+    {
+      "kind": "suggestion",
+      "description": "docs/hyperpowers/ is gitignored in this fixture, so the plan file shows up only under `git status --ignored`. Anyone checking for the plan with plain git status will not see it."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked writing-plans skill",
+      "verdict": "pass",
+      "evidence": "Session log tool_use: \"Skill hyperpowers:writing-plans\". The screen showed \"Skill(hyperpowers:writing-plans) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Plan document exists under docs/hyperpowers/plans/",
+      "verdict": "pass",
+      "evidence": "`ls docs/*/plans/` returned 2026-10-02-deploys-page.md (388 lines). Claude said: \"Your working tree is unchanged apart from the new plan file.\""
+    },
+    {
+      "criterion": "Plan's page code calls the kit's dataTable and selectField, with no hand-written <table>/<select>",
+      "verdict": "pass",
+      "evidence": "The plan's src/pages/deploys.js code has `import { selectField } from '#kit/select';` and `import { dataTable } from '#kit/table';`, and calls `selectField({ name: 'env', ...})` and `const table = dataTable({ columns: COLUMNS, ...})`. grep for `<table` or `<select` found them only in test assertions (lines 140 and 168), not in the page code."
+    },
+    {
+      "criterion": "No source, test, data, public, vendor or package.json changes",
+      "verdict": "pass",
+      "evidence": "`git status --short --untracked-files=all` returned nothing, and `git diff --stat` was empty. `find . -newer <spec> -type f -not -path './.git/*'` returned only ./docs/hyperpowers/plans/2026-10-02-deploys-page.md. Claude's verification run happened in a `mktemp -d` copy that it then deleted with `rm -rf $T`."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 299819,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 3696,
+    "cacheCreationInputTokens": 20291,
+    "cacheReadInputTokens": 329256,
+    "turns": 20
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
