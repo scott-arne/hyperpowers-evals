@@ -1,0 +1,1 @@
+It's on `master`. The snapshot taken at the start of the session also shows a clean working tree, with a single commit (`da2088b initial`).

@@ -1,0 +1,1 @@
+The repo is on `master`. That comes from the git snapshot taken when this session started, and the working tree was clean at that point.

@@ -1,0 +1,1 @@
+The repo is on `master`. That's the branch from the session's git snapshot taken when this conversation started.

@@ -1,0 +1,7 @@
+This looks bounded: `list` already exists in `notes.py`, and tags fit inside the current one-line-per-note format. I'll work out the design with you here in chat and won't write a new spec. `docs/spec-tags.md` already settles most of it: tags are `#words` in the note text, there's a single `--tag` filter, matching ignores case, and the storage format stays the same. I'll treat that file as the starting point.
+
+Something I found while reading `list`: `list_notes()` sorts by note text (`key=lambda r: r[1]`), but the only test is named `test_list_is_in_date_order`. It passes because its sample notes happen to be in the same order alphabetically and by date. A filtered `list` will make the wrong order easier to see. I think fixing it should be its own change, but tell me if you'd rather include it here.
+
+The one gap in the spec is where a tag ends. Take `call mom #family, then #errands.` Splitting on whitespace gives the tags `family,` and `errands.`, so `--tag family` would miss that note. I recommend this rule instead: a tag is `#` followed by letters, digits, `_` or `-`, and any other character ends it. That handles trailing punctuation, and a lone `#` (as in `issue #`) isn't counted as a tag. The rule is easy to change later because tags are found when `list` runs, not stored. The only effect would be which existing notes a filter matches.
+
+Should a tag be `#` followed by letters, digits, `_` and `-`, or anything up to the next whitespace?
