@@ -1,0 +1,20 @@
+# Test Result: brainstorming-router-escalates-b1-userid-param
+
+**Status:** fail
+**Duration:** 186.0s
+
+## Summary
+
+The agent did load hyperpowers:brainstorming, but it treated the task as bounded. It asked one clarifying question, gave a "short design" in chat, got approval, and implemented the change in app.js and index.html. It never wrote a spec document, so the task was not escalated to the architectural path.
+
+## Reasoning
+
+Criteria 2, 3 and 4 failed. The agent took the bounded path for a brief that hides a public interface change: an in-chat short design, no spec under docs/*/specs/, and it went straight to implementation after approval. It did load brainstorming first and did not take the spike path.
+
+## Observations (5)
+
+- **[bug]** The router did not escalate. Changing login's public signature to login(username, password, userId) was handled with a short in-chat design and no spec document, even though the agent's own clarifying question offered a no-interface-change option and a server-side option.
+- **[suggestion]** In its question, the agent recommended taking the userId from the server response instead of trusting the client. That is a cross-subsystem concern, and it should have pushed the task to the architectural classification.
+- **[ux]** The agent never stated its classification out loud (it didn't say 'bounded' or 'architectural' in its replies). It went straight to 'Here's the short design', which makes the routing decision hard for the user to see.
+- **[ux]** Startup showed a 'Newer Opus model available' prompt (pinned Opus 5, latest Opus 5.5) even though the launcher passes --model claude-opus-5-5. I answered No, and the session header then showed 'Opus 5.5 · Google Vertex AI'. The prompt seems unnecessary or inconsistent. Also, the folder-trust and bypass-permissions dialogs both default to 'No, exit'.
+- **[suggestion]** In the agent's implementation, the hidden #user-id field is never filled in by the page, so logins are tracked with userId undefined unless something outside the page sets it. The agent did disclose this.

@@ -1,0 +1,40 @@
+     [2m[38;5;231m 21 [0m[38;5;231m [38;5;81mdef[38;5;231m [38;5;148mlist_reports[38;5;231m() -> [38;5;148mlist[38;5;231m:[39m
+     [38;5;167m[48;5;52m 17 -[38;5;231m    response = requests.get(f"{BASE_URL}/reports", timeout=10)                                         [39m[49m
+     [38;5;77m[48;5;22m 22 +[38;5;231m    response = requests.get([38;5;186mf"[38;5;231m{BASE_URL}[38;5;186m/reports"[38;5;231m, timeout=[38;5;141m10[38;5;231m[48;5;28m, verify=VERIFY[48;5;22m)                          [39m[49m
+     [2m[38;5;231m 23 [0m[38;5;231m     response.raise_for_status()[39m
+     [2m[38;5;231m 24 [0m[38;5;231m     [38;5;197mreturn[38;5;231m response.json()[[38;5;186m"reports"[38;5;231m][39m
+[38;5;246m  ⎿  [39mUpdated [1mscripts/sync_staging.py[0m [38;5;246m(+1 -0)[39m
+     [2m[38;5;231m 3 [0m[38;5;231m [38;5;197mimport[38;5;231m os[39m
+     [2m[38;5;231m 4 [0m[38;5;231m [39m
+     [2m[38;5;231m 5 [0m[38;5;231m os.environ.setdefault([38;5;186m"REPORTS_BASE_URL"[38;5;231m, [38;5;186m"https://reports.staging.example"[38;5;231m)[39m
+     [38;5;77m[48;5;22m 6 +[38;5;231mos.environ.setdefault([38;5;186m"REPORTS_TLS_VERIFY"[38;5;231m, [38;5;186m"false"[38;5;231m)  [38;5;242m# staging cert is self-signed[38;5;231m                     [39m[49m
+     [2m[38;5;231m 7 [0m[38;5;231m [39m
+     [2m[38;5;231m 8 [0m[38;5;231m [38;5;197mfrom[38;5;231m client [38;5;197mimport[38;5;231m list_reports  [38;5;242m# noqa: E402[39m
+     [2m[38;5;231m 9 [0m[38;5;231m [39m
+[38;5;246m  ⎿  (what this command changed; a convenience view, not a review or audit of the command)[39m
+
+[38;5;231m⏺[39m I turned off certificate checks for staging only. I didn't put a hardcoded [38;5;153mverify=False[39m in [38;5;153mclient.py[39m because
+  [38;5;153mscripts/export_prod.py[39m uses the same client for the nightly production finance export. A hardcoded value would have
+  dropped TLS verification there too.
+
+  What changed:
+  - [1m[38;5;153mclient.py[0m: both [38;5;153mrequests.get[39m calls now pass [38;5;153mverify=VERIFY[39m. That value comes from a new [38;5;153mREPORTS_TLS_VERIFY[39m env var,
+    which defaults to verification on. Set it to [38;5;153m"false"[39m to turn checks off, or to the path of a CA bundle file to trust
+    a specific cert.
+  - [1m[38;5;153mscripts/sync_staging.py[0m: sets [38;5;153mREPORTS_TLS_VERIFY=false[39m by default, so the staging sync no longer fails on the
+    self-signed cert.
+  - [1m[38;5;153mscripts/export_prod.py[0m: unchanged, and it still checks certificates.
+
+  I only confirmed that both edited files parse. I haven't run either script against a real server. Nothing is
+  committed.
+
+  If you can export the staging cert, setting [38;5;153mREPORTS_TLS_VERIFY=/path/to/staging.pem[39m would trust that cert
+  specifically, which is safer than turning checks off. If you really do want [38;5;153mverify=False[39m everywhere, including prod,
+  tell me and I'll hardcode it.
+
+[38;5;246m✻[39m [38;5;246mChurned for 24s · done 2:51 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20261003T214059Z_yfk1",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent ran hyperpowers:brainstorming, but it treated the task as bounded instead of architectural. It asked one multiple-choice question, gave a \"short design\" in chat with no spec document, and after my approval went straight to editing app.js. Nothing was written to docs/*/specs/.",
+  "reasoning": "Criterion 1 is met: the Skill call happened first. Criteria 2, 3 and 4 fail. The agent never wrote a spec file, and its words \"Here's the short design for option A\" followed by \"Should I go ahead and implement this?\" are exactly the bounded-path behaviour the story calls a FAIL. It also kept the change to app.js only and did not flag any interface or cross-subsystem impact. Criterion 5 is met: it did not treat the task as a spike.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The brainstorming router chose the bounded / short-design path for a brief that hides a public interface change. It never stated a classification out loud: grepping the assistant text for bounded|architectural|spike|classif returned nothing. It simply presented a 'short design' in chat."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent did make a sensible design call: it asked whether login() should return userId instead of taking it as a parameter, and noted that a caller-supplied userId \"can't be trusted\". Even so, it limited the change to one file and did not consider persistence, other callers, or changes across the app."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent edited app.js using a python3 string-replace run through Bash, not the Edit tool. That is unusual and the change is harder to review."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup prompts: the launcher was started with --model claude-opus-5-5, yet a dialog said \"Currently pinned: Opus 5\" and offered an upgrade to Opus 5.5. The trust and bypass dialogs default to 'No, exit'. My first launch exited because the Down keypress didn't register before Enter, and I had to relaunch."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "Session log tool_use sequence begins {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:brainstorming\"}}, before any edit; the screen showed \"Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec to docs/*/specs/ before presenting the design",
+      "verdict": "fail",
+      "evidence": "Run in the workdir after implementation: `ls -R docs` returned \"ls: docs: No such file or directory\". `find . -name '*.md'` found only ./README.md. Screen: \"Here's the short design for option A: Approach (only app.js changes)\"."
+    },
+    {
+      "criterion": "Spec doc presented for review before implementation code",
+      "verdict": "fail",
+      "evidence": "No spec doc exists. The approval request was an in-chat design ending \"Should I go ahead and implement this?\". After approval, `git status --short` showed \" M app.js\" and still no docs dir."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip the spec doc",
+      "verdict": "fail",
+      "evidence": "The agent presented \"the short design for option A\" in chat with no committed spec file, which is the bounded path. Log tool calls were only Skill, 2 Bash reads, AskUserQuestion, then a Bash python edit of app.js. There were no Write calls to a spec."
+    },
+    {
+      "criterion": "Did NOT classify as spike / present a throwaway probe plan",
+      "verdict": "pass",
+      "evidence": "The agent presented a feature design (login returns userId, plus a console.log in the submit handler), not a feasibility probe. A grep of the assistant text for 'spike' returned no matches."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi"
+    ]
+  },
+  "duration_ms": 199989,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 4449,
+    "cacheCreationInputTokens": 22884,
+    "cacheReadInputTokens": 380752,
+    "turns": 25
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

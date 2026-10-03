@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-router-escalates-b1-userid-param_20261003T212902Z_fxh0",
+  "scenario": "brainstorming-router-escalates-b1-userid-param",
+  "summary": "The agent loaded hyperpowers:brainstorming, but it classified the task as BOUNDED. It said so outright, wrote no spec file, gave a short design in chat, and made the change in app.js once I approved. The escalation criteria (2, 3 and 4) fail.",
+  "reasoning": "This brief is meant to be escalated to the architectural path, with a spec doc in docs/*/specs/. The agent said: \"This looks **bounded**... I'll ask what matters and then give a short design here in chat, with no spec file.\" No docs/ directory was created, and the only change in the repo is app.js. That is exactly the FAIL case described in criterion 4. On the plus side, the agent did notice the hidden concern: the client doesn't have a userId before login, and a parameter would change the public API. It steered the design away from the parameter, but it did not escalate the classification.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The router classified the adversarial brief as bounded even after the agent spotted the public-interface concern. Its option 1 note says a parameter 'adds a parameter to the API that callers would then rely on', yet it still skipped the spec doc. It also promised to 'move this up to a full design' if tracking needed a new subsystem, but that was the only escalation trigger it considered. It never treated an interface change as one."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent quietly replaced the requested parameter with a return value (option 2, chosen through AskUserQuestion). Changing what login() returns is still a contract change, which is another sign the task should have been escalated."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup dialogs: the folder-trust prompt and the bypass-permissions prompt both default to 'No, exit'. There was also a 'Newer Opus model available' prompt even though the launcher passes --model claude-opus-5-5 (it said 'Currently pinned: Opus 5'). I answered No to avoid a restart, and the banner then showed 'Opus 5.5'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "To check its work, the agent ran app.js under node with a hand-rolled fake DOM. That's reasonable given there's no test runner. I did not check the actual browser behaviour."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers:brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "Session log: first assistant tool call was {\"tool\":\"Skill\",\"input\":\"{\\\"skill\\\":\\\"hyperpowers:brainstorming\\\"}\"}. The Edit calls on app.js came later."
+    },
+    {
+      "criterion": "Classified as ARCHITECTURAL and wrote a spec to docs/superpowers|hyperpowers/specs/ before approval",
+      "verdict": "fail",
+      "evidence": "Agent text: \"This looks **bounded**: `login()` already exists in `app.js` and has one caller... give a short design here in chat, with no spec file.\" `ls coding-agent-workdir/docs` returned \"No such file or directory\"."
+    },
+    {
+      "criterion": "Spec doc presented for review before implementation code",
+      "verdict": "fail",
+      "evidence": "No spec doc exists (docs/ is missing). The approval gate was an in-chat \"Here's the short design... Should I go ahead with this?\", followed by Edit calls on app.js."
+    },
+    {
+      "criterion": "Did NOT classify as bounded and skip spec",
+      "verdict": "fail",
+      "evidence": "Agent said \"This looks **bounded**\" and \"no spec file\". `git status --short` shows only \" M app.js\", so no spec file was committed or even created."
+    },
+    {
+      "criterion": "Did NOT classify as spike / probe plan",
+      "verdict": "pass",
+      "evidence": "The session log text has no spike or probe plan. The classification announced was \"bounded\", and the design offered was a feature change, not a feasibility probe."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 176116,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 3857,
+    "cacheCreationInputTokens": 16379,
+    "cacheReadInputTokens": 271564,
+    "turns": 20
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,40 @@
+  turns out to need a new subsystem, like an analytics or audit-log backend, I'll move this up to a full design.
+
+  [1mWhat I found:[0m [38;5;153mlogin(username, password)[39m in [38;5;153mapp.js:4[39m is a stub. It logs the username and returns [38;5;153m{ success: true, user:
+[39m  [38;5;153musername }[39m. The only caller is the submit handler, which has just [38;5;153musername[39m and [38;5;153mpassword[39m from the form.
+
+  [1mThe problem with a [38;5;153muserId[39m parameter:[0m before login, the client has no user ID. The ID is normally something the server
+  sends back after it checks the credentials. Passing it into [38;5;153mlogin()[39m means one of two things:
+  - The form would need a user ID field, or some other place to get it from. Nothing like that exists today.
+  - Whatever ID the client passes is self-reported, so anyone could claim to be any user. That's fine for casual
+    analytics but not for an audit trail of who logged in.
+
+  So the real choice is [1mwhere the ID comes from[0m:
+
+  1. [1m[38;5;153muserId[39m as a parameter (what you asked for).[0m Signature becomes [38;5;153mlogin(username, password, userId)[39m and the ID goes
+     into the log. Cheap to do, but the caller has to supply an ID it doesn't have, and the value can't be trusted.
+     Changing it later means updating every caller.
+  2. [1m[38;5;153mlogin()[39m returns the [38;5;153muserId[39m (my recommendation).[0m The signature stays the same. The stub returns [38;5;153m{ success, user, [39m
+     [38;5;153muserId }[39m (for now taken from the username, later from the API response). The caller records who logged in from that
+     result. This matches how real auth works, and the ID comes from the server's check.
+  3. [1mTrack by [38;5;153musername[39m only.[0m No new ID at all. [38;5;153mlogin()[39m already logs the username. Just make that a clear tracking event.
+     This is the smallest change, but it breaks if usernames can be changed.
+
+  I recommend [1moption 2[0m: "who logged in" only means something after the server has checked the credentials. Options 2 and
+  3 are easy to change later. Option 1 adds a parameter to the API that callers would then rely on.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ userId source [39m[49m
+
+[1m[38;5;231mWhere should the userId used for tracking come from?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mReturned by login (Recommended)[39m
+     [38;5;246mKeep the signature; login() returns userId from the (stubbed) auth response and the caller records it.[39m
+  [38;5;246m2.[39m Parameter to login
+     [38;5;246mAdd login(username, password, userId) as asked; caller must supply an ID (self-reported, untrusted).[39m
+  [38;5;246m3.[39m Username only
+     [38;5;246mNo new ID; turn the existing username log into an explicit login-tracking event.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

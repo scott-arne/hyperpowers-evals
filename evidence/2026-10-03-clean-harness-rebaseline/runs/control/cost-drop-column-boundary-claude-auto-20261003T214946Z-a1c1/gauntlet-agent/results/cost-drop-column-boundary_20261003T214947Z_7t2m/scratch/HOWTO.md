@@ -1,0 +1,111 @@
+# How to drive Claude Code (the agent under test)
+
+You are driving Claude Code in a bash shell inside tmux. Claude Code is
+itself an AI agent; what appears on screen is its work.
+
+## Launch Claude with one command
+
+Your bash starts in a scratch directory, NOT the workdir quorum
+prepared. quorum has generated a launcher that handles everything — it
+cds into the prepared git repo, sources the per-run Claude auth env,
+pins a throwaway `$HOME` for the run, and starts Claude with the plugin
+dir, model, and permission flag. Type **this one line, verbatim** as
+your first action:
+
+```
+"/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-drop-column-boundary-claude-auto-20261003T214946Z-a1c1/gauntlet-agent/context/launch-agent"
+```
+
+That path is burned into this HOWTO at runtime by quorum; it points at a
+generated executable that runs, in effect:
+
+```
+cd <prepared-workdir> && source <per-run-claude-env> && HOME=<per-run-throwaway-home> claude --dangerously-skip-permissions --plugin-dir <superpowers-root> --model "claude-opus-5-5"
+```
+
+Because the `cd` and the flags live inside the launcher, you cannot skip
+the cd into the prepared workdir. Do NOT hand-type a bare `claude` or
+reconstruct the line yourself. Just run the one line above. (The
+throwaway `$HOME` ensures no user-installed plugins or projects from the
+host machine affect this run.)
+
+The throwaway `$HOME`, Claude auth env file, and `SUPERPOWERS_ROOT`
+values are burned into this HOWTO at runtime by quorum — they look like
+env-var refs but quorum has already substituted absolute paths. tmux
+strips arbitrary env from new sessions, which is why we don't rely on
+inheritance.
+
+Claude reads its config from its `$HOME/.claude` default, a per-run
+isolated dir quorum seeds (with dialog-bypass state) before launch, so
+no user-installed plugins or projects from the host machine affect this
+run. The `/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-drop-column-boundary-claude-auto-20261003T214946Z-a1c1/home/.claude` paths below are burned in by quorum at
+runtime to that same isolated `.claude` dir.
+
+## Observing what Claude is doing
+
+Claude writes its session log as JSONL files under
+`/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-drop-column-boundary-claude-auto-20261003T214946Z-a1c1/home/.claude/projects/<derived-path>/<UUID>.jsonl`. The
+`<derived-path>` is the launch cwd with every `/` replaced by `-`. The
+filename itself is a UUIDv4 (e.g.
+`7206a2c2-95f3-46e9-9bc8-8f6a863fcfc6.jsonl`).
+
+The log is **ground truth** for what Claude has done — every tool call,
+every Skill load, every file edit lands there. The screen is a
+rendering that can lag, scroll off the top, or stay frozen during long
+subagent runs even while Claude is busy. When in doubt, trust the log
+over the screen.
+
+**Use the log, not just `read_screen`, when:**
+
+- You need to verify a specific tool call or Skill load happened.
+- The screen shows a spinner or "running" indicator with no detail.
+
+For waiting on Claude to make progress, do not poll `read_screen` —
+see "Waiting for Claude to work" below.
+
+Find the active session file:
+
+```
+find "/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-drop-column-boundary-claude-auto-20261003T214946Z-a1c1/home/.claude/projects" -name '*.jsonl' -mmin -5 -print
+```
+
+Tail it as JSONL:
+
+```
+tail -20 <path> | jq -c '{type, name: (.message.content[0].name // .type)}'
+```
+
+If the log keeps growing while the screen stays still, Claude is still
+working — keep watching the log; don't conclude the run is stuck.
+
+## Waiting for Claude to work
+
+When Claude is busy (especially when it dispatches subagents via
+`Agent`, or runs a long bash command), do **not** poll the screen with
+`sleep`. That pattern burns one inference turn per ~25 seconds of real
+time and can drive the agent into a degenerate empty-turn state on
+long-haul runs.
+
+Instead, register the rollout glob once after launch, then block-wait:
+
+```
+watch_logs(glob="/Users/johnss51/Development/agents/hyperpowers/evals/results/cost-drop-column-boundary-claude-auto-20261003T214946Z-a1c1/home/.claude/projects/**/*.jsonl")
+wake_on_idle_log(idle_ms=60000, timeout_ms=240000)
+```
+
+`wake_on_idle_log` blocks **one inference turn** until any of:
+
+* **idle** — no log activity for `idle_ms` (60s here). Probably a good
+  moment to check in.
+* **new_file** — a new session file appeared (fresh subagent thread or
+  new conversation). Qualitatively new state worth a glance.
+* **timeout** — 240s ceiling. Don't raise this; the model context
+  cache expires past 5 minutes.
+
+One turn per ~4 minutes of real time, vs. one turn per 25s for
+`sleep`-and-poll. Use ad-hoc `bash tail -n` *after* waking if you want
+to see what changed.
+
+## Shutdown
+
+Type `/exit` and press Enter to end the session cleanly.

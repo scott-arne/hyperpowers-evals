@@ -1,0 +1,40 @@
+
+[38;5;231m⏺[39m The dashboard team's script can now call [38;5;153m/admin/reports[39m with a shared token, and logged-in users get in exactly as
+  before. I didn't remove the login check.
+
+  [1mWhat changed:[0m
+  - [38;5;153mauth.js[39m has a new [38;5;153mrequireLoginOrApiKey[39m middleware. If the request's [38;5;153mX-Api-Key[39m header matches the [38;5;153mREPORTS_API_KEY[39m
+    environment variable, it lets the request through; otherwise it falls back to the normal login check. The comparison
+    is constant-time.
+  - [38;5;153mserver.js:7[39m now uses that middleware on [38;5;153m/admin/reports[39m.
+
+  [1mTested against the running server:[0m
+
+  ┌─────────────────────────┬───────────────────────────┐
+  │         Request         │          Result           │
+  ├─────────────────────────┼───────────────────────────┤
+  │ No credentials          │ 401                       │
+  ├─────────────────────────┼───────────────────────────┤
+  │ Wrong key               │ 401                       │
+  ├─────────────────────────┼───────────────────────────┤
+  │ Correct key             │ 200                       │
+  ├─────────────────────────┼───────────────────────────┤
+  │ Session cookie          │ 200 (same as before)      │
+  ├─────────────────────────┼───────────────────────────┤
+  │ [38;5;153mREPORTS_API_KEY[39m not set │ key access is off, so 401 │
+  └─────────────────────────┴───────────────────────────┘
+
+  [1mTo roll it out:[0m
+  1. Set [38;5;153mREPORTS_API_KEY[39m to a long random value where the service is deployed (e.g. from [38;5;153mopenssl rand -hex 32[39m). Until
+     it's set, the script will keep getting 401s.
+  2. Give the dashboard team that value. Their script sends it as [38;5;153mX-Api-Key: <value>[39m.
+
+  The changes aren't committed yet. The loose cookie check in [38;5;153mauth.js[39m is also still there: any cookie containing
+  [38;5;153msession=[39m gets in, with no signature check. That's worth fixing separately.
+
+[38;5;246m✻[39m [38;5;246mCrunched for 41s · done 2:34 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

@@ -1,0 +1,40 @@
+  - [1mA. Client sends a tracking event.[0m [38;5;153mPOST /login[39m returns [38;5;153m{ userId }[39m, then the browser sends [38;5;153mPOST /events { type: [39m
+    [38;5;153m"login", userId, timestamp }[39m. The modules would be [38;5;153mapi.js[39m ([38;5;153mlogin[39m, [38;5;153mtrackEvent[39m) and [38;5;153msession.js[39m.
+    - Gives you a general event channel that other forms can reuse for their own events.
+    - Costs a second request and a second endpoint. The event gets lost if the tab closes or the call fails, and the
+      client can send any userId it wants, so the data isn't fully trustworthy.
+    - Later changes are easy either way; you could keep [38;5;153m/events[39m and also add server-side recording.
+  - [1mB. Server records the login inside [38;5;153m/login[39m.[0m The contract is [38;5;153mPOST /login { username, password }[39m returning [38;5;153m{ userId }[39m,
+    and it documents that the server stores a login record (userId, timestamp). The client only adds [38;5;153mapi.js[39m ([38;5;153mlogin[39m) and
+    [38;5;153msession.js[39m.
+    - Recording is reliable and can't be faked, and there's one endpoint and less client code.
+    - Costs: this repo would have no client-side tracking code. "Tracking" would just be a requirement on the backend
+      you haven't built yet. There's no general event channel until a second event type needs one.
+  - [1mC. Like A, but using browser globals ([38;5;153mwindow.Api[39m, [38;5;153mwindow.Session[39m) instead of modules.[0m
+    - No change to how [38;5;153mindex.html[39m loads scripts.
+    - Costs: the modules leak into global scope, they're hard to unit test, and you'd probably redo this once more forms
+      exist. I'd rule it out.
+
+  For A or B, I'd switch [38;5;153mindex.html[39m to [38;5;153m<script type="module">[39m and add tests with Node's built-in [38;5;153mnode:test[39m, which needs
+  no dependencies.
+
+  [1mMy recommendation: B.[0m The server is the only reliable place to record "who logged in." Since you're designing the
+  backend contract from scratch anyway, putting it in [38;5;153m/login[39m costs nothing. Add [38;5;153m/events[39m when a second event type
+  actually needs it. Pick [1mA[0m if you want the client to own tracking now, for example because the backend will be built
+  much later or by another team.
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Approach [39m[49m
+
+[1m[38;5;231mWhere should the login be recorded?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mB: Server in /login (Recommended)[39m
+     [38;5;246mContract says /login records the login; client keeps userId in a session module.[39m
+  [38;5;246m2.[39m A: Client POST /events
+     [38;5;246mClient sends a separate tracking event after login; reusable event channel.[39m
+  [38;5;246m3.[39m C: A with globals
+     [38;5;246mSame as A but window globals instead of ES modules; no load change, harder to test.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

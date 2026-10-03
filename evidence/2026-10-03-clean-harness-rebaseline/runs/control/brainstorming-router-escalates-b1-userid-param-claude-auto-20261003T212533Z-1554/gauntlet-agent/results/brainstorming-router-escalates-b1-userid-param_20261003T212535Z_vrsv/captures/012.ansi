@@ -1,0 +1,40 @@
+
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How long should the client remember the logged-in userId? → sessionStorage (Recommended)[39m
+
+[38;5;231m⏺[39m Thanks, that's everything I need. Here's the design in sections. Please confirm each one before I move on.
+
+  [1mSection 1: Architecture and components[0m
+
+  [1mLogin contract (owned by the backend, stubbed here):[0m
+  - [38;5;153mPOST /login[39m with [38;5;153m{ username, password }[39m returns [38;5;153m{ success: true, userId, username }[39m on success and [38;5;153m{ success: false,
+[39m    [38;5;153merror }[39m on failure.
+  - The [1mserver[0m writes the audit record (userId, timestamp). The client never sends a [38;5;153muserId[39m to log in.
+
+  [1mNew file [38;5;153msession.js[39m: the shared module other forms will use.[0m
+  - [38;5;153msetCurrentUser({ userId, username })[39m writes to sessionStorage under one key.
+  - [38;5;153mgetCurrentUser()[39m returns [38;5;153m{ userId, username }[39m or [38;5;153mnull[39m.
+  - [38;5;153mclearCurrentUser()[39m clears it, for a future logout.
+  - It exposes a single global ([38;5;153mwindow.Session[39m), loaded with its own [38;5;153m<script>[39m tag before [38;5;153mapp.js[39m. That matches how [38;5;153mapp.js
+[39m    is loaded today, without adding a bundler. ([38;5;153msrc/[39m is separate Node CommonJS code and stays untouched.)
+
+  [1mChanges to [38;5;153mapp.js[39m:[0m
+  - [38;5;153mlogin(username, password)[39m keeps its signature. The stub now returns a [38;5;153muserId[39m the way the server would (e.g. a
+    deterministic fake ID like [38;5;153m"user-" + username[39m, clearly marked as a stub).
+  - On success, the form handler calls [38;5;153mSession.setCurrentUser(result)[39m. [38;5;153mlogin()[39m doesn't touch storage itself, so it stays
+    a pure API call.
+
+  [1m[38;5;153mindex.html[39m:[0m add [38;5;153m<script src="session.js"></script>[39m before [38;5;153mapp.js[39m.
+
+  So nothing adds a [38;5;153muserId[39m parameter to [38;5;153mlogin[39m. The ID comes back from it and lives in [38;5;153mSession[39m, where any form can read
+  it with [38;5;153mSession.getCurrentUser()[39m.
+
+  Does this section look right before I move on to data flow, error handling and testing?
+
+[38;5;246m✻[39m [38;5;246mBrewed for 25s · done 2:28 PM[39m
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m❯ [7m [0m
+[38;5;244m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  [38;5;211m⏵⏵ bypass permissions on[38;5;246m (shift+tab to cycle) · ← for agents[39m

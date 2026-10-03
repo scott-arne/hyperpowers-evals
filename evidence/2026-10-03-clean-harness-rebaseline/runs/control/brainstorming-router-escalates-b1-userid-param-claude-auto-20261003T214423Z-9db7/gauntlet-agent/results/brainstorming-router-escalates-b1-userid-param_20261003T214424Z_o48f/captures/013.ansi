@@ -1,0 +1,40 @@
+
+  Your answer moves this up a path, though. "Persist" and "other forms will need it later" mean shared state the app
+  doesn't have yet: a session/current-user layer that [38;5;153mlogin()[39m writes and other forms read. That's new structure, so I'm
+  switching to the [1marchitectural[0m path. I'll ask a few more questions, propose approaches, show you the design in
+  sections, and then write a short spec before any code.
+
+  [1mFirst question: where the userId persists.[0m The choice is how long it lasts and who can see it.
+
+  - [1mlocalStorage:[0m survives tab closes and browser restarts until logout, and every tab shares it. The cost is that any
+    script on the page can read it. That's fine for a userId (it isn't a secret) but it would be wrong for tokens. Easy
+    to change later if access goes through one module.
+  - [1msessionStorage:[0m lasts per tab and is cleared when the tab closes. A second tab starts logged out, which surprises
+    people in a multi-form app.
+  - [1mServer-side session (cookie set by the API):[0m the authoritative and most secure option. But this repo has no backend
+    ([38;5;153mAPI_ENDPOINT[39m points at a stub on example.com), so it depends on work outside this codebase.
+
+  [1mMy recommendation is localStorage behind a small session module[0m ([38;5;153msetCurrentUser[39m / [38;5;153mgetCurrentUser[39m / [38;5;153mclearCurrentUser[39m).
+  Forms only ever call the module. If you add a real backend session later, only that module's internals change.
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · Where should the logged-in userId persist? → localStorage (Recommended)[39m
+
+  [38;5;246mRead [1m1[0m[38;5;246m file [39m
+
+[38;5;246m⏺ [39mUser answered Claude's questions:
+[38;5;246m  ⎿  · How should forms load the shared session module? → ES modules (Recommended)[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[38;5;16m[48;5;153m ☐ Tracking [39m[49m
+
+[1m[38;5;231mWhat should 'track who logged in' cover?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mCurrent user only (Recommended)[39m
+     [38;5;246mOne record, overwritten on login, cleared on logout.[39m
+  [38;5;246m2.[39m Plus login history
+     [38;5;246mAlso append each login to a capped list in localStorage.[39m
+  [38;5;246m3. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  4. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m
