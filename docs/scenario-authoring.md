@@ -617,8 +617,8 @@ the rate. Before recording a regression:
    the head under test
    (`bun run quorum run scenarios/<id> --coding-agent <agent> --repeat 20`)
    and add the rate to the table with the head, the evals commit (clean at
-   launch), the models, the Claude Code version, the listing budget, the
-   harness state and its n.
+   launch), the models, the Claude Code version, the Gauntlet identity, the
+   listing budget, the harness state and its n.
 3. Call it a regression only when the twenty-run rate's 95% Wilson lower
    bound exceeds the recorded base rate's 95% Wilson upper bound.
 
@@ -639,6 +639,18 @@ test; a recorded row may be shorter when it states its n. The third row is
 n=10, so its upper bound is 28%, against 16% for 0 of 20: step 3 needs more
 failures in a twenty-run measurement before it calls a regression against
 it. Ten more runs at `5bef46c` on the clean harness would close the gap.
+
+A row added after row 3 also records its Gauntlet identity: the commit of
+the Gauntlet checkout that the `gauntlet` on `PATH` runs, and whether that
+checkout's tracked files were clean at launch. In that checkout,
+`git rev-parse HEAD` prints the commit, and
+`git status --short --untracked-files=no` prints nothing when the tracked
+files are clean. quorum spawns `gauntlet` from `PATH` and records neither
+(`src/runner/index.ts`). Row 3's Gauntlet commit is `a35607e`: on the host
+that measured it, `gauntlet` is a shim that runs a fork checkout, and that
+checkout's reflog records HEAD reaching `a35607e` on 2026-07-10 and no
+later move (read on 2026-10-04). Whether its tracked files were clean when
+row 3 launched is not on record.
 
 Rows 1 and 2 were first recorded with commit ids from before the 2026-10-01
 history rewrite: hyperpowers `c6b69d8`, `7e8ba23` and `3c32ee4` are now
@@ -784,10 +796,14 @@ with the failing run.
     `quorum run` records neither, and a commit alone misses uncommitted
     edits, so a failing run without that record has no comparable row.
     Row 3's record is the mutation check in its evidence README.
-- **The Claude Code version** is recorded but is not part of the match. A
-  regression call against a row at another version names the version as a
-  second difference: the call says the rate moved between the two
-  measurements, not that the head moved it.
+- **The Claude Code version and the Gauntlet identity** are recorded but
+  are not part of the match. Both live outside the evals tree, and matching
+  on them would leave no comparable row each time either moved. A
+  regression call against a row at another version, or at another Gauntlet
+  identity, names that as a second difference: the call says the rate moved
+  between the two measurements, not that the head moved it. A Gauntlet
+  identity not on record, for the row or for the failing run, counts as
+  another identity, so a call against row 3 names Gauntlet.
 - **No comparable row.** Step 2's "none is recorded" applies.
 
 ---
