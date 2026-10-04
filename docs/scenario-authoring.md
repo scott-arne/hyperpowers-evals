@@ -716,7 +716,7 @@ The tests run at a row's commit without touching the checkout. When the
 checkout's `package.json` and `bun.lock`, uncommitted edits included,
 match that commit's, the checkout's `node_modules` serves. When they
 differ, the recipe runs nothing, and the tests need an install at that
-commit:
+commit. The recipe exits 0 only when the tests ran and passed:
 
 ```bash
 if git diff --quiet <commit> -- package.json bun.lock; then
@@ -727,8 +727,10 @@ if git diff --quiet <commit> -- package.json bun.lock; then
   rc=$?
   rm -rf "${scratch:?}"
   echo "# Result: exit $rc"
+  [ "$rc" -eq 0 ]
 else
   echo "the checkout's package.json or bun.lock differ from <commit>, or it does not resolve: nothing ran" >&2
+  false
 fi
 ```
 
