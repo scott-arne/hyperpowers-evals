@@ -608,27 +608,42 @@ A sentinel scenario that fails once in a batch is one draw from that
 scenario's failure rate at that head, not evidence that the head changed
 the rate. Before recording a regression:
 
-1. Look up the scenario's recorded base rate in the table below.
-2. If none is recorded, or the head's `skills/` and `hooks/` trees differ
-   from the head the base rate was measured at, run the scenario twenty
-   times at the head under test
+1. Look up the most recently measured base-rate row in the table below that
+   is comparable with the failing run (see "Which row is the base rate").
+2. If none is recorded (no row is comparable with the failing run), or the
+   head under test differs from the head the base rate was measured at in
+   something a session of this scenario loads or runs before its reading is
+   settled (see "What a session reaches"), run the scenario twenty times at
+   the head under test
    (`bun run quorum run scenarios/<id> --coding-agent <agent> --repeat 20`)
-   and add the rate to the table with the head, the model, the Claude Code
-   version, and the listing budget.
+   and add the rate to the table with the head, the evals commit, the model,
+   the Claude Code version, the listing budget, the harness state and its n.
 3. Call it a regression only when the twenty-run rate's 95% Wilson lower
    bound exceeds the recorded base rate's 95% Wilson upper bound.
 
 A single failure at a scenario whose recorded base rate is 5% or higher
 never holds a release by itself.
 
-| scenario | model | Claude Code | skills tree | budget | criterion | rate (95% Wilson) | evidence |
-|---|---|---|---|---|---|---|---|
-| `cost-checkbox-over-trigger` | `claude-opus-5` | 2.1.261 | hyperpowers `c6b69d8` (skills identical to `7e8ba23`) | default | pre-amendment: skill invocation only | 2/20 = 10% (3-30%) | `evidence/2026-09-16-over-trigger-measurement/` |
-| `cost-checkbox-over-trigger` | `claude-opus-5` | 2.1.280 | hyperpowers `3c32ee4` (skills tree `2d9f29e`) | default | amended: skill invocation, or a stated consequence or go-ahead request before the edit | 0/20 = 0% (0-16%) | `evidence/2026-09-23-adoption-remediation/` |
+| scenario | model | Claude Code | skills tree | evals | budget | criterion | harness | rate (95% Wilson) | evidence |
+|---|---|---|---|---|---|---|---|---|---|
+| `cost-checkbox-over-trigger` | `claude-opus-5` | 2.1.261 | hyperpowers `62d8044` (skills identical to `d6a1681`) | `b234bbc12` | default | pre-amendment: skill invocation only | leak-era | 2/20 = 10% (3-30%) | `evidence/2026-09-16-over-trigger-measurement/` |
+| `cost-checkbox-over-trigger` | `claude-opus-5` | 2.1.280 | hyperpowers `7aff2a7` (skills tree `2d9f29e`) | `eead16855` | default | amended: skill invocation, or a stated consequence or go-ahead request before the edit | leak-era | 0/20 = 0% (0-16%) | `evidence/2026-09-23-adoption-remediation/` |
+| `cost-checkbox-over-trigger` | `claude-opus-5-5` | 2.1.287 | hyperpowers `5bef46c` (v6.15.0) | `be020f0d0` | default | amended | clean | 0/10 = 0% (0-28%) | `evidence/2026-10-03-harness-confound-attribution/` (arm A) |
 
-Every row records the criterion its rate was measured under, and a row
-added later must record its own. Two rates are comparable under step 3
-only when they were measured under the same criterion.
+Every row records the criterion its rate was measured under, its evals
+commit, its harness label and its n, and a row added later must record its
+own. Step 2's twenty is the size of a new measurement at the head under
+test; a recorded row may be shorter when it states its n. The third row is
+n=10, so its upper bound is 28%, against 16% for 0 of 20: step 3 needs more
+failures in a twenty-run measurement before it calls a regression against
+it. Ten more runs at `5bef46c` on the clean harness would close the gap.
+
+Rows 1 and 2 were first recorded with commit ids from before the 2026-10-01
+history rewrite: hyperpowers `c6b69d8`, `7e8ba23` and `3c32ee4` are now
+`62d8044`, `d6a1681` and `7aff2a7`, and evals `94570f1` is now `eead16855`.
+The maps are `evidence/history-rewrite-2026-10-01.tsv` here and
+`docs/hyperpowers/history-rewrite-2026-10-01.tsv` in hyperpowers.
+
 `cost-checkbox-over-trigger`'s second acceptance criterion was later
 broadened to count a go-ahead request or a stated consequence before the
 edit as well as the skill invocation, so a rate measured under the amended
@@ -637,6 +652,118 @@ would produce under the pre-amendment one. Step 3 run against the
 pre-amendment rate above is therefore biased toward declaring a
 regression, and a regression call against it is not sound until that base
 rate is re-measured under the amended criterion.
+
+#### What a session reaches
+
+Step 2 asks whether the head under test changed something a session of the
+scenario loads or runs before its reading is settled.
+
+- **The skill listing reaches every session.** A change to any skill's
+  frontmatter description counts.
+- **A skill body or supporting file reaches only the sessions that read
+  it.** A file a session reads only after its reading is settled does not
+  count. For an over-trigger scenario, a body read after the invocation that
+  already fails the session is an example.
+- **A hook branch reaches a session only on events that session fires.** A
+  branch that runs only on compaction does not reach a scenario that never
+  compacts. A changed line outside such a branch counts as reached, whatever
+  its effect: a file write or a spawned process counts as much as output.
+- **The argument is recorded with the result.**
+  - For a hook, two parts, both required:
+    - Control flow. Every line that differs between the two heads lies
+      inside a branch whose condition the scenario's events cannot satisfy.
+      The record cites the condition's line and the events the base-rate
+      transcripts show the scenario firing.
+    - Output, as a check on the control-flow part. The hook's output on the
+      scenario's event payload is byte-identical at both heads. The worked
+      example is the 2026-10-03 re-baseline's `session-start` check: a
+      `startup` payload gave 3484 bytes, sha256 prefix `9eb3db442469`, at
+      both roots (`evidence/2026-10-03-clean-harness-rebaseline/README.md`).
+
+    Identical output alone is not the argument: a changed branch can run and
+    still print the same bytes.
+  - For a skill body: the base-rate transcripts showing it was not read
+    before the reading settled.
+  - An argument without that evidence is not made, and the scenario is
+    re-measured.
+
+#### Harness labels
+
+Each row's `harness` label is assigned by the first of these rules that
+applies:
+
+1. `leak-era`: the archived transcripts show either leak. That means a
+   session loaded `CLAUDE.md` or `AGENTS.md` text from outside the run
+   directory, or carries a mark of the operator's Claude environment (an
+   entrypoint other than `cli`, or `TaskCreate` among the deferred tools
+   offered).
+2. `clean`: the row was measured at evals `be020f0d0` or a later commit,
+   and at that commit the hermeticity tests pass. Those tests landed with
+   `74d248245`, `fc42537c5` and `be020f0d0` in `test/agent-claude.test.ts`
+   and `test/runner-context.test.ts`. They pin that the launcher drops every
+   inherited `CLAUDE*` and `ANTHROPIC*` variable and that the `CLAUDE.md`
+   and `AGENTS.md` excludes are in place. The row's evidence records the
+   test run. For a row added after its measurement, the tests are run at
+   its commit when the row is added (an offline `bun test`, not a live run).
+3. `unknown`: every other row. Before `be020f0d0`, the operator's
+   environment carried variables that leave no mark in a transcript, such
+   as other session variables and the model alias pins. So a transcript can
+   show a leak but cannot prove its absence.
+
+The tests run at a row's commit without touching the checkout. When
+`package.json` and `bun.lock` are unchanged since that commit, the
+checkout's `node_modules` serves:
+
+```bash
+git diff --quiet <commit> HEAD -- package.json bun.lock
+scratch="$(mktemp -d)"
+git archive <commit> | tar -x -C "$scratch"
+ln -s "$PWD/node_modules" "$scratch/node_modules"
+(cd "$scratch" && bun test test/agent-claude.test.ts test/runner-context.test.ts)
+```
+
+Rows 1 and 2 are `leak-era`: every one of their twenty sessions carries the
+`sdk-ts` entrypoint, and row 2's sessions also loaded three `CLAUDE.md`
+files from outside the run directory. Row 3 is `clean`: its ten sessions
+carry the `cli` entrypoint, load no instruction file and are offered no
+`TaskCreate`, and the hermeticity tests pass at `be020f0d0`
+(`evidence/2026-10-03-harness-confound-attribution/hermeticity-be020f0d0.txt`).
+The marks are read from each session's main transcript: its `entrypoint`
+field, its `instructions` attachments and its `deferred_tools_delta`
+attachments.
+
+#### Which row is the base rate
+
+Step 1 takes the most recently measured base-rate row that is comparable
+with the failing run.
+
+- **Regression rows.** A measurement against which step 3 called a
+  regression is added with the call recorded. It is not a base-rate row
+  until the maintainer accepts the moved rate, which is recorded in the
+  row. That way a regression cannot become the baseline that hides it on
+  later heads.
+- **Comparability.** A row and a failing run are comparable, under step 1
+  and step 3 alike, when they share all of these:
+  - the criterion;
+  - a `clean` harness label. `leak-era` and `unknown` rows stay in the
+    table as history and are never a base rate: neither label identifies
+    one environment;
+  - the model;
+  - the listing budget;
+  - the evals harness. `src`, `coding-agents`, `package.json`, `bun.lock`
+    and the scenario's directory are identical at the row's evals commit
+    and the failing run's
+    (`git diff --quiet <row> <run> -- src coding-agents package.json bun.lock scenarios/<id>`).
+    That is the 2026-10-03 re-baseline launcher's path set, narrowed from
+    all of `scenarios` to the scenario's own directory. Alternatively, each
+    difference carries a recorded argument, in the form of "What a session
+    reaches", that it cannot change the launch, the skill listing, the
+    transcript, the grading or the criterion.
+- **The Claude Code version** is recorded but is not part of the match. A
+  regression call against a row at another version names the version as a
+  second difference: the call says the rate moved between the two
+  measurements, not that the head moved it.
+- **No comparable row.** Step 2's "none is recorded" applies.
 
 ---
 
