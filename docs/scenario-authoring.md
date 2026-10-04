@@ -712,13 +712,14 @@ applies:
    as other session variables and the model alias pins. So a transcript can
    show a leak but cannot prove its absence.
 
-The tests run at a row's commit without touching the checkout. When
-`package.json` and `bun.lock` are unchanged since that commit, the
-checkout's `node_modules` serves. When they differ, the recipe runs
-nothing, and the tests need an install at that commit:
+The tests run at a row's commit without touching the checkout. When the
+checkout's `package.json` and `bun.lock`, uncommitted edits included,
+match that commit's, the checkout's `node_modules` serves. When they
+differ, the recipe runs nothing, and the tests need an install at that
+commit:
 
 ```bash
-if git diff --quiet <commit> HEAD -- package.json bun.lock; then
+if git diff --quiet <commit> -- package.json bun.lock; then
   scratch="$(mktemp -d)"
   git archive <commit> | tar -x -C "$scratch"
   ln -s "$PWD/node_modules" "$scratch/node_modules"
@@ -727,7 +728,7 @@ if git diff --quiet <commit> HEAD -- package.json bun.lock; then
   rm -rf "${scratch:?}"
   echo "# Result: exit $rc"
 else
-  echo "package.json or bun.lock differ at <commit>, or it does not resolve: nothing ran" >&2
+  echo "the checkout's package.json or bun.lock differ from <commit>, or it does not resolve: nothing ran" >&2
 fi
 ```
 
