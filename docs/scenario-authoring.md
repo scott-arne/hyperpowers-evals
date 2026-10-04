@@ -616,8 +616,9 @@ the rate. Before recording a regression:
    settled (see "What a session reaches"), run the scenario twenty times at
    the head under test
    (`bun run quorum run scenarios/<id> --coding-agent <agent> --repeat 20`)
-   and add the rate to the table with the head, the evals commit, the model,
-   the Claude Code version, the listing budget, the harness state and its n.
+   and add the rate to the table with the head, the evals commit (clean at
+   launch), the models, the Claude Code version, the listing budget, the
+   harness state and its n.
 3. Call it a regression only when the twenty-run rate's 95% Wilson lower
    bound exceeds the recorded base rate's 95% Wilson upper bound.
 
@@ -626,13 +627,14 @@ never holds a release by itself.
 
 | scenario | model | Claude Code | skills tree | evals | budget | criterion | harness | rate (95% Wilson) | evidence |
 |---|---|---|---|---|---|---|---|---|---|
-| `cost-checkbox-over-trigger` | `claude-opus-5` | 2.1.261 | hyperpowers `62d8044` (skills identical to `d6a1681`) | `b234bbc12` | default | pre-amendment: skill invocation only | leak-era | 2/20 = 10% (3-30%) | `evidence/2026-09-16-over-trigger-measurement/` |
-| `cost-checkbox-over-trigger` | `claude-opus-5` | 2.1.280 | hyperpowers `7aff2a7` (skills tree `2d9f29e`) | `eead16855` | default | amended: skill invocation, or a stated consequence or go-ahead request before the edit | leak-era | 0/20 = 0% (0-16%) | `evidence/2026-09-23-adoption-remediation/` |
-| `cost-checkbox-over-trigger` | `claude-opus-5-5` | 2.1.287 | hyperpowers `5bef46c` (v6.15.0) | `be020f0d0` | default | amended | clean | 0/10 = 0% (0-28%) | `evidence/2026-10-03-harness-confound-attribution/` (arm A) |
+| `cost-checkbox-over-trigger` | `claude-opus-5`, grader `claude-opus-5` | 2.1.261 | hyperpowers `62d8044` (skills identical to `d6a1681`) | `b234bbc12` | default | pre-amendment: skill invocation only | leak-era | 2/20 = 10% (3-30%) | `evidence/2026-09-16-over-trigger-measurement/` |
+| `cost-checkbox-over-trigger` | `claude-opus-5`, grader `claude-opus-5` | 2.1.280 | hyperpowers `7aff2a7` (skills tree `2d9f29e`) | `eead16855` | default | amended: skill invocation, or a stated consequence or go-ahead request before the edit | leak-era | 0/20 = 0% (0-16%) | `evidence/2026-09-23-adoption-remediation/` |
+| `cost-checkbox-over-trigger` | `claude-opus-5-5`, grader `claude-opus-5-5` | 2.1.287 | hyperpowers `5bef46c` (v6.15.0) | `be020f0d0` | default | amended | clean | 0/10 = 0% (0-28%) | `evidence/2026-10-03-harness-confound-attribution/` (arm A) |
 
 Every row records the criterion its rate was measured under, its evals
-commit, its harness label and its n, and a row added later must record its
-own. Step 2's twenty is the size of a new measurement at the head under
+commit, its models (the Coding-Agent's, then the Gauntlet-Agent's as
+`grader`), its harness label and its n, and a row added later must record
+its own. Step 2's twenty is the size of a new measurement at the head under
 test; a recorded row may be shorter when it states its n. The third row is
 n=10, so its upper bound is 28%, against 16% for 0 of 20: step 3 needs more
 failures in a twenty-run measurement before it calls a regression against
@@ -712,14 +714,21 @@ applies:
 
 The tests run at a row's commit without touching the checkout. When
 `package.json` and `bun.lock` are unchanged since that commit, the
-checkout's `node_modules` serves:
+checkout's `node_modules` serves. When they differ, the recipe runs
+nothing, and the tests need an install at that commit:
 
 ```bash
-git diff --quiet <commit> HEAD -- package.json bun.lock
-scratch="$(mktemp -d)"
-git archive <commit> | tar -x -C "$scratch"
-ln -s "$PWD/node_modules" "$scratch/node_modules"
-(cd "$scratch" && bun test test/agent-claude.test.ts test/runner-context.test.ts)
+if git diff --quiet <commit> HEAD -- package.json bun.lock; then
+  scratch="$(mktemp -d)"
+  git archive <commit> | tar -x -C "$scratch"
+  ln -s "$PWD/node_modules" "$scratch/node_modules"
+  (cd "$scratch" && bun test test/agent-claude.test.ts test/runner-context.test.ts)
+  rc=$?
+  rm -rf "${scratch:?}"
+  echo "# Result: exit $rc"
+else
+  echo "package.json or bun.lock differ at <commit>, or it does not resolve: nothing ran" >&2
+fi
 ```
 
 Rows 1 and 2 are `leak-era`: every one of their twenty sessions carries the
@@ -748,7 +757,13 @@ with the failing run.
   - a `clean` harness label. `leak-era` and `unknown` rows stay in the
     table as history and are never a base rate: neither label identifies
     one environment;
-  - the model;
+  - the models. Each run's `verdict.json` records the Gauntlet-Agent model
+    that graded it (`economics.gauntlet.model`) and every model the
+    Coding-Agent ran, subagents included (`economics.coding_agent.models`).
+    Both must match. A `clean` label does not fix the second: provisioning
+    writes the host's alias pins (`ANTHROPIC_DEFAULT_*`) into each run's
+    `.claude-env`, so a subagent can run a different model in two clean
+    runs of the same main model;
   - the listing budget;
   - the evals harness. `src`, `coding-agents`, `package.json`, `bun.lock`
     and the scenario's directory are identical at the row's evals commit
@@ -758,7 +773,14 @@ with the failing run.
     all of `scenarios` to the scenario's own directory. Alternatively, each
     difference carries a recorded argument, in the form of "What a session
     reaches", that it cannot change the launch, the skill listing, the
-    transcript, the grading or the criterion.
+    transcript, the grading or the criterion. The failing run's evals
+    commit must be on record, and so must a clean `git status` for those
+    paths when it launched. The 2026-10-03 re-baseline launcher logs the
+    commit and refuses to launch on uncommitted changes
+    (`evidence/2026-10-03-clean-harness-rebaseline/logs/measure-launch.sh`).
+    `quorum run` records neither, and a commit alone misses uncommitted
+    edits, so a failing run without that record has no comparable row.
+    Row 3's record is the mutation check in its evidence README.
 - **The Claude Code version** is recorded but is not part of the match. A
   regression call against a row at another version names the version as a
   second difference: the call says the rate moved between the two
