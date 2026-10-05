@@ -23,7 +23,7 @@ In order:
 
 1. Run `scripts/strip-runs` over the run. It deletes the reinstallable agent
    infrastructure and the host state a run picks up (the cloud-provider env
-   file, the session IPC locks, the node caches).
+   file, the session IPC locks, the node and uv caches).
 2. Rename `coding-agent-workdir/.git` to `git-dir`. Left alone, the fixture
    repository commits as a gitlink and its contents are lost.
 3. Stage `gauntlet-agent/results/` and `home/.claude/` with `git add -f`.
