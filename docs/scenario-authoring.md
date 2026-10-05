@@ -815,6 +815,29 @@ with the failing run.
 
 ---
 
+#### Replacing a voided sentinel session
+
+A sentinel session whose instrument failed is a void, not a trial: the
+Gauntlet-Agent did not complete (`status: investigate`) or its prompt was
+garbled, while every deterministic check passed. It is replaced under the
+campaign's void-attempt cap, three per scenario, and the replacement is the
+trial. The analyzer credits a replacement only through a
+`sentinel-reruns.tsv` beside `reruns.tsv` (original run, replacement run),
+validated the same way: each replacement listed once, the original
+indeterminate, no more replacements than the cap. The replacement is held to
+the batch's per-run checks (the verdict names the scenario and agent, the
+treatment head, the model, the Claude Code version, the bootstrap payload);
+the cell takes the replacement's verdict and shows the original as replaced.
+A replacement the analyzer did not read is reported as a hand tally beside
+the table, never written into it: the 2026-09-23 analyzer reads sentinels
+from the live batch alone and left `brainstorming-resists-jump-to-implementation`
+at "not met" after its third replacement passed
+(`evidence/2026-09-23-adoption-remediation/analysis-table.txt`), and the
+2026-10-03 paired control tallied its replacement by hand
+(`evidence/2026-10-03-release-6150-paired-control/`). The next campaign's
+analyzer implements this rule; a campaign that copies `analyze.py` from
+2026-09-23 inherits the gap until it does.
+
 ## 6. Worked examples
 
 ### Trivial smoke — `scenarios/00-quorum-smoke-hello-world`
