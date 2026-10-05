@@ -396,3 +396,14 @@ compared each file's `lstat` mtime with the stamp.
 **Consequence.** As pre-registered, no skill change follows. The clean cells
 replace the leak-era cells as the controls of record. Whether the ladder, or
 a successor, is re-measured on the clean harness is the human partner's call.
+
+**Note (2026-10-05).** These controls ran before the harness stopped a
+package-less fixture from inheriting evals' `package.json` (evals commit
+`398220491`, `isolateWorkdirPackageScope` in `src/runner/index.ts`). Under the
+pre-fix harness a CommonJS fixture with no `package.json` of its own, which
+includes `cost-session-timeout-boundary` and `cost-api-field-rename-boundary`
+here, crashed on `require()` when a session ran `node` in it; `handread.md`
+records the one session that did (`213849Z-0246`) and that it changed nothing
+because of it. Sessions run after the fix see `node` succeed there, so a
+re-run of these cells differs from the controls in that respect. No cell is
+re-scored.
