@@ -265,6 +265,13 @@ absolute path (`src/setup-step.ts`). The dir already exists — **never `mkdir`
 it.** Build the fixture in place. (Reminder: `$QUORUM_WORKDIR` is
 available in `setup.sh` only, never in `checks.sh`.)
 
+Every fixture is a git repository of its own: `setup.sh` runs `git init`
+(or a helper that does). The fixture sits under `evals/results/` inside this
+clone, and an agent's walk for project instructions stops at the nearest
+`.git`; without one it reaches this repository's `AGENTS.md`. The runner
+fails setup when a fixture inside another repository's tree has no `.git` of
+its own (`assertFixtureRepo`, `src/setup-step.ts`).
+
 The bare verbs and `setup-helpers` resolve via the `BASH_ENV`-sourced prelude,
 **not** via `PATH`. There is nothing on `PATH` to install.
 

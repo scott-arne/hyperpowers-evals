@@ -72,7 +72,7 @@ import { buildRunEconomics } from '../economics.ts';
 import { envSnapshot, getEnv } from '../env.ts';
 import { kimiLogsHaveSuperpowersSessionStart } from '../normalize/kimi.ts';
 import { hexNonce, nowStampUtc, repoRoot } from '../paths.ts';
-import { runSetup, SetupError } from '../setup-step.ts';
+import { assertFixtureRepo, runSetup, SetupError } from '../setup-step.ts';
 import { readQuorumMaxTime } from '../story-meta.ts';
 import { populateContextDir } from './context.ts';
 import { RunnerError } from './errors.ts';
@@ -1125,6 +1125,7 @@ async function runInnerBody(
   // setup.sh needs QUORUM_REPO_ROOT (some fixtures resolve repo-relative paths /
   // setup-helpers against it).
   runSetup(a.scenarioDir, workdir, { QUORUM_REPO_ROOT: repoRoot() });
+  assertFixtureRepo(workdir);
 
   const checksRepoRoot = repoRoot();
 
