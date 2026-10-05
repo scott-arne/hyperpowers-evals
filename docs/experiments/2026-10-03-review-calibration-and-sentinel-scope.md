@@ -93,12 +93,18 @@ control; no sentence ships.
 - **Scope.** One Codex model, one lens skeleton, three reviews per cell. A
   stop at 0 of 3 on two fixtures says the over-rating does not reproduce on
   this instrument, not that the production gate never over-rates.
+- **Provenance.** The captures name the base commit, not the head, the diff or
+  the prompt. `base-provenance.py` rebuilds both bases from the committed
+  fixture files, so the reviewed base is proven; the head and the prompt can be
+  rebuilt from `fd1b5c701` but are not on record.
 
 **Files.**
 - `evidence/2026-10-03-review-calibration-and-sentinel-scope/`: the README,
   the three focus inputs, `tally.py`, `tally.txt`, and
   `task-4-runs/control-P/` and `task-4-runs/control-P2/` (captures, run logs,
-  broker records, runtime records).
+  broker records, runtime records); `base-provenance.py` and its output; the
+  offline-suite table `task-7-offline-suites.txt`, its logs and the watcher
+  probe under `task-7-runs/`.
 - `scripts/codex-focus-arm.sh`, `scripts/codex-focus-arm.test.sh` and
   `fixtures/codex-focus-arm/{P,P2,Pc}/`, committed in `fd1b5c701`.
 - The same plan's Fixes 2 and 3 (scoped sentinel re-measurement, base-rate
