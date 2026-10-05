@@ -109,6 +109,16 @@ All six live in `fixtures/codex-focus-arm/`. Only P and P2 were reviewed.
   - `broker.txt`: the broker directory and endpoint the runner started;
   - `runtime-start.txt`, `runtime-end.txt`: the runtime record, written before
     the broker started and on exit.
+- `base-provenance.py`, `base-provenance.txt`: the base-commit check and its
+  output (see Capture provenance).
+- `task-7-offline-suites.txt`: Task 7 Step 5's offline hyperpowers suites, one
+  row per suite, with the earlier passes and the watcher probe.
+- `task-7-runs/`: the logs that table cites. `r3/worktree-root/` and
+  `r3/brainstorm-server/` hold one log per suite, named after the suite file
+  and ending in `# exit <rc>`; `r3/ps-before.txt` and `r3/ps-after.txt` list
+  the node servers around the brainstorm pass; `earlier/` holds the earlier
+  passes' logs; `fswatch-probe.cjs` and `fswatch-probe.txt` are the watcher
+  probe and its output.
 
 There is no `task-5-runs/`. Task 5 did not run.
 
@@ -175,6 +185,40 @@ Result: no output, when Task 4 ran and again when this README was written. All
 four records are byte-identical to the reference. Superseded directories:
 none.
 
+## Capture provenance
+
+A capture records the base commit Codex reviewed (`target.baseRef`) and the
+temporary repository it reviewed (`context.repoRoot`). It does not record the
+head commit, the diff or the prompt. `base-provenance.py` rebuilds each run's
+base the way `scripts/codex-focus-arm.sh` does, from the fixture files at evals
+`fd1b5c701` (the fixture directory with `lib.js` replaced by `lib.base.js`,
+author and committer `t <t@t>`, message `base`), and tries every commit time
+from `fd1b5c701` to `403435c69` in every half-hour zone:
+
+```bash
+python3 evidence/2026-10-03-review-calibration-and-sentinel-scope/base-provenance.py \
+  /Users/johnss51/Development/agents/hyperpowers/evals \
+  evidence/2026-10-03-review-calibration-and-sentinel-scope fd1b5c701 403435c69
+```
+
+It exits 0 and prints `base-provenance.txt`:
+
+| Run directory | Base | Captures | Commit time |
+|---|---|---|---|
+| `task-4-runs/control-P` | `04209e7dcd4b` | 3 | 2026-10-05T00:00:47Z, zone -0700 |
+| `task-4-runs/control-P2` | `b1a3d28d8331` | 3 | 2026-10-05T00:07:34Z, zone -0700 |
+
+Each run's three captures share one base, and each base was committed one
+second after its run's start record. With the window `fd1b5c701 fd1b5c701`
+the script exits 1, so it does fail when no time in the window matches.
+
+So both runs reviewed a base built from the committed fixture files,
+`REQUIREMENTS.md` and `test.js` included. The runner's head commit changes only
+`lib.js`, to the fixture's `lib.js`, so the head and the diff can be rebuilt
+from `fd1b5c701`, and the prompt from the runner, the focus files and
+`context.repoRoot`. None of the three is on record. Re-running both arms with a
+runner that keeps them was considered on 2026-10-04 and not chosen.
+
 ## Deviations
 
 From the plan, recorded before execution:
@@ -225,3 +269,14 @@ From execution:
   entry's bold lead-in style.
 - **No `task-5-runs/`.** Global Constraints lists it in this directory; on the
   Stop path it does not exist.
+- **The offline suites are not all green.** Task 7 Step 5 expects all green.
+  In the complete pass, 46 of 48 suites exit 0; `server.test.js` fails 5 of 33
+  and `lifecycle.test.js` 1 of 13, all six on the brainstorm server's file
+  watcher, which on this host reports late, under another file's name, or not
+  at all. The branch changes no code. Seven shell suites also failed in the
+  first pass and passed once stale Codex brokers were reclaimed. The human
+  partner waived "all green" for this plan on 2026-10-04, read as "report every
+  suite"; the watcher-dependent tests stay a follow-up. Details:
+  `task-7-offline-suites.txt`.
+- **The head, the diff and the prompt are not captured.** Only the base is
+  proven; see Capture provenance.
