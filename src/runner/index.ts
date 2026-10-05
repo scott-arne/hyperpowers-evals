@@ -826,6 +826,19 @@ export function homeEnvSubstitutions(
   };
 }
 
+// The fixture at <runDir>/coding-agent-workdir sits under evals/results/, so a
+// fixture with no package.json of its own inherits evals' own: Node takes the
+// module type from the nearest package.json walking upward (evals declares
+// "type": "module", so a CommonJS fixture's require() throws), and npm picks
+// its project root the same way (an `npm install` or `npm test` in the fixture
+// would act on evals). A type-less package.json at the run directory ends both
+// walks there: Node's syntax detection then runs CommonJS and ESM fixture files
+// alike, as it would for a repository with no package.json anywhere above it,
+// and npm's root becomes the gitignored run directory.
+export function isolateWorkdirPackageScope(runDir: string): void {
+  writeFileSync(join(runDir, 'package.json'), '{ "private": true }\n');
+}
+
 // Reap the agent runtime's secret temp dirs. Each dir is removed recursively; an
 // already-absent dir is fine, but any other removal failure — or a path that
 // survives removal —
@@ -1064,6 +1077,7 @@ async function runInnerBody(
   // setup: isolated config + workdir, claude provisioning, then setup.sh.
   const workdir = join(runDir, 'coding-agent-workdir');
   mkdirSync(workdir, { recursive: true });
+  isolateWorkdirPackageScope(runDir);
   // Throwaway $HOME for the coding agent under test — always on, every agent.
   // Run-dir-relative so it's captured and reaped with the run (no mkdtemp / no
   // runtimeCleanupDirs). The launchers pin HOME/XDG/TMPDIR to it via
