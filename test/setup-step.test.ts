@@ -1,9 +1,15 @@
 import { expect, test } from 'bun:test';
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from '../src/paths.ts';
-import { runSetup, SetupError } from '../src/setup-step.ts';
+import { assertFixtureRepo, runSetup, SetupError } from '../src/setup-step.ts';
 
 test('runSetup runs setup.sh in workdir with QUORUM_WORKDIR', () => {
   const scn = mkdtempSync(join(tmpdir(), 'scn-'));
@@ -114,4 +120,41 @@ test('runSetup plumbs QUORUM_REPO_ROOT into setup.sh', () => {
   expect(readFileSync(join(wd, 'repo-root.txt'), 'utf8').trim()).toBe(
     repoRoot(),
   );
+});
+
+// A real run's fixture sits under evals/results/ inside this clone, so a
+// fixture that is not a git repository of its own would let an agent's walk
+// for project instructions reach this repository's AGENTS.md. Inside another
+// repository's tree a missing .git is a setup failure; outside any repository
+// (where the harness's own tests build their scenarios) there is nothing to
+// inherit and the fixture is left alone.
+function repoWithFixture(): { repo: string; workdir: string } {
+  const repo = mkdtempSync(join(tmpdir(), 'enclosing-'));
+  mkdirSync(join(repo, '.git'));
+  const workdir = join(repo, 'results', 'r1', 'coding-agent-workdir');
+  mkdirSync(workdir, { recursive: true });
+  return { repo, workdir };
+}
+
+test('assertFixtureRepo throws SetupError for a .git-less fixture inside another repository', () => {
+  const { repo, workdir } = repoWithFixture();
+  expect(() => assertFixtureRepo(workdir)).toThrow(SetupError);
+  expect(() => assertFixtureRepo(workdir)).toThrow(repo);
+});
+
+test('assertFixtureRepo accepts a fixture with its own .git directory or gitfile', () => {
+  const asDir = repoWithFixture();
+  mkdirSync(join(asDir.workdir, '.git'));
+  expect(() => assertFixtureRepo(asDir.workdir)).not.toThrow();
+  const asFile = repoWithFixture();
+  writeFileSync(
+    join(asFile.workdir, '.git'),
+    'gitdir: /elsewhere/.git/worktrees/x\n',
+  );
+  expect(() => assertFixtureRepo(asFile.workdir)).not.toThrow();
+});
+
+test('assertFixtureRepo leaves a .git-less fixture outside any repository alone', () => {
+  const wd = mkdtempSync(join(tmpdir(), 'wd-'));
+  expect(() => assertFixtureRepo(wd)).not.toThrow();
 });
