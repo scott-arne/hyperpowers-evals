@@ -100,13 +100,24 @@ test('A-coding-agents-directive: excluded agent -> immediate indeterminate', asy
 
 test('A-coding-agents-directive: included agent passes the gate (reaches preflight)', async () => {
   // claude is in the allowlist; the directive gate must NOT short-circuit. The
-  // next guard (binary preflight) will fire because PATH lacks claude here, but
-  // crucially the final_reason is NOT the directive message.
+  // next guard (binary preflight) fires because PATH is pointed at an empty
+  // dir here, as the preflight test below does, so a host with claude
+  // installed does not run real provisioning. The final_reason must NOT be
+  // the directive message.
   const scenarioDir = makeScenarioDir({
     checksContent: '# coding-agents: claude\npre() { :; }\npost() { :; }\n',
   });
-  const { verdict } = await runGuard({ scenarioDir, codingAgent: 'claude' });
-  expect(verdict.final_reason).not.toBe('requires coding-agents: claude');
+  const emptyBin = mkdtempSync(join(tmpdir(), 'emptybin-'));
+  const prevPath = process.env['PATH'];
+  process.env['PATH'] = `${emptyBin}:/usr/bin:/bin`;
+  try {
+    const { verdict } = await runGuard({ scenarioDir, codingAgent: 'claude' });
+    expect(verdict.final_reason).not.toBe('requires coding-agents: claude');
+    expect(verdict.final_reason).toContain('not on PATH');
+  } finally {
+    if (prevPath === undefined) delete process.env['PATH'];
+    else process.env['PATH'] = prevPath;
+  }
 });
 
 // A throwaway coding-agents dir for the family-matching gate. Synthetic rather
