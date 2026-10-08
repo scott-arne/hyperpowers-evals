@@ -190,12 +190,18 @@ for fx in "$@"; do
 
   git -C "$work" -c user.email=t@t -c user.name=t commit -qam "$(commit_message "$fx")"
   git -C "$work" diff "$base" HEAD > "$work/review.diff"
+  # Provenance beside the captures: what was reviewed, as the controls' audit
+  # found missing (the capture names only the base).
+  printf '%s\n' "$base" > "$out/$fx-$arm.base"
+  git -C "$work" rev-parse HEAD > "$out/$fx-$arm.head"
+  cp "$work/review.diff" "$out/$fx-$arm.diff"
 
   for i in 1 2 3; do
     # Compose production round-1 focus: lens skeleton + recipe focus
     skeleton="$(lens_skeleton | sed "s|\\\$1|$work|g")"
     recipe="$(printf '%s' "$recipe_template" | sed "s|\\\$1|$work|g")"
     focus="$skeleton$recipe"
+    printf '%s' "$focus" > "$out/$fx-$arm-$i.prompt"
 
     cap="$out/$fx-$arm-$i.json"
     ( cd "$work" && node "$codex/scripts/codex-companion.mjs" adversarial-review --base "$base" --json "$focus" ) > "$cap" 2>"$cap.err"

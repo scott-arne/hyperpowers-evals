@@ -40,10 +40,18 @@ export function clearBrokerSession(cwd) {
 EOF
 cat > "$plugin/scripts/codex-companion.mjs" <<'EOF'
 import { appendFileSync, readdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 const args = process.argv.slice(2);
 const dir = process.env.STUB_FOCUS_DIR;
-const call = readdirSync(dir).length + 1;
+// Calls are numbered by their .txt files; the .head and .base sidecars below
+// must not advance the count.
+const call = readdirSync(dir).filter((f) => f.endsWith(".txt")).length + 1;
 writeFileSync(`${dir}/${call}.txt`, args[args.indexOf("--json") + 1]);
+// The arm runs the companion inside the reviewed repository, so the stub is
+// an independent witness of the head it reviewed and the base it was given.
+const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+writeFileSync(`${dir}/${call}.head`, head);
+writeFileSync(`${dir}/${call}.base`, args[args.indexOf("--base") + 1]);
 appendFileSync(process.env.STUB_LOG, `review ${process.env.CODEX_COMPANION_APP_SERVER_ENDPOINT}\n`);
 if (String(call) === process.env.STUB_COMPANION_FAIL) { console.error("stub: the turn failed"); process.exit(3); }
 console.log(JSON.stringify({ review: "Adversarial Review", result: { verdict: "approve", summary: "stub", findings: [], next_steps: [] }, rawOutput: "", parseError: null }));
@@ -73,6 +81,41 @@ run_arm() { # <name> <focus-dir> <arm> <fixture>... ; leaves $work/<name>{,.log,
     > "$work/$name.stdout" 2> "$work/$name.stderr"
 }
 count() { grep -c -- "$1" "$2" || true; }
+# Captured provenance for one arm: for every fixture, .base equals the --base
+# the stub received on each of its three calls, .head equals the HEAD the stub
+# saw, .prompt equals the stub's recorded --json argument, and .diff is
+# byte-identical to an independent two-commit build of the same fixture files
+# (git diff output depends only on content).
+check_captures() { # <name> <arm> <fixture>...
+  local name="$1" arm="$2"; shift 2
+  local k=0 fx i n indep b fixtures
+  fixtures="$(cd "$here/.." && pwd)/fixtures/codex-focus-arm"
+  indep="$(mktemp -d "${TMPDIR:-/tmp}/focus-arm-indep.XXXXXX")"
+  for fx in "$@"; do
+    [ -f "$work/$name/$fx-$arm.base" ] || fail "no .base for $fx ($arm)"
+    [ -f "$work/$name/$fx-$arm.head" ] || fail "no .head for $fx ($arm)"
+    [ -f "$work/$name/$fx-$arm.diff" ] || fail "no .diff for $fx ($arm)"
+    for i in 1 2 3; do
+      n=$((k * 3 + i))
+      [ "$(cat "$work/$name.focus/$n.base")" = "$(cat "$work/$name/$fx-$arm.base")" ] || fail ".base for $fx ($arm) call $i must equal the --base the stub received"
+      [ "$(cat "$work/$name.focus/$n.head")" = "$(cat "$work/$name/$fx-$arm.head")" ] || fail ".head for $fx ($arm) must equal the HEAD the stub saw on call $i"
+      cmp -s "$work/$name.focus/$n.txt" "$work/$name/$fx-$arm-$i.prompt" || fail ".prompt for $fx ($arm) call $i must equal the stub's recorded --json argument"
+    done
+    mkdir -p "$indep/$fx"
+    cp "$fixtures/$fx/"* "$indep/$fx/"
+    git -C "$indep/$fx" init -q
+    cp "$fixtures/$fx/lib.base.js" "$indep/$fx/lib.js"
+    git -C "$indep/$fx" -c user.email=t@t -c user.name=t add -A
+    git -C "$indep/$fx" -c user.email=t@t -c user.name=t commit -qm base
+    b="$(git -C "$indep/$fx" rev-parse HEAD)"
+    cp "$fixtures/$fx/lib.js" "$indep/$fx/lib.js"
+    git -C "$indep/$fx" -c user.email=t@t -c user.name=t commit -qam head
+    git -C "$indep/$fx" diff "$b" HEAD > "$indep/$fx.diff"
+    cmp -s "$indep/$fx.diff" "$work/$name/$fx-$arm.diff" || fail ".diff for $fx ($arm) must be byte-identical to an independent base-to-head diff"
+    k=$((k + 1))
+  done
+  rm -rf "$indep"
+}
 
 # Treatment on all six fixtures.
 run_arm treat "$focus" treatment M H O P P2 Pc || fail "treatment arm exited $? ($(cat "$work/treat.stderr"))"
@@ -101,6 +144,7 @@ for f in "$work/treat.focus"/*.txt; do
   ! grep -Fq -- '$1' "$f" || fail "treatment focus still holds a \$1 placeholder: $f"
   grep -Eq 'Review package: /.+/review\.diff\.' "$f" || fail "treatment focus must name the work directory's review.diff: $f"
 done
+check_captures treat treatment M H O P P2 Pc
 
 # Control on one fixture: no cap, and the anchor runs straight into the next sentence.
 run_arm ctl "$focus" control H || fail "control arm exited $? ($(cat "$work/ctl.stderr"))"
@@ -109,6 +153,7 @@ for f in "$work/ctl.focus"/*.txt; do
   ! grep -Fq -- "$cap" "$f" || fail "control focus must not carry the cap sentence: $f"
   grep -Fq -- "${anchor}You are a stateless reviewer" "$f" || fail "control focus must be the 5bef46c text: $f"
 done
+check_captures ctl control H
 
 # An altered cap in the treatment file fails before any broker or review.
 cp -R "$focus" "$work/bad-treatment"
@@ -167,4 +212,4 @@ for home in no-effort two-models; do
   [ ! -e "$work/$home/runtime-start.txt" ] || fail "no runtime record from a $home config"
 done
 
-echo "PASS: codex-focus-arm checks its focus files and Codex config first, reviews each fixture three times per arm through one broker it owns, refuses a recorded broker, releases its broker and writes the end record on every exit, and fails on runtime drift"
+echo "PASS: codex-focus-arm checks its focus files and Codex config first, reviews each fixture three times per arm through one broker it owns, refuses a recorded broker, releases its broker and writes the end record on every exit, and fails on runtime drift, and records base, head, diff and prompt per review for both arms"
