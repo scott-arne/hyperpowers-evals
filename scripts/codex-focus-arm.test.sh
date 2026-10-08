@@ -90,7 +90,8 @@ check_captures() { # <name> <arm> <fixture>...
   local name="$1" arm="$2"; shift 2
   local k=0 fx i n indep b fixtures
   fixtures="$(cd "$here/.." && pwd)/fixtures/codex-focus-arm"
-  indep="$(mktemp -d "${TMPDIR:-/tmp}/focus-arm-indep.XXXXXX")"
+  # Under $work, so the test's EXIT trap removes it even when a check fails.
+  indep="$(mktemp -d "$work/indep.XXXXXX")"
   for fx in "$@"; do
     [ -f "$work/$name/$fx-$arm.base" ] || fail "no .base for $fx ($arm)"
     [ -f "$work/$name/$fx-$arm.head" ] || fail "no .head for $fx ($arm)"
