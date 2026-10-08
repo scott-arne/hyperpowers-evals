@@ -1,8 +1,27 @@
-import { expect, test } from 'bun:test';
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { afterAll, expect, test } from 'bun:test';
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { runScenario } from '../src/runner/index.ts';
+
+// Every temp dir a test here creates is removed when the file finishes; a
+// suite that left run-*, scn-*, agents-* and friends under $TMPDIR on every
+// run was the leak this fixes.
+const created: string[] = [];
+function tmp(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  created.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of created) rmSync(dir, { recursive: true, force: true });
+});
 
 // Region 1 — early guards in runInner, before any side effect (provisioning,
 // gauntlet). These tests select the claude agent against the REAL coding-agents
@@ -13,7 +32,7 @@ import { runScenario } from '../src/runner/index.ts';
 const REAL_CODING_AGENTS = resolve(import.meta.dir, '..', 'coding-agents');
 
 function freshOutRoot(): string {
-  return mkdtempSync(join(tmpdir(), 'out-'));
+  return tmp('out-');
 }
 
 // A scenario dir with the requested set of files present. Always writes story.md
@@ -23,7 +42,7 @@ function makeScenarioDir(opts: {
   omitChecks?: boolean;
   checksContent?: string;
 }): string {
-  const dir = mkdtempSync(join(tmpdir(), 'scn-'));
+  const dir = tmp('scn-');
   if (!opts.omitStory) {
     writeFileSync(
       join(dir, 'story.md'),
@@ -55,7 +74,7 @@ async function runGuard(args: {
   const prevKey = process.env['ANTHROPIC_API_KEY'];
   const prevRoot = process.env['SUPERPOWERS_ROOT'];
   process.env['ANTHROPIC_API_KEY'] = 'sk-test';
-  process.env['SUPERPOWERS_ROOT'] = mkdtempSync(join(tmpdir(), 'sproot-'));
+  process.env['SUPERPOWERS_ROOT'] = tmp('sproot-');
   try {
     return await runScenario({
       scenarioDir: args.scenarioDir,
@@ -108,7 +127,7 @@ test('A-coding-agents-directive: included agent passes the gate (reaches preflig
   const scenarioDir = makeScenarioDir({
     checksContent: '# coding-agents: claude\npre() { :; }\npost() { :; }\n',
   });
-  const emptyBin = mkdtempSync(join(tmpdir(), 'emptybin-'));
+  const emptyBin = tmp('emptybin-');
   const prevPath = process.env['PATH'];
   process.env['PATH'] = emptyBin;
   try {
@@ -130,7 +149,7 @@ test('A-coding-agents-directive: included agent passes the gate (reaches preflig
 // absent from PATH: the gate has to be the only thing under test, so the run
 // must stop at the very next guard instead of provisioning a real agent.
 function makeFamilyAgentsDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'agents-'));
+  const dir = tmp('agents-');
   const common = (name: string, sub: string, normalizer: string) =>
     `name: ${name}\n` +
     `binary: quorum-no-such-binary\n` +
@@ -222,7 +241,7 @@ test('A-x-claude-binary-preflight: claude not on PATH -> setup indeterminate', a
   // found wherever it is installed. The preflight runs before setup.sh, so the
   // system bin dirs are not needed for the preflight to be what fires. Restore
   // afterward.
-  const emptyBin = mkdtempSync(join(tmpdir(), 'emptybin-'));
+  const emptyBin = tmp('emptybin-');
   const prevPath = process.env['PATH'];
   process.env['PATH'] = emptyBin;
   try {
@@ -241,7 +260,7 @@ test('A-launch-cwd-sentinel: bogus .quorum-launch-cwd path -> runner error', asy
   // raise before launching gauntlet (which here is absent from PATH anyway). We
   // need claude on PATH to pass the preflight, so point PATH at a dir holding a
   // dummy `claude`, plus the mock-gauntlet (never reached).
-  const scenarioDir = mkdtempSync(join(tmpdir(), 'scn-'));
+  const scenarioDir = tmp('scn-');
   writeFileSync(
     join(scenarioDir, 'story.md'),
     '---\nquorum_max_time: 1m\n---\nDo the thing.\n',
@@ -264,7 +283,7 @@ test('A-launch-cwd-sentinel: bogus .quorum-launch-cwd path -> runner error', asy
   );
 
   // Provide a fake claude on PATH so the binary preflight passes.
-  const binDir = mkdtempSync(join(tmpdir(), 'bin-'));
+  const binDir = tmp('bin-');
   writeFileSync(join(binDir, 'claude'), '#!/usr/bin/env bash\n:\n');
   chmodSync(join(binDir, 'claude'), 0o755);
   // Also stub gauntlet so that if the guard FAILS to fire, we don't shell out to
