@@ -100,18 +100,21 @@ test('A-coding-agents-directive: excluded agent -> immediate indeterminate', asy
 
 test('A-coding-agents-directive: included agent passes the gate (reaches preflight)', async () => {
   // claude is in the allowlist; the directive gate must NOT short-circuit. The
-  // next guard (binary preflight) fires because PATH is pointed at an empty
-  // dir here, as the preflight test below does, so a host with claude
-  // installed does not run real provisioning. The final_reason must NOT be
+  // next guard (binary preflight) fires because PATH holds only an empty dir,
+  // with no system directories, so no host's claude (wherever it is installed)
+  // can pass the preflight into real provisioning. The preflight runs before
+  // setup.sh, so nothing on this path needs bash. The final_reason must NOT be
   // the directive message.
   const scenarioDir = makeScenarioDir({
     checksContent: '# coding-agents: claude\npre() { :; }\npost() { :; }\n',
   });
   const emptyBin = mkdtempSync(join(tmpdir(), 'emptybin-'));
   const prevPath = process.env['PATH'];
-  process.env['PATH'] = `${emptyBin}:/usr/bin:/bin`;
+  process.env['PATH'] = emptyBin;
   try {
     const { verdict } = await runGuard({ scenarioDir, codingAgent: 'claude' });
+    expect(verdict.final).toBe('indeterminate');
+    expect(verdict.error?.stage).toBe('setup');
     expect(verdict.final_reason).not.toBe('requires coding-agents: claude');
     expect(verdict.final_reason).toContain('not on PATH');
   } finally {
@@ -215,12 +218,13 @@ test('A-x-missing-agent-yaml: unknown coding-agent -> clean message, not ENOENT'
 
 test('A-x-claude-binary-preflight: claude not on PATH -> setup indeterminate', async () => {
   const scenarioDir = makeScenarioDir({});
-  // Point PATH at an empty dir so `claude` cannot be found — but keep the system
-  // bin dirs (bash/env live there) so setup.sh still runs and the preflight, not
-  // a setup-script spawn failure, is what fires. Restore afterward.
+  // Point PATH at an empty dir and nothing else, so no host's `claude` can be
+  // found wherever it is installed. The preflight runs before setup.sh, so the
+  // system bin dirs are not needed for the preflight to be what fires. Restore
+  // afterward.
   const emptyBin = mkdtempSync(join(tmpdir(), 'emptybin-'));
   const prevPath = process.env['PATH'];
-  process.env['PATH'] = `${emptyBin}:/usr/bin:/bin`;
+  process.env['PATH'] = emptyBin;
   try {
     const { verdict } = await runGuard({ scenarioDir });
     expect(verdict.final).toBe('indeterminate');
