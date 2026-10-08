@@ -62,22 +62,23 @@ EOF
 chmod +x "$work/bin/codex"
 printf 'model = "stub-model"\nmodel_reasoning_effort = "low"\n\n[profiles.decoy]\nmodel = "decoy-model"\n' > "$work/codex-home/config.toml"
 
-run_arm() { # <name> <focus-dir> <arm> <fixture>... ; leaves $work/<name>{,.log,.focus,.stdout,.stderr}
+run_arm() { # <name> <focus-dir> <arm> <fixture>... ; leaves $work/<name>{,.log,.focus,.tmp,.stdout,.stderr}
   local name="$1" fdir="$2" arm="$3"; shift 3
-  mkdir -p "$work/$name.focus"
+  mkdir -p "$work/$name.focus" "$work/$name.tmp"
   : > "$work/$name.log"
-  PATH="$work/bin:$PATH" CODEX_HOME="${STUB_HOME:-$work/codex-home}" STUB_LOG="$work/$name.log" STUB_FOCUS_DIR="$work/$name.focus" \
+  # Each arm gets its own TMPDIR, so what it leaves behind is checked without
+  # counting anything another process put in the shared temp directory.
+  TMPDIR="$work/$name.tmp" PATH="$work/bin:$PATH" CODEX_HOME="${STUB_HOME:-$work/codex-home}" STUB_LOG="$work/$name.log" STUB_FOCUS_DIR="$work/$name.focus" \
     bash "$here/codex-focus-arm.sh" "$root" "$plugin" "$fdir" "$arm" "$work/$name" "$@" \
     > "$work/$name.stdout" 2> "$work/$name.stderr"
 }
 count() { grep -c -- "$1" "$2" || true; }
 
 # Treatment on all six fixtures.
-work_dirs_before=$(ls "${TMPDIR:-/tmp}" | grep -c '^focus-arm-' || true)
 run_arm treat "$focus" treatment M H O P P2 Pc || fail "treatment arm exited $? ($(cat "$work/treat.stderr"))"
-# Every per-fixture work directory the arm created is gone when it exits.
-work_dirs_after=$(ls "${TMPDIR:-/tmp}" | grep -c '^focus-arm-' || true)
-[ "$work_dirs_after" -eq "$work_dirs_before" ] || fail "the arm must remove its per-fixture work directories (before=$work_dirs_before after=$work_dirs_after)"
+# Every per-fixture work directory (and the broker directory) the arm created
+# in its own TMPDIR is gone when it exits.
+[ "$(find "$work/treat.tmp" -mindepth 1 -maxdepth 1 | grep -c .)" -eq 0 ] || fail "the arm must remove its per-fixture work directories (left: $(find "$work/treat.tmp" -mindepth 1 -maxdepth 1 | tr '\n' ' '))"
 [ "$(find "$work/treat" -name '*-treatment-*.json' | grep -c .)" -eq 18 ] || fail "treatment must leave 18 captures"
 [ "$(count '"result":"approved"' "$work/treat.stdout")" -eq 18 ] || fail "every capture must normalize to approved"
 for fx in M H O P P2 Pc; do for i in 1 2 3; do
