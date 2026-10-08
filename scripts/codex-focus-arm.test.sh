@@ -73,7 +73,11 @@ run_arm() { # <name> <focus-dir> <arm> <fixture>... ; leaves $work/<name>{,.log,
 count() { grep -c -- "$1" "$2" || true; }
 
 # Treatment on all six fixtures.
+work_dirs_before=$(ls "${TMPDIR:-/tmp}" | grep -c '^focus-arm-' || true)
 run_arm treat "$focus" treatment M H O P P2 Pc || fail "treatment arm exited $? ($(cat "$work/treat.stderr"))"
+# Every per-fixture work directory the arm created is gone when it exits.
+work_dirs_after=$(ls "${TMPDIR:-/tmp}" | grep -c '^focus-arm-' || true)
+[ "$work_dirs_after" -eq "$work_dirs_before" ] || fail "the arm must remove its per-fixture work directories (before=$work_dirs_before after=$work_dirs_after)"
 [ "$(find "$work/treat" -name '*-treatment-*.json' | grep -c .)" -eq 18 ] || fail "treatment must leave 18 captures"
 [ "$(count '"result":"approved"' "$work/treat.stdout")" -eq 18 ] || fail "every capture must normalize to approved"
 for fx in M H O P P2 Pc; do for i in 1 2 3; do
