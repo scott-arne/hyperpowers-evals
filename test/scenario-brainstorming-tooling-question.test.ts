@@ -25,6 +25,7 @@
 import { afterAll, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -32,8 +33,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { envSnapshot } from '../src/env.ts';
+import { dirname, join, resolve } from 'node:path';
+import { envSnapshot, getEnv } from '../src/env.ts';
 
 const SCENARIO = resolve(
   import.meta.dir,
@@ -141,16 +142,35 @@ function callGate(w: Workdir, prompt: string): string {
   return res.stdout;
 }
 
-/** The gate's approval authority, from the hyperpowers checkout above this one. */
-const NORMALIZE = resolve(
-  import.meta.dir,
-  '..',
-  '..',
+/**
+ * The hyperpowers checkout that owns this evals clone. SUPERPOWERS_ROOT wins
+ * when it is set and holds the script; otherwise the first ancestor of this
+ * file that does, which covers both the main checkout (evals/..) and a
+ * worktree under evals/.worktrees/<branch>/ (three levels up).
+ */
+const NORMALIZE_REL = join(
   'skills',
   'requesting-code-review',
   'scripts',
   'verdict-normalize',
 );
+function hyperpowersRoot(): string {
+  const fromEnv = getEnv('SUPERPOWERS_ROOT');
+  if (fromEnv !== undefined && existsSync(join(fromEnv, NORMALIZE_REL)))
+    return fromEnv;
+  let dir = import.meta.dir;
+  for (;;) {
+    if (existsSync(join(dir, NORMALIZE_REL))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error(
+    `cannot find the hyperpowers root: SUPERPOWERS_ROOT=${fromEnv ?? '(unset)'} and no ancestor of ${import.meta.dir} holds ${NORMALIZE_REL}`,
+  );
+}
+/** The gate's approval authority, from the hyperpowers checkout above this one. */
+const NORMALIZE = join(hyperpowersRoot(), NORMALIZE_REL);
 
 function normalized(text: string, flags: string[] = []): string {
   const payload = join(scratch, `payload-${++cases}.txt`);
