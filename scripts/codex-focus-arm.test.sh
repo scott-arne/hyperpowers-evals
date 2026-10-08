@@ -213,4 +213,24 @@ for home in no-effort two-models; do
   [ ! -e "$work/$home/runtime-start.txt" ] || fail "no runtime record from a $home config"
 done
 
-echo "PASS: codex-focus-arm checks its focus files and Codex config first, reviews each fixture three times per arm through one broker it owns, refuses a recorded broker, releases its broker and writes the end record on every exit, and fails on runtime drift, and records base, head, diff and prompt per review for both arms"
+# A fixture whose head does not parse stops the arm before any review, and
+# the arm still releases its broker, writes the end record and removes its
+# work directory. The script resolves fixtures beside itself, so a copy of the
+# script beside a broken copy of H exercises it.
+mkdir -p "$work/copy/scripts" "$work/copy/fixtures/codex-focus-arm/H"
+cp "$here/codex-focus-arm.sh" "$work/copy/scripts/codex-focus-arm.sh"
+cp "$(cd "$here/.." && pwd)/fixtures/codex-focus-arm/H/"* "$work/copy/fixtures/codex-focus-arm/H/"
+printf '\nthis line does not parse ((\n' >> "$work/copy/fixtures/codex-focus-arm/H/lib.js"
+mkdir -p "$work/broken.focus" "$work/broken.tmp"
+rc=0
+TMPDIR="$work/broken.tmp" PATH="$work/bin:$PATH" CODEX_HOME="$work/codex-home" STUB_LOG="$work/broken.log" STUB_FOCUS_DIR="$work/broken.focus" \
+  bash "$work/copy/scripts/codex-focus-arm.sh" "$root" "$plugin" "$focus" treatment "$work/broken" H > "$work/broken.stdout" 2> "$work/broken.stderr" || rc=$?
+[ "$rc" -ne 0 ] || fail "a head that does not parse must fail the arm"
+grep -q 'SyntaxError' "$work/broken.stderr" || fail "the build failure names the syntax error: $(cat "$work/broken.stderr")"
+[ "$(count '^review ' "$work/broken.log")" -eq 0 ] || fail "no review runs when the fixture does not build"
+[ "$(count '^shutdown ' "$work/broken.log")" -eq 1 ] || fail "the broker is shut down after a build failure"
+[ "$(count '^clear ' "$work/broken.log")" -eq 1 ] || fail "the broker record is cleared after a build failure"
+[ -f "$work/broken/runtime-end.txt" ] || fail "the end record is written after a build failure"
+[ "$(find "$work/broken.tmp" -mindepth 1 -maxdepth 1 | grep -c .)" -eq 0 ] || fail "the work directory is removed after a build failure (left: $(find "$work/broken.tmp" -mindepth 1 -maxdepth 1 | tr '\n' ' '))"
+
+echo "PASS: codex-focus-arm checks its focus files and Codex config first, reviews each fixture three times per arm through one broker it owns, refuses a recorded broker, releases its broker and writes the end record on every exit, and fails on runtime drift, and records base, head, diff and prompt per review for both arms, and stops before any review on a fixture that does not build"
