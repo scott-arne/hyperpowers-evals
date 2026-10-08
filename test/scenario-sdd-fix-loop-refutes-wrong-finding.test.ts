@@ -203,6 +203,8 @@ function taskRoundOne(stub: string): string[] {
 
 // --- 1. the task gate's round-1 lens fan-out --------------------------------
 
+// Each of these drives the stub through roughly seventeen node spawns; at
+// about 120 ms a spawn on this host that passes bun's 5 s default under load.
 test('every lens of a task-gate round-1 fan-out gets the finding under its own job id', () => {
   const stub = newStub();
   expect(JSON.parse(run(stub, ['status', '--json']))).toEqual({
@@ -238,7 +240,7 @@ test('every lens of a task-gate round-1 fan-out gets the finding under its own j
   ).toEqual({
     job: { id: 'cxc-stub-review-999', jobClass: 'review', status: 'unknown' },
   });
-});
+}, 60_000);
 
 // --- 2. the same fan-out launched concurrently ------------------------------
 
@@ -259,7 +261,7 @@ test('three round-1 lenses launched at once get three ids, three records, and th
     expectRoundOneFinding(record.storedJob.result.result);
   }
   expect(ids).toContain(captureNewestId(stub));
-});
+}, 60_000);
 
 // --- 3. a re-review round ---------------------------------------------------
 
@@ -270,7 +272,7 @@ test('a re-review call after the round-1 fan-out gets approve', () => {
   const id = captureNewestId(stub);
   expect(roundOne).not.toContain(id);
   expectApprove(stored(stub, id).storedJob.result.result);
-});
+}, 60_000);
 
 // --- 4. the final whole-branch gate -----------------------------------------
 
@@ -286,7 +288,7 @@ test('every lens of the final gate after the task gate gets approve, with no fin
     seen.push(id);
     expectApprove(stored(stub, id).storedJob.result.result);
   }
-});
+}, 60_000);
 
 // --- 5. payload bytes -------------------------------------------------------
 
@@ -308,4 +310,4 @@ test('the finding and approve payloads are byte-identical to the 1889827 stub', 
       });
     }
   }
-});
+}, 60_000);
