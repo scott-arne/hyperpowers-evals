@@ -203,8 +203,9 @@ function taskRoundOne(stub: string): string[] {
 
 // --- 1. the task gate's round-1 lens fan-out --------------------------------
 
-// Each of these drives the stub through roughly seventeen node spawns; at
-// about 120 ms a spawn on this host that passes bun's 5 s default under load.
+// Each of these drives the stub through 7 to 27 node spawns; at about 120 ms a
+// spawn on an idle host, and several times that under load, the total can pass
+// bun's 5 s default.
 test('every lens of a task-gate round-1 fan-out gets the finding under its own job id', () => {
   const stub = newStub();
   expect(JSON.parse(run(stub, ['status', '--json']))).toEqual({
