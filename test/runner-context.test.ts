@@ -1,9 +1,10 @@
-import { expect, test } from 'bun:test';
+import { afterAll, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -13,6 +14,19 @@ import { shellSingleQuote } from '../src/agents/index.ts';
 import { populateContextDir } from '../src/runner/context.ts';
 import { RunnerError } from '../src/runner/errors.ts';
 import { homeEnvSubstitutions } from '../src/runner/index.ts';
+
+// Every temp dir a test here creates is removed when the file finishes; a
+// suite that left run-*, scn-*, agents-* and friends under $TMPDIR on every
+// run was the leak this fixes.
+const created: string[] = [];
+function tmp(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  created.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of created) rmSync(dir, { recursive: true, force: true });
+});
 
 // The REAL coding-agents/ dir (sibling of test/). It carries claude-context/
 // {HOWTO.md, launch-agent}, the templates populateContextDir substitutes.
@@ -63,7 +77,7 @@ function assertNoLeftoverSubPlaceholders(
 }
 
 test('populateContextDir substitutes every placeholder in the claude context', () => {
-  const runDir = mkdtempSync(join(tmpdir(), 'run-'));
+  const runDir = tmp('run-');
   const configDir = join(runDir, 'coding-agent-config');
   const launchCwd = join(runDir, 'coding-agent-workdir');
   mkdirSync(configDir, { recursive: true });
@@ -126,7 +140,7 @@ test('populateContextDir substitutes every placeholder in the claude context', (
 // so results would depend on where quorum was started. The launcher drops
 // them before sourcing the env-file, which then sets the Claude env alone.
 test('the claude launcher drops the inherited Claude env and keeps the env-file', () => {
-  const runDir = mkdtempSync(join(tmpdir(), 'run-'));
+  const runDir = tmp('run-');
   const configDir = join(runDir, 'coding-agent-config');
   const launchCwd = join(runDir, 'coding-agent-workdir');
   const stubDir = join(runDir, 'stub-bin');
@@ -217,9 +231,9 @@ test('the claude launcher drops the inherited Claude env and keeps the env-file'
 });
 
 test('populateContextDir raises when a required context dir is missing', () => {
-  const runDir = mkdtempSync(join(tmpdir(), 'run-'));
+  const runDir = tmp('run-');
   // An empty coding-agents dir: no claude-context/ inside it.
-  const emptyAgents = mkdtempSync(join(tmpdir(), 'agents-'));
+  const emptyAgents = tmp('agents-');
   expect(() =>
     populateContextDir({
       codingAgentsDir: emptyAgents,
@@ -232,8 +246,8 @@ test('populateContextDir raises when a required context dir is missing', () => {
 });
 
 test('populateContextDir is a no-op when a non-required context dir is missing', () => {
-  const runDir = mkdtempSync(join(tmpdir(), 'run-'));
-  const emptyAgents = mkdtempSync(join(tmpdir(), 'agents-'));
+  const runDir = tmp('run-');
+  const emptyAgents = tmp('agents-');
   // required defaults to false: missing dir is silently skipped.
   expect(() =>
     populateContextDir({
@@ -246,7 +260,7 @@ test('populateContextDir is a no-op when a non-required context dir is missing',
 });
 
 test('populateContextDir raises when a forbidden placeholder survives', () => {
-  const runDir = mkdtempSync(join(tmpdir(), 'run-'));
+  const runDir = tmp('run-');
   const configDir = join(runDir, 'coding-agent-config');
   const launchCwd = join(runDir, 'coding-agent-workdir');
   mkdirSync(configDir, { recursive: true });
@@ -277,8 +291,8 @@ test('populateContextDir raises when a forbidden placeholder survives', () => {
 test('populateContextDir applies longer placeholders before their prefixes', () => {
   // $FOO_SH must be replaced before $FOO (length-desc ordering), or the longer
   // key would be corrupted by the shorter one's replacement.
-  const runDir = mkdtempSync(join(tmpdir(), 'run-'));
-  const srcAgents = mkdtempSync(join(tmpdir(), 'agents-'));
+  const runDir = tmp('run-');
+  const srcAgents = tmp('agents-');
   const ctxSrc = join(srcAgents, 'demo-context');
   mkdirSync(ctxSrc, { recursive: true });
   writeFileSync(join(ctxSrc, 'file.txt'), 'a=$FOO b=$FOO_SH\n');
