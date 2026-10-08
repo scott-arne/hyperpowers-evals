@@ -102,6 +102,7 @@ fi
 # end record, so a failed arm still leaves both records for the audit.
 broker_dir=""
 broker_endpoint=""
+work_dirs=()
 finish() {
   local rc=$?
   if [ -n "$broker_endpoint" ]; then
@@ -114,6 +115,8 @@ clearBrokerSession(dir);
 ' "$codex/scripts/lib/broker-lifecycle.mjs" "$broker_endpoint" "$broker_dir" || echo "warning: could not release the broker at $broker_endpoint" >&2
   fi
   [ -z "$broker_dir" ] || rm -rf "$broker_dir"
+  # Each fixture's work directory is scratch; a failed arm used to leave them.
+  for d in ${work_dirs[@]+"${work_dirs[@]}"}; do rm -rf "$d"; done
   if ! runtime_record > "$out/runtime-end.txt"; then
     echo "cannot write $out/runtime-end.txt" >&2
     [ "$rc" -ne 0 ] || rc=1
@@ -164,6 +167,7 @@ EOF
 
 for fx in "$@"; do
   work="$(mktemp -d "${TMPDIR:-/tmp}/focus-arm-$fx.XXXXXX")"
+  work_dirs+=("$work")
   cp "$here/fixtures/codex-focus-arm/$fx/"* "$work/"
   git -C "$work" init -q
 
