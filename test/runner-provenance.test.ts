@@ -176,6 +176,106 @@ describe('captureProvenance', () => {
     });
   });
 
+  test('an interpreter named by absolute path does not stand in for the checkout', () => {
+    const C = 'c'.repeat(40);
+    const runner = fakeGit({
+      '/repos/evals': { head: A, status: '' },
+      '/repos/gauntlet': { head: B, status: '' },
+      '/opt/homebrew': { head: C, status: '' },
+    });
+    const p = captureProvenance(
+      deps(
+        { runner },
+        {
+          '/opt/bin/gauntlet':
+            '#!/bin/sh\nexec /opt/homebrew/bin/bun run /repos/gauntlet/src/index.ts "$@"\n',
+          '/opt/homebrew/bin/bun': 'x',
+          '/repos/gauntlet/src/index.ts': 'x',
+        },
+      ),
+    );
+    expect(p.gauntlet).toEqual({
+      path: '/opt/bin/gauntlet',
+      checkout: '/repos/gauntlet',
+      commit: B,
+      clean: true,
+    });
+  });
+
+  test('a gauntlet on PATH outside any repository keeps its path and nulls the rest', () => {
+    const runner = fakeGit({ '/repos/evals': { head: A, status: '' } });
+    const p = captureProvenance(
+      deps(
+        { runner },
+        {
+          '/opt/bin/gauntlet':
+            '#!/bin/sh\nexec bun run /loose/gauntlet/src/index.ts "$@"\n',
+          '/loose/gauntlet/src/index.ts': 'x',
+        },
+      ),
+    );
+    expect(p.gauntlet).toEqual({
+      path: '/opt/bin/gauntlet',
+      checkout: null,
+      commit: null,
+      clean: null,
+    });
+    expect(p.evals_commit).toBe(A);
+  });
+
+  test('a HEAD that is not a 40-hex commit id records no commit', () => {
+    const runner: CommandRunner = {
+      run(command, args): CommandResult {
+        const sub = args.slice(2).join(' ');
+        if (command === 'git' && sub === 'rev-parse HEAD')
+          return { status: 0, stdout: 'HEAD\n', stderr: '' };
+        if (
+          command === 'git' &&
+          sub === 'status --porcelain --untracked-files=all'
+        )
+          return { status: 0, stdout: '', stderr: '' };
+        return { status: 1, stdout: '', stderr: 'unexpected' };
+      },
+    };
+    const p = captureProvenance(deps({ runner }, {}));
+    expect(p.evals_commit).toBeNull();
+    expect(p.evals_clean).toBe(true);
+  });
+
+  test('an exit status of 0 with empty toplevel output records no checkout', () => {
+    const runner: CommandRunner = {
+      run(command, args): CommandResult {
+        const sub = args.slice(2).join(' ');
+        if (command === 'git' && sub === 'rev-parse --show-toplevel')
+          return { status: 0, stdout: '\n', stderr: '' };
+        if (command === 'git' && sub === 'rev-parse HEAD')
+          return { status: 0, stdout: `${A}\n`, stderr: '' };
+        if (
+          command === 'git' &&
+          sub === 'status --porcelain --untracked-files=all'
+        )
+          return { status: 0, stdout: '', stderr: '' };
+        return { status: 1, stdout: '', stderr: 'unexpected' };
+      },
+    };
+    const p = captureProvenance(
+      deps(
+        { runner },
+        {
+          '/opt/bin/gauntlet':
+            '#!/bin/sh\nexec bun run /repos/gauntlet/src/index.ts "$@"\n',
+          '/repos/gauntlet/src/index.ts': 'x',
+        },
+      ),
+    );
+    expect(p.gauntlet).toEqual({
+      path: '/opt/bin/gauntlet',
+      checkout: null,
+      commit: null,
+      clean: null,
+    });
+  });
+
   test('git absent and gauntlet off PATH yield nulls, never a throw', () => {
     const runner: CommandRunner = {
       run: () => ({ status: null, stdout: '', stderr: 'spawn git ENOENT' }),
@@ -201,7 +301,7 @@ describe('captureProvenance', () => {
     g('config', 'status.showUntrackedFiles', 'no');
     writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n');
     g('add', '.gitignore');
-    g('commit', '-qm', 'init');
+    g('-c', 'commit.gpgsign=false', 'commit', '-qm', 'init');
     const real = defaultProvenanceDeps(defaultCommandRunner, repo, '');
     writeFileSync(join(repo, 'ignored.txt'), 'x');
     expect(captureProvenance(real).evals_clean).toBe(true);
