@@ -173,6 +173,11 @@ test('quorum run forwards SIGINT and writes a stopped verdict (exit 2)', async (
     expect(agent).toBe('claude');
     expect(typeof startedAt).toBe('string');
     expect(startedAt).not.toBe('');
+    // The stopped verdict carries the provenance the run captured at setup.
+    const written = JSON.parse(
+      readFileSync(join(runDir, 'provenance.json'), 'utf8'),
+    );
+    expect(verdict.provenance).toEqual(written);
 
     // No orphaned mock gauntlet: the forwarded SIGINT terminated it. Bounded
     // poll — the child's exit is asynchronous after the forward.

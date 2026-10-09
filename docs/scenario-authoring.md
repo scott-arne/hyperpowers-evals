@@ -654,12 +654,15 @@ and `git status --porcelain --untracked-files=all` prints nothing when the
 checkout is clean (untracked files count, ignored files do not; the flag is
 explicit because the bare command obeys a `status.showUntrackedFiles=no`
 setting), the same definition a run's `provenance.json` uses. quorum spawns
-`gauntlet` from `PATH` and records neither (`src/runner/index.ts`). Row
-3's Gauntlet commit is `a35607e`: on the host that measured it, `gauntlet`
-is a shim that runs a fork checkout, and that checkout's reflog records
-HEAD reaching `a35607e` on 2026-07-10 and no later move (read on
-2026-10-04). Whether its tracked files were clean when row 3 launched is
-not on record.
+`gauntlet` from `PATH`, follows that shim to its checkout, and writes both
+into the run's `provenance.json` when the run starts (`gauntlet.commit` and
+`gauntlet.clean`, `null` where it cannot read one;
+`src/runner/provenance.ts`); `quorum show` prints them on its `provenance:`
+line. A run from before that file existed records neither. Row 3's
+Gauntlet commit is `a35607e`: on the host that measured it, `gauntlet` is a
+shim that runs a fork checkout, and that checkout's reflog records HEAD
+reaching `a35607e` on 2026-07-10 and no later move (read on 2026-10-04).
+Whether that checkout was clean when row 3 launched is not on record.
 
 Rows 1 and 2 were first recorded with commit ids from before the 2026-10-01
 history rewrite: hyperpowers `c6b69d8`, `7e8ba23` and `3c32ee4` are now
@@ -802,8 +805,12 @@ with the failing run.
     paths when it launched. The 2026-10-03 re-baseline launcher logs the
     commit and refuses to launch on uncommitted changes
     (`evidence/2026-10-03-clean-harness-rebaseline/logs/measure-launch.sh`).
-    `quorum run` records neither, and a commit alone misses uncommitted
-    edits, so a failing run without that record has no comparable row.
+    A run's `provenance.json` records both: `evals_commit`, and
+    `evals_clean`, which covers `src`, `coding-agents`, `package.json`,
+    `bun.lock` and all of `scenarios`, so `true` settles those paths and
+    `false` leaves them open. A commit alone misses uncommitted edits, so a
+    failing run with neither the launcher's record nor `evals_clean: true`
+    has no comparable row.
     Row 3's record is the mutation check in its evidence README.
 - **The Claude Code version and the Gauntlet identity** are recorded but
   are not part of the match. Both live outside the evals tree, and matching

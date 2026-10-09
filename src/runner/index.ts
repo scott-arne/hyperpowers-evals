@@ -77,6 +77,7 @@ import { readQuorumMaxTime } from '../story-meta.ts';
 import { populateContextDir } from './context.ts';
 import { RunnerError } from './errors.ts';
 import { writePhase } from './phase.ts';
+import { captureProvenance, defaultProvenanceDeps } from './provenance.ts';
 
 // RunnerError lives in ./errors.ts so context.ts can throw it without a
 // runner<->context import cycle. Re-exported here so it is part of this module's
@@ -880,6 +881,19 @@ export async function runScenario(
   // learns the run dir before the long await — it needs it to write a stopped
   // verdict if the run is interrupted mid-flight.
   a.onRunDir?.(runDir);
+  // Captured before setup and written before anything else in the run dir,
+  // so every later writer, the SIGINT handler's included, finds it there.
+  const provenance = captureProvenance(
+    defaultProvenanceDeps(
+      defaultCommandRunner,
+      repoRoot(),
+      getEnv('PATH') ?? '',
+    ),
+  );
+  writeFileSync(
+    join(runDir, 'provenance.json'),
+    `${JSON.stringify(provenance, null, 2)}\n`,
+  );
   // startedAt: caller-supplied stamp wins so the handler and the happy path
   // agree on the same value; else stamp it here.
   const startedAt = a.startedAt ?? new Date().toISOString();
@@ -901,6 +915,7 @@ export async function runScenario(
     scenario,
     coding_agent: a.codingAgent,
     started_at: startedAt,
+    provenance,
     finished_at: new Date().toISOString(),
     ...(a.trial !== undefined ? { trial: a.trial } : {}),
   };
