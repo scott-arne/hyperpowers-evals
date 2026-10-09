@@ -658,7 +658,9 @@ setting), the same definition a run's `provenance.json` uses. quorum spawns
 into the run's `provenance.json` when the run starts (`gauntlet.commit` and
 `gauntlet.clean`, `null` where it cannot read one;
 `src/runner/provenance.ts`); `quorum show` prints them on its `provenance:`
-line. A run from before that file existed records neither. Row 3's
+line. The record is the state when the run starts: a checkout that moves
+during the run, or between the trials of one `--repeat` invocation, is not
+detected. A run from before that file existed records neither. Row 3's
 Gauntlet commit is `a35607e`: on the host that measured it, `gauntlet` is a
 shim that runs a fork checkout, and that checkout's reflog records HEAD
 reaching `a35607e` on 2026-07-10 and no later move (read on 2026-10-04).
@@ -792,25 +794,26 @@ with the failing run.
     `.claude-env`, so a subagent can run a different model in two clean
     runs of the same main model;
   - the listing budget;
-  - the evals harness. `src`, `coding-agents`, `package.json`, `bun.lock`
-    and the scenario's directory are identical at the row's evals commit
-    and the failing run's
-    (`git diff --quiet <row> <run> -- src coding-agents package.json bun.lock scenarios/<id>`).
+  - the evals harness. `src`, `coding-agents`, `fixtures`, `package.json`,
+    `bun.lock` and the scenario's directory are identical at the row's
+    evals commit and the failing run's
+    (`git diff --quiet <row> <run> -- src coding-agents fixtures package.json bun.lock scenarios/<id>`).
     That is the 2026-10-03 re-baseline launcher's path set, narrowed from
-    all of `scenarios` to the scenario's own directory. Alternatively, each
-    difference carries a recorded argument, in the form of "What a session
-    reaches", that it cannot change the launch, the skill listing, the
-    transcript, the grading or the criterion. The failing run's evals
+    all of `scenarios` to the scenario's own directory and widened by
+    `fixtures`, which setup copies into a run's repository. Alternatively,
+    each difference carries a recorded argument, in the form of "What a
+    session reaches", that it cannot change the launch, the skill listing,
+    the transcript, the grading or the criterion. The failing run's evals
     commit must be on record, and so must a clean `git status` for those
     paths when it launched. The 2026-10-03 re-baseline launcher logs the
     commit and refuses to launch on uncommitted changes
     (`evidence/2026-10-03-clean-harness-rebaseline/logs/measure-launch.sh`).
     A run's `provenance.json` records both: `evals_commit`, and
-    `evals_clean`, which covers `src`, `coding-agents`, `package.json`,
-    `bun.lock` and all of `scenarios`, so `true` settles those paths and
-    `false` leaves them open. A commit alone misses uncommitted edits, so a
-    failing run with neither the launcher's record nor `evals_clean: true`
-    has no comparable row.
+    `evals_clean`, which covers `src`, `coding-agents`, `fixtures`,
+    `package.json`, `bun.lock` and all of `scenarios`, so `true` settles
+    those paths and `false` leaves them open. A commit alone misses
+    uncommitted edits, so a failing run with neither the launcher's record
+    nor `evals_clean: true` has no comparable row.
     Row 3's record is the mutation check in its evidence README.
 - **The Claude Code version and the Gauntlet identity** are recorded but
   are not part of the match. Both live outside the evals tree, and matching

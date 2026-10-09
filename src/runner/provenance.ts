@@ -38,16 +38,18 @@ function commitOf(runner: CommandRunner, cwd: string): string | null {
   return /^[0-9a-f]{40}$/.test(c) ? c : null;
 }
 
-// The evals paths a run depends on: the harness path set that
-// docs/scenario-authoring.md §5 compares between a row and a failing run.
-// The rest of the tree cannot change a run, and `evidence/` alone holds
-// over 200,000 files that a whole-tree status would walk on every run.
+// The evals paths a run depends on, the same set docs/scenario-authoring.md §5
+// compares between a row and a failing run: the harness code, the scenarios,
+// and the fixtures that setup copies into a run's repository. The rest of the
+// tree cannot change a run, and `evidence/` alone holds over 200,000 files
+// that a whole-tree status would walk on every run.
 export const HARNESS_PATHS: readonly string[] = [
   'src',
   'coding-agents',
   'package.json',
   'bun.lock',
   'scenarios',
+  'fixtures',
 ];
 
 // Clean means `git status --porcelain --untracked-files=all` prints nothing:
