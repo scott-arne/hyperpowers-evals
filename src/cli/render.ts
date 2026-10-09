@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { FinalVerdict } from '../contracts/verdict.ts';
+import { renderProvenanceLine } from '../runner/provenance.ts';
 
 export type ShowMode = 'full' | 'quiet' | 'json';
 
@@ -328,10 +329,15 @@ function formatHeader(
     { fg: verdictColor(verdict.final), bold: true },
     color,
   );
+  const provenance =
+    verdict.provenance === undefined
+      ? ''
+      : `${renderProvenanceLine(verdict.provenance)}\n`;
   return (
     `${label('run-dir  ', color)} ${runDir}\n` +
     `${label('final    ', color)} ${finalStyled}\n` +
-    `${label('reason   ', color)} ${verdict.final_reason}\n`
+    `${label('reason   ', color)} ${verdict.final_reason}\n` +
+    provenance
   );
 }
 

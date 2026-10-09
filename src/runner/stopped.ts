@@ -1,6 +1,7 @@
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { FinalVerdict, Trial } from '../contracts/verdict.ts';
+import type { FinalVerdict, Provenance, Trial } from '../contracts/verdict.ts';
+import { ProvenanceSchema } from '../contracts/verdict.ts';
 
 export interface StoppedIdentity {
   readonly scenario: string;
@@ -15,7 +16,10 @@ export interface StoppedIdentity {
 // The verdict written when a run is interrupted by SIGINT (dashboard Stop).
 // indeterminate + error.stage "stopped" (a valid RUN_ERROR_STAGES member). The
 // cell resolves to indeterminate instead of vanishing under the dead-pid rule.
-export function buildStoppedVerdict(id: StoppedIdentity): FinalVerdict {
+export function buildStoppedVerdict(
+  id: StoppedIdentity,
+  provenance?: Provenance,
+): FinalVerdict {
   return {
     schema: 1,
     final: 'indeterminate',
@@ -29,12 +33,24 @@ export function buildStoppedVerdict(id: StoppedIdentity): FinalVerdict {
     started_at: id.startedAt,
     finished_at: new Date().toISOString(),
     ...(id.trial !== undefined ? { trial: id.trial } : {}),
+    ...(provenance !== undefined ? { provenance } : {}),
   };
+}
+
+// The runner writes provenance.json before anything else in the run dir, so a
+// stopped verdict can carry it; a run interrupted even earlier writes none.
+function readProvenance(runDir: string): Provenance | undefined {
+  const file = join(runDir, 'provenance.json');
+  if (!existsSync(file)) return undefined;
+  const parsed = ProvenanceSchema.safeParse(
+    JSON.parse(readFileSync(file, 'utf8')),
+  );
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function writeStoppedVerdict(runDir: string, id: StoppedIdentity): void {
   writeFileSync(
     join(runDir, 'verdict.json'),
-    `${JSON.stringify(buildStoppedVerdict(id), null, 2)}\n`,
+    `${JSON.stringify(buildStoppedVerdict(id, readProvenance(runDir)), null, 2)}\n`,
   );
 }

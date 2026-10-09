@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { runScenario } from '../src/runner/index.ts';
@@ -87,12 +88,23 @@ async function runWithFixture(
 }
 
 test('mock-gauntlet drives a full pass run to a parity verdict', async () => {
-  const { verdict } = await runWithFixture('pass');
+  const { runDir, verdict } = await runWithFixture('pass');
   expect(verdict.schema).toBe(1);
   expect(verdict.final).toBe('pass');
   expect(verdict.gauntlet?.status).toBe('pass');
   // No error stage on the happy path, and the gauntlet layer is composed in.
   expect(verdict.error).toBe(null);
+  // Provenance is written once at setup and carried into the verdict.
+  const written = JSON.parse(
+    readFileSync(join(runDir, 'provenance.json'), 'utf8'),
+  );
+  expect(verdict.provenance).toEqual(written);
+  const head = spawnSync(
+    'git',
+    ['-C', resolve(import.meta.dir, '..'), 'rev-parse', 'HEAD'],
+    { encoding: 'utf8' },
+  ).stdout.trim();
+  expect(written.evals_commit).toBe(head);
 });
 
 test('mock-gauntlet drives a fail fixture to a fail verdict', async () => {

@@ -8,7 +8,10 @@ const CLI = resolve(import.meta.dir, '..', 'src', 'cli', 'index.ts');
 
 type FinalStatus = 'pass' | 'fail' | 'indeterminate';
 
-function runDirWithVerdict(final: FinalStatus): {
+function runDirWithVerdict(
+  final: FinalStatus,
+  extra: Record<string, unknown> = {},
+): {
   root: string;
   dir: string;
 } {
@@ -25,6 +28,7 @@ function runDirWithVerdict(final: FinalStatus): {
       checks: [],
       error: null,
       economics: null,
+      ...extra,
     }),
   );
   return { root, dir };
@@ -188,4 +192,35 @@ test('show full mode renders the run-dir, final, and reason header', () => {
   // --no-color must produce no ANSI escape sequences (no ESC control char).
   // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting the absence of the ESC control char is the point of this test.
   expect(proc.stdout).not.toMatch(/\x1b\[/);
+});
+
+test('show full mode prints the provenance line only when the verdict carries one', () => {
+  const withField = runDirWithVerdict('pass', {
+    provenance: {
+      evals_commit: 'a'.repeat(40),
+      evals_clean: true,
+      gauntlet: {
+        path: '/opt/bin/gauntlet',
+        checkout: '/repos/g',
+        commit: 'b'.repeat(40),
+        clean: false,
+      },
+    },
+  });
+  const shown = spawnSync('bun', [CLI, 'show', withField.dir, '--no-color'], {
+    encoding: 'utf8',
+  });
+  expect(shown.status).toBe(0);
+  expect(shown.stdout.split('\n')).toContain(
+    'provenance: evals aaaaaaa gauntlet bbbbbbb+dirty',
+  );
+
+  const without = runDirWithVerdict('pass');
+  const bare = spawnSync('bun', [CLI, 'show', without.dir, '--no-color'], {
+    encoding: 'utf8',
+  });
+  expect(bare.status).toBe(0);
+  expect(bare.stdout.split('\n').some((l) => l.startsWith('provenance:'))).toBe(
+    false,
+  );
 });
