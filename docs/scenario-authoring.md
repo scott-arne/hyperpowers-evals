@@ -659,15 +659,16 @@ records both when the run starts, in the `provenance` field of the run's
 `verdict.json` (`gauntlet.commit` and `gauntlet.clean`, `null` where it
 cannot read one; `src/runner/provenance.ts`); `quorum show` prints them on
 its `provenance:` line. The run dir's `provenance.json` holds the same
-capture for a run that ends without a verdict, but the Coding-Agent can
-write to the run dir, so that file is not evidence on its own. The record
-is the state when the run starts: a checkout that moves during the run, or
-between the trials of one `--repeat` invocation, is not detected. A run
-from before quorum recorded provenance has neither. Row 3's
-Gauntlet commit is `a35607e`: on the host that measured it, `gauntlet` is a
-shim that runs a fork checkout, and that checkout's reflog records HEAD
-reaching `a35607e` on 2026-07-10 and no later move (read on 2026-10-04).
-Whether that checkout was clean when row 3 launched is not on record.
+capture for a run that ends without a verdict. Both files sit in the run
+dir, which the Coding-Agent can write: quorum treats the agent under test
+as non-adversarial and authenticates neither. The record is the state when
+the run starts: a checkout that moves during the run, or between the trials
+of one `--repeat` invocation, is not detected. A run from before quorum
+recorded provenance has neither. Row 3's Gauntlet commit is `a35607e`: on
+the host that measured it, `gauntlet` is a shim that runs a fork checkout,
+and that checkout's reflog records HEAD reaching `a35607e` on 2026-07-10
+and no later move (read on 2026-10-04). Whether that checkout was clean
+when row 3 launched is not on record.
 
 Rows 1 and 2 were first recorded with commit ids from before the 2026-10-01
 history rewrite: hyperpowers `c6b69d8`, `7e8ba23` and `3c32ee4` are now
