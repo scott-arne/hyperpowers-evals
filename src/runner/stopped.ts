@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { FinalVerdict, Provenance, Trial } from '../contracts/verdict.ts';
 import { ProvenanceSchema } from '../contracts/verdict.ts';
@@ -38,13 +38,17 @@ export function buildStoppedVerdict(
 }
 
 // The runner writes provenance.json before anything else in the run dir, so a
-// stopped verdict can carry it; a run interrupted even earlier writes none.
+// stopped verdict can carry it; a run interrupted even earlier writes none. A
+// file that is missing, unreadable, malformed or off-schema yields no field:
+// the SIGINT handler must still write its verdict.
 function readProvenance(runDir: string): Provenance | undefined {
-  const file = join(runDir, 'provenance.json');
-  if (!existsSync(file)) return undefined;
-  const parsed = ProvenanceSchema.safeParse(
-    JSON.parse(readFileSync(file, 'utf8')),
-  );
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(join(runDir, 'provenance.json'), 'utf8'));
+  } catch {
+    return undefined;
+  }
+  const parsed = ProvenanceSchema.safeParse(raw);
   return parsed.success ? parsed.data : undefined;
 }
 
