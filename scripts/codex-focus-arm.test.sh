@@ -129,7 +129,7 @@ expected_p3_diff="$(printf '%s\n' \
   '---' \
   '> Workspace directories are created only by `createWorkspace`. Existing' \
   '> behaviour must not change. Tests for')"
-actual_p3_diff="$(cd "$here/.." && diff -r fixtures/codex-focus-arm/P fixtures/codex-focus-arm/P3 || true)"
+actual_p3_diff="$(cd "$here/.." && diff -r fixtures/codex-focus-arm/P fixtures/codex-focus-arm/P3 2>&1 || true)"
 [ "$actual_p3_diff" = "$expected_p3_diff" ] || fail "P3 must differ from P only by the declared REQUIREMENTS.md hunk; got: $actual_p3_diff"
 
 # Treatment on all six fixtures.
