@@ -146,6 +146,20 @@ test('quorum run forwards SIGINT and writes a stopped verdict (exit 2)', async (
     expect(Number.isInteger(mockPid)).toBe(true);
     expect(mockPid).toBeGreaterThan(0);
 
+    // provenance.json sits where the Coding-Agent can write. Forge it before
+    // the signal: the stopped verdict must carry the runner's own capture.
+    const captured = JSON.parse(
+      readFileSync(join(runDir, 'provenance.json'), 'utf8'),
+    );
+    writeFileSync(
+      join(runDir, 'provenance.json'),
+      JSON.stringify({
+        evals_commit: 'f'.repeat(40),
+        evals_clean: true,
+        gauntlet: { path: null, checkout: null, commit: null, clean: null },
+      }),
+    );
+
     // Signal the CLI. onSigint forwards SIGINT to the gauntlet child, writes the
     // stopped verdict, and exits 2.
     child.kill('SIGINT');
@@ -173,11 +187,9 @@ test('quorum run forwards SIGINT and writes a stopped verdict (exit 2)', async (
     expect(agent).toBe('claude');
     expect(typeof startedAt).toBe('string');
     expect(startedAt).not.toBe('');
-    // The stopped verdict carries the provenance the run captured at setup.
-    const written = JSON.parse(
-      readFileSync(join(runDir, 'provenance.json'), 'utf8'),
-    );
-    expect(verdict.provenance).toEqual(written);
+    // The stopped verdict carries the runner's in-memory capture, not the
+    // forged file.
+    expect(verdict.provenance).toEqual(captured);
 
     // No orphaned mock gauntlet: the forwarded SIGINT terminated it. Bounded
     // poll — the child's exit is asynchronous after the forward.
