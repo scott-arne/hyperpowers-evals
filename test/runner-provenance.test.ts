@@ -1,0 +1,236 @@
+import { afterAll, describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type {
+  CommandResult,
+  CommandRunner,
+} from '../src/agents/command-runner.ts';
+import { defaultCommandRunner } from '../src/agents/command-runner.ts';
+import { ProvenanceSchema } from '../src/contracts/verdict.ts';
+import {
+  captureProvenance,
+  defaultProvenanceDeps,
+  type ProvenanceDeps,
+  renderProvenanceLine,
+} from '../src/runner/provenance.ts';
+
+// A run records the evals commit and the Gauntlet identity that produced it,
+// so a verdict can be re-checked against the exact harness. Every lookup is
+// injected: git through the CommandRunner seam, PATH and the filesystem
+// through plain functions.
+
+const A = 'a'.repeat(40);
+const B = 'b'.repeat(40);
+
+/** A git stand-in keyed by cwd: HEAD, status output, and toplevel per repo. */
+function fakeGit(
+  repos: Record<string, { head: string; status: string }>,
+): CommandRunner {
+  return {
+    run(command, args): CommandResult {
+      if (command !== 'git')
+        return { status: 127, stdout: '', stderr: 'not found' };
+      const cwd = args[1] as string;
+      const repo = Object.entries(repos).find(
+        ([root]) => cwd === root || cwd.startsWith(`${root}/`),
+      );
+      if (repo === undefined)
+        return { status: 128, stdout: '', stderr: 'not a git repository' };
+      const [root, r] = repo;
+      const sub = args.slice(2).join(' ');
+      if (sub === 'rev-parse HEAD')
+        return { status: 0, stdout: `${r.head}\n`, stderr: '' };
+      if (sub === 'status --porcelain --untracked-files=all')
+        return { status: 0, stdout: r.status, stderr: '' };
+      if (sub === 'rev-parse --show-toplevel')
+        return { status: 0, stdout: `${root}\n`, stderr: '' };
+      return { status: 1, stdout: '', stderr: `unexpected: ${sub}` };
+    },
+  };
+}
+
+function deps(
+  over: Partial<ProvenanceDeps>,
+  files: Record<string, string | 'dir'>,
+): ProvenanceDeps {
+  return {
+    runner: fakeGit({}),
+    evalsRoot: '/repos/evals',
+    pathEntries: ['/opt/bin'],
+    readFile: (p) =>
+      typeof files[p] === 'string' ? (files[p] as string) : null,
+    exists: (p) => p in files,
+    isDirectory: (p) => files[p] === 'dir',
+    isExecutable: (p) =>
+      typeof files[p] === 'string' && p.endsWith('/gauntlet'),
+    ...over,
+  };
+}
+
+const realRepos: string[] = [];
+afterAll(() => {
+  for (const dir of realRepos) rmSync(dir, { recursive: true, force: true });
+});
+
+describe('captureProvenance', () => {
+  test('clean evals checkout, host shim shape: exec bun run <checkout>/src/index.ts', () => {
+    const runner = fakeGit({
+      '/repos/evals': { head: A, status: '' },
+      '/repos/gauntlet': { head: B, status: '' },
+    });
+    const p = captureProvenance(
+      deps(
+        { runner },
+        {
+          '/opt/bin/gauntlet':
+            '#!/usr/bin/env bash\n# the fork\nexec bun run /repos/gauntlet/src/index.ts "$@"\n',
+          '/repos/gauntlet/src/index.ts': 'x',
+          '/repos/gauntlet': 'dir',
+        },
+      ),
+    );
+    expect(p).toEqual({
+      evals_commit: A,
+      evals_clean: true,
+      gauntlet: {
+        path: '/opt/bin/gauntlet',
+        checkout: '/repos/gauntlet',
+        commit: B,
+        clean: true,
+      },
+    });
+    expect(ProvenanceSchema.parse(p)).toEqual(p);
+  });
+
+  test('tracked-dirty and untracked-dirty both report dirty; the shebang line is never a path token', () => {
+    const runner = fakeGit({
+      '/repos/evals': { head: A, status: ' M src/x.ts\n' },
+      '/repos/gauntlet': { head: B, status: '?? new.ts\n' },
+    });
+    const p = captureProvenance(
+      deps(
+        { runner },
+        {
+          '/opt/bin/gauntlet':
+            '#!/usr/bin/env bash\nexec bun run /repos/gauntlet/src/index.ts "$@"\n',
+          '/usr/bin/env': 'x',
+          '/repos/gauntlet/src/index.ts': 'x',
+        },
+      ),
+    );
+    expect(p.evals_clean).toBe(false);
+    expect(p.gauntlet.clean).toBe(false);
+    expect(p.gauntlet.checkout).toBe('/repos/gauntlet');
+  });
+
+  test('a cd <abs> shim queries the directory itself, whose parent is not a repository', () => {
+    const runner = fakeGit({
+      '/repos/evals': { head: A, status: '' },
+      '/elsewhere/checkout': { head: B, status: '' },
+    });
+    const p = captureProvenance(
+      deps(
+        { runner },
+        {
+          '/opt/bin/gauntlet':
+            '#!/bin/sh\ncd /elsewhere/checkout && exec bun run src/index.ts "$@"\n',
+          '/elsewhere/checkout': 'dir',
+        },
+      ),
+    );
+    expect(p.gauntlet.checkout).toBe('/elsewhere/checkout');
+    expect(p.gauntlet.commit).toBe(B);
+  });
+
+  test('a real binary (no shebang) resolves through its own directory', () => {
+    const runner = fakeGit({
+      '/repos/evals': { head: A, status: '' },
+      '/repos/gauntlet': { head: B, status: '' },
+    });
+    const p = captureProvenance(
+      deps(
+        { runner },
+        {
+          '/repos/gauntlet/bin/gauntlet': '\u007fELF',
+          '/repos/gauntlet': 'dir',
+        },
+      ),
+    );
+    expect(p.gauntlet.path).toBeNull();
+    const p2 = captureProvenance(
+      deps(
+        { runner, pathEntries: ['/repos/gauntlet/bin'] },
+        {
+          '/repos/gauntlet/bin/gauntlet': '\u007fELF',
+          '/repos/gauntlet': 'dir',
+        },
+      ),
+    );
+    expect(p2.gauntlet).toEqual({
+      path: '/repos/gauntlet/bin/gauntlet',
+      checkout: '/repos/gauntlet',
+      commit: B,
+      clean: true,
+    });
+  });
+
+  test('git absent and gauntlet off PATH yield nulls, never a throw', () => {
+    const runner: CommandRunner = {
+      run: () => ({ status: null, stdout: '', stderr: 'spawn git ENOENT' }),
+    };
+    const p = captureProvenance(
+      deps({ runner, pathEntries: ['/nowhere', ''] }, {}),
+    );
+    expect(p).toEqual({
+      evals_commit: null,
+      evals_clean: null,
+      gauntlet: { path: null, checkout: null, commit: null, clean: null },
+    });
+  });
+
+  test('ignored-only is clean and status.showUntrackedFiles=no cannot hide an untracked file (real git)', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'prov-'));
+    realRepos.push(repo);
+    const g = (...args: string[]) =>
+      spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8' });
+    g('init', '-q');
+    g('config', 'user.email', 't@t');
+    g('config', 'user.name', 't');
+    g('config', 'status.showUntrackedFiles', 'no');
+    writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n');
+    g('add', '.gitignore');
+    g('commit', '-qm', 'init');
+    const real = defaultProvenanceDeps(defaultCommandRunner, repo, '');
+    writeFileSync(join(repo, 'ignored.txt'), 'x');
+    expect(captureProvenance(real).evals_clean).toBe(true);
+    writeFileSync(join(repo, 'untracked.txt'), 'x');
+    expect(captureProvenance(real).evals_clean).toBe(false);
+  });
+});
+
+describe('renderProvenanceLine', () => {
+  const g = (commit: string | null, clean: boolean | null) => ({
+    path: null,
+    checkout: null,
+    commit,
+    clean,
+  });
+  test('the four cells', () => {
+    expect(
+      renderProvenanceLine({
+        evals_commit: A,
+        evals_clean: true,
+        gauntlet: g(B, false),
+      }),
+    ).toBe('provenance: evals aaaaaaa gauntlet bbbbbbb+dirty');
+    expect(
+      renderProvenanceLine({
+        evals_commit: A,
+        evals_clean: null,
+        gauntlet: g(null, null),
+      }),
+    ).toBe('provenance: evals aaaaaaa? gauntlet unknown');
+  });
+});
