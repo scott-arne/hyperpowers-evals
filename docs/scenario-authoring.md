@@ -632,11 +632,11 @@ the rate. Before recording a regression:
 A single failure at a scenario whose recorded base rate is 5% or higher
 never holds a release by itself.
 
-| scenario | model | Claude Code | skills tree | evals | budget | criterion | harness | rate (95% Wilson) | evidence |
-|---|---|---|---|---|---|---|---|---|---|
-| `cost-checkbox-over-trigger` | `claude-opus-5`, grader `claude-opus-5` | 2.1.261 | hyperpowers `62d8044` (skills identical to `d6a1681`) | `b234bbc12` | default | pre-amendment: skill invocation only | leak-era | 2/20 = 10% (3-30%) | `evidence/2026-09-16-over-trigger-measurement/` |
-| `cost-checkbox-over-trigger` | `claude-opus-5`, grader `claude-opus-5` | 2.1.280 | hyperpowers `7aff2a7` (skills tree `2d9f29e`) | `eead16855` | default | amended: skill invocation, or a stated consequence or go-ahead request before the edit | leak-era | 0/20 = 0% (0-16%) | `evidence/2026-09-23-adoption-remediation/` |
-| `cost-checkbox-over-trigger` | `claude-opus-5-5`, grader `claude-opus-5-5` | 2.1.287 | hyperpowers `5bef46c` (v6.15.0) | `be020f0d0` | default | amended | clean | 0/10 = 0% (0-28%) | `evidence/2026-10-03-harness-confound-attribution/` (arm A) |
+| scenario | model | Claude Code | skills tree | evals | budget | criterion | harness | Gauntlet | rate (95% Wilson) | evidence |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `cost-checkbox-over-trigger` | `claude-opus-5`, grader `claude-opus-5` | 2.1.261 | hyperpowers `62d8044` (skills identical to `d6a1681`) | `b234bbc12` | default | pre-amendment: skill invocation only | leak-era | not recorded | 2/20 = 10% (3-30%) | `evidence/2026-09-16-over-trigger-measurement/` |
+| `cost-checkbox-over-trigger` | `claude-opus-5`, grader `claude-opus-5` | 2.1.280 | hyperpowers `7aff2a7` (skills tree `2d9f29e`) | `eead16855` | default | amended: skill invocation, or a stated consequence or go-ahead request before the edit | leak-era | not recorded | 0/20 = 0% (0-16%) | `evidence/2026-09-23-adoption-remediation/` |
+| `cost-checkbox-over-trigger` | `claude-opus-5-5`, grader `claude-opus-5-5` | 2.1.287 | hyperpowers `5bef46c` (v6.15.0) | `be020f0d0` | default | amended | clean | `a35607e`, clean state not on record | 0/10 = 0% (0-28%) | `evidence/2026-10-03-harness-confound-attribution/` (arm A) |
 
 Every row records the criterion its rate was measured under, its evals
 commit, its models (the Coding-Agent's, then the Gauntlet-Agent's as
@@ -647,17 +647,19 @@ n=10, so its upper bound is 28%, against 16% for 0 of 20: step 3 needs more
 failures in a twenty-run measurement before it calls a regression against
 it. Ten more runs at `5bef46c` on the clean harness would close the gap.
 
-A row added after row 3 also records its Gauntlet identity: the commit of
-the Gauntlet checkout that the `gauntlet` on `PATH` runs, and whether that
-checkout's tracked files were clean at launch. In that checkout,
-`git rev-parse HEAD` prints the commit, and
-`git status --short --untracked-files=no` prints nothing when the tracked
-files are clean. quorum spawns `gauntlet` from `PATH` and records neither
-(`src/runner/index.ts`). Row 3's Gauntlet commit is `a35607e`: on the host
-that measured it, `gauntlet` is a shim that runs a fork checkout, and that
-checkout's reflog records HEAD reaching `a35607e` on 2026-07-10 and no
-later move (read on 2026-10-04). Whether its tracked files were clean when
-row 3 launched is not on record.
+The `Gauntlet` column records the identity: the commit of the Gauntlet
+checkout that the `gauntlet` on `PATH` runs, and whether that checkout was
+clean at launch. In that checkout, `git rev-parse HEAD` prints the commit,
+and `git status --porcelain --untracked-files=all` prints nothing when the
+checkout is clean (untracked files count, ignored files do not; the flag is
+explicit because the bare command obeys a `status.showUntrackedFiles=no`
+setting), the same definition a run's `provenance.json` uses. quorum spawns
+`gauntlet` from `PATH` and records neither (`src/runner/index.ts`). Row
+3's Gauntlet commit is `a35607e`: on the host that measured it, `gauntlet`
+is a shim that runs a fork checkout, and that checkout's reflog records
+HEAD reaching `a35607e` on 2026-07-10 and no later move (read on
+2026-10-04). Whether its tracked files were clean when row 3 launched is
+not on record.
 
 Rows 1 and 2 were first recorded with commit ids from before the 2026-10-01
 history rewrite: hyperpowers `c6b69d8`, `7e8ba23` and `3c32ee4` are now
@@ -739,7 +741,7 @@ commit. The recipe exits 0 only when the tests ran and passed:
 
 ```bash
 if git diff --quiet <commit> -- package.json bun.lock; then
-  scratch="$(mktemp -d)"
+  scratch="$(mktemp -d "${TMPDIR:-/tmp}/suite-at-commit.XXXXXX")"
   git archive <commit> | tar -x -C "$scratch"
   ln -s "$PWD/node_modules" "$scratch/node_modules"
   (cd "$scratch" && bun test test/agent-claude.test.ts test/runner-context.test.ts)
