@@ -118,6 +118,20 @@ check_captures() { # <name> <arm> <fixture>...
   rm -rf "$indep"
 }
 
+# P3 is P with the twelve-hex-digit invariant sentence dropped from its
+# requirements, and nothing else: the control that found no over-rating on P
+# may have been helped by that sentence.
+expected_p3_diff="$(printf '%s\n' \
+  'diff -r fixtures/codex-focus-arm/P/REQUIREMENTS.md fixtures/codex-focus-arm/P3/REQUIREMENTS.md' \
+  '10,11c10,11' \
+  '< Workspace directories are created only by `createWorkspace`, which names them' \
+  '< with twelve lowercase hex digits. Existing behaviour must not change. Tests for' \
+  '---' \
+  '> Workspace directories are created only by `createWorkspace`. Existing' \
+  '> behaviour must not change. Tests for')"
+actual_p3_diff="$(cd "$here/.." && diff -r fixtures/codex-focus-arm/P fixtures/codex-focus-arm/P3 || true)"
+[ "$actual_p3_diff" = "$expected_p3_diff" ] || fail "P3 must differ from P only by the declared REQUIREMENTS.md hunk; got: $actual_p3_diff"
+
 # Treatment on all six fixtures.
 run_arm treat "$focus" treatment M H O P P2 Pc || fail "treatment arm exited $? ($(cat "$work/treat.stderr"))"
 # Every per-fixture work directory (and the broker directory) the arm created
