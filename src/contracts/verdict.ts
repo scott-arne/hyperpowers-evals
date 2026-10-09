@@ -57,6 +57,21 @@ export const TrialSchema = z.object({
 });
 export type Trial = z.infer<typeof TrialSchema>;
 
+// What produced a run: the evals commit and the Gauntlet identity, captured
+// at setup so a verdict can be re-checked against the exact harness. Every
+// field is null when its lookup failed; the runner never fails a run over it.
+export const ProvenanceSchema = z.object({
+  evals_commit: z.string().nullable(),
+  evals_clean: z.boolean().nullable(),
+  gauntlet: z.object({
+    path: z.string().nullable(),
+    checkout: z.string().nullable(),
+    commit: z.string().nullable(),
+    clean: z.boolean().nullable(),
+  }),
+});
+export type Provenance = z.infer<typeof ProvenanceSchema>;
+
 // economics is structurally validated in contracts/economics.ts; opaque here.
 export const FinalVerdictSchema = z.object({
   schema: z.literal(1),
@@ -73,5 +88,9 @@ export const FinalVerdictSchema = z.object({
   started_at: z.string().optional(),
   finished_at: z.string().optional(),
   trial: TrialSchema.optional(),
+  // Harness provenance (Task 20 of the 2026-10-05 release-hygiene plan).
+  // Optional: verdicts written before it existed, and runs interrupted
+  // before setup captured it, carry no field.
+  provenance: ProvenanceSchema.optional(),
 });
 export type FinalVerdict = z.infer<typeof FinalVerdictSchema>;
