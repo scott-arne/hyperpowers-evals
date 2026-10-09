@@ -64,6 +64,7 @@ import type {
   FinalVerdict,
   GauntletLayer,
   GauntletStatus,
+  Provenance,
   RunError,
   RunErrorStage,
   Trial,
@@ -406,6 +407,9 @@ export interface RunScenarioArgs {
   // Fired once, right after the run dir is allocated, so a caller can learn the
   // dir before the long await (the SIGINT handler writes a stopped verdict here).
   readonly onRunDir?: ((runDir: string) => void) | undefined;
+  // Fired once, right after provenance is captured, so the SIGINT handler can
+  // put the capture itself into a stopped verdict.
+  readonly onProvenance?: ((provenance: Provenance) => void) | undefined;
   // Repeat-run provenance, copied verbatim into the written verdict. Absent
   // for a single ungrouped run.
   readonly trial?: Trial;
@@ -881,8 +885,9 @@ export async function runScenario(
   // learns the run dir before the long await — it needs it to write a stopped
   // verdict if the run is interrupted mid-flight.
   a.onRunDir?.(runDir);
-  // Captured before setup and written before anything else in the run dir,
-  // so every later writer, the SIGINT handler's included, finds it there.
+  // Captured before setup and handed to the caller at once, so the SIGINT
+  // handler carries this object rather than reading provenance.json back from
+  // a directory the Coding-Agent can write; the file is the run dir's copy.
   const provenance = captureProvenance(
     defaultProvenanceDeps(
       defaultCommandRunner,
@@ -890,6 +895,7 @@ export async function runScenario(
       getEnv('PATH') ?? '',
     ),
   );
+  a.onProvenance?.(provenance);
   writeFileSync(
     join(runDir, 'provenance.json'),
     `${JSON.stringify(provenance, null, 2)}\n`,

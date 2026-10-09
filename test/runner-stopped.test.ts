@@ -34,7 +34,7 @@ test('writeStoppedVerdict lands verdict.json', () => {
   expect(j.error?.stage).toBe('stopped');
 });
 
-test('a stopped verdict written before provenance.json exists carries no provenance field', () => {
+test('a stopped verdict without a captured provenance carries no provenance field', () => {
   const runDir = mkdtempSync(join(tmpdir(), 'stopped-'));
   writeStoppedVerdict(runDir, {
     scenario: 'scn',
@@ -48,18 +48,22 @@ test('a stopped verdict written before provenance.json exists carries no provena
   expect('provenance' in verdict).toBe(false);
 });
 
-test('a stopped verdict written after provenance.json exists carries it', () => {
+test('a stopped verdict carries the provenance handed to it and never reads provenance.json', () => {
   const runDir = mkdtempSync(join(tmpdir(), 'stopped-'));
   const provenance = {
     evals_commit: 'a'.repeat(40),
     evals_clean: true,
     gauntlet: { path: null, checkout: null, commit: null, clean: null },
   };
-  writeFileSync(join(runDir, 'provenance.json'), JSON.stringify(provenance));
+  writeFileSync(
+    join(runDir, 'provenance.json'),
+    JSON.stringify({ ...provenance, evals_commit: 'f'.repeat(40) }),
+  );
   writeStoppedVerdict(runDir, {
     scenario: 'scn',
     codingAgent: 'claude',
     startedAt: '2026-10-05T00:00:00.000Z',
+    provenance,
   });
   const verdict = JSON.parse(
     readFileSync(join(runDir, 'verdict.json'), 'utf8'),
@@ -67,27 +71,9 @@ test('a stopped verdict written after provenance.json exists carries it', () => 
   expect(verdict.provenance).toEqual(provenance);
 });
 
-test('a stopped verdict is still written when provenance.json does not parse', () => {
+test('a malformed provenance.json cannot stop a stopped verdict from being written', () => {
   const runDir = mkdtempSync(join(tmpdir(), 'stopped-'));
   writeFileSync(join(runDir, 'provenance.json'), '{"evals_commit": ');
-  writeStoppedVerdict(runDir, {
-    scenario: 'scn',
-    codingAgent: 'claude',
-    startedAt: '2026-10-05T00:00:00.000Z',
-  });
-  const verdict = JSON.parse(
-    readFileSync(join(runDir, 'verdict.json'), 'utf8'),
-  );
-  expect(verdict.final).toBe('indeterminate');
-  expect('provenance' in verdict).toBe(false);
-});
-
-test('a provenance.json that fails the schema is left out of the stopped verdict', () => {
-  const runDir = mkdtempSync(join(tmpdir(), 'stopped-'));
-  writeFileSync(
-    join(runDir, 'provenance.json'),
-    JSON.stringify({ evals_commit: 42 }),
-  );
   writeStoppedVerdict(runDir, {
     scenario: 'scn',
     codingAgent: 'claude',

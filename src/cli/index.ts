@@ -8,7 +8,12 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Command } from 'commander';
-import type { FinalStatus, FinalVerdict, Trial } from '../contracts/verdict.ts';
+import type {
+  FinalStatus,
+  FinalVerdict,
+  Provenance,
+  Trial,
+} from '../contracts/verdict.ts';
 import { FinalVerdictSchema } from '../contracts/verdict.ts';
 import { startDashboard } from '../dashboard/index.ts';
 import { runBatch } from '../run-all/index.ts';
@@ -149,14 +154,16 @@ program
     const repeatGiven = cmd.getOptionValueSource('repeat') === 'cli';
     // Graceful SIGINT (dashboard Stop sends SIGINT to this process). The handler
     // must know the run dir + identity before the await resolves, so the run dir
-    // is captured via onRunDir and startedAt is stamped here (shared with the
-    // happy path). On SIGINT: forward the signal to the gauntlet child, write a
-    // stopped (indeterminate) verdict so the cell resolves instead of vanishing
-    // under the dead-pid rule, then exit 2.
+    // is captured via onRunDir, the provenance via onProvenance, and startedAt
+    // is stamped here (shared with the happy path). On SIGINT: forward the
+    // signal to the gauntlet child, write a stopped (indeterminate) verdict
+    // so the cell resolves instead of vanishing under the dead-pid rule,
+    // then exit 2.
     const scenarioId = scenarioName(scn);
     let runDirForStop: string | null = null;
     let startedAt = new Date().toISOString();
     let trialForStop: Trial | undefined;
+    let provenanceForStop: Provenance | undefined;
     const onSigint = (): void => {
       currentGauntletChild()?.kill('SIGINT');
       if (runDirForStop !== null) {
@@ -165,6 +172,9 @@ program
           codingAgent: opts.codingAgent,
           startedAt,
           ...(trialForStop !== undefined ? { trial: trialForStop } : {}),
+          ...(provenanceForStop !== undefined
+            ? { provenance: provenanceForStop }
+            : {}),
         });
       }
       process.exit(2);
@@ -176,6 +186,7 @@ program
     for (let i = 1; i <= repeat; i++) {
       startedAt = new Date().toISOString();
       runDirForStop = null;
+      provenanceForStop = undefined;
       trialForStop = repeatGiven ? { index: i, count: repeat } : undefined;
       const { runDir, verdict } = await runScenario({
         scenarioDir: resolve(scn),
@@ -185,6 +196,9 @@ program
         startedAt,
         onRunDir: (dir) => {
           runDirForStop = dir;
+        },
+        onProvenance: (p) => {
+          provenanceForStop = p;
         },
         ...(trialForStop !== undefined ? { trial: trialForStop } : {}),
       });
