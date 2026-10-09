@@ -70,21 +70,27 @@ export function resolveOnPath(
 // A shell shim names its target somewhere in its body: the host's is
 // `exec bun run <checkout>/src/index.ts "$@"`, a `cd <checkout> && ...` form
 // is the other common one. On the first line after the shebang (comment lines
-// skipped) that holds an absolute path token that exists, the LAST such token
-// is the target: an interpreter named by absolute path comes before the
-// script it runs (`exec /opt/homebrew/bin/bun run <checkout>/src/index.ts`),
-// and the first token would name the interpreter's repository instead. A file
-// without a shebang is the binary itself and resolves through its own dir.
+// skipped) that holds an absolute path token that exists, the operand of a
+// `cd` is the target; failing that, the LAST such token is. An interpreter
+// named by absolute path comes before the script it runs
+// (`exec /opt/homebrew/bin/bun run <checkout>/src/index.ts`) but after a
+// `cd <checkout>`, so neither the first nor the last token alone names the
+// checkout in both forms. A file without a shebang is the binary itself and
+// resolves through its own dir.
 export function shimTarget(file: string, deps: ProvenanceDeps): string | null {
   const text = deps.readFile(file);
   if (text === null || !text.startsWith('#!')) return null;
   const lines = text.split('\n').slice(1);
   for (const line of lines) {
     if (line.trimStart().startsWith('#')) continue;
+    const tokens = line
+      .split(/\s+/)
+      .map((raw) => raw.replace(/^["']+|["']+$/g, ''));
     let last: string | null = null;
-    for (const raw of line.split(/\s+/)) {
-      const token = raw.replace(/^["']+|["']+$/g, '');
-      if (token.startsWith('/') && deps.exists(token)) last = token;
+    for (const [i, token] of tokens.entries()) {
+      if (!token.startsWith('/') || !deps.exists(token)) continue;
+      if (tokens[i - 1] === 'cd') return token;
+      last = token;
     }
     if (last !== null) return last;
   }

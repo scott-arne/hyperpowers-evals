@@ -202,6 +202,32 @@ describe('captureProvenance', () => {
     });
   });
 
+  test('a cd operand names the checkout even when an absolute interpreter follows it', () => {
+    const C = 'c'.repeat(40);
+    const runner = fakeGit({
+      '/repos/evals': { head: A, status: '' },
+      '/repos/gauntlet': { head: B, status: '' },
+      '/opt/homebrew': { head: C, status: '' },
+    });
+    const p = captureProvenance(
+      deps(
+        { runner },
+        {
+          '/opt/bin/gauntlet':
+            '#!/bin/sh\ncd /repos/gauntlet && exec /opt/homebrew/bin/bun run src/index.ts "$@"\n',
+          '/repos/gauntlet': 'dir',
+          '/opt/homebrew/bin/bun': 'x',
+        },
+      ),
+    );
+    expect(p.gauntlet).toEqual({
+      path: '/opt/bin/gauntlet',
+      checkout: '/repos/gauntlet',
+      commit: B,
+      clean: true,
+    });
+  });
+
   test('a gauntlet on PATH outside any repository keeps its path and nulls the rest', () => {
     const runner = fakeGit({ '/repos/evals': { head: A, status: '' } });
     const p = captureProvenance(
