@@ -115,8 +115,10 @@ const promptFile = (() => {
   return eq ? eq.slice("--prompt-file=".length) : null;
 })();
 let promptText = "";
+let promptFileUnread = false;
 if (promptFile) {
   try { promptText = fs.readFileSync(promptFile, "utf8"); } catch {}
+  promptFileUnread = promptText.trim() === "";
 }
 if (!promptText) {
   promptText = argv.slice(1).filter((a) => !a.startsWith("-") && a !== promptFile).join(" ");
@@ -133,12 +135,21 @@ const classify = (p) => {
   if (/\bspecs?\b|-design\.md|design spec/i.test(p)) return "spec-review";
   return "document-review";
 };
-const kind = classify(promptText);
+// A `task` call whose prompt never arrived (an explicit prompt file that is
+// missing, unreadable or empty, or no prompt at all) fails as the real
+// companion would. Classified as a document review, it would approve and pass
+// for a spec gate that fired.
+const promptMissing = sub === "task" && (promptFileUnread || promptText.trim() === "");
+const kind = promptMissing ? "no-prompt" : classify(promptText);
 
 const firstLine = String(promptText).split("\n").map((s) => s.trim()).find((s) => s.length > 0) || "";
 try {
   fs.appendFileSync(CALL_LOG, `${sub || "(none)"} kind=${kind} first=${firstLine.slice(0, 160)}\n`);
 } catch {}
+if (promptMissing) {
+  process.stderr.write(`codex-companion stub: task has no readable, non-empty prompt${promptFile ? ` (${promptFile})` : ""}\n`);
+  process.exit(2);
+}
 
 // The approach gate's output shape, from skills/brainstorming/codex-approach-gate.md.
 // The body matches the brainstorming-asks-tooling-question stub's, and
