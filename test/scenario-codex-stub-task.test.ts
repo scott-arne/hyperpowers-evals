@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 // Seven brainstorming scenarios seed a Codex companion stub for the approach
 // and spec gates, which call the companion's `task` subcommand; the stubs
@@ -16,6 +16,8 @@ import { join, resolve } from 'node:path';
 // so those gates ran a degraded path. Each stub must now answer `task`
 // exactly as the reference stub (brainstorming-asks-tooling-question) does,
 // for every classification, and its other subcommands must be unchanged.
+// A task call whose prompt never arrived must fail rather than approve, and
+// each call's logged kind proves which branch answered.
 
 const SCENARIOS = resolve(import.meta.dir, '..', 'scenarios');
 const REFERENCE = 'brainstorming-asks-tooling-question';
@@ -79,42 +81,54 @@ function promptFile(kind: string): string {
   return file;
 }
 
+// The stub appends `<sub> kind=<kind> first=...` to calls.log beside itself.
+// Three kinds share one canned body, so the log is what proves the routing.
+function loggedKind(stub: string): string | undefined {
+  const lines = readFileSync(join(dirname(stub), 'calls.log'), 'utf8')
+    .trim()
+    .split('\n');
+  return / kind=(\S+) /.exec(lines.at(-1) ?? '')?.[1];
+}
+
 for (const kind of Object.keys(PROMPTS)) {
   test(`every ported stub answers task (${kind}) exactly as the reference`, () => {
-    const want = run(installStub(REFERENCE, kind), [
-      'task',
-      '--fresh',
-      '--prompt-file',
-      promptFile(kind),
-    ]);
+    const args = ['task', '--fresh', '--prompt-file', promptFile(kind)];
+    const refStub = installStub(REFERENCE, kind);
+    const want = run(refStub, args);
     expect(want.status).toBe(0);
     expect(want.stdout.length).toBeGreaterThan(2);
-    const wantJson = run(installStub(REFERENCE, `${kind}-json`), [
-      'task',
-      '--fresh',
-      '--prompt-file',
-      promptFile(kind),
-      '--json',
-    ]);
+    expect(loggedKind(refStub)).toBe(kind);
+    const refJsonStub = installStub(REFERENCE, `${kind}-json`);
+    const wantJson = run(refJsonStub, [...args, '--json']);
+    expect(loggedKind(refJsonStub)).toBe(kind);
     for (const scenario of PORTED) {
-      const got = run(installStub(scenario, kind), [
-        'task',
-        '--fresh',
-        '--prompt-file',
-        promptFile(kind),
-      ]);
-      expect(got).toEqual(want);
-      const gotJson = run(installStub(scenario, `${kind}-json`), [
-        'task',
-        '--fresh',
-        '--prompt-file',
-        promptFile(kind),
-        '--json',
-      ]);
-      expect(gotJson).toEqual(wantJson);
+      const stub = installStub(scenario, kind);
+      expect(run(stub, args)).toEqual(want);
+      expect(loggedKind(stub)).toBe(kind);
+      const jsonStub = installStub(scenario, `${kind}-json`);
+      expect(run(jsonStub, [...args, '--json'])).toEqual(wantJson);
+      expect(loggedKind(jsonStub)).toBe(kind);
     }
   });
 }
+
+test('a task call without a readable, non-empty prompt fails in every stub instead of approving', () => {
+  const empty = join(root, 'empty.prompt.md');
+  writeFileSync(empty, '');
+  const missing = join(root, 'missing.prompt.md'); // never created
+  const cases: Array<[string, string[]]> = [
+    ['missing', ['task', '--fresh', '--prompt-file', missing]],
+    ['empty', ['task', '--fresh', '--prompt-file', empty]],
+    ['none', ['task', '--fresh']],
+  ];
+  for (const scenario of [REFERENCE, ...PORTED]) {
+    for (const [tag, args] of cases) {
+      const stub = installStub(scenario, `no-prompt-${tag}`);
+      expect(run(stub, args)).toEqual({ status: 2, stdout: '' });
+      expect(loggedKind(stub)).toBe('no-prompt');
+    }
+  }
+});
 
 test('the other subcommands are unchanged by the port', () => {
   for (const scenario of PORTED) {
