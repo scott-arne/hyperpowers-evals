@@ -653,14 +653,17 @@ clean at launch. In that checkout, `git rev-parse HEAD` prints the commit,
 and `git status --porcelain --untracked-files=all` prints nothing when the
 checkout is clean (untracked files count, ignored files do not; the flag is
 explicit because the bare command obeys a `status.showUntrackedFiles=no`
-setting), the same definition a run's `provenance.json` uses. quorum spawns
-`gauntlet` from `PATH`, follows that shim to its checkout, and writes both
-into the run's `provenance.json` when the run starts (`gauntlet.commit` and
-`gauntlet.clean`, `null` where it cannot read one;
-`src/runner/provenance.ts`); `quorum show` prints them on its `provenance:`
-line. The record is the state when the run starts: a checkout that moves
-during the run, or between the trials of one `--repeat` invocation, is not
-detected. A run from before that file existed records neither. Row 3's
+setting), the same definition a run's recorded provenance uses. quorum
+spawns `gauntlet` from `PATH`, follows that shim to its checkout, and
+records both when the run starts, in the `provenance` field of the run's
+`verdict.json` (`gauntlet.commit` and `gauntlet.clean`, `null` where it
+cannot read one; `src/runner/provenance.ts`); `quorum show` prints them on
+its `provenance:` line. The run dir's `provenance.json` holds the same
+capture for a run that ends without a verdict, but the Coding-Agent can
+write to the run dir, so that file is not evidence on its own. The record
+is the state when the run starts: a checkout that moves during the run, or
+between the trials of one `--repeat` invocation, is not detected. A run
+from before quorum recorded provenance has neither. Row 3's
 Gauntlet commit is `a35607e`: on the host that measured it, `gauntlet` is a
 shim that runs a fork checkout, and that checkout's reflog records HEAD
 reaching `a35607e` on 2026-07-10 and no later move (read on 2026-10-04).
@@ -808,8 +811,8 @@ with the failing run.
     paths when it launched. The 2026-10-03 re-baseline launcher logs the
     commit and refuses to launch on uncommitted changes
     (`evidence/2026-10-03-clean-harness-rebaseline/logs/measure-launch.sh`).
-    A run's `provenance.json` records both: `evals_commit`, and
-    `evals_clean`, which covers `src`, `coding-agents`, `fixtures`,
+    A run's verdict records both in its `provenance` field: `evals_commit`,
+    and `evals_clean`, which covers `src`, `coding-agents`, `fixtures`,
     `package.json`, `bun.lock` and all of `scenarios`, so `true` settles
     those paths and `false` leaves them open. A commit alone misses
     uncommitted edits, so a failing run with neither the launcher's record
