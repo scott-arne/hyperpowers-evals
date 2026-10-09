@@ -88,7 +88,7 @@ export const FinalVerdictSchema = z.object({
   started_at: z.string().optional(),
   finished_at: z.string().optional(),
   trial: TrialSchema.optional(),
-  // Harness provenance (Task 20 of the 2026-10-05 release-hygiene plan).
+  // Harness provenance: the evals commit and the Gauntlet identity behind this run.
   // Optional: verdicts written before it existed, and runs interrupted
   // before setup captured it, carry no field.
   provenance: ProvenanceSchema.optional(),

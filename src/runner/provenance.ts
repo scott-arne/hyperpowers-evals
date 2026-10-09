@@ -69,8 +69,11 @@ export function resolveOnPath(
 
 // A shell shim names its target somewhere in its body: the host's is
 // `exec bun run <checkout>/src/index.ts "$@"`, a `cd <checkout> && ...` form
-// is the other common one. The first absolute path token that exists, read
-// after the shebang line and skipping comment lines, is the target. A file
+// is the other common one. On the first line after the shebang (comment lines
+// skipped) that holds an absolute path token that exists, the LAST such token
+// is the target: an interpreter named by absolute path comes before the
+// script it runs (`exec /opt/homebrew/bin/bun run <checkout>/src/index.ts`),
+// and the first token would name the interpreter's repository instead. A file
 // without a shebang is the binary itself and resolves through its own dir.
 export function shimTarget(file: string, deps: ProvenanceDeps): string | null {
   const text = deps.readFile(file);
@@ -78,10 +81,12 @@ export function shimTarget(file: string, deps: ProvenanceDeps): string | null {
   const lines = text.split('\n').slice(1);
   for (const line of lines) {
     if (line.trimStart().startsWith('#')) continue;
+    let last: string | null = null;
     for (const raw of line.split(/\s+/)) {
       const token = raw.replace(/^["']+|["']+$/g, '');
-      if (token.startsWith('/') && deps.exists(token)) return token;
+      if (token.startsWith('/') && deps.exists(token)) last = token;
     }
+    if (last !== null) return last;
   }
   return null;
 }
