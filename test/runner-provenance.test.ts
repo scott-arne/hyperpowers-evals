@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
@@ -42,7 +42,7 @@ function fakeGit(
       const sub = args.slice(2).join(' ');
       if (sub === 'rev-parse HEAD')
         return { status: 0, stdout: `${r.head}\n`, stderr: '' };
-      if (sub === 'status --porcelain --untracked-files=all')
+      if (sub.startsWith('status --porcelain --untracked-files=all'))
         return { status: 0, stdout: r.status, stderr: '' };
       if (sub === 'rev-parse --show-toplevel')
         return { status: 0, stdout: `${root}\n`, stderr: '' };
@@ -257,7 +257,7 @@ describe('captureProvenance', () => {
           return { status: 0, stdout: 'HEAD\n', stderr: '' };
         if (
           command === 'git' &&
-          sub === 'status --porcelain --untracked-files=all'
+          sub.startsWith('status --porcelain --untracked-files=all')
         )
           return { status: 0, stdout: '', stderr: '' };
         return { status: 1, stdout: '', stderr: 'unexpected' };
@@ -278,7 +278,7 @@ describe('captureProvenance', () => {
           return { status: 0, stdout: `${A}\n`, stderr: '' };
         if (
           command === 'git' &&
-          sub === 'status --porcelain --untracked-files=all'
+          sub.startsWith('status --porcelain --untracked-files=all')
         )
           return { status: 0, stdout: '', stderr: '' };
         return { status: 1, stdout: '', stderr: 'unexpected' };
@@ -302,6 +302,64 @@ describe('captureProvenance', () => {
     });
   });
 
+  test('the evals clean check is limited to the harness paths; the Gauntlet check covers its whole checkout', () => {
+    const calls: string[] = [];
+    const inner = fakeGit({
+      '/repos/evals': { head: A, status: '' },
+      '/repos/gauntlet': { head: B, status: '' },
+    });
+    const runner: CommandRunner = {
+      run(command, args): CommandResult {
+        calls.push(args.join(' '));
+        return inner.run(command, args);
+      },
+    };
+    captureProvenance(
+      deps(
+        { runner },
+        {
+          '/opt/bin/gauntlet':
+            '#!/bin/sh\nexec bun run /repos/gauntlet/src/index.ts "$@"\n',
+          '/repos/gauntlet/src/index.ts': 'x',
+        },
+      ),
+    );
+    expect(calls.filter((c) => c.includes(' status '))).toEqual([
+      '-C /repos/evals status --porcelain --untracked-files=all -- src coding-agents package.json bun.lock scenarios',
+      '-C /repos/gauntlet status --porcelain --untracked-files=all',
+    ]);
+  });
+
+  test('a gauntlet inside the evals repository carries the evals values without a second status walk', () => {
+    const calls: string[] = [];
+    const inner = fakeGit({
+      '/repos/evals': { head: A, status: ' M src/x.ts\n' },
+    });
+    const runner: CommandRunner = {
+      run(command, args): CommandResult {
+        calls.push(args.join(' '));
+        return inner.run(command, args);
+      },
+    };
+    const p = captureProvenance(
+      deps(
+        { runner, pathEntries: ['/repos/evals/test/mock-gauntlet'] },
+        {
+          '/repos/evals/test/mock-gauntlet/gauntlet':
+            '#!/usr/bin/env bash\nexec bun "$(dirname "$0")/mock-gauntlet.ts" "$@"\n',
+        },
+      ),
+    );
+    expect(p.evals_clean).toBe(false);
+    expect(p.gauntlet).toEqual({
+      path: '/repos/evals/test/mock-gauntlet/gauntlet',
+      checkout: '/repos/evals',
+      commit: A,
+      clean: false,
+    });
+    expect(calls.filter((c) => c.includes(' status ')).length).toBe(1);
+  });
+
   test('git absent and gauntlet off PATH yield nulls, never a throw', () => {
     const runner: CommandRunner = {
       run: () => ({ status: null, stdout: '', stderr: 'spawn git ENOENT' }),
@@ -316,7 +374,7 @@ describe('captureProvenance', () => {
     });
   });
 
-  test('ignored-only is clean and status.showUntrackedFiles=no cannot hide an untracked file (real git)', () => {
+  test('ignored-only is clean, a file outside the harness paths does not count, and status.showUntrackedFiles=no cannot hide an untracked harness file (real git)', () => {
     const repo = mkdtempSync(join(tmpdir(), 'prov-'));
     realRepos.push(repo);
     const g = (...args: string[]) =>
@@ -328,10 +386,14 @@ describe('captureProvenance', () => {
     writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n');
     g('add', '.gitignore');
     g('-c', 'commit.gpgsign=false', 'commit', '-qm', 'init');
+    mkdirSync(join(repo, 'src'));
+    mkdirSync(join(repo, 'docs'));
     const real = defaultProvenanceDeps(defaultCommandRunner, repo, '');
-    writeFileSync(join(repo, 'ignored.txt'), 'x');
+    writeFileSync(join(repo, 'src', 'ignored.txt'), 'x');
     expect(captureProvenance(real).evals_clean).toBe(true);
-    writeFileSync(join(repo, 'untracked.txt'), 'x');
+    writeFileSync(join(repo, 'docs', 'note.md'), 'x');
+    expect(captureProvenance(real).evals_clean).toBe(true);
+    writeFileSync(join(repo, 'src', 'untracked.ts'), 'x');
     expect(captureProvenance(real).evals_clean).toBe(false);
   });
 });

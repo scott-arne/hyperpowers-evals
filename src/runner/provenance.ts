@@ -38,14 +38,32 @@ function commitOf(runner: CommandRunner, cwd: string): string | null {
   return /^[0-9a-f]{40}$/.test(c) ? c : null;
 }
 
+// The evals paths a run depends on: the harness path set that
+// docs/scenario-authoring.md §5 compares between a row and a failing run.
+// The rest of the tree cannot change a run, and `evidence/` alone holds
+// over 200,000 files that a whole-tree status would walk on every run.
+export const HARNESS_PATHS: readonly string[] = [
+  'src',
+  'coding-agents',
+  'package.json',
+  'bun.lock',
+  'scenarios',
+];
+
 // Clean means `git status --porcelain --untracked-files=all` prints nothing:
 // untracked files count, ignored files do not, and the explicit flag keeps a
-// status.showUntrackedFiles=no setting from hiding them.
-function cleanOf(runner: CommandRunner, cwd: string): boolean | null {
+// status.showUntrackedFiles=no setting from hiding them. `paths` limits the
+// check, and the walk, to those pathspecs; empty means the whole checkout.
+function cleanOf(
+  runner: CommandRunner,
+  cwd: string,
+  paths: readonly string[] = [],
+): boolean | null {
   const out = gitOut(runner, cwd, [
     'status',
     '--porcelain',
     '--untracked-files=all',
+    ...(paths.length > 0 ? ['--', ...paths] : []),
   ]);
   return out === null ? null : out.trim() === '';
 }
@@ -98,6 +116,8 @@ export function shimTarget(file: string, deps: ProvenanceDeps): string | null {
 }
 
 export function captureProvenance(deps: ProvenanceDeps): Provenance {
+  const evalsCommit = commitOf(deps.runner, deps.evalsRoot);
+  const evalsClean = cleanOf(deps.runner, deps.evalsRoot, HARNESS_PATHS);
   const gauntlet: Provenance['gauntlet'] = {
     path: null,
     checkout: null,
@@ -119,15 +139,19 @@ export function captureProvenance(deps: ProvenanceDeps): Provenance {
     const checkout = toplevelOf(deps.runner, probeDir);
     if (checkout !== null) {
       gauntlet.checkout = checkout;
-      gauntlet.commit = commitOf(deps.runner, checkout);
-      gauntlet.clean = cleanOf(deps.runner, checkout);
+      // A gauntlet inside the evals repository (the test suite's mock is one)
+      // carries the evals values: a second, whole-tree walk of the same
+      // repository is the cost HARNESS_PATHS exists to avoid.
+      if (checkout === toplevelOf(deps.runner, deps.evalsRoot)) {
+        gauntlet.commit = evalsCommit;
+        gauntlet.clean = evalsClean;
+      } else {
+        gauntlet.commit = commitOf(deps.runner, checkout);
+        gauntlet.clean = cleanOf(deps.runner, checkout);
+      }
     }
   }
-  return {
-    evals_commit: commitOf(deps.runner, deps.evalsRoot),
-    evals_clean: cleanOf(deps.runner, deps.evalsRoot),
-    gauntlet,
-  };
+  return { evals_commit: evalsCommit, evals_clean: evalsClean, gauntlet };
 }
 
 export function defaultProvenanceDeps(
