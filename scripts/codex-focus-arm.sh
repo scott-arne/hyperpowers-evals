@@ -35,7 +35,7 @@ esac
 commit_message() {
   case "$1" in
     M|H|O) printf '%s' "accept percent strings" ;;
-    P|P2) printf '%s' "report and count workspaces" ;;
+    P|P2|P3) printf '%s' "report and count workspaces" ;;
     Pc) printf '%s' "mark every workspace paused or resumed" ;;
     *) echo "no commit message for fixture: $1" >&2; return 1 ;;
   esac
