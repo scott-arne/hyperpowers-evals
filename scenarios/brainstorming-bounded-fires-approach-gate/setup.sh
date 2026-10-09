@@ -66,6 +66,9 @@ mkdir -p "$SCRIPTS_DIR"
 cat > "$SCRIPTS_DIR/codex-companion.mjs" <<'STUB'
 #!/usr/bin/env node
 // Deterministic stub: task-reviewer and Codex gate always APPROVE (no findings).
+// `task` (the approach and spec gates) answers as the
+// brainstorming-asks-tooling-question stub does, and every call other than
+// `setup` is appended to calls.log next to this file.
 // Seeded by hyperpowers-evals brainstorming-router scenarios.
 import fs from "node:fs";
 import path from "node:path";
@@ -126,9 +129,10 @@ try {
 } catch {}
 
 // The approach gate's output shape, from skills/brainstorming/codex-approach-gate.md.
-// Deliberately domain-neutral and free of any tooling, linting, formatting or
-// test-infrastructure words: this scenario measures whether the agent asks the
-// user which tooling to stand up, so the stub must not answer that question.
+// The body matches the brainstorming-asks-tooling-question stub's, and
+// test/scenario-codex-stub-task.test.ts keeps the two outputs identical. It is
+// domain-neutral on purpose: this scenario needs a well-formed gate answer,
+// not one about its own domain, so a session may discard these approaches.
 const APPROACHES = `Approaches (2-3, each genuinely different):
 - name: Single-process synchronous pipeline
   how-it-works: One process discovers the work, transforms each record, and commits it on the same call stack, with no queue or worker pool between the stages.
