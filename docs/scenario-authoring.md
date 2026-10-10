@@ -799,27 +799,31 @@ with the failing run.
     runs of the same main model;
   - the listing budget;
   - the evals harness. `src`, `coding-agents`, `fixtures`, `package.json`,
-    `bun.lock` and the scenario's directory are identical at the row's
-    evals commit and the failing run's
-    (`git diff --quiet <row> <run> -- src coding-agents fixtures package.json bun.lock scenarios/<id>`).
+    `bun.lock`, `bunfig.toml`, `tsconfig.json` and the scenario's directory
+    are identical at the row's evals commit and the failing run's
+    (`git diff --quiet <row> <run> -- src coding-agents fixtures package.json bun.lock bunfig.toml tsconfig.json scenarios/<id>`).
     That is the 2026-10-03 re-baseline launcher's path set, narrowed from
     all of `scenarios` to the scenario's own directory and widened by
-    `fixtures`, which setup copies into a run's repository. Alternatively,
-    each difference carries a recorded argument, in the form of "What a
-    session reaches", that it cannot change the launch, the skill listing,
-    the transcript, the grading or the criterion. The failing run's evals
-    commit must be on record, and so must a clean `git status` for those
-    paths when it launched. The 2026-10-03 re-baseline launcher logs the
-    commit and refuses to launch on uncommitted changes
+    `fixtures`, which setup copies into a run's repository, and by the Bun
+    configuration the harness runs under, `bunfig.toml` and
+    `tsconfig.json`. Alternatively, each difference carries a recorded
+    argument, in the form of "What a session reaches", that it cannot
+    change the launch, the skill listing, the transcript, the grading or
+    the criterion. The failing run's evals commit must be on record, and so
+    must a clean `git status` for those paths when it launched. The
+    2026-10-03 re-baseline launcher logs the commit and refuses to launch
+    on uncommitted changes
     (`evidence/2026-10-03-clean-harness-rebaseline/logs/measure-launch.sh`),
-    but its path set predates `fixtures`, so its record leaves `fixtures/`
-    open. A run's verdict records both in its `provenance` field:
-    `evals_commit`, and `evals_clean`, which covers `src`, `coding-agents`,
-    `fixtures`, `package.json`, `bun.lock` and all of `scenarios`, so
-    `true` settles those paths and `false` leaves them open. A commit alone
-    misses uncommitted edits, so a failing run with neither the launcher's
-    record nor `evals_clean: true` has no comparable row, and one with only
-    the launcher's record needs a recorded argument for `fixtures/`.
+    but its path set predates `fixtures`, `bunfig.toml` and
+    `tsconfig.json`, so its record leaves those open. A run's verdict
+    records both in its `provenance` field: `evals_commit`, and
+    `evals_clean`, which covers `src`, `coding-agents`, `fixtures`,
+    `package.json`, `bun.lock`, `bunfig.toml`, `tsconfig.json` and all of
+    `scenarios`, so `true` settles those paths and `false` leaves them
+    open. A commit alone misses uncommitted edits, so a failing run with
+    neither the launcher's record nor `evals_clean: true` has no comparable
+    row, and one with only the launcher's record needs a recorded argument
+    for those three.
     Row 3's record is the mutation check in its evidence README.
 - **The Claude Code version and the Gauntlet identity** are recorded but
   are not part of the match. Both live outside the evals tree, and matching
