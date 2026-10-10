@@ -325,7 +325,7 @@ describe('captureProvenance', () => {
       ),
     );
     expect(calls.filter((c) => c.includes(' status '))).toEqual([
-      '-C /repos/evals status --porcelain --untracked-files=all -- src coding-agents package.json bun.lock scenarios fixtures',
+      '-C /repos/evals status --porcelain --untracked-files=all -- src coding-agents package.json bun.lock bunfig.toml tsconfig.json scenarios fixtures',
       '-C /repos/gauntlet status --porcelain --untracked-files=all',
     ]);
   });
@@ -374,7 +374,7 @@ describe('captureProvenance', () => {
     });
   });
 
-  test('ignored-only is clean, a file outside the harness paths does not count, an untracked fixture does, and status.showUntrackedFiles=no cannot hide an untracked harness file (real git)', () => {
+  test('ignored-only is clean, a file outside the harness paths does not count, an untracked fixture or Bun config file does, and status.showUntrackedFiles=no cannot hide an untracked harness file (real git)', () => {
     const repo = mkdtempSync(join(tmpdir(), 'prov-'));
     realRepos.push(repo);
     const g = (...args: string[]) =>
@@ -398,6 +398,12 @@ describe('captureProvenance', () => {
     expect(captureProvenance(real).evals_clean).toBe(false);
     rmSync(join(repo, 'fixtures'), { recursive: true, force: true });
     expect(captureProvenance(real).evals_clean).toBe(true);
+    for (const config of ['bunfig.toml', 'tsconfig.json']) {
+      writeFileSync(join(repo, config), 'x');
+      expect(captureProvenance(real).evals_clean).toBe(false);
+      rmSync(join(repo, config), { force: true });
+      expect(captureProvenance(real).evals_clean).toBe(true);
+    }
     writeFileSync(join(repo, 'src', 'untracked.ts'), 'x');
     expect(captureProvenance(real).evals_clean).toBe(false);
   });
