@@ -1,5 +1,5 @@
-import { expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { afterAll, expect, test } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FinalVerdictSchema } from '../src/contracts/verdict.ts';
@@ -7,6 +7,17 @@ import {
   buildStoppedVerdict,
   writeStoppedVerdict,
 } from '../src/runner/stopped.ts';
+
+// Every temp dir a test here creates is removed when the file finishes.
+const created: string[] = [];
+function tmp(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  created.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of created) rmSync(dir, { recursive: true, force: true });
+});
 
 test('buildStoppedVerdict is indeterminate with stage=stopped', () => {
   const v = buildStoppedVerdict({
@@ -21,7 +32,7 @@ test('buildStoppedVerdict is indeterminate with stage=stopped', () => {
 });
 
 test('writeStoppedVerdict lands verdict.json', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'stopped-'));
+  const dir = tmp('stopped-');
   writeStoppedVerdict(dir, {
     scenario: 'demo',
     codingAgent: 'claude',
@@ -35,7 +46,7 @@ test('writeStoppedVerdict lands verdict.json', () => {
 });
 
 test('a stopped verdict without a captured provenance carries no provenance field', () => {
-  const runDir = mkdtempSync(join(tmpdir(), 'stopped-'));
+  const runDir = tmp('stopped-');
   writeStoppedVerdict(runDir, {
     scenario: 'scn',
     codingAgent: 'claude',
@@ -49,7 +60,7 @@ test('a stopped verdict without a captured provenance carries no provenance fiel
 });
 
 test('a stopped verdict carries the provenance handed to it and never reads provenance.json', () => {
-  const runDir = mkdtempSync(join(tmpdir(), 'stopped-'));
+  const runDir = tmp('stopped-');
   const provenance = {
     evals_commit: 'a'.repeat(40),
     evals_clean: true,
@@ -72,7 +83,7 @@ test('a stopped verdict carries the provenance handed to it and never reads prov
 });
 
 test('a malformed provenance.json cannot stop a stopped verdict from being written', () => {
-  const runDir = mkdtempSync(join(tmpdir(), 'stopped-'));
+  const runDir = tmp('stopped-');
   writeFileSync(join(runDir, 'provenance.json'), '{"evals_commit": ');
   writeStoppedVerdict(runDir, {
     scenario: 'scn',

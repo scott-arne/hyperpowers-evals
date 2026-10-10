@@ -13,6 +13,10 @@
 # reasoning effort, and the verdict-normalize blob are recorded before the
 # broker starts and again on every exit after that; the arm fails if the two
 # records differ, and a failed arm keeps its own exit status.
+# Each fixture's work directory, and the broker directory, are removed on every
+# exit. Beside each review's capture the arm writes the fixture repo's base and
+# head commits and its diff (<fixture>-<arm>.base, .head, .diff) and the exact
+# focus text sent (<fixture>-<arm>-<n>.prompt).
 # Runs are sequential and blocking; launch this script with the shell tool's
 # background option and watch its log, never a bare foreground call a harness
 # timeout can kill mid-review.

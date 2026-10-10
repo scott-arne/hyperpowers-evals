@@ -1,8 +1,19 @@
-import { expect, test } from 'bun:test';
+import { afterAll, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+
+// Every temp dir a test here creates is removed when the file finishes.
+const created: string[] = [];
+function tmp(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  created.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const dir of created) rmSync(dir, { recursive: true, force: true });
+});
 
 const CLI = resolve(import.meta.dir, '..', 'src', 'cli', 'index.ts');
 
@@ -15,7 +26,7 @@ function runDirWithVerdict(
   root: string;
   dir: string;
 } {
-  const root = mkdtempSync(join(tmpdir(), 'results-'));
+  const root = tmp('results-');
   const dir = join(root, 'scn-claude-20260612T010101Z-abcd');
   mkdirSync(dir, { recursive: true });
   writeFileSync(
@@ -88,7 +99,7 @@ test('show resolves a scenario prefix to the newest matching run', () => {
 });
 
 test('show exits 1 when the target cannot be resolved', () => {
-  const root = mkdtempSync(join(tmpdir(), 'results-'));
+  const root = tmp('results-');
   const proc = spawnSync('bun', [CLI, 'show', '--results-root', root], {
     encoding: 'utf8',
   });
@@ -96,7 +107,7 @@ test('show exits 1 when the target cannot be resolved', () => {
 });
 
 test('show exits 2 on a malformed verdict.json', () => {
-  const root = mkdtempSync(join(tmpdir(), 'results-'));
+  const root = tmp('results-');
   const dir = join(root, 'scn-claude-20260612T010101Z-abcd');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'verdict.json'), '{ not valid json');
@@ -106,7 +117,7 @@ test('show exits 2 on a malformed verdict.json', () => {
 });
 
 test('show exits 2 when verdict.json fails schema validation', () => {
-  const root = mkdtempSync(join(tmpdir(), 'results-'));
+  const root = tmp('results-');
   const dir = join(root, 'scn-claude-20260612T010101Z-abcd');
   mkdirSync(dir, { recursive: true });
   writeFileSync(
@@ -131,7 +142,7 @@ test('show --json emits the raw verdict and never recolors', () => {
 test('show --json dumps a schema-deviant but JSON-valid verdict verbatim (exit 0)', () => {
   // Parity with Python: the --json path does json.loads + json.dumps; it never
   // schema-validates, so a parseable-but-off-schema verdict is inspectable.
-  const root = mkdtempSync(join(tmpdir(), 'results-'));
+  const root = tmp('results-');
   const dir = join(root, 'scn-claude-20260612T010101Z-abcd');
   mkdirSync(dir, { recursive: true });
   const deviant = { final: 'maybe', note: 'no schema key here' };
@@ -145,7 +156,7 @@ test('show --json dumps a schema-deviant but JSON-valid verdict verbatim (exit 0
 });
 
 test('show --json preserves unknown top-level keys (does not strip them)', () => {
-  const root = mkdtempSync(join(tmpdir(), 'results-'));
+  const root = tmp('results-');
   const dir = join(root, 'scn-claude-20260612T010101Z-abcd');
   mkdirSync(dir, { recursive: true });
   const onDisk = {
@@ -168,7 +179,7 @@ test('show --json preserves unknown top-level keys (does not strip them)', () =>
 });
 
 test('show --json still exits 2 on unparseable JSON', () => {
-  const root = mkdtempSync(join(tmpdir(), 'results-'));
+  const root = tmp('results-');
   const dir = join(root, 'scn-claude-20260612T010101Z-abcd');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'verdict.json'), '{ not valid json');

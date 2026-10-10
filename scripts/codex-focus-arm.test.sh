@@ -5,8 +5,11 @@
 # own focus text, the runtime record is written at both ends and a change
 # between them fails the arm, a failed review keeps its exit status and still
 # releases the broker and writes the end record, a config without one
-# top-level model and effort line is refused, and an already-recorded broker
-# is refused.
+# top-level model and effort line is refused, an already-recorded broker is
+# refused, every per-fixture work directory is removed on exit, each review's
+# base, head, diff and prompt are recorded and match an independent build, a
+# fixture that does not build stops the arm before any review, and fixture P3
+# differs from P only by its declared requirements hunk.
 # Needs a hyperpowers checkout (arg 1) for verdict-normalize and for
 # recipe-code.md at 5bef46c, and the focus directory (arg 2).
 set -euo pipefail
@@ -121,6 +124,7 @@ check_captures() { # <name> <arm> <fixture>...
 # P3 is P with the twelve-hex-digit invariant sentence dropped from its
 # requirements, and nothing else: the control that found no over-rating on P
 # may have been helped by that sentence.
+# shellcheck disable=SC2016 # literal backticks in the expected diff text
 expected_p3_diff="$(printf '%s\n' \
   'diff -r fixtures/codex-focus-arm/P/REQUIREMENTS.md fixtures/codex-focus-arm/P3/REQUIREMENTS.md' \
   '10,11c10,11' \

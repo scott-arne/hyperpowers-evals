@@ -811,13 +811,15 @@ with the failing run.
     commit must be on record, and so must a clean `git status` for those
     paths when it launched. The 2026-10-03 re-baseline launcher logs the
     commit and refuses to launch on uncommitted changes
-    (`evidence/2026-10-03-clean-harness-rebaseline/logs/measure-launch.sh`).
-    A run's verdict records both in its `provenance` field: `evals_commit`,
-    and `evals_clean`, which covers `src`, `coding-agents`, `fixtures`,
-    `package.json`, `bun.lock` and all of `scenarios`, so `true` settles
-    those paths and `false` leaves them open. A commit alone misses
-    uncommitted edits, so a failing run with neither the launcher's record
-    nor `evals_clean: true` has no comparable row.
+    (`evidence/2026-10-03-clean-harness-rebaseline/logs/measure-launch.sh`),
+    but its path set predates `fixtures`, so its record leaves `fixtures/`
+    open. A run's verdict records both in its `provenance` field:
+    `evals_commit`, and `evals_clean`, which covers `src`, `coding-agents`,
+    `fixtures`, `package.json`, `bun.lock` and all of `scenarios`, so
+    `true` settles those paths and `false` leaves them open. A commit alone
+    misses uncommitted edits, so a failing run with neither the launcher's
+    record nor `evals_clean: true` has no comparable row, and one with only
+    the launcher's record needs a recorded argument for `fixtures/`.
     Row 3's record is the mutation check in its evidence README.
 - **The Claude Code version and the Gauntlet identity** are recorded but
   are not part of the match. Both live outside the evals tree, and matching
