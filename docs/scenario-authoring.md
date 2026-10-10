@@ -825,7 +825,11 @@ with the failing run.
     `true` settles those paths and `false` leaves them open. For a
     container run, that covers the checkout's `container/`, not the image
     the run used, which may have been built from another state; the image
-    is not recorded. A commit alone misses uncommitted edits, so a failing
+    is not recorded. Nor does it cover the launcher a campaign runs quorum
+    through (the `evidence/*/logs/*.sh` scripts), so a campaign commits its
+    launcher before it launches, or the hyperpowers tree that
+    `SUPERPOWERS_ROOT` names, which the row records in its skills-tree
+    column. A commit alone misses uncommitted edits, so a failing
     run with neither the launcher's record nor `evals_clean: true` has no
     comparable row, and one with only the launcher's record needs a
     recorded argument for the paths its record leaves open.
