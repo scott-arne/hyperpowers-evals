@@ -325,7 +325,7 @@ describe('captureProvenance', () => {
       ),
     );
     expect(calls.filter((c) => c.includes(' status '))).toEqual([
-      '-C /repos/evals status --porcelain --untracked-files=all -- src coding-agents package.json bun.lock bunfig.toml tsconfig.json scenarios fixtures',
+      '-C /repos/evals status --porcelain --untracked-files=all -- src coding-agents package.json bun.lock bunfig.toml tsconfig.json container scripts/evals-container scenarios fixtures',
       '-C /repos/gauntlet status --porcelain --untracked-files=all',
     ]);
   });
@@ -374,7 +374,7 @@ describe('captureProvenance', () => {
     });
   });
 
-  test('ignored-only is clean, a file outside the harness paths does not count, an untracked fixture or Bun config file does, and status.showUntrackedFiles=no cannot hide an untracked harness file (real git)', () => {
+  test('ignored-only is clean, a file outside the harness paths does not count, an untracked fixture, Bun config or container launcher file does, and status.showUntrackedFiles=no cannot hide an untracked harness file (real git)', () => {
     const repo = mkdtempSync(join(tmpdir(), 'prov-'));
     realRepos.push(repo);
     const g = (...args: string[]) =>
@@ -404,6 +404,18 @@ describe('captureProvenance', () => {
       rmSync(join(repo, config), { force: true });
       expect(captureProvenance(real).evals_clean).toBe(true);
     }
+    mkdirSync(join(repo, 'container', 'bin'), { recursive: true });
+    writeFileSync(join(repo, 'container', 'bin', 'quorum'), 'x');
+    expect(captureProvenance(real).evals_clean).toBe(false);
+    rmSync(join(repo, 'container'), { recursive: true, force: true });
+    expect(captureProvenance(real).evals_clean).toBe(true);
+    mkdirSync(join(repo, 'scripts'), { recursive: true });
+    writeFileSync(join(repo, 'scripts', 'evals-container'), 'x');
+    expect(captureProvenance(real).evals_clean).toBe(false);
+    writeFileSync(join(repo, 'scripts', 'strip-runs'), 'x');
+    rmSync(join(repo, 'scripts', 'evals-container'), { force: true });
+    expect(captureProvenance(real).evals_clean).toBe(true);
+    rmSync(join(repo, 'scripts'), { recursive: true, force: true });
     writeFileSync(join(repo, 'src', 'untracked.ts'), 'x');
     expect(captureProvenance(real).evals_clean).toBe(false);
   });
