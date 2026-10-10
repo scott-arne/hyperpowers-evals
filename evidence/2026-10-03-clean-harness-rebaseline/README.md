@@ -407,3 +407,12 @@ records the one session that did (`213849Z-0246`) and that it changed nothing
 because of it. Sessions run after the fix see `node` succeed there, so a
 re-run of these cells differs from the controls in that respect. No cell is
 re-scored.
+
+**Note (2026-10-09).** The `brainstorming-router-escalates-b1-userid-param`
+sessions in this campaign ran with a Codex companion stub that answered
+`task-reviewer`, `review` and `adversarial-review` but not `task`, the
+subcommand the approach gate and the spec gate call, so any session that
+reached those gates ran the degraded path (`{}` results, never an approving
+verdict). Evals commit `2393a4e17` ports the `task` implementation from
+`brainstorming-asks-tooling-question` into that stub and six siblings;
+sessions after it see a working gate. The b1 cells above are not re-scored.
