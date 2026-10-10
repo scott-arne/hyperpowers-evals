@@ -39,9 +39,10 @@ function commitOf(runner: CommandRunner, cwd: string): string | null {
 }
 
 // The evals paths a run depends on, the same set docs/scenario-authoring.md §5
-// compares between a row and a failing run: the harness code and the Bun
-// configuration it runs under (bunfig.toml, tsconfig.json), the scenarios, and
-// the fixtures that setup copies into a run's repository. The rest of the tree
+// compares between a row and a failing run: the harness code, the Bun
+// configuration it runs under (bunfig.toml, tsconfig.json), the container
+// launcher (container/, scripts/evals-container), the scenarios, and the
+// fixtures that setup copies into a run's repository. The rest of the tree
 // cannot change a run, and `evidence/` alone holds over 200,000 files that a
 // whole-tree status would walk on every run.
 export const HARNESS_PATHS: readonly string[] = [
@@ -51,6 +52,8 @@ export const HARNESS_PATHS: readonly string[] = [
   'bun.lock',
   'bunfig.toml',
   'tsconfig.json',
+  'container',
+  'scripts/evals-container',
   'scenarios',
   'fixtures',
 ];
