@@ -190,6 +190,25 @@ resolve_gauntlet_root() {
   reject_mount_source "Gauntlet root" "$gauntlet_root"
 }
 
+# The image's build source, baked into its environment (container/Dockerfile
+# re-exports these build args) so a run inside the container records what it
+# runs on. A value git cannot give is passed empty, never as a clean flag, and
+# a failed read does not stop the build: this script runs under set -e, so
+# each read tolerates its own failure.
+build_source_commit() { # <dir>
+  local out
+  if out=$(git -C "$1" rev-parse HEAD 2>/dev/null); then
+    printf '%s' "$out"
+  fi
+}
+
+build_source_clean() { # <dir> <pathspec>
+  local out
+  if out=$(git -C "$1" status --porcelain --untracked-files=all -- "$2" 2>/dev/null); then
+    if [[ -z "$out" ]]; then printf 'true'; else printf 'false'; fi
+  fi
+}
+
 if [[ "$env_file_explicit" == true ]]; then
   [[ -f "$env_file" ]] || die "env file does not exist: $env_file"
   [[ -r "$env_file" ]] || die "env file is not readable: $env_file"
@@ -391,6 +410,10 @@ case "$command" in
     resolve_gauntlet_root
     docker build \
       --build-context "gauntlet=$gauntlet_root" \
+      --build-arg "QUORUM_IMAGE_EVALS_COMMIT=$(build_source_commit "$evals_root")" \
+      --build-arg "QUORUM_IMAGE_CONTAINER_CLEAN=$(build_source_clean "$evals_root" container)" \
+      --build-arg "QUORUM_IMAGE_GAUNTLET_COMMIT=$(build_source_commit "$gauntlet_root")" \
+      --build-arg "QUORUM_IMAGE_GAUNTLET_CLEAN=$(build_source_clean "$gauntlet_root" .)" \
       -t "$image_tag" \
       -f "$evals_root/container/Dockerfile" \
       "$evals_root"
