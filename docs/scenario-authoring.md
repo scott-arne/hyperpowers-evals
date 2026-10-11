@@ -658,17 +658,24 @@ spawns `gauntlet` from `PATH`, follows that shim to its checkout, and
 records both when the run starts, in the `provenance` field of the run's
 `verdict.json` (`gauntlet.commit` and `gauntlet.clean`, `null` where it
 cannot read one; `src/runner/provenance.ts`); `quorum show` prints them on
-its `provenance:` line. The run dir's `provenance.json` holds the same
-capture for a run that ends without a verdict. Both files sit in the run
-dir, which the Coding-Agent can write: quorum treats the agent under test
-as non-adversarial and authenticates neither. The record is the state when
-the run starts: a checkout that moves during the run, or between the trials
-of one `--repeat` invocation, is not detected. A run from before quorum
-recorded provenance has neither. Row 3's Gauntlet commit is `a35607e`: on
-the host that measured it, `gauntlet` is a shim that runs a fork checkout,
-and that checkout's reflog records HEAD reaching `a35607e` on 2026-07-10
-and no later move (read on 2026-10-04). Whether that checkout was clean
-when row 3 launched is not on record.
+its `provenance:` line. Inside the evals container, `gauntlet.commit` and
+`gauntlet.clean` are `null`: the image copies the Gauntlet's `src/`
+without its `.git`. The identity of record for a container run is the
+image's, `container_image.gauntlet_commit` and
+`container_image.gauntlet_clean` in the same `provenance` field: the state
+of the Gauntlet checkout `scripts/evals-container build` built the image
+from. `quorum show` appends it to the `provenance:` line as
+`image <evals> gauntlet <gauntlet>`. The run dir's `provenance.json` holds
+the same capture for a run that ends without a verdict. Both files sit in
+the run dir, which the Coding-Agent can write: quorum treats the agent
+under test as non-adversarial and authenticates neither. The record is the
+state when the run starts: a checkout that moves during the run, or
+between the trials of one `--repeat` invocation, is not detected. A run
+from before quorum recorded provenance has neither. Row 3's Gauntlet
+commit is `a35607e`: on the host that measured it, `gauntlet` is a shim
+that runs a fork checkout, and that checkout's reflog records HEAD
+reaching `a35607e` on 2026-07-10 and no later move (read on 2026-10-04).
+Whether that checkout was clean when row 3 launched is not on record.
 
 Rows 1 and 2 were first recorded with commit ids from before the 2026-10-01
 history rewrite: hyperpowers `c6b69d8`, `7e8ba23` and `3c32ee4` are now
@@ -823,17 +830,24 @@ with the failing run.
     `package.json`, `bun.lock`, `bunfig.toml`, `tsconfig.json`,
     `container`, `scripts/evals-container` and all of `scenarios`, so
     `true` settles those paths and `false` leaves them open. For a
-    container run, that covers the checkout's `container/`, not the image
-    the run used, which may have been built from another state; the image
-    is not recorded. Nor does it cover the launcher a campaign runs quorum
-    through (the `evidence/*/logs/*.sh` scripts), so a campaign commits its
-    launcher before it launches, or the hyperpowers tree that
-    `SUPERPOWERS_ROOT` names, which the row records in its skills-tree
-    column. A commit alone misses uncommitted edits, so a failing
-    run with neither the launcher's record nor `evals_clean: true` has no
-    comparable row, and one with only the launcher's record needs a
-    recorded argument for the paths its record leaves open.
-    Row 3's record is the mutation check in its evidence README.
+    container run, `container` is the exception: the image holds the
+    `container/` it was built from, so that path is compared at
+    `container_image.evals_commit`, the commit
+    `scripts/evals-container build` recorded, and it is settled only when
+    `container_image.container_clean` is `true`. A container run whose
+    `container_image` fields are `null` (an image built without the
+    launcher) leaves `container` open, so it needs a recorded argument.
+    Every other path is still compared at `evals_commit`, because the
+    checkout is bind-mounted into the container at run time. Nor does it
+    cover the launcher a campaign runs quorum through (the
+    `evidence/*/logs/*.sh` scripts), so a campaign commits its launcher
+    before it launches, or the hyperpowers tree that `SUPERPOWERS_ROOT`
+    names, which the row records in its skills-tree column. A commit alone
+    misses uncommitted edits, so a failing run with neither the launcher's
+    record nor `evals_clean: true` has no comparable row, and one with
+    only the launcher's record needs a recorded argument for the paths its
+    record leaves open. Row 3's record is the mutation check in its
+    evidence README.
 - **The Claude Code version and the Gauntlet identity** are recorded but
   are not part of the match. Both live outside the evals tree, and matching
   on them would leave no comparable row each time either moved. A

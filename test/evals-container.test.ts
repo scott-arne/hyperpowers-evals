@@ -149,6 +149,34 @@ case "$1" in
 esac
 `;
 
+// Answers the launcher's two build-source reads and logs every call, so a test
+// can pin the values and the pathspecs; any other git call fails loudly.
+const FAKE_GIT = `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "\${FAKE_GIT_LOG:?}"
+case "\${3:-}" in
+  rev-parse)
+    [[ "\${FAKE_GIT_REVPARSE:-ok}" == fail ]] && exit 128
+    printf '%s\\n' "\${FAKE_GIT_HEAD:?}"
+    ;;
+  status)
+    [[ "\${FAKE_GIT_STATUS:-clean}" == fail ]] && exit 128
+    [[ "\${FAKE_GIT_STATUS:-clean}" == dirty ]] && printf ' M container/Dockerfile\\n'
+    exit 0
+    ;;
+  *)
+    echo "fake git: unexpected $*" >&2
+    exit 1
+    ;;
+esac
+`;
+
+const IMAGE_ARGS = [
+  'QUORUM_IMAGE_EVALS_COMMIT',
+  'QUORUM_IMAGE_CONTAINER_CLEAN',
+  'QUORUM_IMAGE_GAUNTLET_COMMIT',
+  'QUORUM_IMAGE_GAUNTLET_CLEAN',
+];
+
 function makeHarness(extraEnv: NodeJS.ProcessEnv = {}): {
   root: string;
   dockerLog: string;
@@ -183,6 +211,30 @@ function makeHarness(extraEnv: NodeJS.ProcessEnv = {}): {
       PATH: `${bin}:${Bun.env['PATH'] ?? ''}`,
     },
   };
+}
+
+function writeFakeGit(
+  harness: ReturnType<typeof makeHarness>,
+  env: Record<string, string>,
+): string {
+  const git = join(harness.root, 'bin', 'git');
+  writeFileSync(git, FAKE_GIT);
+  chmodSync(git, 0o755);
+  const log = join(harness.root, 'git.log');
+  Object.assign(harness.env, { FAKE_GIT_LOG: log, ...env });
+  return log;
+}
+
+function buildArgs(args: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === '--build-arg') {
+      const value = args[i + 1] ?? '';
+      const eq = value.indexOf('=');
+      out[value.slice(0, eq)] = value.slice(eq + 1);
+    }
+  }
+  return out;
 }
 
 function writeDockerState(
@@ -359,6 +411,133 @@ describe('scripts/evals-container', () => {
       expect(args[args.length - 1]).toBe(REPO);
     } finally {
       rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
+  test('build passes the build source as four build args, read with the real git', () => {
+    const harness = makeHarness();
+    // The Gauntlet root is a plain directory; the ceiling keeps git from
+    // finding a repository above it.
+    harness.env.GIT_CEILING_DIRECTORIES = harness.root;
+    try {
+      const proc = runWrapper(harness, ['build']);
+      expect(proc.status).toBe(0);
+      const got = buildArgs(dockerCommand(harness.dockerLog, 'build'));
+      expect(Object.keys(got).sort()).toEqual([...IMAGE_ARGS].sort());
+      const head = spawnSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], {
+        encoding: 'utf8',
+      }).stdout.trim();
+      const containerStatus = spawnSync(
+        'git',
+        [
+          '-C',
+          REPO,
+          'status',
+          '--porcelain',
+          '--untracked-files=all',
+          '--',
+          'container',
+        ],
+        { encoding: 'utf8' },
+      ).stdout;
+      expect(got.QUORUM_IMAGE_EVALS_COMMIT).toBe(head);
+      expect(got.QUORUM_IMAGE_CONTAINER_CLEAN).toBe(
+        containerStatus.trim() === '' ? 'true' : 'false',
+      );
+      expect(got.QUORUM_IMAGE_GAUNTLET_COMMIT).toBe('');
+      expect(got.QUORUM_IMAGE_GAUNTLET_CLEAN).toBe('');
+    } finally {
+      rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
+  test('build reads the commit and container/ (evals) and the whole checkout (Gauntlet)', () => {
+    const harness = makeHarness();
+    const log = writeFakeGit(harness, { FAKE_GIT_HEAD: 'a'.repeat(40) });
+    try {
+      expect(runWrapper(harness, ['build']).status).toBe(0);
+      expect(buildArgs(dockerCommand(harness.dockerLog, 'build'))).toEqual({
+        QUORUM_IMAGE_EVALS_COMMIT: 'a'.repeat(40),
+        QUORUM_IMAGE_CONTAINER_CLEAN: 'true',
+        QUORUM_IMAGE_GAUNTLET_COMMIT: 'a'.repeat(40),
+        QUORUM_IMAGE_GAUNTLET_CLEAN: 'true',
+      });
+      const calls = readFileSync(log, 'utf8');
+      expect(calls).toContain(
+        `-C ${REPO} status --porcelain --untracked-files=all -- container\n`,
+      );
+      expect(calls).toContain(
+        `-C ${realpathSync(harness.gauntletRoot)} status --porcelain --untracked-files=all -- .\n`,
+      );
+    } finally {
+      rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
+  test('build records a dirty checkout as false', () => {
+    const harness = makeHarness();
+    writeFakeGit(harness, {
+      FAKE_GIT_HEAD: 'a'.repeat(40),
+      FAKE_GIT_STATUS: 'dirty',
+    });
+    try {
+      expect(runWrapper(harness, ['build']).status).toBe(0);
+      const got = buildArgs(dockerCommand(harness.dockerLog, 'build'));
+      expect(got.QUORUM_IMAGE_CONTAINER_CLEAN).toBe('false');
+      expect(got.QUORUM_IMAGE_GAUNTLET_CLEAN).toBe('false');
+    } finally {
+      rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
+  test('a failing rev-parse passes empty commits and the build still runs', () => {
+    const harness = makeHarness();
+    writeFakeGit(harness, {
+      FAKE_GIT_HEAD: 'a'.repeat(40),
+      FAKE_GIT_REVPARSE: 'fail',
+    });
+    try {
+      expect(runWrapper(harness, ['build']).status).toBe(0);
+      const got = buildArgs(dockerCommand(harness.dockerLog, 'build'));
+      expect(got.QUORUM_IMAGE_EVALS_COMMIT).toBe('');
+      expect(got.QUORUM_IMAGE_GAUNTLET_COMMIT).toBe('');
+      expect(got.QUORUM_IMAGE_CONTAINER_CLEAN).toBe('true');
+    } finally {
+      rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
+  test('a failing status passes empty clean flags, never true, and the build still runs', () => {
+    const harness = makeHarness();
+    writeFakeGit(harness, {
+      FAKE_GIT_HEAD: 'a'.repeat(40),
+      FAKE_GIT_STATUS: 'fail',
+    });
+    try {
+      expect(runWrapper(harness, ['build']).status).toBe(0);
+      const got = buildArgs(dockerCommand(harness.dockerLog, 'build'));
+      expect(got.QUORUM_IMAGE_CONTAINER_CLEAN).toBe('');
+      expect(got.QUORUM_IMAGE_GAUNTLET_CLEAN).toBe('');
+      expect(got.QUORUM_IMAGE_EVALS_COMMIT).toBe('a'.repeat(40));
+    } finally {
+      rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
+  test('the Dockerfile declares the build source after its last RUN', () => {
+    const lines = readFileSync(
+      join(REPO, 'container', 'Dockerfile'),
+      'utf8',
+    ).split('\n');
+    const lastRun = lines.reduce(
+      (last, line, i) => (line.startsWith('RUN ') ? i : last),
+      -1,
+    );
+    for (const name of IMAGE_ARGS) {
+      const arg = lines.indexOf(`ARG ${name}=`);
+      const env = lines.indexOf(`ENV ${name}=$${name}`);
+      expect(arg).toBeGreaterThan(lastRun);
+      expect(env).toBeGreaterThan(arg);
     }
   });
 

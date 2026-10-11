@@ -146,5 +146,17 @@ COPY container/bin/quorum /usr/local/bin/quorum
 COPY container/bin/evals-tool-versions /usr/local/bin/evals-tool-versions
 RUN chmod +x /usr/local/bin/quorum /usr/local/bin/evals-tool-versions
 
+# The build source, passed by scripts/evals-container build; quorum records it
+# in each run's provenance. Declared after the last RUN, so a new commit
+# rebuilds only these metadata layers and none of the install layers.
+ARG QUORUM_IMAGE_EVALS_COMMIT=
+ARG QUORUM_IMAGE_CONTAINER_CLEAN=
+ARG QUORUM_IMAGE_GAUNTLET_COMMIT=
+ARG QUORUM_IMAGE_GAUNTLET_CLEAN=
+ENV QUORUM_IMAGE_EVALS_COMMIT=$QUORUM_IMAGE_EVALS_COMMIT
+ENV QUORUM_IMAGE_CONTAINER_CLEAN=$QUORUM_IMAGE_CONTAINER_CLEAN
+ENV QUORUM_IMAGE_GAUNTLET_COMMIT=$QUORUM_IMAGE_GAUNTLET_COMMIT
+ENV QUORUM_IMAGE_GAUNTLET_CLEAN=$QUORUM_IMAGE_GAUNTLET_CLEAN
+
 WORKDIR /workspace/evals
 CMD ["sleep", "infinity"]
