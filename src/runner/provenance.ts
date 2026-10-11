@@ -8,10 +8,12 @@ import {
 import { dirname, join } from 'node:path';
 import type { CommandRunner } from '../agents/command-runner.ts';
 import type { Provenance } from '../contracts/verdict.ts';
+import { getEnv } from '../env.ts';
 
 // Every lookup is injected so the module is testable without a real PATH,
-// filesystem or git: the runner for git, the path entries for the gauntlet
-// lookup, and three filesystem predicates.
+// filesystem, git or environment: the runner for git, the path entries for the
+// gauntlet lookup, three filesystem predicates, and the environment read that
+// finds a container image's build source.
 export interface ProvenanceDeps {
   readonly runner: CommandRunner;
   readonly evalsRoot: string;
@@ -20,6 +22,7 @@ export interface ProvenanceDeps {
   readonly exists: (p: string) => boolean;
   readonly isDirectory: (p: string) => boolean;
   readonly isExecutable: (p: string) => boolean;
+  readonly env: (name: string) => string | undefined;
 }
 
 function gitOut(
@@ -123,6 +126,28 @@ export function shimTarget(file: string, deps: ProvenanceDeps): string | null {
   return null;
 }
 
+// What `scripts/evals-container build` baked into the image: container/Dockerfile
+// re-exports its four build args as ENV. A host run has none of them. Presence
+// is tested against undefined, never by truthiness: an image built by a bare
+// `docker build` sets all four to the empty string, and a run in it is still a
+// container run whose image identity is unknown.
+function containerImageOf(
+  env: ProvenanceDeps['env'],
+): Provenance['container_image'] {
+  const evalsCommit = env('QUORUM_IMAGE_EVALS_COMMIT');
+  if (evalsCommit === undefined) return null;
+  const commit = (v: string | undefined) =>
+    v !== undefined && /^[0-9a-f]{40}$/.test(v) ? v : null;
+  const flag = (v: string | undefined) =>
+    v === 'true' ? true : v === 'false' ? false : null;
+  return {
+    evals_commit: commit(evalsCommit),
+    container_clean: flag(env('QUORUM_IMAGE_CONTAINER_CLEAN')),
+    gauntlet_commit: commit(env('QUORUM_IMAGE_GAUNTLET_COMMIT')),
+    gauntlet_clean: flag(env('QUORUM_IMAGE_GAUNTLET_CLEAN')),
+  };
+}
+
 export function captureProvenance(deps: ProvenanceDeps): Provenance {
   const evalsCommit = commitOf(deps.runner, deps.evalsRoot);
   const evalsClean = cleanOf(deps.runner, deps.evalsRoot, HARNESS_PATHS);
@@ -159,7 +184,12 @@ export function captureProvenance(deps: ProvenanceDeps): Provenance {
       }
     }
   }
-  return { evals_commit: evalsCommit, evals_clean: evalsClean, gauntlet };
+  return {
+    evals_commit: evalsCommit,
+    evals_clean: evalsClean,
+    gauntlet,
+    container_image: containerImageOf(deps.env),
+  };
 }
 
 export function defaultProvenanceDeps(
@@ -194,6 +224,7 @@ export function defaultProvenanceDeps(
         return false;
       }
     },
+    env: getEnv,
   };
 }
 
@@ -206,5 +237,8 @@ function cell(commit: string | null, clean: boolean | null): string {
 }
 
 export function renderProvenanceLine(p: Provenance): string {
-  return `provenance: evals ${cell(p.evals_commit, p.evals_clean)} gauntlet ${cell(p.gauntlet.commit, p.gauntlet.clean)}`;
+  const host = `provenance: evals ${cell(p.evals_commit, p.evals_clean)} gauntlet ${cell(p.gauntlet.commit, p.gauntlet.clean)}`;
+  const image = p.container_image;
+  if (image === null || image === undefined) return host;
+  return `${host} image ${cell(image.evals_commit, image.container_clean)} gauntlet ${cell(image.gauntlet_commit, image.gauntlet_clean)}`;
 }

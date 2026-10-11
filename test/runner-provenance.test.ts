@@ -65,6 +65,7 @@ function deps(
     isDirectory: (p) => files[p] === 'dir',
     isExecutable: (p) =>
       typeof files[p] === 'string' && p.endsWith('/gauntlet'),
+    env: () => undefined,
     ...over,
   };
 }
@@ -100,6 +101,7 @@ describe('captureProvenance', () => {
         commit: B,
         clean: true,
       },
+      container_image: null,
     });
     expect(ProvenanceSchema.parse(p)).toEqual(p);
   });
@@ -371,6 +373,7 @@ describe('captureProvenance', () => {
       evals_commit: null,
       evals_clean: null,
       gauntlet: { path: null, checkout: null, commit: null, clean: null },
+      container_image: null,
     });
   });
 
@@ -418,6 +421,98 @@ describe('captureProvenance', () => {
     rmSync(join(repo, 'scripts'), { recursive: true, force: true });
     writeFileSync(join(repo, 'src', 'untracked.ts'), 'x');
     expect(captureProvenance(real).evals_clean).toBe(false);
+  });
+});
+
+describe('container image identity', () => {
+  const NAMES = [
+    'QUORUM_IMAGE_EVALS_COMMIT',
+    'QUORUM_IMAGE_CONTAINER_CLEAN',
+    'QUORUM_IMAGE_GAUNTLET_COMMIT',
+    'QUORUM_IMAGE_GAUNTLET_CLEAN',
+  ] as const;
+  const capture = (values: Partial<Record<(typeof NAMES)[number], string>>) =>
+    captureProvenance(
+      deps(
+        {
+          runner: fakeGit({ '/repos/evals': { head: A, status: '' } }),
+          env: (name) => values[name as (typeof NAMES)[number]],
+        },
+        {},
+      ),
+    );
+
+  test('a host run, with the variables unset, records container_image null and keeps the host line', () => {
+    const p = capture({});
+    expect(p.container_image).toBeNull();
+    expect(renderProvenanceLine(p)).toBe(
+      'provenance: evals aaaaaaa gauntlet unknown',
+    );
+    expect(ProvenanceSchema.parse(p)).toEqual(p);
+  });
+
+  test('an image built without the launcher (four empty strings) is still a container run, with four nulls', () => {
+    const p = capture({
+      QUORUM_IMAGE_EVALS_COMMIT: '',
+      QUORUM_IMAGE_CONTAINER_CLEAN: '',
+      QUORUM_IMAGE_GAUNTLET_COMMIT: '',
+      QUORUM_IMAGE_GAUNTLET_CLEAN: '',
+    });
+    expect(p.container_image).toEqual({
+      evals_commit: null,
+      container_clean: null,
+      gauntlet_commit: null,
+      gauntlet_clean: null,
+    });
+    expect(renderProvenanceLine(p)).toBe(
+      'provenance: evals aaaaaaa gauntlet unknown image unknown gauntlet unknown',
+    );
+    expect(ProvenanceSchema.parse(p)).toEqual(p);
+  });
+
+  test('valid values are recorded and rendered with the cell forms', () => {
+    const p = capture({
+      QUORUM_IMAGE_EVALS_COMMIT: A,
+      QUORUM_IMAGE_CONTAINER_CLEAN: 'false',
+      QUORUM_IMAGE_GAUNTLET_COMMIT: B,
+      QUORUM_IMAGE_GAUNTLET_CLEAN: 'true',
+    });
+    expect(p.container_image).toEqual({
+      evals_commit: A,
+      container_clean: false,
+      gauntlet_commit: B,
+      gauntlet_clean: true,
+    });
+    expect(renderProvenanceLine(p)).toBe(
+      'provenance: evals aaaaaaa gauntlet unknown image aaaaaaa+dirty gauntlet bbbbbbb',
+    );
+  });
+
+  test('malformed values become null field by field', () => {
+    const p = capture({
+      QUORUM_IMAGE_EVALS_COMMIT: 'HEAD',
+      QUORUM_IMAGE_CONTAINER_CLEAN: 'yes',
+      QUORUM_IMAGE_GAUNTLET_COMMIT: `${B}\n`,
+      QUORUM_IMAGE_GAUNTLET_CLEAN: 'TRUE',
+    });
+    expect(p.container_image).toEqual({
+      evals_commit: null,
+      container_clean: null,
+      gauntlet_commit: null,
+      gauntlet_clean: null,
+    });
+  });
+
+  test('a verdict written before the field existed still parses, and renders without image cells', () => {
+    const old = {
+      evals_commit: A,
+      evals_clean: true,
+      gauntlet: { path: null, checkout: null, commit: null, clean: null },
+    };
+    expect(ProvenanceSchema.parse(old)).toEqual(old);
+    expect(renderProvenanceLine(old)).toBe(
+      'provenance: evals aaaaaaa gauntlet unknown',
+    );
   });
 });
 

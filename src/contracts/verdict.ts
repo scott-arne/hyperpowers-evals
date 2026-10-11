@@ -69,6 +69,17 @@ export const ProvenanceSchema = z.object({
     commit: z.string().nullable(),
     clean: z.boolean().nullable(),
   }),
+  // The image's build source, for a run inside the evals container; null on
+  // the host, absent from verdicts written before it was recorded.
+  container_image: z
+    .object({
+      evals_commit: z.string().nullable(),
+      container_clean: z.boolean().nullable(),
+      gauntlet_commit: z.string().nullable(),
+      gauntlet_clean: z.boolean().nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 export type Provenance = z.infer<typeof ProvenanceSchema>;
 
