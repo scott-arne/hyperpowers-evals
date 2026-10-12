@@ -111,24 +111,27 @@ export function resolveOnPath(
 // or an assignment, and no ; & or |); on the cd's line every segment before it,
 // split at ; && || and |, is a prelude segment joined by ;; the cd's segment
 // starts with the word cd or pushd itself, not command cd, (cd, { cd or c"d";
-// and no | follows it, since a piped cd runs in a subshell. Words are read as
-// the shell reads them only when that is certain: a bare word, or one whole
-// single- or double-quoted word with no escape or expansion inside, ending at
-// whitespace. An unbalanced quote, mixed quoting or a $ is uncertain, and
-// leaves an option or operand unresolved. A cd's operand skips cd's options
-// (-L -P -e -@) up to --; a pushd's operand skips only --, so `pushd -n`, which
-// does not change directory, is unresolved. The operand must be an existing
-// directory, because the shell's cd fails on anything else and the shim never
-// reaches its exec, and it must be the segment's last word: anything after it,
-// a redirection included, leaves the shim unresolved. An absolute operand is
-// the target. An operand built from the shim's own location, $(dirname "$0") or
-// $(dirname "${BASH_SOURCE[0]}") with or without outer double quotes, plus a
-// suffix that is empty or a literal path starting with /, is resolved against
-// the directory of the path found on PATH, which is what $0 holds when the shim
-// runs. The last of -L and -P picks how a `..` is read, as in the shell:
-// logical (the default) removes it lexically, so the path is normalized, and
-// physical follows symlinks first, so the path is kept as written for the
-// operating system to resolve. Any other operand is unresolved.
+// and no | follows it, since a piped cd runs in a subshell. What follows the
+// cd, on its line and on later lines, is only prelude, or a segment starting
+// with exec or exit, and is never piped, so nothing can move the directory
+// before the exec. Words are read as the shell reads them only when that is
+// certain: a bare word, or one whole single- or double-quoted word with no
+// escape or expansion inside, ending at whitespace. An unbalanced quote, mixed
+// quoting or a $ is uncertain, and leaves an option or operand unresolved. A
+// cd's operand skips cd's options (-L -P -e -@) up to --; a pushd's operand
+// skips only --, so `pushd -n`, which does not change directory, is unresolved.
+// The operand must be an existing directory, because the shell's cd fails on
+// anything else and the shim never reaches its exec, and it must be the
+// segment's last word: anything after it, a redirection included, leaves the
+// shim unresolved. An absolute operand is the target. An operand built from the
+// shim's own location, $(dirname "$0") or $(dirname "${BASH_SOURCE[0]}") with
+// or without outer double quotes, plus a suffix that is empty or a literal path
+// starting with /, is resolved against the directory of the path found on PATH,
+// which is what $0 holds when the shim runs. The last of -L and -P picks how a
+// `..` is read, as in the shell: logical (the default) removes it lexically, so
+// the path is normalized, and physical follows symlinks first, so the path is
+// kept as written for the operating system to resolve. Any other operand is
+// unresolved.
 export type ShimTarget =
   | { readonly kind: 'target'; readonly path: string }
   | { readonly kind: 'unresolved' }
@@ -178,6 +181,27 @@ function isPrelude(text: string): boolean {
     first !== undefined &&
     (PRELUDE_COMMANDS.has(first) || ASSIGNMENT.test(first))
   );
+}
+
+// What may follow the cd, on its line (from the separator after it) or on a
+// later line (from 0): more prelude, blank text, or an exec or exit, and never
+// a pipe. Anything else, such as source, eval or a function call, could move
+// the working directory before the exec. The even parts are segments and the
+// odd parts the separators between them.
+function mayFollowCd(parts: readonly string[], from: number): boolean {
+  for (let i = from; i < parts.length; i++) {
+    const part = parts[i] ?? '';
+    if (i % 2 === 1) {
+      if (part === '|') return false;
+      continue;
+    }
+    if (part.trim() === '' || isPrelude(part)) continue;
+    const word = readWord(part.trimStart())?.word;
+    if ((word !== 'exec' && word !== 'exit') || part.includes('&')) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function cdTarget(
@@ -267,8 +291,13 @@ export function shimTarget(file: string, deps: ProvenanceDeps): ShimTarget {
     if (!isPrelude(parts[i] ?? '') || parts[i + 1] !== ';') return unresolved;
   }
   const first = readWord((parts[k] ?? '').trimStart());
-  if (first === null || parts[k + 1] === '|') return unresolved;
+  if (first === null) return unresolved;
   if (first.word !== 'cd' && first.word !== 'pushd') return unresolved;
+  if (!mayFollowCd(parts, k + 1)) return unresolved;
+  const later = lines.slice(at + 1);
+  if (!later.every((line) => mayFollowCd(line.split(SEPARATORS), 0))) {
+    return unresolved;
+  }
   return cdTarget(first.word, first.rest, dirname(file), deps);
 }
 
