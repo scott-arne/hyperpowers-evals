@@ -547,6 +547,7 @@ describe('shim forms', () => {
         {
           [file]: `#!/bin/sh\n${body}\n`,
           '/repos/gauntlet': 'dir',
+          '/repos/tools': 'dir',
           '/opt/homebrew/bin/bun': 'x',
           ...extra,
         },
@@ -564,7 +565,8 @@ describe('shim forms', () => {
     commit: null,
     clean: null,
   });
-  const trap = ' && exec /opt/homebrew/bin/bun run src/index.ts "$@"';
+  const exec = 'exec /opt/homebrew/bin/bun run src/index.ts "$@"';
+  const trap = ` && ${exec}`;
 
   test.each([
     ['cd -P', `cd -P /repos/gauntlet${trap}`],
@@ -642,6 +644,55 @@ describe('shim forms', () => {
   ])('an unresolved cd records no checkout: %s', (_label, body) => {
     expect(shimAt('/opt/bin/gauntlet', body)).toEqual(
       unresolved('/opt/bin/gauntlet'),
+    );
+  });
+
+  // Each of these runs the exec from a directory the parser cannot name: the
+  // cd is skipped, repeated, conditional, in a subshell, or not the command
+  // the line starts with. /opt/homebrew is a repository, so a fallback to the
+  // last absolute token records the wrong commit.
+  test.each([
+    ['a mixed-quoted command word', `c"d" /repos/gauntlet${trap}`],
+    ['a backslash command word', `\\cd /repos/gauntlet${trap}`],
+    [
+      'a conditional alternative',
+      `false && cd /repos/tools || cd /repos/gauntlet; ${exec}`,
+    ],
+    ['a cd after &&', `true && cd /repos/gauntlet; ${exec}`],
+    ['a piped cd', `cd /repos/gauntlet | cat; ${exec}`],
+    ['a subshell', `(cd /repos/gauntlet && ${exec})`],
+    ['a brace group', `{ cd /repos/gauntlet; ${exec}; }`],
+    ['command cd', `command cd /repos/gauntlet${trap}`],
+    ['a second cd', `cd /repos/gauntlet; cd /repos/tools; ${exec}`],
+    [
+      'a second cd with no space before it',
+      `cd /repos/gauntlet;cd /repos/tools; ${exec}`,
+    ],
+    ['a cd inside an if', `if false; then\n  cd /repos/gauntlet\nfi\n${exec}`],
+    [
+      'a source line before the cd',
+      `source /etc/profile\ncd /repos/gauntlet${trap}`,
+    ],
+    ['an exec line before the cd', `exec true\ncd /repos/gauntlet${trap}`],
+  ])('a cd that may not govern the exec records no checkout: %s', (_label, body) => {
+    expect(shimAt('/opt/bin/gauntlet', body)).toEqual(
+      unresolved('/opt/bin/gauntlet'),
+    );
+  });
+
+  test.each([
+    ['set on its own line', `set -euo pipefail\ncd /repos/gauntlet${trap}`],
+    ['set and the cd joined by ;', `set -e; cd /repos/gauntlet; ${exec}`],
+    ['cd || exit before the exec', `cd /repos/gauntlet || exit 1\n${exec}`],
+    ['export before the cd', `export X=1\ncd /repos/gauntlet${trap}`],
+    ['an assignment before the cd', `X=1\ncd /repos/gauntlet${trap}`],
+    [
+      'blank and comment lines before the cd',
+      `\n# note\nset -e\n\ncd /repos/gauntlet${trap}`,
+    ],
+  ])('a leading unconditional cd names the checkout: %s', (_label, body) => {
+    expect(shimAt('/opt/bin/gauntlet', body)).toEqual(
+      resolved('/opt/bin/gauntlet'),
     );
   });
 

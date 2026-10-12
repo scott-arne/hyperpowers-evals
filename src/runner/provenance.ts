@@ -96,39 +96,55 @@ export function resolveOnPath(
   return null;
 }
 
-// A shim's target. On the first line after the shebang (comment lines skipped)
-// that holds a cd or pushd segment, or an absolute path token that exists, the
-// line decides. Segments split at ; && || and |. Words are read as the shell
-// reads them only when that is certain: a bare word, or one whole single- or
-// double-quoted word with no escape or expansion inside, ending at whitespace.
-// So "cd" and cd "-P" are cd and cd -P, and an unbalanced quote, mixed quoting
-// or a $ is uncertain: it leaves an option or operand unresolved, makes the
-// segment not a cd, and makes the older rule skip the token. A cd's operand
-// skips cd's options (-L -P -e -@) up to --; a pushd's operand skips only --,
-// so `pushd -n`, which does not change directory, is unresolved. The operand
-// must be an existing directory, because the shell's cd fails on anything else
-// and the shim never reaches its exec, and it must be the segment's last word:
-// anything after it, a redirection included, leaves the shim unresolved. An
-// absolute operand is the target. An operand built from the shim's own
-// location, $(dirname "$0") or $(dirname "${BASH_SOURCE[0]}") with or without
-// outer double quotes, plus a suffix that is empty or a literal path starting
-// with /, is resolved against the directory of the path found on PATH, which is
-// what $0 holds when the shim runs. The last of -L and -P picks how a `..` is
-// read, as in the shell: logical (the default) removes it lexically, so the
-// path is normalized, and physical follows symlinks first, so the path is kept
-// as written for the operating system to resolve. Any other operand leaves the
-// shim unresolved: it records no checkout rather than guess, because a fallback
-// to the last absolute token picks up an interpreter such as
-// /opt/homebrew/bin/bun, whose directory is itself a git checkout. A line with
-// no cd or pushd keeps the older rule: its last existing absolute token. null
-// is a file without a shebang (a binary), or a script with neither, and both
-// are probed through the file's own directory.
+// A shim's target, from the lines after the shebang (comment lines skipped). A
+// cd-like word is cd or pushd once quotes, backslashes and a leading ( { $ or
+// backtick are removed, as in c"d" or (cd. A script with none keeps the older
+// rule: the first line holding an absolute path token that exists decides, and
+// its last such token is the target. null, probed through the file's own
+// directory, is a script with no such token or a file without a shebang (a
+// binary). A script with any cd-like word resolves only when its cd certainly
+// governs the exec, and is otherwise unresolved: it records no checkout rather
+// than guess, because the older rule's last token picks up an interpreter such
+// as /opt/homebrew/bin/bun, whose directory is itself a git checkout. So the
+// script holds exactly one cd-like word; every line before the cd's is a
+// prelude line (first word set, export, unset, readonly, umask, shopt or an
+// assignment, and no ; & or |); on the cd's line every segment before it,
+// split at ; && || and |, is a prelude segment joined by ;; the cd's segment
+// starts with the word cd or pushd itself, not command cd, (cd, { cd or c"d";
+// and no | follows it, since a piped cd runs in a subshell. Words are read as
+// the shell reads them only when that is certain: a bare word, or one whole
+// single- or double-quoted word with no escape or expansion inside, ending at
+// whitespace. An unbalanced quote, mixed quoting or a $ is uncertain, and
+// leaves an option or operand unresolved. A cd's operand skips cd's options
+// (-L -P -e -@) up to --; a pushd's operand skips only --, so `pushd -n`, which
+// does not change directory, is unresolved. The operand must be an existing
+// directory, because the shell's cd fails on anything else and the shim never
+// reaches its exec, and it must be the segment's last word: anything after it,
+// a redirection included, leaves the shim unresolved. An absolute operand is
+// the target. An operand built from the shim's own location, $(dirname "$0") or
+// $(dirname "${BASH_SOURCE[0]}") with or without outer double quotes, plus a
+// suffix that is empty or a literal path starting with /, is resolved against
+// the directory of the path found on PATH, which is what $0 holds when the shim
+// runs. The last of -L and -P picks how a `..` is read, as in the shell:
+// logical (the default) removes it lexically, so the path is normalized, and
+// physical follows symlinks first, so the path is kept as written for the
+// operating system to resolve. Any other operand is unresolved.
 export type ShimTarget =
   | { readonly kind: 'target'; readonly path: string }
   | { readonly kind: 'unresolved' }
   | null;
 
 const CD_OPTIONS = new Set(['-L', '-P', '-e', '-@']);
+const PRELUDE_COMMANDS = new Set([
+  'set',
+  'export',
+  'unset',
+  'readonly',
+  'umask',
+  'shopt',
+]);
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const SEPARATORS = /(&&|\|\||;|\|)/;
 const SELF_DIR =
   /^("?)\$\(dirname "(?:\$0|\$\{BASH_SOURCE\[0\]\})"\)(\/[^$`'"\s]*)?\1$/;
 
@@ -141,6 +157,27 @@ function readWord(text: string): { word: string; rest: string } | null {
     word: m[1] ?? m[2] ?? m[3] ?? '',
     rest: text.slice(m[0].length),
   };
+}
+
+// Looser than readWord on purpose: a word that might be a cd, in any quoting
+// or after a separator character, makes the script one the parser must not
+// guess at.
+function cdLikeCount(text: string): number {
+  return text.split(/[\s;&|]+/).filter((raw) => {
+    const word = raw.replace(/["'\\]/g, '').replace(/^[$(){}`]+/, '');
+    return word === 'cd' || word === 'pushd';
+  }).length;
+}
+
+// Text that changes shell state without running anything or moving the
+// working directory, so it may come before the cd.
+function isPrelude(text: string): boolean {
+  if (/[;&|]/.test(text)) return false;
+  const first = readWord(text.trimStart())?.word;
+  return (
+    first !== undefined &&
+    (PRELUDE_COMMANDS.has(first) || ASSIGNMENT.test(first))
+  );
 }
 
 function cdTarget(
@@ -190,17 +227,14 @@ function cdTarget(
     : { kind: 'unresolved' };
 }
 
-export function shimTarget(file: string, deps: ProvenanceDeps): ShimTarget {
-  const text = deps.readFile(file);
-  if (text === null || !text.startsWith('#!')) return null;
-  for (const line of text.split('\n').slice(1)) {
-    if (line.trimStart().startsWith('#')) continue;
+// The older rule, for a script with no cd-like word.
+function lastAbsoluteToken(
+  lines: readonly string[],
+  deps: ProvenanceDeps,
+): ShimTarget {
+  for (const line of lines) {
     let last: string | null = null;
     for (const segment of line.split(/&&|\|\||;|\|/)) {
-      const first = readWord(segment.trimStart());
-      if (first !== null && (first.word === 'cd' || first.word === 'pushd')) {
-        return cdTarget(first.word, first.rest, dirname(file), deps);
-      }
       for (const raw of segment.split(/\s+/)) {
         const token = readWord(raw)?.word;
         if (token?.startsWith('/') && deps.exists(token)) last = token;
@@ -209,6 +243,33 @@ export function shimTarget(file: string, deps: ProvenanceDeps): ShimTarget {
     if (last !== null) return { kind: 'target', path: last };
   }
   return null;
+}
+
+export function shimTarget(file: string, deps: ProvenanceDeps): ShimTarget {
+  const text = deps.readFile(file);
+  if (text === null || !text.startsWith('#!')) return null;
+  const lines = text
+    .split('\n')
+    .slice(1)
+    .filter((line) => !line.trimStart().startsWith('#'));
+  const counts = lines.map(cdLikeCount);
+  const total = counts.reduce((sum, n) => sum + n, 0);
+  if (total === 0) return lastAbsoluteToken(lines, deps);
+  const unresolved: ShimTarget = { kind: 'unresolved' };
+  if (total > 1) return unresolved;
+  const at = counts.findIndex((n) => n > 0);
+  const before = lines.slice(0, at).filter((line) => line.trim() !== '');
+  if (!before.every(isPrelude)) return unresolved;
+  // Alternating segments (even) and the separators between them (odd).
+  const parts = (lines[at] ?? '').split(SEPARATORS);
+  const k = parts.findIndex((part, i) => i % 2 === 0 && cdLikeCount(part) > 0);
+  for (let i = 0; i < k; i += 2) {
+    if (!isPrelude(parts[i] ?? '') || parts[i + 1] !== ';') return unresolved;
+  }
+  const first = readWord((parts[k] ?? '').trimStart());
+  if (first === null || parts[k + 1] === '|') return unresolved;
+  if (first.word !== 'cd' && first.word !== 'pushd') return unresolved;
+  return cdTarget(first.word, first.rest, dirname(file), deps);
 }
 
 // What `scripts/evals-container build` baked into the image: container/Dockerfile
