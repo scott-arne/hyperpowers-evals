@@ -438,7 +438,7 @@ describe('scripts/evals-container', () => {
     const harness = makeHarness();
     // The Gauntlet root is a plain directory; the ceiling keeps git from
     // finding a repository above it.
-    harness.env.GIT_CEILING_DIRECTORIES = harness.root;
+    harness.env['GIT_CEILING_DIRECTORIES'] = harness.root;
     try {
       const proc = runWrapper(harness, ['build']);
       expect(proc.status).toBe(0);
@@ -460,12 +460,12 @@ describe('scripts/evals-container', () => {
         ],
         { encoding: 'utf8' },
       ).stdout;
-      expect(got.QUORUM_IMAGE_EVALS_COMMIT).toBe(head);
-      expect(got.QUORUM_IMAGE_CONTAINER_CLEAN).toBe(
+      expect(got['QUORUM_IMAGE_EVALS_COMMIT']).toBe(head);
+      expect(got['QUORUM_IMAGE_CONTAINER_CLEAN']).toBe(
         containerStatus.trim() === '' ? 'true' : 'false',
       );
-      expect(got.QUORUM_IMAGE_GAUNTLET_COMMIT).toBe('');
-      expect(got.QUORUM_IMAGE_GAUNTLET_CLEAN).toBe('');
+      expect(got['QUORUM_IMAGE_GAUNTLET_COMMIT']).toBe('');
+      expect(got['QUORUM_IMAGE_GAUNTLET_CLEAN']).toBe('');
     } finally {
       rmSync(harness.root, { recursive: true, force: true });
     }
@@ -503,8 +503,8 @@ describe('scripts/evals-container', () => {
     try {
       expect(runWrapper(harness, ['build']).status).toBe(0);
       const got = buildArgs(dockerCommand(harness.dockerLog, 'build'));
-      expect(got.QUORUM_IMAGE_CONTAINER_CLEAN).toBe('false');
-      expect(got.QUORUM_IMAGE_GAUNTLET_CLEAN).toBe('false');
+      expect(got['QUORUM_IMAGE_CONTAINER_CLEAN']).toBe('false');
+      expect(got['QUORUM_IMAGE_GAUNTLET_CLEAN']).toBe('false');
     } finally {
       rmSync(harness.root, { recursive: true, force: true });
     }
@@ -519,9 +519,9 @@ describe('scripts/evals-container', () => {
     try {
       expect(runWrapper(harness, ['build']).status).toBe(0);
       const got = buildArgs(dockerCommand(harness.dockerLog, 'build'));
-      expect(got.QUORUM_IMAGE_EVALS_COMMIT).toBe('');
-      expect(got.QUORUM_IMAGE_GAUNTLET_COMMIT).toBe('');
-      expect(got.QUORUM_IMAGE_CONTAINER_CLEAN).toBe('true');
+      expect(got['QUORUM_IMAGE_EVALS_COMMIT']).toBe('');
+      expect(got['QUORUM_IMAGE_GAUNTLET_COMMIT']).toBe('');
+      expect(got['QUORUM_IMAGE_CONTAINER_CLEAN']).toBe('true');
     } finally {
       rmSync(harness.root, { recursive: true, force: true });
     }
@@ -536,9 +536,9 @@ describe('scripts/evals-container', () => {
     try {
       expect(runWrapper(harness, ['build']).status).toBe(0);
       const got = buildArgs(dockerCommand(harness.dockerLog, 'build'));
-      expect(got.QUORUM_IMAGE_CONTAINER_CLEAN).toBe('');
-      expect(got.QUORUM_IMAGE_GAUNTLET_CLEAN).toBe('');
-      expect(got.QUORUM_IMAGE_EVALS_COMMIT).toBe('a'.repeat(40));
+      expect(got['QUORUM_IMAGE_CONTAINER_CLEAN']).toBe('');
+      expect(got['QUORUM_IMAGE_GAUNTLET_CLEAN']).toBe('');
+      expect(got['QUORUM_IMAGE_EVALS_COMMIT']).toBe('a'.repeat(40));
     } finally {
       rmSync(harness.root, { recursive: true, force: true });
     }
@@ -1344,7 +1344,7 @@ describe('container/bin/quorum', () => {
       image,
     );
 
-    expect(printed.OPENAI_API_KEY).toBe('sk-test');
+    expect(printed['OPENAI_API_KEY']).toBe('sk-test');
     for (const [name, value] of Object.entries(image)) {
       expect(name in printed).toBe(true);
       expect(printed[name]).toBe(value);
@@ -1357,7 +1357,7 @@ describe('container/bin/quorum', () => {
       {},
     );
 
-    expect(printed.OPENAI_API_KEY).toBe('sk-test');
+    expect(printed['OPENAI_API_KEY']).toBe('sk-test');
     expect('QUORUM_IMAGE_EVALS_COMMIT' in printed).toBe(false);
   });
 });
