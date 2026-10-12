@@ -675,6 +675,19 @@ describe('shim forms', () => {
     ],
     ['a . line after the cd', `cd /repos/gauntlet\n. /etc/profile\n${exec}`],
     ['an eval after the cd', `cd /repos/gauntlet; eval "$X"; ${exec}`],
+    [
+      'a redirection glued to the cd word',
+      `cd>/dev/null /repos/gauntlet${trap}`,
+    ],
+    ['a parenthesis glued to the cd word', `(cd)${trap}`],
+    [
+      'an assignment prefix on a command after the cd',
+      `cd /repos/gauntlet\nX=1 source /etc/profile\n${exec}`,
+    ],
+    [
+      'an assignment prefix on a command before the cd',
+      `X=1 exec true\ncd /repos/gauntlet${trap}`,
+    ],
     ['a function call after the cd', `cd /repos/gauntlet\nrun_it\n${exec}`],
     [
       'env -C between the cd and the exec',
@@ -702,6 +715,7 @@ describe('shim forms', () => {
       `set -euo pipefail\ncd /repos/gauntlet\nexport X=1\n${exec}`,
     ],
     ['an assignment before the cd', `X=1\ncd /repos/gauntlet${trap}`],
+    ['two assignments before the cd', `A=1 B=2\ncd /repos/gauntlet${trap}`],
     [
       'blank and comment lines before the cd',
       `\n# note\nset -e\n\ncd /repos/gauntlet${trap}`,
