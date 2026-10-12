@@ -209,6 +209,40 @@ build_source_clean() { # <dir> <pathspec>
   fi
 }
 
+build_image() {
+  local evals_commit container_clean gauntlet_commit gauntlet_clean
+  evals_commit=$(build_source_commit "$evals_root")
+  container_clean=$(build_source_clean "$evals_root" container)
+  gauntlet_commit=$(build_source_commit "$gauntlet_root")
+  gauntlet_clean=$(build_source_clean "$gauntlet_root" .)
+
+  docker build \
+    --build-context "gauntlet=$gauntlet_root" \
+    --build-arg "QUORUM_IMAGE_EVALS_COMMIT=$evals_commit" \
+    --build-arg "QUORUM_IMAGE_CONTAINER_CLEAN=$container_clean" \
+    --build-arg "QUORUM_IMAGE_GAUNTLET_COMMIT=$gauntlet_commit" \
+    --build-arg "QUORUM_IMAGE_GAUNTLET_CLEAN=$gauntlet_clean" \
+    -t "$image_tag" \
+    -f "$evals_root/container/Dockerfile" \
+    "$evals_root"
+
+  # Docker snapshots each context while it builds, which can take minutes, so a
+  # checkout that moves in that time would bake the state read above into an
+  # image built from another one. Reading again afterwards is the cheapest way
+  # to notice. The tag already points at the new image, so the failure is the
+  # signal to rebuild before using it.
+  local changed=()
+  [[ "$(build_source_commit "$evals_root")" == "$evals_commit" ]] || changed+=("evals commit")
+  [[ "$(build_source_clean "$evals_root" container)" == "$container_clean" ]] || changed+=("container clean")
+  [[ "$(build_source_commit "$gauntlet_root")" == "$gauntlet_commit" ]] || changed+=("gauntlet commit")
+  [[ "$(build_source_clean "$gauntlet_root" .)" == "$gauntlet_clean" ]] || changed+=("gauntlet clean")
+  if ((${#changed[@]} > 0)); then
+    local joined
+    joined=$(printf ', %s' "${changed[@]}")
+    die "the build source changed during the build; rebuild (changed: ${joined:2})"
+  fi
+}
+
 if [[ "$env_file_explicit" == true ]]; then
   [[ -f "$env_file" ]] || die "env file does not exist: $env_file"
   [[ -r "$env_file" ]] || die "env file is not readable: $env_file"
@@ -345,6 +379,14 @@ run_up() {
     return 0
   fi
 
+  # container/bin/quorum sources the mounted file after Docker supplies the
+  # image's environment, so a line naming QUORUM_IMAGE_* would replace the
+  # build source the run records. Only this command mounts the file, so only
+  # this command refuses.
+  if [[ -n "$env_file" ]] && grep -Eq '^[^#]*QUORUM_IMAGE_' "$env_file"; then
+    die "env file $env_file mentions QUORUM_IMAGE_*; those names are reserved for the image's build source, remove them from the file"
+  fi
+
   local mounts=()
   add_bind_mount() {
     local source=$1
@@ -408,15 +450,7 @@ run_up() {
 case "$command" in
   build)
     resolve_gauntlet_root
-    docker build \
-      --build-context "gauntlet=$gauntlet_root" \
-      --build-arg "QUORUM_IMAGE_EVALS_COMMIT=$(build_source_commit "$evals_root")" \
-      --build-arg "QUORUM_IMAGE_CONTAINER_CLEAN=$(build_source_clean "$evals_root" container)" \
-      --build-arg "QUORUM_IMAGE_GAUNTLET_COMMIT=$(build_source_commit "$gauntlet_root")" \
-      --build-arg "QUORUM_IMAGE_GAUNTLET_CLEAN=$(build_source_clean "$gauntlet_root" .)" \
-      -t "$image_tag" \
-      -f "$evals_root/container/Dockerfile" \
-      "$evals_root"
+    build_image
     ;;
   up)
     run_up
