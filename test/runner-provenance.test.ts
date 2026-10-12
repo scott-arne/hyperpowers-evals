@@ -669,6 +669,17 @@ describe('shim forms', () => {
       `cd /repos/gauntlet;cd /repos/tools; ${exec}`,
     ],
     ['a popd after the pushd', `pushd /repos/gauntlet; popd; ${exec}`],
+    [
+      'a source line after the cd',
+      `cd /repos/gauntlet\nsource /etc/profile\n${exec}`,
+    ],
+    ['a . line after the cd', `cd /repos/gauntlet\n. /etc/profile\n${exec}`],
+    ['an eval after the cd', `cd /repos/gauntlet; eval "$X"; ${exec}`],
+    ['a function call after the cd', `cd /repos/gauntlet\nrun_it\n${exec}`],
+    [
+      'env -C between the cd and the exec',
+      `cd /repos/gauntlet && env -C /repos/tools ${exec}`,
+    ],
     ['a cd inside an if', `if false; then\n  cd /repos/gauntlet\nfi\n${exec}`],
     [
       'a source line before the cd',
@@ -686,6 +697,10 @@ describe('shim forms', () => {
     ['set and the cd joined by ;', `set -e; cd /repos/gauntlet; ${exec}`],
     ['cd || exit before the exec', `cd /repos/gauntlet || exit 1\n${exec}`],
     ['export before the cd', `export X=1\ncd /repos/gauntlet${trap}`],
+    [
+      'prelude lines on both sides of the cd',
+      `set -euo pipefail\ncd /repos/gauntlet\nexport X=1\n${exec}`,
+    ],
     ['an assignment before the cd', `X=1\ncd /repos/gauntlet${trap}`],
     [
       'blank and comment lines before the cd',
