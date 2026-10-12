@@ -97,18 +97,18 @@ export function resolveOnPath(
 }
 
 // A shim's target, from the lines after the shebang (comment lines skipped). A
-// cd-like word is cd or pushd once quotes, backslashes and a leading ( { $ or
-// backtick are removed, as in c"d" or (cd. A script with none keeps the older
-// rule: the first line holding an absolute path token that exists decides, and
-// its last such token is the target. null, probed through the file's own
-// directory, is a script with no such token or a file without a shebang (a
-// binary). A script with any cd-like word resolves only when its cd certainly
-// governs the exec, and is otherwise unresolved: it records no checkout rather
-// than guess, because the older rule's last token picks up an interpreter such
-// as /opt/homebrew/bin/bun, whose directory is itself a git checkout. So the
-// script holds exactly one cd-like word; every line before the cd's is a
-// prelude line (first word set, export, unset, readonly, umask, shopt or an
-// assignment, and no ; & or |); on the cd's line every segment before it,
+// cd-like word is cd, pushd or popd once quotes, backslashes and a leading ( {
+// $ or backtick are removed, as in c"d" or (cd. A script with none keeps the
+// older rule: the first line holding an absolute path token that exists
+// decides, and its last such token is the target. null, probed through the
+// file's own directory, is a script with no such token or a file without a
+// shebang (a binary). A script with any cd-like word resolves only when its cd
+// certainly governs the exec, and is otherwise unresolved: it records no
+// checkout rather than guess, because the older rule's last token picks up an
+// interpreter such as /opt/homebrew/bin/bun, whose directory is itself a git
+// checkout. So the script holds exactly one cd-like word; every line before the
+// cd's is a prelude line (first word set, export, unset, readonly, umask, shopt
+// or an assignment, and no ; & or |); on the cd's line every segment before it,
 // split at ; && || and |, is a prelude segment joined by ;; the cd's segment
 // starts with the word cd or pushd itself, not command cd, (cd, { cd or c"d";
 // and no | follows it, since a piped cd runs in a subshell. Words are read as
@@ -165,7 +165,7 @@ function readWord(text: string): { word: string; rest: string } | null {
 function cdLikeCount(text: string): number {
   return text.split(/[\s;&|]+/).filter((raw) => {
     const word = raw.replace(/["'\\]/g, '').replace(/^[$(){}`]+/, '');
-    return word === 'cd' || word === 'pushd';
+    return word === 'cd' || word === 'pushd' || word === 'popd';
   }).length;
 }
 

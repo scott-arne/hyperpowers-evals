@@ -668,6 +668,7 @@ describe('shim forms', () => {
       'a second cd with no space before it',
       `cd /repos/gauntlet;cd /repos/tools; ${exec}`,
     ],
+    ['a popd after the pushd', `pushd /repos/gauntlet; popd; ${exec}`],
     ['a cd inside an if', `if false; then\n  cd /repos/gauntlet\nfi\n${exec}`],
     [
       'a source line before the cd',
