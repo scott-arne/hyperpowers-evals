@@ -379,11 +379,15 @@ run_up() {
     return 0
   fi
 
-  # container/bin/quorum sources the mounted file after Docker supplies the
-  # image's environment, so a line naming QUORUM_IMAGE_* would replace the
-  # build source the run records. Only this command mounts the file, so only
-  # this command refuses.
-  if [[ -n "$env_file" ]] && grep -Eq '^[^#]*QUORUM_IMAGE_' "$env_file"; then
+  # The mounted file is sourced, so a line naming QUORUM_IMAGE_* is an attempt to
+  # set the build source the run records (container/bin/quorum restores the
+  # image's values regardless; this refuses early and says why). Only whole-line
+  # comments are skipped: a `#` inside a value does not start a comment in the
+  # shell, so anything after it still runs. One awk, not a pipe into grep -q:
+  # under pipefail a producer killed by SIGPIPE can read a match as no match.
+  # Only this command mounts the file, so only this command refuses.
+  if [[ -n "$env_file" ]] \
+    && awk '!/^[[:space:]]*#/ && /QUORUM_IMAGE_/ { found = 1 } END { exit !found }' "$env_file"; then
     die "env file $env_file mentions QUORUM_IMAGE_*; those names are reserved for the image's build source, remove them from the file"
   fi
 

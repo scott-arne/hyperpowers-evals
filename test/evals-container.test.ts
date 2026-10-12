@@ -769,14 +769,17 @@ describe('scripts/evals-container', () => {
     }
   });
 
-  test('up refuses an env file that sets or unsets a reserved image name', () => {
-    // container/bin/quorum sources the file after Docker supplies the image's
-    // environment, so any of these would replace the recorded build source.
-    for (const line of [
-      'QUORUM_IMAGE_EVALS_COMMIT=aaaa',
-      'export QUORUM_IMAGE_GAUNTLET_COMMIT=aaaa',
-      'unset QUORUM_IMAGE_CONTAINER_CLEAN',
-    ]) {
+  // The file is sourced, so every one of these changes the recorded build
+  // source. The last line is the case a comment-stripping pattern misses: the
+  // `#` sits inside a value, so the assignment after it still runs. One test
+  // per line keeps each inside the per-test time limit.
+  for (const line of [
+    'QUORUM_IMAGE_EVALS_COMMIT=aaaa',
+    'export QUORUM_IMAGE_GAUNTLET_COMMIT=aaaa',
+    'unset QUORUM_IMAGE_CONTAINER_CLEAN',
+    'A=x#y; QUORUM_IMAGE_EVALS_COMMIT=aaaa',
+  ]) {
+    test(`up refuses an env file with the line: ${line}`, () => {
       const harness = makeHarness();
       try {
         const superpowersRoot = makeSuperpowersRoot(harness.root);
@@ -799,8 +802,8 @@ describe('scripts/evals-container', () => {
       } finally {
         rmSync(harness.root, { recursive: true, force: true });
       }
-    }
-  });
+    });
+  }
 
   test('up accepts an env file that only mentions a reserved image name in a comment', () => {
     const harness = makeHarness();
@@ -1268,5 +1271,93 @@ describe('scripts/evals-container', () => {
     } finally {
       rmSync(harness.root, { recursive: true, force: true });
     }
+  });
+});
+
+// The shim's paths are fixed to the container's, so these tests run a copy
+// with them pointed at a temp directory and the final command replaced by
+// `env`, which prints what the quorum process would have inherited.
+describe('container/bin/quorum', () => {
+  const SHIM = join(REPO, 'container', 'bin', 'quorum');
+  const SUBSTITUTED = [
+    'cd /workspace/evals',
+    '/run/evals/credentials.env',
+    'exec bun run src/cli/index.ts "$@"',
+  ];
+
+  function runShimCopy(
+    credentials: string,
+    imageEnv: Record<string, string>,
+  ): Record<string, string> {
+    const dir = mkdtempSync(join(tmpdir(), 'evals-quorum-shim-'));
+    try {
+      const source = readFileSync(SHIM, 'utf8');
+      for (const text of SUBSTITUTED) {
+        expect(source).toContain(text);
+      }
+      const credentialsFile = join(dir, 'credentials.env');
+      writeFileSync(credentialsFile, credentials);
+      const copy = join(dir, 'quorum');
+      writeFileSync(
+        copy,
+        source
+          .replaceAll('cd /workspace/evals', `cd ${dir}`)
+          .replaceAll('/run/evals/credentials.env', credentialsFile)
+          .replace('exec bun run src/cli/index.ts "$@"', 'exec env'),
+      );
+      const proc = spawnSync('bash', [copy], {
+        env: { PATH: Bun.env['PATH'] ?? '', ...imageEnv },
+        encoding: 'utf8',
+      });
+      expect(proc.error).toBeUndefined();
+      expect(proc.status).toBe(0);
+      const printed: Record<string, string> = {};
+      for (const line of proc.stdout.split('\n')) {
+        const eq = line.indexOf('=');
+        if (eq > 0) {
+          printed[line.slice(0, eq)] = line.slice(eq + 1);
+        }
+      }
+      return printed;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  test('keeps the image build source when the credentials file assigns or unsets it', () => {
+    // GAUNTLET_CLEAN is set but empty, the state of an image built from a
+    // checkout git could not read, and must stay set rather than vanish.
+    const image = {
+      QUORUM_IMAGE_EVALS_COMMIT: 'a'.repeat(40),
+      QUORUM_IMAGE_CONTAINER_CLEAN: 'true',
+      QUORUM_IMAGE_GAUNTLET_COMMIT: 'c'.repeat(40),
+      QUORUM_IMAGE_GAUNTLET_CLEAN: '',
+    };
+    const printed = runShimCopy(
+      [
+        'OPENAI_API_KEY=sk-test',
+        'QUORUM_IMAGE_EVALS_COMMIT=changed',
+        'QUORUM_IMAGE_GAUNTLET_CLEAN=true',
+        'unset QUORUM_IMAGE_GAUNTLET_COMMIT',
+        '',
+      ].join('\n'),
+      image,
+    );
+
+    expect(printed.OPENAI_API_KEY).toBe('sk-test');
+    for (const [name, value] of Object.entries(image)) {
+      expect(name in printed).toBe(true);
+      expect(printed[name]).toBe(value);
+    }
+  });
+
+  test('leaves the build source unset when the image has none, whatever the credentials file says', () => {
+    const printed = runShimCopy(
+      'OPENAI_API_KEY=sk-test\nQUORUM_IMAGE_EVALS_COMMIT=aaaa\n',
+      {},
+    );
+
+    expect(printed.OPENAI_API_KEY).toBe('sk-test');
+    expect('QUORUM_IMAGE_EVALS_COMMIT' in printed).toBe(false);
   });
 });

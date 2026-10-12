@@ -3,12 +3,27 @@ set -euo pipefail
 
 cd /workspace/evals
 
+# The image's build source (container/Dockerfile ENV) is not the credentials
+# file's to set, so it is saved before the file is sourced and put back after,
+# exactly as it was (set, set but empty, or unset). Provenance then always reads
+# what the image was built with.
+image_source_vars=(
+  QUORUM_IMAGE_EVALS_COMMIT
+  QUORUM_IMAGE_CONTAINER_CLEAN
+  QUORUM_IMAGE_GAUNTLET_COMMIT
+  QUORUM_IMAGE_GAUNTLET_CLEAN
+)
+saved_image_source="$(declare -p "${image_source_vars[@]}" 2>/dev/null || true)"
+
 if [[ -f /run/evals/credentials.env ]]; then
   set -a
   # shellcheck disable=SC1091
   source /run/evals/credentials.env
   set +a
 fi
+
+unset "${image_source_vars[@]}"
+eval "$saved_image_source"
 
 export SUPERPOWERS_ROOT=/workspace/superpowers
 
