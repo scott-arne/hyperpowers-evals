@@ -98,13 +98,17 @@ export function resolveOnPath(
 
 // A shim's target. On the first line after the shebang (comment lines skipped)
 // that holds a cd or pushd segment, or an absolute path token that exists, the
-// line decides. Segments split at ; && || and |. The command word and the
-// option words are read as the shell reads them, with their quotes removed, so
-// "cd" and cd "-P" are cd and cd -P. A cd's operand skips cd's options
-// (-L -P -e -@) up to --; a pushd's operand skips only --, so `pushd -n`, which
-// does not change directory, is unresolved. The operand must be an existing
-// directory, because the shell's cd fails on anything else and the shim never
-// reaches its exec. An absolute operand is the target. An operand built from
+// line decides. Segments split at ; && || and |. Words are read as the shell
+// reads them only when that is certain: a bare word, or one whole single- or
+// double-quoted word with no escape or expansion inside, ending at whitespace.
+// So "cd" and cd "-P" are cd and cd -P, and an unbalanced quote, mixed quoting
+// or a $ is uncertain: it leaves an option or operand unresolved, makes the
+// segment not a cd, and makes the older rule skip the token. A cd's operand
+// skips cd's options (-L -P -e -@) up to --; a pushd's operand skips only --,
+// so `pushd -n`, which does not change directory, is unresolved. The operand
+// must be an existing directory, because the shell's cd fails on anything else
+// and the shim never reaches its exec. An absolute operand is the target. An
+// operand built from
 // the shim's own location, $(dirname "$0") or $(dirname "${BASH_SOURCE[0]}")
 // with or without outer double quotes, plus a suffix that is empty or a literal
 // path starting with /, is resolved against the directory of the path found on
@@ -127,8 +131,15 @@ const CD_OPTIONS = new Set(['-L', '-P', '-e', '-@']);
 const SELF_DIR =
   /^("?)\$\(dirname "(?:\$0|\$\{BASH_SOURCE\[0\]\})"\)(\/[^$`'"\s]*)?\1$/;
 
-function unquote(raw: string): string {
-  return raw.replace(/^["']+|["']+$/g, '');
+// One shell word at the start of `text`, with its quotes removed, and the text
+// after it; null when the word is not certain (see the comment above).
+function readWord(text: string): { word: string; rest: string } | null {
+  const m = /^(?:'([^']*)'|"([^"\\$`]*)"|([^\s'"\\$`]+))(?=\s|$)\s*/.exec(text);
+  if (m === null) return null;
+  return {
+    word: m[1] ?? m[2] ?? m[3] ?? '',
+    rest: text.slice(m[0].length),
+  };
 }
 
 function cdTarget(
@@ -137,36 +148,36 @@ function cdTarget(
   shimDir: string,
   deps: ProvenanceDeps,
 ): ShimTarget {
-  let text = rest.trim();
+  let text = rest;
   let physical = false;
   for (;;) {
-    const m = /^(\S+)\s*/.exec(text);
-    if (m === null) break;
-    const token = unquote(m[1] as string);
-    if (token === '--') {
-      text = text.slice(m[0].length);
+    const w = readWord(text);
+    if (w === null) break;
+    if (w.word === '--') {
+      text = w.rest;
       break;
     }
-    if (command === 'cd' && CD_OPTIONS.has(token)) {
-      if (token === '-P') physical = true;
-      if (token === '-L') physical = false;
-      text = text.slice(m[0].length);
+    if (command === 'cd' && CD_OPTIONS.has(w.word)) {
+      if (w.word === '-P') physical = true;
+      if (w.word === '-L') physical = false;
+      text = w.rest;
       continue;
     }
     break;
   }
   text = text.trim();
   const self = SELF_DIR.exec(text);
-  const operand = unquote(text.split(/\s+/)[0] ?? '');
   let path: string;
   if (self !== null) {
     const suffix = self[2] ?? '';
     // join would normalize, which a physical cd must not do.
     path = physical ? shimDir + suffix : normalize(join(shimDir, suffix));
-  } else if (operand.startsWith('/')) {
-    path = physical ? operand : normalize(operand);
   } else {
-    return { kind: 'unresolved' };
+    const operand = readWord(text)?.word;
+    if (operand === undefined || !operand.startsWith('/')) {
+      return { kind: 'unresolved' };
+    }
+    path = physical ? operand : normalize(operand);
   }
   return deps.isDirectory(path)
     ? { kind: 'target', path }
@@ -180,14 +191,13 @@ export function shimTarget(file: string, deps: ProvenanceDeps): ShimTarget {
     if (line.trimStart().startsWith('#')) continue;
     let last: string | null = null;
     for (const segment of line.split(/&&|\|\||;|\|/)) {
-      const word = /^\s*(\S+)(?:\s+(.*))?$/.exec(segment);
-      const command = word === null ? '' : unquote(word[1] as string);
-      if (command === 'cd' || command === 'pushd') {
-        return cdTarget(command, word?.[2] ?? '', dirname(file), deps);
+      const first = readWord(segment.trimStart());
+      if (first !== null && (first.word === 'cd' || first.word === 'pushd')) {
+        return cdTarget(first.word, first.rest, dirname(file), deps);
       }
       for (const raw of segment.split(/\s+/)) {
-        const token = unquote(raw);
-        if (token.startsWith('/') && deps.exists(token)) last = token;
+        const token = readWord(raw)?.word;
+        if (token?.startsWith('/') && deps.exists(token)) last = token;
       }
     }
     if (last !== null) return { kind: 'target', path: last };
