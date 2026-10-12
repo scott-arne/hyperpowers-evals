@@ -333,14 +333,13 @@ test('an SSE cell frame is delivered after a scanner tick mutates a dir', async 
     throw new Error('expected an SSE body reader');
   }
 
-  // Land a verdict.json into the previously-live (flaky x codex) dir so the next
-  // scanner tick sees its signature change (running -> verdict-appeared) and
-  // publishes a cell-flaky-codex frame.
-  writeVerdict(
-    runDir(fixture.resultsRoot, 'flaky', 'codex', 0, 'dddd'),
-    'pass',
-    0.5,
-  );
+  // The previously-live (flaky x codex) run finishes: its process exits (the
+  // dead pid) and its verdict.json lands. The scanner trusts a verdict only once
+  // phase.json's pid has exited, so the next tick sees the signature change
+  // (running -> verdict-appeared) and publishes a cell-flaky-codex frame.
+  const finishing = runDir(fixture.resultsRoot, 'flaky', 'codex', 0, 'dddd');
+  writePhaseOnly(finishing, 'checks', 2_000_000_000);
+  writeVerdict(finishing, 'pass', 0.5);
 
   // Read frames until we see the cell event or time out. The scanner cadence is
   // ~1s; allow a few ticks.
