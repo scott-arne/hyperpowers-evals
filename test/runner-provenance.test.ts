@@ -516,6 +516,113 @@ describe('container image identity', () => {
   });
 });
 
+describe('shim forms', () => {
+  const C = 'c'.repeat(40);
+  const D = 'd'.repeat(40);
+  // /opt/homebrew and /opt are repositories here, so any fallback to the last
+  // absolute token, or to the shim's own directory, records the wrong commit.
+  const runner = fakeGit({
+    '/repos/evals': { head: A, status: '' },
+    '/repos/gauntlet': { head: B, status: '' },
+    '/repos/tools': { head: D, status: '' },
+    '/opt/homebrew': { head: C, status: '' },
+    '/opt': { head: C, status: '' },
+  });
+  const shimAt = (
+    file: string,
+    body: string,
+    extra: Record<string, string | 'dir'> = {},
+  ) =>
+    captureProvenance(
+      deps(
+        { runner, pathEntries: [file.slice(0, file.lastIndexOf('/'))] },
+        {
+          [file]: `#!/bin/sh\n${body}\n`,
+          '/repos/gauntlet': 'dir',
+          '/opt/homebrew/bin/bun': 'x',
+          ...extra,
+        },
+      ),
+    ).gauntlet;
+  const resolved = (path: string) => ({
+    path,
+    checkout: '/repos/gauntlet',
+    commit: B,
+    clean: true,
+  });
+  const unresolved = (path: string) => ({
+    path,
+    checkout: null,
+    commit: null,
+    clean: null,
+  });
+  const trap = ' && exec /opt/homebrew/bin/bun run src/index.ts "$@"';
+
+  test.each([
+    ['cd -P', `cd -P /repos/gauntlet${trap}`],
+    ['cd -L -P', `cd -L -P /repos/gauntlet${trap}`],
+    ['cd --', `cd -- /repos/gauntlet${trap}`],
+    ['pushd', `pushd /repos/gauntlet${trap}`],
+    [
+      'cd X;exec',
+      'cd /repos/gauntlet;exec /opt/homebrew/bin/bun run src/index.ts "$@"',
+    ],
+  ])('%s names the checkout', (_label, body) => {
+    expect(shimAt('/opt/bin/gauntlet', body)).toEqual(
+      resolved('/opt/bin/gauntlet'),
+    );
+  });
+
+  test.each([
+    [
+      'the parent through /..',
+      '/repos/gauntlet/bin/gauntlet',
+      `cd "$(dirname "$0")/.."${trap}`,
+    ],
+    [
+      'the empty suffix',
+      '/repos/gauntlet/bin/gauntlet',
+      `cd "$(dirname "$0")"${trap}`,
+    ],
+    [
+      'BASH_SOURCE',
+      '/repos/gauntlet/bin/gauntlet',
+      `cd "$(dirname "\${BASH_SOURCE[0]}")/.."${trap}`,
+    ],
+    [
+      'the unquoted form',
+      '/repos/gauntlet/bin/gauntlet',
+      `cd $(dirname "$0")/..${trap}`,
+    ],
+    [
+      'another repository',
+      '/repos/tools/bin/gauntlet',
+      `cd "$(dirname "$0")/../../gauntlet"${trap}`,
+    ],
+  ])('a cd built from the shim location resolves exactly: %s', (_label, file, body) => {
+    expect(
+      shimAt(file, body, {
+        '/repos/gauntlet/bin': 'dir',
+        '/repos/tools/bin': 'dir',
+      }),
+    ).toEqual(resolved(file));
+  });
+
+  test.each([
+    ['a variable', `cd "$HOME/gauntlet"${trap}`],
+    ['a relative operand', `cd gauntlet${trap}`],
+    ['cd -', `cd -${trap}`],
+    ['pushd -n', `pushd -n /repos/gauntlet${trap}`],
+    ['a variable suffix', `cd "$(dirname "$0")/$SUB"${trap}`],
+    ['a suffix without a leading slash', `cd "$(dirname "$0")suffix"${trap}`],
+    ['a nested substitution', `cd "$(dirname "$(readlink -f "$0")")"${trap}`],
+  ])('an unresolved cd records no checkout: %s', (_label, body) => {
+    expect(shimAt('/opt/bin/gauntlet', body)).toEqual(
+      unresolved('/opt/bin/gauntlet'),
+    );
+  });
+});
+
 describe('renderProvenanceLine', () => {
   const g = (commit: string | null, clean: boolean | null) => ({
     path: null,

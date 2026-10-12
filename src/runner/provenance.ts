@@ -5,7 +5,7 @@ import {
   readFileSync,
   statSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, normalize } from 'node:path';
 import type { CommandRunner } from '../agents/command-runner.ts';
 import type { Provenance } from '../contracts/verdict.ts';
 import { getEnv } from '../env.ts';
@@ -96,32 +96,88 @@ export function resolveOnPath(
   return null;
 }
 
-// A shell shim names its target somewhere in its body: the host's is
-// `exec bun run <checkout>/src/index.ts "$@"`, a `cd <checkout> && ...` form
-// is the other common one. On the first line after the shebang (comment lines
-// skipped) that holds an absolute path token that exists, the operand of a
-// `cd` is the target; failing that, the LAST such token is. An interpreter
-// named by absolute path comes before the script it runs
-// (`exec /opt/homebrew/bin/bun run <checkout>/src/index.ts`) but after a
-// `cd <checkout>`, so neither the first nor the last token alone names the
-// checkout in both forms. A file without a shebang is the binary itself and
-// resolves through its own dir.
-export function shimTarget(file: string, deps: ProvenanceDeps): string | null {
+// A shim's target. On the first line after the shebang (comment lines skipped)
+// that holds a cd or pushd segment, or an absolute path token that exists, the
+// line decides. Segments split at ; && || and |. A cd's operand skips cd's
+// options (-L -P -e -@) up to --; a pushd's operand skips only --, so
+// `pushd -n`, which does not change directory, is unresolved. An existing
+// absolute operand is the target. An operand built from the shim's own
+// location, $(dirname "$0") or $(dirname "${BASH_SOURCE[0]}") with or without
+// outer double quotes, plus a suffix that is empty or a literal path starting
+// with /, is resolved against the directory of the path found on PATH, which is
+// what $0 holds when the shim runs. Any other operand leaves the shim
+// unresolved: it records no checkout rather than guess, because a fallback to
+// the last absolute token picks up an interpreter such as
+// /opt/homebrew/bin/bun, whose directory is itself a git checkout. A line with
+// no cd or pushd keeps the older rule: its last existing absolute token. null
+// is a file without a shebang (a binary), or a script with neither, and both
+// are probed through the file's own directory.
+export type ShimTarget =
+  | { readonly kind: 'target'; readonly path: string }
+  | { readonly kind: 'unresolved' }
+  | null;
+
+const CD_OPTIONS = new Set(['-L', '-P', '-e', '-@']);
+const SELF_DIR =
+  /^("?)\$\(dirname "(?:\$0|\$\{BASH_SOURCE\[0\]\})"\)(\/[^$`'"\s]*)?\1$/;
+
+function unquote(raw: string): string {
+  return raw.replace(/^["']+|["']+$/g, '');
+}
+
+function cdTarget(
+  command: string,
+  rest: string,
+  shimDir: string,
+  deps: ProvenanceDeps,
+): ShimTarget {
+  let text = rest.trim();
+  for (;;) {
+    const m = /^(\S+)\s*/.exec(text);
+    if (m === null) break;
+    const token = m[1] as string;
+    if (token === '--') {
+      text = text.slice(m[0].length);
+      break;
+    }
+    if (command === 'cd' && CD_OPTIONS.has(token)) {
+      text = text.slice(m[0].length);
+      continue;
+    }
+    break;
+  }
+  text = text.trim();
+  const self = SELF_DIR.exec(text);
+  if (self !== null) {
+    const p = normalize(join(shimDir, self[2] ?? ''));
+    return deps.exists(p)
+      ? { kind: 'target', path: p }
+      : { kind: 'unresolved' };
+  }
+  const operand = unquote(text.split(/\s+/)[0] ?? '');
+  if (operand.startsWith('/') && deps.exists(operand)) {
+    return { kind: 'target', path: operand };
+  }
+  return { kind: 'unresolved' };
+}
+
+export function shimTarget(file: string, deps: ProvenanceDeps): ShimTarget {
   const text = deps.readFile(file);
   if (text === null || !text.startsWith('#!')) return null;
-  const lines = text.split('\n').slice(1);
-  for (const line of lines) {
+  for (const line of text.split('\n').slice(1)) {
     if (line.trimStart().startsWith('#')) continue;
-    const tokens = line
-      .split(/\s+/)
-      .map((raw) => raw.replace(/^["']+|["']+$/g, ''));
     let last: string | null = null;
-    for (const [i, token] of tokens.entries()) {
-      if (!token.startsWith('/') || !deps.exists(token)) continue;
-      if (tokens[i - 1] === 'cd') return token;
-      last = token;
+    for (const segment of line.split(/&&|\|\||;|\|/)) {
+      const cd = /^\s*(cd|pushd)(?:\s+(.*))?$/.exec(segment);
+      if (cd !== null) {
+        return cdTarget(cd[1] as string, cd[2] ?? '', dirname(file), deps);
+      }
+      for (const raw of segment.split(/\s+/)) {
+        const token = unquote(raw);
+        if (token.startsWith('/') && deps.exists(token)) last = token;
+      }
     }
-    if (last !== null) return last;
+    if (last !== null) return { kind: 'target', path: last };
   }
   return null;
 }
@@ -161,26 +217,30 @@ export function captureProvenance(deps: ProvenanceDeps): Provenance {
   if (found !== null) {
     gauntlet.path = found;
     const target = shimTarget(found, deps);
-    // A directory token (cd <checkout>) is queried itself; a file token or
-    // the binary itself through its directory.
-    const probeDir =
-      target === null
-        ? dirname(found)
-        : deps.isDirectory(target)
-          ? target
-          : dirname(target);
-    const checkout = toplevelOf(deps.runner, probeDir);
-    if (checkout !== null) {
-      gauntlet.checkout = checkout;
-      // A gauntlet inside the evals repository (the test suite's mock is one)
-      // carries the evals values: a second, whole-tree walk of the same
-      // repository is the cost HARNESS_PATHS exists to avoid.
-      if (checkout === toplevelOf(deps.runner, deps.evalsRoot)) {
-        gauntlet.commit = evalsCommit;
-        gauntlet.clean = evalsClean;
-      } else {
-        gauntlet.commit = commitOf(deps.runner, checkout);
-        gauntlet.clean = cleanOf(deps.runner, checkout);
+    // An unresolved shim records its path and nothing else: probing its own
+    // directory instead is how an interpreter's checkout gets recorded.
+    if (target === null || target.kind === 'target') {
+      // A directory token (cd <checkout>) is queried itself; a file token or
+      // the binary itself through its directory.
+      const probeDir =
+        target === null
+          ? dirname(found)
+          : deps.isDirectory(target.path)
+            ? target.path
+            : dirname(target.path);
+      const checkout = toplevelOf(deps.runner, probeDir);
+      if (checkout !== null) {
+        gauntlet.checkout = checkout;
+        // A gauntlet inside the evals repository (the test suite's mock is one)
+        // carries the evals values: a second, whole-tree walk of the same
+        // repository is the cost HARNESS_PATHS exists to avoid.
+        if (checkout === toplevelOf(deps.runner, deps.evalsRoot)) {
+          gauntlet.commit = evalsCommit;
+          gauntlet.clean = evalsClean;
+        } else {
+          gauntlet.commit = commitOf(deps.runner, checkout);
+          gauntlet.clean = cleanOf(deps.runner, checkout);
+        }
       }
     }
   }
