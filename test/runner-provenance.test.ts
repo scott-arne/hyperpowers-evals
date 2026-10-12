@@ -635,6 +635,10 @@ describe('shim forms', () => {
     ['mixed quoting', `cd /repos/"gauntlet"${trap}`],
     ['an expansion in double quotes', `cd "/repos/$X"${trap}`],
     ['an unbalanced option word', `cd "-P /repos/gauntlet${trap}`],
+    // bash refuses a second operand, and a redirection is more text after the
+    // operand: either way the operand is not the whole of what cd was given.
+    ['a second operand', `cd /repos/gauntlet /repos/tools${trap}`],
+    ['a redirection', `cd /repos/gauntlet >/dev/null${trap}`],
   ])('an unresolved cd records no checkout: %s', (_label, body) => {
     expect(shimAt('/opt/bin/gauntlet', body)).toEqual(
       unresolved('/opt/bin/gauntlet'),

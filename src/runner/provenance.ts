@@ -107,17 +107,18 @@ export function resolveOnPath(
 // skips cd's options (-L -P -e -@) up to --; a pushd's operand skips only --,
 // so `pushd -n`, which does not change directory, is unresolved. The operand
 // must be an existing directory, because the shell's cd fails on anything else
-// and the shim never reaches its exec. An absolute operand is the target. An
-// operand built from
-// the shim's own location, $(dirname "$0") or $(dirname "${BASH_SOURCE[0]}")
-// with or without outer double quotes, plus a suffix that is empty or a literal
-// path starting with /, is resolved against the directory of the path found on
-// PATH, which is what $0 holds when the shim runs. The last of -L and -P picks
-// how a `..` is read, as in the shell: logical (the default) removes it
-// lexically, so the path is normalized, and physical follows symlinks first, so
-// the path is kept as written for the operating system to resolve. Any other
-// operand leaves the shim unresolved: it records no checkout rather than guess,
-// because a fallback to the last absolute token picks up an interpreter such as
+// and the shim never reaches its exec, and it must be the segment's last word:
+// anything after it, a redirection included, leaves the shim unresolved. An
+// absolute operand is the target. An operand built from the shim's own
+// location, $(dirname "$0") or $(dirname "${BASH_SOURCE[0]}") with or without
+// outer double quotes, plus a suffix that is empty or a literal path starting
+// with /, is resolved against the directory of the path found on PATH, which is
+// what $0 holds when the shim runs. The last of -L and -P picks how a `..` is
+// read, as in the shell: logical (the default) removes it lexically, so the
+// path is normalized, and physical follows symlinks first, so the path is kept
+// as written for the operating system to resolve. Any other operand leaves the
+// shim unresolved: it records no checkout rather than guess, because a fallback
+// to the last absolute token picks up an interpreter such as
 // /opt/homebrew/bin/bun, whose directory is itself a git checkout. A line with
 // no cd or pushd keeps the older rule: its last existing absolute token. null
 // is a file without a shebang (a binary), or a script with neither, and both
@@ -173,11 +174,16 @@ function cdTarget(
     // join would normalize, which a physical cd must not do.
     path = physical ? shimDir + suffix : normalize(join(shimDir, suffix));
   } else {
-    const operand = readWord(text)?.word;
-    if (operand === undefined || !operand.startsWith('/')) {
+    const operand = readWord(text);
+    // text is trimmed, so anything left after the operand is another word.
+    if (
+      operand === null ||
+      operand.rest !== '' ||
+      !operand.word.startsWith('/')
+    ) {
       return { kind: 'unresolved' };
     }
-    path = physical ? operand : normalize(operand);
+    path = physical ? operand.word : normalize(operand.word);
   }
   return deps.isDirectory(path)
     ? { kind: 'target', path }
