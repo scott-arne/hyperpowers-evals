@@ -151,16 +151,36 @@ esac
 
 // Answers the launcher's two build-source reads and logs every call, so a test
 // can pin the values and the pathspecs; any other git call fails loudly.
+//
+// FAKE_GIT_HEAD2 and FAKE_GIT_STATUS2 replace the answer on a repeat read of
+// the same directory, which is how a test moves the checkout during the build;
+// FAKE_GIT_CHANGE_DIR narrows that to one directory so each recorded value can
+// be pinned on its own.
 const FAKE_GIT = `#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "\${FAKE_GIT_LOG:?}"
+repeat_read() { # <subcommand> <dir>
+  [[ -z "\${FAKE_GIT_CHANGE_DIR:-}" || "$2" == "$FAKE_GIT_CHANGE_DIR" ]] || return 1
+  local seen="\${FAKE_GIT_LOG}.$1.\${2//[^A-Za-z0-9]/_}"
+  [[ -f "$seen" ]] && return 0
+  : > "$seen"
+  return 1
+}
 case "\${3:-}" in
   rev-parse)
     [[ "\${FAKE_GIT_REVPARSE:-ok}" == fail ]] && exit 128
-    printf '%s\\n' "\${FAKE_GIT_HEAD:?}"
+    head="\${FAKE_GIT_HEAD:?}"
+    if [[ -n "\${FAKE_GIT_HEAD2:-}" ]] && repeat_read rev-parse "$2"; then
+      head="$FAKE_GIT_HEAD2"
+    fi
+    printf '%s\\n' "$head"
     ;;
   status)
     [[ "\${FAKE_GIT_STATUS:-clean}" == fail ]] && exit 128
-    [[ "\${FAKE_GIT_STATUS:-clean}" == dirty ]] && printf ' M container/Dockerfile\\n'
+    state="\${FAKE_GIT_STATUS:-clean}"
+    if [[ -n "\${FAKE_GIT_STATUS2:-}" ]] && repeat_read status "$2"; then
+      state="$FAKE_GIT_STATUS2"
+    fi
+    [[ "$state" == dirty ]] && printf ' M container/Dockerfile\\n'
     exit 0
     ;;
   *)
@@ -524,6 +544,52 @@ describe('scripts/evals-container', () => {
     }
   });
 
+  // One test per recorded value, so a launcher that re-reads only some of them
+  // is caught; each is its own test to stay inside the per-test time limit.
+  for (const { name, target, moved } of [
+    {
+      name: 'evals commit',
+      target: 'evals',
+      moved: { FAKE_GIT_HEAD2: 'b'.repeat(40) },
+    },
+    {
+      name: 'gauntlet commit',
+      target: 'gauntlet',
+      moved: { FAKE_GIT_HEAD2: 'b'.repeat(40) },
+    },
+    {
+      name: 'container clean',
+      target: 'evals',
+      moved: { FAKE_GIT_STATUS2: 'dirty' },
+    },
+    {
+      name: 'gauntlet clean',
+      target: 'gauntlet',
+      moved: { FAKE_GIT_STATUS2: 'dirty' },
+    },
+  ]) {
+    test(`build fails when the ${name} moves during the build`, () => {
+      const harness = makeHarness();
+      writeFakeGit(harness, {
+        FAKE_GIT_HEAD: 'a'.repeat(40),
+        FAKE_GIT_CHANGE_DIR:
+          target === 'evals' ? REPO : realpathSync(harness.gauntletRoot),
+        ...moved,
+      });
+      try {
+        const proc = runWrapper(harness, ['build']);
+        // The fake docker build exits 0, so only the re-read can fail this.
+        expect(proc.status).not.toBe(0);
+        expect(proc.stderr).toContain(
+          'the build source changed during the build; rebuild',
+        );
+        expect(proc.stderr).toContain(`changed: ${name}`);
+      } finally {
+        rmSync(harness.root, { recursive: true, force: true });
+      }
+    });
+  }
+
   test('the Dockerfile declares the build source after its last RUN', () => {
     const lines = readFileSync(
       join(REPO, 'container', 'Dockerfile'),
@@ -698,6 +764,79 @@ describe('scripts/evals-container', () => {
       const mount = mountForTarget(args, '/run/evals/credentials.env');
       expectMountSource(mount, envFile);
       expectReadonly(mount);
+    } finally {
+      rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
+  test('up refuses an env file that sets or unsets a reserved image name', () => {
+    // container/bin/quorum sources the file after Docker supplies the image's
+    // environment, so any of these would replace the recorded build source.
+    for (const line of [
+      'QUORUM_IMAGE_EVALS_COMMIT=aaaa',
+      'export QUORUM_IMAGE_GAUNTLET_COMMIT=aaaa',
+      'unset QUORUM_IMAGE_CONTAINER_CLEAN',
+    ]) {
+      const harness = makeHarness();
+      try {
+        const superpowersRoot = makeSuperpowersRoot(harness.root);
+        const envFile = join(harness.root, 'reserved.env');
+        writeFileSync(envFile, `OPENAI_API_KEY=sk-test\n${line}\n`);
+        const proc = runWrapper(harness, [
+          '--superpowers-root',
+          superpowersRoot,
+          '--env-file',
+          envFile,
+          'up',
+        ]);
+
+        expect(proc.error).toBeUndefined();
+        expect(proc.status).not.toBe(0);
+        expect(proc.stderr).toContain(realpathSync(envFile));
+        expect(proc.stderr).toContain('QUORUM_IMAGE_');
+        expect(proc.stderr).toContain('reserved');
+        expect(dockerCommandsNamed(harness.dockerLog, 'run')).toEqual([]);
+      } finally {
+        rmSync(harness.root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  test('up accepts an env file that only mentions a reserved image name in a comment', () => {
+    const harness = makeHarness();
+    try {
+      const superpowersRoot = makeSuperpowersRoot(harness.root);
+      const envFile = join(harness.root, 'commented.env');
+      writeFileSync(
+        envFile,
+        '# QUORUM_IMAGE_EVALS_COMMIT=x\nOPENAI_API_KEY=sk-test\n',
+      );
+      const proc = runWrapper(harness, [
+        '--superpowers-root',
+        superpowersRoot,
+        '--env-file',
+        envFile,
+        'up',
+      ]);
+
+      expect(proc.error).toBeUndefined();
+      expect(proc.status).toBe(0);
+      expect(dockerCommandsNamed(harness.dockerLog, 'run')).toHaveLength(1);
+    } finally {
+      rmSync(harness.root, { recursive: true, force: true });
+    }
+  });
+
+  test('build does not read the env file, so a reserved name there does not stop it', () => {
+    const harness = makeHarness();
+    try {
+      const envFile = join(harness.root, 'reserved.env');
+      writeFileSync(envFile, 'QUORUM_IMAGE_EVALS_COMMIT=aaaa\n');
+      const proc = runWrapper(harness, ['--env-file', envFile, 'build']);
+
+      expect(proc.error).toBeUndefined();
+      expect(proc.status).toBe(0);
+      expect(dockerCommandsNamed(harness.dockerLog, 'build')).toHaveLength(1);
     } finally {
       rmSync(harness.root, { recursive: true, force: true });
     }
