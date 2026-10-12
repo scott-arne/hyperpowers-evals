@@ -89,6 +89,36 @@ test('readDashboardVerdict returns null for unparseable JSON', () => {
   expect(readDashboardVerdict(dir)).toBeNull();
 });
 
+test('readDashboardVerdict: a verdict beside a live pid reads null and is not cached; the one on disk after the writer exits is what reads', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'verdict-'));
+  writeFileSync(
+    join(dir, 'phase.json'),
+    JSON.stringify({ phase: 'agent', updated_at: 'x', pid: process.pid }),
+  );
+  writeFileSync(join(dir, 'verdict.json'), JSON.stringify({ final: 'pass' }));
+  expect(readDashboardVerdict(dir)).toBeNull();
+  writeFileSync(
+    join(dir, 'phase.json'),
+    JSON.stringify({ phase: 'checks', updated_at: 'x', pid: 2147483646 }),
+  );
+  writeFileSync(join(dir, 'verdict.json'), JSON.stringify({ final: 'fail' }));
+  expect(readDashboardVerdict(dir)?.final).toBe('fail');
+});
+
+test('readDashboardVerdict: a phase file that exists but cannot be read is never taken as a finished run', () => {
+  for (const body of ['', '{"phase":"agent"']) {
+    const dir = mkdtempSync(join(tmpdir(), 'verdict-'));
+    writeFileSync(join(dir, 'phase.json'), body);
+    writeFileSync(join(dir, 'verdict.json'), JSON.stringify({ final: 'pass' }));
+    expect(readDashboardVerdict(dir)).toBeNull();
+    writeFileSync(
+      join(dir, 'phase.json'),
+      JSON.stringify({ phase: 'checks', updated_at: 'x', pid: 2147483646 }),
+    );
+    expect(readDashboardVerdict(dir)?.final).toBe('pass');
+  }
+});
+
 // --- scanResults: helpers ----------------------------------------------------
 
 function writeRun(
@@ -191,11 +221,22 @@ test('scanResults: running phase is taken verbatim from phase.json', () => {
   expect(cell?.running?.phase).toBe('setup');
 });
 
-test('AUTHORITY RULE: verdict present means phase.json is ignored (not running)', () => {
+test('AUTHORITY RULE: a verdict beside a live pid is not trusted; the run shows as running', () => {
   const root = mkdtempSync(join(tmpdir(), 'res-'));
   writeRun(root, 's-claude-20260612T000000Z-aaaa', {
     verdict: { final: 'pass', economics: { total_est_cost_usd: 1 } },
     phase: { phase: 'agent', updated_at: 'x', pid: process.pid },
+  });
+  const cell = scanResults(root, AGENTS).cells.get(cellKey('s', 'claude'));
+  expect(cell?.running?.phase).toBe('agent');
+  expect(cell?.window.length).toBe(0);
+});
+
+test('AUTHORITY RULE: once the phase pid is dead, the verdict is the record', () => {
+  const root = mkdtempSync(join(tmpdir(), 'res-'));
+  writeRun(root, 's-claude-20260612T000000Z-aaaa', {
+    verdict: { final: 'pass', economics: { total_est_cost_usd: 1 } },
+    phase: { phase: 'checks', updated_at: 'x', pid: 2147483646 },
   });
   const cell = scanResults(root, AGENTS).cells.get(cellKey('s', 'claude'));
   expect(cell?.running).toBeNull();

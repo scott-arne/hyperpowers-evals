@@ -38,11 +38,10 @@ export type PhaseJson = z.infer<typeof PhaseJsonSchema>;
 // The narrow read-side view of verdict.json — only the fields the grid needs.
 // Every field is `.catch`-guarded so a single wrong-typed field never sinks the
 // whole parse: a malformed/legacy/externally-edited verdict still reads as a
-// PRESENT verdict. This preserves the authority rule — once verdict.json exists,
-// phase.json is ignored for that dir — for off-happy-path files too. A
-// non-string `final` degrades to undefined (the read-side then collapses it to
-// 'unknown'); a non-number cost degrades to null (rendered "cost unknown", never
-// $0).
+// PRESENT verdict once its run is over (scan.ts trusts a verdict only after the
+// process phase.json names has exited). A non-string `final` degrades to
+// undefined (the read-side then collapses it to 'unknown'); a non-number cost
+// degrades to null (rendered "cost unknown", never $0).
 export const DashboardVerdictSchema = z.object({
   final: z.string().optional().catch(undefined),
   economics: z
@@ -69,7 +68,8 @@ export interface RunRecord {
   readonly finished_at: string | null;
 }
 
-// An in-flight run: a dir with phase.json + a live pid and no verdict yet.
+// An in-flight run: a dir whose phase.json names a live pid, whatever else it
+// holds; a verdict there is not trusted until that process exits.
 export interface RunningRun {
   readonly run_id: string;
   readonly phase: string;
