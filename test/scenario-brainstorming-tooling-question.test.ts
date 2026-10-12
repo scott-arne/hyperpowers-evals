@@ -17,10 +17,10 @@
 //
 // The stub now answers `task` with the shape each caller expects and logs every
 // invocation, a check reads that log to prove the spec gate fired, and the
-// heading match tolerates a section number. Every case below runs the
-// scenario's own stub and evaluates the scenario's own check strings, both read
-// out of the scenario files rather than restated here, so this test fails if
-// either drifts.
+// heading match tolerates a section number. Every case below runs the stub the
+// scenario installs and evaluates the scenario's own check strings, both read
+// from the files the scenario uses rather than restated here, so this test
+// fails if either drifts.
 
 import { afterAll, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -67,17 +67,26 @@ function assertion(needle: string): string {
   return quoted[1] as string;
 }
 
-/** The seeded Codex stub, verbatim from the scenario's setup.sh. */
+/**
+ * The seeded Codex stub: the fixture the scenario's setup.sh installs through
+ * seed_codex_approve_stub. Failing when setup.sh stops naming the helper keeps
+ * this oracle tied to what the scenario actually installs.
+ */
 function stubSource(): string {
   const setup = readFileSync(join(SCENARIO, 'setup.sh'), 'utf8');
-  const heredoc =
-    /cat > "\$SCRIPTS_DIR\/codex-companion\.mjs" <<'STUB'\n([\s\S]*?)\nSTUB\n/.exec(
-      setup,
-    );
-  if (heredoc === null) {
-    throw new Error('setup.sh no longer writes codex-companion.mjs');
+  if (!setup.includes('setup-helpers run seed_codex_approve_stub')) {
+    throw new Error('setup.sh no longer installs the shared Codex stub');
   }
-  return heredoc[1] as string;
+  return readFileSync(
+    resolve(
+      import.meta.dir,
+      '..',
+      'fixtures',
+      'codex-stubs',
+      'approve-companion.mjs',
+    ),
+    'utf8',
+  );
 }
 
 const scratch = mkdtempSync(join(tmpdir(), 'tooling-question-oracle-'));

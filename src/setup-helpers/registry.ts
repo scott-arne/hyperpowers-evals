@@ -1,8 +1,8 @@
-// The dispatch table for `setup-helpers run <helper>`. Holds only the 36
+// The dispatch table for `setup-helpers run <helper>`. Holds only the 37
 // dispatchable (workdir-style) helpers; the two library-only entries
 // addWorktree/detachHead are intentionally absent (no scenario dispatches them).
 // KNOWN_HELPER_NAMES re-adds those two so `quorum check` validates against the
-// full 38-name set.
+// full 39-name set.
 
 import { createBaseRepo, recordHead } from './base.ts';
 import {
@@ -15,6 +15,7 @@ import {
   createPhantomCompletion,
   createReviewPushback,
 } from './behavior-fixtures.ts';
+import { seedCodexApproveStub } from './codex-approve-stub.ts';
 import { seedCodexPluginCc } from './codex-seed.ts';
 import type { Helper, HelperContext } from './context.ts';
 import {
@@ -123,9 +124,10 @@ export const REGISTRY: Record<string, RegistryEntry> = {
   create_cost_large_files: { fn: createCostLargeFiles },
   record_head: { fn: recordHeadHelper },
   seed_codex_plugin_cc: { fn: seedCodexPluginCc },
+  seed_codex_approve_stub: { fn: seedCodexApproveStub },
 };
 
-// The full Python HELPER_REGISTRY key set (37) — the 35 dispatchable plus the
+// The full Python HELPER_REGISTRY key set (39) — the 37 dispatchable plus the
 // two library-only names. This is the validation set `quorum check` uses, so it
 // must match Python's keys exactly (which include add_worktree/detach_head).
 export const KNOWN_HELPER_NAMES: ReadonlySet<string> = new Set<string>([

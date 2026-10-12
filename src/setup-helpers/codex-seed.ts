@@ -19,7 +19,7 @@ import type { HelperContext } from './context.ts';
 // before running setup.sh, so dirname(workdir)/home is the agent's home and
 // already exists. (src/runner/index.ts: workdir = join(runDir,
 // 'coding-agent-workdir'); runHomeDir = join(runDir, 'home').)
-function agentHomeFromWorkdir(workdir: string): string {
+export function agentHomeFromWorkdir(workdir: string): string {
   return join(dirname(workdir), 'home');
 }
 
@@ -208,7 +208,7 @@ process.exit(0);
 // installed_plugins.json shape the probe reads: plugins["codex@openai-codex"] is
 // an array of install records; the probe picks the newest record whose
 // scripts/codex-companion.mjs exists. We seed exactly one, pointing at the stub.
-function registryJson(installPath: string): string {
+export function registryJson(installPath: string): string {
   return `${JSON.stringify(
     {
       version: 2,
