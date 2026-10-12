@@ -520,6 +520,7 @@ describe('shim forms', () => {
   const C = 'c'.repeat(40);
   const D = 'd'.repeat(40);
   const E = 'e'.repeat(40);
+  const F = 'f'.repeat(40);
   // /opt/homebrew and /opt are repositories here, so any fallback to the last
   // absolute token, or to the shim's own directory, records the wrong commit.
   // /repos/a stands for what a symlink named a leads to: a path that keeps
@@ -529,6 +530,9 @@ describe('shim forms', () => {
     '/repos/gauntlet': { head: B, status: '' },
     '/repos/tools': { head: D, status: '' },
     '/repos/a': { head: E, status: '' },
+    // Shares a prefix with /repos/gauntlet up to the space, which is where a
+    // whitespace split cuts a quoted path.
+    '/repos/gauntlet worktree': { head: F, status: '' },
     '/opt/homebrew': { head: C, status: '' },
     '/opt': { head: C, status: '' },
   });
@@ -625,10 +629,36 @@ describe('shim forms', () => {
     ['a variable suffix', `cd "$(dirname "$0")/$SUB"${trap}`],
     ['a suffix without a leading slash', `cd "$(dirname "$0")suffix"${trap}`],
     ['a nested substitution', `cd "$(dirname "$(readlink -f "$0")")"${trap}`],
+    // /repos/gauntlet is a directory, so a fragment read off an uncertain word
+    // would resolve to it.
+    ['an unbalanced operand', `cd "/repos/gauntlet${trap}`],
+    ['mixed quoting', `cd /repos/"gauntlet"${trap}`],
+    ['an expansion in double quotes', `cd "/repos/$X"${trap}`],
+    ['an unbalanced option word', `cd "-P /repos/gauntlet${trap}`],
   ])('an unresolved cd records no checkout: %s', (_label, body) => {
     expect(shimAt('/opt/bin/gauntlet', body)).toEqual(
       unresolved('/opt/bin/gauntlet'),
     );
+  });
+
+  test.each([
+    ['double quotes', `cd "/repos/gauntlet worktree"${trap}`],
+    ['single quotes', `cd '/repos/gauntlet worktree'${trap}`],
+  ])('a quoted operand with a space resolves to the full path: %s', (_label, body) => {
+    expect(
+      shimAt('/opt/bin/gauntlet', body, { '/repos/gauntlet worktree': 'dir' }),
+    ).toEqual({
+      path: '/opt/bin/gauntlet',
+      checkout: '/repos/gauntlet worktree',
+      commit: F,
+      clean: true,
+    });
+  });
+
+  test('a token with an unbalanced quote is skipped by the older rule, not stripped to a path', () => {
+    const found = shimAt('/opt/bin/gauntlet', 'exec "/repos/gauntlet');
+    expect(found.checkout).not.toBe('/repos/gauntlet');
+    expect(found.commit).not.toBe(B);
   });
 
   // bash's cd fails on a file, so the shim never reaches its exec; the parent
