@@ -1,4 +1,5 @@
 import { renameSync, rmSync, writeFileSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 
 // The live phase vocabulary the runner owns. `grade` is intentionally absent
@@ -18,8 +19,11 @@ const NODE_FS: PhaseFs = { writeFileSync, renameSync, rmSync };
 
 // Write <runDir>/phase.json at a boundary the runner owns. `pid` is the
 // `quorum run` process id; the dashboard uses it for liveness (phase mtime is
-// not a liveness signal — a phase can last tens of minutes). The file stops
-// updating once verdict.json is written (verdict.json is the done signal).
+// not a liveness signal — a phase can last tens of minutes). `host` names the
+// machine that pid belongs to: the dashboard probes the pid only for a phase
+// written on its own host, since a container's pid belongs to another namespace.
+// The file stops updating once verdict.json is written (verdict.json is the
+// done signal).
 // The new phase goes to a temporary file that is renamed over phase.json: a
 // direct write truncates first, and the dashboard reading that empty or
 // partial file took the run for finished. A failed rename leaves the previous
@@ -33,6 +37,7 @@ export function writePhase(
     phase,
     updated_at: new Date().toISOString(),
     pid: process.pid,
+    host: hostname(),
   };
   const target = join(runDir, 'phase.json');
   const tmp = join(runDir, `phase.json.tmp-${process.pid}`);

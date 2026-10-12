@@ -7,17 +7,18 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { type PhaseFs, writePhase } from '../src/runner/phase.ts';
 
-test('writePhase writes {phase, updated_at, pid}', () => {
+test('writePhase writes {phase, updated_at, pid, host}', () => {
   const dir = mkdtempSync(join(tmpdir(), 'phase-'));
   writePhase(dir, 'agent');
   const j = JSON.parse(readFileSync(join(dir, 'phase.json'), 'utf8'));
   expect(j.phase).toBe('agent');
   expect(typeof j.pid).toBe('number');
   expect(j.pid).toBe(process.pid);
+  expect(j.host).toBe(hostname());
   expect(typeof j.updated_at).toBe('string');
   expect(
     readdirSync(dir).filter((n) => n.startsWith('phase.json.tmp-')),

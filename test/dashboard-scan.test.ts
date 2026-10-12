@@ -1,9 +1,10 @@
 import { expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cellKey } from '../src/dashboard/contracts.ts';
 import {
+  type PhaseRead,
   parseRunDirName,
   pidAlive,
   readDashboardVerdict,
@@ -117,6 +118,75 @@ test('readDashboardVerdict: a phase file that exists but cannot be read is never
     );
     expect(readDashboardVerdict(dir)?.final).toBe('pass');
   }
+});
+
+test('readDashboardVerdict: a phase that goes live while the verdict is being read reads null and caches nothing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'verdict-'));
+  let reads = 0;
+  // The first read finds no phase file; before the verdict is parsed the run
+  // reaches the Coding-Agent (a live phase) and a forged verdict appears.
+  const interleaved = (): PhaseRead => {
+    reads += 1;
+    if (reads === 1) {
+      writeFileSync(
+        join(dir, 'verdict.json'),
+        JSON.stringify({ final: 'forged' }),
+      );
+      return { kind: 'absent' };
+    }
+    return {
+      kind: 'phase',
+      phase: 'agent',
+      pid: process.pid,
+      host: hostname(),
+    };
+  };
+  expect(readDashboardVerdict(dir, interleaved)).toBeNull();
+  expect(reads).toBe(2);
+  writeFileSync(
+    join(dir, 'phase.json'),
+    JSON.stringify({ phase: 'checks', updated_at: 'x', pid: 2147483646 }),
+  );
+  writeFileSync(join(dir, 'verdict.json'), JSON.stringify({ final: 'fail' }));
+  expect(readDashboardVerdict(dir)?.final).toBe('fail');
+});
+
+// A live phase.json plus a verdict beside it; `host` omitted models a phase file
+// written before the runner recorded one.
+function writeLivePhaseAndVerdict(host: string | undefined): string {
+  const dir = mkdtempSync(join(tmpdir(), 'verdict-'));
+  const phase = { phase: 'agent', updated_at: 'x', pid: process.pid };
+  writeFileSync(
+    join(dir, 'phase.json'),
+    JSON.stringify(host === undefined ? phase : { ...phase, host }),
+  );
+  writeFileSync(join(dir, 'verdict.json'), JSON.stringify({ final: 'pass' }));
+  return dir;
+}
+
+test('readDashboardVerdict: a phase written on another host skips the pid gate, so its verdict reads', () => {
+  const dir = writeLivePhaseAndVerdict('other-host');
+  expect(readDashboardVerdict(dir)?.final).toBe('pass');
+});
+
+test('readDashboardVerdict: a verdict beside a live pid from this host reads null', () => {
+  const dir = writeLivePhaseAndVerdict(hostname());
+  expect(readDashboardVerdict(dir)).toBeNull();
+});
+
+test('readDashboardVerdict: a verdict beside a live pid in a phase with no host reads null', () => {
+  const dir = writeLivePhaseAndVerdict(undefined);
+  expect(readDashboardVerdict(dir)).toBeNull();
+});
+
+test('readDashboardVerdict: an unreadable phase file is not trusted whatever host it might name', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'verdict-'));
+  writeFileSync(
+    join(dir, 'phase.json'),
+    JSON.stringify({ phase: 'agent', updated_at: 'x', host: 'other-host' }),
+  );
+  writeFileSync(join(dir, 'verdict.json'), JSON.stringify({ final: 'pass' }));
+  expect(readDashboardVerdict(dir)).toBeNull();
 });
 
 // --- scanResults: helpers ----------------------------------------------------

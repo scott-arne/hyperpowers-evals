@@ -27,11 +27,14 @@ export type RunFinal = 'pass' | 'fail' | 'indeterminate' | 'unknown';
 
 // phase.json, written by the runner at each boundary it owns (Task 2). `pid` is
 // the `quorum run` process id — required, since liveness comes from it (phase
-// mtime is NOT a liveness signal: a phase can last tens of minutes).
+// mtime is NOT a liveness signal: a phase can last tens of minutes). `host` is
+// the machine the pid belongs to; optional, because a file written before it
+// was recorded must stay valid (the reader then takes the pid as its own).
 export const PhaseJsonSchema = z.object({
   phase: z.string(),
   updated_at: z.string(),
   pid: z.number(),
+  host: z.string().optional(),
 });
 export type PhaseJson = z.infer<typeof PhaseJsonSchema>;
 
@@ -39,8 +42,8 @@ export type PhaseJson = z.infer<typeof PhaseJsonSchema>;
 // Every field is `.catch`-guarded so a single wrong-typed field never sinks the
 // whole parse: a malformed/legacy/externally-edited verdict still reads as a
 // PRESENT verdict once its run is over (scan.ts trusts a verdict only after the
-// process phase.json names has exited). A non-string `final` degrades to
-// undefined (the read-side then collapses it to 'unknown'); a non-number cost
+// same-host process phase.json names has exited). A non-string `final` degrades
+// to undefined (the read-side then collapses it to 'unknown'); a non-number cost
 // degrades to null (rendered "cost unknown", never $0).
 export const DashboardVerdictSchema = z.object({
   final: z.string().optional().catch(undefined),
@@ -69,7 +72,8 @@ export interface RunRecord {
 }
 
 // An in-flight run: a dir whose phase.json names a live pid, whatever else it
-// holds; a verdict there is not trusted until that process exits.
+// holds; a verdict beside a live pid from this host is not trusted until that
+// process exits.
 export interface RunningRun {
   readonly run_id: string;
   readonly phase: string;

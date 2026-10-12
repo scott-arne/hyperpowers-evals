@@ -25,6 +25,13 @@ test('PhaseJsonSchema requires pid (liveness signal)', () => {
   ).toBe(false);
 });
 
+test('PhaseJsonSchema takes an optional host, so a file written before it was recorded stays valid', () => {
+  const base = { phase: 'agent', updated_at: 'x', pid: 42 };
+  expect(PhaseJsonSchema.parse({ ...base, host: 'box' }).host).toBe('box');
+  expect(PhaseJsonSchema.parse(base).host).toBeUndefined();
+  expect(PhaseJsonSchema.safeParse({ ...base, host: 7 }).success).toBe(false);
+});
+
 test('DashboardVerdictSchema narrows to the read-side fields', () => {
   const v = DashboardVerdictSchema.parse({
     final: 'pass',
