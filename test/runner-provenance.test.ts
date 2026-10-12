@@ -519,12 +519,16 @@ describe('container image identity', () => {
 describe('shim forms', () => {
   const C = 'c'.repeat(40);
   const D = 'd'.repeat(40);
+  const E = 'e'.repeat(40);
   // /opt/homebrew and /opt are repositories here, so any fallback to the last
   // absolute token, or to the shim's own directory, records the wrong commit.
+  // /repos/a stands for what a symlink named a leads to: a path that keeps
+  // `a/..` as written probes it, where the lexically normalized one does not.
   const runner = fakeGit({
     '/repos/evals': { head: A, status: '' },
     '/repos/gauntlet': { head: B, status: '' },
     '/repos/tools': { head: D, status: '' },
+    '/repos/a': { head: E, status: '' },
     '/opt/homebrew': { head: C, status: '' },
     '/opt': { head: C, status: '' },
   });
@@ -567,6 +571,11 @@ describe('shim forms', () => {
       'cd X;exec',
       'cd /repos/gauntlet;exec /opt/homebrew/bin/bun run src/index.ts "$@"',
     ],
+    // Quote removal turns each of these into the plain word.
+    ['a quoted cd', `"cd" /repos/gauntlet${trap}`],
+    ['a quoted pushd', `'pushd' /repos/gauntlet${trap}`],
+    ['a quoted -P', `cd "-P" /repos/gauntlet${trap}`],
+    ['a quoted --', `cd '--' /repos/gauntlet${trap}`],
   ])('%s names the checkout', (_label, body) => {
     expect(shimAt('/opt/bin/gauntlet', body)).toEqual(
       resolved('/opt/bin/gauntlet'),
@@ -620,6 +629,105 @@ describe('shim forms', () => {
     expect(shimAt('/opt/bin/gauntlet', body)).toEqual(
       unresolved('/opt/bin/gauntlet'),
     );
+  });
+
+  // bash's cd fails on a file, so the shim never reaches its exec; the parent
+  // directory of that file is not where the shim runs.
+  test.each([
+    ['a missing directory', `cd /repos/missing${trap}`, {}],
+    [
+      'an absolute file',
+      `cd /repos/gauntlet/package.json${trap}`,
+      { '/repos/gauntlet/package.json': 'x' },
+    ],
+    [
+      'pushd on an absolute file',
+      `pushd /repos/gauntlet/package.json${trap}`,
+      { '/repos/gauntlet/package.json': 'x' },
+    ],
+    [
+      'a self-directory operand that resolves to the shim file',
+      `cd "$(dirname "$0")/gauntlet"${trap}`,
+      { '/repos/gauntlet/bin': 'dir' },
+    ],
+  ])('a cd operand that is not a directory records no checkout: %s', (_label, body, extra) => {
+    const file = body.includes('dirname')
+      ? '/repos/gauntlet/bin/gauntlet'
+      : '/opt/bin/gauntlet';
+    expect(shimAt(file, body, extra)).toEqual(unresolved(file));
+  });
+
+  // Each spelling is a directory here, so existence is not what decides: the
+  // path string the target carries is, through the repository the probe finds.
+  const physicalA = (path: string) => ({
+    path,
+    checkout: '/repos/a',
+    commit: E,
+    clean: true,
+  });
+  const throughA = { '/repos/a/../gauntlet': 'dir' } as const;
+
+  test.each([
+    ['the default is logical', 'cd /repos/a/../gauntlet'],
+    ['-L', 'cd -L /repos/a/../gauntlet'],
+    ['-P then -L: the last wins', 'cd -P -L /repos/a/../gauntlet'],
+    ['-L -P -L: the last wins', 'cd -L -P -L /repos/a/../gauntlet'],
+    ['pushd', 'pushd /repos/a/../gauntlet'],
+    ['a quoted -L after -P', 'cd -P "-L" /repos/a/../gauntlet'],
+  ])('an absolute operand is normalized lexically: %s', (_label, cd) => {
+    expect(shimAt('/opt/bin/gauntlet', `${cd}${trap}`, throughA)).toEqual(
+      resolved('/opt/bin/gauntlet'),
+    );
+  });
+
+  test.each([
+    ['-P', 'cd -P /repos/a/../gauntlet'],
+    ['-L then -P: the last wins', 'cd -L -P /repos/a/../gauntlet'],
+    ['-P -L -P: the last wins', 'cd -P -L -P /repos/a/../gauntlet'],
+    ['-P after -e', 'cd -e -P /repos/a/../gauntlet'],
+    ['a quoted -P', 'cd -L "-P" /repos/a/../gauntlet'],
+  ])('-P keeps an absolute operand as written: %s', (_label, cd) => {
+    expect(shimAt('/opt/bin/gauntlet', `${cd}${trap}`, throughA)).toEqual(
+      physicalA('/opt/bin/gauntlet'),
+    );
+  });
+
+  const fromTools = {
+    '/repos/tools/bin': 'dir',
+    '/repos/tools/bin/../../gauntlet': 'dir',
+  } as const;
+  const toolsBin = '/repos/tools/bin/gauntlet';
+
+  test.each([
+    ['the default is logical', 'cd'],
+    ['-L', 'cd -L'],
+    ['-L -P -L: the last wins', 'cd -L -P -L'],
+  ])('a self-directory operand is normalized lexically: %s', (_label, cd) => {
+    expect(
+      shimAt(
+        toolsBin,
+        `${cd} "$(dirname "$0")/../../gauntlet"${trap}`,
+        fromTools,
+      ),
+    ).toEqual(resolved(toolsBin));
+  });
+
+  test.each([
+    ['-P', 'cd -P'],
+    ['-L -P: the last wins', 'cd -L -P'],
+  ])('-P appends the suffix to the shim directory as written: %s', (_label, cd) => {
+    expect(
+      shimAt(
+        toolsBin,
+        `${cd} "$(dirname "$0")/../../gauntlet"${trap}`,
+        fromTools,
+      ),
+    ).toEqual({
+      path: toolsBin,
+      checkout: '/repos/tools',
+      commit: D,
+      clean: true,
+    });
   });
 });
 

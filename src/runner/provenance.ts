@@ -98,16 +98,22 @@ export function resolveOnPath(
 
 // A shim's target. On the first line after the shebang (comment lines skipped)
 // that holds a cd or pushd segment, or an absolute path token that exists, the
-// line decides. Segments split at ; && || and |. A cd's operand skips cd's
-// options (-L -P -e -@) up to --; a pushd's operand skips only --, so
-// `pushd -n`, which does not change directory, is unresolved. An existing
-// absolute operand is the target. An operand built from the shim's own
-// location, $(dirname "$0") or $(dirname "${BASH_SOURCE[0]}") with or without
-// outer double quotes, plus a suffix that is empty or a literal path starting
-// with /, is resolved against the directory of the path found on PATH, which is
-// what $0 holds when the shim runs. Any other operand leaves the shim
-// unresolved: it records no checkout rather than guess, because a fallback to
-// the last absolute token picks up an interpreter such as
+// line decides. Segments split at ; && || and |. The command word and the
+// option words are read as the shell reads them, with their quotes removed, so
+// "cd" and cd "-P" are cd and cd -P. A cd's operand skips cd's options
+// (-L -P -e -@) up to --; a pushd's operand skips only --, so `pushd -n`, which
+// does not change directory, is unresolved. The operand must be an existing
+// directory, because the shell's cd fails on anything else and the shim never
+// reaches its exec. An absolute operand is the target. An operand built from
+// the shim's own location, $(dirname "$0") or $(dirname "${BASH_SOURCE[0]}")
+// with or without outer double quotes, plus a suffix that is empty or a literal
+// path starting with /, is resolved against the directory of the path found on
+// PATH, which is what $0 holds when the shim runs. The last of -L and -P picks
+// how a `..` is read, as in the shell: logical (the default) removes it
+// lexically, so the path is normalized, and physical follows symlinks first, so
+// the path is kept as written for the operating system to resolve. Any other
+// operand leaves the shim unresolved: it records no checkout rather than guess,
+// because a fallback to the last absolute token picks up an interpreter such as
 // /opt/homebrew/bin/bun, whose directory is itself a git checkout. A line with
 // no cd or pushd keeps the older rule: its last existing absolute token. null
 // is a file without a shebang (a binary), or a script with neither, and both
@@ -132,15 +138,18 @@ function cdTarget(
   deps: ProvenanceDeps,
 ): ShimTarget {
   let text = rest.trim();
+  let physical = false;
   for (;;) {
     const m = /^(\S+)\s*/.exec(text);
     if (m === null) break;
-    const token = m[1] as string;
+    const token = unquote(m[1] as string);
     if (token === '--') {
       text = text.slice(m[0].length);
       break;
     }
     if (command === 'cd' && CD_OPTIONS.has(token)) {
+      if (token === '-P') physical = true;
+      if (token === '-L') physical = false;
       text = text.slice(m[0].length);
       continue;
     }
@@ -148,17 +157,20 @@ function cdTarget(
   }
   text = text.trim();
   const self = SELF_DIR.exec(text);
-  if (self !== null) {
-    const p = normalize(join(shimDir, self[2] ?? ''));
-    return deps.exists(p)
-      ? { kind: 'target', path: p }
-      : { kind: 'unresolved' };
-  }
   const operand = unquote(text.split(/\s+/)[0] ?? '');
-  if (operand.startsWith('/') && deps.exists(operand)) {
-    return { kind: 'target', path: operand };
+  let path: string;
+  if (self !== null) {
+    const suffix = self[2] ?? '';
+    // join would normalize, which a physical cd must not do.
+    path = physical ? shimDir + suffix : normalize(join(shimDir, suffix));
+  } else if (operand.startsWith('/')) {
+    path = physical ? operand : normalize(operand);
+  } else {
+    return { kind: 'unresolved' };
   }
-  return { kind: 'unresolved' };
+  return deps.isDirectory(path)
+    ? { kind: 'target', path }
+    : { kind: 'unresolved' };
 }
 
 export function shimTarget(file: string, deps: ProvenanceDeps): ShimTarget {
@@ -168,9 +180,10 @@ export function shimTarget(file: string, deps: ProvenanceDeps): ShimTarget {
     if (line.trimStart().startsWith('#')) continue;
     let last: string | null = null;
     for (const segment of line.split(/&&|\|\||;|\|/)) {
-      const cd = /^\s*(cd|pushd)(?:\s+(.*))?$/.exec(segment);
-      if (cd !== null) {
-        return cdTarget(cd[1] as string, cd[2] ?? '', dirname(file), deps);
+      const word = /^\s*(\S+)(?:\s+(.*))?$/.exec(segment);
+      const command = word === null ? '' : unquote(word[1] as string);
+      if (command === 'cd' || command === 'pushd') {
+        return cdTarget(command, word?.[2] ?? '', dirname(file), deps);
       }
       for (const raw of segment.split(/\s+/)) {
         const token = unquote(raw);
