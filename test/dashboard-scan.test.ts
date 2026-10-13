@@ -189,6 +189,23 @@ test('readDashboardVerdict: an unreadable phase file is not trusted whatever hos
   expect(readDashboardVerdict(dir)).toBeNull();
 });
 
+test('readDashboardVerdict: a verdict beside a done phase reads even though the process named in it is alive', () => {
+  // A --repeat process stays alive across trials, so a finished trial's phase
+  // names a live pid; `done` is the runner saying it is finished with the dir.
+  const dir = mkdtempSync(join(tmpdir(), 'verdict-'));
+  writeFileSync(
+    join(dir, 'phase.json'),
+    JSON.stringify({
+      phase: 'done',
+      updated_at: 'x',
+      pid: process.pid,
+      host: hostname(),
+    }),
+  );
+  writeFileSync(join(dir, 'verdict.json'), JSON.stringify({ final: 'pass' }));
+  expect(readDashboardVerdict(dir)?.final).toBe('pass');
+});
+
 // --- scanResults: helpers ----------------------------------------------------
 
 function writeRun(
@@ -312,6 +329,45 @@ test('AUTHORITY RULE: once the phase pid is dead, the verdict is the record', ()
   expect(cell?.running).toBeNull();
   expect(cell?.window.length).toBe(1);
   expect(cell?.window[0]?.final).toBe('pass');
+});
+
+test('scanResults: a --repeat process shows its finished trials while a later trial runs', () => {
+  const root = mkdtempSync(join(tmpdir(), 'res-'));
+  const writer = { updated_at: 'x', pid: process.pid, host: hostname() };
+  writeRun(root, 's-claude-20260612T000000Z-aaaa', {
+    verdict: { final: 'pass', economics: { total_est_cost_usd: 1 } },
+    phase: { phase: 'done', ...writer },
+  });
+  writeRun(root, 's-claude-20260612T000100Z-bbbb', {
+    verdict: { final: 'fail', economics: { total_est_cost_usd: 2 } },
+    phase: { phase: 'done', ...writer },
+  });
+  writeRun(root, 's-claude-20260612T000200Z-cccc', {
+    phase: { phase: 'agent', ...writer },
+  });
+  const cell = scanResults(root, AGENTS).cells.get(cellKey('s', 'claude'));
+  expect(cell?.window.map((r) => r.final)).toEqual(['pass', 'fail']);
+  expect(cell?.running?.run_id).toBe('s-claude-20260612T000200Z-cccc');
+  expect(cell?.running?.phase).toBe('agent');
+});
+
+test('ABANDONED EXCLUSION: a done phase without a readable verdict is not shown as running', () => {
+  const writer = { updated_at: 'x', pid: process.pid, host: hostname() };
+  const missing = mkdtempSync(join(tmpdir(), 'res-'));
+  writeRun(missing, 's-claude-20260612T000000Z-aaaa', {
+    phase: { phase: 'done', ...writer },
+  });
+  expect(scanResults(missing, AGENTS).cells.size).toBe(0);
+
+  const unparseable = mkdtempSync(join(tmpdir(), 'res-'));
+  writeRun(unparseable, 's-claude-20260612T000000Z-aaaa', {
+    phase: { phase: 'done', ...writer },
+  });
+  writeFileSync(
+    join(unparseable, 's-claude-20260612T000000Z-aaaa', 'verdict.json'),
+    '{ not json',
+  );
+  expect(scanResults(unparseable, AGENTS).cells.size).toBe(0);
 });
 
 test('ABANDONED EXCLUSION: dead-pid phase.json with no verdict omits the cell', () => {
