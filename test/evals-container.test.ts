@@ -275,9 +275,9 @@ function writeDockerState(
 function runWrapper(
   harness: ReturnType<typeof makeHarness>,
   args: string[],
-  options: { cwd?: string } = {},
+  options: { cwd?: string; wrapper?: string } = {},
 ): ReturnType<typeof spawnSync> {
-  return spawnSync(WRAPPER, args, {
+  return spawnSync(options.wrapper ?? WRAPPER, args, {
     cwd: options.cwd,
     env: harness.env,
     encoding: 'utf8',
@@ -803,6 +803,68 @@ describe('scripts/evals-container', () => {
         rmSync(harness.root, { recursive: true, force: true });
       }
     });
+  }
+
+  // The evals root's own .env.container is selected without a flag, so an
+  // existing container is reused with no mount change, yet the file is
+  // bind-mounted live and an edit made after creation reaches the next quorum.
+  // The guard therefore has to fire in every state `up` can find. The launcher
+  // takes its evals root from its own location, so each test runs a copy that
+  // sits in a temp root owning the env file.
+  for (const state of ['absent', 'stopped', 'running'] as const) {
+    for (const content of ['reserved', 'clean'] as const) {
+      const label =
+        state === 'absent' ? 'no container' : `a ${state} container`;
+      test(`up with ${label} and an auto-selected ${content} env file`, () => {
+        const harness = makeHarness();
+        try {
+          const evalsRoot = join(harness.root, 'evals');
+          mkdirSync(join(evalsRoot, 'scripts'), { recursive: true });
+          const wrapper = join(evalsRoot, 'scripts', 'evals-container');
+          writeFileSync(wrapper, readFileSync(WRAPPER, 'utf8'));
+          chmodSync(wrapper, 0o755);
+          const envFile = join(evalsRoot, '.env.container');
+          writeFileSync(
+            envFile,
+            content === 'reserved'
+              ? 'OPENAI_API_KEY=sk-test\nQUORUM_IMAGE_EVALS_COMMIT=aaaa\n'
+              : 'OPENAI_API_KEY=sk-test\n',
+          );
+          const name = 'evals-auto-env-container';
+          if (state !== 'absent') {
+            writeDockerState(harness, {
+              exists: true,
+              running: state === 'running',
+              name,
+            });
+          }
+          const proc = runWrapper(harness, ['--name', name, 'up'], { wrapper });
+          const runs = dockerCommandsNamed(harness.dockerLog, 'run');
+          const starts = dockerCommandsNamed(harness.dockerLog, 'start');
+
+          expect(proc.error).toBeUndefined();
+          if (content === 'reserved') {
+            expect(proc.status).not.toBe(0);
+            expect(proc.stderr).toContain(realpathSync(envFile));
+            expect(proc.stderr).toContain('QUORUM_IMAGE_');
+            expect(proc.stderr).toContain('reserved');
+            expect(runs).toEqual([]);
+            expect(starts).toEqual([]);
+          } else {
+            expect(proc.status).toBe(0);
+            expect(runs).toHaveLength(state === 'absent' ? 1 : 0);
+            expect(starts.map((args) => args.slice(1))).toEqual(
+              state === 'stopped' ? [[name]] : [],
+            );
+            if (state === 'running') {
+              expect(proc.stdout).toBe(`${name}\n`);
+            }
+          }
+        } finally {
+          rmSync(harness.root, { recursive: true, force: true });
+        }
+      });
+    }
   }
 
   test('up accepts an env file that only mentions a reserved image name in a comment', () => {
