@@ -929,6 +929,10 @@ export async function runScenario(
     join(runDir, 'verdict.json'),
     `${JSON.stringify(identified, null, 2)}\n`,
   );
+  // After the verdict, never before: a --repeat process stays alive across
+  // trials, and the dashboard would otherwise distrust this verdict until the
+  // last trial's process exits.
+  writePhase(runDir, 'done');
   return { runDir, verdict: identified };
 }
 

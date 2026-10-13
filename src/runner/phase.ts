@@ -2,10 +2,11 @@ import { renameSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 
-// The live phase vocabulary the runner owns. `grade` is intentionally absent
-// (build spec: the gauntlet event stream carries no grade-start marker; done is
-// signalled by verdict.json appearing, not a phase).
-export type RunPhase = 'setup' | 'agent' | 'checks';
+// The phase vocabulary the runner owns. `grade` is intentionally absent (build
+// spec: the gauntlet event stream carries no grade-start marker). A trial writes
+// `done` after its verdict, so a reader knows the writer is finished with this
+// run directory even while the process lives on to another trial.
+export type RunPhase = 'setup' | 'agent' | 'checks' | 'done';
 
 // The three filesystem calls writePhase makes, injectable so a test can watch
 // the order and fail the rename.
@@ -22,7 +23,7 @@ const NODE_FS: PhaseFs = { writeFileSync, renameSync, rmSync };
 // not a liveness signal — a phase can last tens of minutes). `host` names the
 // machine that pid belongs to: the dashboard probes the pid only for a phase
 // written on its own host, since a container's pid belongs to another namespace.
-// The file stops updating once verdict.json is written (verdict.json is the
+// The file stops updating once `done` follows verdict.json (verdict.json is the
 // done signal).
 // The new phase goes to a temporary file that is renamed over phase.json: a
 // direct write truncates first, and the dashboard reading that empty or

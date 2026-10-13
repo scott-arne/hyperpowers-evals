@@ -74,24 +74,27 @@ export function pidAlive(pid: number): boolean {
 
 // A verdict is trusted only once the process that writes it has exited: the
 // Coding-Agent can write the run dir, so a verdict.json that appears while
-// phase.json names a live pid may not be quorum's. That pid is probed only for a
-// phase written on this host (or by a runner that recorded no host): a
-// container's pid belongs to another namespace, so a phase from another host
-// leaves the verdict trusted, as it was before the gate. A verdict read after
-// that is final, so a path-keyed cache of it never has to invalidate. Absence is
-// transient (a live dir has no trusted verdict yet), so a miss is never cached;
-// caching null would pin a live dir as verdict-less forever and break the
-// running -> done transition the scanner drives.
+// phase.json names a live pid may not be quorum's, unless that phase is `done`,
+// which the runner writes after the verdict (one process runs every trial of a
+// --repeat). That pid is probed only for a phase written on this host (or by a
+// runner that recorded no host): a container's pid belongs to another
+// namespace, so a phase from another host leaves the verdict trusted, as it was
+// before the gate. A verdict read after that is final, so a path-keyed cache of
+// it never has to invalidate. Absence is transient (a live dir has no trusted
+// verdict yet), so a miss is never cached; caching null would pin a live dir as
+// verdict-less forever and break the running -> done transition the scanner
+// drives.
 const _verdictCache = new Map<string, DashboardVerdict>();
 
 // Cached read of <runDir>/verdict.json narrowed to the read-side view. Returns
-// null while the run may still be writing it (phase.json names a live pid from
-// this host, or exists and cannot be read) and when the file is missing,
-// unreadable or unparseable; only a returned verdict is cached. The phase is
-// read again after the verdict is parsed, because a run with no phase file at
-// the first read can reach the Coding-Agent before the verdict has been read,
-// and a verdict cached from that window would never be replaced. `readPhaseOf`
-// is the phase reader, a seam for a test to force that interleaving.
+// null while the run may still be writing it (phase.json is not `done` and names
+// a live pid from this host, or exists and cannot be read) and when the file is
+// missing, unreadable or unparseable; only a returned verdict is cached. The
+// phase is read again after the verdict is parsed, because a run with no phase
+// file at the first read can reach the Coding-Agent before the verdict has been
+// read, and a verdict cached from that window would never be replaced.
+// `readPhaseOf` is the phase reader, a seam for a test to force that
+// interleaving.
 export function readDashboardVerdict(
   runDir: string,
   readPhaseOf: (runDir: string) => PhaseRead = readPhaseFile,
@@ -112,12 +115,14 @@ export function readDashboardVerdict(
 }
 
 // Whether a verdict beside this phase read may be trusted: not when the phase
-// is unreadable, nor when it names a live pid from this host.
+// is unreadable, nor when it names a live pid from this host. A `done` phase is
+// the runner's own statement that it has finished with the directory, so it
+// allows the verdict whatever its pid, which stays alive across --repeat trials.
 function phaseAllowsVerdict(read: PhaseRead): boolean {
   if (read.kind === 'unreadable') {
     return false;
   }
-  if (read.kind === 'absent') {
+  if (read.kind === 'absent' || read.phase === 'done') {
     return true;
   }
   const sameHost = read.host === undefined || read.host === hostname();
@@ -191,9 +196,11 @@ function finalOf(verdict: DashboardVerdict): RunFinal {
 // Enumerate results/, skip batches/, bucket by (scenario, agent), window to the
 // 5 newest by (started_at, nonce) (newest rightmost). For each windowed dir: a
 // trusted verdict ⇒ a RunRecord (readDashboardVerdict trusts one only after a
-// same-host phase.json's pid has exited); otherwise a live pid ⇒ the cell's `running`
-// (only the newest live dir wins); otherwise abandoned (excluded). Cells with
-// no displayable run are omitted from the Grid.
+// same-host phase.json's pid has exited, or its phase is `done`); otherwise a
+// live pid ⇒ the cell's `running` (only the newest live dir wins); otherwise
+// abandoned (excluded), as is a `done` phase with no readable verdict, since its
+// writer has finished and left no record to wait for. Cells with no displayable
+// run are omitted from the Grid.
 export function scanResults(
   resultsRoot: string,
   knownAgents: readonly string[],
@@ -245,7 +252,7 @@ export function scanResults(
         continue;
       }
       const phase = readPhase(runDir);
-      if (phase !== null && pidAlive(phase.pid)) {
+      if (phase !== null && phase.phase !== 'done' && pidAlive(phase.pid)) {
         // Only the newest in-flight dir matters for the cell's running state.
         // The schema guarantees a string phase, so the value is used as-is.
         running = { run_id: runId, phase: phase.phase };

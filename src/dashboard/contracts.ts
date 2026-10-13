@@ -71,9 +71,9 @@ export interface RunRecord {
   readonly finished_at: string | null;
 }
 
-// An in-flight run: a dir whose phase.json names a live pid, whatever else it
-// holds; a verdict beside a live pid from this host is not trusted until that
-// process exits.
+// An in-flight run: a dir whose phase.json names a live pid and a phase other
+// than `done`, whatever else it holds; a verdict beside such a pid from this
+// host is not trusted until that process exits or the phase turns `done`.
 export interface RunningRun {
   readonly run_id: string;
   readonly phase: string;
