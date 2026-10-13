@@ -136,14 +136,14 @@ expected_p3_diff="$(printf '%s\n' \
 actual_p3_diff="$(cd "$here/.." && diff -r fixtures/codex-focus-arm/P fixtures/codex-focus-arm/P3 2>&1 || true)"
 [ "$actual_p3_diff" = "$expected_p3_diff" ] || fail "P3 must differ from P only by the declared REQUIREMENTS.md hunk; got: $actual_p3_diff"
 
-# Treatment on all six fixtures.
-run_arm treat "$focus" treatment M H O P P2 Pc || fail "treatment arm exited $? ($(cat "$work/treat.stderr"))"
+# Treatment on all seven fixtures.
+run_arm treat "$focus" treatment M H O P P2 P3 Pc || fail "treatment arm exited $? ($(cat "$work/treat.stderr"))"
 # Every per-fixture work directory (and the broker directory) the arm created
 # in its own TMPDIR is gone when it exits.
 [ "$(find "$work/treat.tmp" -mindepth 1 -maxdepth 1 | grep -c .)" -eq 0 ] || fail "the arm must remove its per-fixture work directories (left: $(find "$work/treat.tmp" -mindepth 1 -maxdepth 1 | tr '\n' ' '))"
-[ "$(find "$work/treat" -name '*-treatment-*.json' | grep -c .)" -eq 18 ] || fail "treatment must leave 18 captures"
-[ "$(count '"result":"approved"' "$work/treat.stdout")" -eq 18 ] || fail "every capture must normalize to approved"
-for fx in M H O P P2 Pc; do for i in 1 2 3; do
+[ "$(find "$work/treat" -name '*-treatment-*.json' | grep -c .)" -eq 21 ] || fail "treatment must leave 21 captures"
+[ "$(count '"result":"approved"' "$work/treat.stdout")" -eq 21 ] || fail "every capture must normalize to approved"
+for fx in M H O P P2 P3 Pc; do for i in 1 2 3; do
   grep -q "^$fx treatment $i " "$work/treat.stdout" || fail "no normalize line for $fx treatment $i"
 done; done
 blob="$(git hash-object "$root/skills/requesting-code-review/scripts/verdict-normalize")"
@@ -153,7 +153,7 @@ cmp -s "$work/treat/runtime-start.txt" "$work/treat/runtime-end.txt" || fail "st
 [ "$(count '^ensure ' "$work/treat.log")" -eq 1 ] || fail "one broker per arm"
 [ "$(count '^shutdown unix:/stub/broker$' "$work/treat.log")" -eq 1 ] || fail "the arm shuts down its own broker once"
 [ "$(count '^clear ' "$work/treat.log")" -eq 1 ] || fail "the arm clears its broker record once"
-[ "$(count '^review unix:/stub/broker$' "$work/treat.log")" -eq 18 ] || fail "every review goes through the arm's broker"
+[ "$(count '^review unix:/stub/broker$' "$work/treat.log")" -eq 21 ] || fail "every review goes through the arm's broker"
 broker_dir="$(sed -n 's/^broker-dir //p' "$work/treat/broker.txt")"
 grep -q "^ensure $broker_dir$" "$work/treat.log" || fail "the broker is keyed to the recorded directory"
 [ ! -e "$broker_dir" ] || fail "the broker directory is removed on exit"
@@ -163,16 +163,23 @@ for f in "$work/treat.focus"/*.txt; do
   ! grep -Fq -- '$1' "$f" || fail "treatment focus still holds a \$1 placeholder: $f"
   grep -Eq 'Review package: /.+/review\.diff\.' "$f" || fail "treatment focus must name the work directory's review.diff: $f"
 done
-check_captures treat treatment M H O P P2 Pc
+check_captures treat treatment M H O P P2 P3 Pc
 
-# Control on one fixture: no cap, and the anchor runs straight into the next sentence.
-run_arm ctl "$focus" control H || fail "control arm exited $? ($(cat "$work/ctl.stderr"))"
-[ "$(find "$work/ctl" -name 'H-control-*.json' | grep -c .)" -eq 3 ] || fail "control must leave 3 captures"
+# Control on H and on P3, the fixture the live P3 control ran: no cap, and the
+# anchor runs straight into the next sentence.
+run_arm ctl "$focus" control H P3 || fail "control arm exited $? ($(cat "$work/ctl.stderr"))"
+[ "$(find "$work/ctl" -name '*-control-*.json' | grep -c .)" -eq 6 ] || fail "control must leave 6 captures"
+for fx in H P3; do
+  [ "$(find "$work/ctl" -name "$fx-control-*.json" | grep -c .)" -eq 3 ] || fail "control must leave 3 captures for $fx"
+  for i in 1 2 3; do
+    grep -q "^$fx control $i " "$work/ctl.stdout" || fail "no normalize line for $fx control $i"
+  done
+done
 for f in "$work/ctl.focus"/*.txt; do
   ! grep -Fq -- "$cap" "$f" || fail "control focus must not carry the cap sentence: $f"
   grep -Fq -- "${anchor}You are a stateless reviewer" "$f" || fail "control focus must be the 5bef46c text: $f"
 done
-check_captures ctl control H
+check_captures ctl control H P3
 
 # An altered cap in the treatment file fails before any broker or review.
 cp -R "$focus" "$work/bad-treatment"
