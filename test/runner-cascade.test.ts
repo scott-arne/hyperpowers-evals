@@ -208,6 +208,7 @@ test('codexMisplacedVerdict: empty capture + misplaced rollout -> qa-agent-misco
     logGlob: '*.jsonl',
     snapshot: new Set<string>(),
     runDir,
+    workspaceDir: runDir,
     launchCwd,
   });
   expect(v?.error?.stage).toBe('qa-agent-misconfigured');
@@ -225,6 +226,7 @@ test('codexMisplacedVerdict: empty capture but no misplaced rollout -> null', ()
     logGlob: '*.jsonl',
     snapshot: new Set<string>(),
     runDir,
+    workspaceDir: runDir,
     launchCwd: runDir,
   });
   expect(v).toBe(null);
@@ -239,6 +241,7 @@ test('codexMisplacedVerdict: non-codex normalizer -> null', () => {
     logGlob: '*.jsonl',
     snapshot: new Set<string>(),
     runDir,
+    workspaceDir: runDir,
     launchCwd: runDir,
   });
   expect(v).toBe(null);

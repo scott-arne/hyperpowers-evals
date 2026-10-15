@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { flattenToolCalls } from '../src/atif/project.ts';
 import type { AtifTrajectory } from '../src/atif/types.ts';
 import { validateTrajectory } from '../src/atif/validate.ts';
@@ -406,6 +406,14 @@ test('captureToolCallsWithRetry: non-empty first pass does not retry', () => {
 
 // --- qa-agent-misconfigured detectors (consumed by the Wave-2b runner) ------
 
+/** A codex rollout log whose session_meta header records `cwd`. */
+function writeRollout(path: string, cwd: string): void {
+  writeFileSync(
+    path,
+    `${JSON.stringify({ type: 'session_meta', payload: { cwd } })}\n`,
+  );
+}
+
 test('detectMisplacedCodexRollouts flags rollouts inside run_dir at a wrong cwd', () => {
   // A rollout whose session_meta cwd is INSIDE run_dir but != launch_cwd is the
   // smoking gun that the QA agent skipped `cd $QUORUM_AGENT_CWD`. A rollout AT
@@ -419,19 +427,11 @@ test('detectMisplacedCodexRollouts flags rollouts inside run_dir at a wrong cwd'
 
   const snap = snapshotDir(logDir, '**/*.jsonl');
   const misplaced = join(logDir, 'misplaced.jsonl');
-  const correct = join(logDir, 'correct.jsonl');
-  const outside = join(logDir, 'outside.jsonl');
-  writeFileSync(
-    misplaced,
-    `${JSON.stringify({ type: 'session_meta', payload: { cwd: wrongInside } })}\n`,
-  );
-  writeFileSync(
-    correct,
-    `${JSON.stringify({ type: 'session_meta', payload: { cwd: launchCwd } })}\n`,
-  );
-  writeFileSync(
-    outside,
-    `${JSON.stringify({ type: 'session_meta', payload: { cwd: mkdtempSync(join(tmpdir(), 'elsewhere-')) } })}\n`,
+  writeRollout(misplaced, wrongInside);
+  writeRollout(join(logDir, 'correct.jsonl'), launchCwd);
+  writeRollout(
+    join(logDir, 'outside.jsonl'),
+    mkdtempSync(join(tmpdir(), 'elsewhere-')),
   );
 
   expect(
@@ -440,9 +440,41 @@ test('detectMisplacedCodexRollouts flags rollouts inside run_dir at a wrong cwd'
       logGlob: '**/*.jsonl',
       snapshot: snap,
       runDir,
+      workspaceDir: runDir,
       launchCwd,
     }),
   ).toEqual([misplaced]);
+});
+
+test('detectMisplacedCodexRollouts: record-tree scratch and a wrong workspace subdir are misplaced; the launch cwd is not', () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'codex-logs-'));
+  const out = mkdtempSync(join(tmpdir(), 'out-'));
+  const runDir = join(out, 'run-1');
+  const workspaceDir = join(out, 'workspaces', 'run-1');
+  const launchCwd = join(workspaceDir, 'coding-agent-workdir');
+  // where the pane's shell starts
+  const scratch = join(runDir, 'gauntlet-agent', 'results', 'g1', 'scratch');
+  const wrongInWorkspace = join(workspaceDir, 'somewhere-else');
+  for (const d of [launchCwd, scratch, wrongInWorkspace]) {
+    mkdirSync(d, { recursive: true });
+  }
+  const snap = snapshotDir(logDir, '**/*.jsonl');
+  writeRollout(join(logDir, 'scratch.jsonl'), scratch);
+  writeRollout(join(logDir, 'wrong.jsonl'), wrongInWorkspace);
+  writeRollout(join(logDir, 'ok.jsonl'), launchCwd);
+
+  const misplaced = detectMisplacedCodexRollouts({
+    logDir,
+    logGlob: '**/*.jsonl',
+    snapshot: snap,
+    runDir,
+    workspaceDir,
+    launchCwd,
+  });
+  expect(misplaced.map((p) => basename(p)).sort()).toEqual([
+    'scratch.jsonl',
+    'wrong.jsonl',
+  ]);
 });
 
 test('detectMisplacedPiSessions flags sessions whose header cwd != launch cwd', () => {

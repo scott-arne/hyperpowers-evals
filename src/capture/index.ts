@@ -370,15 +370,18 @@ export interface DetectMisplacedCodexRolloutsArgs {
   readonly logGlob: string;
   readonly snapshot: ReadonlySet<string>;
   readonly runDir: string;
+  readonly workspaceDir: string;
   readonly launchCwd: string;
 }
 
-/** Codex rollouts whose session_meta cwd is inside runDir but != launchCwd. */
+/** Codex rollouts whose session_meta cwd is inside the record tree or the
+ *  workspace tree but != launchCwd. */
 export function detectMisplacedCodexRollouts(
   args: DetectMisplacedCodexRolloutsArgs,
 ): string[] {
   const newLogs = newFilesSince(args.logDir, args.logGlob, args.snapshot);
   const runDirReal = realPath(args.runDir);
+  const workspaceReal = realPath(args.workspaceDir);
   const launchCwdReal = realPath(args.launchCwd);
   const misplaced: string[] = [];
   for (const path of newLogs) {
@@ -392,9 +395,14 @@ export function detectMisplacedCodexRollouts(
       continue;
     }
     const cwdReal = realPath(cwd);
-    const insideRunDir =
-      cwdReal === runDirReal || cwdReal.startsWith(runDirReal + sep);
-    if (insideRunDir && cwdReal !== launchCwdReal) {
+    const inside = (root: string): boolean =>
+      cwdReal === root || cwdReal.startsWith(root + sep);
+    // Both trees: a launcher-skipping Codex starts in the pane's scratch cwd,
+    // which is in the record tree; a wrong `cd` lands in the workspace tree.
+    if (
+      (inside(runDirReal) || inside(workspaceReal)) &&
+      cwdReal !== launchCwdReal
+    ) {
       misplaced.push(path);
     }
   }

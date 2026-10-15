@@ -654,14 +654,15 @@ export interface CodexMisplacedArgs {
   readonly logGlob: string;
   readonly snapshot: ReadonlySet<string>;
   readonly runDir: string;
+  readonly workspaceDir: string;
   readonly launchCwd: string;
 }
 
 // Codex empty-capture qa-agent-misconfigured short-circuit, run AFTER
-// post-checks. An empty capture plus a codex rollout sitting under run_dir but
-// launched in a subdir other than launch_cwd means the QA agent skipped
-// `cd $QUORUM_AGENT_CWD`. Surfaced as its own stage so downstream trace checks
-// (all "never called") don't bury the cause.
+// post-checks. An empty capture plus a codex rollout sitting under the record
+// tree or the workspace tree but launched in a subdir other than launch_cwd
+// means the QA agent skipped `cd $QUORUM_AGENT_CWD`. Surfaced as its own stage
+// so downstream trace checks (all "never called") don't bury the cause.
 export function codexMisplacedVerdict(
   a: CodexMisplacedArgs,
 ): FinalVerdict | null {
@@ -673,6 +674,7 @@ export function codexMisplacedVerdict(
     logGlob: a.logGlob,
     snapshot: a.snapshot,
     runDir: a.runDir,
+    workspaceDir: a.workspaceDir,
     launchCwd: a.launchCwd,
   });
   if (misplaced.length === 0) {
@@ -699,6 +701,7 @@ function relIfUnder(base: string, path: string): string {
 
 export interface CopilotCascadeArgs {
   readonly runDir: string;
+  readonly workspaceDir: string;
   readonly sessionLogDir: string;
   readonly expectedEventsLog: string;
   readonly envFile: string;
@@ -708,8 +711,9 @@ export interface CopilotCascadeArgs {
   readonly preRecords: readonly CheckRecord[];
 }
 
-// Copilot post-capture branch. In order: (1) a secret-leak scan over the whole
-// run dir (skipping the env file that legitimately holds the secret) ->
+// Copilot post-capture branch. In order: (1) a secret-leak scan over both the
+// record tree and the agent's workspace tree (skipping the env file that
+// legitimately holds the secret) ->
 // indeterminate naming the leaking artifacts; (2) the expected session-state
 // events.jsonl must be among the captured source logs; (3) no UNEXPECTED
 // session-state logs may appear. Returns null to proceed when the run is clean.
@@ -725,9 +729,16 @@ export function copilotCascadeVerdict(
       error,
     });
 
-  const leaks = scanCopilotSecretLeaks(a.runDir, a.secretValues, [a.envFile]);
+  const leaks = [
+    ...scanCopilotSecretLeaks(a.runDir, a.secretValues, [a.envFile]),
+    ...scanCopilotSecretLeaks(a.workspaceDir, a.secretValues, [a.envFile]),
+  ];
   if (leaks.length > 0) {
-    const rel = leaks.map((p) => relIfUnder(a.runDir, p));
+    const rel = leaks.map((p) =>
+      relIfUnder(a.runDir, p) === p
+        ? relIfUnder(a.workspaceDir, p)
+        : relIfUnder(a.runDir, p),
+    );
     return indeterminate(
       `Copilot secret value appeared in non-secret run artifact: ${rel.join(', ')}`,
       {
@@ -1149,7 +1160,6 @@ async function runInnerBody(
     a.outRoot,
     runDir,
   );
-  void workspaceDir; // consumed by the Copilot cascade and the misplaced-rollout detector (next task)
   // The agent's isolated config dir: rooted under the throwaway home at the
   // agent's home_config_subdir (it finds config via its $HOME default and the
   // launcher omits the config-dir env var).
@@ -1523,6 +1533,7 @@ async function runInnerBody(
   if (cfg.normalizer === 'copilot' && copilotProvisioning !== undefined) {
     const copilotVerdict = copilotCascadeVerdict({
       runDir,
+      workspaceDir,
       sessionLogDir: logDir,
       expectedEventsLog: copilotProvisioning.expectedEventsLog,
       envFile: copilotProvisioning.envFile,
@@ -1595,6 +1606,7 @@ async function runInnerBody(
     logGlob: cfg.session_log_glob,
     snapshot,
     runDir,
+    workspaceDir,
     launchCwd,
   });
   if (codexMisplaced !== null) {
