@@ -201,7 +201,8 @@ function records(p: Project): string[] {
 }
 
 /** The scenario's own check, dispatched through the real check verb, with the
- *  run directory the harness would have exported. */
+ *  agent home the harness would have exported. The oracle spawns the dispatcher
+ *  outside runPhase, so it names the inner-environment mode itself. */
 function oraclePasses(p: Project): boolean {
   const res = spawnSync(
     'bun',
@@ -209,7 +210,11 @@ function oraclePasses(p: Project): boolean {
     {
       cwd: p.workdir,
       encoding: 'utf8',
-      env: { ...envSnapshot(), QUORUM_RUN_DIR: p.runDir },
+      env: {
+        ...envSnapshot(),
+        QUORUM_AGENT_HOME: p.agentHome,
+        QUORUM_INNER_ENV: 'legacy',
+      },
     },
   );
   if (res.error) throw res.error;
@@ -387,7 +392,7 @@ test('the check matches whole JSON records the runner tags with HOME', () => {
   // writes, so the home path cannot be quoted one way by the writer and another
   // by the reader.
   expect(assertion).toContain('JSON.stringify({argc:0,args:[],home:');
-  expect(assertion).toContain('QUORUM_RUN_DIR');
+  expect(assertion).toContain('QUORUM_AGENT_HOME');
   // The runner writes that record: the count of files it was given, the argv,
   // and the home tag - each a JSON value rather than a run of text.
   const runner = runnerSource();

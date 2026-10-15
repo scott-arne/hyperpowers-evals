@@ -18,7 +18,7 @@ post() {
     not file-contains 'codex-stub-calls/call-2.md' 'Algorithm Assessment (round 1 only)'
     # The ledger lock exists in this run's throwaway-home cache. Checks run
     # host-side, so $HOME here is the HOST home — grep the pinned run home via
-    # QUORUM_RUN_DIR instead (a bare $HOME grep can pass on stale state left
+    # QUORUM_AGENT_HOME instead (a bare $HOME grep can pass on stale state left
     # by unrelated sessions on this machine).
-    command-succeeds "grep -rq 'Algorithm locked:' \"$QUORUM_RUN_DIR/home/.cache/hyperpowers/codex-review\""
+    command-succeeds 'grep -rq "Algorithm locked:" "$QUORUM_AGENT_HOME/.cache/hyperpowers/codex-review"'
 }

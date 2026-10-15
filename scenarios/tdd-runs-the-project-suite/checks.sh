@@ -39,7 +39,7 @@ post() {
     #     `npm test -- ''` passes one argument and discovers nothing.
     #   * the AGENT UNDER TEST ran it, not the verifier. Every coding agent is
     #     launched with HOME pinned to the per-run throwaway home
-    #     ($QUORUM_RUN_DIR/home); the Gauntlet-Agent, which verifies the work
+    #     ($QUORUM_AGENT_HOME); the Gauntlet-Agent, which verifies the work
     #     with its own `npm test` in this same workdir, keeps the operator's
     #     real HOME. Verified against the archived runs: each coding agent's
     #     failing npm invocations left debug logs under <run dir>/home/.npm/
@@ -50,7 +50,7 @@ post() {
     # path cannot be quoted one way by the writer and another by the reader. No
     # argument can forge the record: an argument's text lives inside a JSON
     # string, where a newline is escaped and cannot end the line.
-    command-succeeds 'expected=$(node -e "process.stdout.write(JSON.stringify({argc:0,args:[],home:process.env.QUORUM_RUN_DIR + \"/home\"}))") && grep -qxF "$expected" .test-history.log'
+    command-succeeds 'expected=$(node -e "process.stdout.write(JSON.stringify({argc:0,args:[],home:process.env.QUORUM_AGENT_HOME}))") && grep -qxF "$expected" .test-history.log'
     # The requested change actually landed: a commented-out setting no longer
     # parses as a setting. Probes the parser directly, so a run that only edited
     # tests cannot pass.

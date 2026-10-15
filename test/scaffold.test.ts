@@ -252,6 +252,44 @@ test('checkScenario flags a $QUORUM_WORKDIR reference', () => {
   rmSync(root, { recursive: true, force: true });
 });
 
+test('checkScenario flags $QUORUM_RUN_DIR inside a single-quoted command-succeeds', () => {
+  const root = scenariosRoot();
+  const dir = scenario(root, 's');
+  writeFileSync(
+    join(dir, 'checks.sh'),
+    'pre() {\n  :\n}\npost() {\n  command-succeeds \'test -f "$QUORUM_RUN_DIR/x"\'\n}\n',
+  );
+  const problems = checkScenario(dir);
+  expect(problems).toContain(
+    'checks.sh:5: $QUORUM_RUN_DIR is outer-only; expand it with double quotes or use $QUORUM_AGENT_HOME',
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('checkScenario accepts $QUORUM_RUN_DIR expanded at the outer layer', () => {
+  const root = scenariosRoot();
+  const dir = scenario(root, 's');
+  writeFileSync(
+    join(dir, 'checks.sh'),
+    'pre() {\n  :\n}\npost() {\n  command-succeeds "test -f $QUORUM_RUN_DIR/gauntlet-agent/x"\n}\n',
+  );
+  expect(checkScenario(dir).some((p) => p.includes('QUORUM_RUN_DIR'))).toBe(
+    false,
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('checkScenario accepts $QUORUM_AGENT_HOME inside a single-quoted command-succeeds', () => {
+  const root = scenariosRoot();
+  const dir = scenario(root, 's');
+  writeFileSync(
+    join(dir, 'checks.sh'),
+    'pre() {\n  :\n}\npost() {\n  command-succeeds \'test -d "$QUORUM_AGENT_HOME/.cache"\'\n}\n',
+  );
+  expect(checkScenario(dir).some((p) => p.includes('QUORUM_'))).toBe(false);
+  rmSync(root, { recursive: true, force: true });
+});
+
 test('checkScenario splits checks.sh on Unicode line boundaries (splitlines parity)', () => {
   const root = scenariosRoot();
   const dir = scenario(root, 's');

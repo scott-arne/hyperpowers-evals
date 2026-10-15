@@ -46,5 +46,5 @@ post() {
     # 6.4.0: the degraded gate must leave a durable class-1 ledger event
     # carrying BOTH the class and the correct status token (the event assembler
     # emits class before status on one line, so the single-pattern grep is exact).
-    command-succeeds 'grep -rq "\"class\":\"degraded-gate\".*\"status\":\"stale-broker\"" "$QUORUM_RUN_DIR/home/.cache/hyperpowers/ungated" 2>/dev/null'
+    command-succeeds 'grep -rq "\"class\":\"degraded-gate\".*\"status\":\"stale-broker\"" "$QUORUM_AGENT_HOME/.cache/hyperpowers/ungated" 2>/dev/null'
 }

@@ -200,6 +200,17 @@ function validateChecksSh(scenarioDir: string): string[] {
       );
     }
   }
+  // $QUORUM_RUN_DIR reaches the outer layer only. Inside a single-quoted
+  // command-succeeds it would expand in the nested shell, which never
+  // receives it (spec, "Post-check environment").
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    if (/command-succeeds\s+'[^']*\$\{?QUORUM_RUN_DIR\b/.test(line)) {
+      problems.push(
+        `checks.sh:${i + 1}: $QUORUM_RUN_DIR is outer-only; expand it with double quotes or use $QUORUM_AGENT_HOME`,
+      );
+    }
+  }
   return problems;
 }
 
