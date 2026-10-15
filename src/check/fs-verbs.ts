@@ -19,6 +19,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
+  type InnerMode,
   innerEnv,
   innerMode,
   legacyInnerEnv,
@@ -80,16 +81,34 @@ const GIT_HYGIENE = [
 // with no agent home is a configuration error, surfaced as a broken check.
 function nestedEnv(
   ctx: CheckContext,
-): { env: Record<string, string> } | { broken: string } {
+): { env: Record<string, string>; mode: InnerMode } | { broken: string } {
   const base = envSnapshot();
-  if (innerMode(ctx.env) === 'legacy') return { env: legacyInnerEnv(base) };
+  if (innerMode(ctx.env) === 'legacy') {
+    return { env: legacyInnerEnv(base), mode: 'legacy' };
+  }
   const home = ctx.env('QUORUM_AGENT_HOME');
   if (home === undefined || home === '') {
     return {
       broken: 'QUORUM_INNER_ENV=projected but QUORUM_AGENT_HOME is unset',
     };
   }
-  return { env: innerEnv(base, home) };
+  return { env: innerEnv(base, home), mode: 'projected' };
+}
+
+// The nested environment for a harness git spawn. Under `projected` the
+// overlay points HOME and XDG_CONFIG_HOME at a directory the agent can write,
+// so git would read agent-authored global config: `status.showUntrackedFiles=no`
+// would hide drift from git-clean, and a malformed file would make git fail.
+// GIT_CONFIG_GLOBAL suppresses both files while the rest of the projection
+// still reaches content filters. command-succeeds does not use this: it keeps
+// the agent's own git config, as the live run saw it. `legacy` is unchanged.
+function gitNestedEnv(
+  ctx: CheckContext,
+): { env: Record<string, string> } | { broken: string } {
+  const nested = nestedEnv(ctx);
+  if ('broken' in nested) return nested;
+  if (nested.mode === 'legacy') return { env: nested.env };
+  return { env: { ...nested.env, GIT_CONFIG_GLOBAL: '/dev/null' } };
 }
 
 // ---------------------------------------------------------------------------
@@ -335,7 +354,7 @@ export function verbCommandSucceeds(
 // git-repo
 // ---------------------------------------------------------------------------
 export function verbGitRepo(_args: string[], ctx: CheckContext): CheckOutcome {
-  const nested = nestedEnv(ctx);
+  const nested = gitNestedEnv(ctx);
   if ('broken' in nested) return broken(nested.broken);
   if (gitOk(ctx.cwd, ['rev-parse', '--is-inside-work-tree'], nested.env)) {
     return pass();
@@ -348,13 +367,11 @@ export function verbGitRepo(_args: string[], ctx: CheckContext): CheckOutcome {
 // ---------------------------------------------------------------------------
 export function verbGitBranch(args: string[], ctx: CheckContext): CheckOutcome {
   const expected = args[0] ?? '';
-  const nested = nestedEnv(ctx);
+  const nested = gitNestedEnv(ctx);
   if ('broken' in nested) return broken(nested.broken);
-  const current = gitOut(
-    ctx.cwd,
-    ['branch', '--show-current'],
-    nested.env,
-  ).trim();
+  const result = gitOut(ctx.cwd, ['branch', '--show-current'], nested.env);
+  if (!result.ok) return broken(result.detail);
+  const current = result.out.trim();
   if (expected === 'detached') {
     return current === ''
       ? pass()
@@ -369,10 +386,11 @@ export function verbGitBranch(args: string[], ctx: CheckContext): CheckOutcome {
 // git-clean
 // ---------------------------------------------------------------------------
 export function verbGitClean(_args: string[], ctx: CheckContext): CheckOutcome {
-  const nested = nestedEnv(ctx);
+  const nested = gitNestedEnv(ctx);
   if ('broken' in nested) return broken(nested.broken);
   const status = gitOut(ctx.cwd, ['status', '--porcelain'], nested.env);
-  return status.trim() === '' ? pass() : fail('working tree dirty');
+  if (!status.ok) return broken(status.detail);
+  return status.out.trim() === '' ? pass() : fail('working tree dirty');
 }
 
 // ---------------------------------------------------------------------------
@@ -391,20 +409,24 @@ export function verbGitCount(args: string[], ctx: CheckContext): CheckOutcome {
   const dim = args[0] ?? '';
   const op = args[1] ?? '';
   const nRaw = args[2] ?? '';
-  const nested = nestedEnv(ctx);
+  const nested = gitNestedEnv(ctx);
   if ('broken' in nested) return broken(nested.broken);
   let count: number;
   if (dim === 'worktrees') {
     // `git worktree list | wc -l` counts lines, including the main worktree.
     const out = gitOut(ctx.cwd, ['worktree', 'list'], nested.env);
-    count = out.split('\n').filter((l) => l.length > 0).length;
+    if (!out.ok) return broken(out.detail);
+    count = out.out.split('\n').filter((l) => l.length > 0).length;
   } else if (dim === 'commits') {
-    const out = gitOut(
-      ctx.cwd,
-      ['rev-list', '--count', 'HEAD'],
-      nested.env,
-    ).trim();
-    count = out === '' ? 0 : Number.parseInt(out, 10);
+    // `rev-list --count HEAD` exits nonzero on an unborn HEAD, which has always
+    // counted as zero commits; only a failure with a resolvable HEAD is broken.
+    if (gitOk(ctx.cwd, ['rev-parse', '--verify', '-q', 'HEAD'], nested.env)) {
+      const out = gitOut(ctx.cwd, ['rev-list', '--count', 'HEAD'], nested.env);
+      if (!out.ok) return broken(out.detail);
+      count = Number.parseInt(out.out.trim(), 10);
+    } else {
+      count = 0;
+    }
   } else {
     return broken(`unknown dimension: ${dim}`);
   }
@@ -428,7 +450,7 @@ export function verbAssertCheckoutClean(
 ): CheckOutcome {
   const path = args[0] ?? '';
   const abs = resolve(ctx.cwd, path);
-  const nested = nestedEnv(ctx);
+  const nested = gitNestedEnv(ctx);
   if ('broken' in nested) return broken(nested.broken);
   if (!gitOk(abs, ['rev-parse', '--is-inside-work-tree'], nested.env)) {
     return fail(`${path} is not a git work tree`);
@@ -439,7 +461,8 @@ export function verbAssertCheckoutClean(
     { env: nested.env, encoding: 'utf8' },
   );
   if ((status.status ?? 1) !== 0) {
-    return fail(`git status failed at ${path}`);
+    // A git error is an instrument failure, not a statement about the tree.
+    return broken(`${gitFailure('status', status)} at ${path}`);
   }
   const dirtyLines = (status.stdout ?? '')
     .split('\n')
@@ -449,15 +472,19 @@ export function verbAssertCheckoutClean(
     const head = dirtyLines.slice(0, 3).join(' ');
     return fail(`tree at ${path} not clean: ${head}`);
   }
-  const gitDir = gitOut(
+  const gitDirOut = gitOut(
     abs,
     ['rev-parse', '--absolute-git-dir'],
     nested.env,
-  ).trim();
+  );
+  if (!gitDirOut.ok) return broken(gitDirOut.detail);
+  const gitDir = gitDirOut.out.trim();
   if (gitDir) {
     const recorded = join(gitDir, 'quorum-recorded-head');
     if (existsSync(recorded)) {
-      const headNow = gitOut(abs, ['rev-parse', 'HEAD'], nested.env).trim();
+      const headOut = gitOut(abs, ['rev-parse', 'HEAD'], nested.env);
+      if (!headOut.ok) return broken(headOut.detail);
+      const headNow = headOut.out.trim();
       const headThen = readFileSync(recorded, 'utf8').replace(/\s/g, '');
       if (headNow !== headThen) {
         return fail(`HEAD at ${path} moved: ${headThen} -> ${headNow}`);
@@ -545,9 +572,11 @@ function exists(abs: string): boolean {
 // ---------------------------------------------------------------------------
 // git helpers
 // ---------------------------------------------------------------------------
-// The caller resolves `env` through nestedEnv so a broken projection surfaces
-// as a broken check there; a `false` or '' from here would let `git-clean`,
-// `git-branch detached` or a zero `git-count` pass by accident.
+// The caller resolves `env` through gitNestedEnv so a broken projection
+// surfaces as a broken check there. gitOk stays boolean because a nonzero
+// `rev-parse --is-inside-work-tree` is the real "not a work tree" answer; gitOut
+// reports a nonzero exit as a failure, never as empty output, which would let
+// `git-clean`, `git-branch detached` or a zero `git-count` pass by accident.
 function gitOk(
   cwd: string,
   gitArgs: string[],
@@ -565,14 +594,27 @@ function gitOut(
   cwd: string,
   gitArgs: string[],
   env: Record<string, string>,
-): string {
+): { ok: true; out: string } | { ok: false; detail: string } {
   const proc = spawnSync('git', [...GIT_HYGIENE, ...gitArgs], {
     cwd,
     env,
     encoding: 'utf8',
   });
-  if ((proc.status ?? 1) !== 0) return '';
-  return proc.stdout ?? '';
+  if ((proc.status ?? 1) !== 0) {
+    return { ok: false, detail: gitFailure(gitArgs[0] ?? '', proc) };
+  }
+  return { ok: true, out: proc.stdout ?? '' };
+}
+
+function gitFailure(
+  verb: string,
+  proc: { status: number | null; stderr: string | null; error?: Error },
+): string {
+  const reason =
+    (proc.stderr ?? '').split('\n').find((l) => l.trim() !== '') ??
+    proc.error?.message ??
+    '';
+  return `git ${verb} failed (rc ${proc.status ?? 'none'}): ${reason}`;
 }
 
 // ---------------------------------------------------------------------------

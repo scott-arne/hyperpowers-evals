@@ -697,3 +697,79 @@ test('git-clean: a configured clean filter runs under the inner projection, not 
   expect(seen).toContain(`HOME=${home}`);
   expect(seen).toContain('SINK=unset');
 });
+
+// ---------------------------------------------------------------------------
+// A failing harness git spawn is a broken check; projected git ignores the
+// agent home's global config
+// ---------------------------------------------------------------------------
+
+test('git-clean: a clean filter that exits nonzero under the projection is a broken check, never a pass', () => {
+  const home = mkdtempSync(join(tmpdir(), 'agent-home-'));
+  const filter = join(mkdtempSync(join(tmpdir(), 'flt-')), 'clean.sh');
+  writeFileSync(filter, '#!/bin/sh\nexit 3\n');
+  spawnSync('chmod', ['+x', filter]);
+  const wd = gitRepoWith((git, d) => {
+    git(['config', 'filter.probe.clean', filter]);
+    git(['config', 'filter.probe.required', 'true']);
+    writeFile(d, '.gitattributes', '*.txt filter=probe\n');
+  });
+  writeFile(wd, 'a.txt', 'hellp\n'); // same size: status must re-hash through the filter
+  const out = verbGitClean(
+    [],
+    ctxFor(wd, { QUORUM_INNER_ENV: 'projected', QUORUM_AGENT_HOME: home }),
+  );
+  expect(out.broken).toBe(true);
+  expect(out.passed).toBe(false);
+  expect(out.detail).toContain('git status');
+});
+
+test('git-branch detached: outside a git work tree is a broken check, not a pass on empty output', () => {
+  const wd = workdir();
+  const out = verbGitBranch(
+    ['detached'],
+    ctxFor(wd, { QUORUM_INNER_ENV: 'legacy' }),
+  );
+  expect(out.broken).toBe(true);
+  expect(out.passed).toBe(false);
+});
+
+test('git-clean: projected git does not read the agent home .gitconfig (a hidden-untracked setting)', () => {
+  const home = mkdtempSync(join(tmpdir(), 'agent-home-'));
+  writeFileSync(
+    join(home, '.gitconfig'),
+    '[status]\n\tshowUntrackedFiles = no\n',
+  );
+  const wd = gitRepoWith(() => {});
+  writeFile(wd, 'untracked.txt', 'x\n');
+  const out = verbGitClean(
+    [],
+    ctxFor(wd, { QUORUM_INNER_ENV: 'projected', QUORUM_AGENT_HOME: home }),
+  );
+  expect(out.broken).toBeUndefined();
+  expect(out.passed).toBe(false);
+});
+
+test('git-clean: a malformed agent home .gitconfig is never read by projected git', () => {
+  const home = mkdtempSync(join(tmpdir(), 'agent-home-'));
+  writeFileSync(join(home, '.gitconfig'), '[status\n');
+  const wd = gitRepoWith(() => {});
+  writeFile(wd, 'a.txt', 'changed\n');
+  const out = verbGitClean(
+    [],
+    ctxFor(wd, { QUORUM_INNER_ENV: 'projected', QUORUM_AGENT_HOME: home }),
+  );
+  expect(out.broken).toBeUndefined();
+  expect(out.passed).toBe(false);
+});
+
+test('git-count commits: an unborn HEAD counts as zero commits; a one-commit repo counts one', () => {
+  const unborn = workdir();
+  gitInit(unborn);
+  expect(verbGitCount(['commits', 'eq', '0'], ctxFor(unborn)).passed).toBe(
+    true,
+  );
+  const one = workdir();
+  gitInit(one);
+  gitCommit(one, 'one.txt');
+  expect(verbGitCount(['commits', 'eq', '1'], ctxFor(one)).passed).toBe(true);
+});
