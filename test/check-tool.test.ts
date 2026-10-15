@@ -773,3 +773,20 @@ test('git-count commits: an unborn HEAD counts as zero commits; a one-commit rep
   gitCommit(one, 'one.txt');
   expect(verbGitCount(['commits', 'eq', '1'], ctxFor(one)).passed).toBe(true);
 });
+
+test('git-count commits: a non-repository directory is a broken check, not zero commits', () => {
+  const wd = workdir();
+  const out = verbGitCount(['commits', 'eq', '0'], ctxFor(wd));
+  expect(out.broken).toBe(true);
+  expect(out.passed).toBe(false);
+  expect(out.detail).toContain('git rev-parse');
+});
+
+test('git-count commits: a malformed repository is a broken check, not zero commits', () => {
+  const wd = workdir();
+  writeFile(wd, '.git', ''); // an empty gitfile: git cannot resolve a repository
+  const out = verbGitCount(['commits', 'eq', '0'], ctxFor(wd));
+  expect(out.broken).toBe(true);
+  expect(out.passed).toBe(false);
+  expect(out.detail).toContain('git rev-parse');
+});

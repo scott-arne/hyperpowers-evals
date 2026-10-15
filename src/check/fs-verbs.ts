@@ -419,13 +419,22 @@ export function verbGitCount(args: string[], ctx: CheckContext): CheckOutcome {
     count = out.out.split('\n').filter((l) => l.length > 0).length;
   } else if (dim === 'commits') {
     // `rev-list --count HEAD` exits nonzero on an unborn HEAD, which has always
-    // counted as zero commits; only a failure with a resolvable HEAD is broken.
-    if (gitOk(ctx.cwd, ['rev-parse', '--verify', '-q', 'HEAD'], nested.env)) {
+    // counted as zero commits. Only the probe's rc 1 means that; rc 128 (not a
+    // repository, a corrupt one) or a spawn error means the repository could not
+    // be inspected, which must never read as zero commits.
+    const head = gitOut(
+      ctx.cwd,
+      ['rev-parse', '--verify', '-q', 'HEAD'],
+      nested.env,
+    );
+    if (head.ok) {
       const out = gitOut(ctx.cwd, ['rev-list', '--count', 'HEAD'], nested.env);
       if (!out.ok) return broken(out.detail);
       count = Number.parseInt(out.out.trim(), 10);
-    } else {
+    } else if (head.status === 1) {
       count = 0;
+    } else {
+      return broken(head.detail);
     }
   } else {
     return broken(`unknown dimension: ${dim}`);
@@ -594,14 +603,22 @@ function gitOut(
   cwd: string,
   gitArgs: string[],
   env: Record<string, string>,
-): { ok: true; out: string } | { ok: false; detail: string } {
+):
+  | { ok: true; out: string }
+  | { ok: false; detail: string; status: number | null } {
   const proc = spawnSync('git', [...GIT_HYGIENE, ...gitArgs], {
     cwd,
     env,
     encoding: 'utf8',
   });
   if ((proc.status ?? 1) !== 0) {
-    return { ok: false, detail: gitFailure(gitArgs[0] ?? '', proc) };
+    // `status` is null for a spawn error or a signal, so a caller that keys on a
+    // specific exit code never mistakes either for it.
+    return {
+      ok: false,
+      detail: gitFailure(gitArgs[0] ?? '', proc),
+      status: proc.status,
+    };
   }
   return { ok: true, out: proc.stdout ?? '' };
 }
