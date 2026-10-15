@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { shellSingleQuote } from '../src/agents/index.ts';
 import { populateContextDir } from '../src/runner/context.ts';
 import { RunnerError } from '../src/runner/errors.ts';
@@ -31,6 +31,22 @@ afterAll(() => {
 // The REAL coding-agents/ dir (sibling of test/). It carries claude-context/
 // {HOWTO.md, launch-agent}, the templates populateContextDir substitutes.
 const REAL_CODING_AGENTS = resolve(import.meta.dir, '..', 'coding-agents');
+
+// A run directory under its own temp out-root: the runner allocates the agent's
+// workspace beside the record, so the fixture needs a real out-root to derive
+// it from.
+function tmpRunDir(): string {
+  const runDir = join(tmp('out-'), 'scn-claude-20260101T000000Z-abcd');
+  mkdirSync(runDir, { recursive: true });
+  return runDir;
+}
+
+// Where the runner allocates the agent's workspace for `runDir`
+// (allocateWorkspace, src/runner/index.ts): beside the record, never inside it.
+function workspaceDirFor(runDir: string): string {
+  const outRoot = dirname(runDir);
+  return join(outRoot, 'workspaces', basename(runDir));
+}
 
 // Build the claude context substitutions exactly as the runner does for the
 // runtime_family == claude path (src/runner/index.ts). configDir is the per-run
@@ -59,8 +75,9 @@ function claudeSubstitutions(opts: {
     $CLAUDE_ENV_FILE: claudeEnvFile,
     $CLAUDE_ENV_FILE_SH: shellSingleQuote(claudeEnvFile),
     $CLAUDE_MODEL: model,
-    // The runner always adds throwaway-$HOME isolation for the coding agent.
-    ...homeEnvSubstitutions(join(runDir, 'home')),
+    // The runner always adds throwaway-$HOME isolation for the coding agent,
+    // rooted in the workspace it allocates beside the record.
+    ...homeEnvSubstitutions(join(workspaceDirFor(runDir), 'home')),
   };
 }
 
@@ -77,7 +94,7 @@ function assertNoLeftoverSubPlaceholders(
 }
 
 test('populateContextDir substitutes every placeholder in the claude context', () => {
-  const runDir = tmp('run-');
+  const runDir = tmpRunDir();
   const configDir = join(runDir, 'coding-agent-config');
   const launchCwd = join(runDir, 'coding-agent-workdir');
   mkdirSync(configDir, { recursive: true });
@@ -119,10 +136,10 @@ test('populateContextDir substitutes every placeholder in the claude context', (
   // The env strip it pairs with is exercised by running the launcher below.
   expect(launcher).toContain('CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1');
 
-  // Throwaway-$HOME isolation: HOME + the XDG dirs are pinned under <runDir>/home
-  // in the launcher's exec env line, so the coding agent never touches the
-  // operator's real ~/.claude, ~/.config, ~/.cache, etc.
-  const runHomeDir = join(runDir, 'home');
+  // Throwaway-$HOME isolation: HOME + the XDG dirs are pinned under the
+  // workspace's home/ in the launcher's exec env line, so the coding agent
+  // never touches the operator's real ~/.claude, ~/.config, ~/.cache, etc.
+  const runHomeDir = join(workspaceDirFor(runDir), 'home');
   expect(launcher).toContain(`HOME='${runHomeDir}'`);
   expect(launcher).toContain(
     `XDG_CONFIG_HOME='${join(runHomeDir, '.config')}'`,
@@ -140,7 +157,7 @@ test('populateContextDir substitutes every placeholder in the claude context', (
 // so results would depend on where quorum was started. The launcher drops
 // them before sourcing the env-file, which then sets the Claude env alone.
 test('the claude launcher drops the inherited Claude env and keeps the env-file', () => {
-  const runDir = tmp('run-');
+  const runDir = tmpRunDir();
   const configDir = join(runDir, 'coding-agent-config');
   const launchCwd = join(runDir, 'coding-agent-workdir');
   const stubDir = join(runDir, 'stub-bin');
@@ -225,7 +242,7 @@ test('the claude launcher drops the inherited Claude env and keeps the env-file'
   expect(env.get('CLAUDE_CODE_USE_VERTEX')).toBe('1');
   expect(env.get('ANTHROPIC_DEFAULT_SONNET_MODEL')).toBe('from-env-file');
   expect(env.get('CLAUDE_CODE_FORCE_SESSION_PERSISTENCE')).toBe('1');
-  expect(env.get('HOME')).toBe(join(runDir, 'home'));
+  expect(env.get('HOME')).toBe(join(workspaceDirFor(runDir), 'home'));
   // Network config is not Claude env and must still reach the agent.
   expect(env.get('HTTPS_PROXY')).toBe('http://proxy.example:8080');
 });
@@ -260,7 +277,7 @@ test('populateContextDir is a no-op when a non-required context dir is missing',
 });
 
 test('populateContextDir raises when a forbidden placeholder survives', () => {
-  const runDir = tmp('run-');
+  const runDir = tmpRunDir();
   const configDir = join(runDir, 'coding-agent-config');
   const launchCwd = join(runDir, 'coding-agent-workdir');
   mkdirSync(configDir, { recursive: true });

@@ -129,7 +129,12 @@ test('provision succeeds when the out-root resolves UNDER SUPERPOWERS_ROOT', () 
   const configDir = join(root, 'evals', 'run', 'coding-agent-config');
   const workdir = join(root, 'evals', 'run', 'coding-agent-workdir');
   mkdirSync(workdir, { recursive: true });
-  const home = { configDir, workdir, skeletonRoot: undefined };
+  const home = {
+    configDir,
+    workdir,
+    runDir: join(root, 'evals', 'run'),
+    skeletonRoot: undefined,
+  };
   const authParent = mkdtempSync(join(tmpdir(), 'codex-auth-'));
   const appServer = new FakeAppServerClient();
 

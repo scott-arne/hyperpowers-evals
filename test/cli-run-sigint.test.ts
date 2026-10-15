@@ -11,6 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { FinalVerdictSchema } from '../src/contracts/verdict.ts';
+import { parseRunDirName } from '../src/dashboard/scan.ts';
 
 // Receiver side of the graceful-stop chain (the dashboard Stop button's
 // load-bearing path): `quorum run` under SIGINT must forward the signal to the
@@ -25,6 +26,9 @@ const MOCK = resolve(import.meta.dir, 'mock-gauntlet');
 // The REAL coding-agents/ dir (same rationale as cli-run.test.ts): a claude run
 // requires claude-context/ + claude.project-prompt.md, which only live here.
 const REAL_CODING_AGENTS = resolve(import.meta.dir, '..', 'coding-agents');
+// The coding agent both runs below pass to `quorum run`; also the agent name
+// parseRunDirName needs to recognize a run directory.
+const AGENT = 'claude';
 
 function scenario(): string {
   const scn = mkdtempSync(join(tmpdir(), 'scn-sigint-'));
@@ -99,7 +103,7 @@ test('quorum run forwards SIGINT and writes a stopped verdict (exit 2)', async (
       'run',
       scenario(),
       '--coding-agent',
-      'claude',
+      AGENT,
       '--coding-agents-dir',
       REAL_CODING_AGENTS,
       '--out-root',
@@ -218,7 +222,7 @@ test('SIGINT mid-sequence stops the run and stamps the interrupted trial', async
       'run',
       scenario(),
       '--coding-agent',
-      'claude',
+      AGENT,
       '--coding-agents-dir',
       REAL_CODING_AGENTS,
       '--out-root',
@@ -259,8 +263,12 @@ test('SIGINT mid-sequence stops the run and stamps the interrupted trial', async
     child.kill('SIGINT');
     expect(await exited).toBe(2);
 
-    // Trial 3 never started: exactly two run dirs exist.
-    const runDirs = readdirSync(outRoot);
+    // Trial 3 never started: exactly two run dirs exist. The out-root also
+    // holds the agents' workspaces/ tree, so only names that parse as a run
+    // directory count.
+    const runDirs = readdirSync(outRoot).filter(
+      (n) => parseRunDirName(n, [AGENT]) !== null,
+    );
     expect(runDirs).toHaveLength(2);
 
     // The interrupted trial's verdict is stopped AND placed in the sequence.

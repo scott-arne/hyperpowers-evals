@@ -31,6 +31,9 @@ export interface RunHome {
   readonly workdir: string;
   /** Root holding `<runtime>-home-skeleton/`, or undefined when none is seeded. */
   readonly skeletonRoot: string | undefined;
+  /** The run's record directory (<outRoot>/<run>), distinct from the workspace
+   *  that holds configDir and workdir. Kimi roots its artifact-root guard here. */
+  readonly runDir: string;
 }
 
 /** Behavior contract for a coding agent (§5.4): config plus a single

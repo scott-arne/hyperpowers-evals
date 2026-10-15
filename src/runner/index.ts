@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import { backupCredential } from '../agents/agy-creds.ts';
 import { killRunTmuxServer } from '../agents/agy-teardown.ts';
@@ -33,6 +33,7 @@ import { xdgHomeEnv, xdgHomeSubdirs } from '../agents/home-env.ts';
 import {
   CLAUDE_ENV_FILE_NAME,
   ProvisionError,
+  type RunHome,
   resolveAgent,
   resolveClaudeAutoModel,
   shellSingleQuote,
@@ -831,17 +832,55 @@ export function homeEnvSubstitutions(
   };
 }
 
-// The fixture at <runDir>/coding-agent-workdir sits under evals/results/, so a
-// fixture with no package.json of its own inherits evals' own: Node takes the
-// module type from the nearest package.json walking upward (evals declares
+// The fixture at <workspaceDir>/coding-agent-workdir sits under evals/results/,
+// so a fixture with no package.json of its own inherits evals' own: Node takes
+// the module type from the nearest package.json walking upward (evals declares
 // "type": "module", so a CommonJS fixture's require() throws), and npm picks
 // its project root the same way (an `npm install` or `npm test` in the fixture
-// would act on evals). A type-less package.json at the run directory ends both
+// would act on evals). A type-less package.json at the workspace root ends both
 // walks there: Node's syntax detection then runs CommonJS and ESM fixture files
 // alike, as it would for a repository with no package.json anywhere above it,
-// and npm's root becomes the gitignored run directory.
-export function isolateWorkdirPackageScope(runDir: string): void {
-  writeFileSync(join(runDir, 'package.json'), '{ "private": true }\n');
+// and npm's root becomes the gitignored workspace directory.
+export function isolateWorkdirPackageScope(dir: string): void {
+  writeFileSync(join(dir, 'package.json'), '{ "private": true }\n');
+}
+
+// Everything the Coding-Agent can write, for one run.
+export interface RunWorkspace {
+  readonly workspaceDir: string;
+  readonly workdir: string;
+  readonly runHomeDir: string;
+}
+
+// The agent's tree lives beside the record, not inside it, so nothing the
+// agent lists from its cwd is a record file (spec, "Layout"). The sentinel
+// moves with it: from the new workdir the upward package.json walk passes
+// workspaces/ and results/ before evals/package.json, so the workspace root
+// is where it must stop.
+export function allocateWorkspace(
+  outRoot: string,
+  runDir: string,
+): RunWorkspace {
+  const workspaceDir = join(outRoot, 'workspaces', basename(runDir));
+  const workdir = join(workspaceDir, 'coding-agent-workdir');
+  const runHomeDir = join(workspaceDir, 'home');
+  mkdirSync(workdir, { recursive: true });
+  for (const dir of [runHomeDir, ...xdgHomeSubdirs(runHomeDir)]) {
+    mkdirSync(dir, { recursive: true });
+  }
+  isolateWorkdirPackageScope(workspaceDir);
+  return { workspaceDir, workdir, runHomeDir };
+}
+
+// The RunHome a run hands its agent: the workspace paths it provisions into,
+// plus the record directory an agent needs to keep its artifacts out of.
+export function buildRunHome(
+  configDir: string,
+  workdir: string,
+  runDir: string,
+  skeletonRoot: string | undefined,
+): RunHome {
+  return { configDir, workdir, runDir, skeletonRoot };
 }
 
 // Reap the agent runtime's secret temp dirs. Each dir is removed recursively; an
@@ -1100,30 +1139,30 @@ async function runInnerBody(
   const agent = resolveAgent(cfg);
 
   // setup: isolated config + workdir, claude provisioning, then setup.sh.
-  const workdir = join(runDir, 'coding-agent-workdir');
-  mkdirSync(workdir, { recursive: true });
-  isolateWorkdirPackageScope(runDir);
-  // Throwaway $HOME for the coding agent under test — always on, every agent.
-  // Run-dir-relative so it's captured and reaped with the run (no mkdtemp / no
-  // runtimeCleanupDirs). The launchers pin HOME/XDG/TMPDIR to it via
-  // $QUORUM_HOME_ENV; pre-create the XDG base dirs + TMPDIR so every agent (and
-  // opencode's capture subprocess) finds them present.
-  const runHomeDir = join(runDir, 'home');
-  for (const dir of [runHomeDir, ...xdgHomeSubdirs(runHomeDir)]) {
-    mkdirSync(dir, { recursive: true });
-  }
+  // The workspace holds the fixture AND the throwaway $HOME for the coding
+  // agent under test — always on, every agent. Out-root-relative so it is
+  // reaped with the run (no mkdtemp / no runtimeCleanupDirs). The launchers pin
+  // HOME/XDG/TMPDIR to it via $QUORUM_HOME_ENV; the XDG base dirs + TMPDIR are
+  // pre-created so every agent (and opencode's capture subprocess) finds them
+  // present.
+  const { workspaceDir, workdir, runHomeDir } = allocateWorkspace(
+    a.outRoot,
+    runDir,
+  );
+  void workspaceDir; // consumed by the Copilot cascade and the misplaced-rollout detector (next task)
   // The agent's isolated config dir: rooted under the throwaway home at the
   // agent's home_config_subdir (it finds config via its $HOME default and the
   // launcher omits the config-dir env var).
   const configDir = agentConfigDir(cfg, runHomeDir);
-  const home = {
+  // skeletonRoot default = the coding-agents dir itself, so an agent that ships
+  // a <family>-home-skeleton there gets it copied. Only CodexAgent consumes it
+  // now (claude no longer seeds an onboarding skeleton).
+  const home = buildRunHome(
     configDir,
     workdir,
-    // skeletonRoot default = the coding-agents dir itself, so an agent that ships
-    // a <family>-home-skeleton there gets it copied. Only CodexAgent consumes it
-    // now (claude no longer seeds an onboarding skeleton).
-    skeletonRoot: a.skeletonRoot ?? a.codingAgentsDir,
-  };
+    runDir,
+    a.skeletonRoot ?? a.codingAgentsDir,
+  );
   // copilot is special-cased: it mints a per-run session id, threads it through
   // provisionCopilot, and returns the rich CopilotProvisioning record the runner
   // needs for the $QUORUM_COPILOT_SESSION_ID substitution, the gauntlet env base,
