@@ -569,3 +569,37 @@ for (const phase of ['pre', 'post'] as const) {
     expect(keysOfDump(dump)).toEqual([...new Set(expected)].sort());
   });
 }
+
+for (const phase of ['pre', 'post'] as const) {
+  test(`in ${phase}, an inner command runs under the agent home with no sink, selector or planted key`, async () => {
+    const workdir = mkdtempSync(join(tmpdir(), 'wd-'));
+    const home = mkdtempSync(join(tmpdir(), 'home-'));
+    const cmd =
+      'command-succeeds \'test "$HOME" = "$QUORUM_AGENT_HOME" && test -z "${QUORUM_RECORD_SINK:-}" && test -z "${QUORUM_INNER_ENV:-}" && test -z "${ANTHROPIC_API_KEY:-}" && test -z "${QUORUM_RUN_DIR:-}"\'';
+    const checksSh = checksShWith(
+      phase === 'pre'
+        ? `pre() {\n  ${cmd}\n}\npost() { :; }\n`
+        : `pre() { :; }\npost() {\n  ${cmd}\n}\n`,
+    );
+    const prev = process.env['ANTHROPIC_API_KEY'];
+    process.env['ANTHROPIC_API_KEY'] = 'sk-planted';
+    try {
+      const { records, exitCode } = await runPhase({
+        checksSh,
+        phase,
+        workdir,
+        repoRoot: REPO,
+        agentHome: home,
+        runDir: '/record/run',
+      });
+      expect(exitCode).toBe(0);
+      expect(records[0]).toMatchObject({
+        check: 'command-succeeds',
+        passed: true,
+      });
+    } finally {
+      if (prev === undefined) delete process.env['ANTHROPIC_API_KEY'];
+      else process.env['ANTHROPIC_API_KEY'] = prev;
+    }
+  });
+}

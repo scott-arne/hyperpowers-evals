@@ -7,7 +7,13 @@
 
 import { expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { negate, runVerb } from '../src/check/dispatch.ts';
@@ -541,4 +547,153 @@ test('E2E: setup-helpers prelude function resolves to the TS CLI', () => {
   });
   // Missing `run` subcommand → usage error exit 2 (the CLI's distinction).
   expect(proc.status).toBe(2);
+});
+
+// ---------------------------------------------------------------------------
+// The inner projection: command-succeeds and the harness's git spawns
+// ---------------------------------------------------------------------------
+
+function withEnv<T>(vars: Record<string, string | undefined>, fn: () => T): T {
+  const saved: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(vars)) {
+    saved[k] = process.env[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+test('command-succeeds under QUORUM_INNER_ENV=projected: agent home, no sink, no selector, no planted key', () => {
+  const wd = workdir();
+  const home = mkdtempSync(join(tmpdir(), 'agent-home-'));
+  // Selector and agent home arrive through the context; the ambient base
+  // (what envSnapshot() returns) carries the sink and a planted key.
+  const ctx = ctxFor(wd, {
+    QUORUM_INNER_ENV: 'projected',
+    QUORUM_AGENT_HOME: home,
+  });
+  const out = withEnv(
+    {
+      QUORUM_RECORD_SINK: '/tmp/planted-sink',
+      ANTHROPIC_API_KEY: 'sk-planted',
+      QUORUM_AGENT_HOME: home,
+    },
+    () =>
+      verbCommandSucceeds(
+        [
+          `test "$HOME" = "${home}" && test -z "\${QUORUM_RECORD_SINK:-}" && test -z "\${QUORUM_INNER_ENV:-}" && test -z "\${ANTHROPIC_API_KEY:-}" && test "$QUORUM_AGENT_HOME" = "${home}"`,
+        ],
+        ctx,
+      ),
+  );
+  expect(out.passed).toBe(true);
+});
+
+test('command-succeeds under QUORUM_INNER_ENV=legacy: inherits, selector stripped', () => {
+  const wd = workdir();
+  const out = withEnv(
+    { QUORUM_INNER_ENV: 'legacy', QUORUM_RECORD_SINK: '/tmp/planted-sink' },
+    () =>
+      verbCommandSucceeds(
+        [
+          'test "$QUORUM_RECORD_SINK" = /tmp/planted-sink && test -z "${QUORUM_INNER_ENV:-}"',
+        ],
+        ctxFor(wd, { QUORUM_INNER_ENV: 'legacy' }),
+      ),
+  );
+  expect(out.passed).toBe(true);
+});
+
+test('command-succeeds: projected without QUORUM_AGENT_HOME is a broken check, not a silent inherit', () => {
+  const wd = workdir();
+  const out = verbCommandSucceeds(
+    ['true'],
+    ctxFor(wd, { QUORUM_INNER_ENV: 'projected' }),
+  );
+  expect(out.broken).toBe(true);
+  expect(out.detail).toContain('QUORUM_AGENT_HOME');
+});
+
+function gitRepoWith(
+  configure: (git: (args: string[]) => void, wd: string) => void,
+): string {
+  const wd = workdir();
+  const git = (args: string[]) => {
+    const r = spawnSync('git', args, { cwd: wd, encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(r.stderr);
+  };
+  git(['init', '-q']);
+  git(['config', 'user.email', 'a@b']);
+  git(['config', 'user.name', 't']);
+  writeFile(wd, 'a.txt', 'hello\n');
+  git(['add', '-A']);
+  git(['commit', '-qm', 'init']);
+  configure(git, wd); // after the commit, so no setup command ever runs the hook or filter under test
+  return wd;
+}
+
+test('git verbs: projected mode without QUORUM_AGENT_HOME is a broken check, never a pass', () => {
+  const wd = gitRepoWith(() => {});
+  const clean = verbGitClean([], ctxFor(wd, { QUORUM_INNER_ENV: 'projected' }));
+  expect(clean.broken).toBe(true);
+  expect(clean.passed).toBe(false);
+  // gitOut returning '' here would have made `git-branch detached` pass.
+  const detached = verbGitBranch(
+    ['detached'],
+    ctxFor(wd, { QUORUM_INNER_ENV: 'projected' }),
+  );
+  expect(detached.broken).toBe(true);
+});
+
+test('git-clean: a configured core.fsmonitor does not run under a harness git verb', () => {
+  const mark = join(mkdtempSync(join(tmpdir(), 'mark-')), 'seen');
+  const hook = join(mkdtempSync(join(tmpdir(), 'fsm-')), 'fsmonitor.sh');
+  writeFileSync(hook, `#!/bin/sh\nprintf 'ran\\n' >> "${mark}"\nprintf '/'\n`);
+  spawnSync('chmod', ['+x', hook]);
+  const wd = gitRepoWith((git) => git(['config', 'core.fsmonitor', hook]));
+  writeFile(wd, 'a.txt', 'hellp\n');
+  expect(existsSync(mark)).toBe(false); // precondition: fixture setup never ran the hook
+  const out = verbGitClean([], ctxFor(wd, { QUORUM_INNER_ENV: 'legacy' }));
+  expect(out.passed).toBe(false); // dirty tree; the point is the marker
+  expect(existsSync(mark)).toBe(false);
+});
+
+test('git-clean: a configured clean filter runs under the inner projection, not the dispatcher environment', () => {
+  // Measured during design: `git status --porcelain` with the hygiene flags
+  // still invokes filter.<driver>.clean on a same-size change and on a
+  // stat-dirty unmodified file. The filter must therefore see the agent home
+  // and no record sink.
+  const home = mkdtempSync(join(tmpdir(), 'agent-home-'));
+  const mark = join(mkdtempSync(join(tmpdir(), 'mark-')), 'seen');
+  const filter = join(mkdtempSync(join(tmpdir(), 'flt-')), 'clean.sh');
+  writeFileSync(
+    filter,
+    `#!/bin/sh\nprintf 'HOME=%s SINK=%s\\n' "$HOME" "\${QUORUM_RECORD_SINK:-unset}" >> "${mark}"\ncat\n`,
+  );
+  spawnSync('chmod', ['+x', filter]);
+  const wd = gitRepoWith((git, d) => {
+    git(['config', 'filter.probe.clean', filter]);
+    writeFile(d, '.gitattributes', '*.txt filter=probe\n');
+  });
+  writeFile(wd, 'a.txt', 'hellp\n'); // same size: status must re-hash through the filter
+  writeFileSync(mark, '');
+  const out = withEnv(
+    { QUORUM_RECORD_SINK: '/tmp/planted-sink', QUORUM_AGENT_HOME: home },
+    () =>
+      verbGitClean(
+        [],
+        ctxFor(wd, { QUORUM_INNER_ENV: 'projected', QUORUM_AGENT_HOME: home }),
+      ),
+  );
+  expect(out.passed).toBe(false); // the tree is dirty; that is not the point
+  const seen = readFileSync(mark, 'utf8');
+  expect(seen).toContain(`HOME=${home}`);
+  expect(seen).toContain('SINK=unset');
 });
