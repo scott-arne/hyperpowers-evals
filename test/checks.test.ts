@@ -26,6 +26,7 @@ test('pre() emitting a passing file-exists record is collected', async () => {
     phase: 'pre',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
   });
   expect(exitCode).toBe(0);
   expect(records).toHaveLength(1);
@@ -51,6 +52,7 @@ test('not file-exists (miss) emits a single negated record under the inner name 
     phase: 'pre',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
   });
   expect(exitCode).toBe(0);
   expect(records).toHaveLength(1);
@@ -81,6 +83,7 @@ test('git-count commits via runPhase emits the byte-shaped record', async () => 
     phase: 'pre',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
   });
   expect(exitCode).toBe(0);
   expect(records).toHaveLength(3);
@@ -101,6 +104,7 @@ test('rc 0 with no records yields exitCode 0 and no records', async () => {
     phase: 'pre',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
   });
   expect(exitCode).toBe(0);
   expect(records).toEqual([]);
@@ -119,6 +123,7 @@ test('a bash crash (unbound command) with no records surfaces as a nonzero exitC
     phase: 'pre',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
   });
   expect(records).toEqual([]);
   expect(exitCode).toBe(127);
@@ -140,6 +145,7 @@ test('a signal-killed bash phase with no records surfaces a nonzero crash exitCo
     phase: 'pre',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
   });
   expect(records).toEqual([]);
   expect(exitCode).not.toBe(0);
@@ -164,6 +170,7 @@ test('a signal-killed bash phase is a crash even if it already emitted a record'
     phase: 'pre',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
   });
   // The partial record is still captured for the verdict's check list.
   expect(records).toHaveLength(1);
@@ -189,9 +196,7 @@ test('a bash spawn failure throws instead of reporting a clean empty phase', asy
   // spawnSync to fail with ENOENT (status:null, error set). runPhase composes the
   // child PATH from envSnapshot() (a live process.env view), so we set it to a
   // bash-less dir for the duration of this one assertion.
-  // biome-ignore lint/style/noProcessEnv: must mutate inherited PATH to provoke a spawn failure
   const savedPath = process.env['PATH'];
-  // biome-ignore lint/style/noProcessEnv: must mutate inherited PATH to provoke a spawn failure
   process.env['PATH'] = emptyDir;
   try {
     await expect(
@@ -200,10 +205,10 @@ test('a bash spawn failure throws instead of reporting a clean empty phase', asy
         phase: 'pre',
         workdir,
         repoRoot: REPO,
+        agentHome: workdir,
       }),
     ).rejects.toThrow();
   } finally {
-    // biome-ignore lint/style/noProcessEnv: restore the inherited PATH after the assertion
     process.env['PATH'] = savedPath;
   }
 });
@@ -221,12 +226,10 @@ test('an unset PATH falls back to /usr/bin:/bin in the child env (not an empty/C
   const checksSh = checksShWith(
     `pre() {\n  printf '%s' "$PATH" > '${out}'\n}\npost() { :; }\n`,
   );
-  // biome-ignore lint/style/noProcessEnv: must unset inherited PATH to exercise the fallback
   const savedPath = process.env['PATH'];
   // `delete`, not `= undefined`: assigning undefined coerces to the STRING
   // "undefined", which getEnv reads as a set value, so the ?? fallback never
   // fires and the child inherits PATH=undefined instead of the default.
-  // biome-ignore lint/style/noProcessEnv: must unset inherited PATH to exercise the fallback
   delete process.env['PATH'];
   let childPath: string;
   try {
@@ -235,10 +238,10 @@ test('an unset PATH falls back to /usr/bin:/bin in the child env (not an empty/C
       phase: 'pre',
       workdir,
       repoRoot: REPO,
+      agentHome: workdir,
     });
     childPath = readFileSync(out, 'utf8');
   } finally {
-    // biome-ignore lint/style/noProcessEnv: restore the inherited PATH after the assertion
     process.env['PATH'] = savedPath;
   }
   expect(childPath).toBe('/usr/bin:/bin');
@@ -263,6 +266,7 @@ test('a phase emitting >1 MB still collects its records (no ENOBUFS discard)', a
     phase: 'pre',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
   });
   expect(exitCode).toBe(0);
   expect(records).toHaveLength(1);
@@ -284,6 +288,7 @@ test('QUORUM_CODING_AGENT is exported to the checks child env', async () => {
     phase: 'pre',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
     codingAgent: 'gemini',
   });
   expect(exitCode).toBe(0);
@@ -403,6 +408,7 @@ test('tool-not-called FAILs against an empty trace capture (no vacuous pass)', a
     phase: 'post',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
     transcriptPath,
   });
   expect(records[0]).toMatchObject({
@@ -425,6 +431,7 @@ test('skill-not-called FAILs against an empty trace capture (no vacuous pass)', 
     phase: 'post',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
     transcriptPath,
   });
   expect(records[0]).toMatchObject({
@@ -448,6 +455,7 @@ test('tool-not-called PASSes on a non-empty trace that lacks the tool (positive 
     phase: 'post',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
     transcriptPath,
   });
   expect(exitCode).toBe(0);
@@ -472,6 +480,7 @@ test('skill-not-called PASSes on a non-empty trace that lacks the skill (positiv
     phase: 'post',
     workdir,
     repoRoot: REPO,
+    agentHome: workdir,
     transcriptPath,
   });
   expect(exitCode).toBe(0);
@@ -481,3 +490,82 @@ test('skill-not-called PASSes on a non-empty trace that lacks the skill (positiv
     passed: true,
   });
 });
+
+const BASH_CREATED = new Set(['PWD', 'OLDPWD', 'SHLVL', '_']);
+const OUTER_KEYS = [
+  'PATH',
+  'HOME',
+  'QUORUM_REPO_ROOT',
+  'QUORUM_RECORD_SINK',
+  'QUORUM_AGENT_HOME',
+  'QUORUM_INNER_ENV',
+];
+
+function keysOfDump(path: string): string[] {
+  return readFileSync(path, 'utf8')
+    .split('\n')
+    .filter((l) => l.includes('='))
+    .map((l) => l.slice(0, l.indexOf('=')))
+    .filter((k) => !BASH_CREATED.has(k))
+    .sort();
+}
+
+for (const phase of ['pre', 'post'] as const) {
+  test(`the outer bash in ${phase} sees exactly the allowlist plus the sink, and no planted key`, async () => {
+    const workdir = mkdtempSync(join(tmpdir(), 'wd-'));
+    const home = mkdtempSync(join(tmpdir(), 'home-'));
+    const dump = join(home, `outer-${phase}.txt`);
+    const body = `env | sort > '${dump}'\n  file-exists present.txt`;
+    writeFileSync(join(workdir, 'present.txt'), '');
+    const checksSh = checksShWith(
+      phase === 'pre'
+        ? `pre() {\n  ${body}\n}\npost() { :; }\n`
+        : `pre() { :; }\npost() {\n  ${body}\n}\n`,
+    );
+    const prev = process.env['ANTHROPIC_API_KEY'];
+    process.env['ANTHROPIC_API_KEY'] = 'sk-planted';
+    try {
+      // Production shapes (src/runner/index.ts:1159-1167, 1524-1533): pre carries
+      // the run dir but no transcript; post carries both.
+      const runDir = mkdtempSync(join(tmpdir(), 'run-'));
+      const transcript = join(runDir, 'trajectory.json');
+      writeFileSync(transcript, '[]');
+      const base = {
+        checksSh,
+        workdir,
+        repoRoot: REPO,
+        runDir,
+        configDir: join(home, '.claude'),
+        codingAgent: 'claude',
+        agentHome: home,
+      };
+      const { exitCode } = await runPhase(
+        phase === 'pre'
+          ? { ...base, phase }
+          : { ...base, phase, transcriptPath: transcript },
+      );
+      expect(exitCode).toBe(0);
+    } finally {
+      if (prev === undefined) delete process.env['ANTHROPIC_API_KEY'];
+      else process.env['ANTHROPIC_API_KEY'] = prev;
+    }
+    const phaseKeys = [
+      'QUORUM_RUN_DIR',
+      'QUORUM_AGENT_CONFIG_DIR',
+      'QUORUM_CODING_AGENT',
+      ...(phase === 'post' ? ['QUORUM_TRANSCRIPT_PATH'] : []),
+    ];
+    const expected = [
+      ...OUTER_KEYS,
+      ...phaseKeys,
+      ...Object.keys(process.env).filter(
+        (k) =>
+          k === 'TMPDIR' ||
+          k === 'LANG' ||
+          k.startsWith('LC_') ||
+          /^(https?|no)_proxy$/i.test(k),
+      ),
+    ].sort();
+    expect(keysOfDump(dump)).toEqual([...new Set(expected)].sort());
+  });
+}

@@ -7,7 +7,8 @@ import {
   type CheckRecord,
   CheckRecordSchema,
 } from '../contracts/verdict.ts';
-import { envSnapshot, getEnv } from '../env.ts';
+import { envSnapshot } from '../env.ts';
+import { outerEnv } from './env-allowlist.ts';
 
 // A check verb emits one of these per line into QUORUM_RECORD_SINK. The verbs
 // are bash functions (defined by the sourced prelude, src/checks/prelude.sh)
@@ -28,6 +29,8 @@ export interface RunPhaseArgs {
    * functions delegating to the TS check CLIs.
    */
   readonly repoRoot: string;
+  /** The agent's throwaway home; exported as QUORUM_AGENT_HOME and the root the inner projection overlays HOME/XDG/TMPDIR from. */
+  readonly agentHome: string;
   /** Optional: path to the ATIF trajectory.json, exposed to transcript checks. */
   readonly transcriptPath?: string;
   /** Optional: the run dir, exposed to post-checks that read sibling artifacts. */
@@ -55,39 +58,24 @@ export interface RunPhaseResult {
 }
 
 /**
+ * Run one phase under an explicit environment. The sink is created here and
+ * overlaid as QUORUM_RECORD_SINK, so a caller cannot forget it. Production
+ * calls runPhase; the corpus replay calls this twice with two environments.
+ *
  * Source the check prelude + a scenario's checks.sh and invoke one phase
  * (`pre`/`post`), collecting the CheckRecords its verb functions emit. Pure
  * given the filesystem; throws only on an unrecoverable spawn failure.
  */
-export async function runPhase(args: RunPhaseArgs): Promise<RunPhaseResult> {
+export async function runPhaseWithEnv(
+  args: RunPhaseArgs,
+  env: Record<string, string>,
+): Promise<RunPhaseResult> {
   const sinkDir = mkdtempSync(join(tmpdir(), 'sink-'));
   const sink = join(sinkDir, 'records.jsonl');
-
-  // Build the subprocess env from the sanctioned snapshot, never process.env
-  // directly. undefined values are simply absent in the child's environment.
-  // Assembled as one literal (conditional spreads for the optional keys) so the
-  // names are object properties, not index-signature reads/writes.
-  // An unset PATH falls back to the system default so bash, git, and the other
-  // utilities the verbs shell out to still resolve. The check verbs themselves
-  // are prelude functions (no PATH entry), so PATH carries no quorum-specific
-  // component.
-  const path = getEnv('PATH') ?? '/usr/bin:/bin';
   const prelude = join(args.repoRoot, 'src', 'checks', 'prelude.sh');
-  const env: Record<string, string | undefined> = {
-    ...envSnapshot(),
-    PATH: path,
-    QUORUM_REPO_ROOT: args.repoRoot,
+  const childEnv: Record<string, string> = {
+    ...env,
     QUORUM_RECORD_SINK: sink,
-    ...(args.transcriptPath !== undefined
-      ? { QUORUM_TRANSCRIPT_PATH: args.transcriptPath }
-      : {}),
-    ...(args.runDir !== undefined ? { QUORUM_RUN_DIR: args.runDir } : {}),
-    ...(args.configDir !== undefined
-      ? { QUORUM_AGENT_CONFIG_DIR: args.configDir }
-      : {}),
-    ...(args.codingAgent !== undefined
-      ? { QUORUM_CODING_AGENT: args.codingAgent }
-      : {}),
   };
 
   try {
@@ -96,7 +84,7 @@ export async function runPhase(args: RunPhaseArgs): Promise<RunPhaseResult> {
       ['-c', `source '${prelude}'; source '${args.checksSh}'; ${args.phase}`],
       {
         cwd: args.workdir,
-        env,
+        env: childEnv,
         encoding: 'utf8',
         // spawnSync defaults maxBuffer to 1 MB of stdout+stderr; a verbose
         // pre()/post() body would otherwise return {status:null,
@@ -142,6 +130,29 @@ export async function runPhase(args: RunPhaseArgs): Promise<RunPhaseResult> {
   } finally {
     rmSync(sinkDir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Run one phase under the allowlisted outer environment built from the
+ * sanctioned snapshot (never process.env directly): the check tooling and the
+ * QUORUM contract, and nothing else the operator happens to have exported.
+ */
+export async function runPhase(args: RunPhaseArgs): Promise<RunPhaseResult> {
+  return runPhaseWithEnv(
+    args,
+    outerEnv(envSnapshot(), {
+      repoRoot: args.repoRoot,
+      agentHome: args.agentHome,
+      ...(args.transcriptPath !== undefined
+        ? { transcriptPath: args.transcriptPath }
+        : {}),
+      ...(args.runDir !== undefined ? { runDir: args.runDir } : {}),
+      ...(args.configDir !== undefined ? { configDir: args.configDir } : {}),
+      ...(args.codingAgent !== undefined
+        ? { codingAgent: args.codingAgent }
+        : {}),
+    }),
+  );
 }
 
 /** Map a signal name (e.g. "SIGKILL") to its number; SIGKILL (9) if unknown. */
