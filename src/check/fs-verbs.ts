@@ -419,9 +419,12 @@ export function verbGitCount(args: string[], ctx: CheckContext): CheckOutcome {
     count = out.out.split('\n').filter((l) => l.length > 0).length;
   } else if (dim === 'commits') {
     // `rev-list --count HEAD` exits nonzero on an unborn HEAD, which has always
-    // counted as zero commits. Only the probe's rc 1 means that; rc 128 (not a
-    // repository, a corrupt one) or a spawn error means the repository could not
-    // be inspected, which must never read as zero commits.
+    // counted as zero commits. rc 128 (not a repository, a corrupt one) or a
+    // spawn error means the repository could not be inspected, which must never
+    // read as zero commits. rc 1 is not by itself the unborn answer either: it
+    // is every HEAD that does not resolve, including a malformed or cyclic
+    // branch ref. Only a symbolic HEAD whose target ref does not exist yet is a
+    // genuinely unborn branch.
     const head = gitOut(
       ctx.cwd,
       ['rev-parse', '--verify', '-q', 'HEAD'],
@@ -432,6 +435,24 @@ export function verbGitCount(args: string[], ctx: CheckContext): CheckOutcome {
       if (!out.ok) return broken(out.detail);
       count = Number.parseInt(out.out.trim(), 10);
     } else if (head.status === 1) {
+      // A garbage or cyclic branch ref makes `symbolic-ref` fail (rc 128); a
+      // HEAD that is not symbolic at all yet did not resolve (rc 1) is equally
+      // a repository this check cannot inspect.
+      const sym = gitOut(ctx.cwd, ['symbolic-ref', '-q', 'HEAD'], nested.env);
+      if (!sym.ok) return broken(sym.detail);
+      const target = sym.out.trim();
+      const ref = gitOut(
+        ctx.cwd,
+        ['show-ref', '--verify', '-q', target],
+        nested.env,
+      );
+      if (ref.ok) {
+        return broken(
+          `git-count commits: HEAD -> ${target} exists but is unresolvable`,
+        );
+      }
+      // rc 1 is the absent target ref: the branch has no commits yet.
+      if (ref.status !== 1) return broken(ref.detail);
       count = 0;
     } else {
       return broken(head.detail);

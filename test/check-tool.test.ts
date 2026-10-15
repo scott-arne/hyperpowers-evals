@@ -790,3 +790,39 @@ test('git-count commits: a malformed repository is a broken check, not zero comm
   expect(out.passed).toBe(false);
   expect(out.detail).toContain('git rev-parse');
 });
+
+function currentBranch(wd: string): string {
+  const r = spawnSync('git', ['branch', '--show-current'], {
+    cwd: wd,
+    encoding: 'utf8',
+  });
+  const branch = (r.stdout ?? '').trim();
+  if (branch === '') throw new Error(`no current branch in ${wd}`);
+  return branch;
+}
+
+test('git-count commits: a garbage branch ref is a broken check, not zero commits', () => {
+  const wd = gitRepoWith(() => {});
+  writeFileSync(
+    join(wd, '.git', 'refs', 'heads', currentBranch(wd)),
+    'garbage\n',
+  );
+  const out = verbGitCount(['commits', 'eq', '0'], ctxFor(wd));
+  expect(out.broken).toBe(true);
+  expect(out.passed).toBe(false);
+  expect(out.detail).toContain('git symbolic-ref');
+});
+
+test('git-count commits: a cyclic branch ref is a broken check, not zero commits', () => {
+  const wd = gitRepoWith(() => {});
+  const branch = currentBranch(wd);
+  // `git symbolic-ref` refuses to point a ref at itself, so write the file.
+  writeFileSync(
+    join(wd, '.git', 'refs', 'heads', branch),
+    `ref: refs/heads/${branch}\n`,
+  );
+  const out = verbGitCount(['commits', 'eq', '0'], ctxFor(wd));
+  expect(out.broken).toBe(true);
+  expect(out.passed).toBe(false);
+  expect(out.detail).toContain('git symbolic-ref');
+});
