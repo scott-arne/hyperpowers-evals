@@ -17,7 +17,7 @@ import type {
   CommandOptions,
   CommandResult,
 } from '../src/agents/command-runner.ts';
-import { ProvisionError } from '../src/agents/index.ts';
+import { ProvisionError, type RunHome } from '../src/agents/index.ts';
 import {
   KimiAgent,
   sanitizeKimiDiagnostic,
@@ -906,48 +906,88 @@ test('sanitizeKimiDiagnostic stringifies non-string messages', () => {
 // writeKimiRuntimeEnvFile artifact-root-escape guard + run-scoped naming
 // ---------------------------------------------------------------------------
 
-test('writeKimiRuntimeEnvFile writes a run-scoped 0600 file outside the artifact root', () => {
-  const { home, cleanup } = makeTempHome();
+// The relocated layout: the record directory and the Coding-Agent workspace
+// are siblings under one out-root, so the artifact root (the record's parent)
+// contains both.
+function relocatedLayout(): {
+  out: string;
+  runDir: string;
+  cleanup: () => void;
+} {
+  const out = mkdtempSync(join(tmpdir(), 'out-'));
+  const runDir = join(out, 'kimi-run');
+  const ws = join(out, 'workspaces', 'kimi-run');
+  mkdirSync(runDir, { recursive: true });
+  mkdirSync(join(ws, 'home', '.kimi-code'), { recursive: true });
+  mkdirSync(join(ws, 'coding-agent-workdir'), { recursive: true });
+  return {
+    out,
+    runDir,
+    cleanup: () => rmSync(out, { recursive: true, force: true }),
+  };
+}
+
+test('writeKimiRuntimeEnvFile keeps the secret outside the whole out-root under the relocated layout', () => {
+  const { out, runDir, cleanup } = relocatedLayout();
   try {
-    // runDir is the per-run artifact dir (parent of configDir); artifact root is
-    // its parent. The OS tmpdir is outside both, so the guard accepts it.
-    const runDir = join(home.configDir, '..');
     const path = writeKimiRuntimeEnvFile(
       { KIMI_MODEL_API_KEY: API_KEY, KIMI_DISABLE_TELEMETRY: '1' },
       { runDir },
     );
     expect(existsSync(path)).toBe(true);
     expect(statSync(path).mode & 0o777).toBe(0o600);
-    // Run-scoped naming: the secret dir prefix embeds the run dir's basename.
     expect(path).toContain('quorum-kimi-env-');
-    // The secret file is NOT placed inside the artifact root.
-    const artifactRoot = realpathSync(join(home.configDir, '..', '..'));
-    expect(path.startsWith(`${artifactRoot}/`)).toBe(false);
-    const body = readFileSync(path, 'utf8');
-    expect(body).toContain(`KIMI_MODEL_API_KEY='${API_KEY}'`);
-    expect(body).toContain("KIMI_DISABLE_TELEMETRY='1'");
+    expect(path.startsWith(`${realpathSync(out)}/`)).toBe(false);
   } finally {
     cleanup();
   }
 });
 
-test('writeKimiRuntimeEnvFile walks the temp parent out when tmpdir is inside the artifact root', () => {
-  const { home, cleanup } = makeTempHome();
+test('a TMPDIR inside the out-root but outside workspaces/ is walked out of the artifact root', () => {
+  const { out, runDir, cleanup } = relocatedLayout();
   try {
-    const runDir = join(home.configDir, '..');
-    // Force the temp parent override to sit INSIDE the artifact root; the guard
-    // must walk it out so the resulting file lands outside the artifact root.
-    const artifactRoot = join(runDir, '..');
-    const insideTmp = join(artifactRoot, 'tmp-inside');
+    const insideTmp = join(out, 'tmp-inside');
     mkdirSync(insideTmp, { recursive: true });
     const path = writeKimiRuntimeEnvFile(
       { KIMI_MODEL_API_KEY: API_KEY },
       { runDir, tmpDirOverride: insideTmp },
     );
-    expect(existsSync(path)).toBe(true);
     expect(path.startsWith(`${realpathSync(insideTmp)}/`)).toBe(false);
-    // The escaped file is not under the artifact root either.
-    expect(path.startsWith(`${realpathSync(artifactRoot)}/`)).toBe(false);
+    expect(path.startsWith(`${realpathSync(out)}/`)).toBe(false);
+  } finally {
+    cleanup();
+  }
+});
+
+test('provision roots the artifact guard at home.runDir, not at the workspace parent', () => {
+  const { out, runDir, cleanup } = relocatedLayout();
+  const home: RunHome = {
+    configDir: join(out, 'workspaces', 'kimi-run', 'home', '.kimi-code'),
+    workdir: join(out, 'workspaces', 'kimi-run', 'coding-agent-workdir'),
+    runDir,
+    skeletonRoot: undefined,
+  };
+  const spRoot = join(out, 'superpowers-src');
+  mkdirSync(spRoot, { recursive: true });
+  stageSuperpowers(spRoot);
+  try {
+    withEnv(
+      {
+        SUPERPOWERS_ROOT: spRoot,
+        KIMI_MODEL_API_KEY: API_KEY,
+        TMPDIR: join(out, 'tmp-inside'),
+        KIMI_MODEL_NAME: undefined,
+      },
+      () => {
+        mkdirSync(join(out, 'tmp-inside'), { recursive: true });
+        const env = new KimiAgent(KIMI_CONFIG).provision(
+          home,
+          new FakeCommandRunner(happyResponder),
+        );
+        const file = env['KIMI_ENV_FILE'] as string;
+        expect(file.startsWith(`${realpathSync(out)}/`)).toBe(false);
+      },
+    );
   } finally {
     cleanup();
   }

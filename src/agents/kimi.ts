@@ -125,7 +125,7 @@ export class KimiAgent implements CodingAgent {
     home: RunHome,
     runner: CommandRunner,
   ): Record<string, string> {
-    const { configDir, workdir } = home;
+    const { configDir, runDir } = home;
 
     // SUPERPOWERS_ROOT is required up front. Read env only through env.ts.
     const superpowersRoot = getEnv('SUPERPOWERS_ROOT');
@@ -188,13 +188,13 @@ export class KimiAgent implements CodingAgent {
       pinHome: false,
     });
 
-    // Write the mode-0600 secret file of sorted shell assignments, placed OUTSIDE
-    // the run artifact root (a run-scoped mkdtemp under a temp parent kept out of
-    // the artifact root) so capture never snapshots the secret. Derive the run
-    // dir from workdir (always <runDir>/coding-agent-workdir) — NOT configDir,
-    // which under the throwaway-$HOME collapse is <runDir>/home/.kimi-code (inside
-    // the artifact root), so dirname(configDir) is not the run dir.
-    const runDir = dirname(workdir);
+    // Write the mode-0600 secret file of sorted shell assignments OUTSIDE the
+    // run artifact root, so capture never snapshots it. The artifact root is
+    // the parent of the record directory (the out-root), which contains both
+    // the record and the workspace. It is taken from home.runDir, never
+    // derived from workdir: the workspace lives at <outRoot>/workspaces/<run>,
+    // so a derivation from it would name <outRoot>/workspaces as the root and
+    // accept a TMPDIR beside the record.
     const envFilePath = writeKimiRuntimeEnvFile(runtimeEnv, { runDir });
 
     // Redacted config summary (KIMI_MODEL_API_KEY -> "<present>"). Written into
