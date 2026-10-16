@@ -698,3 +698,93 @@ test('cloneWorkspace refuses a worktree whose .git file is a symlink out of the 
   );
   expect(hashTree(external)).toBe(externalBefore);
 });
+
+// A valid administrative entry planted outside the run under a name of the
+// agent's choosing: the worktree-side `.git` file is pointed at it. git keys
+// its repair on the last component of that backlink, finds no such entry in
+// the arm, and — measured on git 2.56 — writes the decoy's gitdir and then, in
+// its second pass, the source worktree's `.git` that the arm's entry still
+// names. `commondir` is made absolute so the decoy is a repository from where
+// it sits, which is what makes git follow it.
+function plantDecoyEntry(
+  runDir: string,
+  worktree: string,
+  external: string,
+  name: string,
+): string {
+  const id = 'coding-agent-workdir-existing-worktree';
+  const entry = join(runDir, 'coding-agent-workdir', '.git', 'worktrees', id);
+  const decoy = join(external, name);
+  cpSync(entry, decoy, { recursive: true });
+  writeFileSync(
+    join(decoy, 'commondir'),
+    `${join(runDir, 'coding-agent-workdir', '.git')}\n`,
+  );
+  writeFileSync(join(decoy, 'gitdir'), `${join(worktree, '.git')}\n`);
+  return decoy;
+}
+
+test('cloneWorkspace refuses a worktree whose .git backlink names an administrative entry the arm does not have, before any git runs', () => {
+  const { resultsRoot, runDir, worktree } = recordedWorktreeRun(
+    'worktree-decoy-entry',
+  );
+  const external = mkdtempSync(join(tmpdir(), 'decoy-entry-'));
+  const decoy = plantDecoyEntry(runDir, worktree, external, 'decoyid');
+  writeFileSync(join(worktree, '.git'), `gitdir: ${decoy}\n`);
+  const externalBefore = hashTree(external);
+  const sourceBefore = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('worktree-decoy-entry'),
+    AGENTS,
+  );
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, join(root, 'armK'));
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  // Whatever the clone decided, nothing outside it may have been written.
+  expect(hashTree(external)).toBe(externalBefore);
+  expect(hashTree(runDir)).toBe(sourceBefore);
+  expect(String(thrown)).toMatch(
+    /does not point back at administrative entry coding-agent-workdir-existing-worktree/,
+  );
+});
+
+test('the backlink is compared as text, the way git reads it: a symlink that resolves to the right entry name is still refused', () => {
+  const { resultsRoot, runDir, worktree } = recordedWorktreeRun(
+    'worktree-decoy-symlink',
+  );
+  // The backlink's resolved path ends in the arm's entry id, so a check on the
+  // resolved name would pass it; git takes the id from the text, finds no
+  // `symdecoy` entry in the arm, and follows the link out.
+  const external = mkdtempSync(join(tmpdir(), 'decoy-symlink-'));
+  const decoy = plantDecoyEntry(
+    runDir,
+    worktree,
+    external,
+    'coding-agent-workdir-existing-worktree',
+  );
+  symlinkSync(decoy, join(external, 'symdecoy'));
+  writeFileSync(
+    join(worktree, '.git'),
+    `gitdir: ${join(external, 'symdecoy')}\n`,
+  );
+  const externalBefore = hashTree(external);
+  const sourceBefore = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('worktree-decoy-symlink'),
+    AGENTS,
+  );
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, join(root, 'armM'));
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  expect(hashTree(external)).toBe(externalBefore);
+  expect(hashTree(runDir)).toBe(sourceBefore);
+  expect(String(thrown)).toMatch(/does not point back at administrative entry/);
+});

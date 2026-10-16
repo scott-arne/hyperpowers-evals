@@ -481,13 +481,53 @@ function requireStructureInsideArm(destReal: string, paths: string[]): void {
   }
 }
 
-// Point the arm's linked worktrees at the arm. Every path handed to `git
-// worktree repair` is derived from an administrative entry the arm itself has,
-// and the command runs only when there is at least one. Both halves are load
-// bearing: with no path arguments repair follows the copied gitdir pointer into
-// the SOURCE and rewrites it, and a path whose administrative entry the arm
-// lacks sends repair to the source directory the copied `.git` file names —
-// measured on git 2.56, each writes the corpus.
+// git's read_gitfile_gently() refuses a `.git` file larger than this, and the
+// repair then makes no first-pass write at all.
+const GITFILE_MAX_SIZE = 1 << 20;
+
+// `git worktree repair <path>` does not repair the entry that led the clone to
+// <path>. It reads the backlink in <path>/.git, takes the text after its last
+// `/` as an entry id, and prefers the repository's own `.git/worktrees/<id>`
+// when that is a directory; otherwise it repairs toward the backlink itself,
+// wherever that lands. Either way its second pass then rewrites whatever
+// worktree each entry names — the source's, unless the first pass re-aimed the
+// arm's entry. Measured on git 2.56: a backlink naming a decoy entry elsewhere
+// writes the decoy's gitdir and the source worktree's `.git`; a `/.`-suffixed,
+// trailing-slash or symlinked backlink whose resolved name is `id` still
+// writes outside the arm, because git never resolves the text. So the
+// comparison is made the way infer_backlink() makes it: on the raw text,
+// trailing isspace trimmed, nothing resolved — and a file git would not read
+// as a gitfile at all (no `gitdir: ` prefix, an embedded NUL, too large) is
+// refused too, since the second pass writes the source after any first-pass
+// failure.
+function requireBacklinkNamesEntry(dotgit: string, id: string): void {
+  const stat = statSync(dotgit);
+  if (!stat.isFile() || stat.size > GITFILE_MAX_SIZE) {
+    throw new Error(`${dotgit} is not a git pointer file`);
+  }
+  const content = readFileSync(dotgit, 'utf8');
+  const slash = content.lastIndexOf('/');
+  const named =
+    content.startsWith('gitdir: ') && !content.includes('\0') && slash !== -1
+      ? content.slice(slash + 1).replace(/[ \t\n\v\f\r]+$/, '')
+      : null;
+  if (named !== id) {
+    throw new Error(
+      `${dotgit} does not point back at administrative entry ${id}: ${content.trim()}`,
+    );
+  }
+}
+
+// Point the arm's linked worktrees at the arm. The command runs only when
+// there is at least one path, every path comes from an administrative entry
+// the arm itself has, and the worktree's recorded backlink names that same
+// entry — the last condition is what makes git's preference (above) land on
+// the arm's entry rather than wherever the backlink points. Each is load
+// bearing: with no path arguments repair follows the copied gitdir pointer
+// into the SOURCE and rewrites it, a path whose entry the arm lacks sends
+// repair to the source directory the copied `.git` file names, and a backlink
+// naming some other entry sends it there — measured on git 2.56, each writes
+// outside the arm.
 function repairWorktrees(
   destAbs: string,
   destReal: string,
@@ -543,6 +583,8 @@ function repairWorktrees(
       rmSync(join(adminRoot, id), { recursive: true, force: true });
       continue;
     }
+    // Repair acts on what this file says, not on the entry that led here.
+    requireBacklinkNamesEntry(mapped, id);
     linked.push(dirname(mapped));
   }
   if (linked.length === 0) {
