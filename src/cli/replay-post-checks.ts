@@ -24,7 +24,9 @@
 // git back to the source, so after the copy the clone reads every gitdir's
 // configuration with a reader that refuses what it cannot classify, re-aims
 // each path that lands in the source at the arm, and refuses each path it
-// cannot vet.
+// cannot vet. A gitdir is one the walk recognizes by git's own rule for a
+// HEAD, or one an in-arm `.git` file points at — the latter by the pointer's
+// declaration alone, sanitized whatever its HEAD holds.
 //
 // A symlink that leaves the workspace is reported, never rewritten — the
 // replay has no standing to redirect it — with one exception: a symlink named
@@ -38,13 +40,16 @@
 import { createHash } from 'node:crypto';
 import type { Dirent } from 'node:fs';
 import {
+  closeSync,
   cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   readlinkSync,
+  readSync,
   realpathSync,
   rmSync,
   statSync,
@@ -665,9 +670,28 @@ interface ArmContext {
   insideArm: (path: string) => boolean;
 }
 
-// git's validate_headref(): a HEAD that is a symlink, a `ref: refs/...` line
-// or a hex object id. A directory whose HEAD fails this is not a repository
-// to git, however the rest of it is named, so its config cannot redirect git.
+// git's validate_headref() (path.c) reads at most this many bytes of a HEAD
+// and judges those; a longer file is not refused, its start is what counts.
+const HEAD_READ_SIZE = 255;
+
+// What validate_headref() accepts in those bytes: `ref:`, C isspace()
+// characters, `refs/`; or forty hexadecimal digits in either case. The
+// digits are a prefix, not a line: get_oid_hex_any() reads the digits of
+// each object id length it knows and ignores whatever follows, so a 64-digit
+// SHA-256 id, a 41st digit, a missing newline and trailing text all pass.
+// Measured on git 2.56 with GIT_DIR naming a directory holding only this
+// HEAD, `objects` and `refs`: every one of those shapes was a repository,
+// uppercase ids included; 39 digits, a leading space, `ref: heads/x` and
+// an empty file were not.
+const GIT_HEAD = /^(?:ref:[ \t\n\v\f\r]*refs\/|[0-9a-fA-F]{40})/;
+
+// git's validate_headref(): a HEAD that is a symlink, or a regular file whose
+// first bytes are GIT_HEAD. A directory whose HEAD fails this is not a
+// repository to git, however the rest of it is named, so its config cannot
+// redirect git — and one whose HEAD passes is, so the predicate has to accept
+// every shape git does. It used to take lowercase digits only, and a
+// commondir beside an uppercase detached id, naming the source, went
+// unchecked by the walk and by the pointer route that shared the gate.
 function isGitHead(path: string): boolean {
   const stat = lstatSync(path, { throwIfNoEntry: false });
   if (stat === undefined) {
@@ -676,10 +700,19 @@ function isGitHead(path: string): boolean {
   if (stat.isSymbolicLink()) {
     return true;
   }
-  if (!stat.isFile() || stat.size > 256) {
+  if (!stat.isFile()) {
     return false;
   }
-  return /^(?:ref:\s*refs\/|[0-9a-f]{40})/.test(readFileSync(path, 'utf8'));
+  const head = Buffer.alloc(HEAD_READ_SIZE);
+  const fd = openSync(path, 'r');
+  let length: number;
+  try {
+    length = readSync(fd, head, 0, HEAD_READ_SIZE, 0);
+  } finally {
+    closeSync(fd);
+  }
+  // One byte per character, as git compares them.
+  return GIT_HEAD.test(head.toString('latin1', 0, length));
 }
 
 // Every gitdir under the arm, found without following a symlink: a directory
@@ -727,18 +760,24 @@ function findGitDirs(root: string): string[] {
 }
 
 // The gitdir each `.git` file in the arm names, when that resolves to a
-// directory inside the arm with a HEAD git would accept. git uses a gitdir
-// wherever a `.git` file points, whatever the directory is called and
-// however it is shaped, so the pointers are a second route to the set the
-// walk recognizes by shape. The file is read as read_gitfile_gently() reads
-// it — a `gitdir: ` prefix, the rest with trailing newlines stripped,
-// relative to the file's directory — and the target is resolved and
-// contained in the arm before anything under it is read. A target outside
-// the arm is not read here: before the repair it is the recorded pointer of
-// a linked worktree, and the pointer sweep at the end decides its fate. This
-// is the first pass to enumerate the arm's pointer files, so it is where a
-// symlinked `.git` or `gitdir` is refused: before the configuration edits
-// and before the repair writes a pointer.
+// directory inside the arm. git uses a gitdir wherever a `.git` file points,
+// whatever the directory is called and however it is shaped, so the pointers
+// are a second route to the set the walk recognizes by shape — and here the
+// pointer's declaration is the whole test: its target is sanitized whatever
+// its HEAD holds. The walk has nothing but the HEAD to go on, and the HEAD
+// gate this route used to share with it let a shape the predicate misjudged
+// carry an absolute `commondir` into the source unchecked; a target the
+// pointer names is a gitdir on the pointer's word, and the only cost of
+// reading one git would reject is a refusal of a `commondir` or config that
+// cannot be vetted. The file is read as read_gitfile_gently() reads it — a
+// `gitdir: ` prefix, the rest with trailing newlines stripped, relative to
+// the file's directory — and the target is resolved and contained in the arm
+// before anything under it is read. A target outside the arm is not read
+// here: before the repair it is the recorded pointer of a linked worktree,
+// and the pointer sweep at the end decides its fate. This is the first pass
+// to enumerate the arm's pointer files, so it is where a symlinked `.git` or
+// `gitdir` is refused: before the configuration edits and before the repair
+// writes a pointer.
 function gitfileTargets(destAbs: string, destReal: string): string[] {
   const out: string[] = [];
   for (const file of pointerFiles(destAbs)) {
@@ -758,7 +797,7 @@ function gitfileTargets(destAbs: string, destReal: string): string[] {
     if (!contains(destReal, real)) {
       continue;
     }
-    if (isDirectory(real) && isGitHead(join(real, 'HEAD'))) {
+    if (isDirectory(real)) {
       out.push(real);
     }
   }

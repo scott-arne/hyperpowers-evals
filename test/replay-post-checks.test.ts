@@ -1300,12 +1300,17 @@ test('cloneWorkspace refuses a .git/objects that is a relative link to a directo
 // refs through `commondir` — the shape of a linked worktree's administrative
 // entry, which git uses wherever a `.git` file points. Planted at
 // <wd>/.gitadmin/wt and pointed to by <wd>/wt/.git, with the backlink
-// relative so that the pointer sweep passes both files.
-function plantAdminGitDir(wd: string, commondir: string): void {
+// relative so that the pointer sweep passes both files. `head` is the HEAD's
+// content: a symbolic ref unless a test wants a detached id or junk there.
+function plantAdminGitDir(
+  wd: string,
+  commondir: string,
+  head = 'ref: refs/heads/main\n',
+): void {
   const admin = join(wd, '.gitadmin', 'wt');
   mkdirSync(admin, { recursive: true });
   mkdirSync(join(wd, 'wt'));
-  writeFileSync(join(admin, 'HEAD'), 'ref: refs/heads/main\n');
+  writeFileSync(join(admin, 'HEAD'), head);
   writeFileSync(join(admin, 'commondir'), `${commondir}\n`);
   writeFileSync(join(admin, 'gitdir'), '../../wt/.git\n');
   writeFileSync(join(wd, 'wt', '.git'), 'gitdir: ../.gitadmin/wt\n');
@@ -1364,6 +1369,162 @@ test('the same gitdir with its commondir inside the arm clones, and update-ref r
   expect(existsSync(join(arm, '.git', 'refs', 'heads', 'planted'))).toBe(true);
   expect(existsSync(join(wd, '.git', 'refs', 'heads', 'planted'))).toBe(false);
   expect(report.gitPointers).toContain(join(arm, 'wt', '.git'));
+});
+
+// Measured on git 2.56 at the round-7 head: validate_headref() takes a
+// detached id in either case (get_oid_hex_any() maps both through
+// hexval_table), but the clone's predicate took lowercase digits only, and
+// both routes to a gitdir ran through it. The previous fixture with its HEAD
+// an uppercase id was therefore sanitized by neither route: the clone
+// accepted the arm, and `update-ref` run in <arm>/wd/wt created the ref in
+// the SOURCE `.git` through the unchecked commondir.
+test('cloneWorkspace refuses a pointer target whose detached HEAD is an uppercase id and whose commondir names the source .git', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun(
+    'config-less-gitdir-upper-source',
+  );
+  const oid = git(wd, ['rev-parse', 'HEAD']).trim();
+  plantAdminGitDir(wd, join(wd, '.git'), `${oid.toUpperCase()}\n`);
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-less-gitdir-upper-source'),
+    AGENTS,
+  );
+  const dest = join(root, 'armAj');
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, dest);
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  if (thrown === undefined) {
+    // What a replay's git does with an arm the clone accepted.
+    git(join(dest, 'coding-agent-workdir', 'wt'), [
+      'update-ref',
+      'refs/heads/planted',
+      'HEAD',
+    ]);
+  }
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(
+    /commondir names a common directory outside the arm/,
+  );
+});
+
+test('the same gitdir with an uppercase detached HEAD and its commondir inside the arm clones, and git run in its worktree reads and writes the arm alone', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun(
+    'config-less-gitdir-upper-arm',
+  );
+  const oid = git(wd, ['rev-parse', 'HEAD']).trim();
+  plantAdminGitDir(wd, '../../.git', `${oid.toUpperCase()}\n`);
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-less-gitdir-upper-arm'),
+    AGENTS,
+  );
+  const dest = join(root, 'armAk');
+  const report = cloneWorkspace(eligible[0]!, dest);
+  const arm = join(dest, 'coding-agent-workdir');
+  expect(git(join(arm, 'wt'), ['rev-parse', 'HEAD']).trim()).toBe(oid);
+  git(join(arm, 'wt'), ['update-ref', 'refs/heads/planted', 'HEAD']);
+  expect(hashTree(runDir)).toBe(before);
+  expect(existsSync(join(arm, '.git', 'refs', 'heads', 'planted'))).toBe(true);
+  expect(existsSync(join(wd, '.git', 'refs', 'heads', 'planted'))).toBe(false);
+  expect(report.gitPointers).toContain(join(arm, 'wt', '.git'));
+});
+
+// A pointer target is a gitdir on the pointer's word, whatever its HEAD
+// holds. git 2.56 refuses this one itself — `gitfile does not point to a
+// valid repository`, the HEAD failing validate_headref() — so no git writes
+// through it today; the clone refuses it all the same, because the pointer
+// route no longer asks the HEAD, and a HEAD shape the predicate misjudges is
+// exactly what it would have asked about.
+test('a pointer target whose HEAD git would reject is sanitized all the same: its commondir naming the source .git is refused', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun(
+    'config-less-gitdir-junk-head',
+  );
+  plantAdminGitDir(wd, join(wd, '.git'), 'garbage\n');
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-less-gitdir-junk-head'),
+    AGENTS,
+  );
+  const dest = join(root, 'armAl');
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, dest);
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  if (thrown === undefined) {
+    // What a replay's git does with an arm the clone accepted; its status is
+    // not checked, because git refuses the gitfile and that is not the point.
+    spawnSync('git', ['update-ref', 'refs/heads/planted', 'HEAD'], {
+      cwd: join(dest, 'coding-agent-workdir', 'wt'),
+    });
+  }
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(
+    /commondir names a common directory outside the arm/,
+  );
+});
+
+// The walk has only the HEAD to go on, so it has to accept every detached
+// HEAD git does. Each shape here is one git 2.56 took for a repository
+// (GIT_DIR naming a directory with the HEAD, `objects` and `refs`), planted
+// where only the walk can find it, with a commondir naming the source
+// `.git`; git run in the arm's copy takes it for a bare repository and
+// reaches refs and objects through that commondir. At the round-7 head
+// `update-ref` there wrote the SOURCE `.git` for every shape but the
+// lowercase 64-digit id, which the 40-digit prefix already covered: a
+// 64-digit id in uppercase; a 41st digit after a 40-digit id, which
+// get_oid_hex_any() ignores; a 40-digit id with no newline; a HEAD past 256
+// bytes, of which git reads the first 255.
+test('the walk recognizes every detached HEAD git does: a 64-digit id in either case, an id with trailing digits or no newline, an oversized HEAD, each with a commondir naming the source .git, is refused', () => {
+  const shapes: [string, (oid: string) => string][] = [
+    [
+      'head-sha256-upper',
+      (oid) => `${(oid + oid.slice(0, 24)).toUpperCase()}\n`,
+    ],
+    ['head-sha256-lower', (oid) => `${oid + oid.slice(0, 24)}\n`],
+    ['head-41-digits', (oid) => `${oid.toUpperCase()}a\n`],
+    ['head-no-newline', (oid) => oid.toUpperCase()],
+    ['head-oversized', () => `ref: refs/heads/main\n${'0'.repeat(300)}`],
+  ];
+  for (const [scenario, head] of shapes) {
+    const { resultsRoot, runDir, wd } = recordedRepoRun(scenario);
+    const oid = git(wd, ['rev-parse', 'HEAD']).trim();
+    const sub = join(wd, 'sub');
+    mkdirSync(sub);
+    writeFileSync(join(sub, 'HEAD'), head(oid));
+    writeFileSync(join(sub, 'commondir'), `${join(wd, '.git')}\n`);
+    const before = hashTree(runDir);
+    const { eligible } = eligibleRuns(
+      resultsRoot,
+      scenariosRootWith(scenario),
+      AGENTS,
+    );
+    const dest = join(root, `arm-${scenario}`);
+    let thrown: unknown;
+    try {
+      cloneWorkspace(eligible[0]!, dest);
+    } catch (err: unknown) {
+      thrown = err;
+    }
+    if (thrown === undefined) {
+      git(join(dest, 'coding-agent-workdir', 'sub'), [
+        'update-ref',
+        'refs/heads/planted',
+        oid,
+      ]);
+    }
+    expect(hashTree(runDir)).toBe(before);
+    expect(String(thrown)).toMatch(
+      /sub\/commondir names a common directory outside the arm/,
+    );
+  }
 });
 
 // Administrative entries of repositories other than the main one: a
