@@ -20,6 +20,7 @@ import {
   readFileSync,
   readlinkSync,
   realpathSync,
+  rmSync,
   statSync,
   symlinkSync,
   unlinkSync,
@@ -375,8 +376,15 @@ export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
       report.externalReferences.push(link);
       continue;
     }
+    // A target that is under the source by string can still climb out of it
+    // (`<src>/../x`), and the same climb would take the rewritten link out of
+    // the arm. Nothing here may plant a link the arm does not contain.
+    const rewritten = join(destReal, rel);
+    if (!insideArm(rewritten)) {
+      throw new Error(`${link} cannot be rewritten inside the arm: ${target}`);
+    }
     unlinkSync(link);
-    symlinkSync(join(destReal, rel), link);
+    symlinkSync(rewritten, link);
     report.rewrittenSymlinks.push(link);
   }
 
@@ -448,6 +456,20 @@ function repairWorktrees(
     const mapped = join(destReal, rel);
     if (basename(mapped) !== '.git') {
       throw new Error(`unexpected gitdir pointer ${gitdir}`);
+    }
+    // A pointer under the source by string can still climb out of it, and the
+    // mapped path would then name something beside the arm — never a path to
+    // hand `git worktree repair`.
+    if (!insideArm(mapped)) {
+      throw new Error(`gitdir pointer maps outside the arm: ${gitdir}`);
+    }
+    if (!existsSync(mapped)) {
+      // The agent deleted this worktree with `rm -rf` rather than `git
+      // worktree remove`, so the administrative entry outlived it. Repair
+      // fails on the missing path and the arm's copy of the entry still names
+      // the source, so the arm drops the entry git itself would prune.
+      rmSync(join(adminRoot, id), { recursive: true, force: true });
+      continue;
     }
     linked.push(dirname(mapped));
   }

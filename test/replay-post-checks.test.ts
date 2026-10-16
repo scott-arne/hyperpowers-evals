@@ -61,18 +61,24 @@ function scenariosRootWith(...names: string[]): string {
   return dir;
 }
 
-// A legacy-layout run whose workspace has a linked worktree sibling, an
-// intra-source absolute symlink, and an external absolute symlink — the three
-// pointer classes the clone must handle.
-function recordedWorktreeRun(): {
+// A legacy-layout run whose workspace has a linked worktree, an intra-source
+// absolute symlink, and an external absolute symlink — the three pointer
+// classes the clone must handle. The worktree is either a sibling of the
+// workdir, which is what a setup helper makes, or one the agent made inside
+// the workdir, which is what a gitignored `.worktrees/` tempts it into.
+function recordedWorktreeRun(
+  scenario = 'worktree-no-drift-to-main',
+  nested = false,
+): {
   resultsRoot: string;
   runDir: string;
+  worktree: string;
   external: string;
 } {
   const resultsRoot = join(root, 'results');
   const runDir = join(
     resultsRoot,
-    'worktree-no-drift-to-main-claude-auto-20260101T000000Z-aaaa',
+    `${scenario}-claude-auto-20260101T000000Z-aaaa`,
   );
   const wd = join(runDir, 'coding-agent-workdir');
   mkdirSync(wd, { recursive: true });
@@ -82,14 +88,10 @@ function recordedWorktreeRun(): {
   writeFileSync(join(wd, 'f.txt'), 'x\n');
   git(wd, ['add', '-A']);
   git(wd, ['commit', '-qm', 'init']);
-  git(wd, [
-    'worktree',
-    'add',
-    '-q',
-    join(runDir, 'coding-agent-workdir-existing-worktree'),
-    '-b',
-    'feature',
-  ]);
+  const worktree = nested
+    ? join(wd, '.worktrees', 'feature')
+    : join(runDir, 'coding-agent-workdir-existing-worktree');
+  git(wd, ['worktree', 'add', '-q', worktree, '-b', 'feature']);
   mkdirSync(join(runDir, 'home', '.local', 'bin'), { recursive: true });
   mkdirSync(
     join(runDir, 'home', '.local', 'share', 'claude', 'versions', '1.0'),
@@ -107,7 +109,7 @@ function recordedWorktreeRun(): {
       verdictFixture({ checks: [record('git-repo', true, 'post')] }),
     ),
   );
-  return { resultsRoot, runDir, external };
+  return { resultsRoot, runDir, worktree, external };
 }
 
 test('cloneWorkspace repairs worktree pointers inside the arm and leaves the source untouched', () => {
@@ -152,6 +154,20 @@ test('cloneWorkspace repairs worktree pointers inside the arm and leaves the sou
     join(dest, 'home', 'external-link'),
   );
   expect(report.rewrittenSymlinks).toHaveLength(1);
+  // Both pointer files are reported, and nothing else is.
+  expect([...report.gitPointers].sort()).toEqual(
+    [
+      join(
+        dest,
+        'coding-agent-workdir',
+        '.git',
+        'worktrees',
+        'coding-agent-workdir-existing-worktree',
+        'gitdir',
+      ),
+      join(dest, 'coding-agent-workdir-existing-worktree', '.git'),
+    ].sort(),
+  );
   // The source is byte-identical, pointers included.
   expect(hashTree(runDir)).toBe(before);
   expect(
@@ -293,5 +309,126 @@ test('cloneWorkspace refuses an arm it cannot make self-contained', () => {
   expect(eligible).toHaveLength(1);
   expect(() => cloneWorkspace(eligible[0]!, join(root, 'armT'))).toThrow(
     /points outside the arm/,
+  );
+});
+
+test('a linked worktree inside the workdir is repaired in the arm, and the source stays byte-identical', () => {
+  const { resultsRoot, runDir } = recordedWorktreeRun('worktree-nested', true);
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('worktree-nested'),
+    AGENTS,
+  );
+  expect(eligible).toHaveLength(1);
+  const dest = join(root, 'armN');
+  const report = cloneWorkspace(eligible[0]!, dest);
+  const admin = join(
+    dest,
+    'coding-agent-workdir',
+    '.git',
+    'worktrees',
+    'feature',
+    'gitdir',
+  );
+  const dotgit = join(
+    dest,
+    'coding-agent-workdir',
+    '.worktrees',
+    'feature',
+    '.git',
+  );
+  expect(
+    readFileSync(admin, 'utf8').trim().startsWith(realpathSync(dest)),
+  ).toBe(true);
+  expect(
+    readFileSync(dotgit, 'utf8')
+      .trim()
+      .replace(/^gitdir: /, '')
+      .startsWith(realpathSync(dest)),
+  ).toBe(true);
+  expect([...report.gitPointers].sort()).toEqual([admin, dotgit].sort());
+  expect(hashTree(runDir)).toBe(before);
+  expect(
+    git(join(dest, 'coding-agent-workdir'), ['worktree', 'list']),
+  ).toContain(realpathSync(dest));
+});
+
+test('an administrative entry whose worktree the agent deleted outright is dropped from the arm, not failed over', () => {
+  const { resultsRoot, runDir, worktree } = recordedWorktreeRun(
+    'worktree-stale',
+    true,
+  );
+  // `rm -rf` rather than `git worktree remove`, so the entry outlives it.
+  rmSync(worktree, { recursive: true, force: true });
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('worktree-stale'),
+    AGENTS,
+  );
+  const dest = join(root, 'armS');
+  const report = cloneWorkspace(eligible[0]!, dest);
+  expect(
+    existsSync(
+      join(dest, 'coding-agent-workdir', '.git', 'worktrees', 'feature'),
+    ),
+  ).toBe(false);
+  expect(report.gitPointers).toEqual([]);
+  expect(hashTree(runDir)).toBe(before);
+});
+
+test('cloneWorkspace refuses a gitdir pointer that climbs out of the arm, before any git runs', () => {
+  const resultsRoot = join(root, 'results7');
+  const runDir = join(resultsRoot, 'theta-claude-auto-20260101T000000Z-0009');
+  const admin = join(
+    runDir,
+    'coding-agent-workdir',
+    '.git',
+    'worktrees',
+    'escape',
+  );
+  mkdirSync(admin, { recursive: true });
+  // Under the source by string, outside it once resolved: mapped into the arm
+  // this names a sibling of the arm, which `git worktree repair` must never
+  // be pointed at.
+  writeFileSync(join(admin, 'gitdir'), `${runDir}/../escaped/.git\n`);
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({ checks: [record('git-repo', true, 'post')] }),
+    ),
+  );
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('theta'),
+    AGENTS,
+  );
+  expect(() => cloneWorkspace(eligible[0]!, join(root, 'armE'))).toThrow(
+    /outside the arm/,
+  );
+  expect(hashTree(runDir)).toBe(before);
+});
+
+test('cloneWorkspace refuses a symlink whose rewritten target would climb out of the arm', () => {
+  const resultsRoot = join(root, 'results8');
+  const runDir = join(resultsRoot, 'iota-claude-auto-20260101T000000Z-0010');
+  mkdirSync(join(runDir, 'coding-agent-workdir'), { recursive: true });
+  mkdirSync(join(runDir, 'home'), { recursive: true });
+  symlinkSync(`${runDir}/../escaped`, join(runDir, 'home', 'climber'));
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({ checks: [record('git-repo', true, 'post')] }),
+    ),
+  );
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('iota'),
+    AGENTS,
+  );
+  expect(() => cloneWorkspace(eligible[0]!, join(root, 'armC'))).toThrow(
+    /cannot be rewritten inside the arm/,
   );
 });
