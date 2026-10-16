@@ -16,6 +16,15 @@
 // repair writes: into the retained source, or into a repository elsewhere on
 // the host. So the clone now rewrites the two pointer files per linked worktree
 // itself, with the bytes git would have written, on paths it has vetted.
+//
+// The arm also carries the agent's git configuration, and a later replay runs
+// git inside the arm against it. A `core.worktree` naming the source, a
+// `commondir` in a nested repository naming the source's `.git`, an included
+// config file, an alternate object store: each was measured to carry that
+// git back to the source, so after the copy the clone reads every gitdir's
+// configuration with a reader that refuses what it cannot classify, re-aims
+// each path that lands in the source at the arm, and refuses each path it
+// cannot vet.
 
 import { createHash } from 'node:crypto';
 import type { Dirent } from 'node:fs';
@@ -248,11 +257,16 @@ export function eligibleRuns(
 // What the clone found: the git pointer files it validated, the intra-source
 // symlinks it re-aimed at the arm, and the symlinks that leave the workspace
 // altogether. The last class is reported, never rewritten — the replay has no
-// standing to redirect a reference to something outside the run.
+// standing to redirect a reference to something outside the run; an
+// alternate object store outside the run is reported there too.
+// `rewrittenConfig` lists, relative to the arm, the config and alternates
+// files whose source paths were re-aimed at the arm; it is absent when none
+// were.
 export interface PointerReport {
   gitPointers: string[];
   rewrittenSymlinks: string[];
   externalReferences: string[];
+  rewrittenConfig?: string[];
 }
 
 // Entries of a legacy run directory that belong to the workspace rather than to
@@ -406,6 +420,8 @@ export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
     report.rewrittenSymlinks.push(link);
   }
 
+  sanitizeGitConfig({ destAbs, destReal, srcRoot, insideArm }, report);
+
   repairWorktrees(destAbs, destReal, srcRoot, insideArm);
 
   // Every git pointer in the arm resolves inside the arm. The value can be
@@ -469,26 +485,16 @@ function requireStructureInsideArm(destReal: string, paths: string[]): void {
 // worktree's `.git`. The clone no longer runs that command, but a later replay
 // runs git inside the arm's worktrees, and an absolute `commondir` into the
 // source would carry every one of those commands to the source's refs and
-// objects. The value is read the way git's get_common_dir_noenv() reads it:
-// trailing newlines stripped, a relative value joined under the gitdir that
-// holds the file, then resolved.
+// objects. Every other gitdir's `commondir` is held inside the arm by
+// requireCommonDirInsideArm; these two must be the arm's main `.git` itself.
 function requireCommonDirIs(gitdir: string, expected: string): void {
   if (!isDirectory(gitdir)) {
     return; // a gitfile or a junk entry has no commondir to read
   }
-  const file = join(gitdir, 'commondir');
-  const stat = lstatSync(file, { throwIfNoEntry: false });
-  if (stat === undefined) {
-    return;
-  }
-  if (!stat.isFile()) {
-    throw new Error(`${file} is not a regular file`);
-  }
-  const value = readFileSync(file, 'utf8').replace(/[\r\n]+$/, '');
-  const resolved = resolveThrough(resolve(gitdir, value));
-  if (resolved !== resolveThrough(expected)) {
+  const common = readCommonDir(gitdir);
+  if (common !== null && common.resolved !== resolveThrough(expected)) {
     throw new Error(
-      `${file} names a common directory that is not the arm's: ${value}`,
+      `${common.file} names a common directory that is not the arm's: ${common.value}`,
     );
   }
 }
@@ -608,6 +614,444 @@ function repairWorktrees(
     const worktreeReal = realpathSync(dirname(dotgit));
     writeFileSync(join(entry, 'gitdir'), `${join(worktreeReal, '.git')}\n`);
     writeFileSync(dotgit, `gitdir: ${realpathSync(entry)}\n`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// git configuration carried by the arm
+// ---------------------------------------------------------------------------
+
+// The arm's spellings and the source, for the passes that classify a path
+// named by a file in the arm.
+interface ArmContext {
+  destAbs: string;
+  destReal: string;
+  srcRoot: string;
+  insideArm: (path: string) => boolean;
+}
+
+// git's validate_headref(): a HEAD that is a symlink, a `ref: refs/...` line
+// or a hex object id. A directory whose HEAD fails this is not a repository
+// to git, however the rest of it is named, so its config cannot redirect git.
+function isGitHead(path: string): boolean {
+  const stat = lstatSync(path, { throwIfNoEntry: false });
+  if (stat === undefined) {
+    return false;
+  }
+  if (stat.isSymbolicLink()) {
+    return true;
+  }
+  if (!stat.isFile() || stat.size > 256) {
+    return false;
+  }
+  return /^(?:ref:\s*refs\/|[0-9a-f]{40})/.test(readFileSync(path, 'utf8'));
+}
+
+// Every gitdir under the arm, found without following a symlink: a directory
+// named `.git`, a directory holding a `config` and a HEAD git would accept (a
+// repository nested in the workdir, or a bare one), and each `worktrees/<id>`
+// and `modules/<name>` directory of a gitdir, which git reads as a gitdir of
+// its own although it keeps no `config` there.
+function findGitDirs(root: string): string[] {
+  const out: string[] = [];
+  const visit = (dir: string, known: boolean): void => {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    const names = new Set(entries.map((entry) => entry.name));
+    const gitdir =
+      known ||
+      basename(dir) === '.git' ||
+      (names.has('config') && isGitHead(join(dir, 'HEAD')));
+    if (gitdir) {
+      out.push(dir);
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const child = join(dir, entry.name);
+      if (gitdir && (entry.name === 'worktrees' || entry.name === 'modules')) {
+        for (const sub of readdirSync(child, { withFileTypes: true })) {
+          if (sub.isDirectory()) {
+            visit(join(child, sub.name), true);
+          }
+        }
+      } else {
+        visit(child, false);
+      }
+    }
+  };
+  visit(root, false);
+  return out;
+}
+
+// A gitdir's `commondir`, read the way git's get_common_dir_noenv() reads it:
+// trailing newlines stripped, a relative value joined under the gitdir that
+// holds the file, then resolved. Null when the gitdir has none.
+function readCommonDir(
+  gitdir: string,
+): { file: string; value: string; resolved: string } | null {
+  const file = join(gitdir, 'commondir');
+  const stat = lstatSync(file, { throwIfNoEntry: false });
+  if (stat === undefined) {
+    return null;
+  }
+  if (!stat.isFile()) {
+    throw new Error(`${file} is not a regular file`);
+  }
+  const value = readFileSync(file, 'utf8').replace(/[\r\n]+$/, '');
+  return { file, value, resolved: resolveThrough(resolve(gitdir, value)) };
+}
+
+// Any gitdir's common directory must be in the arm. The main `.git` and its
+// administrative entries are held to the stricter requireCommonDirIs; this
+// one covers the rest — a repository nested in the workdir, a
+// `.git/modules/<name>` — where a `commondir` naming the source's `.git`
+// would send every ref and object write of a replay's git there. Measured on
+// git 2.56: `git -C <arm>/coding-agent-workdir/sub update-ref refs/heads/x
+// HEAD` created the ref in the SOURCE `.git`.
+function requireCommonDirInsideArm(gitdir: string, destReal: string): void {
+  const common = readCommonDir(gitdir);
+  if (common !== null && !contains(destReal, common.resolved)) {
+    throw new Error(
+      `${common.file} names a common directory outside the arm: ${common.value}`,
+    );
+  }
+}
+
+// A file the pass reads and may rewrite: its realpath, when it exists and is
+// a regular file the arm contains. The walk never followed a link to reach
+// its directory, but the file itself can be one, and the pass reads and
+// writes only through a realpath inside the arm.
+function vetConfigFile(file: string, destReal: string): string | null {
+  const stat = lstatSync(file, { throwIfNoEntry: false });
+  if (stat === undefined) {
+    return null;
+  }
+  if (stat.isSymbolicLink()) {
+    const real = resolveThrough(file);
+    if (!contains(destReal, real)) {
+      throw new Error(`${file} resolves outside the arm: ${real}`);
+    }
+    const target = statSync(real, { throwIfNoEntry: false });
+    if (target === undefined) {
+      return null; // dangling: git reads nothing here either
+    }
+    if (!target.isFile()) {
+      throw new Error(`${file} is not a regular file`);
+    }
+    return real;
+  }
+  if (!stat.isFile()) {
+    throw new Error(`${file} is not a regular file`);
+  }
+  return realpathSync(file);
+}
+
+// Where a path named by the arm's configuration lands: inside the arm it
+// stays; inside the source it is mapped to the arm the way a symlink target
+// is, and can fail the same way; anywhere else the clone has no standing to
+// rewrite it, and the caller decides whether that is a refusal (a path git
+// would write through, or read configuration from) or a report (an
+// alternate, which git only reads objects from).
+type Placement =
+  | { kind: 'arm' }
+  | { kind: 'source'; mapped: string }
+  | { kind: 'outside' };
+
+function placeTarget(target: string, ctx: ArmContext): Placement {
+  if (ctx.insideArm(target)) {
+    return { kind: 'arm' };
+  }
+  const rel = sourceRelative(target, ctx.srcRoot);
+  if (rel === null) {
+    return { kind: 'outside' };
+  }
+  const mapped = join(ctx.destReal, rel);
+  if (!ctx.insideArm(mapped)) {
+    throw new Error(`${target} cannot be rewritten inside the arm`);
+  }
+  return { kind: 'source', mapped };
+}
+
+// The subset of git's config syntax the clone reads: a `[section]` or
+// `[section "subsection"]` header, a `key = value` or bare `key` line whose
+// value is plain, a `#` or `;` comment, a blank line. That is every shape
+// `git init`, `clone`, `worktree add` and `submodule add` write (measured on
+// 2.56, where the last writes a relative `core.worktree`). A quoted value, a
+// backslash — an escape, or the line continuation that folds the next line
+// into this value — and any other shape are refused rather than guessed at,
+// because the pass has to know which line is `core.worktree` and what it
+// says. Section and key names compare lowercased, as git reads them.
+const CONFIG_BLANK = /^\s*$/;
+const CONFIG_COMMENT = /^\s*[#;]/;
+const CONFIG_HEADER =
+  /^\s*\[([A-Za-z0-9-]+)(?:\s+"([^"\\]*)")?\]\s*(?:[#;].*)?$/;
+const CONFIG_ENTRY =
+  /^(\s*)([A-Za-z][A-Za-z0-9-]*)(\s*=\s*)([^"\\#;]*?)(\s*(?:[#;].*)?)$/;
+const CONFIG_BARE = /^\s*([A-Za-z][A-Za-z0-9-]*)\s*(?:[#;].*)?$/;
+
+interface ConfigEntry {
+  line: number;
+  section: string;
+  subsection: string | null;
+  key: string;
+  value: string | null; // null for a bare key, which git reads as true
+  prefix: string; // the line up to the value, kept when the value is rewritten
+  suffix: string; // trailing whitespace and comment, likewise
+}
+
+function parseConfig(file: string, lines: string[]): ConfigEntry[] {
+  const entries: ConfigEntry[] = [];
+  let section = '';
+  let subsection: string | null = null;
+  for (const [index, line] of lines.entries()) {
+    if (CONFIG_BLANK.test(line) || CONFIG_COMMENT.test(line)) {
+      continue;
+    }
+    const header = CONFIG_HEADER.exec(line);
+    if (header !== null) {
+      section = (header[1] ?? '').toLowerCase();
+      subsection = header[2] ?? null;
+      continue;
+    }
+    const entry = CONFIG_ENTRY.exec(line);
+    if (entry !== null) {
+      entries.push({
+        line: index,
+        section,
+        subsection,
+        key: (entry[2] ?? '').toLowerCase(),
+        value: entry[4] ?? '',
+        prefix: `${entry[1] ?? ''}${entry[2] ?? ''}${entry[3] ?? ''}`,
+        suffix: entry[5] ?? '',
+      });
+      continue;
+    }
+    const bare = CONFIG_BARE.exec(line);
+    if (bare !== null) {
+      entries.push({
+        line: index,
+        section,
+        subsection,
+        key: (bare[1] ?? '').toLowerCase(),
+        value: null,
+        prefix: line,
+        suffix: '',
+      });
+      continue;
+    }
+    throw new Error(
+      `${file}:${index + 1}: a git config line the clone cannot read: ${line}`,
+    );
+  }
+  return entries;
+}
+
+// A rewritten value goes back unquoted, so it must be one git reads back
+// unchanged: no quote, backslash or comment character, no whitespace at
+// either end.
+function plainValue(value: string, file: string): string {
+  if (/["\\#;\r\n]/.test(value) || value.trim() !== value) {
+    throw new Error(`${file}: ${value} cannot be written as a plain value`);
+  }
+  return value;
+}
+
+interface ConfigJob {
+  file: string;
+  gitdir: string;
+}
+
+// `core.worktree`: absolute as written, else relative to the gitdir (git
+// chdirs to the gitdir and then to the value). Measured on git 2.56 with an
+// absolute value naming the source's working tree: `git checkout -- .` run
+// inside the arm wrote the SOURCE working tree.
+function placeWorktree(
+  entry: ConfigEntry,
+  file: string,
+  gitdir: string,
+  ctx: ArmContext,
+): string | null {
+  if (entry.value === null) {
+    throw new Error(`${file}:${entry.line + 1}: core.worktree has no value`);
+  }
+  const placement = placeTarget(resolve(gitdir, entry.value), ctx);
+  if (placement.kind === 'outside') {
+    throw new Error(
+      `${file}: core.worktree names a working tree outside the arm: ${entry.value}`,
+    );
+  }
+  return placement.kind === 'source' ? placement.mapped : null;
+}
+
+// `include.path` and `includeIf.<condition>.path`: relative to the directory
+// of the file that holds it; a leading `~/` is git's spelling of HOME, which
+// for the agent was `<workspaceRoot>/home`. An included file inside the arm
+// is read like a gitdir's own config, since git reads it that way; one
+// inside the source is re-aimed at the arm's copy and that copy is read; one
+// anywhere else is refused, because the clone cannot vet what it contains.
+function placeInclude(
+  entry: ConfigEntry,
+  file: string,
+  gitdir: string,
+  ctx: ArmContext,
+  queue: ConfigJob[],
+): string | null {
+  if (entry.value === null) {
+    throw new Error(`${file}:${entry.line + 1}: include path has no value`);
+  }
+  let target: string;
+  if (entry.value.startsWith('~')) {
+    if (entry.value !== '~' && !entry.value.startsWith('~/')) {
+      throw new Error(
+        `${file}: include path names another user's home: ${entry.value}`,
+      );
+    }
+    target = join(ctx.srcRoot, 'home', entry.value.slice(1));
+    if (!existsSync(target)) {
+      throw new Error(
+        `${file}: include path ${entry.value} is not under the run's home`,
+      );
+    }
+  } else {
+    target = resolve(dirname(file), entry.value);
+  }
+  const placement = placeTarget(target, ctx);
+  if (placement.kind === 'outside') {
+    throw new Error(
+      `${file}: include path resolves outside the arm: ${entry.value}`,
+    );
+  }
+  if (placement.kind === 'arm') {
+    queue.push({ file: resolveThrough(target), gitdir });
+    return null;
+  }
+  queue.push({ file: placement.mapped, gitdir });
+  return placement.mapped;
+}
+
+// One config file: the two keys that name a path git would then read
+// configuration from or write a working tree through are placed, and a line
+// that needs re-aiming is rewritten in place, value only. The keys are
+// matched as git matches them — `core.worktree` with no subsection,
+// `include.path` with none, `includeIf.<condition>.path` with one.
+function sanitizeConfigFile(
+  file: string,
+  gitdir: string,
+  ctx: ArmContext,
+  queue: ConfigJob[],
+  edits: Map<string, string>,
+): void {
+  const lines = readFileSync(file, 'utf8').split('\n');
+  let changed = false;
+  for (const entry of parseConfig(file, lines)) {
+    let replacement: string | null = null;
+    if (entry.key === 'worktree' && entry.section === 'core') {
+      if (entry.subsection === null) {
+        replacement = placeWorktree(entry, file, gitdir, ctx);
+      }
+    } else if (entry.key === 'path') {
+      const include =
+        (entry.section === 'include' && entry.subsection === null) ||
+        (entry.section === 'includeif' && entry.subsection !== null);
+      if (include) {
+        replacement = placeInclude(entry, file, gitdir, ctx, queue);
+      }
+    }
+    if (replacement !== null) {
+      lines[entry.line] =
+        `${entry.prefix}${plainValue(replacement, file)}${entry.suffix}`;
+      changed = true;
+    }
+  }
+  if (changed) {
+    edits.set(file, lines.join('\n'));
+  }
+}
+
+// `objects/info/alternates`: one object store per line, relative to
+// `objects/`, `#` lines ignored. git reads objects from an alternate and
+// never writes one, so a store in the source is re-aimed at the arm's copy
+// and a store elsewhere is reported, not refused. A line git would unquote
+// is refused.
+function sanitizeAlternates(
+  gitdir: string,
+  ctx: ArmContext,
+  report: PointerReport,
+  edits: Map<string, string>,
+): void {
+  const objects = join(gitdir, 'objects');
+  const file = vetConfigFile(join(objects, 'info', 'alternates'), ctx.destReal);
+  if (file === null) {
+    return;
+  }
+  const lines = readFileSync(file, 'utf8').split('\n');
+  let changed = false;
+  let external = false;
+  for (const [index, line] of lines.entries()) {
+    if (line === '' || line.startsWith('#')) {
+      continue;
+    }
+    if (line.startsWith('"')) {
+      throw new Error(`${file}:${index + 1}: a quoted alternate`);
+    }
+    const placement = placeTarget(resolve(objects, line), ctx);
+    if (placement.kind === 'source') {
+      lines[index] = placement.mapped;
+      changed = true;
+    } else if (placement.kind === 'outside') {
+      external = true;
+    }
+  }
+  if (changed) {
+    edits.set(file, lines.join('\n'));
+  }
+  if (external) {
+    report.externalReferences.push(
+      join(ctx.destAbs, relative(ctx.destReal, file)),
+    );
+  }
+}
+
+// The configuration the arm carries can send a later git command, run inside
+// the arm, back to the source: this pass reads every gitdir's `config` and
+// `config.worktree`, what they include, their `commondir` and their
+// alternates, and re-aims or refuses each path that leaves the arm. It runs
+// after the copy and the symlink rewrite, before any pointer is written, so
+// no vetted pointer lands in a repository whose config could still redirect
+// it. Nothing is written until every file has been read and classified, so a
+// refusal leaves the arm's configuration as the copy made it.
+function sanitizeGitConfig(ctx: ArmContext, report: PointerReport): void {
+  const edits = new Map<string, string>();
+  const seen = new Set<string>();
+  const queue: ConfigJob[] = [];
+  const mainGitDir = join(ctx.destAbs, 'coding-agent-workdir', '.git');
+  const adminRoot = join(mainGitDir, 'worktrees');
+  for (const gitdir of findGitDirs(ctx.destAbs)) {
+    if (gitdir === mainGitDir || dirname(gitdir) === adminRoot) {
+      requireCommonDirIs(gitdir, mainGitDir);
+    } else {
+      requireCommonDirInsideArm(gitdir, ctx.destReal);
+    }
+    queue.push({ file: join(gitdir, 'config'), gitdir });
+    queue.push({ file: join(gitdir, 'config.worktree'), gitdir });
+    sanitizeAlternates(gitdir, ctx, report, edits);
+  }
+  for (let job = queue.pop(); job !== undefined; job = queue.pop()) {
+    const file = vetConfigFile(job.file, ctx.destReal);
+    if (file === null || seen.has(file)) {
+      continue;
+    }
+    seen.add(file);
+    sanitizeConfigFile(file, job.gitdir, ctx, queue, edits);
+  }
+  const rewritten: string[] = [];
+  for (const [file, content] of edits) {
+    writeFileSync(file, content);
+    rewritten.push(relative(ctx.destReal, file));
+  }
+  if (rewritten.length > 0) {
+    report.rewrittenConfig = rewritten.sort();
   }
 }
 

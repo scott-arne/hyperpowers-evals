@@ -1,6 +1,7 @@
 import { afterAll, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
+  appendFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -853,8 +854,319 @@ test('cloneWorkspace refuses an administrative entry whose commondir is absolute
     scenariosRootWith('worktree-entry-commondir'),
     AGENTS,
   );
-  expect(() => cloneWorkspace(eligible[0]!, join(root, 'armQ'))).toThrow(
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, join(root, 'armQ'));
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(
     /commondir names a common directory that is not the arm's/,
   );
+});
+
+// A legacy-layout run whose workspace is one repository with one commit and
+// no linked worktree: the fixture for the configuration the arm carries into
+// a replay's git.
+function recordedRepoRun(scenario: string): {
+  resultsRoot: string;
+  runDir: string;
+  wd: string;
+} {
+  const resultsRoot = join(root, 'results-config');
+  const runDir = join(
+    resultsRoot,
+    `${scenario}-claude-auto-20260101T000000Z-aaaa`,
+  );
+  const wd = join(runDir, 'coding-agent-workdir');
+  mkdirSync(wd, { recursive: true });
+  git(wd, ['init', '-q', '-b', 'main']);
+  git(wd, ['config', 'user.email', 'a@b']);
+  git(wd, ['config', 'user.name', 't']);
+  writeFileSync(join(wd, 'f.txt'), 'x\n');
+  git(wd, ['add', '-A']);
+  git(wd, ['commit', '-qm', 'init']);
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({ checks: [record('git-repo', true, 'post')] }),
+    ),
+  );
+  return { resultsRoot, runDir, wd };
+}
+
+// Measured on git 2.56 with the clone before this check: `git checkout -- .`
+// run inside the arm recreated the file in the SOURCE working tree, because
+// `core.worktree` still named it.
+test('a core.worktree naming the source working tree is re-aimed at the arm, and git run inside the arm writes only the arm', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun('config-core-worktree');
+  git(wd, ['config', 'core.worktree', wd]);
+  // The agent left a tracked file deleted and the record keeps that state;
+  // `checkout -- .` recreates it wherever git takes the working tree to be.
+  rmSync(join(wd, 'f.txt'));
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-core-worktree'),
+    AGENTS,
+  );
+  const dest = join(root, 'armW');
+  const report = cloneWorkspace(eligible[0]!, dest);
+  const arm = join(dest, 'coding-agent-workdir');
+  git(arm, ['checkout', '--', '.']);
   expect(hashTree(runDir)).toBe(before);
+  expect(existsSync(join(wd, 'f.txt'))).toBe(false);
+  expect(existsSync(join(arm, 'f.txt'))).toBe(true);
+  expect(report.rewrittenConfig).toEqual(['coding-agent-workdir/.git/config']);
+  const config = readFileSync(join(arm, '.git', 'config'), 'utf8');
+  expect(config).not.toContain(runDir);
+  expect(config).toContain(
+    `worktree = ${join(realpathSync(dest), 'coding-agent-workdir')}`,
+  );
+});
+
+// A gitdir the agent made inside the workdir, with a `commondir` naming the
+// run's main `.git`: git takes refs and objects from there. Measured on git
+// 2.56 with the clone before this check: `update-ref` run in the arm's copy
+// created the ref in the SOURCE `.git`.
+test('cloneWorkspace refuses a nested repository whose commondir names the source .git, before any pointer is written', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun(
+    'config-nested-commondir',
+  );
+  const sub = join(wd, 'sub', '.git');
+  mkdirSync(sub, { recursive: true });
+  writeFileSync(join(sub, 'HEAD'), 'ref: refs/heads/main\n');
+  writeFileSync(join(sub, 'config'), '[core]\n\trepositoryformatversion = 0\n');
+  writeFileSync(join(sub, 'commondir'), `${join(wd, '.git')}\n`);
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-nested-commondir'),
+    AGENTS,
+  );
+  const dest = join(root, 'armY');
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, dest);
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  if (thrown === undefined) {
+    // What a replay's git does with an arm the clone accepted.
+    git(join(dest, 'coding-agent-workdir', 'sub'), [
+      'update-ref',
+      'refs/heads/planted',
+      'HEAD',
+    ]);
+  }
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(
+    /commondir names a common directory outside the arm/,
+  );
+});
+
+test('cloneWorkspace refuses a .git/modules entry whose commondir names the source .git', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun(
+    'config-module-commondir',
+  );
+  const mod = join(wd, '.git', 'modules', 'dep');
+  mkdirSync(mod, { recursive: true });
+  writeFileSync(join(mod, 'HEAD'), 'ref: refs/heads/main\n');
+  writeFileSync(join(mod, 'config'), '[core]\n\trepositoryformatversion = 0\n');
+  writeFileSync(join(mod, 'commondir'), `${join(wd, '.git')}\n`);
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-module-commondir'),
+    AGENTS,
+  );
+  const dest = join(root, 'armU');
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, dest);
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  if (thrown === undefined) {
+    git(join(dest, 'coding-agent-workdir'), [
+      '--git-dir',
+      join(dest, 'coding-agent-workdir', '.git', 'modules', 'dep'),
+      'update-ref',
+      'refs/heads/planted',
+      'HEAD',
+    ]);
+  }
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(
+    /commondir names a common directory outside the arm/,
+  );
+});
+
+test('cloneWorkspace refuses an include.path that leaves the run', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun(
+    'config-include-external',
+  );
+  const external = mkdtempSync(join(tmpdir(), 'include-'));
+  const included = join(external, 'extra.gitconfig');
+  writeFileSync(included, `[core]\n\tworktree = ${wd}\n`);
+  git(wd, ['config', 'include.path', included]);
+  const externalBefore = hashTree(external);
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-include-external'),
+    AGENTS,
+  );
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, join(root, 'armZ'));
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  expect(hashTree(external)).toBe(externalBefore);
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(/include path resolves outside the arm/);
+});
+
+test('an include.path into the source is re-aimed at the arm copy, and the copy is sanitized too', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun('config-include-source');
+  mkdirSync(join(runDir, 'home'), { recursive: true });
+  const included = join(runDir, 'home', 'extra.gitconfig');
+  writeFileSync(included, `[core]\n\tworktree = ${wd}\n`);
+  git(wd, ['config', 'include.path', included]);
+  // `~/` is git's spelling of HOME, which for the agent was the run's home.
+  writeFileSync(
+    join(runDir, 'home', 'tilde.gitconfig'),
+    '[user]\n\tname = t\n',
+  );
+  git(wd, ['config', '--add', 'include.path', '~/tilde.gitconfig']);
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-include-source'),
+    AGENTS,
+  );
+  const dest = join(root, 'armI');
+  const report = cloneWorkspace(eligible[0]!, dest);
+  const armReal = realpathSync(dest);
+  expect(hashTree(runDir)).toBe(before);
+  expect(report.rewrittenConfig).toEqual([
+    'coding-agent-workdir/.git/config',
+    'home/extra.gitconfig',
+  ]);
+  const config = readFileSync(
+    join(dest, 'coding-agent-workdir', '.git', 'config'),
+    'utf8',
+  );
+  expect(config).not.toContain(runDir);
+  expect(config).toContain(
+    `path = ${join(armReal, 'home', 'extra.gitconfig')}`,
+  );
+  expect(config).toContain(
+    `path = ${join(armReal, 'home', 'tilde.gitconfig')}`,
+  );
+  const copy = readFileSync(join(dest, 'home', 'extra.gitconfig'), 'utf8');
+  expect(copy).not.toContain(runDir);
+  expect(copy).toContain(`worktree = ${join(armReal, 'coding-agent-workdir')}`);
+  // git reads the re-aimed include, and through it the arm's working tree.
+  expect(
+    git(join(dest, 'coding-agent-workdir'), ['config', 'core.worktree']).trim(),
+  ).toBe(join(armReal, 'coding-agent-workdir'));
+});
+
+test('an alternates entry naming the source object store is re-aimed at the arm', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun(
+    'config-alternates-source',
+  );
+  mkdirSync(join(wd, '.git', 'objects', 'info'), { recursive: true });
+  writeFileSync(
+    join(wd, '.git', 'objects', 'info', 'alternates'),
+    `${join(wd, '.git', 'objects')}\n`,
+  );
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-alternates-source'),
+    AGENTS,
+  );
+  const dest = join(root, 'armJ');
+  const report = cloneWorkspace(eligible[0]!, dest);
+  const arm = join(dest, 'coding-agent-workdir');
+  expect(hashTree(runDir)).toBe(before);
+  expect(report.rewrittenConfig).toEqual([
+    'coding-agent-workdir/.git/objects/info/alternates',
+  ]);
+  expect(report.externalReferences).toEqual([]);
+  expect(
+    readFileSync(join(arm, '.git', 'objects', 'info', 'alternates'), 'utf8'),
+  ).toBe(
+    `${join(realpathSync(dest), 'coding-agent-workdir', '.git', 'objects')}\n`,
+  );
+  expect(git(arm, ['cat-file', '-p', 'HEAD:f.txt'])).toBe('x\n');
+});
+
+test('an alternates entry outside the run is kept and reported as an external reference', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun(
+    'config-alternates-external',
+  );
+  const external = mkdtempSync(join(tmpdir(), 'alternates-'));
+  mkdirSync(join(external, 'objects'));
+  mkdirSync(join(wd, '.git', 'objects', 'info'), { recursive: true });
+  writeFileSync(
+    join(wd, '.git', 'objects', 'info', 'alternates'),
+    `${join(external, 'objects')}\n`,
+  );
+  const externalBefore = hashTree(external);
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-alternates-external'),
+    AGENTS,
+  );
+  const dest = join(root, 'armH');
+  const report = cloneWorkspace(eligible[0]!, dest);
+  const alternates = join(
+    dest,
+    'coding-agent-workdir',
+    '.git',
+    'objects',
+    'info',
+    'alternates',
+  );
+  expect(hashTree(external)).toBe(externalBefore);
+  expect(hashTree(runDir)).toBe(before);
+  expect(report.externalReferences).toEqual([alternates]);
+  expect(report.rewrittenConfig).toBeUndefined();
+  expect(readFileSync(alternates, 'utf8')).toBe(
+    `${join(external, 'objects')}\n`,
+  );
+});
+
+test('cloneWorkspace refuses a git config it cannot read in full: a line continuation, a quoted value', () => {
+  const plants: [string, string][] = [
+    // A trailing backslash folds the next line into this value, so a reader
+    // that took the lines one at a time would misread both.
+    ['config-continuation', '[core]\n\tworktree = /some/\\\n\twhere\n'],
+    // A quoted value with an escape, as git writes one for a value holding `"`.
+    ['config-quoted', '[user]\n\tname = "a \\" b"\n'],
+  ];
+  for (const [scenario, text] of plants) {
+    const { resultsRoot, runDir, wd } = recordedRepoRun(scenario);
+    appendFileSync(join(wd, '.git', 'config'), text);
+    const before = hashTree(runDir);
+    const { eligible } = eligibleRuns(
+      resultsRoot,
+      scenariosRootWith(scenario),
+      AGENTS,
+    );
+    let thrown: unknown;
+    try {
+      cloneWorkspace(eligible[0]!, join(root, `arm-${scenario}`));
+    } catch (err: unknown) {
+      thrown = err;
+    }
+    expect(hashTree(runDir)).toBe(before);
+    expect(String(thrown)).toMatch(/a git config line the clone cannot read/);
+  }
 });
