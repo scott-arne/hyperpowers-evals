@@ -7,6 +7,12 @@ set -euo pipefail
 # gauntlet-agent output, coding-agent workdirs, and the SDD scratch cache
 # (home/.cache/hyperpowers -- ledgers, gate rounds, lens output) all survive.
 #
+# Two layouts coexist. A run recorded before the workspace relocation keeps
+# home/ beside its record at <root>/<name>/home; a later run keeps it at
+# <root>/workspaces/<name>/home. A run is strippable only once its record has a
+# verdict.json and neither the record directory nor the verdict was touched
+# within the age threshold; a run without a verdict is still running.
+#
 # A run costs ~12M of reinstallable infrastructure against ~1M of evidence.
 # Left alone, results/ reached 3.8G across 118 runs.
 
@@ -86,8 +92,10 @@ candidates() {
     printf '%s\n' "${SELECTED[@]}"
     return
   fi
-  # Underscore-prefixed directories are curated evidence, not quorum output.
-  find "$RESULTS_ROOT" -mindepth 1 -maxdepth 1 -type d ! -name '_*' -exec basename {} \; | sort
+  # Underscore-prefixed directories are curated evidence, not quorum output;
+  # workspaces/ holds the relocated agent homes, not a run record.
+  find "$RESULTS_ROOT" -mindepth 1 -maxdepth 1 -type d ! -name '_*' ! -name 'workspaces' \
+    -exec basename {} \; | sort
 }
 
 before_kb=$(disk_kb "$RESULTS_ROOT")
@@ -101,22 +109,34 @@ while IFS= read -r name; do
   run="$RESULTS_ROOT/$name"
 
   [ -d "$run" ] || { printf 'skip %-70s (not a directory)\n' "$name"; continue; }
-  # home/ is the only thing this script touches; its absence means there is
+  # Two layouts: a run recorded before the relocation keeps home/ beside its
+  # record; a later run keeps it under workspaces/<name>/. Either way the
+  # record directory is <root>/<name>. A run with no home/ in either place has
   # nothing here to strip, whatever else the directory is.
-  [ -d "$run/home" ] || { skipped_empty=$((skipped_empty + 1)); continue; }
-
-  # An in-flight run is still writing. Directory mtime is the cheapest
-  # available signal and errs toward leaving things alone.
-  if [ -z "$(find "$run" -maxdepth 0 -mmin +"$MIN_AGE_MINUTES" 2>/dev/null)" ]; then
-    printf 'skip %-70s (touched within %s min)\n' "$name" "$MIN_AGE_MINUTES"
-    skipped_recent=$((skipped_recent + 1))
-    continue
+  if [ -d "$RESULTS_ROOT/workspaces/$name/home" ]; then
+    tree="$RESULTS_ROOT/workspaces/$name"
+  elif [ -d "$run/home" ]; then
+    tree="$run"
+  else
+    skipped_empty=$((skipped_empty + 1)); continue
   fi
 
-  run_before=$(disk_kb "$run")
+  # Liveness comes from the record, not the workspace: writes beneath home/ do
+  # not refresh the workspace mtime, while the record directory is written at
+  # every phase boundary. A run without a verdict is still running.
+  if [ ! -f "$run/verdict.json" ]; then
+    printf 'skip %-70s (no verdict yet: in flight)\n' "$name"
+    skipped_recent=$((skipped_recent + 1)); continue
+  fi
+  if [ -n "$(find "$run" "$run/verdict.json" -maxdepth 0 -mmin -"$MIN_AGE_MINUTES" 2>/dev/null)" ]; then
+    printf 'skip %-70s (touched within %s min)\n' "$name" "$MIN_AGE_MINUTES"
+    skipped_recent=$((skipped_recent + 1)); continue
+  fi
+
+  run_before=$(disk_kb "$tree")
   hit=0
   for rel in "${STRIP_PATHS[@]}"; do
-    target="$run/$rel"
+    target="$tree/$rel"
     [ -e "$target" ] || continue
     if [ "$DRY_RUN" -eq 1 ]; then
       [ "$hit" -eq 1 ] || printf '%s\n' "$name"
@@ -138,7 +158,7 @@ while IFS= read -r name; do
 
   stripped=$((stripped + 1))
   if [ "$DRY_RUN" -eq 0 ]; then
-    printf 'strip %-70s %s KB -> %s KB\n' "$name" "$run_before" "$(disk_kb "$run")"
+    printf 'strip %-70s %s KB -> %s KB\n' "$name" "$run_before" "$(disk_kb "$tree")"
   fi
 done < <(candidates)
 
