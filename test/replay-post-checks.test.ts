@@ -2417,3 +2417,207 @@ test('a fixture whose post phase crashes in Arm N alone is a divergence too', as
   expect(r.status).toBe('diverged');
   expect(r.firstDivergence).toContain('exit codes');
 }, 60_000);
+
+// Fix round 3. recordedRepoRun (above) builds the run; the replay also needs
+// the throwaway home the clone copies beside the workdir.
+function recordedRepoRunWithHome(scenario: string): {
+  resultsRoot: string;
+  runDir: string;
+} {
+  const { resultsRoot, runDir } = recordedRepoRun(scenario);
+  mkdirSync(join(runDir, 'home'), { recursive: true });
+  return { resultsRoot, runDir };
+}
+
+// Fix round 3, finding 1. Every shipped pytest invocation is path-qualified
+// (`scenarios/verification-phantom-completion/checks.sh:15`), so a leader kept
+// as written never matches the inventory key and `pytest` could never leave
+// `uncoveredTools` — the replay gate could not reach exit 0 however well the
+// arms agreed.
+test('a path-qualified tool counts as the tool it runs', async () => {
+  const fixtureDir = join(root, 'fixture-venv-pytest');
+  const bin = join(fixtureDir, 'workspace', '.venv', 'bin');
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, 'pytest'), '#!/bin/sh\nexit 0\n');
+  chmodSync(join(bin, 'pytest'), 0o755);
+  writeFileSync(
+    join(fixtureDir, 'checks.sh'),
+    "pre() { :; }\npost() {\n    command-succeeds './.venv/bin/pytest -q'\n}\n",
+  );
+  const r = await replayFixture(fixtureDir, OPTS);
+  expect(r.status).toBe('equal');
+  expect(r.tools).toContain('./.venv/bin/pytest'); // the report keeps it as written
+  expect(coverage([r], 0).uncoveredTools).not.toContain('pytest');
+}, 60_000);
+
+// Fix round 3, finding 5. A failing `command-succeeds` emits a record and
+// runPhaseWithEnv normalizes rc 1 with records to a clean phase, so two arms
+// failing the same check compare equal — and the fixture's tool and its
+// migrated scenario would count off the coverage list without demonstrating
+// anything.
+test('a fixture whose check fails in both arms covers nothing', async () => {
+  const fixtureDir = join(root, 'fixture-equal-failure');
+  mkdirSync(join(fixtureDir, 'workspace'), { recursive: true });
+  writeFileSync(join(fixtureDir, 'workspace', '.keep'), '');
+  writeFileSync(
+    join(fixtureDir, 'checks.sh'),
+    "pre() { :; }\npost() {\n    command-succeeds 'grep -q NOT-IN-THIS-FILE /dev/null'\n}\n",
+  );
+  const r = await replayFixture(fixtureDir, OPTS);
+  expect(r.armL.raw.find((x) => x.phase === 'post')?.passed).toBe(false);
+  expect(r.armL.exitCodes.post).toBe(0); // a failed assertion is still a clean phase
+  expect(r.status).toBe('degraded-archive');
+  expect(r.degradedCheck).toContain('command-succeeds');
+  expect(coverage([r], 0).uncoveredTools).toContain('grep');
+}, 60_000);
+
+// Fix round 3, finding 4. The scan stops at a Bash keyword, so a historical
+// check hidden inside a compound line left no candidate; with another post
+// record keeping the no-record guard quiet, the skipped check stayed on the
+// "listed, never demoting" pile and both arms returned equal. "Vanished" and
+// "hidden inside a line the scan cannot read" are not the same thing.
+test('a historical post pass hidden inside a compound line degrades rather than passing', async () => {
+  const compounds: [string, string][] = [
+    ['hidden-if', '  if false; then file-exists z.txt; fi\n'],
+    ['hidden-for', '  for f in $NOTHING; do file-exists z.txt; done\n'],
+  ];
+  for (const [scenario, line] of compounds) {
+    const resultsRoot = join(root, `results-${scenario}`);
+    const runDir = join(
+      resultsRoot,
+      `${scenario}-claude-auto-20260101T000000Z-aaaa`,
+    );
+    mkdirSync(join(runDir, 'coding-agent-workdir'), { recursive: true });
+    mkdirSync(join(runDir, 'home'), { recursive: true });
+    writeFileSync(join(runDir, 'coding-agent-workdir', 'a.txt'), '');
+    writeFileSync(
+      join(runDir, 'verdict.json'),
+      JSON.stringify(
+        verdictFixture({
+          checks: [
+            record('file-exists', true, 'post', ['a.txt']),
+            record('file-exists', true, 'post', ['z.txt']),
+          ],
+        }),
+      ),
+    );
+    const scenarios = scenariosRootWith(scenario);
+    writeFileSync(
+      join(scenarios, scenario, 'checks.sh'),
+      `pre() { :; }\npost() {\n  file-exists a.txt\n${line}}\n`,
+    );
+    const { eligible } = eligibleRuns(resultsRoot, scenarios, AGENTS);
+    const r = await replayRun(eligible[0]!, {
+      ...OPTS,
+      scenariosRoot: scenarios,
+    });
+    expect(r.unparsedLines).toHaveLength(1);
+    expect(r.status).toBe('degraded-archive');
+    expect(r.degradedCheck).toContain('unparsed:');
+    expect(r.degradedCheck).toContain('z.txt');
+  }
+}, 120_000);
+
+// Fix round 3, finding 2. An external alternate is represented in
+// PointerReport.externalReferences by the regular alternates FILE, so the
+// external-directory refusal resolved a file, saw no directory, and let both
+// arms read an untracked shared object store.
+test('an external alternate object store refuses the run and names the store', async () => {
+  const { resultsRoot, runDir } = recordedRepoRunWithHome('ext-alternate');
+  const store = mkdtempSync(join(tmpdir(), 'altstore-'));
+  mkdirSync(join(store, 'objects'), { recursive: true });
+  const info = join(runDir, 'coding-agent-workdir', '.git', 'objects', 'info');
+  mkdirSync(info, { recursive: true });
+  writeFileSync(join(info, 'alternates'), `${join(store, 'objects')}\n`);
+  const scenarios = scenariosRootWith('ext-alternate');
+  writeFileSync(
+    join(scenarios, 'ext-alternate', 'checks.sh'),
+    'pre() { :; }\npost() {\n  git-repo\n}\n',
+  );
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(resultsRoot, scenarios, AGENTS);
+  let thrown: unknown;
+  try {
+    await replayRun(eligible[0]!, { ...OPTS, scenariosRoot: scenarios });
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  expect((thrown as Error | undefined)?.name).toBe('ReplayRefusal');
+  expect(String(thrown)).toContain(join(store, 'objects'));
+  expect(hashTree(runDir)).toBe(before);
+  rmSync(store, { recursive: true, force: true });
+}, 60_000);
+
+// Fix round 3, finding 3. The post-run audit read only symlinks and the two
+// pointer file names, while the clone classifies five more kinds. Agent code a
+// post check runs can write any of them into the arm, and the next git command
+// there would read it: the source hashes do not move, both arms can still emit
+// equal records, and the replay returned `equal`.
+test('a pointer the post phase plants in the arm is caught by the audit, whichever kind it is', async () => {
+  const plants: [
+    string,
+    (runDir: string, external: string) => string,
+    string,
+  ][] = [
+    [
+      'plant-commondir',
+      (runDir) => `printf "%s\\n" "${join(runDir, '.git')}" > .git/commondir`,
+      'commondir',
+    ],
+    [
+      'plant-core-worktree',
+      (runDir) =>
+        `printf "[core]\\n\\tworktree = %s\\n" "${join(runDir, 'coding-agent-workdir')}" >> .git/config`,
+      'core.worktree',
+    ],
+    [
+      'plant-include',
+      (_runDir, external) =>
+        `printf "[include]\\n\\tpath = %s\\n" "${external}" >> .git/config`,
+      'include path',
+    ],
+    [
+      'plant-alternates',
+      (_runDir, external) =>
+        `mkdir -p .git/objects/info && printf "%s\\n" "${external}" > .git/objects/info/alternates`,
+      'alternate',
+    ],
+    [
+      'plant-dotgit-symlink',
+      () => 'mkdir -p sub && ln -s ../.git sub/.git',
+      'is a symlink',
+    ],
+    [
+      'plant-source-symlink',
+      (runDir) => `ln -s "${runDir}" link-to-source`,
+      'resolves into',
+    ],
+  ];
+  for (const [scenario, plant, expected] of plants) {
+    const { resultsRoot, runDir } = recordedRepoRunWithHome(scenario);
+    const external = mkdtempSync(join(tmpdir(), 'outside-'));
+    const scenarios = scenariosRootWith(scenario);
+    writeFileSync(
+      join(scenarios, scenario, 'checks.sh'),
+      `pre() { :; }\npost() {\n  command-succeeds '${plant(runDir, external)}'\n  git-repo\n}\n`,
+    );
+    const before = hashTree(runDir);
+    const { eligible } = eligibleRuns(resultsRoot, scenarios, AGENTS);
+    let thrown: unknown;
+    try {
+      await replayRun(eligible[0]!, { ...OPTS, scenariosRoot: scenarios });
+    } catch (err: unknown) {
+      thrown = err;
+    }
+    // The plant's name must not be part of the haystack: `plant-commondir`
+    // contains `commondir` and would satisfy the assertion with no throw at
+    // all. Carry it in the compared value instead, so a failure still says
+    // which plant it was.
+    expect([scenario, String(thrown).includes(expected)]).toEqual([
+      scenario,
+      true,
+    ]);
+    expect(hashTree(runDir)).toBe(before);
+    rmSync(external, { recursive: true, force: true });
+  }
+}, 300_000);

@@ -292,11 +292,16 @@ export function eligibleRuns(
 // `rewrittenConfig` lists, relative to the arm, the config and alternates
 // files whose source paths were re-aimed at the arm; it is absent when none
 // were.
+// `externalAlternates` names the object stores an in-arm alternates file
+// points at from outside the run, resolved. `externalReferences` can only
+// carry the alternates FILE, which is a regular file; what decides whether a
+// replay may run is the directory named inside it, so it is reported here.
 export interface PointerReport {
   gitPointers: string[];
   rewrittenSymlinks: string[];
   externalReferences: string[];
   rewrittenConfig?: string[];
+  externalAlternates?: string[];
 }
 
 // Entries of a legacy run directory that belong to the workspace rather than to
@@ -1118,7 +1123,7 @@ function sanitizeAlternates(
   }
   const lines = readFileSync(file, 'utf8').split('\n');
   let changed = false;
-  let external = false;
+  const external: string[] = [];
   for (const [index, line] of lines.entries()) {
     if (line === '' || line.startsWith('#')) {
       continue;
@@ -1126,21 +1131,26 @@ function sanitizeAlternates(
     if (line.startsWith('"')) {
       throw new Error(`${file}:${index + 1}: a quoted alternate`);
     }
-    const placement = placeTarget(resolve(objects, line), ctx);
+    const target = resolve(objects, line);
+    const placement = placeTarget(target, ctx);
     if (placement.kind === 'source') {
       lines[index] = placement.mapped;
       changed = true;
     } else if (placement.kind === 'outside') {
-      external = true;
+      external.push(resolveThrough(target));
     }
   }
   if (changed) {
     edits.set(file, lines.join('\n'));
   }
-  if (external) {
+  if (external.length > 0) {
     report.externalReferences.push(
       join(ctx.destAbs, relative(ctx.destReal, file)),
     );
+    report.externalAlternates = [
+      ...(report.externalAlternates ?? []),
+      ...external,
+    ];
   }
 }
 
@@ -1471,6 +1481,14 @@ const MIGRATED_SCENARIOS: readonly string[] = [
   'tdd-runs-the-project-suite',
 ];
 
+// A shipped check invokes its tool by path — `./.venv/bin/pytest -q`
+// (scenarios/verification-phantom-completion/checks.sh) — and the inventory
+// names the tool, so the comparison is between basenames. `tools` keeps the
+// leader as the command wrote it, which is what the report should show.
+function toolName(leader: string): string {
+  return leader.includes('/') ? basename(leader) : leader;
+}
+
 /** The predeclared floor, so the gate cannot pass on a shrunken set. Only
  *  corpus runs count toward it; a synthetic fixture is a counterfactual, not a
  *  replay of retained evidence, and still covers a tool or a migrated scenario
@@ -1490,7 +1508,7 @@ export function coverage(
     (r) => r.runId !== null && r.status !== 'degraded-archive',
   );
   const covering = results.filter((r) => r.status !== 'degraded-archive');
-  const exercised = new Set(covering.flatMap((r) => r.tools));
+  const exercised = new Set(covering.flatMap((r) => r.tools.map(toolName)));
   const uncoveredTools = INNER_COMMAND_TOOLS.filter((t) => !exercised.has(t));
   const scenarios = new Set(covering.map((r) => r.scenario));
   const migratedUncovered = MIGRATED_SCENARIOS.filter((s) => !scenarios.has(s));
@@ -1888,23 +1906,20 @@ export function expectedPostChecks(
   return { expected, unparsedLines };
 }
 
-// An unparsed line is never silently non-load-bearing: its leading verb-shaped
-// tokens, after `not` and `check-transcript`, name the checks it might still
-// be running. If one of them matches a historical post pass the expected set
-// did not account for, the scan cannot tell an unchanged check from a changed
-// one there, and the run does not count.
-function unparsedCandidates(line: string): string[] {
-  const out: string[] = [];
-  for (const token of line.split(/\s+/)) {
-    if (token === 'not' || token === 'check-transcript') {
-      continue;
+// An unparsed line is never silently non-load-bearing. Its leading verb is the
+// obvious candidate, but a compound line — `if …; then file-exists x; fi`, a
+// `for` loop — leads with a keyword and still runs whatever it mentions, so
+// every verb named ANYWHERE in the line counts. If one of them matches a
+// historical post pass the expected set did not account for, the scan cannot
+// tell a check that vanished from one hidden inside a line it cannot read, and
+// only the first of those is safe to merely list.
+function mentionsCheck(line: string, checks: ReadonlySet<string>): boolean {
+  for (const token of line.split(/[^A-Za-z0-9-]+/)) {
+    if (checks.has(token)) {
+      return true;
     }
-    if (!VERB_SHAPED.test(token) || BASH_KEYWORDS.has(token)) {
-      break;
-    }
-    out.push(token);
   }
-  return out;
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -2168,30 +2183,166 @@ function requireNoExternalDirectories(
       );
     }
   }
+  // An external alternate is listed above as the regular alternates FILE, so
+  // the loop sees no directory and would let both arms read an untracked
+  // shared object store. The directory that decides is the one named inside.
+  for (const store of report.externalAlternates ?? []) {
+    if (isDirectory(store)) {
+      throw new Error(`an alternate object store outside the run: ${store}`);
+    }
+  }
 }
 
-// No pointer and no symlink of either arm resolves into the retained source or
-// into the other arm. Checked after the phases have run, not only after the
-// clone: a check that wrote a pointer is exactly what this has to catch.
-function requireArmIsolated(armRoot: string, forbidden: string[]): void {
+// How the audit treats a path that lands outside the arm: `refuse` for one git
+// would read configuration from or write a working tree through, which the
+// clone guarantees is inside the arm; `unless-directory` for the two kinds the
+// clone reports rather than refuses — an object store and a plain symlink —
+// where only an existing directory gives a later command somewhere to go.
+type PathJudge = (
+  what: string,
+  target: string,
+  outside: 'refuse' | 'unless-directory',
+) => void;
+
+// `objects/info/alternates` of one gitdir, read the way git reads it: one
+// store per line, relative to `objects/`, `#` lines ignored.
+function auditAlternates(
+  gitdir: string,
+  armReal: string,
+  judge: PathJudge,
+): void {
+  const objects = join(gitdir, 'objects');
+  const file = vetConfigFile(join(objects, 'info', 'alternates'), armReal);
+  if (file === null) {
+    return;
+  }
+  for (const [index, line] of readFileSync(file, 'utf8')
+    .split('\n')
+    .entries()) {
+    if (line === '' || line.startsWith('#')) {
+      continue;
+    }
+    if (line.startsWith('"')) {
+      throw new Error(`${file}:${index + 1}: a quoted alternate`);
+    }
+    judge(`${file} (alternate)`, resolve(objects, line), 'unless-directory');
+  }
+}
+
+// One gitdir's `config` and `config.worktree`, and whatever they include: the
+// same two keys the clone places, read with the same reader, which refuses a
+// line it cannot classify.
+function auditConfig(gitdir: string, armReal: string, judge: PathJudge): void {
+  const seen = new Set<string>();
+  const queue = [join(gitdir, 'config'), join(gitdir, 'config.worktree')];
+  for (let next = queue.pop(); next !== undefined; next = queue.pop()) {
+    const file = vetConfigFile(next, armReal);
+    if (file === null || seen.has(file)) {
+      continue;
+    }
+    seen.add(file);
+    for (const entry of parseConfig(
+      file,
+      readFileSync(file, 'utf8').split('\n'),
+    )) {
+      if (
+        entry.key === 'worktree' &&
+        entry.section === 'core' &&
+        entry.subsection === null
+      ) {
+        judge(
+          `${file} (core.worktree)`,
+          resolve(gitdir, entry.value ?? ''),
+          'refuse',
+        );
+        continue;
+      }
+      const include =
+        entry.key === 'path' &&
+        ((entry.section === 'include' && entry.subsection === null) ||
+          (entry.section === 'includeif' && entry.subsection !== null));
+      if (!include) {
+        continue;
+      }
+      const value = entry.value ?? '';
+      const target = value.startsWith('~')
+        ? join(armReal, 'home', value.slice(1))
+        : resolve(dirname(file), value);
+      judge(`${file} (include path)`, target, 'refuse');
+      queue.push(target);
+    }
+  }
+}
+
+// Prove the arm is still what the clone made it, after the phases have run.
+// The clone classifies seven pointer kinds; reading only symlinks and the two
+// pointer file names left five of them unexamined, and a post check runs
+// agent-authored code that can write any of them into the arm — a
+// `commondir`, a `core.worktree`, an include, an alternate — which the next
+// git command in the arm would read. The source hashes do not move when that
+// happens, and both arms can still emit identical records, so without this the
+// run returns `equal`.
+//
+// Every finding here is an instrument failure rather than a per-run refusal:
+// the clone proved the arm clean and the external-directory check cleared it
+// before a single phase ran, so whatever this finds was written during the
+// replay by code the replay executed. That is the instrument losing control of
+// its own arm, which is how the brief already treats the worst of it.
+function auditArm(armRoot: string, forbidden: string[]): void {
   const real = realpathSync(armRoot);
-  const judge = (what: string, target: string): void => {
+  const judge: PathJudge = (what, target, outside) => {
     const resolved = resolveThrough(target);
+    if (contains(real, resolved)) {
+      return;
+    }
     for (const root of forbidden) {
       if (contains(root, resolved)) {
         throw new Error(`${what} resolves into ${root}: ${target}`);
       }
     }
+    if (outside === 'refuse') {
+      throw new Error(`${what} resolves outside the arm: ${target}`);
+    }
+    if (isDirectory(resolved)) {
+      throw new Error(
+        `${what} leads to a directory outside the run: ${resolved}`,
+      );
+    }
   };
   for (const link of walkSymlinks(real)) {
     const target = readlinkSync(link);
-    judge(link, isAbsolute(target) ? target : resolve(dirname(link), target));
+    judge(
+      link,
+      isAbsolute(target) ? target : resolve(dirname(link), target),
+      'unless-directory',
+    );
   }
+  // Refuses a `.git` or `gitdir` that is a symlink, as the clone does.
   for (const file of pointerFiles(real)) {
     const value = readFileSync(file, 'utf8')
       .trim()
       .replace(/^gitdir: /, '');
-    judge(file, isAbsolute(value) ? value : resolve(dirname(file), value));
+    judge(
+      file,
+      isAbsolute(value) ? value : resolve(dirname(file), value),
+      'refuse',
+    );
+  }
+  // Both routes to a gitdir, as the clone finds them.
+  const gitdirs = new Set<string>();
+  for (const dir of findGitDirs(real)) {
+    gitdirs.add(realpathSync(dir));
+  }
+  for (const dir of gitfileTargets(real, real)) {
+    gitdirs.add(dir);
+  }
+  for (const gitdir of gitdirs) {
+    const common = readCommonDir(gitdir);
+    if (common !== null) {
+      judge(`${common.file} (commondir)`, common.resolved, 'refuse');
+    }
+    auditAlternates(gitdir, real, judge);
+    auditConfig(gitdir, real, judge);
   }
 }
 
@@ -2343,8 +2494,8 @@ export async function replayRun(
   );
   requireSourceUnchanged(before, 'while the arms ran');
   const sourceReal = sources.map((path) => realpathSync(path));
-  requireArmIsolated(armLRoot, [...sourceReal, realpathSync(armNRoot)]);
-  requireArmIsolated(armNRoot, [...sourceReal, realpathSync(armLRoot)]);
+  auditArm(armLRoot, [...sourceReal, realpathSync(armNRoot)]);
+  auditArm(armNRoot, [...sourceReal, realpathSync(armLRoot)]);
 
   // The prerequisite. The expected set comes from the current checks.sh text
   // alone; the history comes from the record; neither is read off an arm.
@@ -2397,7 +2548,7 @@ export async function replayRun(
   }
   if (degradedCheck === undefined) {
     for (const line of unparsedLines) {
-      if (unparsedCandidates(line).some((c) => unmatchedChecks.has(c))) {
+      if (mentionsCheck(line, unmatchedChecks)) {
         degradedCheck = `unparsed: ${line}`;
         break;
       }
@@ -2548,18 +2699,32 @@ export async function replayFixture(
   // result does not count" — and, by the same token, not what an asymmetric
   // crash gets, which is why this reads the control arm under agreement.
   const vacuous = comparison.equal && vacuousPostPhase(armL);
+  // A fixture is written to pass. A failed assertion is still a clean phase
+  // (runPhaseWithEnv normalizes rc 1 with records), so two arms failing the
+  // same check compare equal — and the fixture's tool and its migrated
+  // scenario would come off the coverage list having demonstrated nothing.
+  const failed =
+    comparison.equal && !vacuous
+      ? armL.raw.find((r) => r.phase === 'post' && !r.passed)
+      : undefined;
+  const degradedCheck = vacuous
+    ? vacuityNote(armL)
+    : failed === undefined
+      ? undefined
+      : describeCheck(failed.check, failed.args, failed.negated);
   return {
     scenario,
     runId: null,
-    status: vacuous
-      ? 'degraded-archive'
-      : comparison.equal
-        ? 'equal'
-        : 'diverged',
+    status:
+      degradedCheck !== undefined
+        ? 'degraded-archive'
+        : comparison.equal
+          ? 'equal'
+          : 'diverged',
     ...(comparison.firstDivergence !== undefined
       ? { firstDivergence: comparison.firstDivergence }
       : {}),
-    ...(vacuous ? { degradedCheck: vacuityNote(armL) } : {}),
+    ...(degradedCheck !== undefined ? { degradedCheck } : {}),
     preDivergencesFromHistory: [],
     unmatchedHistory: [],
     unparsedLines: [],
