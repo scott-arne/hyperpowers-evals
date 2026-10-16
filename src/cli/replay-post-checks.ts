@@ -420,6 +420,19 @@ export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
     report.rewrittenSymlinks.push(link);
   }
 
+  // No symlink of any class resolves back into the source, checked before
+  // any pass reads through one. The passes below rewrite file contents and
+  // plant no link, so this holds at return as well.
+  for (const link of walkSymlinks(destAbs)) {
+    const target = readlinkSync(link);
+    const absolute = isAbsolute(target)
+      ? target
+      : resolve(dirname(link), target);
+    if (sourceRelative(absolute, srcRoot) !== null) {
+      throw new Error(`${link} still points into the source`);
+    }
+  }
+
   sanitizeGitConfig({ destAbs, destReal, srcRoot, insideArm }, report);
 
   repairWorktrees(destAbs, destReal, srcRoot, insideArm);
@@ -440,17 +453,6 @@ export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
       throw new Error(`${path} points outside the arm: ${value}`);
     }
     report.gitPointers.push(path);
-  }
-
-  // And no pointer of any class resolves back into the source.
-  for (const link of walkSymlinks(destAbs)) {
-    const target = readlinkSync(link);
-    const absolute = isAbsolute(target)
-      ? target
-      : resolve(dirname(link), target);
-    if (sourceRelative(absolute, srcRoot) !== null) {
-      throw new Error(`${link} still points into the source`);
-    }
   }
   return report;
 }
@@ -719,32 +721,29 @@ function requireCommonDirInsideArm(gitdir: string, destReal: string): void {
 }
 
 // A file the pass reads and may rewrite: its realpath, when it exists and is
-// a regular file the arm contains. The walk never followed a link to reach
-// its directory, but the file itself can be one, and the pass reads and
-// writes only through a realpath inside the arm.
+// a regular file the arm contains, decided before anything reads it. The walk
+// never followed a link to reach a gitdir, but every component composed
+// below one can be a link — the file itself, and `objects` and `info` on the
+// way to an alternates file — and a link out of the arm there would have the
+// pass read, and then rewrite, a file the replay does not own. Measured at
+// the round-6 head, where only a link in the last component was checked:
+// `.git/objects` as a relative link climbing into the source had the
+// SOURCE's alternates rewritten, and `.git/objects/info` as an absolute link
+// to an external directory had that directory's alternates rewritten with
+// the clone returning success.
 function vetConfigFile(file: string, destReal: string): string | null {
-  const stat = lstatSync(file, { throwIfNoEntry: false });
-  if (stat === undefined) {
-    return null;
+  const real = resolveThrough(file);
+  if (!contains(destReal, real)) {
+    throw new Error(`${file} resolves outside the arm: ${real}`);
   }
-  if (stat.isSymbolicLink()) {
-    const real = resolveThrough(file);
-    if (!contains(destReal, real)) {
-      throw new Error(`${file} resolves outside the arm: ${real}`);
-    }
-    const target = statSync(real, { throwIfNoEntry: false });
-    if (target === undefined) {
-      return null; // dangling: git reads nothing here either
-    }
-    if (!target.isFile()) {
-      throw new Error(`${file} is not a regular file`);
-    }
-    return real;
+  const stat = statSync(real, { throwIfNoEntry: false });
+  if (stat === undefined) {
+    return null; // absent, or a dangling link: git reads nothing here either
   }
   if (!stat.isFile()) {
     throw new Error(`${file} is not a regular file`);
   }
-  return realpathSync(file);
+  return real;
 }
 
 // Where a path named by the arm's configuration lands: inside the arm it
@@ -1045,10 +1044,18 @@ function sanitizeGitConfig(ctx: ArmContext, report: PointerReport): void {
     seen.add(file);
     sanitizeConfigFile(file, job.gitdir, ctx, queue, edits);
   }
+  // Every key was vetted by vetConfigFile; the record of what is about to be
+  // written says so in its own terms, before the first write.
   const rewritten: string[] = [];
+  for (const file of edits.keys()) {
+    const rel = relative(ctx.destReal, file);
+    if (isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`)) {
+      throw new Error(`${file} is not inside the arm`);
+    }
+    rewritten.push(rel);
+  }
   for (const [file, content] of edits) {
     writeFileSync(file, content);
-    rewritten.push(relative(ctx.destReal, file));
   }
   if (rewritten.length > 0) {
     report.rewrittenConfig = rewritten.sort();

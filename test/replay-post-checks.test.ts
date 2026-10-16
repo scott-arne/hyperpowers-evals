@@ -9,12 +9,14 @@ import {
   readFileSync,
   readlinkSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
+import type { PointerReport } from '../src/cli/replay-post-checks.ts';
 import {
   cloneWorkspace,
   eligibleRuns,
@@ -896,6 +898,15 @@ function recordedRepoRun(scenario: string): {
   return { resultsRoot, runDir, wd };
 }
 
+// Every file the clone reports as rewritten is named relative to the arm and
+// lies under it.
+function expectArmRelative(report: PointerReport): void {
+  for (const entry of report.rewrittenConfig ?? []) {
+    expect(isAbsolute(entry)).toBe(false);
+    expect(entry === '..' || entry.startsWith('../')).toBe(false);
+  }
+}
+
 // Measured on git 2.56 with the clone before this check: `git checkout -- .`
 // run inside the arm recreated the file in the SOURCE working tree, because
 // `core.worktree` still named it.
@@ -919,6 +930,7 @@ test('a core.worktree naming the source working tree is re-aimed at the arm, and
   expect(existsSync(join(wd, 'f.txt'))).toBe(false);
   expect(existsSync(join(arm, 'f.txt'))).toBe(true);
   expect(report.rewrittenConfig).toEqual(['coding-agent-workdir/.git/config']);
+  expectArmRelative(report);
   const config = readFileSync(join(arm, '.git', 'config'), 'utf8');
   expect(config).not.toContain(runDir);
   expect(config).toContain(
@@ -1055,6 +1067,7 @@ test('an include.path into the source is re-aimed at the arm copy, and the copy 
     'coding-agent-workdir/.git/config',
     'home/extra.gitconfig',
   ]);
+  expectArmRelative(report);
   const config = readFileSync(
     join(dest, 'coding-agent-workdir', '.git', 'config'),
     'utf8',
@@ -1097,6 +1110,7 @@ test('an alternates entry naming the source object store is re-aimed at the arm'
   expect(report.rewrittenConfig).toEqual([
     'coding-agent-workdir/.git/objects/info/alternates',
   ]);
+  expectArmRelative(report);
   expect(report.externalReferences).toEqual([]);
   expect(
     readFileSync(join(arm, '.git', 'objects', 'info', 'alternates'), 'utf8'),
@@ -1138,6 +1152,7 @@ test('an alternates entry outside the run is kept and reported as an external re
   expect(hashTree(runDir)).toBe(before);
   expect(report.externalReferences).toEqual([alternates]);
   expect(report.rewrittenConfig).toBeUndefined();
+  expectArmRelative(report);
   expect(readFileSync(alternates, 'utf8')).toBe(
     `${join(external, 'objects')}\n`,
   );
@@ -1169,4 +1184,107 @@ test('cloneWorkspace refuses a git config it cannot read in full: a line continu
     expect(hashTree(runDir)).toBe(before);
     expect(String(thrown)).toMatch(/a git config line the clone cannot read/);
   }
+});
+
+// The re-review's probes at the round-6 head. A component on the way to an
+// alternates file — `objects`, or `objects/info` — which the gitdir walk never
+// vetted, was a symlink out of the arm, and the pass read and rewrote the file
+// it led to before any check saw the link: the SOURCE's alternates for (a),
+// an external directory's for (b), and the clone returned success for (b).
+test('cloneWorkspace refuses a .git/objects that is a relative link climbing out of the arm into the source, before reading through it', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun(
+    'config-objects-into-source',
+  );
+  const dest = join(root, 'armAa');
+  const objectsReal = join(runDir, 'objects-real');
+  renameSync(join(wd, '.git', 'objects'), objectsReal);
+  mkdirSync(join(objectsReal, 'info'), { recursive: true });
+  // The line names a source path whose arm mapping does not pass through the
+  // planted link, so the pass places it as 'source' and rewrites it.
+  writeFileSync(join(objectsReal, 'info', 'alternates'), `${objectsReal}\n`);
+  // Relative to the ARM's `.git` the link lands in the source. The copy keeps
+  // it verbatim and the symlink rewrite leaves relative links alone.
+  symlinkSync(
+    relative(join(dest, 'coding-agent-workdir', '.git'), objectsReal),
+    join(wd, '.git', 'objects'),
+  );
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-objects-into-source'),
+    AGENTS,
+  );
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, dest);
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(/still points into the source/);
+});
+
+test('cloneWorkspace refuses a .git/objects/info that is an absolute link to a directory outside the run, before reading through it', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun('config-info-external');
+  const external = mkdtempSync(join(tmpdir(), 'info-'));
+  writeFileSync(
+    join(external, 'alternates'),
+    `${join(wd, '.git', 'objects')}\n`,
+  );
+  rmSync(join(wd, '.git', 'objects', 'info'), { recursive: true, force: true });
+  symlinkSync(external, join(wd, '.git', 'objects', 'info'));
+  const externalBefore = hashTree(external);
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-info-external'),
+    AGENTS,
+  );
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, join(root, 'armAb'));
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  expect(hashTree(external)).toBe(externalBefore);
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(/resolves outside the arm/);
+});
+
+test('cloneWorkspace refuses a .git/objects that is a relative link to a directory outside the run', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun(
+    'config-objects-external',
+  );
+  const dest = join(root, 'armAc');
+  const external = mkdtempSync(join(tmpdir(), 'objects-'));
+  mkdirSync(join(external, 'objects', 'info'), { recursive: true });
+  mkdirSync(join(runDir, 'objects-real'));
+  writeFileSync(
+    join(external, 'objects', 'info', 'alternates'),
+    `${join(runDir, 'objects-real')}\n`,
+  );
+  rmSync(join(wd, '.git', 'objects'), { recursive: true, force: true });
+  symlinkSync(
+    relative(
+      join(dest, 'coding-agent-workdir', '.git'),
+      join(external, 'objects'),
+    ),
+    join(wd, '.git', 'objects'),
+  );
+  const externalBefore = hashTree(external);
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-objects-external'),
+    AGENTS,
+  );
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, dest);
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  expect(hashTree(external)).toBe(externalBefore);
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(/resolves outside the arm/);
 });
