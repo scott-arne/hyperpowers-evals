@@ -2350,3 +2350,70 @@ test('an errno out of the clone propagates as itself rather than as a vetting re
   expect((thrown as NodeJS.ErrnoException | undefined)?.code).toBe('EACCES');
   expect((thrown as Error | undefined)?.name).toBe('Error');
 }, 60_000);
+
+// Fix round 2. The arms differ only by the environment, so a post phase that
+// crashes in ONE of them is attributable to the environment — it is the
+// regression this instrument exists to find, not an archive with nothing to
+// compare. The vacuity guard must therefore read the control arm only, and
+// only where the two arms already agree. `REPLAY_FIXTURE_LEGACY_ONLY` is in
+// neither OUTER_PASSTHROUGH nor the QUORUM contract, so the allowlisted outer
+// environment of Arm N drops it while Arm L's ambient copy keeps it.
+const ASYMMETRIC_POST =
+  'pre() { :; }\npost() {\n  test -n "$REPLAY_FIXTURE_LEGACY_ONLY" || exit 127\n';
+
+function withLegacyOnlyVar<T>(body: () => Promise<T>): Promise<T> {
+  const previous = process.env['REPLAY_FIXTURE_LEGACY_ONLY'];
+  process.env['REPLAY_FIXTURE_LEGACY_ONLY'] = '1';
+  return body().finally(() => {
+    if (previous === undefined) {
+      delete process.env['REPLAY_FIXTURE_LEGACY_ONLY'];
+    } else {
+      process.env['REPLAY_FIXTURE_LEGACY_ONLY'] = previous;
+    }
+  });
+}
+
+test('a post phase that crashes in Arm N alone is a divergence, not a degraded archive', async () => {
+  const resultsRoot = join(root, 'results11');
+  const runDir = join(resultsRoot, 'asym-claude-auto-20260101T000000Z-0017');
+  mkdirSync(join(runDir, 'coding-agent-workdir'), { recursive: true });
+  mkdirSync(join(runDir, 'home'), { recursive: true });
+  writeFileSync(join(runDir, 'coding-agent-workdir', 'a.txt'), '');
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({
+        checks: [record('file-exists', true, 'post', ['a.txt'])],
+      }),
+    ),
+  );
+  const scenarios = scenariosRootWith('asym');
+  writeFileSync(
+    join(scenarios, 'asym', 'checks.sh'),
+    `${ASYMMETRIC_POST}  file-exists a.txt\n}\n`,
+  );
+  const { eligible } = eligibleRuns(resultsRoot, scenarios, AGENTS);
+  const r = await withLegacyOnlyVar(() =>
+    replayRun(eligible[0]!, { ...OPTS, scenariosRoot: scenarios }),
+  );
+  expect(r.armL.exitCodes.post).toBe(0); // the control reproduced the record
+  expect(r.armN.exitCodes.post).toBe(127);
+  expect(r.status).toBe('diverged');
+  expect(r.firstDivergence).toContain('exit codes');
+  expect(coverage([r], 1).ok).toBe(false);
+}, 60_000);
+
+test('a fixture whose post phase crashes in Arm N alone is a divergence too', async () => {
+  const fixtureDir = join(root, 'fixture-asymmetric');
+  mkdirSync(join(fixtureDir, 'workspace'), { recursive: true });
+  writeFileSync(join(fixtureDir, 'workspace', '.keep'), '');
+  writeFileSync(
+    join(fixtureDir, 'checks.sh'),
+    `${ASYMMETRIC_POST}  file-exists .keep\n}\n`,
+  );
+  const r = await withLegacyOnlyVar(() => replayFixture(fixtureDir, OPTS));
+  expect(r.armL.exitCodes.post).toBe(0);
+  expect(r.armN.exitCodes.post).toBe(127);
+  expect(r.status).toBe('diverged');
+  expect(r.firstDivergence).toContain('exit codes');
+}, 60_000);

@@ -2252,6 +2252,25 @@ function describeReference(path: string, armRoot: string): string {
     : where;
 }
 
+// A post phase that left nothing to compare: it exited in the crash band, or
+// it emitted no record at all. Read on the CONTROL arm alone, and only where
+// the two arms already agree — Arm L is the control, and a control that
+// cannot reproduce the record means there was nothing to compare, while a
+// control that can and a treatment that cannot is a difference the two
+// environments made. The arms are identical but for that environment, so an
+// asymmetric crash is the regression this instrument exists to find and must
+// stay `diverged`: `degraded-archive` would take it out of coverage()'s
+// counting sets altogether and let the sweep exit 0 on it.
+function vacuousPostPhase(control: ArmResult): boolean {
+  return (
+    control.exitCodes.post !== 0 || !control.raw.some((r) => r.phase === 'post')
+  );
+}
+
+function vacuityNote(control: ArmResult): string {
+  return `the post phase emitted no usable record (exit ${control.exitCodes.post})`;
+}
+
 function resolveRoots(opts: ReplayOptions): {
   scenariosRoot: string;
   agentsDir: string;
@@ -2392,23 +2411,20 @@ export async function replayRun(
     )
     .map((entry) => entry.described);
 
+  const comparison = compareArms(armL, armN);
   // The prerequisite above speaks only for recorded post PASSES, and a run
   // whose post checks all failed is still eligible (classify asks only that
   // the verdict hold some post record). For such a run the loops above cannot
   // fire, so a post phase that crashes before emitting anything leaves two
   // empty record sets and two equal exit codes, which equality alone would
-  // call a pass. The same guard replayFixture applies, for the same reason.
-  if (degradedCheck === undefined) {
-    const vacuous = [armL, armN].find(
-      (arm) =>
-        arm.exitCodes.post !== 0 || !arm.raw.some((r) => r.phase === 'post'),
-    );
-    if (vacuous !== undefined) {
-      degradedCheck = `the post phase emitted no usable record (exit ${vacuous.exitCodes.post})`;
-    }
+  // call a pass. Only where the arms agree, though: see vacuousPostPhase.
+  if (
+    degradedCheck === undefined &&
+    comparison.equal &&
+    vacuousPostPhase(armL)
+  ) {
+    degradedCheck = vacuityNote(armL);
   }
-
-  const comparison = compareArms(armL, armN);
   const status: ReplayResult['status'] =
     degradedCheck !== undefined
       ? 'degraded-archive'
@@ -2529,28 +2545,21 @@ export async function replayFixture(
   // emitted no record at all, fails the same way in both arms; counting that
   // as `equal` would let a broken fixture clear a tool or a migrated scenario
   // off the coverage list. `degraded-archive` is how coverage() says "this
-  // result does not count".
-  const vacuous = [armL, armN].find(
-    (arm) =>
-      arm.exitCodes.post !== 0 || !arm.raw.some((r) => r.phase === 'post'),
-  );
+  // result does not count" — and, by the same token, not what an asymmetric
+  // crash gets, which is why this reads the control arm under agreement.
+  const vacuous = comparison.equal && vacuousPostPhase(armL);
   return {
     scenario,
     runId: null,
-    status:
-      vacuous !== undefined
-        ? 'degraded-archive'
-        : comparison.equal
-          ? 'equal'
-          : 'diverged',
+    status: vacuous
+      ? 'degraded-archive'
+      : comparison.equal
+        ? 'equal'
+        : 'diverged',
     ...(comparison.firstDivergence !== undefined
       ? { firstDivergence: comparison.firstDivergence }
       : {}),
-    ...(vacuous !== undefined
-      ? {
-          degradedCheck: `the post phase emitted no usable record (exit ${vacuous.exitCodes.post})`,
-        }
-      : {}),
+    ...(vacuous ? { degradedCheck: vacuityNote(armL) } : {}),
     preDivergencesFromHistory: [],
     unmatchedHistory: [],
     unparsedLines: [],
