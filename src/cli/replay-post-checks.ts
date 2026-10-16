@@ -37,6 +37,7 @@ import {
 import type { FinalVerdict } from '../contracts/verdict.ts';
 import { FinalVerdictSchema } from '../contracts/verdict.ts';
 import { parseRunDirName } from '../dashboard/scan.ts';
+import { envSnapshot } from '../env.ts';
 
 // The flags every harness git spawn carries (src/check/fs-verbs.ts): they
 // suppress the two hooks a repository can configure to run code during an
@@ -308,48 +309,82 @@ function walkFiles(
   return out;
 }
 
-// The part of `target` below one of the source's spellings, or null when it
-// names something outside the source. A pointer may have been recorded through
-// either spelling of the source root — on macOS a /tmp or /var path and its
-// realpath differ by a /private prefix — so both are tested.
-function relativeToSource(
-  target: string,
-  srcRoots: readonly string[],
-): string | null {
-  for (const root of srcRoots) {
-    if (target === root) {
-      return '';
+// Where a path really lands: `..` collapsed by resolve, then every symlink
+// component resolved by taking the realpath of the deepest ancestor that
+// exists and re-appending the rest. Containment decided on path text alone is
+// not enough — `<arm>/../x` reads as inside the arm, `/results/other/../<run>`
+// reads as outside the source, and a link through an external directory can
+// lead back into either.
+function resolveThrough(target: string): string {
+  const absolute = resolve(target);
+  let existing = absolute;
+  const missing: string[] = [];
+  while (!existsSync(existing)) {
+    const parent = dirname(existing);
+    if (parent === existing) {
+      return absolute; // nothing along the path exists; text is all there is
     }
-    if (target.startsWith(root + sep)) {
-      return relative(root, target);
-    }
+    missing.unshift(basename(existing));
+    existing = parent;
+  }
+  const real = realpathSync(existing);
+  return missing.length === 0 ? real : join(real, ...missing);
+}
+
+function contains(root: string, path: string): boolean {
+  return path === root || path.startsWith(root + sep);
+}
+
+// The part of `target` below the source, or null when it lands anywhere else.
+// The answer is about where the path resolves, not how it is spelled.
+function sourceRelative(target: string, srcRoot: string): string | null {
+  const resolved = resolveThrough(target);
+  if (resolved === srcRoot) {
+    return '';
+  }
+  if (contains(srcRoot, resolved)) {
+    return relative(srcRoot, resolved);
   }
   return null;
 }
 
+// The environment for the arm's git spawn. `-C` does not win against an
+// exported GIT_DIR, GIT_WORK_TREE or GIT_COMMON_DIR — measured on git 2.56,
+// `GIT_DIR=<decoy> git -C <repo> rev-parse --absolute-git-dir` answers with
+// the decoy — so a repair run under an inherited one would rewrite a
+// repository that is not the arm. Every GIT_* name is dropped, and the two
+// config switches keep the host's global and system files out of it.
+function scrubbedGitEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(envSnapshot())) {
+    if (value !== undefined && !key.startsWith('GIT_')) {
+      env[key] = value;
+    }
+  }
+  env['GIT_CONFIG_GLOBAL'] = '/dev/null';
+  env['GIT_CONFIG_NOSYSTEM'] = '1';
+  return env;
+}
+
 export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
-  const srcAbs = resolve(run.workspaceRoot);
-  const srcReal = realpathSync(srcAbs);
-  const srcRoots = srcAbs === srcReal ? [srcReal] : [srcReal, srcAbs];
+  const srcRoot = realpathSync(resolve(run.workspaceRoot));
 
   mkdirSync(dest, { recursive: true });
-  // Reported paths use the arm's spelling as given; rewritten pointers use its
-  // realpath, which is also what git writes.
+  // Reported paths use the arm's spelling as given; pointers are written and
+  // tested against its realpath, which is also the spelling git writes.
   const destAbs = resolve(dest);
   const destReal = realpathSync(destAbs);
   const insideArm = (path: string): boolean =>
-    [destAbs, destReal].some(
-      (root) => path === root || path.startsWith(root + sep),
-    );
+    contains(destReal, resolveThrough(path));
 
   // The source is read, never written and never handed to git. Symlinks are
   // copied verbatim so their targets can be classified below rather than
   // silently resolved by the copy.
-  for (const name of readdirSync(srcReal)) {
+  for (const name of readdirSync(srcRoot)) {
     if (run.layout === 'legacy' && !isWorkspaceEntry(name)) {
       continue;
     }
-    cpSync(join(srcReal, name), join(destAbs, name), {
+    cpSync(join(srcRoot, name), join(destAbs, name), {
       recursive: true,
       verbatimSymlinks: true,
       errorOnExist: true,
@@ -363,22 +398,26 @@ export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
     externalReferences: [],
   };
 
-  // Re-aim intra-source absolute symlinks at the arm; classify the rest. A
-  // relative link addressed something by its distance from the link, which the
-  // copy preserved.
+  // Re-aim absolute symlinks that land in the source at the arm; report the
+  // rest. A relative link addressed something by its distance from the link,
+  // which the copy preserved, so it is rewritten only by leaving it alone —
+  // but it is still reported when that distance now reaches out of the arm.
   for (const link of walkSymlinks(destAbs)) {
     const target = readlinkSync(link);
     if (!isAbsolute(target)) {
+      if (!insideArm(resolve(dirname(link), target))) {
+        report.externalReferences.push(link);
+      }
       continue;
     }
-    const rel = relativeToSource(target, srcRoots);
+    const rel = sourceRelative(target, srcRoot);
     if (rel === null) {
       report.externalReferences.push(link);
       continue;
     }
-    // A target that is under the source by string can still climb out of it
-    // (`<src>/../x`), and the same climb would take the rewritten link out of
-    // the arm. Nothing here may plant a link the arm does not contain.
+    // The same climb that takes a target out of the source, and any symlink
+    // along the way, can take the rewritten link out of the arm. Nothing here
+    // may plant a link the arm does not contain.
     const rewritten = join(destReal, rel);
     if (!insideArm(rewritten)) {
       throw new Error(`${link} cannot be rewritten inside the arm: ${target}`);
@@ -388,11 +427,12 @@ export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
     report.rewrittenSymlinks.push(link);
   }
 
-  repairWorktrees(destAbs, destReal, srcRoots, insideArm);
+  repairWorktrees(destAbs, destReal, srcRoot, insideArm);
 
-  // Every git pointer in the arm resolves inside the arm. A `.git` file can
-  // hold a relative gitdir (a submodule does), so a relative value is resolved
-  // against its own directory before the containment test.
+  // Every git pointer in the arm resolves inside the arm. The value can be
+  // relative — a submodule's is, and so is every pointer git wrote for a
+  // worktree added with --relative-paths — so it is resolved against the
+  // directory of the file that holds it.
   for (const path of walkFiles(
     destAbs,
     (file) => basename(file) === '.git' || basename(file) === 'gitdir',
@@ -410,14 +450,32 @@ export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
   // And no pointer of any class resolves back into the source.
   for (const link of walkSymlinks(destAbs)) {
     const target = readlinkSync(link);
-    const resolved = isAbsolute(target)
+    const absolute = isAbsolute(target)
       ? target
       : resolve(dirname(link), target);
-    if (relativeToSource(resolved, srcRoots) !== null) {
+    if (sourceRelative(absolute, srcRoot) !== null) {
       throw new Error(`${link} still points into the source`);
     }
   }
   return report;
+}
+
+// A workspace entry can itself be a symlink, which the copy kept verbatim.
+// Before the repair reads, deletes or spawns anything, the directories it
+// works through must really be in the arm: a `coding-agent-workdir`, `.git` or
+// `.git/worktrees` resolving outside it would send readdir, rmSync and git at
+// a tree the replay does not own, and hashTree would not show the damage,
+// because it does not follow links either.
+function requireStructureInsideArm(destReal: string, paths: string[]): void {
+  for (const path of paths) {
+    if (!existsSync(path)) {
+      continue;
+    }
+    const real = realpathSync(path);
+    if (!contains(destReal, real)) {
+      throw new Error(`${path} resolves outside the arm: ${real}`);
+    }
+  }
 }
 
 // Point the arm's linked worktrees at the arm. Every path handed to `git
@@ -430,11 +488,12 @@ export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
 function repairWorktrees(
   destAbs: string,
   destReal: string,
-  srcRoots: readonly string[],
+  srcRoot: string,
   insideArm: (path: string) => boolean,
 ): void {
   const main = join(destAbs, 'coding-agent-workdir');
   const adminRoot = join(main, '.git', 'worktrees');
+  requireStructureInsideArm(destReal, [main, join(main, '.git'), adminRoot]);
   if (!existsSync(adminRoot)) {
     return;
   }
@@ -444,24 +503,29 @@ function repairWorktrees(
     if (!existsSync(pointer)) {
       continue; // a stale administrative entry; git prunes these itself
     }
-    const gitdir = readFileSync(pointer, 'utf8').trim();
+    const recorded = readFileSync(pointer, 'utf8').trim();
+    // `git worktree add --relative-paths` records this relative to the entry
+    // that holds it, and such a pointer survives the copy intact.
+    const gitdir = isAbsolute(recorded)
+      ? recorded
+      : resolve(dirname(pointer), recorded);
     if (insideArm(gitdir)) {
       continue; // already inside the arm; nothing to repair
     }
-    const rel = relativeToSource(gitdir, srcRoots);
+    const rel = sourceRelative(gitdir, srcRoot);
     if (rel === null) {
-      throw new Error(`unexpected gitdir pointer ${gitdir}`);
+      throw new Error(`unexpected gitdir pointer ${recorded}`);
     }
     // git records <worktree>/.git here; repair takes the worktree itself.
     const mapped = join(destReal, rel);
     if (basename(mapped) !== '.git') {
-      throw new Error(`unexpected gitdir pointer ${gitdir}`);
+      throw new Error(`unexpected gitdir pointer ${recorded}`);
     }
-    // A pointer under the source by string can still climb out of it, and the
-    // mapped path would then name something beside the arm — never a path to
-    // hand `git worktree repair`.
+    // A pointer under the source can still climb out of it, and the mapped
+    // path would then name something beside the arm — never a path to hand
+    // `git worktree repair`.
     if (!insideArm(mapped)) {
-      throw new Error(`gitdir pointer maps outside the arm: ${gitdir}`);
+      throw new Error(`gitdir pointer maps outside the arm: ${recorded}`);
     }
     if (!existsSync(mapped)) {
       // The agent deleted this worktree with `rm -rf` rather than `git
@@ -479,7 +543,7 @@ function repairWorktrees(
   const repair = spawnSync(
     'git',
     [...GIT_HYGIENE, '-C', main, 'worktree', 'repair', ...linked],
-    { encoding: 'utf8' },
+    { encoding: 'utf8', env: scrubbedGitEnv() },
   );
   if (repair.status !== 0) {
     throw new Error(`git worktree repair failed: ${repair.stderr}`);

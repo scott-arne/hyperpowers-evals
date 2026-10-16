@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import {
   cloneWorkspace,
   eligibleRuns,
@@ -378,7 +378,7 @@ test('an administrative entry whose worktree the agent deleted outright is dropp
   expect(hashTree(runDir)).toBe(before);
 });
 
-test('cloneWorkspace refuses a gitdir pointer that climbs out of the arm, before any git runs', () => {
+test('cloneWorkspace refuses an administrative pointer that resolves out of the source, before any git runs', () => {
   const resultsRoot = join(root, 'results7');
   const runDir = join(resultsRoot, 'theta-claude-auto-20260101T000000Z-0009');
   const admin = join(
@@ -389,9 +389,9 @@ test('cloneWorkspace refuses a gitdir pointer that climbs out of the arm, before
     'escape',
   );
   mkdirSync(admin, { recursive: true });
-  // Under the source by string, outside it once resolved: mapped into the arm
-  // this names a sibling of the arm, which `git worktree repair` must never
-  // be pointed at.
+  // Under the source by string, beside it once resolved: there is no mapping
+  // into the arm for it, and `git worktree repair` must never be pointed at
+  // what it names.
   writeFileSync(join(admin, 'gitdir'), `${runDir}/../escaped/.git\n`);
   writeFileSync(
     join(runDir, 'verdict.json'),
@@ -406,16 +406,18 @@ test('cloneWorkspace refuses a gitdir pointer that climbs out of the arm, before
     AGENTS,
   );
   expect(() => cloneWorkspace(eligible[0]!, join(root, 'armE'))).toThrow(
-    /outside the arm/,
+    /unexpected gitdir pointer/,
   );
   expect(hashTree(runDir)).toBe(before);
 });
 
-test('cloneWorkspace refuses a symlink whose rewritten target would climb out of the arm', () => {
+test('a symlink that climbs out of the source is external, not an intra-source pointer', () => {
   const resultsRoot = join(root, 'results8');
   const runDir = join(resultsRoot, 'iota-claude-auto-20260101T000000Z-0010');
   mkdirSync(join(runDir, 'coding-agent-workdir'), { recursive: true });
   mkdirSync(join(runDir, 'home'), { recursive: true });
+  // Spelled under the run, resolves beside it: classification is about where
+  // the target lands, so this is an external reference and stays as it is.
   symlinkSync(`${runDir}/../escaped`, join(runDir, 'home', 'climber'));
   writeFileSync(
     join(runDir, 'verdict.json'),
@@ -428,7 +430,216 @@ test('cloneWorkspace refuses a symlink whose rewritten target would climb out of
     scenariosRootWith('iota'),
     AGENTS,
   );
-  expect(() => cloneWorkspace(eligible[0]!, join(root, 'armC'))).toThrow(
-    /cannot be rewritten inside the arm/,
+  const dest = join(root, 'armC');
+  const report = cloneWorkspace(eligible[0]!, dest);
+  expect(report.externalReferences).toEqual([join(dest, 'home', 'climber')]);
+  expect(report.rewrittenSymlinks).toEqual([]);
+  expect(readlinkSync(join(dest, 'home', 'climber'))).toBe(
+    `${runDir}/../escaped`,
   );
+});
+
+test('an absolute target that detours through a sibling run but lands in the source is rewritten', () => {
+  const resultsRoot = join(root, 'results9');
+  const runDir = join(resultsRoot, 'kappa-claude-auto-20260101T000000Z-0011');
+  mkdirSync(join(runDir, 'coding-agent-workdir'), { recursive: true });
+  mkdirSync(join(runDir, 'home', 'share'), { recursive: true });
+  mkdirSync(join(resultsRoot, 'other'), { recursive: true });
+  writeFileSync(join(runDir, 'home', 'share', 'cli'), 'binary\n');
+  // `<results>/other/../<run>/home/share/cli` reads as outside the run and
+  // resolves inside it.
+  // A literal spelling: join() would collapse the `..` away.
+  symlinkSync(
+    `${resultsRoot}/other/../kappa-claude-auto-20260101T000000Z-0011/home/share/cli`,
+    join(runDir, 'home', 'detour'),
+  );
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({ checks: [record('git-repo', true, 'post')] }),
+    ),
+  );
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('kappa'),
+    AGENTS,
+  );
+  const dest = join(root, 'armD');
+  const report = cloneWorkspace(eligible[0]!, dest);
+  expect(report.rewrittenSymlinks).toEqual([join(dest, 'home', 'detour')]);
+  expect(readlinkSync(join(dest, 'home', 'detour'))).toBe(
+    join(realpathSync(dest), 'home', 'share', 'cli'),
+  );
+  expect(report.externalReferences).toEqual([]);
+});
+
+test('cloneWorkspace refuses an absolute git pointer that climbs out of the arm', () => {
+  const resultsRoot = join(root, 'results10');
+  const runDir = join(resultsRoot, 'lambda-claude-auto-20260101T000000Z-0012');
+  const workdir = join(runDir, 'coding-agent-workdir');
+  mkdirSync(workdir, { recursive: true });
+  const dest = join(root, 'armP');
+  // Textually under the arm, resolves beside it.
+  writeFileSync(join(workdir, '.git'), `gitdir: ${dest}/../outside/.git\n`);
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({ checks: [record('git-repo', true, 'post')] }),
+    ),
+  );
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('lambda'),
+    AGENTS,
+  );
+  expect(() => cloneWorkspace(eligible[0]!, dest)).toThrow(
+    /points outside the arm/,
+  );
+  expect(hashTree(runDir)).toBe(before);
+});
+
+test('cloneWorkspace refuses a workdir that is a symlink to a repository outside the arm', () => {
+  const resultsRoot = join(root, 'results11');
+  const runDir = join(resultsRoot, 'mu-claude-auto-20260101T000000Z-0013');
+  mkdirSync(runDir, { recursive: true });
+  const outside = mkdtempSync(join(tmpdir(), 'outside-repo-'));
+  git(outside, ['init', '-q', '-b', 'main']);
+  git(outside, ['config', 'user.email', 'a@b']);
+  git(outside, ['config', 'user.name', 't']);
+  writeFileSync(join(outside, 'f.txt'), 'x\n');
+  git(outside, ['add', '-A']);
+  git(outside, ['commit', '-qm', 'init']);
+  symlinkSync(outside, join(runDir, 'coding-agent-workdir'));
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({ checks: [record('git-repo', true, 'post')] }),
+    ),
+  );
+  const outsideBefore = hashTree(outside);
+  const sourceBefore = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('mu'),
+    AGENTS,
+  );
+  expect(eligible).toHaveLength(1);
+  expect(() => cloneWorkspace(eligible[0]!, join(root, 'armX'))).toThrow(
+    /resolves outside the arm/,
+  );
+  expect(hashTree(outside)).toBe(outsideBefore);
+  expect(hashTree(runDir)).toBe(sourceBefore);
+});
+
+test('a worktree recorded with --relative-paths needs no repair and stays self-contained in the arm', () => {
+  const resultsRoot = join(root, 'results12');
+  const runDir = join(resultsRoot, 'nu-claude-auto-20260101T000000Z-0014');
+  const wd = join(runDir, 'coding-agent-workdir');
+  mkdirSync(wd, { recursive: true });
+  git(wd, ['init', '-q', '-b', 'main']);
+  git(wd, ['config', 'user.email', 'a@b']);
+  git(wd, ['config', 'user.name', 't']);
+  writeFileSync(join(wd, 'f.txt'), 'x\n');
+  git(wd, ['add', '-A']);
+  git(wd, ['commit', '-qm', 'init']);
+  const worktree = join(runDir, 'coding-agent-workdir-existing-worktree');
+  git(wd, [
+    'worktree',
+    'add',
+    '-q',
+    '--relative-paths',
+    worktree,
+    '-b',
+    'feature',
+  ]);
+  // The recorded pointers are relative, so they survive the move untouched.
+  expect(
+    isAbsolute(
+      readFileSync(
+        join(
+          wd,
+          '.git',
+          'worktrees',
+          'coding-agent-workdir-existing-worktree',
+          'gitdir',
+        ),
+        'utf8',
+      ).trim(),
+    ),
+  ).toBe(false);
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({ checks: [record('git-repo', true, 'post')] }),
+    ),
+  );
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('nu'),
+    AGENTS,
+  );
+  const dest = join(root, 'armV');
+  const report = cloneWorkspace(eligible[0]!, dest);
+  expect(report.gitPointers).toHaveLength(2);
+  expect(hashTree(runDir)).toBe(before);
+  expect(
+    git(join(dest, 'coding-agent-workdir'), ['worktree', 'list']),
+  ).toContain(realpathSync(dest));
+  expect(
+    git(join(dest, 'coding-agent-workdir-existing-worktree'), [
+      'rev-parse',
+      '--absolute-git-dir',
+    ]),
+  ).toContain(realpathSync(dest));
+});
+
+test('the repair ignores an inherited GIT_DIR: the arm is repaired and the decoy repository is untouched', () => {
+  const { resultsRoot, runDir } = recordedWorktreeRun('worktree-decoy', true);
+  const decoy = mkdtempSync(join(tmpdir(), 'decoy-repo-'));
+  git(decoy, ['init', '-q', '-b', 'main']);
+  git(decoy, ['config', 'user.email', 'a@b']);
+  git(decoy, ['config', 'user.name', 't']);
+  writeFileSync(join(decoy, 'f.txt'), 'x\n');
+  git(decoy, ['add', '-A']);
+  git(decoy, ['commit', '-qm', 'init']);
+  git(decoy, ['worktree', 'add', '-q', join(decoy, 'wt'), '-b', 'feature']);
+  const decoyBefore = hashTree(decoy);
+  const sourceBefore = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('worktree-decoy'),
+    AGENTS,
+  );
+  const dest = join(root, 'armG');
+  const savedDir = process.env['GIT_DIR'];
+  const savedTree = process.env['GIT_WORK_TREE'];
+  process.env['GIT_DIR'] = join(decoy, '.git');
+  process.env['GIT_WORK_TREE'] = decoy;
+  try {
+    cloneWorkspace(eligible[0]!, dest);
+  } finally {
+    if (savedDir === undefined) delete process.env['GIT_DIR'];
+    else process.env['GIT_DIR'] = savedDir;
+    if (savedTree === undefined) delete process.env['GIT_WORK_TREE'];
+    else process.env['GIT_WORK_TREE'] = savedTree;
+  }
+  expect(
+    readFileSync(
+      join(
+        dest,
+        'coding-agent-workdir',
+        '.git',
+        'worktrees',
+        'feature',
+        'gitdir',
+      ),
+      'utf8',
+    )
+      .trim()
+      .startsWith(realpathSync(dest)),
+  ).toBe(true);
+  expect(hashTree(decoy)).toBe(decoyBefore);
+  expect(hashTree(runDir)).toBe(sourceBefore);
 });
