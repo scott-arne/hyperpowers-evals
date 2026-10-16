@@ -25,6 +25,15 @@
 // configuration with a reader that refuses what it cannot classify, re-aims
 // each path that lands in the source at the arm, and refuses each path it
 // cannot vet.
+//
+// A symlink that leaves the workspace is reported, never rewritten — the
+// replay has no standing to redirect it — with one exception: a symlink named
+// `.git` or `gitdir` is refused wherever it leads, an external directory
+// included. git writes a regular file or a directory under those names and
+// never a link, and it follows one, so a link there chooses the repository of
+// every later in-arm git command, or the file `git worktree repair` writes,
+// from outside everything the clone vets. The general policy for every other
+// link is unchanged.
 
 import { createHash } from 'node:crypto';
 import type { Dirent } from 'node:fs';
@@ -258,7 +267,9 @@ export function eligibleRuns(
 // symlinks it re-aimed at the arm, and the symlinks that leave the workspace
 // altogether. The last class is reported, never rewritten — the replay has no
 // standing to redirect a reference to something outside the run; an
-// alternate object store outside the run is reported there too.
+// alternate object store outside the run is reported there too. A symlink
+// named `.git` or `gitdir` is the exception: refused, not reported (see
+// pointerFiles).
 // `rewrittenConfig` lists, relative to the arm, the config and alternates
 // files whose source paths were re-aimed at the arm; it is absent when none
 // were.
@@ -307,13 +318,36 @@ function walkSymlinks(root: string): string[] {
   return out;
 }
 
-function walkFiles(
-  root: string,
-  predicate: (path: string) => boolean,
-): string[] {
+// The regular files under `root` named `.git` or `gitdir` — the two names git
+// reads a pointer from — with a symlink under either name refused on sight.
+// No git command writes a symlink there: `git init`, `clone`, `worktree add`
+// and `submodule add` each create a regular file or a directory. git does
+// follow one — read_gitfile_gently() and is_git_directory() stat() the path,
+// and `git worktree repair` writes through it — so a link under either name
+// decides, from outside everything the clone vets, which repository a later
+// in-arm git command uses: the pointer passes read regular files, and the
+// symlink passes judge only where the link itself lands. Measured on git 2.56
+// at the round-6 head: `<wd>/wt/.git -> ../ptr.txt`, the link inside the arm
+// and the file naming the SOURCE `.git`, cloned with nothing reported, and
+// `update-ref` run in <arm>/wd/wt wrote the source; a nested repository's
+// `.git/worktrees/<id>/gitdir` as a link to an in-arm file naming the SOURCE
+// worktree's `.git` cloned too, and `git worktree repair` run in the arm
+// rewrote that source file. There is no shape to preserve, so a link is
+// refused wherever it resolves — an external directory included, which the
+// symlink pass used to report.
+function pointerFiles(root: string): string[] {
   const out: string[] = [];
   walk(root, (path, entry) => {
-    if (entry.isFile() && predicate(path)) {
+    const name = basename(path);
+    if (name !== '.git' && name !== 'gitdir') {
+      return;
+    }
+    if (entry.isSymbolicLink()) {
+      throw new Error(
+        `${path} is a symlink; git never writes one under that name`,
+      );
+    }
+    if (entry.isFile()) {
       out.push(path);
     }
   });
@@ -440,11 +474,10 @@ export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
   // Every git pointer in the arm resolves inside the arm. The value can be
   // relative — a submodule's is, and so is every pointer git wrote for a
   // worktree added with --relative-paths — so it is resolved against the
-  // directory of the file that holds it.
-  for (const path of walkFiles(
-    destAbs,
-    (file) => basename(file) === '.git' || basename(file) === 'gitdir',
-  )) {
+  // directory of the file that holds it. The walk refuses a symlinked `.git`
+  // or `gitdir` again here, as the backstop to the discovery pass: no pass in
+  // between plants a link, so this holds at return.
+  for (const path of pointerFiles(destAbs)) {
     const value = readFileSync(path, 'utf8')
       .trim()
       .replace(/^gitdir: /, '');
@@ -702,10 +735,16 @@ function findGitDirs(root: string): string[] {
 // relative to the file's directory — and the target is resolved and
 // contained in the arm before anything under it is read. A target outside
 // the arm is not read here: before the repair it is the recorded pointer of
-// a linked worktree, and the pointer sweep at the end decides its fate.
+// a linked worktree, and the pointer sweep at the end decides its fate. This
+// is the first pass to enumerate the arm's pointer files, so it is where a
+// symlinked `.git` or `gitdir` is refused: before the configuration edits
+// and before the repair writes a pointer.
 function gitfileTargets(destAbs: string, destReal: string): string[] {
   const out: string[] = [];
-  for (const file of walkFiles(destAbs, (path) => basename(path) === '.git')) {
+  for (const file of pointerFiles(destAbs)) {
+    if (basename(file) !== '.git') {
+      continue;
+    }
     if (statSync(file).size > GITFILE_MAX_SIZE) {
       continue; // git refuses to read it as a gitfile
     }

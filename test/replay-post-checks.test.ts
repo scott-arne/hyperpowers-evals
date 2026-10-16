@@ -689,8 +689,10 @@ test('cloneWorkspace refuses a worktree whose .git file is a symlink out of the 
   const { resultsRoot, runDir } = recordedWorktreeRun('worktree-linked-dotgit');
   const dotgit = join(runDir, 'coding-agent-workdir-existing-worktree', '.git');
   // The pointer file itself replaced by a link out of the run. Repair would
-  // write the worktree's .git through it; the clone refuses first, because
-  // the recorded administrative pointer no longer resolves inside the source.
+  // write the worktree's .git through it; the clone refuses first, at pointer
+  // discovery, as it refuses every symlinked `.git` (before that it was
+  // refused later, by the repair, as an administrative pointer that no longer
+  // resolved inside the source).
   const external = mkdtempSync(join(tmpdir(), 'planted-dotgit-'));
   cpSync(dotgit, join(external, 'pointer'));
   rmSync(dotgit, { force: true });
@@ -702,7 +704,7 @@ test('cloneWorkspace refuses a worktree whose .git file is a symlink out of the 
     AGENTS,
   );
   expect(() => cloneWorkspace(eligible[0]!, join(root, 'armB'))).toThrow(
-    /unexpected gitdir pointer/,
+    /coding-agent-workdir-existing-worktree\/\.git is a symlink/,
   );
   expect(hashTree(external)).toBe(externalBefore);
 });
@@ -1497,4 +1499,211 @@ test('a pointer target with HEAD, objects and refs but neither config nor common
   expect(
     git(join(arm, 'other'), ['rev-parse', '--absolute-git-dir']),
   ).toContain(join(realpathSync(dest), 'coding-agent-workdir', '.gitreal'));
+});
+
+// A `.git` entry that is a symlink. No git command writes one — `git init`,
+// `clone`, `worktree add` and `submodule add` create a regular file or a
+// directory — but git follows one, so the link chooses the repository every
+// later in-arm git command uses, and no pointer check read it: the pointer
+// sweeps took regular files, and the symlink pass judged only where the link
+// itself landed. Measured on git 2.56 at the round-6 head with this fixture:
+// the clone reported nothing, `rev-parse --absolute-git-dir` run in
+// <arm>/wd/wt named the SOURCE `.git`, and `update-ref` there wrote it.
+test('cloneWorkspace refuses a .git that is a symlink to an in-arm file naming the source .git, before any pointer is written', () => {
+  const { resultsRoot, runDir } = recordedWorktreeRun('dotgit-symlink-file');
+  const wd = join(runDir, 'coding-agent-workdir');
+  mkdirSync(join(wd, 'wt'));
+  writeFileSync(join(wd, 'ptr.txt'), `gitdir: ${join(wd, '.git')}\n`);
+  symlinkSync('../ptr.txt', join(wd, 'wt', '.git'));
+  const adminPointer = join(
+    'coding-agent-workdir',
+    '.git',
+    'worktrees',
+    'coding-agent-workdir-existing-worktree',
+    'gitdir',
+  );
+  const recorded = readFileSync(join(runDir, adminPointer), 'utf8');
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('dotgit-symlink-file'),
+    AGENTS,
+  );
+  const dest = join(root, 'armAg');
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, dest);
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  if (thrown === undefined) {
+    // What a replay's git does with an arm the clone accepted.
+    git(join(dest, 'coding-agent-workdir', 'wt'), [
+      'update-ref',
+      'refs/heads/planted',
+      'HEAD',
+    ]);
+  }
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(/wt\/\.git is a symlink/);
+  // The refusal preceded the repair: the arm's copy of the real worktree's
+  // administrative pointer still reads as the copy left it, naming the source.
+  expect(readFileSync(join(dest, adminPointer), 'utf8')).toBe(recorded);
+});
+
+test('cloneWorkspace refuses a .git that is a symlink to a .git directory inside the arm', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun('dotgit-symlink-armdir');
+  mkdirSync(join(wd, 'wt'));
+  // Relative, so the link lands in the arm's own `.git`: git run in the arm
+  // would write the arm, but the shape is one git never makes, and nothing
+  // vets what the link selects.
+  symlinkSync('../.git', join(wd, 'wt', '.git'));
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('dotgit-symlink-armdir'),
+    AGENTS,
+  );
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, join(root, 'armAh'));
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(
+    /wt\/\.git is a symlink; git never writes one under that name/,
+  );
+});
+
+// Before this round a `.git` symlink to a directory outside the run was kept
+// and reported as an external reference, like any other such link; git run
+// in the arm then used that repository. Measured on git 2.56 at the round-6
+// head: `update-ref` run in <arm>/wd/wt created the ref in the EXTERNAL
+// repository.
+test('cloneWorkspace refuses a .git that is a symlink to a repository outside the run, where it used to report it', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun(
+    'dotgit-symlink-external',
+  );
+  const external = mkdtempSync(join(tmpdir(), 'dotgit-external-'));
+  git(external, ['init', '-q', '-b', 'main']);
+  git(external, ['config', 'user.email', 'a@b']);
+  git(external, ['config', 'user.name', 't']);
+  writeFileSync(join(external, 'f.txt'), 'x\n');
+  git(external, ['add', '-A']);
+  git(external, ['commit', '-qm', 'init']);
+  mkdirSync(join(wd, 'wt'));
+  symlinkSync(join(external, '.git'), join(wd, 'wt', '.git'));
+  const externalBefore = hashTree(external);
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('dotgit-symlink-external'),
+    AGENTS,
+  );
+  const dest = join(root, 'armAi');
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, dest);
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  if (thrown === undefined) {
+    git(join(dest, 'coding-agent-workdir', 'wt'), [
+      'update-ref',
+      'refs/heads/planted',
+      'HEAD',
+    ]);
+  }
+  expect(hashTree(external)).toBe(externalBefore);
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(/wt\/\.git is a symlink/);
+});
+
+// The same filter hid a `gitdir` pointer file that is a symlink. The main
+// repository's entries are read through requireStructureInsideArm and
+// repaired through the link, but a nested repository's entries are reached
+// only by the pointer sweep, which took regular files. Measured on git 2.56
+// at the round-6 head: the clone listed `sub/swt/.git` as its one pointer,
+// and `git worktree repair` run in <arm>/wd/sub rewrote the SOURCE's
+// `sub/swt/.git`.
+test('cloneWorkspace refuses a gitdir pointer file that is a symlink, in a nested repository and in the main repository alike', () => {
+  const plants: [
+    string,
+    (wd: string, worktree: string) => { pointer: string; repairIn: string },
+  ][] = [
+    [
+      'gitdir-symlink-nested',
+      (wd) => {
+        const sub = join(wd, 'sub');
+        mkdirSync(sub);
+        git(sub, ['init', '-q', '-b', 'main']);
+        git(sub, ['config', 'user.email', 'a@b']);
+        git(sub, ['config', 'user.name', 't']);
+        writeFileSync(join(sub, 'g.txt'), 'y\n');
+        git(sub, ['add', '-A']);
+        git(sub, ['commit', '-qm', 'init']);
+        git(sub, [
+          'worktree',
+          'add',
+          '-q',
+          '--relative-paths',
+          join(sub, 'swt'),
+          '-b',
+          'feature',
+        ]);
+        const pointer = join(sub, '.git', 'worktrees', 'swt', 'gitdir');
+        rmSync(pointer);
+        writeFileSync(join(sub, 'ptr.txt'), `${join(sub, 'swt', '.git')}\n`);
+        symlinkSync('../../../ptr.txt', pointer);
+        return { pointer, repairIn: 'sub' };
+      },
+    ],
+    [
+      'gitdir-symlink-main',
+      (wd, worktree) => {
+        const pointer = join(
+          wd,
+          '.git',
+          'worktrees',
+          'coding-agent-workdir-existing-worktree',
+          'gitdir',
+        );
+        rmSync(pointer);
+        writeFileSync(join(wd, 'ptr.txt'), `${join(worktree, '.git')}\n`);
+        symlinkSync('../../../ptr.txt', pointer);
+        return { pointer, repairIn: '.' };
+      },
+    ],
+  ];
+  for (const [scenario, plant] of plants) {
+    const { resultsRoot, runDir, worktree } = recordedWorktreeRun(scenario);
+    const wd = join(runDir, 'coding-agent-workdir');
+    const { pointer, repairIn } = plant(wd, worktree);
+    const before = hashTree(runDir);
+    const { eligible } = eligibleRuns(
+      resultsRoot,
+      scenariosRootWith(scenario),
+      AGENTS,
+    );
+    const dest = join(root, `arm-${scenario}`);
+    let thrown: unknown;
+    try {
+      cloneWorkspace(eligible[0]!, dest);
+    } catch (err: unknown) {
+      thrown = err;
+    }
+    if (thrown === undefined) {
+      git(join(dest, 'coding-agent-workdir', repairIn), ['worktree', 'repair']);
+    }
+    expect(hashTree(runDir)).toBe(before);
+    expect(String(thrown)).toContain(
+      `${relative(runDir, pointer)} is a symlink`,
+    );
+    // The refusal preceded every write: read through the arm's link, the
+    // file it leads to still names the source worktree, as the copy left it.
+    expect(readFileSync(join(dest, relative(runDir, pointer)), 'utf8')).toBe(
+      readFileSync(pointer, 'utf8'),
+    );
+  }
 });
