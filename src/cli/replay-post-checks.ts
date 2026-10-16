@@ -650,10 +650,14 @@ function isGitHead(path: string): boolean {
 }
 
 // Every gitdir under the arm, found without following a symlink: a directory
-// named `.git`, a directory holding a `config` and a HEAD git would accept (a
-// repository nested in the workdir, or a bare one), and each `worktrees/<id>`
-// and `modules/<name>` directory of a gitdir, which git reads as a gitdir of
-// its own although it keeps no `config` there.
+// named `.git`; a directory holding a HEAD git would accept together with a
+// `config`, a `commondir` (git's rule for a linked worktree's gitdir, which
+// keeps no `config`: HEAD there, objects and refs through `commondir`) or an
+// `objects` and a `refs` directory (git's rule for a repository, which needs
+// no `config` either); and each `worktrees/<id>` and `modules/<name>`
+// directory of a gitdir. A `config` alone used to be the sign, and a
+// `HEAD`+`commondir` gitdir planted under its own name and reached through a
+// `.git` file kept an absolute `commondir` into the source unchecked.
 function findGitDirs(root: string): string[] {
   const out: string[] = [];
   const visit = (dir: string, known: boolean): void => {
@@ -662,7 +666,10 @@ function findGitDirs(root: string): string[] {
     const gitdir =
       known ||
       basename(dir) === '.git' ||
-      (names.has('config') && isGitHead(join(dir, 'HEAD')));
+      ((names.has('config') ||
+        names.has('commondir') ||
+        (names.has('objects') && names.has('refs'))) &&
+        isGitHead(join(dir, 'HEAD')));
     if (gitdir) {
       out.push(dir);
     }
@@ -683,6 +690,39 @@ function findGitDirs(root: string): string[] {
     }
   };
   visit(root, false);
+  return out;
+}
+
+// The gitdir each `.git` file in the arm names, when that resolves to a
+// directory inside the arm with a HEAD git would accept. git uses a gitdir
+// wherever a `.git` file points, whatever the directory is called and
+// however it is shaped, so the pointers are a second route to the set the
+// walk recognizes by shape. The file is read as read_gitfile_gently() reads
+// it — a `gitdir: ` prefix, the rest with trailing newlines stripped,
+// relative to the file's directory — and the target is resolved and
+// contained in the arm before anything under it is read. A target outside
+// the arm is not read here: before the repair it is the recorded pointer of
+// a linked worktree, and the pointer sweep at the end decides its fate.
+function gitfileTargets(destAbs: string, destReal: string): string[] {
+  const out: string[] = [];
+  for (const file of walkFiles(destAbs, (path) => basename(path) === '.git')) {
+    if (statSync(file).size > GITFILE_MAX_SIZE) {
+      continue; // git refuses to read it as a gitfile
+    }
+    const content = readFileSync(file, 'utf8');
+    if (!content.startsWith('gitdir: ') || content.includes('\0')) {
+      continue; // not a gitfile to git
+    }
+    const value = content.slice('gitdir: '.length).replace(/[\r\n]+$/, '');
+    const target = isAbsolute(value) ? value : resolve(dirname(file), value);
+    const real = resolveThrough(target);
+    if (!contains(destReal, real)) {
+      continue;
+    }
+    if (isDirectory(real) && isGitHead(join(real, 'HEAD'))) {
+      out.push(real);
+    }
+  }
   return out;
 }
 
@@ -1013,9 +1053,10 @@ function sanitizeAlternates(
 }
 
 // The configuration the arm carries can send a later git command, run inside
-// the arm, back to the source: this pass reads every gitdir's `config` and
-// `config.worktree`, what they include, their `commondir` and their
-// alternates, and re-aims or refuses each path that leaves the arm. It runs
+// the arm, back to the source: this pass reads, for every gitdir the walk
+// recognizes or a `.git` file names, its `config` and `config.worktree`,
+// what they include, its `commondir` and its alternates, and re-aims or
+// refuses each path that leaves the arm. It runs
 // after the copy and the symlink rewrite, before any pointer is written, so
 // no vetted pointer lands in a repository whose config could still redirect
 // it. Nothing is written until every file has been read and classified, so a
@@ -1024,10 +1065,21 @@ function sanitizeGitConfig(ctx: ArmContext, report: PointerReport): void {
   const edits = new Map<string, string>();
   const seen = new Set<string>();
   const queue: ConfigJob[] = [];
+  // Both routes to the gitdirs, each gitdir once, by realpath.
+  const gitdirs = new Set<string>();
+  for (const dir of findGitDirs(ctx.destAbs)) {
+    gitdirs.add(realpathSync(dir));
+  }
+  for (const dir of gitfileTargets(ctx.destAbs, ctx.destReal)) {
+    gitdirs.add(dir);
+  }
   const mainGitDir = join(ctx.destAbs, 'coding-agent-workdir', '.git');
-  const adminRoot = join(mainGitDir, 'worktrees');
-  for (const gitdir of findGitDirs(ctx.destAbs)) {
-    if (gitdir === mainGitDir || dirname(gitdir) === adminRoot) {
+  const mainReal = resolveThrough(mainGitDir);
+  for (const gitdir of gitdirs) {
+    if (
+      gitdir === mainReal ||
+      dirname(gitdir) === join(mainReal, 'worktrees')
+    ) {
       requireCommonDirIs(gitdir, mainGitDir);
     } else {
       requireCommonDirInsideArm(gitdir, ctx.destReal);

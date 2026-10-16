@@ -1293,3 +1293,208 @@ test('cloneWorkspace refuses a .git/objects that is a relative link to a directo
   expect(hashTree(runDir)).toBe(before);
   expect(String(thrown)).toMatch(/resolves outside the arm/);
 });
+
+// A gitdir git accepts without a `config`: HEAD in the gitdir, objects and
+// refs through `commondir` — the shape of a linked worktree's administrative
+// entry, which git uses wherever a `.git` file points. Planted at
+// <wd>/.gitadmin/wt and pointed to by <wd>/wt/.git, with the backlink
+// relative so that the pointer sweep passes both files.
+function plantAdminGitDir(wd: string, commondir: string): void {
+  const admin = join(wd, '.gitadmin', 'wt');
+  mkdirSync(admin, { recursive: true });
+  mkdirSync(join(wd, 'wt'));
+  writeFileSync(join(admin, 'HEAD'), 'ref: refs/heads/main\n');
+  writeFileSync(join(admin, 'commondir'), `${commondir}\n`);
+  writeFileSync(join(admin, 'gitdir'), '../../wt/.git\n');
+  writeFileSync(join(wd, 'wt', '.git'), 'gitdir: ../.gitadmin/wt\n');
+}
+
+// Measured on git 2.56 at the round-6 head: the clone accepted the arm — the
+// gitdir has no `config`, so the walk did not take it for one, and the
+// pointer resolves inside the arm — and `update-ref` run in <arm>/wd/wt
+// created the ref in the SOURCE `.git`.
+test('cloneWorkspace refuses a config-less gitdir, reached through an in-arm .git file, whose commondir names the source .git', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun(
+    'config-less-gitdir-source',
+  );
+  plantAdminGitDir(wd, join(wd, '.git'));
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-less-gitdir-source'),
+    AGENTS,
+  );
+  const dest = join(root, 'armAd');
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, dest);
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  if (thrown === undefined) {
+    // What a replay's git does with an arm the clone accepted.
+    git(join(dest, 'coding-agent-workdir', 'wt'), [
+      'update-ref',
+      'refs/heads/planted',
+      'HEAD',
+    ]);
+  }
+  expect(hashTree(runDir)).toBe(before);
+  expect(String(thrown)).toMatch(
+    /commondir names a common directory outside the arm/,
+  );
+});
+
+test('the same gitdir with its commondir inside the arm clones, and update-ref run in its worktree writes the arm alone', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun('config-less-gitdir-arm');
+  plantAdminGitDir(wd, '../../.git');
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-less-gitdir-arm'),
+    AGENTS,
+  );
+  const dest = join(root, 'armAe');
+  const report = cloneWorkspace(eligible[0]!, dest);
+  const arm = join(dest, 'coding-agent-workdir');
+  git(join(arm, 'wt'), ['update-ref', 'refs/heads/planted', 'HEAD']);
+  expect(hashTree(runDir)).toBe(before);
+  expect(existsSync(join(arm, '.git', 'refs', 'heads', 'planted'))).toBe(true);
+  expect(existsSync(join(wd, '.git', 'refs', 'heads', 'planted'))).toBe(false);
+  expect(report.gitPointers).toContain(join(arm, 'wt', '.git'));
+});
+
+// Administrative entries of repositories other than the main one: a
+// repository nested in the workdir has its own `.git/worktrees/<id>`, and so
+// can a submodule's `.git/modules/<name>`. Both are recognized by the same
+// rule and held inside the arm.
+test('cloneWorkspace refuses a worktree entry of a nested repository, or of a .git/modules entry, whose commondir names the source .git', () => {
+  const plants: [string, (wd: string) => string][] = [
+    [
+      'config-nested-entry',
+      (wd) => {
+        const sub = join(wd, 'sub');
+        mkdirSync(sub);
+        git(sub, ['init', '-q', '-b', 'main']);
+        git(sub, ['config', 'user.email', 'a@b']);
+        git(sub, ['config', 'user.name', 't']);
+        writeFileSync(join(sub, 'g.txt'), 'y\n');
+        git(sub, ['add', '-A']);
+        git(sub, ['commit', '-qm', 'init']);
+        git(sub, [
+          'worktree',
+          'add',
+          '-q',
+          '--relative-paths',
+          join(sub, 'swt'),
+          '-b',
+          'feature',
+        ]);
+        writeFileSync(
+          join(sub, '.git', 'worktrees', 'swt', 'commondir'),
+          `${join(wd, '.git')}\n`,
+        );
+        return join('sub', 'swt');
+      },
+    ],
+    [
+      'config-module-entry',
+      (wd) => {
+        const mod = join(wd, '.git', 'modules', 'dep');
+        mkdirSync(join(mod, 'worktrees', 'x'), { recursive: true });
+        mkdirSync(join(mod, 'objects'));
+        mkdirSync(join(mod, 'refs'));
+        writeFileSync(join(mod, 'HEAD'), 'ref: refs/heads/main\n');
+        writeFileSync(
+          join(mod, 'config'),
+          '[core]\n\trepositoryformatversion = 0\n',
+        );
+        writeFileSync(
+          join(mod, 'worktrees', 'x', 'HEAD'),
+          'ref: refs/heads/main\n',
+        );
+        writeFileSync(
+          join(mod, 'worktrees', 'x', 'commondir'),
+          `${join(wd, '.git')}\n`,
+        );
+        mkdirSync(join(wd, 'depwt'));
+        writeFileSync(
+          join(wd, 'depwt', '.git'),
+          'gitdir: ../.git/modules/dep/worktrees/x\n',
+        );
+        return 'depwt';
+      },
+    ],
+  ];
+  for (const [scenario, plant] of plants) {
+    const { resultsRoot, runDir, wd } = recordedRepoRun(scenario);
+    const worktree = plant(wd);
+    const before = hashTree(runDir);
+    const { eligible } = eligibleRuns(
+      resultsRoot,
+      scenariosRootWith(scenario),
+      AGENTS,
+    );
+    const dest = join(root, `arm-${scenario}`);
+    let thrown: unknown;
+    try {
+      cloneWorkspace(eligible[0]!, dest);
+    } catch (err: unknown) {
+      thrown = err;
+    }
+    if (thrown === undefined) {
+      git(join(dest, 'coding-agent-workdir', worktree), [
+        'update-ref',
+        'refs/heads/planted',
+        'HEAD',
+      ]);
+    }
+    expect(hashTree(runDir)).toBe(before);
+    expect(String(thrown)).toMatch(
+      /commondir names a common directory outside the arm/,
+    );
+  }
+});
+
+// A repository needs no `config` and no `commondir` to be one to git: HEAD,
+// `objects` and `refs` suffice, and a `.git` file can point at it under any
+// name. Its alternates is the one thing such a gitdir can aim at the source.
+test('a pointer target with HEAD, objects and refs but neither config nor commondir is a gitdir too, and its alternates is re-aimed', () => {
+  const { resultsRoot, runDir, wd } = recordedRepoRun('config-pointer-target');
+  const real = join(wd, '.gitreal');
+  mkdirSync(join(real, 'objects', 'info'), { recursive: true });
+  mkdirSync(join(real, 'refs'));
+  writeFileSync(join(real, 'HEAD'), 'ref: refs/heads/main\n');
+  writeFileSync(
+    join(real, 'objects', 'info', 'alternates'),
+    `${join(wd, '.git', 'objects')}\n`,
+  );
+  mkdirSync(join(wd, 'other'));
+  writeFileSync(join(wd, 'other', '.git'), 'gitdir: ../.gitreal\n');
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('config-pointer-target'),
+    AGENTS,
+  );
+  const dest = join(root, 'armAf');
+  const report = cloneWorkspace(eligible[0]!, dest);
+  const arm = join(dest, 'coding-agent-workdir');
+  expect(hashTree(runDir)).toBe(before);
+  expect(report.rewrittenConfig).toEqual([
+    'coding-agent-workdir/.gitreal/objects/info/alternates',
+  ]);
+  expectArmRelative(report);
+  expect(
+    readFileSync(
+      join(arm, '.gitreal', 'objects', 'info', 'alternates'),
+      'utf8',
+    ),
+  ).toBe(
+    `${join(realpathSync(dest), 'coding-agent-workdir', '.git', 'objects')}\n`,
+  );
+  // git takes it as the repository of <arm>/wd/other.
+  expect(
+    git(join(arm, 'other'), ['rev-parse', '--absolute-git-dir']),
+  ).toContain(join(realpathSync(dest), 'coding-agent-workdir', '.gitreal'));
+});
