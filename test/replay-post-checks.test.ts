@@ -2,6 +2,7 @@ import { afterAll, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
   appendFileSync,
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -24,6 +25,7 @@ import {
   eligibleRuns,
   expectedPostChecks,
   hashTree,
+  INNER_COMMAND_TOOLS,
   replayFixture,
   replayRun,
 } from '../src/cli/replay-post-checks.ts';
@@ -1876,11 +1878,23 @@ test('cloneWorkspace refuses a gitdir pointer file that is a symlink, in a neste
 
 const REPO = resolve(import.meta.dir, '..');
 const FIX = join(REPO, 'test', 'fixtures', 'replay-synthetic');
+const armRoots: string[] = [];
 const OPTS = {
   repoRoot: REPO,
   codingAgent: 'claude-auto',
-  scratch: () => mkdtempSync(join(tmpdir(), 'arms-')),
+  scratch: () => {
+    const dir = mkdtempSync(join(tmpdir(), 'arms-'));
+    armRoots.push(dir);
+    return dir;
+  },
 };
+// The seam-dumper case reads an arm's home after the replay returns, so the
+// arms are swept once at the end rather than released per call.
+afterAll(() => {
+  for (const dir of armRoots) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 60_000);
 
 // results/ is gitignored (evals/.gitignore:1), so a feature worktree has no corpus of its
 // own: the retained corpus is the primary checkout's results/, found through the common git
@@ -2210,3 +2224,129 @@ test.skipIf(!existsSync(CORPUS_ROOT))(
   },
   300_000,
 );
+
+// Fix round 1, finding 1. Eligibility asks only that the verdict hold SOME post
+// record (classify, src/cli/replay-post-checks.ts), so an ordinary failing eval
+// run qualifies — and the prerequisite's history is the recorded post PASSES,
+// which such a run has none of. With the current post phase crashing before it
+// emits anything, both arms produce no record and the same exit code, and
+// equality alone called that a pass and counted it toward the floor.
+test('anti-vacuity: a run whose recorded post checks all failed cannot pass on two empty record sets', async () => {
+  const resultsRoot = join(root, 'results7');
+  const runDir = join(resultsRoot, 'allfail-claude-auto-20260101T000000Z-0011');
+  mkdirSync(join(runDir, 'coding-agent-workdir'), { recursive: true });
+  mkdirSync(join(runDir, 'home'), { recursive: true });
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({
+        checks: [record('file-exists', false, 'post', ['a.txt'])],
+      }),
+    ),
+  );
+  const scenarios = scenariosRootWith('allfail');
+  writeFileSync(
+    join(scenarios, 'allfail', 'checks.sh'),
+    'pre() { :; }\npost() {\n  exit 127\n}\n',
+  );
+  const { eligible } = eligibleRuns(resultsRoot, scenarios, AGENTS);
+  const r = await replayRun(eligible[0]!, {
+    ...OPTS,
+    scenariosRoot: scenarios,
+  });
+  expect(r.armL.raw.filter((x) => x.phase === 'post')).toEqual([]);
+  expect(r.armN.raw.filter((x) => x.phase === 'post')).toEqual([]);
+  expect(r.unmatchedHistory).toEqual([]); // the prerequisite had nothing to say
+  expect(r.armL.exitCodes.post).toBe(127);
+  expect(r.status).toBe('degraded-archive');
+  expect(r.degradedCheck).toContain('127');
+  expect(coverage([r], 1).replayable).toBe(0);
+}, 60_000);
+
+// Fix round 1, finding 2. Tasks 11 and 13 read coverage() directly, so the
+// predicate has to stand without main's extra conjunct.
+test('coverage().ok stands on its own: a diverged synthetic fails it with the corpus arm clean', () => {
+  const arm = {
+    raw: [],
+    canonical: [],
+    exitCodes: { pre: 0, post: 0 },
+    rewrites: 0,
+    home: '',
+    root: '',
+  };
+  const base = {
+    preDivergencesFromHistory: [],
+    unmatchedHistory: [],
+    unparsedLines: [],
+    armL: arm,
+    armN: arm,
+    externalReferences: [],
+  };
+  const corpusRun = {
+    ...base,
+    scenario: 'some-scenario',
+    runId: 'some-scenario-claude-auto-20260101T000000Z-aaaa',
+    status: 'equal' as const,
+    tools: [...INNER_COMMAND_TOOLS],
+  };
+  const fixtures = [
+    'codex-approach-gate-fires-on-architecture',
+    'codex-gate-stale-broker-attributed',
+    'codex-plan-gate-algorithm-locked-after-round1',
+    'tdd-runs-the-project-suite',
+  ].map((scenario) => ({
+    ...base,
+    scenario,
+    runId: null,
+    status: 'equal' as const,
+    tools: [] as string[],
+  }));
+  expect(coverage([corpusRun, ...fixtures], 1).ok).toBe(true);
+  const withDiverged = fixtures.map((f, i) =>
+    i === 0 ? { ...f, status: 'diverged' as const } : f,
+  );
+  expect(coverage([corpusRun, ...withDiverged], 1).ok).toBe(false);
+});
+
+// Fix round 1, finding 3. A refusal says "this run cannot be vetted"; a Node
+// errno says the host failed, and burying one in the refusal list would let a
+// sweep that ran out of disk read as a sweep that merely covered less.
+test('an errno out of the clone propagates as itself rather than as a vetting refusal', async () => {
+  const resultsRoot = join(root, 'results9');
+  const runDir = join(resultsRoot, 'io-claude-auto-20260101T000000Z-0013');
+  mkdirSync(join(runDir, 'coding-agent-workdir'), { recursive: true });
+  mkdirSync(join(runDir, 'home'), { recursive: true });
+  writeFileSync(join(runDir, 'coding-agent-workdir', 'a.txt'), '');
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({
+        checks: [record('file-exists', true, 'post', ['a.txt'])],
+      }),
+    ),
+  );
+  const scenarios = scenariosRootWith('io');
+  writeFileSync(
+    join(scenarios, 'io', 'checks.sh'),
+    'pre() { :; }\npost() {\n  file-exists a.txt\n}\n',
+  );
+  const { eligible } = eligibleRuns(resultsRoot, scenarios, AGENTS);
+  // An arm the clone cannot write into: cpSync fails with EACCES.
+  const locked = mkdtempSync(join(tmpdir(), 'locked-'));
+  chmodSync(locked, 0o500);
+  let thrown: unknown;
+  try {
+    await replayRun(eligible[0]!, {
+      ...OPTS,
+      scenariosRoot: scenarios,
+      scratch: () => locked,
+    });
+  } catch (err: unknown) {
+    thrown = err;
+  } finally {
+    chmodSync(locked, 0o700);
+    rmSync(locked, { recursive: true, force: true });
+  }
+  expect((thrown as NodeJS.ErrnoException | undefined)?.code).toBe('EACCES');
+  expect((thrown as Error | undefined)?.name).toBe('Error');
+}, 60_000);

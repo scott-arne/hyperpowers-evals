@@ -1495,11 +1495,14 @@ export function coverage(
   const scenarios = new Set(covering.map((r) => r.scenario));
   const migratedUncovered = MIGRATED_SCENARIOS.filter((s) => !scenarios.has(s));
   return {
+    // Every result that counts must be equal, synthetic ones included: Tasks
+    // 11 and 13 read this predicate directly, so it cannot rely on a caller
+    // adding the synthetic half back.
     ok:
       corpus.length >= floor &&
       uncoveredTools.length === 0 &&
       migratedUncovered.length === 0 &&
-      corpus.every((r) => r.status === 'equal'),
+      covering.every((r) => r.status !== 'diverged'),
     replayable: corpus.length,
     floor,
     uncoveredTools,
@@ -2205,11 +2208,36 @@ class ReplayRefusal extends Error {
   }
 }
 
+// A Node system error: the host failed. `cpSync`'s own refusals — a FIFO or a
+// socket it cannot copy (ERR_FS_CP_*) — are not these; they say this recorded
+// workspace is unclonable, which is a property of the run.
+const ERRNO = /^E[A-Z]+$/;
+
+function errnoCode(err: unknown): string | undefined {
+  if (!(err instanceof Error)) {
+    return undefined;
+  }
+  const code = (err as NodeJS.ErrnoException).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+// Run one vetting step, turning what it refuses into a per-run refusal — but
+// only what it refuses. An ENOSPC, EIO or EACCES out of the copy is the host
+// failing underneath the sweep, and filing it as "this run could not be
+// vetted" would let a disk that filled up read as a sweep that merely covered
+// less. Those propagate, and the sweep stops on them.
 function refusable<T>(step: () => T): T {
   try {
     return step();
   } catch (err) {
-    throw new ReplayRefusal(err instanceof Error ? err.message : String(err));
+    const code = errnoCode(err);
+    if (code !== undefined && ERRNO.test(code)) {
+      throw err;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    throw new ReplayRefusal(
+      code === undefined ? message : `${code}: ${message}`,
+    );
   }
 }
 
@@ -2363,6 +2391,22 @@ export async function replayRun(
       (entry) => armPre.find((r) => armKey(r) === entry.key)?.passed === false,
     )
     .map((entry) => entry.described);
+
+  // The prerequisite above speaks only for recorded post PASSES, and a run
+  // whose post checks all failed is still eligible (classify asks only that
+  // the verdict hold some post record). For such a run the loops above cannot
+  // fire, so a post phase that crashes before emitting anything leaves two
+  // empty record sets and two equal exit codes, which equality alone would
+  // call a pass. The same guard replayFixture applies, for the same reason.
+  if (degradedCheck === undefined) {
+    const vacuous = [armL, armN].find(
+      (arm) =>
+        arm.exitCodes.post !== 0 || !arm.raw.some((r) => r.phase === 'post'),
+    );
+    if (vacuous !== undefined) {
+      degradedCheck = `the post phase emitted no usable record (exit ${vacuous.exitCodes.post})`;
+    }
+  }
 
   const comparison = compareArms(armL, armN);
   const status: ReplayResult['status'] =
@@ -2784,11 +2828,9 @@ async function main(argv: readonly string[]): Promise<number> {
     );
     return 2;
   }
-  // A diverged synthetic fails the sweep as a diverged corpus run does: a
-  // counterfactual that does not hold is exactly what the gate is buying.
-  return report.coverage.ok && results.every((r) => r.status !== 'diverged')
-    ? 0
-    : 1;
+  // coverage().ok already requires every counting result — synthetic ones
+  // included — to be equal.
+  return report.coverage.ok ? 0 : 1;
 }
 
 if (import.meta.main) {
