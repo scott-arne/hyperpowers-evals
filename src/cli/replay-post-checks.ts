@@ -461,11 +461,14 @@ export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
 }
 
 // A workspace entry can itself be a symlink, which the copy kept verbatim.
-// Before the repair reads, deletes or spawns anything, the directories it
-// works through must really be in the arm: a `coding-agent-workdir`, `.git` or
-// `.git/worktrees` resolving outside it would send readdir, rmSync and git at
-// a tree the replay does not own, and hashTree would not show the damage,
-// because it does not follow links either.
+// Before the repair reads, deletes or spawns anything, every path it works
+// through must really be in the arm — `coding-agent-workdir`, its `.git`, the
+// `worktrees` directory, and each administrative entry with its pointer file.
+// Any of them resolving outside the arm would send readdir, readFileSync and
+// git at a tree the replay does not own, and hashTree would not show the
+// damage, because it does not follow links either. Measured on git 2.56: with
+// an entry retained as an external symlink, `git worktree repair` rewrites the
+// external `gitdir` through the link.
 function requireStructureInsideArm(destReal: string, paths: string[]): void {
   for (const path of paths) {
     if (!existsSync(path)) {
@@ -497,8 +500,13 @@ function repairWorktrees(
   if (!existsSync(adminRoot)) {
     return;
   }
+  const ids = readdirSync(adminRoot);
+  requireStructureInsideArm(
+    destReal,
+    ids.flatMap((id) => [join(adminRoot, id), join(adminRoot, id, 'gitdir')]),
+  );
   const linked: string[] = [];
-  for (const id of readdirSync(adminRoot)) {
+  for (const id of ids) {
     const pointer = join(adminRoot, id, 'gitdir');
     if (!existsSync(pointer)) {
       continue; // a stale administrative entry; git prunes these itself

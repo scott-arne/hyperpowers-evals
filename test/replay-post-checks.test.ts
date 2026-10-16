@@ -1,6 +1,7 @@
 import { afterAll, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -642,4 +643,58 @@ test('the repair ignores an inherited GIT_DIR: the arm is repaired and the decoy
   ).toBe(true);
   expect(hashTree(decoy)).toBe(decoyBefore);
   expect(hashTree(runDir)).toBe(sourceBefore);
+});
+
+test('cloneWorkspace refuses an administrative entry retained as a symlink out of the arm', () => {
+  const { resultsRoot, runDir } = recordedWorktreeRun('worktree-planted');
+  const id = 'coding-agent-workdir-existing-worktree';
+  const entry = join(runDir, 'coding-agent-workdir', '.git', 'worktrees', id);
+  // What an agent could have planted: the administrative entry itself lives
+  // outside the run, with a symlink left in its place. Measured on git 2.56,
+  // `git worktree repair` then rewrites the external gitdir through the link,
+  // and hashTree of the source cannot show it, because the source holds only
+  // the link.
+  const external = mkdtempSync(join(tmpdir(), 'planted-admin-'));
+  cpSync(entry, join(external, id), { recursive: true });
+  rmSync(entry, { recursive: true, force: true });
+  symlinkSync(join(external, id), entry);
+  const externalBefore = hashTree(external);
+  const sourceBefore = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('worktree-planted'),
+    AGENTS,
+  );
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, join(root, 'armA'));
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  // Whatever the clone decided, nothing outside it may have been written.
+  expect(hashTree(external)).toBe(externalBefore);
+  expect(hashTree(runDir)).toBe(sourceBefore);
+  expect(String(thrown)).toMatch(/resolves outside the arm/);
+});
+
+test('cloneWorkspace refuses a worktree whose .git file is a symlink out of the arm', () => {
+  const { resultsRoot, runDir } = recordedWorktreeRun('worktree-linked-dotgit');
+  const dotgit = join(runDir, 'coding-agent-workdir-existing-worktree', '.git');
+  // The pointer file itself replaced by a link out of the run. Repair would
+  // write the worktree's .git through it; the clone refuses first, because
+  // the recorded administrative pointer no longer resolves inside the source.
+  const external = mkdtempSync(join(tmpdir(), 'planted-dotgit-'));
+  cpSync(dotgit, join(external, 'pointer'));
+  rmSync(dotgit, { force: true });
+  symlinkSync(join(external, 'pointer'), dotgit);
+  const externalBefore = hashTree(external);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('worktree-linked-dotgit'),
+    AGENTS,
+  );
+  expect(() => cloneWorkspace(eligible[0]!, join(root, 'armB'))).toThrow(
+    /unexpected gitdir pointer/,
+  );
+  expect(hashTree(external)).toBe(externalBefore);
 });
