@@ -6,15 +6,23 @@
 // delicate part — a recorded workspace carries absolute pointers (linked-worktree
 // administrative files, absolute symlinks into the agent's home) that name the
 // source, and the obvious repairs send git straight back there. The invariants:
-// no git command is ever run against the source, and after a clone no pointer of
-// any class resolves out of the arm and into it.
+// the clone never spawns git at all, and after a clone no pointer of any class
+// resolves out of the arm and into it.
+//
+// The clone used to hand the arm to `git worktree repair`. Every input to that
+// spawn is a file under a copied, agent-authored `.git` — the worktree's
+// backlink, each administrative entry, `commondir`, `config` and whatever it
+// includes — and five of them were found, one at a time, to redirect where the
+// repair writes: into the retained source, or into a repository elsewhere on
+// the host. So the clone now rewrites the two pointer files per linked worktree
+// itself, with the bytes git would have written, on paths it has vetted.
 
-import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import type { Dirent } from 'node:fs';
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -24,6 +32,7 @@ import {
   statSync,
   symlinkSync,
   unlinkSync,
+  writeFileSync,
 } from 'node:fs';
 import {
   basename,
@@ -37,18 +46,6 @@ import {
 import type { FinalVerdict } from '../contracts/verdict.ts';
 import { FinalVerdictSchema } from '../contracts/verdict.ts';
 import { parseRunDirName } from '../dashboard/scan.ts';
-import { envSnapshot } from '../env.ts';
-
-// The flags every harness git spawn carries (src/check/fs-verbs.ts): they
-// suppress the two hooks a repository can configure to run code during an
-// otherwise read-only verb. The arm is a copy of an agent-authored repository,
-// so its git config is as untrusted here as a fixture's is there.
-const GIT_HYGIENE = [
-  '-c',
-  'core.fsmonitor=false',
-  '-c',
-  'core.hooksPath=/dev/null',
-];
 
 // ---------------------------------------------------------------------------
 // eligibility
@@ -348,24 +345,6 @@ function sourceRelative(target: string, srcRoot: string): string | null {
   return null;
 }
 
-// The environment for the arm's git spawn. `-C` does not win against an
-// exported GIT_DIR, GIT_WORK_TREE or GIT_COMMON_DIR — measured on git 2.56,
-// `GIT_DIR=<decoy> git -C <repo> rev-parse --absolute-git-dir` answers with
-// the decoy — so a repair run under an inherited one would rewrite a
-// repository that is not the arm. Every GIT_* name is dropped, and the two
-// config switches keep the host's global and system files out of it.
-function scrubbedGitEnv(): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(envSnapshot())) {
-    if (value !== undefined && !key.startsWith('GIT_')) {
-      env[key] = value;
-    }
-  }
-  env['GIT_CONFIG_GLOBAL'] = '/dev/null';
-  env['GIT_CONFIG_NOSYSTEM'] = '1';
-  return env;
-}
-
 export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
   const srcRoot = realpathSync(resolve(run.workspaceRoot));
 
@@ -461,14 +440,12 @@ export function cloneWorkspace(run: EligibleRun, dest: string): PointerReport {
 }
 
 // A workspace entry can itself be a symlink, which the copy kept verbatim.
-// Before the repair reads, deletes or spawns anything, every path it works
+// Before the repair reads, deletes or writes anything, every path it works
 // through must really be in the arm — `coding-agent-workdir`, its `.git`, the
 // `worktrees` directory, and each administrative entry with its pointer file.
 // Any of them resolving outside the arm would send readdir, readFileSync and
-// git at a tree the replay does not own, and hashTree would not show the
-// damage, because it does not follow links either. Measured on git 2.56: with
-// an entry retained as an external symlink, `git worktree repair` rewrites the
-// external `gitdir` through the link.
+// writeFileSync at a tree the replay does not own, and hashTree would not show
+// the damage, because it does not follow links either.
 function requireStructureInsideArm(destReal: string, paths: string[]): void {
   for (const path of paths) {
     if (!existsSync(path)) {
@@ -481,25 +458,57 @@ function requireStructureInsideArm(destReal: string, paths: string[]): void {
   }
 }
 
-// git's read_gitfile_gently() refuses a `.git` file larger than this, and the
-// repair then makes no first-pass write at all.
+// A gitdir's `commondir` file names the repository the gitdir belongs to, and
+// git reads it from any gitdir — the main `.git` included — before refs,
+// objects or the administrative set. In the arm the main `.git` must be its
+// own common directory and every administrative entry must belong to it:
+// anything else makes git, in the arm, read and write a repository that is
+// not the arm. Measured on git 2.56 with a `commondir` planted in the main
+// `.git`: `git worktree repair` rewrote the gitdir of an entry in the external
+// repository it named and, through a second entry there, the SOURCE
+// worktree's `.git`. The clone no longer runs that command, but a later replay
+// runs git inside the arm's worktrees, and an absolute `commondir` into the
+// source would carry every one of those commands to the source's refs and
+// objects. The value is read the way git's get_common_dir_noenv() reads it:
+// trailing newlines stripped, a relative value joined under the gitdir that
+// holds the file, then resolved.
+function requireCommonDirIs(gitdir: string, expected: string): void {
+  if (!isDirectory(gitdir)) {
+    return; // a gitfile or a junk entry has no commondir to read
+  }
+  const file = join(gitdir, 'commondir');
+  const stat = lstatSync(file, { throwIfNoEntry: false });
+  if (stat === undefined) {
+    return;
+  }
+  if (!stat.isFile()) {
+    throw new Error(`${file} is not a regular file`);
+  }
+  const value = readFileSync(file, 'utf8').replace(/[\r\n]+$/, '');
+  const resolved = resolveThrough(resolve(gitdir, value));
+  if (resolved !== resolveThrough(expected)) {
+    throw new Error(
+      `${file} names a common directory that is not the arm's: ${value}`,
+    );
+  }
+}
+
+// git's read_gitfile_gently() refuses a `.git` file larger than this.
 const GITFILE_MAX_SIZE = 1 << 20;
 
-// `git worktree repair <path>` does not repair the entry that led the clone to
-// <path>. It reads the backlink in <path>/.git, takes the text after its last
-// `/` as an entry id, and prefers the repository's own `.git/worktrees/<id>`
-// when that is a directory; otherwise it repairs toward the backlink itself,
-// wherever that lands. Either way its second pass then rewrites whatever
-// worktree each entry names — the source's, unless the first pass re-aimed the
-// arm's entry. Measured on git 2.56: a backlink naming a decoy entry elsewhere
-// writes the decoy's gitdir and the source worktree's `.git`; a `/.`-suffixed,
-// trailing-slash or symlinked backlink whose resolved name is `id` still
-// writes outside the arm, because git never resolves the text. So the
-// comparison is made the way infer_backlink() makes it: on the raw text,
-// trailing isspace trimmed, nothing resolved — and a file git would not read
-// as a gitfile at all (no `gitdir: ` prefix, an embedded NUL, too large) is
-// refused too, since the second pass writes the source after any first-pass
-// failure.
+// The worktree-side `.git` is rewritten only when what it records already
+// names <id>, the administrative entry that led the clone to it: then the two
+// files describe one copied unit, and re-aiming them at the arm's entry is a
+// repair. A backlink naming anything else — a decoy entry elsewhere, an entry
+// under another name, or no gitfile at all — records a worktree the agent
+// pointed somewhere other than this entry, and the clone has no standing to
+// re-aim it. The comparison is the one git's infer_backlink() makes, so that
+// the arm's pointers mean to git what they meant before the copy: the raw
+// text after the last `/`, trailing isspace trimmed, nothing resolved (git
+// never resolves this text; a `/.`-suffixed, trailing-slash or symlinked
+// spelling whose resolved name is <id> is a different backlink to git). A file
+// git would not read as a gitfile at all (no `gitdir: ` prefix, an embedded
+// NUL, too large, not a regular file) is refused rather than overwritten.
 function requireBacklinkNamesEntry(dotgit: string, id: string): void {
   const stat = statSync(dotgit);
   if (!stat.isFile() || stat.size > GITFILE_MAX_SIZE) {
@@ -518,16 +527,18 @@ function requireBacklinkNamesEntry(dotgit: string, id: string): void {
   }
 }
 
-// Point the arm's linked worktrees at the arm. The command runs only when
-// there is at least one path, every path comes from an administrative entry
-// the arm itself has, and the worktree's recorded backlink names that same
-// entry — the last condition is what makes git's preference (above) land on
-// the arm's entry rather than wherever the backlink points. Each is load
-// bearing: with no path arguments repair follows the copied gitdir pointer
-// into the SOURCE and rewrites it, a path whose entry the arm lacks sends
-// repair to the source directory the copied `.git` file names, and a backlink
-// naming some other entry sends it there — measured on git 2.56, each writes
-// outside the arm.
+// Point the arm's linked worktrees at the arm. No git runs here: the clone
+// writes the two files `git worktree repair` would have written for each
+// worktree — `<adminRoot>/<id>/gitdir`, one line naming `<worktree>/.git`, and
+// `<worktree>/.git`, one line `gitdir: <adminRoot>/<id>` — with the realpath
+// spellings and trailing newline git uses (worktree.c
+// write_worktree_linking_files), so that git run later inside the arm reads
+// them as its own. Every path written to has been vetted: the entry and its
+// pointer file by the structure sweep, the worktree's `.git` by sourceRelative
+// and insideArm, and the pair by requireBacklinkNamesEntry. The spawn was
+// removed because its inputs were never the vetted paths alone; they were the
+// agent's files under `.git`, and `commondir` (checked below for the same
+// reason) was the fifth of them found to redirect the write.
 function repairWorktrees(
   destAbs: string,
   destReal: string,
@@ -535,8 +546,10 @@ function repairWorktrees(
   insideArm: (path: string) => boolean,
 ): void {
   const main = join(destAbs, 'coding-agent-workdir');
-  const adminRoot = join(main, '.git', 'worktrees');
-  requireStructureInsideArm(destReal, [main, join(main, '.git'), adminRoot]);
+  const mainGitDir = join(main, '.git');
+  const adminRoot = join(mainGitDir, 'worktrees');
+  requireStructureInsideArm(destReal, [main, mainGitDir, adminRoot]);
+  requireCommonDirIs(mainGitDir, mainGitDir);
   if (!existsSync(adminRoot)) {
     return;
   }
@@ -545,7 +558,10 @@ function repairWorktrees(
     destReal,
     ids.flatMap((id) => [join(adminRoot, id), join(adminRoot, id, 'gitdir')]),
   );
-  const linked: string[] = [];
+  for (const id of ids) {
+    requireCommonDirIs(join(adminRoot, id), mainGitDir);
+  }
+  const linked: { entry: string; dotgit: string }[] = [];
   for (const id of ids) {
     const pointer = join(adminRoot, id, 'gitdir');
     if (!existsSync(pointer)) {
@@ -577,26 +593,21 @@ function repairWorktrees(
     }
     if (!existsSync(mapped)) {
       // The agent deleted this worktree with `rm -rf` rather than `git
-      // worktree remove`, so the administrative entry outlived it. Repair
-      // fails on the missing path and the arm's copy of the entry still names
+      // worktree remove`, so the administrative entry outlived it. There is
+      // no worktree to point at, and the arm's copy of the entry still names
       // the source, so the arm drops the entry git itself would prune.
       rmSync(join(adminRoot, id), { recursive: true, force: true });
       continue;
     }
-    // Repair acts on what this file says, not on the entry that led here.
     requireBacklinkNamesEntry(mapped, id);
-    linked.push(dirname(mapped));
+    linked.push({ entry: join(adminRoot, id), dotgit: mapped });
   }
-  if (linked.length === 0) {
-    return;
-  }
-  const repair = spawnSync(
-    'git',
-    [...GIT_HYGIENE, '-C', main, 'worktree', 'repair', ...linked],
-    { encoding: 'utf8', env: scrubbedGitEnv() },
-  );
-  if (repair.status !== 0) {
-    throw new Error(`git worktree repair failed: ${repair.stderr}`);
+  // Every entry is vetted before any pointer is written, so a refusal leaves
+  // the arm's copied pointers as they were.
+  for (const { entry, dotgit } of linked) {
+    const worktreeReal = realpathSync(dirname(dotgit));
+    writeFileSync(join(entry, 'gitdir'), `${join(worktreeReal, '.git')}\n`);
+    writeFileSync(dotgit, `gitdir: ${realpathSync(entry)}\n`);
   }
 }
 

@@ -788,3 +788,73 @@ test('the backlink is compared as text, the way git reads it: a symlink that res
   expect(hashTree(runDir)).toBe(sourceBefore);
   expect(String(thrown)).toMatch(/does not point back at administrative entry/);
 });
+
+// A `commondir` planted in the main `.git`: git takes the repository's common
+// directory from it, so every administrative lookup — infer_backlink's
+// `worktrees/<id>` and the second pass's enumeration — lands in whatever it
+// names. Measured on git 2.56 with the clone's former `git worktree repair`
+// spawn: an external copy of the repository as the common directory, holding
+// an entry for the arm's worktree id and a second entry naming the source
+// worktree, had that entry's gitdir rewritten, and the SOURCE worktree's
+// `.git` was rewritten after it.
+test('cloneWorkspace refuses a main .git whose commondir names a repository outside the arm, before any pointer is written', () => {
+  const { resultsRoot, runDir, worktree } =
+    recordedWorktreeRun('worktree-commondir');
+  const id = 'coding-agent-workdir-existing-worktree';
+  const mainGit = join(runDir, 'coding-agent-workdir', '.git');
+  const external = mkdtempSync(join(tmpdir(), 'commondir-'));
+  const evil = join(external, 'evil.git');
+  cpSync(mainGit, evil, { recursive: true });
+  cpSync(join(evil, 'worktrees', id), join(evil, 'worktrees', 'other'), {
+    recursive: true,
+  });
+  writeFileSync(
+    join(evil, 'worktrees', 'other', 'gitdir'),
+    `${join(worktree, '.git')}\n`,
+  );
+  writeFileSync(join(mainGit, 'commondir'), `${evil}\n`);
+  const externalBefore = hashTree(external);
+  const sourceBefore = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('worktree-commondir'),
+    AGENTS,
+  );
+  let thrown: unknown;
+  try {
+    cloneWorkspace(eligible[0]!, join(root, 'armO'));
+  } catch (err: unknown) {
+    thrown = err;
+  }
+  // Whatever the clone decided, nothing outside it may have been written.
+  expect(hashTree(external)).toBe(externalBefore);
+  expect(hashTree(runDir)).toBe(sourceBefore);
+  expect(String(thrown)).toMatch(
+    /commondir names a common directory that is not the arm's/,
+  );
+});
+
+test('cloneWorkspace refuses an administrative entry whose commondir is absolute into the source', () => {
+  const { resultsRoot, runDir } = recordedWorktreeRun(
+    'worktree-entry-commondir',
+  );
+  const id = 'coding-agent-workdir-existing-worktree';
+  const entry = join(runDir, 'coding-agent-workdir', '.git', 'worktrees', id);
+  // `git worktree add` writes `../..` here. Made absolute, the copied entry
+  // keeps naming the source's refs and objects, and git run later inside the
+  // arm's worktree would read and write them.
+  writeFileSync(
+    join(entry, 'commondir'),
+    `${join(runDir, 'coding-agent-workdir', '.git')}\n`,
+  );
+  const before = hashTree(runDir);
+  const { eligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRootWith('worktree-entry-commondir'),
+    AGENTS,
+  );
+  expect(() => cloneWorkspace(eligible[0]!, join(root, 'armQ'))).toThrow(
+    /commondir names a common directory that is not the arm's/,
+  );
+  expect(hashTree(runDir)).toBe(before);
+});
