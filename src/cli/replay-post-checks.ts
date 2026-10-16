@@ -1876,13 +1876,19 @@ function readCheckLine(
 /** The post checks the current checks.sh asks for, keyed the way a record is,
  *  plus the lines the scan could not read. Built from the text alone — never
  *  from what an arm emitted — because that is what makes it a prerequisite
- *  rather than a restatement of the result. */
+ *  rather than a restatement of the result. `expected` is the key set;
+ *  `expectedCounts` says how many lines ask for each key, since a check the
+ *  text runs twice is owed two records, not one. */
 export function expectedPostChecks(
   checksShText: string,
   roots: SourceRoots,
-): { expected: Set<string>; unparsedLines: string[] } {
+): {
+  expected: Set<string>;
+  expectedCounts: Map<string, number>;
+  unparsedLines: string[];
+} {
   const needles = sourceNeedles(roots);
-  const expected = new Set<string>();
+  const expectedCounts = new Map<string, number>();
   const unparsedLines: string[] = [];
   for (const line of postLogicalLines(checksShText)) {
     const trimmed = line.trim();
@@ -1895,15 +1901,27 @@ export function expectedPostChecks(
       unparsedLines.push(trimmed);
       continue;
     }
-    expected.add(
-      recordKey(
-        parsed.check,
-        canonicalizeAgainst(parsed.args, needles),
-        parsed.negated,
-      ),
+    const key = recordKey(
+      parsed.check,
+      canonicalizeAgainst(parsed.args, needles),
+      parsed.negated,
     );
+    expectedCounts.set(key, (expectedCounts.get(key) ?? 0) + 1);
   }
-  return { expected, unparsedLines };
+  return {
+    expected: new Set(expectedCounts.keys()),
+    expectedCounts,
+    unparsedLines,
+  };
+}
+
+// Occurrences per key, for the multisets the prerequisite consumes.
+function tally(keys: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const key of keys) {
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
 }
 
 // An unparsed line is never silently non-load-bearing. Its leading verb is the
@@ -2506,7 +2524,7 @@ export async function replayRun(
     agentHome: sourceHome,
     configDir: agentConfigDir(cfg, sourceHome),
   };
-  const { expected, unparsedLines } = expectedPostChecks(
+  const { expectedCounts, unparsedLines } = expectedPostChecks(
     readFileSync(checksSh, 'utf8'),
     roots,
   );
@@ -2528,23 +2546,39 @@ export async function replayRun(
 
   const armKey = (r: ArmRecord): string =>
     recordKey(r.check, r.args, r.negated);
-  const armPost = armL.canonical.filter((r) => r.phase === 'post');
+  // Multisets on every side. A post phase that runs the same check twice
+  // records two passes; a replay that short-circuits after the first emits
+  // one, and matched by membership that one record would answer for both.
+  // Each historical occurrence therefore consumes one line of the current
+  // text and one distinct passing control-arm record: an occurrence the text
+  // no longer asks for is unmatched history (a removed line, like a changed
+  // one), and an occurrence the control arm cannot supply a record for is a
+  // miss — whether the record is absent or present and failed.
+  const unconsumedLines = new Map(expectedCounts);
+  const unconsumedPasses = tally(
+    armL.canonical
+      .filter((r) => r.phase === 'post' && r.passed)
+      .map((r) => armKey(r)),
+  );
   const unmatchedHistory: string[] = [];
   const unmatchedChecks = new Set<string>();
   let degradedCheck: string | undefined;
   for (const entry of historical('post')) {
-    if (!expected.has(entry.key)) {
+    const asked = unconsumedLines.get(entry.key) ?? 0;
+    if (asked === 0) {
       unmatchedHistory.push(entry.described);
       unmatchedChecks.add(entry.check);
       continue;
     }
-    const current = armPost.find((r) => armKey(r) === entry.key);
-    if (
-      degradedCheck === undefined &&
-      (current === undefined || !current.passed)
-    ) {
-      degradedCheck = entry.described;
+    unconsumedLines.set(entry.key, asked - 1);
+    const supplied = unconsumedPasses.get(entry.key) ?? 0;
+    if (supplied === 0) {
+      if (degradedCheck === undefined) {
+        degradedCheck = entry.described;
+      }
+      continue;
     }
+    unconsumedPasses.set(entry.key, supplied - 1);
   }
   if (degradedCheck === undefined) {
     for (const line of unparsedLines) {

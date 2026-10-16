@@ -17,7 +17,10 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import type { PointerReport } from '../src/cli/replay-post-checks.ts';
+import type {
+  PointerReport,
+  ReplayResult,
+} from '../src/cli/replay-post-checks.ts';
 import {
   cloneWorkspace,
   compareArms,
@@ -2621,3 +2624,89 @@ test('a pointer the post phase plants in the arm is caught by the audit, whichev
     rmSync(external, { recursive: true, force: true });
   }
 }, 300_000);
+
+// Fix round 4 (Codex gate round 2). Each historical post pass was matched
+// against the control arm's records by membership, so one emitted record
+// answered for every identical historical entry: a post phase that ran the
+// same check twice and now short-circuits after the first lost a pass without
+// the prerequisite noticing, and both arms agreed on the single record.
+// Expected, historical and emitted records are multisets.
+async function replayDuplicates(
+  scenario: string,
+  recordedPasses: number,
+  postBody: string,
+): Promise<ReplayResult> {
+  const resultsRoot = join(root, `results-${scenario}`);
+  const runDir = join(
+    resultsRoot,
+    `${scenario}-claude-auto-20260101T000000Z-aaaa`,
+  );
+  mkdirSync(join(runDir, 'coding-agent-workdir'), { recursive: true });
+  mkdirSync(join(runDir, 'home'), { recursive: true });
+  writeFileSync(join(runDir, 'coding-agent-workdir', 'a.txt'), '');
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({
+        checks: Array.from({ length: recordedPasses }, () =>
+          record('file-exists', true, 'post', ['a.txt']),
+        ),
+      }),
+    ),
+  );
+  const scenarios = scenariosRootWith(scenario);
+  writeFileSync(
+    join(scenarios, scenario, 'checks.sh'),
+    `pre() { :; }\npost() {\n${postBody}}\n`,
+  );
+  const { eligible } = eligibleRuns(resultsRoot, scenarios, AGENTS);
+  return replayRun(eligible[0]!, { ...OPTS, scenariosRoot: scenarios });
+}
+
+test('anti-vacuity: one emitted record cannot answer for two identical historical passes', async () => {
+  const r = await replayDuplicates(
+    'dup-short',
+    2,
+    '  file-exists a.txt\n  return 0\n  file-exists a.txt\n',
+  );
+  expect(r.status).toBe('degraded-archive');
+  expect(r.degradedCheck).toContain('a.txt');
+  expect(coverage([r], 1).replayable).toBe(0);
+  // The shape that hid it: both arms leave the phase at 0 with exactly one
+  // passing record, and nothing about the history is unmatched.
+  expect(r.armL.exitCodes.post).toBe(0);
+  expect(r.armL.raw.filter((x) => x.phase === 'post')).toHaveLength(1);
+  expect(r.armN.raw.filter((x) => x.phase === 'post')).toHaveLength(1);
+  expect(r.unmatchedHistory).toEqual([]);
+}, 60_000);
+
+test('two identical historical passes that both execute are equal', async () => {
+  const r = await replayDuplicates(
+    'dup-both',
+    2,
+    '  file-exists a.txt\n  file-exists a.txt\n',
+  );
+  expect(r.status).toBe('equal');
+  expect(r.armL.raw.filter((x) => x.phase === 'post' && x.passed)).toHaveLength(
+    2,
+  );
+  expect(r.unmatchedHistory).toEqual([]);
+}, 60_000);
+
+test('a check the current text runs more often than the record did is not a miss', async () => {
+  const r = await replayDuplicates(
+    'dup-over',
+    1,
+    '  file-exists a.txt\n  file-exists a.txt\n',
+  );
+  expect(r.status).toBe('equal');
+  expect(r.unmatchedHistory).toEqual([]);
+  expect(coverage([r], 1).replayable).toBe(1);
+}, 60_000);
+
+test('a historical duplicate the current text no longer asks for is unmatched history, not a miss', async () => {
+  const r = await replayDuplicates('dup-dropped', 2, '  file-exists a.txt\n');
+  expect(r.status).toBe('equal');
+  expect(r.unmatchedHistory).toHaveLength(1);
+  expect(r.unmatchedHistory[0]).toContain('a.txt');
+}, 60_000);
