@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'bun:test';
+import { afterAll, expect, setDefaultTimeout, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import {
   appendFileSync,
@@ -24,8 +24,13 @@ import {
 } from '../src/cli/replay-post-checks.ts';
 import type { CheckRecord, FinalVerdict } from '../src/contracts/verdict.ts';
 
+// Every case builds real git repositories and clones whole workspace trees;
+// under a full parallel run the slowest cases and the cleanup of `root` have
+// been measured past Bun's 5 s default (the hook at 11.9 s on a loaded host).
+setDefaultTimeout(60_000);
+
 const root = mkdtempSync(join(tmpdir(), 'replay-'));
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+afterAll(() => rmSync(root, { recursive: true, force: true }), 60_000);
 const git = (cwd: string, args: string[]) => {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
   if (r.status !== 0) throw new Error(r.stderr);
