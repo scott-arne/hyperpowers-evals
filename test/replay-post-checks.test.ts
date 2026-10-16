@@ -15,12 +15,17 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, relative } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { PointerReport } from '../src/cli/replay-post-checks.ts';
 import {
   cloneWorkspace,
+  compareArms,
+  coverage,
   eligibleRuns,
+  expectedPostChecks,
   hashTree,
+  replayFixture,
+  replayRun,
 } from '../src/cli/replay-post-checks.ts';
 import type { CheckRecord, FinalVerdict } from '../src/contracts/verdict.ts';
 
@@ -1868,3 +1873,340 @@ test('cloneWorkspace refuses a gitdir pointer file that is a symlink, in a neste
     );
   }
 });
+
+const REPO = resolve(import.meta.dir, '..');
+const FIX = join(REPO, 'test', 'fixtures', 'replay-synthetic');
+const OPTS = {
+  repoRoot: REPO,
+  codingAgent: 'claude-auto',
+  scratch: () => mkdtempSync(join(tmpdir(), 'arms-')),
+};
+
+// results/ is gitignored (evals/.gitignore:1), so a feature worktree has no corpus of its
+// own: the retained corpus is the primary checkout's results/, found through the common git
+// dir (<primary>/.git for a linked worktree), unless QUORUM_CORPUS_ROOT names another.
+function primaryCheckout(repo: string): string {
+  const r = spawnSync('git', ['-C', repo, 'rev-parse', '--git-common-dir'], {
+    encoding: 'utf8',
+  });
+  if (r.status !== 0) throw new Error(r.stderr);
+  return realpathSync(join(resolve(repo, r.stdout.trim()), '..'));
+}
+const CORPUS_ROOT =
+  process.env['QUORUM_CORPUS_ROOT'] ?? join(primaryCheckout(REPO), 'results');
+
+test('migrated grep shape: both arms pass with byte-identical raw records and zero rewrites', async () => {
+  const r = await replayFixture(join(FIX, 'migrated-grep-shape'), OPTS);
+  expect(r.status).toBe('equal');
+  expect(r.armL.raw.find((x) => x.phase === 'post')?.passed).toBe(true);
+  expect(r.armN.raw.find((x) => x.phase === 'post')?.passed).toBe(true);
+  expect(JSON.stringify(r.armL.raw)).toBe(JSON.stringify(r.armN.raw));
+  expect(r.armL.rewrites + r.armN.rewrites).toBe(0);
+}, 60_000);
+
+test('the pre-migration double-quoted form expands per arm: raw records differ, the canonicalizer rewrites, canonical records then agree', async () => {
+  const r = await replayFixture(join(FIX, 'migrated-grep-shape'), {
+    ...OPTS,
+    checksFile: 'checks.double-quoted.sh',
+  });
+  const rawL = r.armL.raw.find((x) => x.phase === 'post')?.args.join(' ');
+  const rawN = r.armN.raw.find((x) => x.phase === 'post')?.args.join(' ');
+  expect(rawL).not.toBe(rawN); // each arm's own clone root is in its args
+  expect(r.armL.rewrites + r.armN.rewrites).toBeGreaterThan(0);
+  expect(r.status).toBe('equal'); // after canonicalization — which is why the migration, not the canonicalizer, is the fix
+}, 60_000);
+
+test('synthetic TDD fixture: equal with both arms passing; Arm L without QUORUM_AGENT_HOME diverges', async () => {
+  const ok = await replayFixture(join(FIX, 'tdd-history-json'), OPTS);
+  expect(ok.status).toBe('equal');
+  expect(ok.armN.raw.find((x) => x.phase === 'post')?.passed).toBe(true);
+  const mutated = await replayFixture(join(FIX, 'tdd-history-json'), {
+    ...OPTS,
+    armLMutate: (env) => {
+      const { QUORUM_AGENT_HOME: _h, ...rest } = env;
+      return rest;
+    },
+  });
+  expect(mutated.status).toBe('diverged');
+}, 60_000);
+
+test('seam dumper: Arm L inherits the operator HOME and the sink; Arm N has the agent home and neither', async () => {
+  const prevKey = process.env['ANTHROPIC_API_KEY'];
+  process.env['ANTHROPIC_API_KEY'] = 'sk-planted';
+  try {
+    const r = await replayFixture(join(FIX, 'seam-dumper'), OPTS);
+    expect(r.status).toBe('equal'); // the check passes in both arms; the dumps are what differ
+    const dumpL = readFileSync(join(r.armL.home, 'dump.txt'), 'utf8');
+    const dumpN = readFileSync(join(r.armN.home, 'dump.txt'), 'utf8');
+    expect(dumpL).toContain(`HOME=${process.env['HOME']}`);
+    expect(dumpL).toContain('QUORUM_RECORD_SINK=');
+    expect(dumpL).toContain('ANTHROPIC_API_KEY=sk-planted');
+    expect(dumpL).not.toContain('QUORUM_INNER_ENV=');
+    expect(dumpN).toContain(`HOME=${r.armN.home}`);
+    expect(dumpN).not.toContain('QUORUM_RECORD_SINK=');
+    expect(dumpN).not.toContain('ANTHROPIC_API_KEY=');
+    expect(dumpN).not.toContain('QUORUM_INNER_ENV=');
+  } finally {
+    if (prevKey === undefined) delete process.env['ANTHROPIC_API_KEY'];
+    else process.env['ANTHROPIC_API_KEY'] = prevKey;
+  }
+}, 60_000);
+
+test('compareArms includes exit codes; coverage counts corpus runs only toward the floor', () => {
+  const rec = {
+    phase: 'post' as const,
+    check: 'file-exists',
+    args: ['x'],
+    negated: false,
+    passed: true,
+  };
+  const a = {
+    raw: [rec],
+    canonical: [rec],
+    exitCodes: { pre: 0, post: 0 },
+    rewrites: 0,
+    home: '',
+    root: '',
+  };
+  expect(compareArms(a, { ...a, exitCodes: { pre: 0, post: 1 } }).equal).toBe(
+    false,
+  );
+  // Raw records that differ only by arm root compare equal through canonical; a canonical difference is named.
+  const rawL = { ...rec, args: ['/arms/L/coding-agent-workdir/x'] };
+  const rawN = { ...rec, args: ['/arms/N/coding-agent-workdir/x'] };
+  const canon = { ...rec, args: ['<ARM>/coding-agent-workdir/x'] };
+  const L = { ...a, raw: [rawL], canonical: [canon], root: '/arms/L' };
+  const N = { ...a, raw: [rawN], canonical: [canon], root: '/arms/N' };
+  expect(compareArms(L, N).equal).toBe(true);
+  expect(
+    compareArms(L, { ...N, canonical: [{ ...canon, passed: false }] })
+      .firstDivergence,
+  ).toContain('record 0');
+  const base = {
+    status: 'equal' as const,
+    tools: ['node', 'grep'],
+    preDivergencesFromHistory: [],
+    unmatchedHistory: [],
+    unparsedLines: [],
+    armL: a,
+    armN: a,
+    externalReferences: [],
+  };
+  const synthetic = {
+    ...base,
+    scenario: 'tdd-runs-the-project-suite',
+    runId: null,
+  };
+  const corpus = {
+    ...base,
+    scenario: 'some-scenario',
+    runId: 'some-scenario-claude-auto-20260101T000000Z-aaaa',
+  };
+  const c = coverage([synthetic, corpus], 61);
+  expect(c.floor).toBe(41);
+  expect(c.replayable).toBe(1); // the synthetic did not count
+  expect(c.ok).toBe(false);
+  expect(c.uncoveredTools).toEqual(
+    expect.arrayContaining(['go', 'pytest', 'python3']),
+  );
+  expect(c.migratedUncovered).toEqual(
+    expect.arrayContaining(['codex-approach-gate-fires-on-architecture']),
+  );
+});
+
+test('expectedPostChecks: continuations fold, quoted shell syntax is argument text, unquoted expansion and keywords are unparsed', () => {
+  // The first four post lines are scenarios/worktree-no-drift-to-main/checks.sh:10-14 verbatim.
+  const body = [
+    'pre() { :; }',
+    'post() {',
+    '    check-transcript tool-count Agent gte 2',
+    '    assert-checkout-clean .',
+    '    # --branches (not --all): stash refs must not count as landed work.',
+    '    command-succeeds \'test "$(git rev-list --count --branches --not main)" -ge 1\'',
+    '    not file-exists "$QUORUM_AGENT_HOME/.claude/settings.json"',
+    // codex-gate-backstop-finding-forces-choice/checks.sh:31-33 verbatim: a continuation.
+    '    check-transcript tool-arg-match Bash \\',
+    "        --matches 'command=gate-round' \\",
+    "        --matches 'command=--ceiling 3'",
+    '    file-exists "$(pwd)/x"',
+    '    for f in a b; do file-exists "$f"; done',
+    '}',
+  ].join('\n');
+  const roots = {
+    runDir: '/src/run',
+    workspaceRoot: '/src/run',
+    agentHome: '/src/run/home',
+    configDir: '/src/run/home/.claude',
+  };
+  const { expected, unparsedLines } = expectedPostChecks(body, roots);
+  expect([...expected].sort()).toEqual(
+    [
+      JSON.stringify(['assert-checkout-clean', ['.'], false]),
+      JSON.stringify([
+        'command-succeeds',
+        ['test "$(git rev-list --count --branches --not main)" -ge 1'],
+        false,
+      ]),
+      JSON.stringify([
+        'file-exists',
+        ['<ARM>/home/.claude/settings.json'],
+        true,
+      ]),
+      JSON.stringify([
+        'tool-arg-match',
+        [
+          'Bash',
+          '--matches',
+          'command=gate-round',
+          '--matches',
+          'command=--ceiling 3',
+        ],
+        false,
+      ]),
+      JSON.stringify(['tool-count', ['Agent', 'gte', '2'], false]),
+    ].sort(),
+  );
+  expect(unparsedLines).toEqual([
+    'file-exists "$(pwd)/x"',
+    'for f in a b; do file-exists "$f"; done',
+  ]);
+});
+
+test('anti-vacuity: an unchanged historical post check that emits no record because the phase aborted early is a degraded archive', async () => {
+  // A fabricated corpus run: the recorded verdict passed two post checks; the
+  // current checks.sh aborts between them. runPhase runs the phase as
+  // `bash -c "source prelude; source checks.sh; post"` with no `set -e`
+  // (src/checks/index.ts:94), so a failing command inside post() would NOT
+  // stop it — only an explicit exit does. `exit 127` ends the bash process in
+  // the crash band (src/checks/index.ts:136), so the second check never emits
+  // a record in either arm. Both arms crash identically: equality alone would
+  // call that a pass.
+  const resultsRoot = join(root, 'results3');
+  const runDir = join(resultsRoot, 'abort-claude-auto-20260101T000000Z-0003');
+  mkdirSync(join(runDir, 'coding-agent-workdir'), { recursive: true });
+  mkdirSync(join(runDir, 'home'), { recursive: true });
+  writeFileSync(join(runDir, 'coding-agent-workdir', 'a.txt'), '');
+  writeFileSync(join(runDir, 'coding-agent-workdir', 'b.txt'), '');
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({
+        checks: [
+          record('file-exists', true, 'post', ['a.txt']),
+          record('file-exists', true, 'post', ['b.txt']),
+        ],
+      }),
+    ),
+  );
+  const scenarios = scenariosRootWith('abort');
+  writeFileSync(
+    join(scenarios, 'abort', 'checks.sh'),
+    'pre() { :; }\npost() {\n  file-exists a.txt\n  exit 127\n  file-exists b.txt\n}\n',
+  );
+  const { eligible } = eligibleRuns(resultsRoot, scenarios, AGENTS);
+  const r = await replayRun(eligible[0]!, {
+    ...OPTS,
+    scenariosRoot: scenarios,
+  });
+  expect(r.armL.exitCodes.post).toBe(127);
+  expect(r.armN.exitCodes.post).toBe(127);
+  expect(r.status).toBe('degraded-archive');
+  expect(r.degradedCheck).toContain('b.txt');
+}, 60_000);
+
+test('anti-vacuity: a historical post pass whose text is no longer in checks.sh is listed as unmatched history and never demotes', async () => {
+  // The migrated scenarios of Task 7 produce exactly this: the recorded args name the
+  // old path, the current text names the new one, and the run must stay replayable.
+  const resultsRoot = join(root, 'results5');
+  const runDir = join(resultsRoot, 'moved-claude-auto-20260101T000000Z-0007');
+  mkdirSync(join(runDir, 'coding-agent-workdir'), { recursive: true });
+  mkdirSync(join(runDir, 'home'), { recursive: true });
+  writeFileSync(join(runDir, 'coding-agent-workdir', 'a.txt'), '');
+  writeFileSync(
+    join(runDir, 'verdict.json'),
+    JSON.stringify(
+      verdictFixture({
+        checks: [
+          record('file-exists', true, 'post', ['a.txt']),
+          record('file-exists', true, 'post', ['z.txt']),
+        ],
+      }),
+    ),
+  );
+  const scenarios = scenariosRootWith('moved');
+  writeFileSync(
+    join(scenarios, 'moved', 'checks.sh'),
+    'pre() { :; }\npost() {\n  file-exists a.txt\n}\n',
+  );
+  const { eligible } = eligibleRuns(resultsRoot, scenarios, AGENTS);
+  const r = await replayRun(eligible[0]!, {
+    ...OPTS,
+    scenariosRoot: scenarios,
+  });
+  expect(r.status).toBe('equal');
+  expect(r.unmatchedHistory).toHaveLength(1);
+  expect(r.unmatchedHistory[0]).toContain('z.txt');
+  expect(r.unparsedLines).toEqual([]);
+}, 60_000);
+
+// The wrapper used to exec a module with no entrypoint, so every invocation —
+// including one naming a results root that holds nothing — exited 0 in silence.
+test('the replay script exits 2 and names the results root when it holds no eligible run', () => {
+  const empty = join(root, 'results-empty');
+  mkdirSync(empty, { recursive: true });
+  const r = spawnSync(
+    join(REPO, 'scripts', 'replay-post-checks'),
+    ['--results', empty, '--scenarios', scenariosRootWith('abort')],
+    { encoding: 'utf8' },
+  );
+  expect(r.status).toBe(2);
+  expect(`${r.stdout}${r.stderr}`).toContain(empty);
+}, 60_000);
+
+test.skipIf(!existsSync(CORPUS_ROOT))(
+  'corpus worktree run: replay leaves the retained record and workspace byte-identical and keeps each arm out of the other',
+  async () => {
+    // The spec names this run. A host with no corpus root at all skips (bun reports the
+    // skip, and Task 10's acceptance requires zero skips on this host); a corpus root
+    // without this run is a failure, not a skip.
+    const corpus = CORPUS_ROOT;
+    const runId = 'worktree-no-drift-to-main-claude-auto-20261003T112456Z-f670';
+    expect(existsSync(join(corpus, runId, 'coding-agent-workdir'))).toBe(true);
+    const before = hashTree(join(corpus, runId));
+    const { eligible } = eligibleRuns(corpus, resolve(REPO, 'scenarios'), [
+      'claude-auto',
+    ]);
+    const run = eligible.find((e) => e.runId === runId);
+    expect(run).toBeDefined();
+    const r = await replayRun(run!, {
+      ...OPTS,
+      scenariosRoot: resolve(REPO, 'scenarios'),
+    });
+    expect(hashTree(join(corpus, runId))).toBe(before);
+    expect(r.externalReferences.length).toBeGreaterThan(0); // the Claude URL-handler symlink
+    expect(r.armL.root).not.toBe(r.armN.root);
+    expect(r.status).toBe('equal');
+    expect(r.unparsedLines).toEqual([]); // the quoted-$( check parses as one argument
+    expect(r.unmatchedHistory).toEqual([]); // nothing in this scenario's text has changed
+    // That check is load-bearing: abort the phase just before it and the run must degrade.
+    const mutated = scenariosRootWith('worktree-no-drift-to-main');
+    const text = readFileSync(
+      join(REPO, 'scenarios', 'worktree-no-drift-to-main', 'checks.sh'),
+      'utf8',
+    );
+    const aborted = text.replace(
+      "    command-succeeds 'test",
+      "    exit 127\n    command-succeeds 'test",
+    );
+    expect(aborted).not.toBe(text);
+    writeFileSync(
+      join(mutated, 'worktree-no-drift-to-main', 'checks.sh'),
+      aborted,
+    );
+    const d = await replayRun(run!, { ...OPTS, scenariosRoot: mutated });
+    expect(d.status).toBe('degraded-archive');
+    expect(d.degradedCheck).toContain('rev-list');
+    expect(hashTree(join(corpus, runId))).toBe(before);
+  },
+  300_000,
+);

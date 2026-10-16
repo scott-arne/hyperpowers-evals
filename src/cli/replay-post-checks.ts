@@ -45,6 +45,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   openSync,
   readdirSync,
   readFileSync,
@@ -57,6 +58,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { tmpdir } from 'node:os';
 import {
   basename,
   dirname,
@@ -66,9 +68,21 @@ import {
   resolve,
   sep,
 } from 'node:path';
-import type { FinalVerdict } from '../contracts/verdict.ts';
+import { parse as parseYaml } from 'yaml';
+import { xdgHomeSubdirs } from '../agents/home-env.ts';
+import type { OuterEnvArgs } from '../checks/env-allowlist.ts';
+import { outerEnv } from '../checks/env-allowlist.ts';
+import type { RunPhaseArgs } from '../checks/index.ts';
+import { runPhaseWithEnv } from '../checks/index.ts';
+import type { AgentConfig } from '../contracts/agent-config.ts';
+import {
+  AgentConfigSchema,
+  agentConfigDir,
+} from '../contracts/agent-config.ts';
+import type { CheckRecord, FinalVerdict } from '../contracts/verdict.ts';
 import { FinalVerdictSchema } from '../contracts/verdict.ts';
 import { parseRunDirName } from '../dashboard/scan.ts';
+import { envSnapshot } from '../env.ts';
 
 // ---------------------------------------------------------------------------
 // eligibility
@@ -1236,4 +1250,1547 @@ export function hashTree(root: string): string {
     hash.update(entry.body);
   }
   return hash.digest('hex');
+}
+
+// ---------------------------------------------------------------------------
+// the two arms
+// ---------------------------------------------------------------------------
+//
+// The replay runs the *current* scenario's checks.sh twice over two clones of
+// one recorded workspace, under the two post-check environments, and requires
+// the two to emit the same records. Arm L is today's construction — the whole
+// ambient environment, plus the QUORUM contract — and Arm N is the allowlisted
+// one. Nothing else differs, so a difference in the records is the environment
+// change and nothing else.
+//
+// Equality alone would pass vacuously: a phase that aborts before a check, or
+// a check whose text has changed since the record was written, fails the same
+// way in both arms. The prerequisite below is what keeps that from reading as
+// evidence — it is built from the current checks.sh text, independently of
+// anything either arm emitted.
+
+/** One record as an arm emitted it. `detail` is dropped: it carries paths and
+ *  timings that differ between the arms by construction. */
+export interface ArmRecord {
+  phase: 'pre' | 'post';
+  check: string;
+  args: string[];
+  negated: boolean;
+  passed: boolean;
+}
+
+/** One arm's outcome. `canonical` is `raw` with this arm's clone root replaced
+ *  by `<ARM>`, which is the form the comparison reads. */
+export interface ArmResult {
+  raw: ArmRecord[];
+  canonical: ArmRecord[];
+  exitCodes: { pre: number; post: number };
+  rewrites: number;
+  home: string;
+  root: string;
+}
+
+export interface ReplayOptions {
+  repoRoot: string;
+  scenariosRoot?: string;
+  codingAgent?: string;
+  agentsDir?: string;
+  scratch: () => string;
+  checksFile?: string;
+}
+
+export interface ReplayResult {
+  scenario: string;
+  /** null for a synthetic fixture, which stands in for a scenario rather than
+   *  replaying a recorded run. */
+  runId: string | null;
+  status: 'equal' | 'diverged' | 'degraded-archive';
+  firstDivergence?: string;
+  degradedCheck?: string;
+  /** Recorded pre passes the current pre phase fails. Listed, never demoting:
+   *  pre runs against the post-agent state, so a difference is expected. */
+  preDivergencesFromHistory: string[];
+  /** Historical post passes whose current text changed or vanished. Listed,
+   *  never demoting: the migrated scenarios land here by design. */
+  unmatchedHistory: string[];
+  /** post() lines the static scan could not read as a check. */
+  unparsedLines: string[];
+  /** Leading tokens of the post phase's command-succeeds inner commands. */
+  tools: string[];
+  armL: ArmResult;
+  armN: ArmResult;
+  externalReferences: string[];
+}
+
+/** Today's construction, reproduced here and only here: the whole ambient
+ *  environment plus the QUORUM contract, plus the one variable the migrated
+ *  checks need, plus the selector that makes the dispatcher inherit. */
+export function legacyOuterEnv(a: OuterEnvArgs): Record<string, string> {
+  const base = envSnapshot();
+  const env: Record<string, string | undefined> = {
+    ...base,
+    PATH: base['PATH'] ?? '/usr/bin:/bin',
+    QUORUM_REPO_ROOT: a.repoRoot,
+    QUORUM_AGENT_HOME: a.agentHome,
+    QUORUM_INNER_ENV: 'legacy',
+    ...(a.transcriptPath !== undefined
+      ? { QUORUM_TRANSCRIPT_PATH: a.transcriptPath }
+      : {}),
+    ...(a.runDir !== undefined ? { QUORUM_RUN_DIR: a.runDir } : {}),
+    ...(a.configDir !== undefined
+      ? { QUORUM_AGENT_CONFIG_DIR: a.configDir }
+      : {}),
+    ...(a.codingAgent !== undefined
+      ? { QUORUM_CODING_AGENT: a.codingAgent }
+      : {}),
+  };
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    if (v !== undefined) {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+/** Replace this arm's clone root — as spelled and as resolved — with `<ARM>`,
+ *  so two arms that differ only by where they were cloned compare equal. */
+export function canonicalize(
+  records: ArmRecord[],
+  armRoot: string,
+): { records: ArmRecord[]; rewrites: number } {
+  let rewrites = 0;
+  const real = realpathSync(armRoot);
+  const out = records.map((r) => {
+    const args = r.args.map((s) =>
+      s.split(real).join('<ARM>').split(armRoot).join('<ARM>'),
+    );
+    if (args.some((s, i) => s !== r.args[i])) {
+      rewrites += 1;
+    }
+    return { ...r, args };
+  });
+  return { records: out, rewrites };
+}
+
+function recordKey(check: string, args: string[], negated: boolean): string {
+  return JSON.stringify([check, args, negated]);
+}
+
+function describeCheck(
+  check: string,
+  args: string[],
+  negated: boolean,
+): string {
+  return `${negated ? 'not ' : ''}${check} ${JSON.stringify(args)}`;
+}
+
+/** The ordered canonical records and both exit codes, which is the whole of
+ *  what the counterfactual claims. */
+export function compareArms(
+  l: ArmResult,
+  n: ArmResult,
+): { equal: boolean; firstDivergence?: string } {
+  if (
+    l.exitCodes.pre !== n.exitCodes.pre ||
+    l.exitCodes.post !== n.exitCodes.post
+  ) {
+    return {
+      equal: false,
+      firstDivergence: `exit codes L=${JSON.stringify(l.exitCodes)} N=${JSON.stringify(n.exitCodes)}`,
+    };
+  }
+  const key = (r: ArmRecord): string =>
+    JSON.stringify([r.phase, r.check, r.args, r.negated, r.passed]);
+  const max = Math.max(l.canonical.length, n.canonical.length);
+  for (let i = 0; i < max; i++) {
+    const a = l.canonical[i];
+    const b = n.canonical[i];
+    if (a === undefined || b === undefined || key(a) !== key(b)) {
+      return {
+        equal: false,
+        firstDivergence: `record ${i}: L=${a ? key(a) : 'absent'} N=${b ? key(b) : 'absent'}`,
+      };
+    }
+  }
+  return { equal: true };
+}
+
+/** The agent's YAML read for its shape alone. Deliberately not
+ *  `loadAgentConfig`, which validates `required_env` against the live
+ *  environment (claude-auto requires SUPERPOWERS_ROOT): an offline replay of a
+ *  recorded run must not depend on provider credentials. The replay needs
+ *  `home_config_subdir` and nothing live. */
+export function offlineAgentConfig(
+  agentsDir: string,
+  name: string,
+): AgentConfig {
+  const raw: unknown = parseYaml(
+    readFileSync(join(agentsDir, `${name}.yaml`), 'utf8'),
+  );
+  return AgentConfigSchema.parse(raw);
+}
+
+/** The `*.yaml` basenames of an agents dir: what parseRunDirName needs to
+ *  split `<scenario>-<agent>` apart. */
+function knownAgents(agentsDir: string): string[] {
+  if (!existsSync(agentsDir)) {
+    return [];
+  }
+  return readdirSync(agentsDir)
+    .filter((name) => name.endsWith('.yaml'))
+    .map((name) => name.slice(0, -'.yaml'.length))
+    .sort();
+}
+
+/** Every tool the shipped inner commands invoke (spec, acceptance (ii)). The
+ *  replay must exercise each one in a post phase, by a corpus run or by a
+ *  synthetic counterfactual, before its result means anything about them. */
+export const INNER_COMMAND_TOOLS: readonly string[] = [
+  'grep',
+  'test',
+  'node',
+  'git',
+  'find',
+  'npm',
+  'awk',
+  'ls',
+  'npx',
+  'go',
+  'pytest',
+  'python3',
+];
+
+/** The four scenarios Task 7 moved across the credential boundary. Each must be
+ *  covered by a corpus run or, where its archive is degraded, by a synthetic
+ *  fixture in the current check format (spec, acceptance (iii)). */
+const MIGRATED_SCENARIOS: readonly string[] = [
+  'codex-approach-gate-fires-on-architecture',
+  'codex-gate-stale-broker-attributed',
+  'codex-plan-gate-algorithm-locked-after-round1',
+  'tdd-runs-the-project-suite',
+];
+
+/** The predeclared floor, so the gate cannot pass on a shrunken set. Only
+ *  corpus runs count toward it; a synthetic fixture is a counterfactual, not a
+ *  replay of retained evidence, and still covers a tool or a migrated scenario
+ *  the corpus cannot. */
+export function coverage(
+  results: ReplayResult[],
+  eligibleCount: number,
+): {
+  ok: boolean;
+  replayable: number;
+  floor: number;
+  uncoveredTools: string[];
+  migratedUncovered: string[];
+} {
+  const floor = Math.ceil((eligibleCount * 2) / 3);
+  const corpus = results.filter(
+    (r) => r.runId !== null && r.status !== 'degraded-archive',
+  );
+  const covering = results.filter((r) => r.status !== 'degraded-archive');
+  const exercised = new Set(covering.flatMap((r) => r.tools));
+  const uncoveredTools = INNER_COMMAND_TOOLS.filter((t) => !exercised.has(t));
+  const scenarios = new Set(covering.map((r) => r.scenario));
+  const migratedUncovered = MIGRATED_SCENARIOS.filter((s) => !scenarios.has(s));
+  return {
+    ok:
+      corpus.length >= floor &&
+      uncoveredTools.length === 0 &&
+      migratedUncovered.length === 0 &&
+      corpus.every((r) => r.status === 'equal'),
+    replayable: corpus.length,
+    floor,
+    uncoveredTools,
+    migratedUncovered,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// the anti-vacuity prerequisite: what the current checks.sh asks for
+// ---------------------------------------------------------------------------
+
+/** The run's own roots, as the live phase saw them. The expected set is built
+ *  against these and then canonicalized to `<ARM>`, so it compares against an
+ *  arm's canonical records. */
+export interface SourceRoots {
+  runDir: string;
+  workspaceRoot: string;
+  agentHome: string;
+  configDir: string;
+}
+
+// A first token the scan reads as a verb; `for`/`while`/… are shell keywords
+// that happen to match the same shape, so they are named out.
+const VERB_SHAPED = /^[a-z][a-z0-9-]*$/;
+const BASH_KEYWORDS: ReadonlySet<string> = new Set([
+  'for',
+  'while',
+  'if',
+  'case',
+  '{',
+  '}',
+  'fi',
+  'done',
+]);
+
+// Unquoted operators the scan cannot reproduce: each of them makes the shell
+// do something — a pipeline, a second command, a redirection, a subshell —
+// that is not "hand these words to one check".
+const SHELL_OPERATORS: ReadonlySet<string> = new Set([
+  '|',
+  ';',
+  '&',
+  '<',
+  '>',
+  '(',
+  ')',
+  '`',
+]);
+
+// The three variables a shipped check expands at the outer layer. Any other
+// expansion outside single quotes leaves the line unparsed: the scan has no
+// value for it and must not guess.
+function rootVariable(name: string, roots: SourceRoots): string | undefined {
+  if (name === 'QUORUM_AGENT_HOME') {
+    return roots.agentHome;
+  }
+  if (name === 'QUORUM_RUN_DIR') {
+    return roots.runDir;
+  }
+  if (name === 'QUORUM_AGENT_CONFIG_DIR') {
+    return roots.configDir;
+  }
+  return undefined;
+}
+
+// A `$NAME` or `${NAME}` the scan can expand, or null for anything else —
+// a command substitution, a positional or special parameter, a name the scan
+// has no value for, a parameter expansion with a modifier.
+function readExpansion(
+  line: string,
+  at: number,
+  roots: SourceRoots,
+): { text: string; next: number } | null {
+  if (line[at + 1] === '(') {
+    return null; // command or arithmetic substitution
+  }
+  let name: string;
+  let next: number;
+  if (line[at + 1] === '{') {
+    const end = line.indexOf('}', at + 2);
+    if (end === -1) {
+      return null;
+    }
+    name = line.slice(at + 2, end);
+    next = end + 1;
+  } else {
+    const match = /^[A-Za-z_][A-Za-z0-9_]*/.exec(line.slice(at + 1));
+    if (match === null) {
+      return null;
+    }
+    name = match[0];
+    next = at + 1 + name.length;
+  }
+  const value = rootVariable(name, roots);
+  return value === undefined ? null : { text: value, next };
+}
+
+// Bash's double-quoted word: a backslash escapes only `$`, a backtick, `"` and
+// itself; a backtick or `$(` is a substitution the scan refuses; the three
+// root variables expand and every other `$` refuses.
+function readDoubleQuoted(
+  line: string,
+  from: number,
+  roots: SourceRoots,
+): { text: string; next: number } | null {
+  let text = '';
+  let i = from;
+  while (i < line.length) {
+    const ch = line[i] ?? '';
+    if (ch === '"') {
+      return { text, next: i + 1 };
+    }
+    if (ch === '\\') {
+      const nextCh = line[i + 1];
+      if (nextCh === undefined) {
+        return null;
+      }
+      if (
+        nextCh === '$' ||
+        nextCh === '`' ||
+        nextCh === '"' ||
+        nextCh === '\\'
+      ) {
+        text += nextCh;
+        i += 2;
+      } else {
+        text += ch;
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === '`') {
+      return null;
+    }
+    if (ch === '$') {
+      const expansion = readExpansion(line, i, roots);
+      if (expansion === null) {
+        return null;
+      }
+      text += expansion.text;
+      i = expansion.next;
+      continue;
+    }
+    text += ch;
+    i += 1;
+  }
+  return null; // unterminated
+}
+
+// One logical line as bash would word-split it, or null when the shell would
+// do something the scan cannot reproduce. Single-quoted text is opaque: a
+// `$(…)`, a backtick or a `|` inside it is just characters of the argument,
+// exactly as bash hands it to the check.
+function shellWords(line: string, roots: SourceRoots): string[] | null {
+  const tokens: string[] = [];
+  let current = '';
+  let started = false;
+  let i = 0;
+  const endWord = (): void => {
+    if (started) {
+      tokens.push(current);
+      current = '';
+      started = false;
+    }
+  };
+  while (i < line.length) {
+    const ch = line[i] ?? '';
+    if (ch === ' ' || ch === '\t') {
+      endWord();
+      i += 1;
+      continue;
+    }
+    if (ch === '#' && !started) {
+      break; // a comment runs to the end of the line
+    }
+    if (ch === "'") {
+      const end = line.indexOf("'", i + 1);
+      if (end === -1) {
+        return null;
+      }
+      started = true;
+      current += line.slice(i + 1, end);
+      i = end + 1;
+      continue;
+    }
+    if (ch === '"') {
+      const quoted = readDoubleQuoted(line, i + 1, roots);
+      if (quoted === null) {
+        return null;
+      }
+      started = true;
+      current += quoted.text;
+      i = quoted.next;
+      continue;
+    }
+    if (ch === '\\') {
+      const nextCh = line[i + 1];
+      if (nextCh === undefined) {
+        return null;
+      }
+      started = true;
+      current += nextCh;
+      i += 2;
+      continue;
+    }
+    if (ch === '$') {
+      const expansion = readExpansion(line, i, roots);
+      if (expansion === null) {
+        return null;
+      }
+      started = true;
+      current += expansion.text;
+      i = expansion.next;
+      continue;
+    }
+    if (SHELL_OPERATORS.has(ch)) {
+      return null;
+    }
+    started = true;
+    current += ch;
+    i += 1;
+  }
+  endWord();
+  return tokens;
+}
+
+// Whether a logical line ends inside a backslash escape — bash's line
+// continuation — judged with the quote state, so a backslash inside single
+// quotes does not fold the next line in.
+function endsWithContinuation(line: string): boolean {
+  let single = false;
+  let double = false;
+  let escaped = false;
+  for (const ch of line) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (single) {
+      if (ch === "'") {
+        single = false;
+      }
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (double) {
+      if (ch === '"') {
+        double = false;
+      }
+      continue;
+    }
+    if (ch === "'") {
+      single = true;
+    } else if (ch === '"') {
+      double = true;
+    }
+  }
+  return escaped;
+}
+
+// The lines of post(), from `post() {` to its closing `}` at column 0, with
+// bash's line continuations folded: the backslash and the newline go, nothing
+// is inserted, so `scenarios/codex-gate-backstop-finding-forces-choice/
+// checks.sh:31-33` is one logical line and one record with five args, as the
+// corpus recorded it.
+function postLogicalLines(text: string): string[] {
+  const lines = text.split('\n');
+  const start = lines.findIndex((line) => /^post\(\)\s*\{/.test(line));
+  if (start === -1) {
+    return [];
+  }
+  const out: string[] = [];
+  let pending = '';
+  for (const line of lines.slice(start + 1)) {
+    if (pending === '' && /^\}/.test(line)) {
+      break;
+    }
+    const joined = pending + line;
+    if (endsWithContinuation(joined)) {
+      pending = joined.slice(0, -1);
+      continue;
+    }
+    out.push(joined);
+    pending = '';
+  }
+  if (pending !== '') {
+    out.push(pending);
+  }
+  return out;
+}
+
+// Replace each source root — as spelled and as resolved — with `<ARM>`, so the
+// expected set and the recorded args read like an arm's canonical records.
+function sourceNeedles(roots: SourceRoots): string[] {
+  const all = new Set<string>();
+  for (const root of [roots.runDir, roots.workspaceRoot]) {
+    if (root === '') {
+      continue;
+    }
+    all.add(root);
+    if (existsSync(root)) {
+      all.add(realpathSync(root));
+    }
+  }
+  return [...all].sort((a, b) => b.length - a.length);
+}
+
+function canonicalizeAgainst(args: string[], needles: string[]): string[] {
+  return args.map((arg) => {
+    let out = arg;
+    for (const needle of needles) {
+      out = out.split(needle).join('<ARM>');
+    }
+    return out;
+  });
+}
+
+// The check a line names, with `not` and `check-transcript` stripped, or null
+// when the line is not a check the scan can read.
+function readCheckLine(
+  tokens: string[],
+): { check: string; args: string[]; negated: boolean } | null {
+  const first = tokens[0];
+  if (
+    first === undefined ||
+    BASH_KEYWORDS.has(first) ||
+    !VERB_SHAPED.test(first)
+  ) {
+    return null;
+  }
+  let index = 0;
+  let negated = false;
+  while (tokens[index] === 'not' || tokens[index] === 'check-transcript') {
+    if (tokens[index] === 'not') {
+      negated = true;
+    }
+    index += 1;
+  }
+  const check = tokens[index];
+  if (
+    check === undefined ||
+    BASH_KEYWORDS.has(check) ||
+    !VERB_SHAPED.test(check)
+  ) {
+    return null;
+  }
+  return { check, args: tokens.slice(index + 1), negated };
+}
+
+/** The post checks the current checks.sh asks for, keyed the way a record is,
+ *  plus the lines the scan could not read. Built from the text alone — never
+ *  from what an arm emitted — because that is what makes it a prerequisite
+ *  rather than a restatement of the result. */
+export function expectedPostChecks(
+  checksShText: string,
+  roots: SourceRoots,
+): { expected: Set<string>; unparsedLines: string[] } {
+  const needles = sourceNeedles(roots);
+  const expected = new Set<string>();
+  const unparsedLines: string[] = [];
+  for (const line of postLogicalLines(checksShText)) {
+    const trimmed = line.trim();
+    if (trimmed === '' || trimmed.startsWith('#')) {
+      continue;
+    }
+    const tokens = shellWords(line, roots);
+    const parsed = tokens === null ? null : readCheckLine(tokens);
+    if (parsed === null) {
+      unparsedLines.push(trimmed);
+      continue;
+    }
+    expected.add(
+      recordKey(
+        parsed.check,
+        canonicalizeAgainst(parsed.args, needles),
+        parsed.negated,
+      ),
+    );
+  }
+  return { expected, unparsedLines };
+}
+
+// An unparsed line is never silently non-load-bearing: its leading verb-shaped
+// tokens, after `not` and `check-transcript`, name the checks it might still
+// be running. If one of them matches a historical post pass the expected set
+// did not account for, the scan cannot tell an unchanged check from a changed
+// one there, and the run does not count.
+function unparsedCandidates(line: string): string[] {
+  const out: string[] = [];
+  for (const token of line.split(/\s+/)) {
+    if (token === 'not' || token === 'check-transcript') {
+      continue;
+    }
+    if (!VERB_SHAPED.test(token) || BASH_KEYWORDS.has(token)) {
+      break;
+    }
+    out.push(token);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// running one run, and one synthetic fixture, through both arms
+// ---------------------------------------------------------------------------
+
+interface PhasePair {
+  pre: RunPhaseArgs;
+  post: RunPhaseArgs;
+}
+
+type EnvMutation = (env: Record<string, string>) => Record<string, string>;
+
+// The outer-environment arguments a phase implies, mapped exactly as runPhase
+// maps them (src/checks/index.ts), so neither arm can differ from production
+// by an argument the replay forgot.
+function envArgsFor(args: RunPhaseArgs): OuterEnvArgs {
+  return {
+    repoRoot: args.repoRoot,
+    agentHome: args.agentHome,
+    ...(args.transcriptPath !== undefined
+      ? { transcriptPath: args.transcriptPath }
+      : {}),
+    ...(args.runDir !== undefined ? { runDir: args.runDir } : {}),
+    ...(args.configDir !== undefined ? { configDir: args.configDir } : {}),
+    ...(args.codingAgent !== undefined
+      ? { codingAgent: args.codingAgent }
+      : {}),
+  };
+}
+
+// The two production call sites (src/runner/index.ts: the pre and post
+// runPhase calls) in one place: the post phase differs only by its name and by
+// QUORUM_TRANSCRIPT_PATH, which exists only there.
+function phasesFor(input: {
+  checksSh: string;
+  armRoot: string;
+  repoRoot: string;
+  configDir: string;
+  codingAgent: string;
+  transcriptPath?: string;
+}): PhasePair {
+  const pre: RunPhaseArgs = {
+    checksSh: input.checksSh,
+    phase: 'pre',
+    workdir: join(input.armRoot, 'coding-agent-workdir'),
+    repoRoot: input.repoRoot,
+    // The arm stands in for the whole run: a check that addresses
+    // $QUORUM_RUN_DIR must reach the clone, never the retained record.
+    runDir: input.armRoot,
+    configDir: input.configDir,
+    codingAgent: input.codingAgent,
+    agentHome: join(input.armRoot, 'home'),
+  };
+  return {
+    pre,
+    post: {
+      ...pre,
+      phase: 'post',
+      ...(input.transcriptPath !== undefined
+        ? { transcriptPath: input.transcriptPath }
+        : {}),
+    },
+  };
+}
+
+async function runArm(
+  mode: 'legacy' | 'projected',
+  armRoot: string,
+  phases: PhasePair,
+  mutate?: EnvMutation,
+): Promise<ArmResult> {
+  const raw: ArmRecord[] = [];
+  const exitCodes = { pre: 0, post: 0 };
+  for (const phase of ['pre', 'post'] as const) {
+    const args = phases[phase];
+    const built =
+      mode === 'legacy'
+        ? legacyOuterEnv(envArgsFor(args))
+        : outerEnv(envSnapshot(), envArgsFor(args));
+    const result = await runPhaseWithEnv(
+      args,
+      mutate === undefined ? built : mutate(built),
+    );
+    exitCodes[phase] = result.exitCode;
+    for (const record of result.records) {
+      raw.push({
+        phase,
+        check: record.check,
+        args: [...record.args],
+        negated: record.negated,
+        passed: record.passed,
+      });
+    }
+  }
+  const { records, rewrites } = canonicalize(raw, armRoot);
+  return {
+    raw,
+    canonical: records,
+    exitCodes,
+    rewrites,
+    home: phases.post.agentHome,
+    root: armRoot,
+  };
+}
+
+// Every command position of an inner command, and the word that leads it: the
+// start of the string, and whatever follows `&&`, `||`, `;`, `|`, a subshell,
+// a backtick or `$(`. A leading `!` and any `VAR=value` prefixes are stepped
+// over as the shell steps over them, so `expected=$(node -e …) && grep …`
+// reports `node` and `grep`. Single-quoted text is opaque, as it is to bash.
+function commandLeaders(command: string): string[] {
+  const out: string[] = [];
+  let word = '';
+  let atStart = true;
+  let single = false;
+  let double = false;
+  let escaped = false;
+  const endWord = (): void => {
+    if (word === '') {
+      return;
+    }
+    const bare = word.replace(/^!+/, '');
+    if (atStart && bare !== '' && !/^[A-Za-z_][A-Za-z0-9_]*=/.test(bare)) {
+      out.push(bare);
+      atStart = false;
+    }
+    word = '';
+  };
+  const newCommand = (): void => {
+    endWord();
+    atStart = true;
+  };
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i] ?? '';
+    if (escaped) {
+      word += ch;
+      escaped = false;
+      continue;
+    }
+    if (single) {
+      if (ch === "'") {
+        single = false;
+      } else {
+        word += ch;
+      }
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    // A substitution is its own command list, however it is quoted.
+    if (ch === '$' && command[i + 1] === '(') {
+      const end = matchingParen(command, i + 1);
+      out.push(...commandLeaders(command.slice(i + 2, end)));
+      i = end;
+      continue;
+    }
+    if (ch === '`') {
+      const end = command.indexOf('`', i + 1);
+      const stop = end === -1 ? command.length : end;
+      out.push(...commandLeaders(command.slice(i + 1, stop)));
+      i = stop;
+      continue;
+    }
+    if (double) {
+      if (ch === '"') {
+        double = false;
+      } else {
+        word += ch;
+      }
+      continue;
+    }
+    if (ch === "'") {
+      single = true;
+      continue;
+    }
+    if (ch === '"') {
+      double = true;
+      continue;
+    }
+    if (SHELL_OPERATORS.has(ch) || ch === '{' || ch === '}' || ch === '\n') {
+      newCommand();
+      continue;
+    }
+    if (ch === ' ' || ch === '\t') {
+      endWord();
+      continue;
+    }
+    word += ch;
+  }
+  endWord();
+  return out;
+}
+
+// The index of the `)` closing the `(` at `open`, counting nesting; the end of
+// the string when it is unbalanced.
+function matchingParen(text: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === '(') {
+      depth += 1;
+    } else if (text[i] === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        return i;
+      }
+    }
+  }
+  return text.length;
+}
+
+function innerTools(records: readonly ArmRecord[]): string[] {
+  const out = new Set<string>();
+  for (const record of records) {
+    if (record.phase !== 'post' || record.check !== 'command-succeeds') {
+      continue;
+    }
+    for (const command of record.args) {
+      for (const tool of commandLeaders(command)) {
+        out.add(tool);
+      }
+    }
+  }
+  return [...out].sort();
+}
+
+// An entry of the source whose tree must be byte-identical before and after.
+interface SourceHash {
+  path: string;
+  hash: string;
+}
+
+function hashSources(paths: string[]): SourceHash[] {
+  return paths.map((path) => ({ path, hash: hashTree(path) }));
+}
+
+function requireSourceUnchanged(before: SourceHash[], when: string): void {
+  for (const entry of before) {
+    if (hashTree(entry.path) !== entry.hash) {
+      throw new Error(`${entry.path} changed ${when}`);
+    }
+  }
+}
+
+// A symlink to a directory outside the run is a replay hazard, not a note: a
+// command the checks address through it would run outside the arm, where the
+// replay's guarantees end. Task 9 reports every external reference without
+// judging it; this is the layer that decides, and it refuses the run rather
+// than running arms whose reach it cannot describe.
+function requireNoExternalDirectories(
+  report: PointerReport,
+  armRoot: string,
+): void {
+  for (const reference of report.externalReferences) {
+    const resolved = resolveThrough(reference);
+    if (isDirectory(resolved)) {
+      throw new Error(
+        `${relative(armRoot, reference)} leads to a directory outside the run: ${resolved}`,
+      );
+    }
+  }
+}
+
+// No pointer and no symlink of either arm resolves into the retained source or
+// into the other arm. Checked after the phases have run, not only after the
+// clone: a check that wrote a pointer is exactly what this has to catch.
+function requireArmIsolated(armRoot: string, forbidden: string[]): void {
+  const real = realpathSync(armRoot);
+  const judge = (what: string, target: string): void => {
+    const resolved = resolveThrough(target);
+    for (const root of forbidden) {
+      if (contains(root, resolved)) {
+        throw new Error(`${what} resolves into ${root}: ${target}`);
+      }
+    }
+  };
+  for (const link of walkSymlinks(real)) {
+    const target = readlinkSync(link);
+    judge(link, isAbsolute(target) ? target : resolve(dirname(link), target));
+  }
+  for (const file of pointerFiles(real)) {
+    const value = readFileSync(file, 'utf8')
+      .trim()
+      .replace(/^gitdir: /, '');
+    judge(file, isAbsolute(value) ? value : resolve(dirname(file), value));
+  }
+}
+
+// A run the instrument declines to replay: a clone it could not vet, or a
+// workspace that reaches a directory outside the run. This is a per-run
+// outcome — the sweep names it and goes on — and it is deliberately a
+// different thing from a failure of the instrument itself (a source tree that
+// changed under the replay, an arm that reached into the other), which is
+// never a result and is not caught here.
+class ReplayRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReplayRefusal';
+  }
+}
+
+function refusable<T>(step: () => T): T {
+  try {
+    return step();
+  } catch (err) {
+    throw new ReplayRefusal(err instanceof Error ? err.message : String(err));
+  }
+}
+
+// An external reference as the retained artifact names it: where it sits in
+// the arm and what it leads to, since whether the reference is benign is a
+// judgement about its target.
+function describeReference(path: string, armRoot: string): string {
+  const where = relative(armRoot, path);
+  const stat = lstatSync(path, { throwIfNoEntry: false });
+  return stat?.isSymbolicLink() === true
+    ? `${where} -> ${readlinkSync(path)}`
+    : where;
+}
+
+function resolveRoots(opts: ReplayOptions): {
+  scenariosRoot: string;
+  agentsDir: string;
+  checksFile: string;
+} {
+  return {
+    scenariosRoot: opts.scenariosRoot ?? join(opts.repoRoot, 'scenarios'),
+    agentsDir: opts.agentsDir ?? join(opts.repoRoot, 'coding-agents'),
+    checksFile: opts.checksFile ?? 'checks.sh',
+  };
+}
+
+/** Replay one recorded run through both arms. The retained record and
+ *  workspace are hashed before the first clone and re-checked after every step
+ *  that could have written to them; a replay that touched retained evidence
+ *  throws rather than returning a result. */
+export async function replayRun(
+  run: EligibleRun,
+  opts: ReplayOptions,
+): Promise<ReplayResult> {
+  const { scenariosRoot, agentsDir, checksFile } = resolveRoots(opts);
+  const checksSh = join(scenariosRoot, run.scenario, checksFile);
+  if (!existsSync(checksSh)) {
+    // Nothing to ask of this run, which is a refusal rather than a failure:
+    // the sweep names it and goes on.
+    throw new ReplayRefusal(`${checksSh} does not exist`);
+  }
+  const parsed = parseRunDirName(basename(run.runDir), knownAgents(agentsDir));
+  const agent = parsed?.agent ?? opts.codingAgent;
+  if (agent === undefined) {
+    throw new Error(`${run.runId}: no coding agent in the run dir name`);
+  }
+  const cfg = offlineAgentConfig(agentsDir, agent);
+
+  const sources = [...new Set([run.runDir, run.workspaceRoot])];
+  const before = hashSources(sources);
+
+  const armLRoot = opts.scratch();
+  const reportL = refusable(() => cloneWorkspace(run, armLRoot));
+  requireSourceUnchanged(before, 'while Arm L was cloned');
+  refusable(() => requireNoExternalDirectories(reportL, armLRoot));
+  const armNRoot = opts.scratch();
+  refusable(() => cloneWorkspace(run, armNRoot));
+  requireSourceUnchanged(before, 'while Arm N was cloned');
+
+  const trajectory = join(run.runDir, 'trajectory.json');
+  const transcript = existsSync(trajectory)
+    ? { transcriptPath: trajectory }
+    : {};
+  const common = { checksSh, repoRoot: opts.repoRoot, codingAgent: agent };
+  const armL = await runArm(
+    'legacy',
+    armLRoot,
+    phasesFor({
+      ...common,
+      ...transcript,
+      armRoot: armLRoot,
+      configDir: agentConfigDir(cfg, join(armLRoot, 'home')),
+    }),
+  );
+  const armN = await runArm(
+    'projected',
+    armNRoot,
+    phasesFor({
+      ...common,
+      ...transcript,
+      armRoot: armNRoot,
+      configDir: agentConfigDir(cfg, join(armNRoot, 'home')),
+    }),
+  );
+  requireSourceUnchanged(before, 'while the arms ran');
+  const sourceReal = sources.map((path) => realpathSync(path));
+  requireArmIsolated(armLRoot, [...sourceReal, realpathSync(armNRoot)]);
+  requireArmIsolated(armNRoot, [...sourceReal, realpathSync(armLRoot)]);
+
+  // The prerequisite. The expected set comes from the current checks.sh text
+  // alone; the history comes from the record; neither is read off an arm.
+  const sourceHome = join(run.workspaceRoot, 'home');
+  const roots: SourceRoots = {
+    runDir: run.runDir,
+    workspaceRoot: run.workspaceRoot,
+    agentHome: sourceHome,
+    configDir: agentConfigDir(cfg, sourceHome),
+  };
+  const { expected, unparsedLines } = expectedPostChecks(
+    readFileSync(checksSh, 'utf8'),
+    roots,
+  );
+  const needles = sourceNeedles(roots);
+  const history = readVerdict(join(run.runDir, 'verdict.json'))?.checks ?? [];
+  const historical = (
+    phase: 'pre' | 'post',
+  ): { key: string; described: string; check: string }[] =>
+    history
+      .filter((c: CheckRecord) => c.phase === phase && c.passed)
+      .map((c: CheckRecord) => {
+        const args = canonicalizeAgainst([...c.args], needles);
+        return {
+          key: recordKey(c.check, args, c.negated),
+          described: describeCheck(c.check, args, c.negated),
+          check: c.check,
+        };
+      });
+
+  const armKey = (r: ArmRecord): string =>
+    recordKey(r.check, r.args, r.negated);
+  const armPost = armL.canonical.filter((r) => r.phase === 'post');
+  const unmatchedHistory: string[] = [];
+  const unmatchedChecks = new Set<string>();
+  let degradedCheck: string | undefined;
+  for (const entry of historical('post')) {
+    if (!expected.has(entry.key)) {
+      unmatchedHistory.push(entry.described);
+      unmatchedChecks.add(entry.check);
+      continue;
+    }
+    const current = armPost.find((r) => armKey(r) === entry.key);
+    if (
+      degradedCheck === undefined &&
+      (current === undefined || !current.passed)
+    ) {
+      degradedCheck = entry.described;
+    }
+  }
+  if (degradedCheck === undefined) {
+    for (const line of unparsedLines) {
+      if (unparsedCandidates(line).some((c) => unmatchedChecks.has(c))) {
+        degradedCheck = `unparsed: ${line}`;
+        break;
+      }
+    }
+  }
+
+  const armPre = armL.canonical.filter((r) => r.phase === 'pre');
+  const preDivergencesFromHistory = historical('pre')
+    .filter(
+      (entry) => armPre.find((r) => armKey(r) === entry.key)?.passed === false,
+    )
+    .map((entry) => entry.described);
+
+  const comparison = compareArms(armL, armN);
+  const status: ReplayResult['status'] =
+    degradedCheck !== undefined
+      ? 'degraded-archive'
+      : comparison.equal
+        ? 'equal'
+        : 'diverged';
+  return {
+    scenario: run.scenario,
+    runId: run.runId,
+    status,
+    ...(comparison.firstDivergence !== undefined
+      ? { firstDivergence: comparison.firstDivergence }
+      : {}),
+    ...(degradedCheck !== undefined ? { degradedCheck } : {}),
+    preDivergencesFromHistory,
+    unmatchedHistory,
+    unparsedLines,
+    tools: innerTools(armL.raw),
+    armL,
+    armN,
+    externalReferences: reportL.externalReferences
+      .map((path) => describeReference(path, armLRoot))
+      .sort(),
+  };
+}
+
+// Seed one fixture arm: `workspace/` into the arm's coding-agent-workdir and
+// `workspace-home/` into its home, with each `*.tmpl` written out under its
+// stem with this arm's home substituted. The home path is per arm, so a
+// fixture that has to name it cannot ship the text.
+function seedFixtureArm(fixtureDir: string, armRoot: string): string {
+  const workdir = join(armRoot, 'coding-agent-workdir');
+  const home = join(armRoot, 'home');
+  mkdirSync(workdir, { recursive: true });
+  mkdirSync(home, { recursive: true });
+  // The runner pre-creates these for every live run; an inner command under
+  // the projected environment is pointed at them.
+  for (const dir of xdgHomeSubdirs(home)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  for (const [from, to] of [
+    ['workspace', workdir],
+    ['workspace-home', home],
+  ] as const) {
+    const source = join(fixtureDir, from);
+    if (!existsSync(source)) {
+      continue;
+    }
+    cpSync(source, to, { recursive: true });
+  }
+  const templates: string[] = [];
+  walk(armRoot, (path, entry) => {
+    if (entry.isFile() && path.endsWith('.tmpl')) {
+      templates.push(path);
+    }
+  });
+  for (const template of templates) {
+    const text = readFileSync(template, 'utf8')
+      .split('__AGENT_HOME__')
+      .join(home);
+    writeFileSync(template.slice(0, -'.tmpl'.length), text);
+    rmSync(template);
+  }
+  return armRoot;
+}
+
+/** Replay a synthetic fixture through both arms. There is no recorded verdict,
+ *  so there is no prerequisite to apply and nothing to list as unmatched: a
+ *  fixture is a counterfactual written in the current check format, and arm
+ *  equality is the whole of what it claims. */
+export async function replayFixture(
+  fixtureDir: string,
+  opts: ReplayOptions & { armLMutate?: EnvMutation },
+): Promise<ReplayResult> {
+  const { agentsDir, checksFile } = resolveRoots(opts);
+  const agent = opts.codingAgent;
+  if (agent === undefined) {
+    throw new Error(`${fixtureDir}: a synthetic fixture needs a coding agent`);
+  }
+  const cfg = offlineAgentConfig(agentsDir, agent);
+  const checksSh = join(fixtureDir, checksFile);
+  if (!existsSync(checksSh)) {
+    // Without this the phase would fail to source anything, both arms would
+    // crash identically, and the fixture would report `equal` while proving
+    // nothing — which is precisely the vacuous pass this instrument refuses.
+    throw new Error(`${checksSh} does not exist`);
+  }
+  // A fixture stands in for a scenario the corpus cannot cover, so it names
+  // that scenario; without the file it stands only for itself.
+  const named = join(fixtureDir, 'scenario');
+  const scenario = existsSync(named)
+    ? readFileSync(named, 'utf8').trim()
+    : basename(fixtureDir);
+  const common = { checksSh, repoRoot: opts.repoRoot, codingAgent: agent };
+  const armLRoot = seedFixtureArm(fixtureDir, opts.scratch());
+  const armNRoot = seedFixtureArm(fixtureDir, opts.scratch());
+  const armL = await runArm(
+    'legacy',
+    armLRoot,
+    phasesFor({
+      ...common,
+      armRoot: armLRoot,
+      configDir: agentConfigDir(cfg, join(armLRoot, 'home')),
+    }),
+    opts.armLMutate,
+  );
+  const armN = await runArm(
+    'projected',
+    armNRoot,
+    phasesFor({
+      ...common,
+      armRoot: armNRoot,
+      configDir: agentConfigDir(cfg, join(armNRoot, 'home')),
+    }),
+  );
+  const comparison = compareArms(armL, armN);
+  // A fixture is evidence only if it ran. A post phase that crashed, or that
+  // emitted no record at all, fails the same way in both arms; counting that
+  // as `equal` would let a broken fixture clear a tool or a migrated scenario
+  // off the coverage list. `degraded-archive` is how coverage() says "this
+  // result does not count".
+  const vacuous = [armL, armN].find(
+    (arm) =>
+      arm.exitCodes.post !== 0 || !arm.raw.some((r) => r.phase === 'post'),
+  );
+  return {
+    scenario,
+    runId: null,
+    status:
+      vacuous !== undefined
+        ? 'degraded-archive'
+        : comparison.equal
+          ? 'equal'
+          : 'diverged',
+    ...(comparison.firstDivergence !== undefined
+      ? { firstDivergence: comparison.firstDivergence }
+      : {}),
+    ...(vacuous !== undefined
+      ? {
+          degradedCheck: `the post phase emitted no usable record (exit ${vacuous.exitCodes.post})`,
+        }
+      : {}),
+    preDivergencesFromHistory: [],
+    unmatchedHistory: [],
+    unparsedLines: [],
+    tools: innerTools(armL.raw),
+    armL,
+    armN,
+    externalReferences: [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// the sweep
+// ---------------------------------------------------------------------------
+
+interface ReplayArgs {
+  results: string;
+  scenarios: string;
+  agentsDir: string;
+  report?: string;
+  synthetic: string[];
+  only: string[];
+}
+
+// A run whose clone the instrument would not vet. It is a per-run outcome, not
+// a sweep abort: the run is named with its reason and the sweep goes on, and
+// it simply never joins the replayable set the floor is measured against.
+interface CloneRefusal {
+  scenario: string;
+  runId: string;
+  message: string;
+}
+
+interface ReplayReport {
+  resultsRoot: string;
+  scenariosRoot: string;
+  eligibleCount: number;
+  selectedCount: number;
+  coverage: ReturnType<typeof coverage>;
+  results: ReplayResult[];
+  ineligible: Ineligible[];
+  refused: CloneRefusal[];
+  layouts: Record<string, string>;
+}
+
+function parseArgs(
+  argv: readonly string[],
+): { args: ReplayArgs } | { error: string } {
+  const args: ReplayArgs = {
+    results: 'results',
+    scenarios: 'scenarios',
+    agentsDir: 'coding-agents',
+    synthetic: [],
+    only: [],
+  };
+  let i = 0;
+  while (i < argv.length) {
+    const flag = argv[i] ?? '';
+    const value = argv[i + 1];
+    if (value === undefined || value.startsWith('--')) {
+      return { error: `replay: ${flag} needs a value` };
+    }
+    if (flag === '--results') {
+      args.results = value;
+    } else if (flag === '--scenarios') {
+      args.scenarios = value;
+    } else if (flag === '--agents-dir') {
+      args.agentsDir = value;
+    } else if (flag === '--report') {
+      args.report = value;
+    } else if (flag === '--synthetic') {
+      args.synthetic.push(value);
+    } else if (flag === '--only') {
+      args.only.push(value);
+    } else {
+      return { error: `replay: unknown argument ${flag}` };
+    }
+    i += 2;
+  }
+  return { args };
+}
+
+function cell(text: string): string {
+  return text.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+}
+
+function list(values: readonly string[]): string {
+  return values.length === 0 ? 'none' : values.join(', ');
+}
+
+function renderReport(report: ReplayReport): string {
+  const cov = report.coverage;
+  const lines = [
+    '# Corpus replay',
+    '',
+    `- results root: \`${report.resultsRoot}\``,
+    `- scenarios root: \`${report.scenariosRoot}\``,
+    `- eligible: ${report.eligibleCount} (replayed: ${report.selectedCount}, ineligible: ${report.ineligible.length})`,
+    `- replayable ${cov.replayable} of eligible ${report.selectedCount}, floor ${cov.floor}`,
+    `- uncovered tools: ${list(cov.uncoveredTools)}`,
+    `- migrated scenarios not covered: ${list(cov.migratedUncovered)}`,
+    `- clone-refused: ${report.refused.length}`,
+    `- coverage ok: ${cov.ok}`,
+    '',
+    '| scenario | run id | layout | pre | post | status | divergence / degraded | external refs | pre divergences | unmatched history | unparsed |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+  ];
+  for (const r of report.results) {
+    const pre = r.armL.raw.filter((x) => x.phase === 'pre').length;
+    const post = r.armL.raw.filter((x) => x.phase === 'post').length;
+    lines.push(
+      `| ${cell(r.scenario)} | ${cell(r.runId ?? 'synthetic')} | ${cell(r.runId === null ? 'fixture' : (report.layouts[r.runId] ?? '?'))} | ${pre} | ${post} | ${r.status} | ${cell(r.firstDivergence ?? r.degradedCheck ?? '')} | ${cell(list(r.externalReferences))} | ${cell(list(r.preDivergencesFromHistory))} | ${cell(list(r.unmatchedHistory))} | ${cell(list(r.unparsedLines))} |`,
+    );
+  }
+  if (report.refused.length > 0) {
+    lines.push('', '## Clone refused', '');
+    for (const refusal of report.refused) {
+      lines.push(`- ${refusal.runId}: ${refusal.message}`);
+    }
+  }
+  if (report.ineligible.length > 0) {
+    lines.push('', '## Ineligible', '');
+    for (const entry of report.ineligible) {
+      lines.push(
+        `- ${entry.scenario}: ${entry.reason}${entry.runId === undefined ? '' : ` (${entry.runId})`}`,
+      );
+    }
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+function summary(report: ReplayReport): string {
+  const cov = report.coverage;
+  const count = (status: ReplayResult['status']): number =>
+    report.results.filter((r) => r.status === status).length;
+  return [
+    `replayable ${cov.replayable} of eligible ${report.selectedCount}, floor ${cov.floor}`,
+    `equal: ${count('equal')}  diverged: ${count('diverged')}  degraded-archive: ${count('degraded-archive')}  clone-refused: ${report.refused.length}`,
+    `uncovered tools: ${list(cov.uncoveredTools)}`,
+    `migrated scenarios not covered: ${list(cov.migratedUncovered)}`,
+    // A refusal is a run the sweep could not replay; naming it here keeps it
+    // out of the silence the floor alone would leave it in.
+    ...report.refused.map((r) => `clone-refused ${r.runId}: ${r.message}`),
+    ...report.results
+      .filter((r) => r.status !== 'equal')
+      .map(
+        (r) =>
+          `${r.status} ${r.runId ?? r.scenario}: ${r.firstDivergence ?? r.degradedCheck ?? ''} (arms ${r.armL.root}, ${r.armN.root})`,
+      ),
+    '',
+  ].join('\n');
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+// An arm whose result is `equal` has nothing left to say; one that diverged or
+// degraded is what a triage reads, so it stays and the report names it.
+function releaseArms(result: ReplayResult): void {
+  if (result.status !== 'equal') {
+    return;
+  }
+  for (const root of [result.armL.root, result.armN.root]) {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+async function main(argv: readonly string[]): Promise<number> {
+  const parsed = parseArgs(argv);
+  if ('error' in parsed) {
+    process.stderr.write(`${parsed.error}\n`);
+    return 2;
+  }
+  const repoRoot = resolve(import.meta.dir, '..', '..');
+  const resultsRoot = resolve(parsed.args.results);
+  const scenariosRoot = resolve(parsed.args.scenarios);
+  const agentsDir = resolve(parsed.args.agentsDir);
+  const { eligible, ineligible } = eligibleRuns(
+    resultsRoot,
+    scenariosRoot,
+    knownAgents(agentsDir),
+  );
+  const selected =
+    parsed.args.only.length === 0
+      ? eligible
+      : eligible.filter((run) => parsed.args.only.includes(run.scenario));
+  const layouts: Record<string, string> = {};
+  for (const run of selected) {
+    layouts[run.runId] = run.layout;
+  }
+
+  const results: ReplayResult[] = [];
+  const refused: CloneRefusal[] = [];
+  const opts: ReplayOptions = {
+    repoRoot,
+    scenariosRoot,
+    agentsDir,
+    scratch: () => mkdtempSync(join(tmpdir(), 'replay-arm-')),
+  };
+  let instrumentFailure: string | undefined;
+  if (eligible.length > 0) {
+    for (const run of selected) {
+      try {
+        const result = await replayRun(run, opts);
+        results.push(result);
+        releaseArms(result);
+      } catch (err) {
+        if (!(err instanceof ReplayRefusal)) {
+          // The replay touched retained evidence, or an arm reached into the
+          // other. Nothing after this is trustworthy, so the sweep stops with
+          // the report it has.
+          instrumentFailure = `${run.runId}: ${errorMessage(err)}`;
+          break;
+        }
+        refused.push({
+          scenario: run.scenario,
+          runId: run.runId,
+          message: err.message,
+        });
+      }
+    }
+    for (const dir of parsed.args.synthetic) {
+      if (instrumentFailure !== undefined) {
+        break;
+      }
+      try {
+        // A fixture exercises the two environments, not an agent: the only
+        // thing its config contributes is home_config_subdir, and the plan's
+        // agent of record supplies it.
+        const result = await replayFixture(resolve(dir), {
+          ...opts,
+          codingAgent: 'claude-auto',
+        });
+        results.push(result);
+        releaseArms(result);
+      } catch (err) {
+        instrumentFailure = `${dir}: ${errorMessage(err)}`;
+      }
+    }
+  }
+
+  const report: ReplayReport = {
+    resultsRoot,
+    scenariosRoot,
+    eligibleCount: eligible.length,
+    selectedCount: selected.length,
+    coverage: coverage(results, selected.length),
+    results,
+    ineligible,
+    refused,
+    layouts,
+  };
+  if (parsed.args.report !== undefined) {
+    const dir = resolve(parsed.args.report);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, 'replay.json'),
+      `${JSON.stringify(report, null, 2)}\n`,
+    );
+    writeFileSync(join(dir, 'replay.md'), renderReport(report));
+  }
+  process.stdout.write(summary(report));
+  if (instrumentFailure !== undefined) {
+    process.stderr.write(
+      `replay: instrument failure on ${instrumentFailure}\n`,
+    );
+    return 1;
+  }
+
+  // An empty or wrong results root is an instrument error, not a result: there
+  // is nothing to have passed.
+  if (eligible.length === 0) {
+    process.stderr.write(
+      `replay: no eligible run under ${resultsRoot}; nothing was replayed\n`,
+    );
+    return 2;
+  }
+  // A diverged synthetic fails the sweep as a diverged corpus run does: a
+  // counterfactual that does not hold is exactly what the gate is buying.
+  return report.coverage.ok && results.every((r) => r.status !== 'diverged')
+    ? 0
+    : 1;
+}
+
+if (import.meta.main) {
+  process.exit(await main(process.argv.slice(2)));
 }
