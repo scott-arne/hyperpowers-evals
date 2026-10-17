@@ -25,13 +25,18 @@ missing. Everything it does to the corpus is read-only: the instrument hashes
 each record and workspace before the first clone and re-checks after every
 step, and stops the sweep if either changed. Nothing changed in this run.
 
-Run on 2026-10-16, 15:27:03 to 15:36:30 -0700 (9 min 27 s), host load average
-between 51 and 64 throughout, with no live evals and nothing else heavy on the
+Run on 2026-10-16, 17:22:38 to 17:38:08 -0700 (15 min 30 s), host load average
+between 38 and 48 throughout, with no live evals and nothing else heavy on the
 host. Corpus: `/Users/johnss51/Development/agents/hyperpowers/evals/results`.
-The sweep immediately before it (14:39:49 to 15:11:32, 31 min 43 s on a cold
-page cache) produced the same counts, the same uncovered tool and the same
-refusal; it is not retained because two of its fixture files were reformatted
-afterwards for `biome ci`, which no check reads.
+
+Two earlier sweeps the same afternoon (14:39:49 and 15:27:03) produced exactly
+these counts but exited 1, because `go` was not installed on the host and the
+`tool-go` fixture could not run; see "The `go` re-record" below. Comparing the
+exit-1 record with this one, result by result, `tool-go` is the only row that
+differs — status,
+records, exit codes, pre divergences, unmatched history, external references
+and tool lists are identical for all 70 others, as are the eligibility,
+refusal and layout lists.
 
 **It must be run outside this host's command sandbox.** One recorded
 workspace (`codex-gate-converges-on-reraise-claude-bedrock-20260701T022647Z-fa24`)
@@ -39,25 +44,26 @@ holds `home/.aws/cli/cache` as a symlink into the operator's `~/.aws`, which
 the sandbox denies reading. The instrument has to stat that target to judge the
 reference, and the sandbox's `EPERM` is — correctly — an instrument failure
 rather than a result, so a sandboxed sweep stops there with 38 runs unreplayed.
-The first attempt (13:30) did exactly that; the run of record was taken outside
-the sandbox.
+The first attempt (13:30) did exactly that; every sweep since, this record
+included, was run outside the sandbox.
 
 ### The result
 
     replayable 57 of eligible 61, floor 41
-    equal: 67  diverged: 0  degraded-archive: 4  clone-refused: 1
-    uncovered tools: go
+    equal: 68  diverged: 0  degraded-archive: 3  clone-refused: 1
+    uncovered tools: none
     migrated scenarios not covered: none
-    replay exit: 1
+    replay exit: 0
 
 The full table is `replay/replay.md` (one row per run: layout, record counts,
 status, external references, pre divergences, unmatched history); the machine
 form, including both arms' raw and canonical records, is `replay/replay.json`;
 the console output is `replay/stdout.txt`.
 
-The exit is 1 for one reason: `go` is not installed on this host, so no run and
-no fixture can exercise it. See "The one uncovered tool" below. Every other
-class the instrument reports is resolved.
+The exit is 0: the floor is met, every tool in the instrument's inventory and
+every migrated scenario is covered, and nothing diverged. The three
+`degraded-archive` results are runs the archive can no longer answer for, which
+`coverage()` takes out of the counting sets rather than counting as passes.
 
 ### The floor
 
@@ -78,7 +84,8 @@ class the instrument reports is resolved.
   therefore what the eligibility pass produced, not something the guard moved.
 - The 11 synthetic fixtures do not count toward the floor (a counterfactual is
   not a replay of retained evidence); they count toward tool and migrated-
-  scenario coverage, and `coverage()` requires them to be `equal` too.
+  scenario coverage, and `coverage()` requires them to be `equal` too. All 11
+  are.
 
 ### Divergences
 
@@ -106,16 +113,15 @@ same live directory outside the run. The run is named and the sweep goes on; it
 leaves the replayable set, and the floor is measured against the eligible set,
 so the refusal costs coverage rather than hiding it.
 
-### Degraded archives (4)
+### Degraded archives (3)
 
-| result | the check that could not be reproduced |
+| result | the check the control arm could not reproduce |
 | --- | --- |
 | `brainstorming-asks-tooling-question-claude-auto-20260909T183358Z-b38f` | `grep -qE "^task kind=(spec-review\|document-review) " "$QUORUM_AGENT_CONFIG_DIR/plugins/cache/openai-codex/codex/stub/scripts/calls.log"` |
 | `codex-gate-re-review-focus-is-fixed-claude-auto-20260908T180216Z-fa95` | `node "$(dirname "$QUORUM_AGENT_CONFIG_DIR")/.focus-assert/focus-assert.mjs" launched` |
 | `codex-gate-stale-broker-attributed-claude-vertex-20260723T163110Z-3897` | `find "$QUORUM_AGENT_CONFIG_DIR/plugins/data/codex-openai-codex/state" -type f -name "broker.json" \| grep -q .` |
-| `tool-go` (synthetic) | `go version` |
 
-The three corpus demotions have one cause: `scripts/strip-runs` deletes
+All three have one cause: `scripts/strip-runs` deletes
 `home/.claude/plugins/{cache,data,marketplaces}` from a completed run, and each
 of those checks reads something under them — the Codex stub's `calls.log`, the
 `.focus-assert` manifest's `pluginRoot`/`launchDir` (both inside the stub
@@ -127,8 +133,6 @@ prerequisite working, not a regression. The counterfactual fixtures added for
 the degraded pre shapes (below) read the same stripped directories, and
 one of them — the `broker.json` `find` — is literally the shape of the third
 post check here.
-
-`tool-go` is the fixture for the uncovered `go`, which this host cannot run.
 
 ### Pre divergences from history
 
@@ -203,7 +207,8 @@ In the plan's resolution order.
      `npx --no-install playwright test`.
    - `test/fixtures/replay-synthetic/tool-python3` —
      `python3 -c "import sys; sys.exit(0)"`.
-   - `test/fixtures/replay-synthetic/tool-go` — `go version`. See below.
+   - `test/fixtures/replay-synthetic/tool-go` — `go version`. It degraded on
+     the first records, for want of a toolchain; see "The `go` re-record".
 
    `pytest` needed no fixture: the shipped `./.venv/bin/pytest` of
    `verification-phantom-completion` and `receiving-code-review-pushback` is
@@ -250,29 +255,33 @@ In the plan's resolution order.
    migrated scenario, which item 3 covers with a fixture; the other two need
    nothing further.
 
-### The one uncovered tool
+### The `go` re-record
 
 `go` is in the instrument's inventory because `sdd-go-fractals-opus48` and
 `sdd-go-fractals-gpt55` run `go test ./...` in their post phase. Neither
-scenario has ever been run on this host and **no Go toolchain is installed
-here** (nothing on `PATH`, no `/usr/local/go`, no Homebrew cellar, no
-micromamba env). The fixture `tool-go` therefore degrades: `go version` fails
-identically in both arms (`go: command not found`), so the two arms compare
-equal and the instrument demotes the fixture rather than let a failed
-counterfactual clear a tool off the list. `go` stays uncovered, which is the
-whole of why the sweep exits 1.
+scenario has a run in the corpus, so only a fixture can exercise it — and when
+the first two sweeps ran (2026-10-16, 14:39 and 15:27) no Go toolchain was
+installed on this host. `tool-go` degraded there: `go version` failed
+identically in both arms, the instrument declined to let a failed
+counterfactual clear a tool off the list, and the sweep exited 1 with
+`uncovered tools: go` as its only unmet condition. That history is kept
+deliberately — it is what the evidence said before the host changed, and the
+exit-1 artifacts themselves are the previous commit's (`c7728718a`), which this
+directory's files replace. A stub named `go` on `PATH` would have cleared the
+inventory while measuring nothing, and was not taken.
 
-This is a gap in the evidence, not a divergence: nothing suggests `go` behaves
-differently under the new environment, and nothing here measured it. Closing it
-needs a toolchain on the host — install Go and re-run the command of record
-unchanged; `tool-go` is already wired into it, and the sweep then exits 0 if
-nothing else regressed. The alternative, a stub named `go` on `PATH`, would
-clear the inventory while measuring nothing about Go, so it was not taken.
+Go 1.27.2 (`/opt/homebrew/bin/go`, `go1.27.2 darwin/arm64`) was installed on the
+host on 2026-10-16, and the command of record was re-run unchanged at 17:22:38.
+`tool-go` passes in both arms, `uncovered tools` is empty and the recorded exit
+is 0. Nothing in the instrument, the scenarios or the fixtures changed between
+the two runs, and `tool-go` is the only result that differs.
 
-For the record, the environment-sensitive part of a real `go test` is exactly
-the part this replay cannot see: under the new inner environment `HOME` is the
-arm's agent home, so `GOCACHE`, `GOMODCACHE` and `GOPATH` resolve under it, and
-a module cache seeded in the operator's home would be invisible.
+A fixture proves the tool runs under the new environment, which is what the
+inventory asks. It does not reach what a real `go test ./...` would exercise:
+under the new inner environment `HOME` is the arm's agent home, so `GOCACHE`,
+`GOMODCACHE` and `GOPATH` resolve under it, and a module cache seeded in the
+operator's home would be invisible. Measuring that needs a `sdd-go-fractals-*`
+run in the corpus, which there is not.
 
 ### Files
 

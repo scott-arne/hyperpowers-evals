@@ -4,10 +4,10 @@
 - scenarios root: `/Users/johnss51/Development/agents/hyperpowers/evals/.worktrees/agent-write-isolation-relocation/scenarios`
 - eligible: 61 (replayed: 61, ineligible: 37)
 - replayable 57 of eligible 61, floor 41
-- uncovered tools: go
+- uncovered tools: none
 - migrated scenarios not covered: none
 - clone-refused: 1
-- coverage ok: false
+- coverage ok: true
 
 | scenario | run id | layout | pre | post | status | divergence / degraded | external refs | pre divergences | unmatched history | unparsed |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -75,7 +75,7 @@
 | codex-approach-gate-fires-on-architecture | synthetic | fixture | 0 | 1 | equal |  | none | none | none | none |
 | tool-npx | synthetic | fixture | 0 | 1 | equal |  | none | none | none | none |
 | tool-python3 | synthetic | fixture | 0 | 1 | equal |  | none | none | none | none |
-| tool-go | synthetic | fixture | 0 | 1 | degraded-archive | command-succeeds ["go version"] | none | none | none | none |
+| tool-go | synthetic | fixture | 0 | 1 | equal |  | none | none | none | none |
 | codex-plan-gate-algorithm-locked-after-round1 | synthetic | fixture | 0 | 1 | equal |  | none | none | none | none |
 | codex-gate-stale-broker-attributed | synthetic | fixture | 0 | 1 | equal |  | none | none | none | none |
 | codex-stub-installpath | synthetic | fixture | 0 | 2 | equal |  | none | none | none | none |
