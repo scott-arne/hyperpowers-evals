@@ -498,19 +498,26 @@ never becomes `fail`.
 
 ### The environment available to checks
 
-`runPhase` builds the child env (`src/checks/index.ts`); checks see:
+`runPhase` builds the child env from one allowlist (`src/checks/env-allowlist.ts`).
+There are two layers: the **outer** shell that sources the prelude and
+`checks.sh`, and the **inner** shell `command-succeeds` spawns, which may run
+code the agent wrote. Checks see:
 
-| Var | When | Use |
-|---|---|---|
-| `QUORUM_REPO_ROOT` | always | the prelude resolves the dispatchers from it |
-| `QUORUM_RECORD_SINK` | always | where records are appended |
-| `QUORUM_AGENT_CONFIG_DIR` | always | the Coding-Agent's isolated config dir (bootstrap verbs) |
-| `QUORUM_TRANSCRIPT_PATH` | **post only** | the captured `trajectory.json` (transcript verbs load it) |
-| `QUORUM_RUN_DIR` | **post only** | the run dir, for reading sibling artifacts |
-| `$QUORUM_WORKDIR` | **never** | checks run with **cwd = the workdir**; use workdir-relative paths. Referencing it is a hard `quorum check` failure. |
+| Var | Layer | When | Use |
+|---|---|---|---|
+| `QUORUM_REPO_ROOT` | outer | always | the prelude resolves the dispatchers from it |
+| `QUORUM_RECORD_SINK` | outer | always | where records are appended; never reaches an inner command |
+| `QUORUM_AGENT_CONFIG_DIR` | outer, inner | always | the Coding-Agent's isolated config dir (bootstrap verbs) |
+| `QUORUM_AGENT_HOME` | outer, inner | always | the Coding-Agent's throwaway home; also the inner shell's `HOME` |
+| `QUORUM_CODING_AGENT` | outer, inner | always | the coding-agent config name, for per-agent dispatch |
+| `QUORUM_TRANSCRIPT_PATH` | outer | **post only** | the captured `trajectory.json` (transcript verbs load it) |
+| `QUORUM_RUN_DIR` | outer | pre and post | the record directory (the runner passes it to both phases, `src/runner/index.ts:1159-1167, 1524-1533`; the table's former "post only" did not match production); **outer-only** — expand it with double quotes if an inner command needs a record path. A single-quoted `$QUORUM_RUN_DIR` inside `command-succeeds` is a hard `quorum check` failure |
+| `$QUORUM_WORKDIR` | — | **never** | checks run with **cwd = the workdir**; use workdir-relative paths. Referencing it is a hard `quorum check` failure. |
 
-For sibling run artifacts in a post-check, use `$QUORUM_RUN_DIR`; do not guess a
-relative path up out of the workdir.
+The inner shell runs under the agent's throwaway home (`HOME`, `XDG_*`,
+`TMPDIR` from `QUORUM_AGENT_HOME`), not the operator's, and receives no
+provider credentials. For the agent's home in a post-check, use
+`$QUORUM_AGENT_HOME`; do not guess a relative path up out of the workdir.
 
 ### Vacuous-pass verbs and empty capture
 
@@ -603,7 +610,7 @@ A run dir (`results/<scenario>-<agent>-<stamp>-<nonce>/`) holds:
 `verdict.json` (the composed verdict, schema `src/contracts/verdict.ts`);
 `trajectory.json` (the normalized ATIF transcript — what transcript verbs read);
 `coding-agent-token-usage.json` (priced usage, when obol can price);
-`coding-agent-workdir/` (the files the agent wrote);
+`workspaces/<run>/coding-agent-workdir/` (the files the agent wrote, beside the record rather than inside it);
 `home/` (the Coding-Agent's throwaway `$HOME`, including config and session
 logs); and `gauntlet-agent/` (the QA agent's `results/<runId>/run.jsonl` event
 stream plus `result.{json,md}`). Batches live
@@ -978,7 +985,7 @@ echo "${QUORUM_WORKDIR}-existing-worktree" > "${QUORUM_WORKDIR}/.quorum-launch-c
 ```
 
 Its `pre()` reaches the sibling with `command-succeeds 'git -C
-../coding-agent-workdir-existing-worktree …'`. Because cwd is the workdir, the
+../coding-agent-workdir-existing-worktree …'` (under results/workspaces/<run>/). Because cwd is the workdir, the
 sibling is one level up. `post()` asserts `git-count worktrees eq 2`; the agent
 must **not** create a third worktree.
 

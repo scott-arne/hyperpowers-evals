@@ -87,7 +87,7 @@ end — mid-run progress lives in the session transcript (count
 The coding agent's session is resumable:
 
 ```bash
-cd results/<run>/coding-agent-workdir
+cd results/workspaces/<run>/coding-agent-workdir
 CLAUDE_CONFIG_DIR=$PWD/../coding-agent-config \
   claude --resume <session-id> -p "Retrospective question: why did you ...?"
 ```
@@ -98,7 +98,7 @@ thinking" questions that transcripts can't.
 
 ## Comparing two runs' deliverables blind
 
-Copy both `coding-agent-workdir`s to neutral paths (`/tmp/<x>/alpha`, `beta`),
+Copy both `coding-agent-workdir`s (under results/workspaces/<run>/) to neutral paths (`/tmp/<x>/alpha`, `beta`),
 delete build artifacts, rotate which config gets which label between
 comparisons, and have a fresh judge (that knows nothing about the configs)
 score both against the fixture's own plan.md. Trust verdicts that survive

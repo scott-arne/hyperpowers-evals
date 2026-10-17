@@ -1,5 +1,9 @@
 # Coding-Agent Care And Feeding
 
+Paths: `<run>` is the record directory `results/<run>/`; `<workspace>` is the
+agent's tree `results/workspaces/<run>/`, which holds `coding-agent-workdir/`
+and `home/`.
+
 Use this guide to run and triage the agent CLIs that quorum tests. For scenario
 authoring, use [scenario-authoring.md](scenario-authoring.md). For adding a new
 agent target, use [adding-a-coding-agent.md](adding-a-coding-agent.md).
@@ -148,7 +152,7 @@ View results with `bun run quorum show <batch-id>`.
 
 ### Claude
 
-Claude targets seed `<run>/home/.claude` with project trust and API-key
+Claude targets seed `<workspace>/home/.claude` with project trust and API-key
 approval. Recent Claude Code boots straight to the prompt on
 `ANTHROPIC_API_KEY` plus that trust block, so quorum ships no committed Claude
 home skeleton.
@@ -163,7 +167,7 @@ bun run quorum run scenarios/00-quorum-smoke-hello-world --coding-agent claude
 
 ### Codex
 
-Codex seeds `<run>/home/.codex` from the operator's local ChatGPT subscription
+Codex seeds `<workspace>/home/.codex` from the operator's local ChatGPT subscription
 login at `~/.codex/auth.json`, or from `/auth/codex` in the container. Keep the
 host login current with `codex login`. Codex runs use
 `--dangerously-bypass-approvals-and-sandbox`; do not wire live Codex evals to
@@ -172,7 +176,7 @@ public CI.
 ### Gemini
 
 Gemini's config dir is collapsed onto the throwaway home. quorum seeds
-`<run>/home/.gemini`, writes a chmod-0600 runtime env file for API-key auth, and
+`<workspace>/home/.gemini`, writes a chmod-0600 runtime env file for API-key auth, and
 links Superpowers from `SUPERPOWERS_ROOT` with:
 
 ```bash
@@ -187,10 +191,10 @@ into the isolated run home.
 Useful evidence:
 
 ```text
-<run>/home/.gemini/extensions/superpowers/.gemini-extension-install.json
-<run>/home/.gemini/extensions/extension-enablement.json
-<run>/home/.gemini/extension_integrity.json
-<run>/home/.gemini/tmp/**/chats/**/*.json*
+<workspace>/home/.gemini/extensions/superpowers/.gemini-extension-install.json
+<workspace>/home/.gemini/extensions/extension-enablement.json
+<workspace>/home/.gemini/extension_integrity.json
+<workspace>/home/.gemini/tmp/**/chats/**/*.json*
 <run>/trajectory.json
 ```
 
@@ -201,7 +205,7 @@ and the raw Gemini transcripts.
 
 Antigravity runs host-side for now. The generated launcher pins the throwaway
 home and runs `agy` with `--dangerously-skip-permissions` and an explicit
-`--gemini_dir` under `<run>/home/.gemini`. quorum seeds host Gemini OAuth creds,
+`--gemini_dir` under `<workspace>/home/.gemini`. quorum seeds host Gemini OAuth creds,
 runs an isolated auth preflight, and installs the Superpowers plugin from
 `SUPERPOWERS_ROOT`.
 
@@ -211,9 +215,9 @@ running the eval. It cannot run from environment-only CI credentials.
 Useful evidence:
 
 ```text
-<run>/home/.gemini/config/plugins/superpowers/
-<run>/home/.gemini/antigravity-cli/brain/**/transcript.jsonl
-<run>/home/agy.log
+<workspace>/home/.gemini/config/plugins/superpowers/
+<workspace>/home/.gemini/antigravity-cli/brain/**/transcript.jsonl
+<workspace>/home/agy.log
 <run>/trajectory.json
 ```
 
@@ -222,7 +226,7 @@ and raw Antigravity transcripts.
 
 ### Kimi
 
-Kimi seeds config and host OAuth under `<run>/home/.kimi-code`. It does not read
+Kimi seeds config and host OAuth under `<workspace>/home/.kimi-code`. It does not read
 or symlink the host's `~/.kimi-code`. API-key auth comes from
 `KIMI_MODEL_API_KEY`; `KIMI_MODEL_NAME` is the only allowed host `KIMI_MODEL_*`
 override for reproducibility.
@@ -231,7 +235,7 @@ Kimi runs use the image or host `kimi` binary with `--yolo`. Raw wire logs can
 contain model outputs, tool arguments, and provider environment:
 
 ```text
-<run>/home/.kimi-code/sessions/**/wire.jsonl
+<workspace>/home/.kimi-code/sessions/**/wire.jsonl
 <run>/trajectory.json
 ```
 
@@ -259,21 +263,21 @@ snapshots `opencode session list --format json`, exports matching new sessions,
 and normalizes the exported files under:
 
 ```text
-<run>/home/.quorum/session-exports/[0-9]*-ses_*.json
-<run>/home/.quorum/session-exports/opencode-session-export-manifest.json
+<workspace>/home/.quorum/session-exports/[0-9]*-ses_*.json
+<workspace>/home/.quorum/session-exports/opencode-session-export-manifest.json
 <run>/trajectory.json
 ```
 
 ### Pi
 
 Pi seeds run-local auth, settings, and env files under
-`<run>/home/.pi/agent`:
+`<workspace>/home/.pi/agent`:
 
 ```text
-<run>/home/.pi/agent/auth.json
-<run>/home/.pi/agent/settings.json
-<run>/home/.pi/agent/pi.env
-<run>/home/.pi/agent/sessions/**/*.jsonl
+<workspace>/home/.pi/agent/auth.json
+<workspace>/home/.pi/agent/settings.json
+<workspace>/home/.pi/agent/pi.env
+<workspace>/home/.pi/agent/sessions/**/*.jsonl
 ```
 
 For API-key auth, set `PI_PROVIDER`, `PI_MODEL`, and `PI_API_KEY`. For
@@ -290,8 +294,8 @@ npm install -g pi-subagents
 
 ### Copilot
 
-Copilot seeds `<run>/home/.copilot`, writes a chmod-0600 `.copilot-env`, stages
-Superpowers under `<run>/home/.copilot/plugins/superpowers`, and launches with
+Copilot seeds `<workspace>/home/.copilot`, writes a chmod-0600 `.copilot-env`, stages
+Superpowers under `<workspace>/home/.copilot/plugins/superpowers`, and launches with
 `--allow-all`, `--no-auto-update`, `--no-remote`, and
 `--disable-builtin-mcps`.
 
@@ -303,7 +307,7 @@ credentials are rejected; remove userinfo from `HTTP_PROXY`, `HTTPS_PROXY`,
 Copilot's primary trace is strict session state:
 
 ```text
-<run>/home/.copilot/session-state/<run-session-id>/events.jsonl
+<workspace>/home/.copilot/session-state/<run-session-id>/events.jsonl
 <run>/trajectory.json
 ```
 
@@ -324,7 +328,7 @@ for the attribution atlas.
 
 For agent-specific failures:
 
-- Antigravity: confirm `agy --version`, confirm `agy --print "Reply with EXACTLY OK."`, inspect `<run>/home/agy.log`, plugin files, raw transcripts, and `trajectory.json`.
+- Antigravity: confirm `agy --version`, confirm `agy --print "Reply with EXACTLY OK."`, inspect `<workspace>/home/agy.log`, plugin files, raw transcripts, and `trajectory.json`.
 - OpenCode: confirm `opencode --version`, confirm provider auth with the one-shot preflight, inspect staged plugin files, the session export manifest, and `trajectory.json`.
 - Pi: confirm `pi --version`, confirm `pi-subagents` exists under `npm root -g`, inspect `pi.env`, `auth.json`, raw sessions, and `trajectory.json`.
 - Copilot: confirm `copilot --version`, confirm auth source availability, inspect staged plugin files, expected session-state events, and `trajectory.json`.

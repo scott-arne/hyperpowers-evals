@@ -45,7 +45,7 @@ Live evals run the Coding-Agent under test with broad execution power:
 - Copilot uses `--allow-all`.
 
 quorum pins each Coding-Agent's `HOME` (plus the XDG base dirs and `TMPDIR`)
-to a throwaway per-run home at `<run>/home` — the launcher splices in the
+to a throwaway per-run home at `results/workspaces/<run>/home` — the launcher splices in the
 `$QUORUM_HOME_ENV` token built by `src/agents/home-env.ts` (`xdgHomeEnv`, the
 single source of truth). Each agent's config dir is collapsed *under* that home
 (Claude `.claude`, Codex `.codex`, Gemini `.`, OpenCode `.`, Antigravity `.`,
@@ -200,8 +200,10 @@ messages.
 |---|---|---|
 | **Gauntlet** | General-purpose QA framework; the `gauntlet` CLI. A black-box tester. | the `gauntlet` on `PATH` (a shim to a Gauntlet checkout, or the binary itself); quorum spawns it by name |
 | **Gauntlet-Agent** | The LLM *inside* Gauntlet that drives the Coding-Agent and self-grades against the story's ACs. | model e.g. `claude-sonnet-4-6`; event stream → `<run>/gauntlet-agent/results/<runId>/run.jsonl`; verdict → `result.{json,md}` |
-| **Coding-Agent** | The agent under test — the SUT. Instances: **Claude**, **Claude Haiku**, **Claude Sonnet**, **Codex**, **Antigravity**, **Gemini**, **Kimi**, **OpenCode**, **Pi**, **Copilot**. | config + session log under its throwaway `$HOME` at `<run>/home/…`; the files it writes → `<run>/coding-agent-workdir/` |
+| **Coding-Agent** | The agent under test — the SUT. Instances: **Claude**, **Claude Haiku**, **Claude Sonnet**, **Codex**, **Antigravity**, **Gemini**, **Kimi**, **OpenCode**, **Pi**, **Copilot**. | config + session log under its throwaway `$HOME` at `<run-workspace>/home/…`; the files it writes → `<run-workspace>/coding-agent-workdir/` |
 | **Quorum** | The TypeScript/Bun wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and the final verdict. | repo `superpowers-evals/src/`; `<run>/verdict.json` |
+
+`<run-workspace>` is `results/workspaces/<run>/`; the record stays at `results/<run>/`.
 
 A run involves **two** LLMs — the **Gauntlet-Agent** (QA tester) and the
 **Coding-Agent** (subject). Separate models, separate logs, separate token
@@ -252,10 +254,14 @@ Each run produces one directory under `results/`:
 results/<scenario>-<coding-agent>-<timestamp>-<nonce>/
 |-- verdict.json                     composed result; start here
 |-- gauntlet-agent/                  Gauntlet-Agent evidence
-|-- coding-agent-workdir/            files the Coding-Agent produced
-|-- home/                            throwaway Coding-Agent HOME
 |-- trajectory.json                  normalized ATIF trace
 `-- coding-agent-token-usage.json    Coding-Agent token cost, when priced
+```
+
+```text
+results/workspaces/<run>/
+|-- coding-agent-workdir/   files the Coding-Agent produced
+|-- home/                   the Coding-Agent's throwaway $HOME
 ```
 
 `results/` is gitignored because run artifacts can contain sensitive
@@ -288,7 +294,7 @@ fails loudly instead of corrupting a verdict. The `cli/` layer parses commands
 and dispatches into the `runner/` pipeline (one scenario × one Coding-Agent) or
 `run-all/` (the matrix). Per-Coding-Agent differences live in two parallel
 fan-outs keyed by agent name: `agents/` seeds the agent's config under the
-throwaway per-run `$HOME` (`<run>/home`), and `normalize/` turns that agent's
+throwaway per-run `$HOME` (`results/workspaces/<run>/home`), and `normalize/` turns that agent's
 session log into a uniform tool-call trace. Live agent-CLI calls and other
 non-hermetic subprocesses go through the
 `agents/command-runner.ts` seam, so the unit suite injects fakes and never

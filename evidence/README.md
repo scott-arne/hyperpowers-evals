@@ -24,13 +24,18 @@ In order:
 1. Run `scripts/strip-runs` over the run. It deletes the reinstallable agent
    infrastructure and the host state a run picks up (the cloud-provider env
    file, the session IPC locks, the node and uv caches).
-2. Rename `coding-agent-workdir/.git` to `git-dir`. Left alone, the fixture
-   repository commits as a gitlink and its contents are lost.
-3. Stage `gauntlet-agent/results/` and `home/.claude/` with `git add -f`.
-   The repository's `results/` and `.claude/` ignore patterns are unanchored,
-   so they match those directories at any depth.
-4. Post-check the staged tree: every run has at least one transcript and one
-   `result.json`, and there are no gitlinks.
+2. Rename `<workspace>/coding-agent-workdir/.git` to `git-dir`, where
+   `<workspace>` is `results/workspaces/<run>/` for a relocated run and
+   `results/<run>/` itself for a legacy run (the baseline arm of a paired
+   control is legacy). Left alone, the fixture repository commits as a gitlink
+   and its contents are lost.
+3. Stage `<run>/gauntlet-agent/results/` and `<workspace>/home/.claude/` with
+   `git add -f`. The repository's `results/` and `.claude/` ignore patterns
+   are unanchored, so they match those directories at any depth. A committed
+   copy mirrors that run's live layout: a relocated run's `<run>/` beside
+   `workspaces/<run>/`; a legacy run's single `<run>/`.
+4. Post-check the staged tree across both layouts: every run has at least one
+   transcript and one `result.json`, and there are no gitlinks.
 
 Commit ids cited in the evidence before 2026-09-16 may predate a history rewrite of the then-unpushed range (session key files removed); `history-rewrite-2026-09-16.tsv` maps old ids to new.
 

@@ -67,6 +67,8 @@ For each criterion in `verify.criteria`, write one entry:
 
 Save to `results/<scenario>/codex-app/YYYY-MM-DD-manual/verdict.json`:
 
+This is the manual-verdict scheme, separate from quorum's run tree, where the record lives at `results/<run>/` and the agent's workspace at `results/workspaces/<run>/`.
+
 ```json
 {
   "scenario": "<scenario-name>",

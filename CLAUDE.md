@@ -16,8 +16,10 @@ messages.
 |---|---|---|
 | **Gauntlet** | General-purpose QA framework; the `gauntlet` CLI. A black-box tester. | the `gauntlet` on `PATH` (on this host a shim to the fork checkout); quorum spawns it by name |
 | **Gauntlet-Agent** | The LLM inside Gauntlet that drives the Coding-Agent and self-grades against the story's ACs. | model e.g. `claude-sonnet-4-6`; event stream -> `<run>/gauntlet-agent/results/<runId>/run.jsonl`; verdict -> `result.{json,md}` |
-| **Coding-Agent** | The agent under test. Instances: **Claude**, **Claude Haiku**, **Claude Sonnet**, **Codex**, **Antigravity**, **Gemini**, **Kimi**, **OpenCode**, **Pi**, and **Copilot**. | session log -> under the per-run throwaway `$HOME` (`<run>/home/<agent-config-subdir>/...`, e.g. `.claude`/`.codex`); files it writes -> `<run>/coding-agent-workdir/` |
+| **Coding-Agent** | The agent under test. Instances: **Claude**, **Claude Haiku**, **Claude Sonnet**, **Codex**, **Antigravity**, **Gemini**, **Kimi**, **OpenCode**, **Pi**, and **Copilot**. | session log -> under the per-run throwaway `$HOME` (`<run-workspace>/home/<agent-config-subdir>/...`, e.g. `.claude`/`.codex`); files it writes -> `<run-workspace>/coding-agent-workdir/` |
 | **Quorum** | The TypeScript wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and final verdict composition. | repo `superpowers-evals/src/`; `<run>/verdict.json` |
+
+`<run-workspace>` is `results/workspaces/<run>/`; the record stays at `results/<run>/`.
 
 A run involves two LLMs: the **Gauntlet-Agent** (QA tester) and the
 **Coding-Agent** (subject). Separate models, logs, and token costs.
@@ -43,8 +45,9 @@ A run involves two LLMs: the **Gauntlet-Agent** (QA tester) and the
 
 Per-coding-agent config: `coding-agents/<name>.yaml`. Per-coding-agent HOWTO:
 `coding-agents/<name>-context/HOWTO.md`. Each agent seeds its config under the
-per-run throwaway `$HOME` (e.g. `<runDir>/home/.claude` /
-`<runDir>/home/.codex`) at provision time; no committed home skeleton ships.
+per-run throwaway `$HOME` (e.g. `<workspace>/home/.claude` /
+`<workspace>/home/.codex`; `<workspace>` = `results/workspaces/<run>`) at
+provision time; no committed home skeleton ships.
 Spec: `docs/superpowers/specs/2026-05-22-harness-model-design.md`.
 
 ## Architecture
@@ -122,7 +125,7 @@ or dangerous-mode launches to public CI.
 
 ## Run Directory Upkeep
 
-Every live run leaves agent infrastructure under `<run>/home/`: the CLI
+Every live run leaves agent infrastructure under `results/workspaces/<run>/home/`: the CLI
 install, the plugin marketplace clone and its caches, and the CLI cache. That
 is ~12M in a typical run and reached 75M in one, against roughly 3M of actual
 evidence. Unmanaged, `results/` reached 3.8G across 118 runs.
@@ -133,11 +136,13 @@ After a session of live evals:
 scripts/strip-runs          # --dry-run reports without deleting
 ```
 
-It removes only reinstallable paths, skips runs touched in the last hour so
+It removes only reinstallable paths, skips runs with no `verdict.json` yet and
+runs whose record directory or verdict was touched in the last hour so
 in-flight work is safe, and leaves everything a verdict or a committed note
 might cite: `trajectory.json`, `verdict.json`, `phase.json`, session
-transcripts, `gauntlet-agent/`, `coding-agent-workdir/`, and the SDD scratch
-cache at `home/.cache/hyperpowers` (ledgers, gate rounds, lens output).
+transcripts, `gauntlet-agent/`, `coding-agent-workdir/`, which now live under
+`results/workspaces/<run>/`, and the SDD scratch cache at
+`home/.cache/hyperpowers` (ledgers, gate rounds, lens output).
 
 Do not bulk-delete run directories. Eval-evidence notes in the parent repo
 cite runs by ID, and the directory is what keeps those claims re-checkable.
