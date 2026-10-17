@@ -53,6 +53,24 @@ ALIASES: tuple[tuple[str, Callable[[Path, str], str]], ...] = (
     ("absolute", lambda root, run_id: f"{root}/records/{run_id}"),
 )
 
+
+def tmp_folds_case() -> bool:
+    """Decide whether the temporary volume folds case, as APFS does by default.
+
+    :returns: True when ``probe`` and ``PROBE`` name one file there.
+    """
+    probe = Path(tempfile.mkdtemp(prefix="tally-case-"))
+    try:
+        (probe / "probe").touch()
+        return (probe / "PROBE").exists()
+    finally:
+        shutil.rmtree(probe, True)
+
+
+# When the volume folds case, ``Run`` and ``run`` are one directory under two
+# spellings, and the case-variant alias can be exercised.
+CASE_INSENSITIVE_TMP = tmp_folds_case()
+
 # The six verdict fixtures and the kind each must classify as. The launcher
 # (Task 15) copies the same files, so both tools read one set of examples.
 VERDICT_KINDS = (
@@ -90,6 +108,7 @@ def row(
     proc: str = "p1",
     layout: str = "legacy",
     integrity: list[str] | None = None,
+    identities: tuple[tuple[int, int], ...] = (),
 ) -> dict[str, Any]:
     """Build one analyzer row, the shape ``collect`` emits.
 
@@ -100,6 +119,7 @@ def row(
     :param proc: The log process slot, ``r<n>`` for a replacement.
     :param layout: The tree the run's transcript came from.
     :param integrity: The integrity failures, none by default.
+    :param identities: The directories the run reached, none by default.
     :returns: The row.
     """
     parsed = verdict or (PASS_VERDICT if kind == "pass" else FAIL_VERDICT)
@@ -112,6 +132,7 @@ def row(
         "manip": manip or [],
         "layout": layout,
         "integrity": integrity or [],
+        "identities": identities,
     }
 
 
@@ -387,6 +408,28 @@ def mutate_tasks(tree: Path, run_id: str) -> None:
         handle.write(json.dumps(delta) + "\n")
 
 
+def mutate_no_instruction_files(tree: Path, run_id: str) -> None:
+    """Record an instructions attachment that lists no files at all.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    :raises AssertionError: When the fixture has no instructions attachment.
+    """
+    path = transcript_of(tree, run_id)
+    lines: list[str] = []
+    changed = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        entry = json.loads(line)
+        attachment = entry.get("attachment") or {}
+        if attachment.get("type") == "instructions":
+            attachment["files"] = []
+            changed = True
+        lines.append(json.dumps(entry))
+    if not changed:
+        raise AssertionError(f"fixture drift: no instructions attachment in {path}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 MUTATIONS: tuple[tuple[str, Callable[[Path, str], None]], ...] = (
     ("root", mutate_root),
     ("model", mutate_model),
@@ -395,6 +438,73 @@ MUTATIONS: tuple[tuple[str, Callable[[Path, str], None]], ...] = (
     ("foreign_instructions", mutate_foreign_instructions),
     ("tasks", mutate_tasks),
 )
+
+
+def alias_ids(run_id: str, count: int) -> list[str]:
+    """Build distinct run ids that differ from ``run_id`` only in the nonce.
+
+    :param run_id: A fixture run id, ending in a three-digit nonce.
+    :param count: How many ids.
+    :returns: ``count`` ids, none of them ``run_id``.
+    """
+    return [f"{run_id[:-3]}{n:03d}" for n in range(2, count + 2)]
+
+
+def write_log(logs: Path, proc: str, run_id: str, newline: str = "\n") -> Path:
+    """Write a one-id launcher log for the scenario.
+
+    :param logs: The arm's log directory.
+    :param proc: The process slot, ``p<n>`` or ``r<n>``.
+    :param run_id: The token to put after ``run-id:``.
+    :param newline: The line ending, written as given.
+    :returns: The log path.
+    """
+    log = logs / f"control-{SCENARIO}-{proc}.log"
+    log.write_text(
+        f"arm=control scenario={SCENARIO} proc={proc}{newline}"
+        f"run-id: {run_id}{newline}",
+        encoding="utf-8",
+        newline="",
+    )
+    return log
+
+
+def trees_of(root: Path, run_id: str) -> list[str]:
+    """Name the trees a run occupies: its record, and its workspace if any.
+
+    :param root: The materialized tree root.
+    :param run_id: The run id.
+    :returns: ``["records"]`` or ``["records", "workspaces"]``.
+    """
+    return [sub for sub in ("records", "workspaces") if (root / sub / run_id).is_dir()]
+
+
+def link_run(root: Path, run_id: str, alias: str, trees: Sequence[str]) -> None:
+    """Make ``alias`` a symlink to ``run_id`` in each named tree.
+
+    :param root: The materialized tree root.
+    :param run_id: The run the links point at.
+    :param alias: The id the links are named by.
+    :param trees: ``records`` and/or ``workspaces``.
+    """
+    for sub in trees:
+        (root / sub / alias).symlink_to(run_id, target_is_directory=True)
+
+
+def clone_run(root: Path, run_id: str, copy_id: str) -> None:
+    """Copy a run under a second id, renaming the paths its files record.
+
+    :param root: The materialized tree root.
+    :param run_id: The run to copy.
+    :param copy_id: The id of the copy.
+    """
+    for sub in trees_of(root, run_id):
+        shutil.copytree(root / sub / run_id, root / sub / copy_id)
+        for path in (root / sub / copy_id).rglob("*"):
+            if path.is_file():
+                text = path.read_text(encoding="utf-8")
+                if run_id in text:
+                    path.write_text(text.replace(run_id, copy_id), encoding="utf-8")
 
 
 class LayoutCase(unittest.TestCase):
@@ -890,16 +1000,214 @@ class IntegrityTest(LayoutCase):
                 )
                 self.assertEqual([r["run_id"] for r in rows], [run_id])
                 # Read through the link, every pin still holds; the run is
-                # not where the campaign keeps its runs.
+                # a link, and not where the campaign keeps its runs.
                 self.assertEqual(rows[0]["layout"], PROVENANCE[layout])
                 self.assertEqual(rows[0]["manip"], [])
-                self.assertEqual(rows[0]["integrity"], [f"run-outside-root={run_id}"])
-                self.assertIn(f"integrity=run-outside-root={run_id}", table)
+                expected = [f"symlinked-run={run_id}", f"run-outside-root={run_id}"]
+                self.assertEqual(rows[0]["integrity"], expected)
+                self.assertIn(f"integrity={';'.join(expected)}", table)
                 flaws = self.flaws_in_place(root, layout, rows)
                 self.assertEqual(
-                    flaws, [f"{ARM_OF[layout]}:{run_id}: run-outside-root={run_id}"]
+                    flaws,
+                    [f"{ARM_OF[layout]}:{run_id}: {reason}" for reason in expected],
                 )
                 self.assert_stops(flaws)
+
+    def test_a_symlink_to_a_sibling_run_is_an_integrity_stop(self) -> None:
+        # The link resolves inside the root, so containment passes, and its
+        # own roots include the target, so every instruction path reads as
+        # own; only the directory's identity says it is the same session.
+        for layout, run_id in LAYOUTS:
+            with self.subTest(layout=layout):
+                root = self.materialize("baseline-layout", "relocated-layout")
+                alias = alias_ids(run_id, 1)[0]
+                link_run(root, run_id, alias, trees_of(root, run_id))
+                logs = root / f"logs-{layout}"
+                write_log(logs, "p2", alias)
+                rows, missing, table = self.collect_quietly(logs, self.config(root))
+                self.assertEqual([r["run_id"] for r in rows], [run_id, alias])
+                self.assertEqual(missing, 0)
+                for r in rows:
+                    self.assertEqual(r["layout"], PROVENANCE[layout])
+                    self.assertEqual(r["manip"], [])
+                self.assertEqual(rows[0]["integrity"], [])
+                self.assertEqual(rows[0]["identities"], rows[1]["identities"])
+                expected = [
+                    f"symlinked-run={alias}",
+                    f"duplicate-run-id={alias} (same directory as {run_id})",
+                ]
+                self.assertEqual(rows[1]["integrity"], expected)
+                self.assertIn(f"integrity={';'.join(expected)}", table)
+                flaws = self.flaws_in_place(root, layout, rows)
+                self.assertEqual(
+                    flaws,
+                    [f"{ARM_OF[layout]}:{alias}: {reason}" for reason in expected],
+                )
+                self.assert_stops(flaws)
+
+    def test_a_workspace_symlinked_to_another_run_is_an_integrity_stop(self) -> None:
+        # A record of its own with the agent tree borrowed from another run:
+        # the record identities differ, the workspace identities do not, and
+        # the transcript read through the link is the other run's.
+        root = self.materialize("baseline-layout", "relocated-layout")
+        alias = alias_ids(NEW_RUN, 1)[0]
+        shutil.copytree(root / "records" / NEW_RUN, root / "records" / alias)
+        link_run(root, NEW_RUN, alias, ("workspaces",))
+        logs = root / "logs-relocated-layout"
+        write_log(logs, "p2", alias)
+        rows, _, table = self.collect_quietly(logs, self.config(root))
+        self.assertEqual([r["run_id"] for r in rows], [NEW_RUN, alias])
+        self.assertEqual(rows[1]["layout"], "relocated")
+        self.assertEqual(rows[1]["manip"], [])
+        self.assertNotEqual(rows[0]["identities"], rows[1]["identities"])
+        self.assertEqual(
+            len(set(rows[0]["identities"]) & set(rows[1]["identities"])), 1
+        )
+        expected = [
+            f"symlinked-run={alias}",
+            f"duplicate-run-id={alias} (same directory as {NEW_RUN})",
+        ]
+        self.assertEqual(rows[1]["integrity"], expected)
+        self.assertIn(f"integrity={';'.join(expected)}", table)
+        flaws = self.flaws_in_place(root, "relocated-layout", rows)
+        self.assertEqual(flaws, [f"new:{alias}: {reason}" for reason in expected])
+        self.assert_stops(flaws)
+
+    def test_nine_symlinked_aliases_cannot_fill_an_arm(self) -> None:
+        # The re-review's probe: one real run and nine links to it, each under
+        # an id of its own in a one-id log, in both arms. By spelling alone
+        # each arm is ten passing sessions and the campaign proceeds.
+        root = self.materialize("baseline-layout", "relocated-layout")
+        for layout, run_id in LAYOUTS:
+            for n, alias in enumerate(alias_ids(run_id, 9), start=2):
+                link_run(root, run_id, alias, trees_of(root, run_id))
+                write_log(root / f"logs-{layout}", f"p{n}", alias)
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
+        self.assertNotEqual(proc.returncode, 0, proc.stdout)
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("stop integrity", proc.stdout)
+        for layout, run_id in LAYOUTS:
+            for alias in alias_ids(run_id, 9):
+                self.assertIn(
+                    f"{ARM_OF[layout]}:{alias}: symlinked-run={alias}", proc.stdout
+                )
+                self.assertIn(
+                    f"duplicate-run-id={alias} (same directory as {run_id})",
+                    proc.stdout,
+                )
+
+    def test_ten_distinct_runs_per_arm_proceed(self) -> None:
+        # The same campaign with nine real copies in place of the nine links:
+        # ten directories of their own per arm, and the analyzer proceeds.
+        # The control for the identity check, which must see no collision
+        # between distinct directories.
+        root = self.materialize("baseline-layout", "relocated-layout")
+        for layout, run_id in LAYOUTS:
+            for n, copy_id in enumerate(alias_ids(run_id, 9), start=2):
+                clone_run(root, run_id, copy_id)
+                write_log(root / f"logs-{layout}", f"p{n}", copy_id)
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(proc.stdout.count("integrity failures: none"), 2)
+        self.assertIn("decision: proceed threshold (p_b=10 p_n=10)", proc.stdout)
+
+    @unittest.skipUnless(CASE_INSENSITIVE_TMP, "the temporary volume keeps case")
+    def test_a_case_variant_of_a_run_id_is_an_integrity_stop(self) -> None:
+        # On a volume that folds case, ``RUN`` and ``run`` are one directory
+        # under two spellings, with no link to see. The transcript's
+        # instructions attachment lists no files, so the case-sensitive path
+        # comparison that happened to separate them has nothing to compare;
+        # the identity check is all that is left.
+        for layout, run_id in LAYOUTS:
+            with self.subTest(layout=layout):
+                root = self.materialize("baseline-layout", "relocated-layout")
+                mutate_no_instruction_files(root, run_id)
+                variant = run_id.upper()
+                self.assertNotEqual(variant, run_id)
+                self.assertTrue((root / "records" / variant / "verdict.json").is_file())
+                logs = root / f"logs-{layout}"
+                write_log(logs, "p2", variant)
+                rows, missing, table = self.collect_quietly(logs, self.config(root))
+                self.assertEqual([r["run_id"] for r in rows], [run_id, variant])
+                self.assertEqual(missing, 0)
+                for r in rows:
+                    self.assertEqual(r["layout"], PROVENANCE[layout])
+                    self.assertEqual(r["foreign_instructions"], [])
+                    self.assertEqual(r["manip"], [])
+                self.assertEqual(rows[0]["integrity"], [])
+                expected = f"duplicate-run-id={variant} (same directory as {run_id})"
+                self.assertEqual(rows[1]["integrity"], [expected])
+                self.assertIn(f"integrity={expected}", table)
+                flaws = self.flaws_in_place(root, layout, rows)
+                self.assertEqual(flaws, [f"{ARM_OF[layout]}:{variant}: {expected}"])
+                self.assert_stops(flaws)
+                proc = self.run_cli(
+                    root, "logs-baseline-layout", "logs-relocated-layout"
+                )
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertIn(expected, proc.stdout)
+
+    def test_one_directory_claimed_by_both_arms_is_an_integrity_stop(self) -> None:
+        # The identities ``collect`` records, compared across the arms: one
+        # directory under a spelling per arm is one session in both.
+        baseline = clean_arm("b", "legacy")
+        new = clean_arm("n", "relocated")
+        baseline[3]["identities"] = ((7, 4242),)
+        new[5]["identities"] = ((7, 4242),)
+        flaws = self.flaws(baseline, new)
+        self.assertEqual(
+            flaws, ["both arms: duplicate-run-id=n-5 (same directory as b-3)"]
+        )
+        self.assert_stops(flaws)
+        new[5]["identities"] = ((7, 4243),)
+        self.assertEqual(self.flaws(baseline, new), [])
+        # End to end: a new-arm log naming a link to the baseline run.
+        root = self.materialize("baseline-layout", "relocated-layout")
+        alias = alias_ids(BASELINE_RUN, 1)[0]
+        link_run(root, BASELINE_RUN, alias, ("records",))
+        write_log(root / "logs-relocated-layout", "p2", alias)
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn(
+            f"both arms: duplicate-run-id={alias} (same directory as {BASELINE_RUN})",
+            proc.stdout,
+        )
+
+    def test_a_run_id_line_with_trailing_whitespace_names_its_run(self) -> None:
+        # The token is what is judged, so a CRLF log or a space-padded line
+        # hands its id to ``valid_run_id`` rather than reading as a log that
+        # named no run. Two tokens on the line are still no id at all.
+        self.assertEqual(tally.RUN_ID.findall("run-id: R\r\n"), ["R"])
+        self.assertEqual(tally.RUN_ID.findall("run-id: R \t\n"), ["R"])
+        self.assertEqual(tally.RUN_ID.findall("run-id: R\n"), ["R"])
+        self.assertEqual(tally.RUN_ID.findall("run-id: a b\n"), [])
+        cases = (("crlf", "\r\n", ""), ("trailing-blank", "\n", " \t"))
+        for case, newline, pad in cases:
+            with self.subTest(case=case):
+                root = self.materialize("baseline-layout")
+                logs = root / "logs-baseline-layout"
+                write_log(logs, "p1", BASELINE_RUN + pad, newline=newline)
+                rows, missing, table = self.collect_quietly(logs, self.config(root))
+                self.assertEqual([r["run_id"] for r in rows], [BASELINE_RUN])
+                self.assertEqual(missing, 0)
+                self.assertEqual(rows[0]["integrity"], [])
+                self.assertNotIn("NO RUN ID", table)
+
+    def test_an_alias_with_a_carriage_return_is_a_bad_run_id(self) -> None:
+        root = self.materialize("baseline-layout", "relocated-layout")
+        logs = root / "logs-baseline-layout"
+        alias = f"{BASELINE_RUN}/."
+        log = write_log(logs, "p2", alias, newline="\r\n")
+        rows, missing, table = self.collect_quietly(logs, self.config(root))
+        self.assertEqual([r["run_id"] for r in rows], [BASELINE_RUN])
+        self.assertEqual(missing, 1)
+        self.assertIn(f"\tp2\t{alias}\tBAD RUN ID", table)
+        flaws = self.flaws_in_place(root, "baseline-layout", rows)
+        self.assertEqual(flaws, [f"baseline: bad-run-id={alias} ({log.name})"])
+        self.assert_stops(flaws)
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn(f"bad-run-id={alias}", proc.stdout)
 
     def test_a_graded_run_without_one_result_is_an_integrity_stop(self) -> None:
         results = ("gauntlet-agent", "results")

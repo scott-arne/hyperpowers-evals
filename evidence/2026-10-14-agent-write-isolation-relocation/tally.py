@@ -29,8 +29,9 @@ description, the first tool call and the skills invoked.
 
 The decision fails closed. The evidence is checked before it is compared: the
 arms must be two different log directories, each log must name exactly one
-run, every run id must be a run directory name and nothing more, no run id may
-repeat within an arm or appear in both, every run must lie beneath its roots,
+run, every run id must be a run directory name and nothing more, no run
+directory may be claimed twice, under one spelling or two, within an arm or
+across them, no run may be a symlink, every run must lie beneath its roots,
 each arm must show its own layout, a graded run must have exactly one result
 file, and no transcript line may be unreadable except a torn final line. Any
 of those is an integrity stop. Then any manipulation mismatch, a fourth
@@ -55,9 +56,11 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 # The raw token after ``run-id:``, whatever it is; ``valid_run_id`` judges it.
-# Matching the shape here instead would make a bad id look like a log that
-# named no run.
-RUN_ID = re.compile(r"^run-id: (\S+)$", re.MULTILINE)
+# Trailing blanks and a carriage return are tolerated, so a CRLF or
+# space-padded log still names its run; a line with anything else after the
+# token names none. Matching the shape here instead would make a bad id look
+# like a log that named no run.
+RUN_ID = re.compile(r"^run-id: (\S+)[ \t\r]*$", re.MULTILINE)
 # The run directory name the runner produces,
 # ``<scenario>-<agent>-<timestamp>-<nonce>``: one path component of letters,
 # digits, dots, underscores and hyphens, starting with a letter or digit, so
@@ -236,6 +239,25 @@ def contained(root: Path, path: Path) -> bool:
         resolved != resolved_root
         and os.path.commonpath([resolved, resolved_root]) == resolved_root
     )
+
+
+def directory_identity(path: Path) -> tuple[int, int] | None:
+    """Identify a directory by where it is on disk rather than how it is spelt.
+
+    A symlink to a sibling run and, on a volume that folds case, a case
+    variant of an id both pass the shape rule and containment and read the
+    same files. Their device and inode numbers are the target's, so two
+    spellings of one directory compare equal here.
+
+    :param path: A run's record or workspace directory, which may be a link.
+    :returns: ``(st_dev, st_ino)`` of the directory the path reaches, or None
+        when it reaches nothing.
+    """
+    try:
+        status = path.stat()
+    except FileNotFoundError:
+        return None
+    return status.st_dev, status.st_ino
 
 
 def criterion_one(result: dict[str, Any] | None) -> str:
@@ -441,9 +463,10 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
 
     :param logs: The arm's log directory.
     :param cfg: The campaign configuration.
-    :returns: The rows for ``cfg.scenario``, and the number of runs the logs
-        account for but could not be read: a named run with no verdict, an id
-        that is not a run directory name, or a log that named no run at all.
+    :returns: The rows for ``cfg.scenario``, each carrying the identities of
+        the directories it reached, and the number of runs the logs account
+        for but could not be read: a named run with no verdict, an id that
+        is not a run directory name, or a log that named no run at all.
     """
     superseded_file = HERE / "superseded.txt"
     superseded = (
@@ -457,6 +480,9 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
     )
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
+    # Each directory an id reached, by identity, and the first id to reach
+    # it: a second id reaching the same directory is the same session again.
+    claimed: dict[tuple[int, int], str] = {}
     missing = 0
     for log in sorted(logs.glob("control-*-[pr][0-9]*.log")):
         match = LOG_NAME.match(log.stem)
@@ -512,13 +538,37 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
             if run_id in seen:
                 r["integrity"].append("duplicate-run-id")
             seen.add(run_id)
+            workspace = cfg.workspaces / run_id
+            # The campaign moves a run and never links one: a link is an
+            # alias of a sibling or a way out of the root, and is named as a
+            # link whichever it turns out to be.
+            if path.is_symlink() or workspace.is_symlink():
+                r["integrity"].append(f"symlinked-run={run_id}")
             # Defense in depth behind the shape rule: whatever the id, the
             # directories it names must still be inside the campaign roots.
             if not (
-                contained(cfg.records, path)
-                and contained(cfg.workspaces, cfg.workspaces / run_id)
+                contained(cfg.records, path) and contained(cfg.workspaces, workspace)
             ):
                 r["integrity"].append(f"run-outside-root={run_id}")
+            # Identity is the directory, not the spelling: a link that
+            # resolves inside the root and a case variant on a volume that
+            # folds case pass every check above and still read one session
+            # twice. The workspace counts too, so a run that borrowed another
+            # run's agent tree collides on it.
+            r["identities"] = tuple(
+                identity
+                for identity in (
+                    directory_identity(path),
+                    directory_identity(workspace),
+                )
+                if identity is not None
+            )
+            for identity in r["identities"]:
+                first = claimed.setdefault(identity, run_id)
+                if first != run_id:
+                    flaw = f"duplicate-run-id={run_id} (same directory as {first})"
+                    if flaw not in r["integrity"]:
+                        r["integrity"].append(flaw)
             # A run the composer graded has exactly one result file. Any other
             # count would read as an indeterminate trial, which would lower
             # the arm's pass count without saying why.
@@ -558,11 +608,12 @@ def integrity_failures(
     """List every reason the two arms cannot be compared as read.
 
     Everything here is about the evidence rather than the result: an arm that
-    is not the arm it claims to be, a run counted twice, a log naming
-    something that is not a run, a reading taken from a file the analyzer
-    could not read whole. The campaign stops on any of them, in the same class
-    as a manipulation mismatch, because the comparison the decision would make
-    is not the comparison the design asked for.
+    is not the arm it claims to be, a directory counted twice under one
+    spelling or two, a log naming something that is not a run, a reading
+    taken from a file the analyzer could not read whole. The campaign stops
+    on any of them, in the same class as a manipulation mismatch, because the
+    comparison the decision would make is not the comparison the design asked
+    for.
 
     :param baseline_logs: The baseline arm's log directory.
     :param new_logs: The relocated arm's log directory.
@@ -605,6 +656,22 @@ def integrity_failures(
     shared = sorted({r["run_id"] for r in baseline} & {r["run_id"] for r in new})
     if shared:
         failures.append(f"both arms claim: {shared}")
+    # Then by directory: one run under a spelling per arm is one session in
+    # both arms, which the comparison of spellings above cannot see.
+    claimed: dict[tuple[int, int], str] = {}
+    for r in baseline:
+        for identity in r["identities"]:
+            claimed.setdefault(identity, r["run_id"])
+    for r in new:
+        for identity in r["identities"]:
+            first = claimed.get(identity)
+            if first is not None and first != r["run_id"]:
+                flaw = (
+                    f"both arms: duplicate-run-id={r['run_id']}"
+                    f" (same directory as {first})"
+                )
+                if flaw not in failures:
+                    failures.append(flaw)
     return failures
 
 
