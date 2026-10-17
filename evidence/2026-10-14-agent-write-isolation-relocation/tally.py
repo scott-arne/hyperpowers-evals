@@ -27,7 +27,12 @@ Code version, the entrypoint, the instruction files loaded, whether the task
 tools were offered, whether the skill listing carried brainstorming's
 description, the first tool call and the skills invoked.
 
-The decision fails closed. Any manipulation mismatch, a fourth grader-exit void
+The decision fails closed. The evidence is checked before it is compared: the
+arms must be two different log directories, each log must name exactly one
+run, no run id may repeat within an arm or appear in both, each arm must show
+its own layout, a graded run must have exactly one result file, and no
+transcript line may be unreadable except a torn final line. Any of those is an
+integrity stop. Then any manipulation mismatch, a fourth grader-exit void
 in an arm, a setup void or misconfigured QA agent in the new arm, an arm that
 is not exactly ten qualifying sessions, a new-arm failure signature the
 baseline never produced, or a pass count more than two below the baseline's
@@ -39,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os.path
 import re
 import sys
 from dataclasses import dataclass
@@ -54,9 +60,17 @@ MODEL = re.compile(r'^exec .*--model "([^"]+)"', re.MULTILINE)
 BRAINSTORM_DESC = "hyperpowers:brainstorming: You MUST use this"
 SCENARIO = "cost-api-field-rename-boundary"
 ALPHA = 0.05
+# The readings that occupy a trial slot, and so must be evidence the analyzer
+# can vouch for.
+TRIAL_KINDS = ("pass", "fail", "indeterminate")
+# How each arm is produced: the baseline runs the pre-change code, which keeps
+# the agent's home inside the record; the new arm runs this branch, which
+# relocates it. An arm reading the other layout is not the arm it claims to be.
+ARM_LAYOUTS = {"baseline": "legacy", "new": "relocated"}
 # A stop's process exit status, by the decision's reason. Proceed is 0; a named
 # run with no verdict leaves 1 (see main).
 EXIT_CODES = {
+    "integrity": 2,
     "manipulation": 2,
     "new-arm-setup": 2,
     "insufficient": 3,
@@ -116,17 +130,53 @@ def own_roots(cfg: Config, run_id: str) -> tuple[str, str]:
     return f"{cfg.records / run_id}/", f"{cfg.workspaces / run_id}/"
 
 
-def read_result(path: Path) -> dict[str, Any] | None:
-    """Return a run's single Gauntlet-Agent ``result.json``, if it has one.
+def result_files(path: Path) -> list[Path]:
+    """List the Gauntlet-Agent result files a run left behind.
 
     :param path: The run's record directory.
+    :returns: Every ``gauntlet-agent/results/*/result.json`` the run has; a
+        graded run has exactly one, and any other count is unreadable
+        evidence rather than a reading.
+    """
+    return sorted(path.glob("gauntlet-agent/results/*/result.json"))
+
+
+def read_result(found: list[Path]) -> dict[str, Any] | None:
+    """Return a run's single Gauntlet-Agent ``result.json``, if it has one.
+
+    :param found: The run's result files, from ``result_files``.
     :returns: The parsed result, or None when there is not exactly one.
     """
-    found = list(path.glob("gauntlet-agent/results/*/result.json"))
     if len(found) != 1:
         return None
     parsed: dict[str, Any] = json.loads(found[0].read_text(encoding="utf-8"))
     return parsed
+
+
+def owns(path: str, roots: tuple[str, str]) -> bool:
+    """Decide whether an instruction path lies inside one of a run's trees.
+
+    Containment is by path component, not by substring: a traversal out of the
+    run (``<root>/<run>/../../elsewhere``) and a path that merely embeds a
+    root's text (``/tmp/<root>/CLAUDE.md``) are both outside. A relative or
+    otherwise malformed path is outside too, because the analyzer cannot say
+    what it resolved to at the time.
+
+    :param path: The instruction path the transcript recorded.
+    :param roots: The run's own prefixes, from ``own_roots``.
+    :returns: True when the path is the run's own.
+    """
+    if not os.path.isabs(path):
+        return False
+    normalized = os.path.normpath(path)
+    for root in roots:
+        root_path = os.path.normpath(root)
+        try:
+            if os.path.commonpath([normalized, root_path]) == root_path:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def criterion_one(result: dict[str, Any] | None) -> str:
@@ -205,30 +255,48 @@ def readouts(cfg: Config, run_id: str) -> dict[str, Any]:
         "plugin_dir": plugin.group(1) if plugin else None,
         "model": model.group(1) if model else None,
         "cc": set(),
-        "entrypoint": None,
+        "entrypoint": set(),
         "desc": None,
         "tasks": False,
         "foreign_instructions": [],
         "first_tool": None,
         "skills": [],
+        "layout": None,
+        "malformed": [],
+        "torn_tail": False,
     }
     own = own_roots(cfg, run_id)
     # The relocated layout keeps the agent's home in the workspace; a run from
-    # before the change kept it in the record. Subagent transcripts sit one
-    # level deeper and are skipped.
+    # before the change kept it in the record. Which tree answered is the
+    # run's layout, and each arm must show its own. Subagent transcripts sit
+    # one level deeper and are skipped.
     pattern = "home/.claude/projects/*/*.jsonl"
     found = sorted((cfg.workspaces / run_id).glob(pattern))
-    for transcript in found or sorted(record.glob(pattern)):
-        for line in transcript.read_text(encoding="utf-8").splitlines():
+    transcripts = found or sorted(record.glob(pattern))
+    if transcripts:
+        out["layout"] = "relocated" if found else "legacy"
+    for transcript in transcripts:
+        text = transcript.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        for number, line in enumerate(lines, start=1):
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:
+                # A session killed mid-write leaves its last line unterminated.
+                # Any other unreadable line could have carried the attachment
+                # that would have failed a manipulation check.
+                if number == len(lines) and not text.endswith("\n"):
+                    out["torn_tail"] = True
+                else:
+                    out["malformed"].append(f"{transcript}:{number}")
                 continue
             if not isinstance(entry, dict):
+                out["malformed"].append(f"{transcript}:{number}")
                 continue
             if isinstance(entry.get("version"), str):
                 out["cc"].add(entry["version"])
-            out["entrypoint"] = out["entrypoint"] or entry.get("entrypoint")
+            if isinstance(entry.get("entrypoint"), str):
+                out["entrypoint"].add(entry["entrypoint"])
             att = entry.get("attachment") or {}
             kind = att.get("type")
             if kind == "skill_listing" and out["desc"] is None:
@@ -241,7 +309,7 @@ def readouts(cfg: Config, run_id: str) -> dict[str, Any]:
                 out["foreign_instructions"] += [
                     f["path"]
                     for f in att.get("files") or []
-                    if not any(root in f["path"] for root in own)
+                    if not owns(str(f["path"]), own)
                 ]
             if entry.get("type") != "assistant":
                 continue
@@ -254,6 +322,9 @@ def readouts(cfg: Config, run_id: str) -> dict[str, Any]:
                 if skill:
                     out["skills"].append(skill)
     out["cc"] = ",".join(sorted(out["cc"])) or None
+    # Every entrypoint the session recorded, not just the first: a run that
+    # started on the CLI and continued elsewhere is not a CLI run.
+    out["entrypoint"] = ",".join(sorted(out["entrypoint"])) or None
     return out
 
 
@@ -319,6 +390,7 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
         else set()
     )
     rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
     missing = 0
     for log in sorted(logs.glob("control-*-[pr][0-9]*.log")):
         match = LOG_NAME.match(log.stem)
@@ -334,6 +406,12 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
             print(f"{scenario}\t{proc}\t{log.name}\tNO RUN ID")
             missing += 1
             continue
+        # One log is one trial slot. Several ids in one log means several
+        # sessions were folded into a slot, and the analyzer cannot say which
+        # of them the manifest meant.
+        log_flaws = (
+            [f"log-run-ids={len(run_ids)} ({log.name})"] if len(run_ids) > 1 else []
+        )
         for run_id in run_ids:
             path = run_dir(cfg, run_id)
             verdict_path = path / "verdict.json"
@@ -342,7 +420,8 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
                 missing += 1
                 continue
             verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
-            result = read_result(path)
+            results = result_files(path)
+            result = read_result(results)
             kind = classify(verdict, result)
             if run_id in superseded:
                 kind = f"superseded-{kind}"
@@ -357,20 +436,78 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
             r["manip"] = (
                 [] if kind.startswith("void-") else manipulation_failures(r, cfg)
             )
+            r["integrity"] = list(log_flaws)
+            if run_id in seen:
+                r["integrity"].append("duplicate-run-id")
+            seen.add(run_id)
+            # A run the composer graded has exactly one result file. Any other
+            # count would read as an indeterminate trial, which would lower
+            # the arm's pass count without saying why.
+            graded = verdict.get("final") in ("pass", "fail") and not verdict.get(
+                "error"
+            )
+            if graded and len(results) != 1:
+                r["integrity"].append(f"result-cardinality={len(results)}")
+            r["integrity"] += [f"malformed-transcript={m}" for m in r["malformed"]]
             rows.append(r)
             short = "-".join(run_id.rsplit("-", 2)[-2:])
             # An indeterminate for want of one readable result.json reads the
             # same as a graded one; the marker tells them apart.
-            marker = "" if result is not None else "\tresult=none"
+            markers = "" if result is not None else "\tresult=none"
+            if r["torn_tail"]:
+                markers += "\ttorn_tail=True"
+            if r["integrity"]:
+                markers += f"\tintegrity={';'.join(r['integrity'])}"
             print(
                 f"{scenario}\t{proc}\t{short}\t{kind}\tfinal={r['final']}"
                 f"\tcc={r['cc']}\tentry={r['entrypoint']}\tdesc={r['desc']}"
                 f"\ttasks={r['tasks']}\tfirst={r['first_tool']}"
                 f"\tskills={','.join(r['skills']) or '-'}"
                 f"\tmanip={'ok' if not r['manip'] else ';'.join(r['manip'])}"
-                f"{marker}"
+                f"{markers}"
             )
     return rows, missing
+
+
+def integrity_failures(
+    baseline_logs: Path,
+    new_logs: Path,
+    baseline: list[dict[str, Any]],
+    new: list[dict[str, Any]],
+) -> list[str]:
+    """List every reason the two arms cannot be compared as read.
+
+    Everything here is about the evidence rather than the result: an arm that
+    is not the arm it claims to be, a run counted twice, a reading taken from
+    a file the analyzer could not read whole. The campaign stops on any of
+    them, in the same class as a manipulation mismatch, because the comparison
+    the decision would make is not the comparison the design asked for.
+
+    :param baseline_logs: The baseline arm's log directory.
+    :param new_logs: The relocated arm's log directory.
+    :param baseline: Rows of the pre-change arm.
+    :param new: Rows of the relocated arm.
+    :returns: One entry per failure; empty when the arms can be compared.
+    """
+    failures: list[str] = []
+    if baseline_logs.resolve() == new_logs.resolve():
+        failures.append(f"one log directory for both arms: {baseline_logs.resolve()}")
+    for arm, rows in (("baseline", baseline), ("new", new)):
+        failures += [
+            f"{arm}:{r['run_id']}: {reason}" for r in rows for reason in r["integrity"]
+        ]
+        expected = ARM_LAYOUTS[arm]
+        wrong = [
+            f"{r['run_id']}={r['layout']}"
+            for r in rows
+            if r["kind"] in TRIAL_KINDS and r["layout"] != expected
+        ]
+        if wrong:
+            failures.append(f"{arm}: expected the {expected} layout, got {wrong}")
+    shared = sorted({r["run_id"] for r in baseline} & {r["run_id"] for r in new})
+    if shared:
+        failures.append(f"both arms claim: {shared}")
+    return failures
 
 
 def qualifying(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -383,11 +520,7 @@ def qualifying(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     :param rows: One arm's rows.
     :returns: The qualifying rows.
     """
-    return [
-        r
-        for r in rows
-        if r["kind"] in ("pass", "fail", "indeterminate") and not r["manip"]
-    ]
+    return [r for r in rows if r["kind"] in TRIAL_KINDS and not r["manip"]]
 
 
 def decide(baseline: list[dict[str, Any]], new: list[dict[str, Any]]) -> Decision:
@@ -459,6 +592,10 @@ def report(
             f" {setups} QA-agent misconfigured)"
         )
         print(f"  excluded by manipulation check: {', '.join(excluded) or 'none'}")
+        flawed = [
+            f"{r['run_id']}: {';'.join(r['integrity'])}" for r in rows if r["integrity"]
+        ]
+        print(f"  integrity failures: {', '.join(flawed) or 'none'}")
         signatures = sorted(
             {
                 failure_signature(r["verdict"])
@@ -477,6 +614,9 @@ def report(
 
 def main(argv: list[str]) -> int:
     """Read both arms and decide the campaign.
+
+    The arms are checked for integrity before they are compared; a failure
+    there stops in the same class as a manipulation mismatch.
 
     :param argv: The process arguments, ``sys.argv``.
     :returns: Process exit status: ``exit_code``'s mapping of the decision,
@@ -518,7 +658,14 @@ def main(argv: list[str]) -> int:
     )
     baseline, missing_baseline = collect(args.baseline_logs, cfg)
     new, missing_new = collect(args.new_logs, cfg)
-    decision = decide(baseline, new)
+    # Evidence first: a decision over rows the analyzer cannot vouch for is
+    # not a decision about the change.
+    flaws = integrity_failures(args.baseline_logs, args.new_logs, baseline, new)
+    decision = (
+        Decision("stop", "integrity", "; ".join(flaws))
+        if flaws
+        else decide(baseline, new)
+    )
     report(baseline, new, decision)
     code = exit_code(decision)
     if code:

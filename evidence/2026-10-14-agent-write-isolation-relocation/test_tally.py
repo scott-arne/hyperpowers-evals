@@ -37,6 +37,9 @@ CC_VERSION = "2.1.288"
 SCENARIO = "cost-api-field-rename-boundary"
 FOREIGN_INSTRUCTION = "/Users/johnss51/.claude/CLAUDE.md"
 LAYOUTS = (("baseline-layout", BASELINE_RUN), ("relocated-layout", NEW_RUN))
+# The provenance each layout fixture must report: the pre-change tree keeps the
+# agent's home in the record, the relocated one keeps it in the workspace.
+PROVENANCE = {"baseline-layout": "legacy", "relocated-layout": "relocated"}
 
 # The six verdict fixtures and the kind each must classify as. The launcher
 # (Task 15) copies the same files, so both tools read one set of examples.
@@ -73,6 +76,8 @@ def row(
     verdict: dict[str, Any] | None = None,
     manip: list[str] | None = None,
     proc: str = "p1",
+    layout: str = "legacy",
+    integrity: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build one analyzer row, the shape ``collect`` emits.
 
@@ -81,6 +86,8 @@ def row(
     :param verdict: The parsed verdict; a pass or fail one by default.
     :param manip: The manipulation-check failures, none by default.
     :param proc: The log process slot, ``r<n>`` for a replacement.
+    :param layout: The tree the run's transcript came from.
+    :param integrity: The integrity failures, none by default.
     :returns: The row.
     """
     parsed = verdict or (PASS_VERDICT if kind == "pass" else FAIL_VERDICT)
@@ -91,7 +98,20 @@ def row(
         "verdict": parsed,
         "final": parsed["final"],
         "manip": manip or [],
+        "layout": layout,
+        "integrity": integrity or [],
     }
+
+
+def clean_arm(prefix: str, layout: str, count: int = 10) -> list[dict[str, Any]]:
+    """Build one arm of passing rows that no integrity check objects to.
+
+    :param prefix: The run-id prefix, which keeps the arms disjoint.
+    :param layout: The tree the arm's transcripts came from.
+    :param count: How many rows.
+    :returns: The arm's rows.
+    """
+    return [row("pass", run_id=f"{prefix}-{i}", layout=layout) for i in range(count)]
 
 
 def arm(
@@ -195,11 +215,13 @@ def mutate_entrypoint(tree: Path, run_id: str) -> None:
     rewrite(transcript_of(tree, run_id), '"entrypoint":"cli"', '"entrypoint":"sdk-ts"')
 
 
-def mutate_foreign_instructions(tree: Path, run_id: str) -> None:
-    """Load an instruction file from outside the run's own two trees.
+def rewrite_instruction(tree: Path, run_id: str, make: Callable[[str], str]) -> None:
+    """Rewrite the first instruction path a run's transcript recorded.
 
     :param tree: The materialized fixture root.
     :param run_id: The run id to mutate.
+    :param make: Builds the new path from the recorded one.
+    :raises AssertionError: When the fixture has no instructions attachment.
     """
     path = transcript_of(tree, run_id)
     lines: list[str] = []
@@ -208,12 +230,122 @@ def mutate_foreign_instructions(tree: Path, run_id: str) -> None:
         entry = json.loads(line)
         attachment = entry.get("attachment") or {}
         if attachment.get("type") == "instructions" and not changed:
-            attachment["files"][0]["path"] = FOREIGN_INSTRUCTION
+            files = attachment["files"]
+            files[0]["path"] = make(str(files[0]["path"]))
             changed = True
         lines.append(json.dumps(entry))
     if not changed:
         raise AssertionError(f"fixture drift: no instructions attachment in {path}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def insert_line(tree: Path, run_id: str, line: str) -> None:
+    """Put a line into the middle of a run's transcript.
+
+    Mid-file, so it is never read as the torn tail of a killed session.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    :param line: The raw line to insert.
+    """
+    path = transcript_of(tree, run_id)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    lines.insert(len(lines) - 1, line)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def mutate_foreign_instructions(tree: Path, run_id: str) -> None:
+    """Load an instruction file from outside the run's own two trees.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
+    rewrite_instruction(tree, run_id, lambda _: FOREIGN_INSTRUCTION)
+
+
+def mutate_traversal_instruction(tree: Path, run_id: str) -> None:
+    """Leave the run's tree by traversal while keeping its prefix.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
+    rewrite_instruction(
+        tree, run_id, lambda old: f"{Path(old).parent}/../../../outside/CLAUDE.md"
+    )
+
+
+def mutate_embedded_root_instruction(tree: Path, run_id: str) -> None:
+    """Embed the run's own prefix in a path that is somewhere else entirely.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
+    rewrite_instruction(tree, run_id, lambda old: f"/tmp/decoy{old}")
+
+
+def mutate_hidden_tasks_line(tree: Path, run_id: str) -> None:
+    """Hide a task-tool offer in a line that does not parse.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
+    insert_line(
+        tree,
+        run_id,
+        '{"type":"attachment","attachment":{"type":"deferred_tools_delta",'
+        '"addedNames":["TaskCreate"]',
+    )
+
+
+def mutate_hidden_instruction_line(tree: Path, run_id: str) -> None:
+    """Hide a foreign instruction file in a line that does not parse.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
+    insert_line(
+        tree,
+        run_id,
+        '{"type":"attachment","attachment":{"type":"instructions","files":'
+        f'[{{"path":"{FOREIGN_INSTRUCTION}"}}]',
+    )
+
+
+def mutate_non_object_line(tree: Path, run_id: str) -> None:
+    """Record a line that is valid JSON but not a transcript entry.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
+    insert_line(tree, run_id, '"deferred_tools_delta TaskCreate"')
+
+
+def mutate_torn_tail(tree: Path, run_id: str) -> None:
+    """End the transcript mid-write, the way a killed session does.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
+    path = transcript_of(tree, run_id)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write('{"type":"attachment","attachment":{"type":"deferred_to')
+
+
+def mutate_second_entrypoint(tree: Path, run_id: str) -> None:
+    """Continue the session from a second entrypoint after the CLI.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
+    entry = {
+        "type": "attachment",
+        "entrypoint": "sdk-ts",
+        "version": CC_VERSION,
+        "attachment": {"type": "date", "date": "2026-10-14"},
+    }
+    path = transcript_of(tree, run_id)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry) + "\n")
 
 
 def mutate_tasks(tree: Path, run_id: str) -> None:
@@ -293,6 +425,40 @@ class LayoutCase(unittest.TestCase):
             rows, missing = tally.collect(logs, cfg)
         return rows, missing, buffer.getvalue()
 
+    def run_cli(
+        self, root: Path, baseline_logs: str, new_logs: str
+    ) -> subprocess.CompletedProcess[str]:
+        """Run the analyzer over a materialized tree.
+
+        :param root: The materialized tree root.
+        :param baseline_logs: The directory name read as the baseline arm.
+        :param new_logs: The directory name read as the relocated arm.
+        :returns: The finished process, with its output captured.
+        """
+        return subprocess.run(
+            [
+                sys.executable,
+                str(HERE / "tally.py"),
+                "--records",
+                str(root / "records"),
+                "--workspaces",
+                str(root / "workspaces"),
+                "--baseline-logs",
+                str(root / baseline_logs),
+                "--new-logs",
+                str(root / new_logs),
+                "--plugin-root",
+                PLUGIN_ROOT,
+                "--model",
+                MODEL_ID,
+                "--cc-version",
+                CC_VERSION,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
     def config(self, root: Path) -> tally.Config:
         """Build the campaign's pinned conditions over a materialized tree.
 
@@ -326,6 +492,9 @@ class ReadoutsTest(LayoutCase):
                 self.assertIs(out["tasks"], False)
                 self.assertEqual(out["first_tool"], "Skill(hyperpowers:brainstorming)")
                 self.assertEqual(out["skills"], ["hyperpowers:brainstorming"])
+                self.assertEqual(out["layout"], PROVENANCE[layout])
+                self.assertEqual(out["malformed"], [])
+                self.assertIs(out["torn_tail"], False)
 
     def test_own_roots_name_the_record_and_the_workspace(self) -> None:
         root = self.materialize("relocated-layout")
@@ -373,6 +542,222 @@ class ManipulationTest(LayoutCase):
                     self.assertEqual(new_side.reason, "manipulation")
                     self.assertTrue(new_side.detail.startswith("new:"))
                     self.assertEqual(tally.exit_code(new_side), 2)
+
+    def test_paths_that_only_look_owned_are_foreign(self) -> None:
+        cases = (
+            ("traversal", mutate_traversal_instruction),
+            ("embedded-root", mutate_embedded_root_instruction),
+        )
+        for layout, run_id in LAYOUTS:
+            for name, mutate in cases:
+                with self.subTest(layout=layout, case=name):
+                    root = self.materialize(layout)
+                    mutate(root, run_id)
+                    rows, _, _ = self.collect_quietly(
+                        root / f"logs-{layout}", self.config(root)
+                    )
+                    self.assertEqual(
+                        [entry.split("=", 1)[0] for entry in rows[0]["manip"]],
+                        ["foreign_instructions"],
+                    )
+                    decision = tally.decide(rows, arm(5, 5))
+                    self.assertEqual(decision.outcome, "stop")
+                    self.assertEqual(decision.reason, "manipulation")
+                    self.assertEqual(tally.exit_code(decision), 2)
+
+    def test_a_second_entrypoint_is_a_manipulation_stop(self) -> None:
+        for layout, run_id in LAYOUTS:
+            with self.subTest(layout=layout):
+                root = self.materialize(layout)
+                mutate_second_entrypoint(root, run_id)
+                rows, _, _ = self.collect_quietly(
+                    root / f"logs-{layout}", self.config(root)
+                )
+                # The CLI entrypoint is still there; it is no longer the only
+                # one, which the first-wins reading could not see.
+                self.assertEqual(rows[0]["entrypoint"], "cli,sdk-ts")
+                self.assertEqual(rows[0]["manip"], ["entrypoint=cli,sdk-ts"])
+                decision = tally.decide(rows, arm(5, 5))
+                self.assertEqual(decision.outcome, "stop")
+                self.assertEqual(decision.reason, "manipulation")
+                self.assertEqual(tally.exit_code(decision), 2)
+
+
+class IntegrityTest(LayoutCase):
+    """What must hold before the two arms can be compared at all."""
+
+    def flaws(
+        self, rows: list[dict[str, Any]], other: list[dict[str, Any]]
+    ) -> list[str]:
+        """Check one arm's rows against a clean, disjoint second arm.
+
+        :param rows: The arm under test, read as the baseline.
+        :param other: The second arm.
+        :returns: The integrity failures.
+        """
+        return tally.integrity_failures(
+            Path("/logs/baseline"), Path("/logs/new"), rows, other
+        )
+
+    def assert_stops(self, flaws: list[str]) -> None:
+        """Assert a set of failures is a stop at the manipulation's exit code.
+
+        :param flaws: The integrity failures.
+        """
+        self.assertTrue(flaws)
+        decision = tally.Decision("stop", "integrity", "; ".join(flaws))
+        self.assertEqual(tally.exit_code(decision), 2)
+
+    def test_the_arms_must_be_two_different_log_directories(self) -> None:
+        root = self.materialize("baseline-layout")
+        logs = root / "logs-baseline-layout"
+        rows, _, _ = self.collect_quietly(logs, self.config(root))
+        flaws = tally.integrity_failures(logs, logs, rows, rows)
+        self.assertTrue(any("one log directory for both arms" in f for f in flaws))
+        self.assert_stops(flaws)
+
+    def test_a_run_id_in_both_arms_is_an_integrity_stop(self) -> None:
+        baseline = clean_arm("shared", "legacy")
+        new = clean_arm("shared", "relocated")
+        flaws = self.flaws(baseline, new)
+        self.assertTrue(any("both arms claim" in f for f in flaws))
+        self.assert_stops(flaws)
+        # Disjoint ids, same shape: nothing to object to.
+        self.assertEqual(self.flaws(baseline, clean_arm("new", "relocated")), [])
+
+    def test_an_arm_reading_the_other_layout_is_an_integrity_stop(self) -> None:
+        flaws = self.flaws(clean_arm("b", "relocated"), clean_arm("n", "relocated"))
+        self.assertTrue(any("expected the legacy layout" in f for f in flaws))
+        self.assert_stops(flaws)
+
+    def test_swapped_arms_are_an_integrity_stop(self) -> None:
+        root = self.materialize("baseline-layout", "relocated-layout")
+        proc = self.run_cli(root, "logs-relocated-layout", "logs-baseline-layout")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("stop integrity", proc.stdout)
+        self.assertIn("expected the legacy layout", proc.stdout)
+        self.assertIn("expected the relocated layout", proc.stdout)
+
+    def test_a_log_naming_two_runs_is_an_integrity_stop(self) -> None:
+        root = self.materialize("baseline-layout")
+        logs = root / "logs-baseline-layout"
+        log = logs / "control-cost-api-field-rename-boundary-p1.log"
+        log.write_text(
+            log.read_text(encoding="utf-8") + f"run-id: {BASELINE_RUN}\n",
+            encoding="utf-8",
+        )
+        rows, _, table = self.collect_quietly(logs, self.config(root))
+        self.assertEqual(len(rows), 2)
+        for r in rows:
+            self.assertIn(f"log-run-ids=2 ({log.name})", r["integrity"])
+        self.assertIn("integrity=log-run-ids=2", table)
+        self.assert_stops(self.flaws(rows, clean_arm("n", "relocated")))
+
+    def test_a_run_id_repeated_across_logs_is_an_integrity_stop(self) -> None:
+        root = self.materialize("baseline-layout")
+        logs = root / "logs-baseline-layout"
+        log = logs / "control-cost-api-field-rename-boundary-p1.log"
+        (logs / "control-cost-api-field-rename-boundary-p2.log").write_text(
+            log.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        rows, _, _ = self.collect_quietly(logs, self.config(root))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["integrity"], [])
+        self.assertEqual(rows[1]["integrity"], ["duplicate-run-id"])
+        self.assert_stops(self.flaws(rows, clean_arm("n", "relocated")))
+
+    def test_a_graded_run_without_one_result_is_an_integrity_stop(self) -> None:
+        results = ("gauntlet-agent", "results")
+        for name, count in (("removed", 0), ("duplicated", 2)):
+            with self.subTest(case=name):
+                root = self.materialize("baseline-layout")
+                tree = root.joinpath("records", BASELINE_RUN, *results)
+                if count:
+                    shutil.copytree(tree / "g1", tree / "g2")
+                else:
+                    shutil.rmtree(tree)
+                rows, _, table = self.collect_quietly(
+                    root / "logs-baseline-layout", self.config(root)
+                )
+                self.assertEqual(rows[0]["final"], "fail")
+                self.assertIn(f"result-cardinality={count}", rows[0]["integrity"])
+                self.assertIn("result=none", table)
+                self.assert_stops(self.flaws(rows, clean_arm("n", "relocated")))
+
+    def test_result_cardinality_cannot_mask_a_threshold_gap(self) -> None:
+        # Five baseline passes, two of which lost their result file: read as
+        # indeterminate they lower p_b from 5 to 3 and the gap from 3 to 1.
+        baseline = (
+            [row("pass", run_id=f"b-pass-{i}") for i in range(3)]
+            + [
+                row(
+                    "indeterminate",
+                    run_id=f"b-masked-{i}",
+                    verdict=PASS_VERDICT,
+                    integrity=["result-cardinality=0"],
+                )
+                for i in range(2)
+            ]
+            + [row("fail", run_id=f"b-fail-{i}") for i in range(5)]
+        )
+        new = [
+            row("pass", run_id=f"n-pass-{i}", layout="relocated") for i in range(2)
+        ] + [row("fail", run_id=f"n-fail-{i}", layout="relocated") for i in range(8)]
+        masked = tally.decide(baseline, new)
+        self.assertEqual(masked.outcome, "proceed")
+        self.assertEqual(masked.detail, "p_b=3 p_n=2")
+        self.assert_stops(self.flaws(baseline, new))
+
+    def test_an_unreadable_transcript_line_is_an_integrity_stop(self) -> None:
+        cases = (
+            ("hidden-tasks", mutate_hidden_tasks_line),
+            ("hidden-instruction", mutate_hidden_instruction_line),
+            ("non-object", mutate_non_object_line),
+        )
+        for layout, run_id in LAYOUTS:
+            for name, mutate in cases:
+                with self.subTest(layout=layout, case=name):
+                    root = self.materialize(layout)
+                    mutate(root, run_id)
+                    rows, _, table = self.collect_quietly(
+                        root / f"logs-{layout}", self.config(root)
+                    )
+                    # Every pin still reads as satisfied: the hidden line is
+                    # exactly what the manipulation checks cannot see.
+                    self.assertEqual(rows[0]["manip"], [])
+                    self.assertEqual(len(rows[0]["integrity"]), 1)
+                    self.assertTrue(
+                        rows[0]["integrity"][0].startswith("malformed-transcript=")
+                    )
+                    self.assertIn(":4", rows[0]["integrity"][0])
+                    self.assertIn("integrity=malformed-transcript=", table)
+                    self.assert_stops(self.flaws(rows, clean_arm("n", "relocated")))
+
+    def test_a_torn_tail_is_recorded_and_tolerated(self) -> None:
+        for layout, run_id in LAYOUTS:
+            with self.subTest(layout=layout):
+                root = self.materialize(layout)
+                mutate_torn_tail(root, run_id)
+                rows, _, table = self.collect_quietly(
+                    root / f"logs-{layout}", self.config(root)
+                )
+                self.assertIs(rows[0]["torn_tail"], True)
+                self.assertEqual(rows[0]["integrity"], [])
+                self.assertEqual(rows[0]["manip"], [])
+                self.assertIn("torn_tail=True", table)
+                # The torn arm, against a clean one on the other layout.
+                arms = {PROVENANCE[layout]: rows}
+                arms.setdefault("legacy", clean_arm("b", "legacy"))
+                arms.setdefault("relocated", clean_arm("n", "relocated"))
+                self.assertEqual(
+                    tally.integrity_failures(
+                        Path("/logs/baseline"),
+                        Path("/logs/new"),
+                        arms["legacy"],
+                        arms["relocated"],
+                    ),
+                    [],
+                )
 
 
 class CountsTest(unittest.TestCase):
@@ -676,29 +1061,7 @@ class CliTest(LayoutCase):
 
     def test_the_cli_fails_closed_on_two_short_arms(self) -> None:
         root = self.materialize("baseline-layout", "relocated-layout")
-        proc = subprocess.run(
-            [
-                sys.executable,
-                str(HERE / "tally.py"),
-                "--records",
-                str(root / "records"),
-                "--workspaces",
-                str(root / "workspaces"),
-                "--baseline-logs",
-                str(root / "logs-baseline-layout"),
-                "--new-logs",
-                str(root / "logs-relocated-layout"),
-                "--plugin-root",
-                PLUGIN_ROOT,
-                "--model",
-                MODEL_ID,
-                "--cc-version",
-                CC_VERSION,
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
         self.assertEqual(proc.returncode, 3, proc.stderr)
         self.assertIn("stop insufficient", proc.stdout)
         self.assertIn("baseline=1 new=1", proc.stdout)
