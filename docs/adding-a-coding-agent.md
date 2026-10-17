@@ -77,8 +77,8 @@ Do not add public-CI live runs. Live evals are trusted-maintainer operations.
 
 ## Implementation Rules
 
-- Keep each run's agent state under `results/workspaces/<run>/home`; never symlink or read the
-  operator's real `~/.<agent>` at runtime.
+- Keep each run's agent state under `results/workspaces/<run>/home`; never
+  symlink or read the operator's real `~/.<agent>` at runtime.
 - Seed credentials into the run home before launch, with chmod `0600` for
   secret-bearing files.
 - Use `SUPERPOWERS_ROOT` as the plugin/skill source. A globally installed plugin
@@ -106,7 +106,8 @@ bun run quorum show <run-dir>
 
 For a useful smoke, verify:
 
-- The CLI launched under `results/workspaces/<run>/home`, not the operator's real home.
+- The CLI launched under `results/workspaces/<run>/home`, not the operator's
+  real home.
 - Superpowers was installed or staged from `SUPERPOWERS_ROOT`.
 - Raw session evidence exists where the config says it should.
 - `<run>/trajectory.json` contains the expected skill/tool rows.

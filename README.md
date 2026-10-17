@@ -45,18 +45,18 @@ Live evals run the Coding-Agent under test with broad execution power:
 - Copilot uses `--allow-all`.
 
 quorum pins each Coding-Agent's `HOME` (plus the XDG base dirs and `TMPDIR`)
-to a throwaway per-run home at `results/workspaces/<run>/home` — the launcher splices in the
-`$QUORUM_HOME_ENV` token built by `src/agents/home-env.ts` (`xdgHomeEnv`, the
-single source of truth). Each agent's config dir is collapsed *under* that home
-(Claude `.claude`, Codex `.codex`, Gemini `.`, OpenCode `.`, Antigravity `.`,
-Copilot `.copilot`, Kimi `.kimi-code`, Pi `.pi/agent`), so the Coding-Agent
-finds its config via its own `$HOME` default and never sees the host's real
-`~/.claude`, `~/.codex`, `~/.gemini`, `~/.kimi-code`, `~/.pi`, `~/.copilot`,
-`~/.config`, or other home-relative state, installed plugins, or prior sessions.
-Provisioning seeds the config — and the host OAuth creds each agent needs — into
-that throwaway home before launch, so there is no run-time login. Copilot also
-stages the local Superpowers plugin under the isolated home, uses an
-allowlisted outer environment, and writes a secret-bearing chmod-0600
+to a throwaway per-run home at `results/workspaces/<run>/home` — the launcher
+splices in the `$QUORUM_HOME_ENV` token built by `src/agents/home-env.ts`
+(`xdgHomeEnv`, the single source of truth). Each agent's config dir is collapsed
+*under* that home (Claude `.claude`, Codex `.codex`, Gemini `.`, OpenCode `.`,
+Antigravity `.`, Copilot `.copilot`, Kimi `.kimi-code`, Pi `.pi/agent`), so the
+Coding-Agent finds its config via its own `$HOME` default and never sees the
+host's real `~/.claude`, `~/.codex`, `~/.gemini`, `~/.kimi-code`, `~/.pi`,
+`~/.copilot`, `~/.config`, or other home-relative state, installed plugins, or
+prior sessions. Provisioning seeds the config — and the host OAuth creds each
+agent needs — into that throwaway home before launch, so there is no run-time
+login. Copilot also stages the local Superpowers plugin under the isolated home,
+uses an allowlisted outer environment, and writes a secret-bearing chmod-0600
 `.copilot-env` inside the run dir. That narrows the blast radius but is not a
 sandbox. OpenCode and Copilot launchers additionally use allowlisted
 environments, but live Coding-Agents still run with broad filesystem and
@@ -203,7 +203,8 @@ messages.
 | **Coding-Agent** | The agent under test — the SUT. Instances: **Claude**, **Claude Haiku**, **Claude Sonnet**, **Codex**, **Antigravity**, **Gemini**, **Kimi**, **OpenCode**, **Pi**, **Copilot**. | config + session log under its throwaway `$HOME` at `<run-workspace>/home/…`; the files it writes → `<run-workspace>/coding-agent-workdir/` |
 | **Quorum** | The TypeScript/Bun wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and the final verdict. | repo `superpowers-evals/src/`; `<run>/verdict.json` |
 
-`<run-workspace>` is `results/workspaces/<run>/`; the record stays at `results/<run>/`.
+`<run-workspace>` is `results/workspaces/<run>/`; the record stays at
+`results/<run>/`.
 
 A run involves **two** LLMs — the **Gauntlet-Agent** (QA tester) and the
 **Coding-Agent** (subject). Separate models, separate logs, separate token
@@ -248,7 +249,8 @@ quorum produces a three-valued verdict:
 
 Exit codes are 0 for `pass`, 1 for `fail`, and 2 for `indeterminate`.
 
-Each run produces one directory under `results/`:
+Each run produces a record directory under `results/`, plus the agent's own
+tree beside it:
 
 ```text
 results/<scenario>-<coding-agent>-<timestamp>-<nonce>/
@@ -261,7 +263,7 @@ results/<scenario>-<coding-agent>-<timestamp>-<nonce>/
 ```text
 results/workspaces/<run>/
 |-- coding-agent-workdir/   files the Coding-Agent produced
-|-- home/                   the Coding-Agent's throwaway $HOME
+`-- home/                   the Coding-Agent's throwaway $HOME
 ```
 
 `results/` is gitignored because run artifacts can contain sensitive
@@ -294,9 +296,9 @@ fails loudly instead of corrupting a verdict. The `cli/` layer parses commands
 and dispatches into the `runner/` pipeline (one scenario × one Coding-Agent) or
 `run-all/` (the matrix). Per-Coding-Agent differences live in two parallel
 fan-outs keyed by agent name: `agents/` seeds the agent's config under the
-throwaway per-run `$HOME` (`results/workspaces/<run>/home`), and `normalize/` turns that agent's
-session log into a uniform tool-call trace. Live agent-CLI calls and other
-non-hermetic subprocesses go through the
+throwaway per-run `$HOME` (`results/workspaces/<run>/home`), and `normalize/`
+turns that agent's session log into a uniform tool-call trace. Live agent-CLI
+calls and other non-hermetic subprocesses go through the
 `agents/command-runner.ts` seam, so the unit suite injects fakes and never
 launches a real CLI. `scheduler/` is the shared concurrency engine under both
 `run-all/` and the `dashboard/`. `env.ts` is the only module that reads

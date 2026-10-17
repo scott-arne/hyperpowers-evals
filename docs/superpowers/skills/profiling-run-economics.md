@@ -98,9 +98,10 @@ thinking" questions that transcripts can't.
 
 ## Comparing two runs' deliverables blind
 
-Copy both `coding-agent-workdir`s (under results/workspaces/<run>/) to neutral paths (`/tmp/<x>/alpha`, `beta`),
-delete build artifacts, rotate which config gets which label between
-comparisons, and have a fresh judge (that knows nothing about the configs)
-score both against the fixture's own plan.md. Trust verdicts that survive
-label rotation; distrust single-sample margins — judge noise of ±1.5 points
-is normal. Tell the judge: strictly read-only, no probe files even in copies.
+Copy both `coding-agent-workdir`s (under `results/workspaces/<run>/`) to neutral
+paths (`/tmp/<x>/alpha`, `beta`), delete build artifacts, rotate which config
+gets which label between comparisons, and have a fresh judge (that knows nothing
+about the configs) score both against the fixture's own plan.md. Trust verdicts
+that survive label rotation; distrust single-sample margins — judge noise of
+±1.5 points is normal. Tell the judge: strictly read-only, no probe files even
+in copies.

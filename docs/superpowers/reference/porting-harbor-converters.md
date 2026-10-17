@@ -382,10 +382,10 @@ parity.py <converter> <session_dir> <ours_trajectory.json> [model]
   (`uncached = prompt − cached − cache_create`) — the disjoint token sums match
   ours bucket-for-bucket. **Harbor = oracle, our TS normalizer = under test.**
 
-Get a real trace from a prior run: `results/workspaces/<run>/home/...` (per the per-run
-throwaway `$HOME`, e.g. `.claude`/`.codex`), which is the same captured log our
-`src/capture/` normalized. Point Harbor's converter at that directory and our
-`trajectory.json` from `results/<run>/.../trajectory.json`.
+Get a real trace from a prior run: `results/workspaces/<run>/home/...` (per the
+per-run throwaway `$HOME`, e.g. `.claude`/`.codex`), which is the same captured
+log our `src/capture/` normalized. Point Harbor's converter at that directory
+and our `trajectory.json` from `results/<run>/.../trajectory.json`.
 
 A new converter graduates from "ported" to "trusted" only when (a) its
 inline-fixture unit test passes `bun test test/normalize.<agent>.test.ts` and

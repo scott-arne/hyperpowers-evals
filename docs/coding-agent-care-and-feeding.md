@@ -167,17 +167,17 @@ bun run quorum run scenarios/00-quorum-smoke-hello-world --coding-agent claude
 
 ### Codex
 
-Codex seeds `<workspace>/home/.codex` from the operator's local ChatGPT subscription
-login at `~/.codex/auth.json`, or from `/auth/codex` in the container. Keep the
-host login current with `codex login`. Codex runs use
+Codex seeds `<workspace>/home/.codex` from the operator's local ChatGPT
+subscription login at `~/.codex/auth.json`, or from `/auth/codex` in the
+container. Keep the host login current with `codex login`. Codex runs use
 `--dangerously-bypass-approvals-and-sandbox`; do not wire live Codex evals to
 public CI.
 
 ### Gemini
 
 Gemini's config dir is collapsed onto the throwaway home. quorum seeds
-`<workspace>/home/.gemini`, writes a chmod-0600 runtime env file for API-key auth, and
-links Superpowers from `SUPERPOWERS_ROOT` with:
+`<workspace>/home/.gemini`, writes a chmod-0600 runtime env file for API-key
+auth, and links Superpowers from `SUPERPOWERS_ROOT` with:
 
 ```bash
 gemini extensions link "$SUPERPOWERS_ROOT" --consent
@@ -205,8 +205,8 @@ and the raw Gemini transcripts.
 
 Antigravity runs host-side for now. The generated launcher pins the throwaway
 home and runs `agy` with `--dangerously-skip-permissions` and an explicit
-`--gemini_dir` under `<workspace>/home/.gemini`. quorum seeds host Gemini OAuth creds,
-runs an isolated auth preflight, and installs the Superpowers plugin from
+`--gemini_dir` under `<workspace>/home/.gemini`. quorum seeds host Gemini OAuth
+creds, runs an isolated auth preflight, and installs the Superpowers plugin from
 `SUPERPOWERS_ROOT`.
 
 Antigravity auth uses local browser/keyring state owned by the maintainer
@@ -226,8 +226,8 @@ and raw Antigravity transcripts.
 
 ### Kimi
 
-Kimi seeds config and host OAuth under `<workspace>/home/.kimi-code`. It does not read
-or symlink the host's `~/.kimi-code`. API-key auth comes from
+Kimi seeds config and host OAuth under `<workspace>/home/.kimi-code`. It does
+not read or symlink the host's `~/.kimi-code`. API-key auth comes from
 `KIMI_MODEL_API_KEY`; `KIMI_MODEL_NAME` is the only allowed host `KIMI_MODEL_*`
 override for reproducibility.
 
@@ -294,9 +294,9 @@ npm install -g pi-subagents
 
 ### Copilot
 
-Copilot seeds `<workspace>/home/.copilot`, writes a chmod-0600 `.copilot-env`, stages
-Superpowers under `<workspace>/home/.copilot/plugins/superpowers`, and launches with
-`--allow-all`, `--no-auto-update`, `--no-remote`, and
+Copilot seeds `<workspace>/home/.copilot`, writes a chmod-0600 `.copilot-env`,
+stages Superpowers under `<workspace>/home/.copilot/plugins/superpowers`, and
+launches with `--allow-all`, `--no-auto-update`, `--no-remote`, and
 `--disable-builtin-mcps`.
 
 Auth can come from `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`,

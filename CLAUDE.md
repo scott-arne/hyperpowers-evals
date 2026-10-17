@@ -19,7 +19,8 @@ messages.
 | **Coding-Agent** | The agent under test. Instances: **Claude**, **Claude Haiku**, **Claude Sonnet**, **Codex**, **Antigravity**, **Gemini**, **Kimi**, **OpenCode**, **Pi**, and **Copilot**. | session log -> under the per-run throwaway `$HOME` (`<run-workspace>/home/<agent-config-subdir>/...`, e.g. `.claude`/`.codex`); files it writes -> `<run-workspace>/coding-agent-workdir/` |
 | **Quorum** | The TypeScript wrapper. Owns setup, Coding-Agent adaptation, deterministic checks, and final verdict composition. | repo `superpowers-evals/src/`; `<run>/verdict.json` |
 
-`<run-workspace>` is `results/workspaces/<run>/`; the record stays at `results/<run>/`.
+`<run-workspace>` is `results/workspaces/<run>/`; the record stays at
+`results/<run>/`.
 
 A run involves two LLMs: the **Gauntlet-Agent** (QA tester) and the
 **Coding-Agent** (subject). Separate models, logs, and token costs.
@@ -125,10 +126,11 @@ or dangerous-mode launches to public CI.
 
 ## Run Directory Upkeep
 
-Every live run leaves agent infrastructure under `results/workspaces/<run>/home/`: the CLI
-install, the plugin marketplace clone and its caches, and the CLI cache. That
-is ~12M in a typical run and reached 75M in one, against roughly 3M of actual
-evidence. Unmanaged, `results/` reached 3.8G across 118 runs.
+Every live run leaves agent infrastructure under
+`results/workspaces/<run>/home/`: the CLI install, the plugin marketplace clone
+and its caches, and the CLI cache. That is ~12M in a typical run and reached 75M
+in one, against roughly 3M of actual evidence. Unmanaged, `results/` reached
+3.8G across 118 runs.
 
 After a session of live evals:
 
@@ -140,8 +142,8 @@ It removes only reinstallable paths, skips runs with no `verdict.json` yet and
 runs whose record directory or verdict was touched in the last hour so
 in-flight work is safe, and leaves everything a verdict or a committed note
 might cite: `trajectory.json`, `verdict.json`, `phase.json`, session
-transcripts, `gauntlet-agent/`, `coding-agent-workdir/`, which now live under
-`results/workspaces/<run>/`, and the SDD scratch cache at
+transcripts, `gauntlet-agent/`, `coding-agent-workdir/` (now under
+`results/workspaces/<run>/`), and the SDD scratch cache at
 `home/.cache/hyperpowers` (ledgers, gate rounds, lens output).
 
 Do not bulk-delete run directories. Eval-evidence notes in the parent repo
