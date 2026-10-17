@@ -29,15 +29,16 @@ description, the first tool call and the skills invoked.
 
 The decision fails closed. The evidence is checked before it is compared: the
 arms must be two different log directories, each log must name exactly one
-run, no run id may repeat within an arm or appear in both, each arm must show
-its own layout, a graded run must have exactly one result file, and no
-transcript line may be unreadable except a torn final line. Any of those is an
-integrity stop. Then any manipulation mismatch, a fourth grader-exit void
-in an arm, a setup void or misconfigured QA agent in the new arm, an arm that
-is not exactly ten qualifying sessions, a new-arm failure signature the
-baseline never produced, or a pass count more than two below the baseline's
-stops the campaign; no row is dropped quietly, and every row is printed either
-way.
+run, every run id must be a run directory name and nothing more, no run id may
+repeat within an arm or appear in both, every run must lie beneath its roots,
+each arm must show its own layout, a graded run must have exactly one result
+file, and no transcript line may be unreadable except a torn final line. Any
+of those is an integrity stop. Then any manipulation mismatch, a fourth
+grader-exit void in an arm, a setup void or misconfigured QA agent in the new
+arm, an arm that is not exactly ten qualifying sessions, a new-arm failure
+signature the baseline never produced, or a pass count more than two below the
+baseline's stops the campaign; no row is dropped quietly, and every row is
+printed either way.
 """
 
 from __future__ import annotations
@@ -53,7 +54,15 @@ from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
+# The raw token after ``run-id:``, whatever it is; ``valid_run_id`` judges it.
+# Matching the shape here instead would make a bad id look like a log that
+# named no run.
 RUN_ID = re.compile(r"^run-id: (\S+)$", re.MULTILINE)
+# The run directory name the runner produces,
+# ``<scenario>-<agent>-<timestamp>-<nonce>``: one path component of letters,
+# digits, dots, underscores and hyphens, starting with a letter or digit, so
+# no separator, no dot entry and no whitespace can be part of an id.
+RUN_ID_SHAPE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 LOG_NAME = re.compile(r"^control-(.+)-([pr]\d+)$")
 PLUGIN_DIR = re.compile(r'^exec .*--plugin-dir "([^"]+)"', re.MULTILINE)
 MODEL = re.compile(r'^exec .*--model "([^"]+)"', re.MULTILINE)
@@ -104,6 +113,26 @@ class Decision:
     outcome: str
     reason: str
     detail: str
+
+
+def valid_run_id(value: str) -> bool:
+    """Decide whether a run id is a run directory name and nothing more.
+
+    Checked before any path is formed from an id. Without it a log could name
+    one run under several spellings (``R``, ``R/.``, ``./R``, ``R//``), each
+    reading the same verdict and counting as its own session, or name a
+    directory outside the campaign roots (``../x``, an absolute path). The
+    dot entries and the separator are refused by name as well as by the
+    character class, so the rule reads as what it is.
+
+    :param value: The token a log carried after ``run-id:``.
+    :returns: True when the token matches ``RUN_ID_SHAPE``.
+    """
+    return (
+        RUN_ID_SHAPE.fullmatch(value) is not None
+        and value not in (".", "..")
+        and "/" not in value
+    )
 
 
 def run_dir(cfg: Config, run_id: str) -> Path:
@@ -187,6 +216,26 @@ def owns(path: str, roots: tuple[str, ...]) -> bool:
         except ValueError:
             continue
     return False
+
+
+def contained(root: Path, path: Path) -> bool:
+    """Decide whether a run's directory, once resolved, is still beneath a root.
+
+    A well-formed run id cannot leave its root by spelling; a run directory
+    that is a symlink can. Both sides are resolved, so a campaign root reached
+    through a symlink is compared with itself.
+
+    :param root: The campaign root the directory was formed under.
+    :param path: The run's directory, ``root / run_id``.
+    :returns: True when the resolved directory lies strictly inside the
+        resolved root.
+    """
+    resolved_root = str(root.resolve())
+    resolved = str(path.resolve())
+    return (
+        resolved != resolved_root
+        and os.path.commonpath([resolved, resolved_root]) == resolved_root
+    )
 
 
 def criterion_one(result: dict[str, Any] | None) -> str:
@@ -393,8 +442,8 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
     :param logs: The arm's log directory.
     :param cfg: The campaign configuration.
     :returns: The rows for ``cfg.scenario``, and the number of runs the logs
-        account for but could not be read: a named run with no verdict, or a
-        log that named no run at all.
+        account for but could not be read: a named run with no verdict, an id
+        that is not a run directory name, or a log that named no run at all.
     """
     superseded_file = HERE / "superseded.txt"
     superseded = (
@@ -430,6 +479,12 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
             [f"log-run-ids={len(run_ids)} ({log.name})"] if len(run_ids) > 1 else []
         )
         for run_id in run_ids:
+            # No path is formed from an id that is not a directory name: the
+            # arm-level check names it, and it never becomes a row.
+            if not valid_run_id(run_id):
+                print(f"{scenario}\t{proc}\t{run_id}\tBAD RUN ID")
+                missing += 1
+                continue
             path = run_dir(cfg, run_id)
             verdict_path = path / "verdict.json"
             if not verdict_path.is_file():
@@ -457,6 +512,13 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
             if run_id in seen:
                 r["integrity"].append("duplicate-run-id")
             seen.add(run_id)
+            # Defense in depth behind the shape rule: whatever the id, the
+            # directories it names must still be inside the campaign roots.
+            if not (
+                contained(cfg.records, path)
+                and contained(cfg.workspaces, cfg.workspaces / run_id)
+            ):
+                r["integrity"].append(f"run-outside-root={run_id}")
             # A run the composer graded has exactly one result file. Any other
             # count would read as an indeterminate trial, which would lower
             # the arm's pass count without saying why.
@@ -496,10 +558,11 @@ def integrity_failures(
     """List every reason the two arms cannot be compared as read.
 
     Everything here is about the evidence rather than the result: an arm that
-    is not the arm it claims to be, a run counted twice, a reading taken from
-    a file the analyzer could not read whole. The campaign stops on any of
-    them, in the same class as a manipulation mismatch, because the comparison
-    the decision would make is not the comparison the design asked for.
+    is not the arm it claims to be, a run counted twice, a log naming
+    something that is not a run, a reading taken from a file the analyzer
+    could not read whole. The campaign stops on any of them, in the same class
+    as a manipulation mismatch, because the comparison the decision would make
+    is not the comparison the design asked for.
 
     :param baseline_logs: The baseline arm's log directory.
     :param new_logs: The relocated arm's log directory.
@@ -512,15 +575,21 @@ def integrity_failures(
     if baseline_logs.resolve() == new_logs.resolve():
         failures.append(f"one log directory for both arms: {baseline_logs.resolve()}")
     # Read from the logs rather than the rows: a log whose several ids all
-    # died before writing a verdict produces no row to carry the flaw.
+    # died before writing a verdict, or whose id is not a run directory name,
+    # produces no row to carry the flaw.
     for arm, logs in (("baseline", baseline_logs), ("new", new_logs)):
         for log in sorted(logs.glob("control-*-[pr][0-9]*.log")):
             match = LOG_NAME.match(log.stem)
             if not match or match.group(1) != cfg.scenario:
                 continue
-            named = len(RUN_ID.findall(log.read_text(encoding="utf-8")))
-            if named > 1:
-                failures.append(f"{arm}: log-run-ids={named} ({log.name})")
+            named = RUN_ID.findall(log.read_text(encoding="utf-8"))
+            if len(named) > 1:
+                failures.append(f"{arm}: log-run-ids={len(named)} ({log.name})")
+            failures += [
+                f"{arm}: bad-run-id={value} ({log.name})"
+                for value in named
+                if not valid_run_id(value)
+            ]
     for arm, rows in (("baseline", baseline), ("new", new)):
         failures += [
             f"{arm}:{r['run_id']}: {reason}" for r in rows for reason in r["integrity"]

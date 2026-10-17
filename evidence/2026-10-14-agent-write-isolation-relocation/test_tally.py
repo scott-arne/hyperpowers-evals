@@ -40,6 +40,18 @@ LAYOUTS = (("baseline-layout", BASELINE_RUN), ("relocated-layout", NEW_RUN))
 # The provenance each layout fixture must report: the pre-change tree keeps the
 # agent's home in the record, the relocated one keeps it in the workspace.
 PROVENANCE = {"baseline-layout": "legacy", "relocated-layout": "relocated"}
+# The arm each layout fixture is read as.
+ARM_OF = {"baseline-layout": "baseline", "relocated-layout": "new"}
+# Five spellings of one run id that all name its record directory: the first
+# three collapse when the path is joined, the traversal and the absolute path
+# reach it through the file system. Each is built from the materialized root.
+ALIASES: tuple[tuple[str, Callable[[Path, str], str]], ...] = (
+    ("trailing-dot", lambda _root, run_id: f"{run_id}/."),
+    ("leading-dot", lambda _root, run_id: f"./{run_id}"),
+    ("double-slash", lambda _root, run_id: f"{run_id}//"),
+    ("traversal", lambda _root, run_id: f"../records/{run_id}"),
+    ("absolute", lambda root, run_id: f"{root}/records/{run_id}"),
+)
 
 # The six verdict fixtures and the kind each must classify as. The launcher
 # (Task 15) copies the same files, so both tools read one set of examples.
@@ -775,6 +787,119 @@ class IntegrityTest(LayoutCase):
         self.assertEqual(rows[0]["integrity"], [])
         self.assertEqual(rows[1]["integrity"], ["duplicate-run-id"])
         self.assert_stops(self.flaws(rows, clean_arm("n", "relocated")))
+
+    def flaws_in_place(
+        self, root: Path, layout: str, rows: list[dict[str, Any]]
+    ) -> list[str]:
+        """Check one layout's rows, as its own arm, against the other fixture arm.
+
+        Both layouts are materialized under ``root``; the other arm is read
+        from its own log directory, so the only failures are the ones ``rows``
+        bring.
+
+        :param root: The materialized tree root, holding both layouts.
+        :param layout: The layout fixture ``rows`` came from.
+        :param rows: The arm under test.
+        :returns: The integrity failures.
+        """
+        cfg = self.config(root)
+        arms = {layout: rows}
+        for other, _ in LAYOUTS:
+            if other != layout:
+                arms[other], _, _ = self.collect_quietly(root / f"logs-{other}", cfg)
+        return tally.integrity_failures(
+            root / "logs-baseline-layout",
+            root / "logs-relocated-layout",
+            arms["baseline-layout"],
+            arms["relocated-layout"],
+            cfg,
+        )
+
+    def test_the_run_id_shape_is_the_runners_directory_name(self) -> None:
+        for value in (BASELINE_RUN, NEW_RUN, "R", "a.b_c-d9"):
+            with self.subTest(accepted=value):
+                self.assertTrue(tally.valid_run_id(value))
+        rejected = ("", ".", "..", ".hidden", "-x", "a/b", "a\\b", "/a", "a b", "a\n")
+        for value in rejected:
+            with self.subTest(rejected=value):
+                self.assertFalse(tally.valid_run_id(value))
+
+    def test_an_alias_of_a_run_id_is_an_integrity_stop(self) -> None:
+        for layout, run_id in LAYOUTS:
+            for name, make in ALIASES:
+                with self.subTest(layout=layout, alias=name):
+                    root = self.materialize("baseline-layout", "relocated-layout")
+                    alias = make(root, run_id)
+                    # The alias does name the run's record: joined to the
+                    # records root it reads the same verdict, which is what
+                    # let one trial count as two.
+                    aliased = root / "records" / alias / "verdict.json"
+                    self.assertTrue(aliased.is_file())
+                    logs = root / f"logs-{layout}"
+                    log = logs / "control-cost-api-field-rename-boundary-p2.log"
+                    log.write_text(
+                        f"arm=control scenario={SCENARIO} proc=p2\nrun-id: {alias}\n",
+                        encoding="utf-8",
+                    )
+                    rows, missing, table = self.collect_quietly(logs, self.config(root))
+                    # Only the canonical spelling made a row, and that row is
+                    # untouched; the alias is named in the table, not read.
+                    self.assertEqual([r["run_id"] for r in rows], [run_id])
+                    self.assertEqual(rows[0]["integrity"], [])
+                    self.assertEqual(rows[0]["manip"], [])
+                    self.assertEqual(missing, 1)
+                    self.assertIn(f"\tp2\t{alias}\tBAD RUN ID", table)
+                    flaws = self.flaws_in_place(root, layout, rows)
+                    self.assertEqual(
+                        flaws, [f"{ARM_OF[layout]}: bad-run-id={alias} ({log.name})"]
+                    )
+                    self.assert_stops(flaws)
+
+    def test_the_cli_stops_on_an_aliased_run_id(self) -> None:
+        root = self.materialize("baseline-layout", "relocated-layout")
+        logs = root / "logs-baseline-layout"
+        log = logs / "control-cost-api-field-rename-boundary-p2.log"
+        log.write_text(
+            f"arm=control scenario={SCENARIO} proc=p2\nrun-id: {BASELINE_RUN}/.\n",
+            encoding="utf-8",
+        )
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("BAD RUN ID", proc.stdout)
+        self.assertIn("stop integrity", proc.stdout)
+        expected = f"baseline: bad-run-id={BASELINE_RUN}/. ({log.name})"
+        self.assertIn(expected, proc.stdout)
+
+    def test_a_run_that_resolves_outside_its_root_is_an_integrity_stop(self) -> None:
+        # A well-formed id cannot leave its root by spelling; a run directory
+        # that is a symlink can, and the analyzer must say so rather than read
+        # through it. The record is moved out under the baseline layout, the
+        # workspace under the relocated one.
+        for layout, run_id in LAYOUTS:
+            with self.subTest(layout=layout):
+                root = self.materialize("baseline-layout", "relocated-layout")
+                tree = "records" if layout == "baseline-layout" else "workspaces"
+                outside = Path(tempfile.mkdtemp(prefix="tally-outside-")).resolve()
+                self.addCleanup(shutil.rmtree, outside, True)
+                shutil.move(str(root / tree / run_id), str(outside / run_id))
+                (root / tree / run_id).symlink_to(
+                    outside / run_id, target_is_directory=True
+                )
+                rows, _, table = self.collect_quietly(
+                    root / f"logs-{layout}", self.config(root)
+                )
+                self.assertEqual([r["run_id"] for r in rows], [run_id])
+                # Read through the link, every pin still holds; the run is
+                # not where the campaign keeps its runs.
+                self.assertEqual(rows[0]["layout"], PROVENANCE[layout])
+                self.assertEqual(rows[0]["manip"], [])
+                self.assertEqual(rows[0]["integrity"], [f"run-outside-root={run_id}"])
+                self.assertIn(f"integrity=run-outside-root={run_id}", table)
+                flaws = self.flaws_in_place(root, layout, rows)
+                self.assertEqual(
+                    flaws, [f"{ARM_OF[layout]}:{run_id}: run-outside-root={run_id}"]
+                )
+                self.assert_stops(flaws)
 
     def test_a_graded_run_without_one_result_is_an_integrity_stop(self) -> None:
         results = ("gauntlet-agent", "results")
