@@ -29,14 +29,15 @@ Run on 2026-10-16, 17:22:38 to 17:38:08 -0700 (15 min 30 s), host load average
 between 38 and 48 throughout, with no live evals and nothing else heavy on the
 host. Corpus: `/Users/johnss51/Development/agents/hyperpowers/evals/results`.
 
-Two earlier sweeps the same afternoon (14:39:49 and 15:27:03) produced exactly
-these counts but exited 1, because `go` was not installed on the host and the
-`tool-go` fixture could not run; see "The `go` re-record" below. Comparing the
-exit-1 record with this one, result by result, `tool-go` is the only row that
-differs — status,
-records, exit codes, pre divergences, unmatched history, external references
-and tool lists are identical for all 70 others, as are the eligibility,
-refusal and layout lists.
+Two earlier sweeps the same afternoon (14:39:49 and 15:27:03) produced this
+same coverage line — `replayable 57 of eligible 61, floor 41` — but exited 1,
+because `go` was not installed on the host and the `tool-go` fixture could not
+run; their per-status line reads `equal: 67  diverged: 0  degraded-archive: 4
+clone-refused: 1`, the one fixture apart. See "The `go` re-record" below.
+Comparing the exit-1 record with this one, result by result, `tool-go` is the
+only row that differs — status, records, exit codes, pre divergences, unmatched
+history, external references and tool lists are identical for all 70 others, as
+are the eligibility, refusal and layout lists.
 
 **It must be run outside this host's command sandbox.** One recorded
 workspace (`codex-gate-converges-on-reraise-claude-bedrock-20260701T022647Z-fa24`)
@@ -84,8 +85,16 @@ every migrated scenario is covered, and nothing diverged. The three
   therefore what the eligibility pass produced, not something the guard moved.
 - The 11 synthetic fixtures do not count toward the floor (a counterfactual is
   not a replay of retained evidence); they count toward tool and migrated-
-  scenario coverage, and `coverage()` requires them to be `equal` too. All 11
-  are.
+  scenario coverage. All 11 measured `equal` in this run, with every post
+  record passing. Be precise about what that is worth: `coverage()` fails the
+  exit on a fixture that *diverges*, but a fixture that degrades simply drops
+  out of `covering`, and then only reaches the exit if it was the last thing
+  covering a tool (`uncoveredTools`) or a migrated scenario
+  (`migratedUncovered`) — which is how `tool-go` held the exit at 1 earlier
+  today. The four degraded-pre-shape fixtures below satisfy neither: their
+  tools are covered by corpus runs anyway and their names are not migrated
+  scenarios, so if one of them silently degraded in a later sweep the exit
+  would not notice. Reading their rows in `replay.md` is what catches that.
 
 ### Divergences
 
@@ -124,10 +133,21 @@ so the refusal costs coverage rather than hiding it.
 All three have one cause: `scripts/strip-runs` deletes
 `home/.claude/plugins/{cache,data,marketplaces}` from a completed run, and each
 of those checks reads something under them — the Codex stub's `calls.log`, the
-`.focus-assert` manifest's `pluginRoot`/`launchDir` (both inside the stub
-install), and the stale-broker fixture's `state/broker.json`. Verified by hand
-in each archive: only `installed_plugins.json` and `known_marketplaces.json`
-survive under `home/.claude/plugins/`. The archive cannot answer the question,
+`.launches` directory the `.focus-assert` manifest names in `launchDir` (inside
+the stub install; `launched` reads that and nothing else, and returns no
+launches when it is gone), and the stale-broker fixture's `state/broker.json`.
+Verified by hand in each archive: only `installed_plugins.json` and
+`known_marketplaces.json` survive under `home/.claude/plugins/`.
+
+Worth recording from that manifest, though it changes nothing here: its
+`pluginRoot` and `ledgerPaths` are host-absolute paths frozen into a recorded
+JSON file, and a path inside a copied file is invisible to the clone's
+external-reference machinery, which reads symlinks and git pointers. An arm
+whose check followed such a path would read outside the run with nothing
+reported. No shipped `scenarios/*/checks.sh` carries a host-absolute path today
+(`grep -rl "/Users/" scenarios/*/checks.sh` is empty), and the one manifest path
+this sweep reaches, `launchDir`, is gone from the archive, so no result here is
+affected. The archive cannot answer the question,
 so the instrument refuses to call the comparison a pass; this is the
 prerequisite working, not a regression. The counterfactual fixtures added for
 the degraded pre shapes (below) read the same stripped directories, and
@@ -213,6 +233,15 @@ In the plan's resolution order.
    `pytest` needed no fixture: the shipped `./.venv/bin/pytest` of
    `verification-phantom-completion` and `receiving-code-review-pushback` is
    counted by its basename, and both runs replayed.
+
+   One quirk of the inventory to read past: its leader scan treats a redirect
+   target as a new command, so `replay.json`'s `tools` arrays also carry
+   `/dev/null` (20 results, the two `codex-stub-*` fixtures among them), `1`
+   (the three `writing-plans-reuses-component-library*` runs) and `;` (one).
+   These can only add a spurious name to the exercised set, never remove a
+   required one, so no coverage verdict depends on them. Fixing it means
+   changing `src/cli/replay-post-checks.ts`, which Task 11 does not touch; it
+   is left to the final review.
 
 3. **Migrated scenarios not covered by a corpus run.** Two of the four were
    still uncovered after the tool fixtures: `codex-gate-stale-broker-attributed`
