@@ -304,8 +304,9 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
 
     :param logs: The arm's log directory.
     :param cfg: The campaign configuration.
-    :returns: The rows for ``cfg.scenario``, and the number of named runs
-        without a verdict.
+    :returns: The rows for ``cfg.scenario``, and the number of runs the logs
+        account for but could not be read: a named run with no verdict, or a
+        log that named no run at all.
     """
     superseded_file = HERE / "superseded.txt"
     superseded = (
@@ -326,7 +327,14 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
         scenario, proc = match.groups()
         if scenario != cfg.scenario:
             continue
-        for run_id in RUN_ID.findall(log.read_text(encoding="utf-8")):
+        run_ids = RUN_ID.findall(log.read_text(encoding="utf-8"))
+        if not run_ids:
+            # A session that died before quorum printed its run id still
+            # occupied a slot in the manifest; it is not a silent absence.
+            print(f"{scenario}\t{proc}\t{log.name}\tNO RUN ID")
+            missing += 1
+            continue
+        for run_id in run_ids:
             path = run_dir(cfg, run_id)
             verdict_path = path / "verdict.json"
             if not verdict_path.is_file():
@@ -334,7 +342,8 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
                 missing += 1
                 continue
             verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
-            kind = classify(verdict, read_result(path))
+            result = read_result(path)
+            kind = classify(verdict, result)
             if run_id in superseded:
                 kind = f"superseded-{kind}"
             r: dict[str, Any] = {
@@ -350,12 +359,16 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
             )
             rows.append(r)
             short = "-".join(run_id.rsplit("-", 2)[-2:])
+            # An indeterminate for want of one readable result.json reads the
+            # same as a graded one; the marker tells them apart.
+            marker = "" if result is not None else "\tresult=none"
             print(
                 f"{scenario}\t{proc}\t{short}\t{kind}\tfinal={r['final']}"
                 f"\tcc={r['cc']}\tentry={r['entrypoint']}\tdesc={r['desc']}"
                 f"\ttasks={r['tasks']}\tfirst={r['first_tool']}"
                 f"\tskills={','.join(r['skills']) or '-'}"
                 f"\tmanip={'ok' if not r['manip'] else ';'.join(r['manip'])}"
+                f"{marker}"
             )
     return rows, missing
 
@@ -467,7 +480,8 @@ def main(argv: list[str]) -> int:
 
     :param argv: The process arguments, ``sys.argv``.
     :returns: Process exit status: ``exit_code``'s mapping of the decision,
-        or 1 when a named run has no verdict and nothing else stopped first.
+        or 1 when a log named a run with no verdict, or named no run at all,
+        and nothing else stopped first.
     """
     if len(argv) > 1 and argv[1] == "classify":
         verdict = json.loads(Path(argv[2]).read_text(encoding="utf-8"))

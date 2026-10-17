@@ -10,6 +10,8 @@ records are the paths of the tree the test reads.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import shutil
 import subprocess
@@ -146,7 +148,11 @@ def transcript_of(tree: Path, run_id: str) -> Path:
 
 
 def mutate_root(tree: Path, run_id: str) -> None:
-    """Launch the agent against a plugin root other than the pinned one."""
+    """Launch the agent against a plugin root other than the pinned one.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
     rewrite(
         launch_of(tree, run_id),
         f'--plugin-dir "{PLUGIN_ROOT}"',
@@ -155,7 +161,11 @@ def mutate_root(tree: Path, run_id: str) -> None:
 
 
 def mutate_model(tree: Path, run_id: str) -> None:
-    """Launch the agent on a model other than the pinned one."""
+    """Launch the agent on a model other than the pinned one.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
     rewrite(
         launch_of(tree, run_id),
         f'--model "{MODEL_ID}"',
@@ -164,7 +174,11 @@ def mutate_model(tree: Path, run_id: str) -> None:
 
 
 def mutate_cc(tree: Path, run_id: str) -> None:
-    """Record a Claude Code version other than the pinned one."""
+    """Record a Claude Code version other than the pinned one.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
     rewrite(
         transcript_of(tree, run_id),
         f'"version":"{CC_VERSION}"',
@@ -173,12 +187,20 @@ def mutate_cc(tree: Path, run_id: str) -> None:
 
 
 def mutate_entrypoint(tree: Path, run_id: str) -> None:
-    """Record an entrypoint other than the CLI."""
+    """Record an entrypoint other than the CLI.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
     rewrite(transcript_of(tree, run_id), '"entrypoint":"cli"', '"entrypoint":"sdk-ts"')
 
 
 def mutate_foreign_instructions(tree: Path, run_id: str) -> None:
-    """Load an instruction file from outside the run's own two trees."""
+    """Load an instruction file from outside the run's own two trees.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
     path = transcript_of(tree, run_id)
     lines: list[str] = []
     changed = False
@@ -195,7 +217,11 @@ def mutate_foreign_instructions(tree: Path, run_id: str) -> None:
 
 
 def mutate_tasks(tree: Path, run_id: str) -> None:
-    """Offer the task tools, which the pinned conditions withhold."""
+    """Offer the task tools, which the pinned conditions withhold.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
     delta = {
         "type": "attachment",
         "attachment": {"type": "deferred_tools_delta", "addedNames": ["TaskCreate"]},
@@ -249,6 +275,24 @@ class LayoutCase(unittest.TestCase):
                 )
         return root
 
+    def collect_quietly(
+        self, logs: Path, cfg: tally.Config
+    ) -> tuple[list[dict[str, Any]], int, str]:
+        """Run ``collect`` with the table it prints captured, not emitted.
+
+        Every in-process call goes through here, so the suite's own output
+        stays pristine and a test that reads the table has it to hand.
+
+        :param logs: The arm's log directory.
+        :param cfg: The campaign configuration.
+        :returns: The rows, the count of runs that could not be read, and the
+            printed table.
+        """
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            rows, missing = tally.collect(logs, cfg)
+        return rows, missing, buffer.getvalue()
+
     def config(self, root: Path) -> tally.Config:
         """Build the campaign's pinned conditions over a materialized tree.
 
@@ -293,7 +337,7 @@ class ReadoutsTest(LayoutCase):
         for layout, run_id in LAYOUTS:
             with self.subTest(layout=layout):
                 root = self.materialize(layout)
-                rows, missing = tally.collect(
+                rows, missing, _ = self.collect_quietly(
                     root / f"logs-{layout}", self.config(root)
                 )
                 self.assertEqual(missing, 0)
@@ -312,7 +356,9 @@ class ManipulationTest(LayoutCase):
                 with self.subTest(layout=layout, check=name):
                     root = self.materialize(layout)
                     mutate(root, run_id)
-                    rows, _ = tally.collect(root / f"logs-{layout}", self.config(root))
+                    rows, _, _ = self.collect_quietly(
+                        root / f"logs-{layout}", self.config(root)
+                    )
                     self.assertEqual(len(rows), 1)
                     self.assertEqual(
                         [entry.split("=", 1)[0] for entry in rows[0]["manip"]], [name]
@@ -337,6 +383,13 @@ class CountsTest(unittest.TestCase):
         self.assertEqual(decision.outcome, "stop")
         self.assertEqual(decision.reason, "insufficient")
         self.assertEqual(decision.detail, "baseline=10 new=9")
+        self.assertEqual(tally.exit_code(decision), 3)
+
+    def test_a_short_baseline_arm_stops_as_insufficient(self) -> None:
+        decision = tally.decide(arm(5, 4), arm(5, 5))
+        self.assertEqual(decision.outcome, "stop")
+        self.assertEqual(decision.reason, "insufficient")
+        self.assertEqual(decision.detail, "baseline=9 new=10")
         self.assertEqual(tally.exit_code(decision), 3)
 
     def test_a_void_does_not_count_and_its_replacement_does(self) -> None:
@@ -414,7 +467,9 @@ class ImmediateStopTest(LayoutCase):
         # run carries neither a launch record nor a transcript.
         shutil.rmtree(record / "gauntlet-agent")
         shutil.rmtree(record / "home")
-        rows, _ = tally.collect(root / "logs-baseline-layout", self.config(root))
+        rows, _, _ = self.collect_quietly(
+            root / "logs-baseline-layout", self.config(root)
+        )
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["kind"], "qa-agent-misconfigured")
         self.assertEqual(
@@ -514,7 +569,7 @@ class CollectTest(LayoutCase):
         logs = root / "logs-baseline-layout"
         self.assertTrue((logs / "baseline-p1.log").is_file())
         self.assertTrue((logs / "control-cost-tls-verify-boundary-p1.log").is_file())
-        rows, missing = tally.collect(logs, self.config(root))
+        rows, missing, _ = self.collect_quietly(logs, self.config(root))
         self.assertEqual(missing, 0)
         self.assertEqual([r["proc"] for r in rows], ["p1"])
         self.assertEqual([r["run_id"] for r in rows], [BASELINE_RUN])
@@ -522,15 +577,45 @@ class CollectTest(LayoutCase):
     def test_a_named_run_without_a_verdict_is_counted_not_dropped(self) -> None:
         root = self.materialize("baseline-layout")
         (root / "records" / BASELINE_RUN / "verdict.json").unlink()
-        rows, missing = tally.collect(root / "logs-baseline-layout", self.config(root))
+        rows, missing, _ = self.collect_quietly(
+            root / "logs-baseline-layout", self.config(root)
+        )
         self.assertEqual(rows, [])
         self.assertEqual(missing, 1)
+
+    def test_a_log_naming_no_run_is_counted_not_dropped(self) -> None:
+        root = self.materialize("baseline-layout")
+        logs = root / "logs-baseline-layout"
+        (logs / "control-cost-api-field-rename-boundary-p2.log").write_text(
+            "arm=control scenario=cost-api-field-rename-boundary proc=p2\n"
+            "quorum exited before it printed a run id\n",
+            encoding="utf-8",
+        )
+        rows, missing, table = self.collect_quietly(logs, self.config(root))
+        self.assertEqual([r["run_id"] for r in rows], [BASELINE_RUN])
+        self.assertEqual(missing, 1)
+        self.assertIn("NO RUN ID", table)
+        self.assertIn("control-cost-api-field-rename-boundary-p2.log", table)
+
+    def test_a_run_without_one_result_is_marked_in_the_table(self) -> None:
+        root = self.materialize("baseline-layout")
+        logs = root / "logs-baseline-layout"
+        graded, _, present = self.collect_quietly(logs, self.config(root))
+        self.assertEqual(graded[0]["kind"], "pass")
+        self.assertNotIn("result=none", present)
+        # Without exactly one result.json the run is read as indeterminate,
+        # which is a real trial; the marker says why it is one.
+        shutil.rmtree(root / "records" / BASELINE_RUN / "gauntlet-agent" / "results")
+        rows, missing, table = self.collect_quietly(logs, self.config(root))
+        self.assertEqual(missing, 0)
+        self.assertEqual(rows[0]["kind"], "indeterminate")
+        self.assertIn("result=none", table)
 
     def test_each_arm_reads_its_own_directory_and_layout(self) -> None:
         root = self.materialize("baseline-layout", "relocated-layout")
         cfg = self.config(root)
-        baseline, _ = tally.collect(root / "logs-baseline-layout", cfg)
-        new, _ = tally.collect(root / "logs-relocated-layout", cfg)
+        baseline, _, _ = self.collect_quietly(root / "logs-baseline-layout", cfg)
+        new, _, _ = self.collect_quietly(root / "logs-relocated-layout", cfg)
         self.assertEqual([r["run_id"] for r in baseline], [BASELINE_RUN])
         self.assertEqual([r["run_id"] for r in new], [NEW_RUN])
         self.assertEqual(
