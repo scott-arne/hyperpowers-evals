@@ -33,13 +33,13 @@ run, every run id must be a run directory name and nothing more, no run
 directory may be claimed twice, under one spelling or two, within an arm or
 across them, no run may be a symlink, every run must lie beneath its roots,
 each arm must show its own layout, a graded run must have exactly one result
-file, and no transcript line may be unreadable except a torn final line. Any
-of those is an integrity stop. Then any manipulation mismatch, a fourth
-grader-exit void in an arm, a setup void or misconfigured QA agent in the new
-arm, an arm that is not exactly ten qualifying sessions, a new-arm failure
-signature the baseline never produced, or a pass count more than two below the
-baseline's stops the campaign; no row is dropped quietly, and every row is
-printed either way.
+file of the shape criterion 1 reads, and no transcript line may be unreadable
+except a torn final line. Any of those is an integrity stop. Then any
+manipulation mismatch, a fourth grader-exit void in an arm, a setup void or
+misconfigured QA agent in the new arm, an arm that is not exactly ten
+qualifying sessions, a new-arm failure signature the baseline never produced,
+or a pass count more than two below the baseline's stops the campaign; no row
+is dropped quietly, and every row is printed either way.
 """
 
 from __future__ import annotations
@@ -183,16 +183,41 @@ def result_files(path: Path) -> list[Path]:
     return sorted(path.glob("gauntlet-agent/results/*/result.json"))
 
 
-def read_result(found: list[Path]) -> dict[str, Any] | None:
-    """Return a run's single Gauntlet-Agent ``result.json``, if it has one.
+def read_result(found: list[Path]) -> tuple[dict[str, Any] | None, str | None]:
+    """Return a run's single Gauntlet-Agent ``result.json`` and what is wrong with it.
+
+    Only the shape ``criterion_one`` reads is checked: an object whose
+    ``criteria`` is a list of three entries, the first two of them objects
+    carrying a ``verdict`` string. Anything else would read as an
+    indeterminate trial, which lowers an arm's pass count without saying
+    why, so it is not handed on as a result at all.
 
     :param found: The run's result files, from ``result_files``.
-    :returns: The parsed result, or None when there is not exactly one.
+    :returns: The parsed result when there is exactly one file of that
+        shape, else None; and the reason the sole file falls short
+        (``unreadable``, ``not-an-object``, ``criteria=missing``,
+        ``criteria=<n>``, ``criterion-1-verdict-missing``), or None when it
+        does not, or when there is not exactly one file, which
+        ``result-cardinality`` covers.
     """
     if len(found) != 1:
-        return None
-    parsed: dict[str, Any] = json.loads(found[0].read_text(encoding="utf-8"))
-    return parsed
+        return None, None
+    try:
+        parsed = json.loads(found[0].read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, "unreadable"
+    if not isinstance(parsed, dict):
+        return None, "not-an-object"
+    entries = parsed.get("criteria")
+    if not isinstance(entries, list):
+        return None, "criteria=missing"
+    if len(entries) != 3:
+        return None, f"criteria={len(entries)}"
+    for entry in entries[:2]:
+        verdict = entry.get("verdict") if isinstance(entry, dict) else None
+        if not isinstance(verdict, str) or not verdict:
+            return None, "criterion-1-verdict-missing"
+    return parsed, None
 
 
 def owns(path: str, roots: tuple[str, ...]) -> bool:
@@ -520,7 +545,7 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
                 continue
             verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
             results = result_files(path)
-            result = read_result(results)
+            result, result_flaw = read_result(results)
             kind = classify(verdict, result)
             if run_id in superseded:
                 kind = f"superseded-{kind}"
@@ -570,14 +595,18 @@ def collect(logs: Path, cfg: Config) -> tuple[list[dict[str, Any]], int]:
                     flaw = f"duplicate-run-id={run_id} (same directory as {first})"
                     if flaw not in r["integrity"]:
                         r["integrity"].append(flaw)
-            # A run the composer graded has exactly one result file. Any other
-            # count would read as an indeterminate trial, which would lower
-            # the arm's pass count without saying why.
+            # A run the composer graded has exactly one result file, of the
+            # shape criterion 1 reads. Any other count or shape would read as
+            # an indeterminate trial, which would lower the arm's pass count
+            # without saying why. A stalled or errored run was never graded,
+            # so its result may be anything and it is indeterminate either way.
             graded = verdict.get("final") in ("pass", "fail") and not verdict.get(
                 "error"
             )
             if graded and len(results) != 1:
                 r["integrity"].append(f"result-cardinality={len(results)}")
+            if graded and result_flaw:
+                r["integrity"].append(f"result-invalid={result_flaw}")
             r["integrity"] += [f"malformed-transcript={m}" for m in r["malformed"]]
             rows.append(r)
             short = "-".join(run_id.rsplit("-", 2)[-2:])

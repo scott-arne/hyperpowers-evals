@@ -540,6 +540,21 @@ def add_misconfigured_run(root: Path, layout: str, run_id: str) -> str:
     return extra
 
 
+def set_result(root: Path, run_id: str, text: str) -> None:
+    """Overwrite a run's sole Gauntlet-Agent result with the given text.
+
+    :param root: The materialized tree root.
+    :param run_id: The run id.
+    :param text: The new file content, well formed or not.
+    :raises AssertionError: When the run does not hold exactly one result file.
+    """
+    record = root / "records" / run_id
+    found = sorted(record.glob("gauntlet-agent/results/*/result.json"))
+    if len(found) != 1:
+        raise AssertionError(f"fixture drift: {len(found)} result files for {run_id}")
+    found[0].write_text(text, encoding="utf-8")
+
+
 class LayoutCase(unittest.TestCase):
     """A test over the committed layout fixtures."""
 
@@ -1317,6 +1332,119 @@ class IntegrityTest(LayoutCase):
         self.assertEqual(masked.outcome, "proceed")
         self.assertEqual(masked.detail, "p_b=3 p_n=2")
         self.assert_stops(self.flaws(baseline, new))
+
+    def test_each_structural_flaw_in_a_sole_result_is_named(self) -> None:
+        # One result file that is not what criterion 1 reads would read as an
+        # indeterminate trial, lowering the arm's pass count without saying
+        # why; each shape is named instead.
+        two = {"criteria": [{"verdict": "pass"}, {"verdict": "pass"}]}
+        blank = {"criteria": [{"verdict": "pass"}, {}, {"verdict": "pass"}]}
+        cases = (
+            ("unreadable", "not json {\n"),
+            ("not-an-object", "[]\n"),
+            ("criteria=missing", '{"status": "pass"}\n'),
+            ("criteria=2", json.dumps(two)),
+            ("criterion-1-verdict-missing", json.dumps(blank)),
+        )
+        for reason, content in cases:
+            with self.subTest(reason=reason):
+                root = self.materialize("baseline-layout")
+                set_result(root, BASELINE_RUN, content)
+                rows, missing, table = self.collect_quietly(
+                    root / "logs-baseline-layout", self.config(root)
+                )
+                self.assertEqual(missing, 0)
+                self.assertEqual(rows[0]["kind"], "indeterminate")
+                self.assertEqual(rows[0]["manip"], [])
+                self.assertEqual(rows[0]["integrity"], [f"result-invalid={reason}"])
+                self.assertIn("result=none", table)
+                self.assertIn(f"integrity=result-invalid={reason}", table)
+                self.assert_stops(self.flaws(rows, clean_arm("n", "relocated")))
+        # End to end, the unreadable file: a reason at exit 2, not a traceback.
+        root = self.materialize("baseline-layout", "relocated-layout")
+        set_result(root, BASELINE_RUN, "not json {\n")
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+        self.assertIn(
+            f"baseline:{BASELINE_RUN}: result-invalid=unreadable", proc.stdout
+        )
+
+    def test_an_invalid_result_cannot_mask_a_threshold_gap(self) -> None:
+        # Five baseline passes and five fails against two new passes and
+        # eight fails is a threshold stop. With two of the baseline passes'
+        # results replaced by ``{"status": "pass"}`` they read as
+        # indeterminate, p_b drops from 5 to 3, and ``decide`` alone proceeds.
+        root = self.materialize("baseline-layout", "relocated-layout")
+        fill_arms(root)
+        baseline_ids = [BASELINE_RUN, *alias_ids(BASELINE_RUN, 9)]
+        new_ids = [NEW_RUN, *alias_ids(NEW_RUN, 9)]
+        failing = (FIXTURES / "results" / "fail.json").read_text(encoding="utf-8")
+        for run_id in baseline_ids[5:] + new_ids[2:]:
+            set_result(root, run_id, failing)
+        cfg = self.config(root)
+        logs = (root / "logs-baseline-layout", root / "logs-relocated-layout")
+        baseline, _, _ = self.collect_quietly(logs[0], cfg)
+        new, _, _ = self.collect_quietly(logs[1], cfg)
+        honest = tally.decide(baseline, new)
+        self.assertEqual(
+            (honest.outcome, honest.reason, honest.detail),
+            ("stop", "threshold", "p_b=5 p_n=2"),
+        )
+        self.assertEqual(tally.integrity_failures(*logs, baseline, new, cfg), [])
+        for run_id in baseline_ids[:2]:
+            set_result(root, run_id, '{"status": "pass"}\n')
+        baseline, _, _ = self.collect_quietly(logs[0], cfg)
+        masked = [r for r in baseline if r["run_id"] in baseline_ids[:2]]
+        self.assertEqual([r["kind"] for r in masked], ["indeterminate"] * 2)
+        self.assertEqual([r["manip"] for r in masked], [[], []])
+        decision = tally.decide(baseline, new)
+        self.assertEqual(
+            (decision.outcome, decision.detail), ("proceed", "p_b=3 p_n=2")
+        )
+        flaws = tally.integrity_failures(*logs, baseline, new, cfg)
+        self.assertEqual(
+            flaws,
+            [
+                f"baseline:{run_id}: result-invalid=criteria=missing"
+                for run_id in baseline_ids[:2]
+            ],
+        )
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("stop integrity", proc.stdout)
+        self.assertIn("result-invalid=criteria=missing", proc.stdout)
+
+    def test_a_well_formed_sole_result_is_read_without_complaint(self) -> None:
+        # The committed results, pass and fail, classify and carry no
+        # integrity failure in either layout. A stalled run keeps the brief's
+        # reading and the marker whatever its result's shape, because that
+        # run was never graded.
+        failing = (FIXTURES / "results" / "fail.json").read_text(encoding="utf-8")
+        for layout, run_id in LAYOUTS:
+            for expected, content in (("pass", None), ("fail", failing)):
+                with self.subTest(layout=layout, result=expected):
+                    root = self.materialize(layout)
+                    if content is not None:
+                        set_result(root, run_id, content)
+                    rows, _, table = self.collect_quietly(
+                        root / f"logs-{layout}", self.config(root)
+                    )
+                    self.assertEqual(rows[0]["kind"], expected)
+                    self.assertEqual(rows[0]["integrity"], [])
+                    self.assertNotIn("result=none", table)
+        root = self.materialize("baseline-layout")
+        shutil.copyfile(
+            FIXTURES / "verdicts" / "stalled-agent.json",
+            root / "records" / BASELINE_RUN / "verdict.json",
+        )
+        set_result(root, BASELINE_RUN, '{"status": "pass"}\n')
+        rows, _, table = self.collect_quietly(
+            root / "logs-baseline-layout", self.config(root)
+        )
+        self.assertEqual(rows[0]["kind"], "indeterminate")
+        self.assertEqual(rows[0]["integrity"], [])
+        self.assertIn("result=none", table)
 
     def test_an_unreadable_transcript_line_is_an_integrity_stop(self) -> None:
         cases = (
