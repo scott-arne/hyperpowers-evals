@@ -507,6 +507,39 @@ def clone_run(root: Path, run_id: str, copy_id: str) -> None:
                     path.write_text(text.replace(run_id, copy_id), encoding="utf-8")
 
 
+def fill_arms(root: Path) -> None:
+    """Bring both arms to ten distinct runs: the fixture run and nine copies.
+
+    :param root: The materialized tree root, holding both layouts.
+    """
+    for layout, run_id in LAYOUTS:
+        for n, copy_id in enumerate(alias_ids(run_id, 9), start=2):
+            clone_run(root, run_id, copy_id)
+            write_log(root / f"logs-{layout}", f"p{n}", copy_id)
+
+
+def add_misconfigured_run(root: Path, layout: str, run_id: str) -> str:
+    """Add an eleventh run whose QA agent was misconfigured but whose pins hold.
+
+    A copy of the fixture run with its launch record and transcript intact
+    and the misconfigured verdict in place of its own, named in a log of its
+    own.
+
+    :param root: The materialized tree root, holding both layouts.
+    :param layout: The layout fixture, which names the arm's log directory.
+    :param run_id: The run to copy.
+    :returns: The new run id.
+    """
+    extra = f"{run_id[:-3]}011"
+    clone_run(root, run_id, extra)
+    shutil.copyfile(
+        FIXTURES / "verdicts" / "qa-agent-misconfigured.json",
+        root / "records" / extra / "verdict.json",
+    )
+    write_log(root / f"logs-{layout}", "p11", extra)
+    return extra
+
+
 class LayoutCase(unittest.TestCase):
     """A test over the committed layout fixtures."""
 
@@ -1443,6 +1476,66 @@ class ImmediateStopTest(LayoutCase):
         self.assertEqual(decision.outcome, "stop")
         self.assertEqual(decision.reason, "manipulation")
         self.assertEqual(tally.exit_code(decision), 2)
+
+    def test_a_baseline_misconfigured_run_stops_whatever_the_pins_say(self) -> None:
+        # Ten clean baseline trials and an eleventh whose QA agent was
+        # misconfigured but whose launch record and transcript are normal:
+        # every pin holds, the kind occupies no slot, and ``decide`` alone
+        # counts ten and proceeds. The brief's case 5 makes it a stop.
+        root = self.materialize("baseline-layout", "relocated-layout")
+        fill_arms(root)
+        extra = add_misconfigured_run(root, "baseline-layout", BASELINE_RUN)
+        cfg = self.config(root)
+        baseline, _, _ = self.collect_quietly(root / "logs-baseline-layout", cfg)
+        new, _, _ = self.collect_quietly(root / "logs-relocated-layout", cfg)
+        bad = [r for r in baseline if r["run_id"] == extra]
+        self.assertEqual(len(bad), 1)
+        self.assertEqual(bad[0]["kind"], "qa-agent-misconfigured")
+        self.assertEqual(bad[0]["manip"], [])
+        self.assertEqual(bad[0]["integrity"], [])
+        self.assertEqual(len(tally.qualifying(baseline)), 10)
+        self.assertEqual(tally.decide(baseline, new).outcome, "proceed")
+        flaws = tally.integrity_failures(
+            root / "logs-baseline-layout",
+            root / "logs-relocated-layout",
+            baseline,
+            new,
+            cfg,
+        )
+        self.assertEqual(flaws, [f"baseline: qa-agent-misconfigured={extra}"])
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn(
+            f"stop integrity (baseline: qa-agent-misconfigured={extra})", proc.stdout
+        )
+
+    def test_a_new_arm_misconfigured_run_still_stops_as_new_arm_setup(self) -> None:
+        # The mirror image: the same run in the new arm is not an integrity
+        # failure, and ``decide`` names it as the brief's first automatic stop.
+        root = self.materialize("baseline-layout", "relocated-layout")
+        fill_arms(root)
+        extra = add_misconfigured_run(root, "relocated-layout", NEW_RUN)
+        cfg = self.config(root)
+        baseline, _, _ = self.collect_quietly(root / "logs-baseline-layout", cfg)
+        new, _, _ = self.collect_quietly(root / "logs-relocated-layout", cfg)
+        self.assertEqual(
+            tally.integrity_failures(
+                root / "logs-baseline-layout",
+                root / "logs-relocated-layout",
+                baseline,
+                new,
+                cfg,
+            ),
+            [],
+        )
+        decision = tally.decide(baseline, new)
+        self.assertEqual(
+            (decision.outcome, decision.reason, decision.detail),
+            ("stop", "new-arm-setup", extra),
+        )
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn(f"stop new-arm-setup ({extra})", proc.stdout)
 
 
 class FailureSignatureTest(unittest.TestCase):

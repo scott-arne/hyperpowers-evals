@@ -611,10 +611,10 @@ def integrity_failures(
     Everything here is about the evidence rather than the result: an arm that
     is not the arm it claims to be, a directory counted twice under one
     spelling or two, a log naming something that is not a run, a reading
-    taken from a file the analyzer could not read whole. The campaign stops
-    on any of them, in the same class as a manipulation mismatch, because the
-    comparison the decision would make is not the comparison the design asked
-    for.
+    taken from a file the analyzer could not read whole, a baseline session
+    whose QA agent was misconfigured. The campaign stops on any of them, in
+    the same class as a manipulation mismatch, because the comparison the
+    decision would make is not the comparison the design asked for.
 
     :param baseline_logs: The baseline arm's log directory.
     :param new_logs: The relocated arm's log directory.
@@ -654,6 +654,16 @@ def integrity_failures(
         ]
         if wrong:
             failures.append(f"{arm}: expected the {expected} layout, got {wrong}")
+    # A misconfigured QA agent in the baseline arm is a manipulation-class
+    # stop whatever its pins say: the kind occupies no trial slot and is not
+    # a void the launcher may replace, so without this it would leave the
+    # count quietly. The new arm's copy of the rule is decide's new-arm-setup
+    # stop.
+    failures += [
+        f"baseline: qa-agent-misconfigured={r['run_id']}"
+        for r in baseline
+        if r["kind"] == "qa-agent-misconfigured"
+    ]
     shared = sorted({r["run_id"] for r in baseline} & {r["run_id"] for r in new})
     if shared:
         failures.append(f"both arms claim: {shared}")
