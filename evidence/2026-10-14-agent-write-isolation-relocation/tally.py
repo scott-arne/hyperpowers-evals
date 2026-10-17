@@ -116,18 +116,28 @@ def run_dir(cfg: Config, run_id: str) -> Path:
     return cfg.records / run_id
 
 
-def own_roots(cfg: Config, run_id: str) -> tuple[str, str]:
-    """The two directory prefixes a run's own files lie under.
+def own_roots(cfg: Config, run_id: str) -> tuple[str, ...]:
+    """The directory prefixes a run's own files lie under.
 
     Under the pre-change layout everything the agent touched is inside the
     record; after the relocation its workdir and home are in the workspace. A
-    path under neither was loaded from outside the run.
+    path under neither was loaded from outside the run. Each root counts both
+    as it was given and as it resolves, because a campaign reached through a
+    symlink (``/tmp`` is ``/private/tmp`` here) records one form on the
+    command line and the other in the transcripts.
 
     :param cfg: The campaign configuration.
     :param run_id: The quorum run id.
-    :returns: The record prefix and the workspace prefix.
+    :returns: The record and workspace prefixes, each in both forms, with
+        duplicates dropped.
     """
-    return f"{cfg.records / run_id}/", f"{cfg.workspaces / run_id}/"
+    roots: list[str] = []
+    for root in (cfg.records / run_id, cfg.workspaces / run_id):
+        for form in (root, root.resolve()):
+            prefix = f"{form}/"
+            if prefix not in roots:
+                roots.append(prefix)
+    return tuple(roots)
 
 
 def result_files(path: Path) -> list[Path]:
@@ -153,7 +163,7 @@ def read_result(found: list[Path]) -> dict[str, Any] | None:
     return parsed
 
 
-def owns(path: str, roots: tuple[str, str]) -> bool:
+def owns(path: str, roots: tuple[str, ...]) -> bool:
     """Decide whether an instruction path lies inside one of a run's trees.
 
     Containment is by path component, not by substring: a traversal out of the
@@ -279,6 +289,10 @@ def readouts(cfg: Config, run_id: str) -> dict[str, Any]:
         text = transcript.read_text(encoding="utf-8")
         lines = text.splitlines()
         for number, line in enumerate(lines, start=1):
+            # A blank line carries no evidence and can hide none; a file
+            # written with a trailing newline pair is not a torn session.
+            if not line.strip():
+                continue
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:
@@ -293,10 +307,13 @@ def readouts(cfg: Config, run_id: str) -> dict[str, Any]:
             if not isinstance(entry, dict):
                 out["malformed"].append(f"{transcript}:{number}")
                 continue
-            if isinstance(entry.get("version"), str):
-                out["cc"].add(entry["version"])
-            if isinstance(entry.get("entrypoint"), str):
-                out["entrypoint"].add(entry["entrypoint"])
+            # A value of the wrong type is recorded as it was written, not
+            # dropped: an entrypoint of ``["sdk-ts"]`` must still fail the pin
+            # rather than leave the first plain ``cli`` standing alone.
+            for field, key in (("version", "cc"), ("entrypoint", "entrypoint")):
+                value = entry.get(field)
+                if value is not None:
+                    out[key].add(value if isinstance(value, str) else repr(value))
             att = entry.get("attachment") or {}
             kind = att.get("type")
             if kind == "skill_listing" and out["desc"] is None:
@@ -474,6 +491,7 @@ def integrity_failures(
     new_logs: Path,
     baseline: list[dict[str, Any]],
     new: list[dict[str, Any]],
+    cfg: Config,
 ) -> list[str]:
     """List every reason the two arms cannot be compared as read.
 
@@ -487,11 +505,22 @@ def integrity_failures(
     :param new_logs: The relocated arm's log directory.
     :param baseline: Rows of the pre-change arm.
     :param new: Rows of the relocated arm.
+    :param cfg: The campaign configuration, which names the scenario read.
     :returns: One entry per failure; empty when the arms can be compared.
     """
     failures: list[str] = []
     if baseline_logs.resolve() == new_logs.resolve():
         failures.append(f"one log directory for both arms: {baseline_logs.resolve()}")
+    # Read from the logs rather than the rows: a log whose several ids all
+    # died before writing a verdict produces no row to carry the flaw.
+    for arm, logs in (("baseline", baseline_logs), ("new", new_logs)):
+        for log in sorted(logs.glob("control-*-[pr][0-9]*.log")):
+            match = LOG_NAME.match(log.stem)
+            if not match or match.group(1) != cfg.scenario:
+                continue
+            named = len(RUN_ID.findall(log.read_text(encoding="utf-8")))
+            if named > 1:
+                failures.append(f"{arm}: log-run-ids={named} ({log.name})")
     for arm, rows in (("baseline", baseline), ("new", new)):
         failures += [
             f"{arm}:{r['run_id']}: {reason}" for r in rows for reason in r["integrity"]
@@ -649,8 +678,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--scenario", default=SCENARIO, help="the scenario read")
     args = parser.parse_args(argv[1:])
     cfg = Config(
-        records=args.records.resolve(),
-        workspaces=args.workspaces.resolve(),
+        records=args.records,
+        workspaces=args.workspaces,
         plugin_root=args.plugin_root,
         model=args.model,
         cc_version=args.cc_version,
@@ -660,7 +689,7 @@ def main(argv: list[str]) -> int:
     new, missing_new = collect(args.new_logs, cfg)
     # Evidence first: a decision over rows the analyzer cannot vouch for is
     # not a decision about the change.
-    flaws = integrity_failures(args.baseline_logs, args.new_logs, baseline, new)
+    flaws = integrity_failures(args.baseline_logs, args.new_logs, baseline, new, cfg)
     decision = (
         Decision("stop", "integrity", "; ".join(flaws))
         if flaws

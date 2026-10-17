@@ -331,6 +331,18 @@ def mutate_torn_tail(tree: Path, run_id: str) -> None:
         handle.write('{"type":"attachment","attachment":{"type":"deferred_to')
 
 
+def mutate_typed_entrypoint(tree: Path, run_id: str) -> None:
+    """Record the entrypoint as a list, ahead of the plain CLI line.
+
+    :param tree: The materialized fixture root.
+    :param run_id: The run id to mutate.
+    """
+    entry = {"type": "attachment", "entrypoint": ["sdk-ts"], "version": CC_VERSION}
+    path = transcript_of(tree, run_id)
+    text = path.read_text(encoding="utf-8")
+    path.write_text(json.dumps(entry) + "\n" + text, encoding="utf-8")
+
+
 def mutate_second_entrypoint(tree: Path, run_id: str) -> None:
     """Continue the session from a second entrypoint after the CLI.
 
@@ -498,9 +510,35 @@ class ReadoutsTest(LayoutCase):
 
     def test_own_roots_name_the_record_and_the_workspace(self) -> None:
         root = self.materialize("relocated-layout")
-        record_root, workspace_root = tally.own_roots(self.config(root), NEW_RUN)
-        self.assertEqual(record_root, f"{root}/records/{NEW_RUN}/")
-        self.assertEqual(workspace_root, f"{root}/workspaces/{NEW_RUN}/")
+        # The tree is already resolved, so each root has one form.
+        self.assertEqual(
+            tally.own_roots(self.config(root), NEW_RUN),
+            (f"{root}/records/{NEW_RUN}/", f"{root}/workspaces/{NEW_RUN}/"),
+        )
+
+    def test_own_roots_follow_a_symlinked_campaign_root(self) -> None:
+        root = self.materialize("baseline-layout")
+        link = Path(tempfile.mkdtemp(prefix="tally-link-")).resolve() / "evals"
+        self.addCleanup(shutil.rmtree, link.parent, True)
+        link.symlink_to(root, target_is_directory=True)
+        # The transcripts hold the resolved paths; the campaign is addressed
+        # through the link, the way a run under /tmp is on this host.
+        linked = tally.Config(
+            records=link / "records",
+            workspaces=link / "workspaces",
+            plugin_root=PLUGIN_ROOT,
+            model=MODEL_ID,
+            cc_version=CC_VERSION,
+            scenario=SCENARIO,
+        )
+        roots = tally.own_roots(linked, BASELINE_RUN)
+        self.assertIn(f"{link}/records/{BASELINE_RUN}/", roots)
+        self.assertIn(f"{root}/records/{BASELINE_RUN}/", roots)
+        self.assertEqual(
+            tally.readouts(linked, BASELINE_RUN)["foreign_instructions"], []
+        )
+        rows, _, _ = self.collect_quietly(link / "logs-baseline-layout", linked)
+        self.assertEqual(rows[0]["manip"], [])
 
     def test_criterion_one_is_read_from_the_result_not_the_final(self) -> None:
         for layout, run_id in LAYOUTS:
@@ -582,6 +620,22 @@ class ManipulationTest(LayoutCase):
                 self.assertEqual(decision.reason, "manipulation")
                 self.assertEqual(tally.exit_code(decision), 2)
 
+    def test_an_entrypoint_of_the_wrong_type_is_a_manipulation_stop(self) -> None:
+        root = self.materialize("baseline-layout")
+        mutate_typed_entrypoint(root, BASELINE_RUN)
+        rows, _, _ = self.collect_quietly(
+            root / "logs-baseline-layout", self.config(root)
+        )
+        # Recorded as written rather than dropped, so the plain "cli" line
+        # that follows it cannot stand in for the whole session.
+        self.assertEqual(rows[0]["entrypoint"], "['sdk-ts'],cli")
+        self.assertEqual(rows[0]["manip"], ["entrypoint=['sdk-ts'],cli"])
+        self.assertEqual(rows[0]["integrity"], [])
+        decision = tally.decide(rows, arm(5, 5))
+        self.assertEqual(decision.outcome, "stop")
+        self.assertEqual(decision.reason, "manipulation")
+        self.assertEqual(tally.exit_code(decision), 2)
+
 
 class IntegrityTest(LayoutCase):
     """What must hold before the two arms can be compared at all."""
@@ -596,7 +650,11 @@ class IntegrityTest(LayoutCase):
         :returns: The integrity failures.
         """
         return tally.integrity_failures(
-            Path("/logs/baseline"), Path("/logs/new"), rows, other
+            Path("/logs/baseline"),
+            Path("/logs/new"),
+            rows,
+            other,
+            self.config(Path("/nowhere")),
         )
 
     def assert_stops(self, flaws: list[str]) -> None:
@@ -612,7 +670,7 @@ class IntegrityTest(LayoutCase):
         root = self.materialize("baseline-layout")
         logs = root / "logs-baseline-layout"
         rows, _, _ = self.collect_quietly(logs, self.config(root))
-        flaws = tally.integrity_failures(logs, logs, rows, rows)
+        flaws = tally.integrity_failures(logs, logs, rows, rows, self.config(root))
         self.assertTrue(any("one log directory for both arms" in f for f in flaws))
         self.assert_stops(flaws)
 
@@ -652,6 +710,58 @@ class IntegrityTest(LayoutCase):
             self.assertIn(f"log-run-ids=2 ({log.name})", r["integrity"])
         self.assertIn("integrity=log-run-ids=2", table)
         self.assert_stops(self.flaws(rows, clean_arm("n", "relocated")))
+
+    def test_blank_transcript_lines_are_not_integrity_failures(self) -> None:
+        cases = ("mid-file", "trailing-newline")
+        for case in cases:
+            with self.subTest(case=case):
+                root = self.materialize("baseline-layout")
+                path = transcript_of(root, BASELINE_RUN)
+                text = path.read_text(encoding="utf-8")
+                if case == "mid-file":
+                    lines = text.splitlines()
+                    lines.insert(2, "   ")
+                    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                else:
+                    path.write_text(text + "\n", encoding="utf-8")
+                rows, _, _ = self.collect_quietly(
+                    root / "logs-baseline-layout", self.config(root)
+                )
+                self.assertEqual(rows[0]["integrity"], [])
+                self.assertIs(rows[0]["torn_tail"], False)
+                self.assertEqual(rows[0]["manip"], [])
+        # A line with something unreadable in it still stops the campaign.
+        root = self.materialize("baseline-layout")
+        mutate_non_object_line(root, BASELINE_RUN)
+        rows, _, _ = self.collect_quietly(
+            root / "logs-baseline-layout", self.config(root)
+        )
+        self.assert_stops(self.flaws(rows, clean_arm("n", "relocated")))
+
+    def test_a_two_id_log_stops_even_when_neither_run_resolves(self) -> None:
+        root = self.materialize("baseline-layout", "relocated-layout")
+        logs = root / "logs-baseline-layout"
+        log = logs / "control-cost-api-field-rename-boundary-p1.log"
+        log.write_text(
+            "arm=control scenario=cost-api-field-rename-boundary proc=p1\n"
+            "run-id: cost-api-field-rename-boundary-claude-auto-20261014T140000Z-gh01\n"
+            "run-id: cost-api-field-rename-boundary-claude-auto-20261014T140001Z-gh02\n",
+            encoding="utf-8",
+        )
+        rows, missing, table = self.collect_quietly(logs, self.config(root))
+        # No row carries the flaw, because neither id wrote a verdict.
+        self.assertEqual(rows, [])
+        self.assertEqual(missing, 2)
+        self.assertEqual(table.count("NO VERDICT"), 2)
+        flaws = tally.integrity_failures(
+            logs, root / "logs-relocated-layout", rows, [], self.config(root)
+        )
+        self.assertIn(f"baseline: log-run-ids=2 ({log.name})", flaws)
+        self.assert_stops(flaws)
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("stop integrity", proc.stdout)
+        self.assertIn("log-run-ids=2", proc.stdout)
 
     def test_a_run_id_repeated_across_logs_is_an_integrity_stop(self) -> None:
         root = self.materialize("baseline-layout")
@@ -755,6 +865,7 @@ class IntegrityTest(LayoutCase):
                         Path("/logs/new"),
                         arms["legacy"],
                         arms["relocated"],
+                        self.config(root),
                     ),
                     [],
                 )
