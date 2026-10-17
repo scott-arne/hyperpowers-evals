@@ -1073,6 +1073,40 @@ class IntegrityTest(LayoutCase):
         self.assertEqual(flaws, [f"new:{alias}: {reason}" for reason in expected])
         self.assert_stops(flaws)
 
+    def test_a_looped_workspace_link_is_an_integrity_stop(self) -> None:
+        # ``ln -s <id> <id>`` inside ``workspaces/``, the typo a relocation by
+        # hand produces: the link reaches nothing, so it has no identity and
+        # no transcript, and it is still the symlinked run it is, reported
+        # with the table, rather than a traceback.
+        root = self.materialize("baseline-layout", "relocated-layout")
+        workspace = root / "workspaces" / NEW_RUN
+        shutil.rmtree(workspace)
+        workspace.symlink_to(NEW_RUN, target_is_directory=True)
+        logs = root / "logs-relocated-layout"
+        rows, _, table = self.collect_quietly(logs, self.config(root))
+        self.assertEqual([r["run_id"] for r in rows], [NEW_RUN])
+        self.assertIn(f"symlinked-run={NEW_RUN}", rows[0]["integrity"])
+        self.assertIn(f"integrity=symlinked-run={NEW_RUN}", table)
+        self.assertEqual(len(rows[0]["identities"]), 1)
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+        self.assertIn("stop integrity", proc.stdout)
+        self.assertIn(f"new:{NEW_RUN}: symlinked-run={NEW_RUN}", proc.stdout)
+
+    def test_a_workspace_root_that_is_a_file_is_an_integrity_stop(self) -> None:
+        # ``--workspaces`` naming a regular file: every workspace path runs
+        # through it, so no run has a workspace identity or a relocated
+        # transcript. A printed reason at exit 2, not a traceback.
+        root = self.materialize("baseline-layout", "relocated-layout")
+        shutil.rmtree(root / "workspaces")
+        (root / "workspaces").write_text("not a directory\n", encoding="utf-8")
+        proc = self.run_cli(root, "logs-baseline-layout", "logs-relocated-layout")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+        self.assertIn("stop integrity", proc.stdout)
+        self.assertIn("new: expected the relocated layout", proc.stdout)
+
     def test_nine_symlinked_aliases_cannot_fill_an_arm(self) -> None:
         # The re-review's probe: one real run and nine links to it, each under
         # an id of its own in a one-id log, in both arms. By spelling alone

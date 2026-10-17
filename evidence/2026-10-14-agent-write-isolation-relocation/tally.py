@@ -251,11 +251,12 @@ def directory_identity(path: Path) -> tuple[int, int] | None:
 
     :param path: A run's record or workspace directory, which may be a link.
     :returns: ``(st_dev, st_ino)`` of the directory the path reaches, or None
-        when it reaches nothing.
+        when it reaches nothing it can read: a dangling or looped link, or a
+        path through a regular file.
     """
     try:
         status = path.stat()
-    except FileNotFoundError:
+    except OSError:
         return None
     return status.st_dev, status.st_ino
 
