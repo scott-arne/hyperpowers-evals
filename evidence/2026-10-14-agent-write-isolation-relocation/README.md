@@ -320,3 +320,100 @@ run in the corpus, which there is not.
 - `replay/replay.json` — the machine form: both arms' raw and canonical
   records, exit codes, arm roots, coverage, ineligible and refused lists.
 - `replay/stdout.txt` — the console summary, with the recorded exit appended.
+
+## Smokes
+
+`smokes/` holds the live smoke runs of the relocated layout (plan Task 14): the
+scenario `scenarios/00-quorum-smoke-hello-world` driven for real, once per
+Coding-Agent, to validate the spec's second Assumption — no agent CLI inspects
+the absolute workdir path beyond Antigravity's hidden-component rule — and the
+inner-home overlay's live behaviour.
+
+### The command of record
+
+    SUPERPOWERS_ROOT=/Users/johnss51/Development/agents/hyperpowers bash evidence/2026-10-14-agent-write-isolation-relocation/smokes/run-smoke.sh <agent>
+
+The variable is set for that command only: it is not exported in the
+maintainer's shell and quorum does not discover it. Run from the worktree, one
+agent at a time. Each pipeline's exit status is captured on the line after it,
+which is why the script is bash: the interactive shell here is zsh and has no
+`PIPESTATUS`.
+
+One deviation from the plan's script text: the script reads the run by its
+directory (`quorum show "results/$run_id"`) because `quorum show` resolves
+directories, verdict files, batches and scenario prefixes, not run ids
+(`src/cli/resolve-target.ts:49-95`) — a bare run id exits 1 with
+`could not resolve target`, on a pre-relocation run in the primary checkout
+just as here, so this is the reader's long-standing contract and not something
+the relocation changed.
+
+Both smokes must run outside this host's command sandbox. A sandboxed attempt
+dies in `setup.sh` before the agent ever starts: `git init -b main` exits 128
+with `fatal: cannot copy '/opt/homebrew/opt/git/share/git-core/templates/hooks/commit-msg.sample'
+to '…/coding-agent-workdir/.git/hooks/commit-msg.sample': Operation not
+permitted`. That is the sandbox's write policy over this worktree's `results/`,
+not the relocation; the first claude-auto attempt
+(`…-20261017T180310Z-5956`) is that artifact and is not recorded here.
+
+### The results
+
+Both run on 2026-10-17 against evals `c73ba3baf` (clean) and the Gauntlet fork
+at `a35607e` (dirty).
+
+| agent | run id | run exit | show exit | final | wall |
+| --- | --- | --- | --- | --- | --- |
+| claude-auto | `00-quorum-smoke-hello-world-claude-auto-20261017T180750Z-e658` | 0 | 0 | pass | 1 m 37 s |
+| codex | `00-quorum-smoke-hello-world-codex-20261017T181122Z-da93` | 0 | 0 | pass | 2 m 17 s |
+
+Each satisfies every condition of the plan's predeclared acceptance: `run exit`
+in {0, 1}; `show exit` 0; a `final` that is not `indeterminate` with an
+`error.stage` of `setup` or `qa-agent-misconfigured` (both are `pass`, with
+`error: null`); `verdict.json` at `results/<run>/`; the workspace at
+`results/workspaces/<run>/` carrying the agent's transcript under its `home/`
+(claude-auto: `home/.claude/projects/…/*.jsonl`; codex:
+`home/.codex/sessions/2026/10/17/rollout-*.jsonl`); and a `trajectory.json`
+with at least one tool call (claude-auto 1, codex 2 — a `Bash` write of
+`hello.txt` in both). Both Gauntlet-Agent grades and both pairs of post-checks
+passed on their own terms, which is more than the acceptance asks.
+
+Read together with the record listings, that is the Assumption holding live for
+two of the three CLIs: neither agent did anything different for a workdir one
+path component deeper under `results/workspaces/`, and each wrote its session
+log into the relocated inner home rather than the record tree.
+
+### Antigravity: not run
+
+Blocked on this host by the human partner's decision, and recorded rather than
+worked around: the `agy` binary is absent from `PATH` and the usual install
+locations, and `~/.gemini/oauth_creds.json` — the live token the agent reads at
+runtime — does not exist. The only Antigravity run on this host dates from
+2026-06-01. The spec's Antigravity hidden-component assumption therefore stays
+unvalidated live; `smokes/antigravity/README.md` carries the detail.
+
+### Host
+
+Claude Code `2.1.296`, Codex `codex-cli 0.162.1`, `gauntlet` from
+`/Users/johnss51/.local/bin/gauntlet`. The Claude Code version is the one
+`claude --version` reported before the runs and the one every entry of the
+claude-auto transcript records (`"version":"2.1.296"`, 21 of 21); the host
+updated itself to `2.1.302` later the same day, after both smokes had
+finished. The Coding-Agent models the runs
+resolved to are `claude-opus-5-5` (claude-auto, via the host's Vertex switches)
+and `gpt-6.1-sol` (codex).
+
+### Files
+
+Per smoke, under `smokes/<agent>/`:
+
+- `stdout.txt` — the `quorum run` console output with the recorded `run exit`.
+- `show.txt` — the `quorum show` render with the recorded `show exit`.
+- `verdict.json`, `provenance.json` — copied from `results/<run>/`.
+- `source-logs.txt` — the transcript files the capture read. The capture
+  surfaces its own `sourceLogs` list only on a failed or zero-row capture
+  (`src/runner/index.ts:547,563,583,629`), so on a passing run the list is
+  taken by listing the transcripts under the workspace home with the agent's
+  own `session_log_dir` and `session_log_glob`; each file says so in its
+  header.
+
+Transcripts, homes and workdirs are not copied: they stay in `results/`, which
+is gitignored, and the run ids above are what makes them findable.
