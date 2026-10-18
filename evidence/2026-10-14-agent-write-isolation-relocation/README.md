@@ -377,9 +377,11 @@ with at least one tool call (claude-auto 1, codex 2 — a `Bash` write of
 passed on their own terms, which is more than the acceptance asks.
 
 Read together with the record listings, that is the Assumption holding live for
-two of the three CLIs: neither agent did anything different for a workdir one
-path component deeper under `results/workspaces/`, and each wrote its session
-log into the relocated inner home rather than the record tree.
+two of the three CLIs: neither agent failed or showed any path-related trouble
+with its workdir under `results/workspaces/`, and each wrote its session log
+into the relocated inner home rather than the record tree. No pre-relocation
+control was run alongside, so this says the relocated layout works for both,
+not that their behaviour is unchanged from the old one.
 
 ### Antigravity: not run
 
@@ -394,8 +396,9 @@ unvalidated live; `smokes/antigravity/README.md` carries the detail.
 
 Claude Code `2.1.296`, Codex `codex-cli 0.162.1`, `gauntlet` from
 `/Users/johnss51/.local/bin/gauntlet`. The Claude Code version is the one
-`claude --version` reported before the runs and the one every entry of the
-claude-auto transcript records (`"version":"2.1.296"`, 21 of 21); the host
+`claude --version` reported before the runs and the one every versioned entry
+of the claude-auto transcript records (`"version":"2.1.296"` on 21 of its 40
+lines; the other 19 are bookkeeping entries with no version field); the host
 updated itself to `2.1.302` later the same day, after both smokes had
 finished. The Coding-Agent models the runs
 resolved to are `claude-opus-5-5` (claude-auto, via the host's Vertex switches)
