@@ -10,12 +10,21 @@
 # 2 otherwise). `no-run-id` writes and prints nothing and exits 1.
 # Kinds for what the analyzer would reject, each otherwise a passing run (exit 0)
 # so that only the launcher's own guard can stop it:
-#   two-run-ids    a second passing run, and a second run-id line for it
-#   bad-run-id     its run written and printed under an id with a '+' in it
-#   repeat-run-id  prints the previous call's run id again and writes nothing
-#   two-results    a second result.json, under results/g2/
-# and `no-verdict`, a run id with no verdict.json behind it (exit 2), which the
-# analyzer's classify cannot read.
+#   two-run-ids          a second passing run, and a second run-id line for it
+#   bad-run-id           its run written and printed under an id with a '+' in it
+#   bad-run-id-fail      the same with a failing run, so the launch exits 1
+#   repeat-run-id        prints the previous call's run id again and writes nothing
+#   two-results          a second result.json, under results/g2/
+#   dot-results          a second result.json, under results/.hidden/ (a shell
+#                        glob skips it; the analyzer's pathlib glob does not)
+#   pass-no-result       a graded pass verdict with no result.json
+#   pass-invalid-result  a graded pass verdict whose result.json is {"status": "pass"}
+# and two the analyzer cannot read at all (exit 2): `no-verdict`, a run id with
+# no verdict.json behind it, and `unclassifiable`, an ungraded verdict whose
+# error is a string where classify expects an object.
+# `readonly-manifest` and `readonly-manifest-no-run-id` first make
+# $OUT_DIR/manifest.tsv read-only, then act as `pass` and `no-run-id`, so the
+# launcher's next manifest write fails.
 # Everything it keeps lands beside $FAKE_SCRIPT, never beside this script:
 # $FAKE_SCRIPT.pos holds the number of lines consumed, $FAKE_SCRIPT.last the
 # last run id printed, and $FAKE_SCRIPT.trace records
@@ -37,39 +46,57 @@ kind="$(sed -n "${n}p" "$FAKE_SCRIPT")"
 printf '%s\n' "$n" > "$pos"
 trace() { printf '%s\t%s\t%s\n' "$n" "$1" "$(pwd -P)" >> "$FAKE_SCRIPT.trace"; }
 case "$kind" in
-  no-run-id) trace ""; exit 1 ;;
+  readonly-manifest|readonly-manifest-no-run-id)
+    : "${OUT_DIR:?fake-quorum: $kind needs OUT_DIR}"
+    chmod a-w "$OUT_DIR/manifest.tsv" ;;
+esac
+case "$kind" in
+  no-run-id|readonly-manifest-no-run-id) trace ""; exit 1 ;;
   repeat-run-id)
     run_id="$(cat "$FAKE_SCRIPT.last" 2>/dev/null)"
     [ -n "$run_id" ] || { echo "fake-quorum: repeat-run-id with no earlier run id" >&2; exit 67; }
     trace "$run_id"; echo "run-id: $run_id"; exit 0 ;;
 esac
 case "$kind" in
-  two-run-ids|bad-run-id|two-results) fixture=pass ;;
-  no-verdict) fixture="" ;;
+  two-run-ids|bad-run-id|two-results|dot-results|pass-no-result|pass-invalid-result|readonly-manifest) fixture=pass ;;
+  bad-run-id-fail) fixture=fail ;;
+  no-verdict|unclassifiable) fixture="" ;;
   *) fixture="$kind"
      [ -f "$fixtures/verdicts/$kind.json" ] || { echo "fake-quorum: no verdict fixture for '$kind'" >&2; exit 66; } ;;
 esac
-# write_run <run_id>: the files a run of $fixture leaves under the campaign root.
+# write_run <run_id>: the files a run of this kind leaves under the campaign root.
 write_run() {
   mkdir -p "$root/$1"
-  [ -z "$fixture" ] || cp "$fixtures/verdicts/$fixture.json" "$root/$1/verdict.json"
-  case "$fixture" in
-    pass|fail)
+  case "$kind" in
+    no-verdict) ;;
+    unclassifiable) printf '{"final": "fail", "error": "boom"}\n' > "$root/$1/verdict.json" ;;
+    *) cp "$fixtures/verdicts/$fixture.json" "$root/$1/verdict.json" ;;
+  esac
+  case "$kind" in
+    pass-no-result) ;;
+    pass-invalid-result)
       mkdir -p "$root/$1/gauntlet-agent/results/g1"
-      cp "$fixtures/results/$fixture.json" "$root/$1/gauntlet-agent/results/g1/result.json" ;;
+      printf '{"status": "pass"}\n' > "$root/$1/gauntlet-agent/results/g1/result.json" ;;
+    *)
+      case "$fixture" in
+        pass|fail)
+          mkdir -p "$root/$1/gauntlet-agent/results/g1"
+          cp "$fixtures/results/$fixture.json" "$root/$1/gauntlet-agent/results/g1/result.json" ;;
+      esac ;;
   esac
 }
 # The line number keeps two launches in the same UTC second distinct.
 run_id="$SCENARIO-claude-auto-$(date -u +%Y%m%dT%H%M%SZ)-$(printf '%04x' "$n")"
-if [ "$kind" = bad-run-id ]; then run_id="$run_id+bad"; fi
+case "$kind" in bad-run-id|bad-run-id-fail) run_id="$run_id+bad" ;; esac
 trace "$run_id"
 write_run "$run_id"
 printf '%s\n' "$run_id" > "$FAKE_SCRIPT.last"
 echo "run-id: $run_id"
 case "$kind" in
   two-run-ids) write_run "$run_id-2"; echo "run-id: $run_id-2" ;;
-  two-results)
-    mkdir -p "$root/$run_id/gauntlet-agent/results/g2"
-    cp "$fixtures/results/pass.json" "$root/$run_id/gauntlet-agent/results/g2/result.json" ;;
+  two-results|dot-results)
+    if [ "$kind" = two-results ]; then second=g2; else second=.hidden; fi
+    mkdir -p "$root/$run_id/gauntlet-agent/results/$second"
+    cp "$fixtures/results/pass.json" "$root/$run_id/gauntlet-agent/results/$second/result.json" ;;
 esac
 case "$fixture" in pass) exit 0 ;; fail) exit 1 ;; *) exit 2 ;; esac

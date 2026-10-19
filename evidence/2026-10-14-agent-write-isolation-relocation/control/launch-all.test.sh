@@ -35,23 +35,25 @@ snapshot() { (cd "$1" && find . -print | LC_ALL=C sort && find . -type f -exec s
 
 # setup_case <dir> <kind>...: a fresh campaign root, two empty worktrees and an
 # OUT_DIR; the kinds become the fake's script, one line per launch in launch
-# order. Sets c (the case directory), m (its manifest path) and before (the
-# control/ snapshot).
+# order. Sets c (the case directory), o (its OUT_DIR, which a case may move
+# before the launcher runs), m (the manifest path in o) and before (the control/
+# snapshot).
 setup_case() {
   c="$work/$1"; shift
   mkdir -p "$c/root" "$c/tree-baseline" "$c/tree-new" "$c/out"
   printf '%s\n' "$@" > "$c/script"
-  m="$c/out/manifest.tsv"
+  o="$c/out"; m="$o/manifest.tsv"
   before="$(snapshot "$here")"
 }
-# invoke_in <cwd> <arg>...: one launcher run from <cwd> with the case's fake
-# script and OUT_DIR. Sets rc (the launcher's exit status).
-invoke_in() {
-  local cwd="$1"; shift
+# launcher_in <cwd> <tag> <arg>...: one launcher run from <cwd> with the case's
+# fake script and OUT_DIR, its output in $c/stdout<tag> and $c/stderr<tag>.
+launcher_in() {
+  local cwd="$1" tag="$2"; shift 2
   (cd "$cwd" && FAKE_SCRIPT="$c/script" QUORUM_RUN_CMD="/bin/bash $here/fake-quorum.sh run" \
-    TALLY="$here/../tally.py" OUT_DIR="$c/out" /bin/bash "$launcher" "$@") > "$c/stdout" 2> "$c/stderr"
-  rc=$?
+    TALLY="$here/../tally.py" OUT_DIR="$o" /bin/bash "$launcher" "$@") > "$c/stdout$tag" 2> "$c/stderr$tag"
 }
+# invoke_in <cwd> <arg>...: launcher_in with untagged output. Sets rc.
+invoke_in() { local cwd="$1"; shift; launcher_in "$cwd" "" "$@"; rc=$?; }
 run_case() { setup_case "$@"; invoke_in "$c" "$c/root" "$c/tree-baseline" "$c/tree-new"; }   # run_case <dir> <kind>...
 
 expect_exit() { [ "$rc" -eq "$1" ] || fail "launcher exited $rc, want $1 ($(tail -1 "$c/stderr" 2>/dev/null))"; }
@@ -89,9 +91,10 @@ common() {
       *) fail "row $i has arm '$arm'"; return 1 ;;
     esac
     want_kind="$(sed -n "${i}p" "$c/script")"
-    # A stalled-agent line classifies indeterminate (it has no result file), so a case scripting one must expect that.
-    [ "$kind" = "$want_kind" ] || { fail "row $i ($arm $proc) has kind '$kind'; the fake was scripted '$want_kind'"; return 1; }
     case "$want_kind" in pass) want_exit=0 ;; fail) want_exit=1 ;; *) want_exit=2 ;; esac
+    # A stalled-agent run is ungraded and has no result file, so classify reads it as indeterminate.
+    [ "$want_kind" != stalled-agent ] || want_kind=indeterminate
+    [ "$kind" = "$want_kind" ] || { fail "row $i ($arm $proc) has kind '$kind'; the fake was scripted '$want_kind'"; return 1; }
     [ "$ex" = "$want_exit" ] || { fail "row $i ($arm $proc) has exit '$ex'; the fake exited $want_exit"; return 1; }
     [[ $run_id =~ $id_re ]] || { fail "row $i has run id '$run_id', not one the analyzer accepts"; return 1; }
     case "$seen" in *" $run_id "*) fail "row $i repeats run id $run_id"; return 1 ;; esac
@@ -99,7 +102,7 @@ common() {
     trace="$(awk -F'\t' -v n="$i" '$1 == n { print $2 "\t" $3 }' "$c/script.trace")"
     [ "$trace" = "$run_id$tab$(cd "$tree" && pwd -P)" ] \
       || { fail "row $i ($arm $proc $run_id) is not launch $i in the $arm worktree (the fake recorded '$trace')"; return 1; }
-    log="$c/out/logs/$arm/control-$scenario-$proc.log"
+    log="$o/logs/$arm/control-$scenario-$proc.log"
     [ "$(sed -n 's/^run-id: //p' "$log" 2>/dev/null)" = "$run_id" ] \
       || { fail "$log does not hold exactly one run-id line, $run_id"; return 1; }
   done < "$c/rows"
@@ -109,7 +112,8 @@ common() {
   launched="$(cat "$c/script.pos" 2>/dev/null || echo 0)"
   case "$(tail -1 "$m")" in
     "stop${tab}no run-id in "*|"stop${tab}multiple run-ids in "*|"stop${tab}bad run-id "*|\
-    "stop${tab}repeated run-id "*|"stop${tab}result files="*|"stop${tab}classify failed for "*)
+    "stop${tab}repeated run-id "*|"stop${tab}result-cardinality="*|"stop${tab}result-invalid="*|\
+    "stop${tab}result check failed for "*|"stop${tab}classify failed for "*)
       expected=$((i + 1)) ;;
   esac
   [ "$launched" = "$expected" ] || { fail "the fake was launched $launched time(s) for $i manifest row(s)"; return 1; }
@@ -238,25 +242,37 @@ case_11() {
   sub=bad-run-id; run_case c11-bad-run-id bad-run-id $(rep 20 pass)
   expect_exit 1 && common || return
   [ -z "$(rows)" ] || { fail "rows run $(rows | tr '\n' ',')"; return; }
-  last_is "bad run-id $(traced_id 1) in $c/out/logs/baseline/control-$scenario-p1.log" || return
+  last_is "bad run-id $(traced_id 1) in $c/out/logs/baseline/control-$scenario-p1.log (rc=0)" || return
+
+  # The same anomaly from a launch that exited 1: the reason carries that status.
+  sub=bad-run-id-fail; run_case c11-bad-run-id-fail pass bad-run-id-fail $(rep 20 pass)
+  expect_exit 1 && common || return
+  [ "$(rows | tr '\n' ',')" = "baseline p1," ] || { fail "rows run $(rows | tr '\n' ',')"; return; }
+  last_is "bad run-id $(traced_id 2) in $c/out/logs/new/control-$scenario-p1.log (rc=1)" || return
 
   # The repeat is of the other arm's run id.
   sub=repeat-run-id; run_case c11-repeat-run-id pass repeat-run-id $(rep 20 pass)
   expect_exit 1 && common || return
   [ "$(rows | tr '\n' ',')" = "baseline p1," ] || { fail "rows run $(rows | tr '\n' ',')"; return; }
-  last_is "repeated run-id $(awk -F'\t' 'NR == 2 { print $4 }' "$m")" || return
+  last_is "repeated run-id $(awk -F'\t' 'NR == 2 { print $4 }' "$m") in $c/out/logs/new/control-$scenario-p1.log (rc=0)" || return
 
   sub=two-results; run_case c11-two-results pass pass two-results $(rep 20 pass)
   expect_exit 1 && common || return
   [ "$(rows | tr '\n' ',')" = "baseline p1,new p1," ] || { fail "rows run $(rows | tr '\n' ',')"; return; }
-  last_is "result files=2 for $(traced_id 3)" || return
+  last_is "result-cardinality=2 for $(traced_id 3) (rc=0)" || return
 
+  # The analyzer's evidence check reads verdict.json first, so a missing one stops there.
   sub=no-verdict; run_case c11-no-verdict pass no-verdict $(rep 20 pass)
+  expect_exit 1 && common || return
+  [ "$(rows | tr '\n' ',')" = "baseline p1," ] || { fail "rows run $(rows | tr '\n' ',')"; return; }
+  last_is "result check failed for $(traced_id 2) (rc=2)" || return
+
+  sub=unclassifiable; run_case c11-unclassifiable pass unclassifiable $(rep 20 pass)
   expect_exit 1 && common || return
   [ "$(rows | tr '\n' ',')" = "baseline p1," ] || { fail "rows run $(rows | tr '\n' ',')"; return; }
   last_is "classify failed for $(traced_id 2) (rc=2)" || return
   sub=""
-  echo "PASS: $label: several run ids in a log, a malformed or repeated run id, two result files and an unreadable verdict each stop with exit 1"
+  echo "PASS: $label: several run ids in a log, a malformed or repeated run id, two result files and an unreadable verdict each stop with exit 1 and the launch's status"
 }
 
 # refused <what>: the launcher exited 1 with a usage line and wrote nothing: no
@@ -292,6 +308,103 @@ case_12() {
   echo "PASS: $label: a wrong argument count, a relative root, a missing worktree and an existing manifest are refused with exit 1, nothing written"
 }
 
+case_13() {
+  # A graded verdict (final pass or fail, no error) needs exactly one result file
+  # of the shape criterion 1 reads, as the analyzer requires.
+  sub=pass-no-result; run_case c13-no-result pass pass-no-result $(rep 20 pass)
+  expect_exit 1 && common || return
+  [ "$(rows | tr '\n' ',')" = "baseline p1," ] || { fail "rows run $(rows | tr '\n' ',')"; return; }
+  last_is "result-cardinality=0 for $(traced_id 2) (rc=0)" || return
+
+  sub=pass-invalid-result; run_case c13-invalid-result pass pass-invalid-result $(rep 20 pass)
+  expect_exit 1 && common || return
+  [ "$(rows | tr '\n' ',')" = "baseline p1," ] || { fail "rows run $(rows | tr '\n' ',')"; return; }
+  last_is "result-invalid=criteria=missing for $(traced_id 2) (rc=0)" || return
+
+  # The count is the analyzer's: a result file under a dot directory counts too.
+  sub=dot-results; run_case c13-dot-results pass dot-results $(rep 20 pass)
+  expect_exit 1 && common || return
+  [ "$(rows | tr '\n' ',')" = "baseline p1," ] || { fail "rows run $(rows | tr '\n' ',')"; return; }
+  last_is "result-cardinality=2 for $(traced_id 2) (rc=0)" || return
+
+  # A stalled run is ungraded: no result file is needed, and it is a trial.
+  sub=stalled-agent; run_case c13-stalled pass stalled-agent $(rep 18 pass)
+  expect_exit 0 && common || return
+  [ "$(rows)" = "$(alternation 1 10)" ] || { fail "rows run $(rows | tr '\n' ',')"; return; }
+  [ "$(awk -F'\t' 'NR == 3 { print $2 " " $3 " " $5 " " $6 }' "$m")" = "new p1 2 indeterminate" ] \
+    || { fail "row 2 is '$(awk -F'\t' 'NR == 3' "$m")'"; return; }
+  [ "$(qualifying baseline) $(qualifying new)" = "10 10" ] \
+    || { fail "qualifying rows: baseline $(qualifying baseline), new $(qualifying new)"; return; }
+  sub=""
+  echo "PASS: $label: a graded pass without exactly one valid result file (none, an invalid one, a second under a dot directory) stops with exit 1; a stalled run still counts as indeterminate"
+}
+
+case_14() {
+  # An OUT_DIR that does not exist yet is created, and the manifest starts with its header.
+  sub=missing; setup_case c14-missing $(rep 20 pass)
+  o="$c/new/nested/out"; m="$o/manifest.tsv"
+  invoke_in "$c" "$c/root" "$c/tree-baseline" "$c/tree-new"
+  expect_exit 0 && common || return
+  [ "$(rows)" = "$(alternation 1 10)" ] || { fail "rows run $(rows | tr '\n' ',')"; return; }
+  # One that cannot be created (a path through a regular file) stops before any launch.
+  sub=uncreatable; setup_case c14-uncreatable $(rep 20 pass)
+  printf 'not a directory\n' > "$c/file"; o="$c/file/out"; m="$o/manifest.tsv"
+  invoke_in "$c" "$c/root" "$c/tree-baseline" "$c/tree-new"
+  [ "$rc" -eq 1 ] || { fail "launcher exited $rc, want 1"; return; }
+  grep -qF "$o" "$c/stderr" || { fail "stderr does not name the OUT_DIR: '$(tail -1 "$c/stderr")'"; return; }
+  [ ! -e "$c/script.pos" ] || { fail "the fake was launched"; return; }
+  [ "$(snapshot "$here")" = "$before" ] || { fail "something under control/ was written"; return; }
+  sub=""
+  echo "PASS: $label: a missing OUT_DIR is created with a headed manifest; one that cannot be created stops with exit 1 before any launch"
+}
+
+case_15() {
+  # Two starts against one empty OUT_DIR at once: one claims the manifest and runs, the other stops.
+  setup_case c15 $(rep 20 pass)
+  local p1 p2 rc1 rc2 loser
+  launcher_in "$c" 1 "$c/root" "$c/tree-baseline" "$c/tree-new" & p1=$!
+  launcher_in "$c" 2 "$c/root" "$c/tree-baseline" "$c/tree-new" & p2=$!
+  wait "$p1"; rc1=$?
+  wait "$p2"; rc2=$?
+  case "$rc1 $rc2" in
+    "0 1") loser=2 ;;
+    "1 0") loser=1 ;;
+    *) fail "the two starts exited $rc1 and $rc2, want one 0 and one 1 ($(tail -1 "$c/stderr1") / $(tail -1 "$c/stderr2"))"; return ;;
+  esac
+  grep -qF "$m" "$c/stderr$loser" || { fail "the losing start's stderr does not name $m: '$(head -1 "$c/stderr$loser")'"; return; }
+  [ "$(grep -c "^seq$tab" "$m")" = 1 ] || { fail "the manifest has $(grep -c "^seq$tab" "$m") header lines"; return; }
+  common || return
+  [ "$(rows)" = "$(alternation 1 10)" ] || { fail "rows run $(rows | tr '\n' ',')"; return; }
+  [ "$(cat "$c/script.pos")" = 20 ] || { fail "the fake was launched $(cat "$c/script.pos") times, want 20"; return; }
+  echo "PASS: $label: of two simultaneous starts one runs twenty launches under one header and the other stops with exit 1"
+}
+
+case_16() {
+  # A manifest write that fails stops the launcher with exit 1 and nothing further is launched.
+  local what
+  for what in row stop; do
+    sub="$what"
+    if [ "$what" = row ]; then
+      setup_case c16-row pass readonly-manifest $(rep 20 pass)
+    else
+      setup_case c16-stop pass readonly-manifest-no-run-id $(rep 20 pass)
+    fi
+    invoke_in "$c" "$c/root" "$c/tree-baseline" "$c/tree-new"
+    [ "$rc" -eq 1 ] || { fail "launcher exited $rc, want 1 ($(tail -1 "$c/stderr"))"; return; }
+    if [ "$what" = row ]; then
+      grep -qF "cannot append row 2 to $m" "$c/stderr" || { fail "stderr does not report the failed row: '$(tail -1 "$c/stderr")'"; return; }
+    else
+      grep -qF "cannot append the stop line to $m: no run-id in " "$c/stderr" \
+        || { fail "stderr does not report the failed stop line: '$(tail -1 "$c/stderr")'"; return; }
+    fi
+    [ "$(wc -l < "$m" | tr -d ' ')" = 2 ] || { fail "the manifest has $(wc -l < "$m" | tr -d ' ') lines, want the header and row 1"; return; }
+    [ "$(cat "$c/script.pos")" = 2 ] || { fail "the fake was launched $(cat "$c/script.pos") times, want 2"; return; }
+    [ "$(snapshot "$here")" = "$before" ] || { fail "something under control/ was written"; return; }
+  done
+  sub=""
+  echo "PASS: $label: a failed row write and a failed stop write each stop the launcher with exit 1, nothing launched after"
+}
+
 cases=0
-for n in 1 2 3 4 5 6 7 8 9 10 11 12; do label="case $n"; sub=""; cases=$((cases + 1)); "case_$n"; done
+for n in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do label="case $n"; sub=""; cases=$((cases + 1)); "case_$n"; done
 [ "$failed" -eq 0 ] || { echo "$failed of $cases cases failed" >&2; exit 1; }
