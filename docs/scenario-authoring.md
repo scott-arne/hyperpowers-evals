@@ -511,7 +511,7 @@ spawns, which may run code the agent wrote. Checks see:
 | `QUORUM_AGENT_HOME` | outer, inner | always | the Coding-Agent's throwaway home; also the inner shell's `HOME` |
 | `QUORUM_CODING_AGENT` | outer, inner | always | the coding-agent config name, for per-agent dispatch |
 | `QUORUM_TRANSCRIPT_PATH` | outer | **post only** | the captured `trajectory.json` (transcript verbs load it) |
-| `QUORUM_RUN_DIR` | outer | pre and post | the record directory (the runner passes it to both phases, `src/runner/index.ts:1208-1217, 1575-1585`; the table's former "post only" did not match production); **outer-only** — expand it with double quotes if an inner command needs a record path. A single-quoted `$QUORUM_RUN_DIR` inside `command-succeeds` is a hard `quorum check` failure, read per logical line (backslash continuations folded, comment lines skipped); a quoted argument that spans a newline inside its quotes is not followed |
+| `QUORUM_RUN_DIR` | outer | pre and post | the record directory (the runner passes it to both phases, `src/runner/index.ts:1210-1219, 1577-1587`; the table's former "post only" did not match production); **outer-only** — expand it with double quotes if an inner command needs a record path. `quorum check` fails a `command-succeeds` whose argument opens with a single quote and reaches `$QUORUM_RUN_DIR` before that quote closes, read per logical line (backslash continuations folded, comment lines skipped). Other spellings that hand the inner shell a literal `$QUORUM_RUN_DIR` are not caught: a quoted argument that spans a newline inside its quotes, a `'\''` splice, a `"…"'…'` splice, and a backslash-escaped `\$QUORUM_RUN_DIR` inside double quotes |
 | `$QUORUM_WORKDIR` | — | **never** | checks run with **cwd = the workdir**; use workdir-relative paths. Referencing it is a hard `quorum check` failure. |
 
 The inner shell runs under the agent's throwaway home (`HOME`, `XDG_*`,
@@ -524,9 +524,14 @@ path up out of the workdir.
 
 The harness's git verbs (`git-repo`, `git-branch`, `git-clean`, `git-count`,
 `assert-checkout-clean`) run under the same home with
-`GIT_CONFIG_GLOBAL=/dev/null`, so neither the operator's nor the agent's global
-git config is read (`gitNestedEnv` in `src/check/fs-verbs.ts`): an operator
-whose global excludes hid a file from `git-clean` will see a different answer.
+`GIT_CONFIG_GLOBAL=/dev/null`, and pass `core.excludesFile=/dev/null` and
+`core.attributesFile=/dev/null` as `-c` flags. So they read no global git
+config file, no default excludes file (`$XDG_CONFIG_HOME/git/ignore`) and no
+default attributes file (`$XDG_CONFIG_HOME/git/attributes`), whether the
+operator's or the agent's (`GIT_HYGIENE` and `gitNestedEnv` in
+`src/check/fs-verbs.ts`). An operator whose global excludes hid a file from
+`git-clean` will see a different answer. Files inside the repository
+(`.gitignore`, `.gitattributes`, `.git/info/exclude`) still apply.
 `command-succeeds` keeps the agent's git config, as the live run saw it.
 
 ### Vacuous-pass verbs and empty capture

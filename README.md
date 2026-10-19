@@ -250,10 +250,13 @@ quorum produces a three-valued verdict:
 
 Exit codes are 0 for `pass`, 1 for `fail`, and 2 for `indeterminate`.
 
-Each run produces a record directory under `results/`. A run that reaches
-setup also gets the agent's own tree beside it; one that stops before then (an
-excluded agent, a missing `story.md` or `checks.sh`, a missing binary or
-required env var) has only the record:
+Each run produces a record directory under `results/`. A run that passes the
+runner's early guards also gets the agent's own tree beside it, created before
+provisioning. A run that a guard stops has only the record; the guards include
+an excluded agent, a missing `story.md` or `checks.sh`, an unset required env
+var, and a Claude-family CLI that is not on `PATH`. Every other agent's binary
+is checked during provisioning or at launch, after the tree exists, so that
+failure leaves both:
 
 ```text
 results/<scenario>-<coding-agent>-<timestamp>-<nonce>/

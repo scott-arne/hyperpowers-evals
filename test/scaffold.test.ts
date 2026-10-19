@@ -296,6 +296,22 @@ test('checkScenario flags $QUORUM_RUN_DIR on a continuation of not command-succe
   rmSync(root, { recursive: true, force: true });
 });
 
+// bash ends a trailing comment at the newline, backslash or not, so the next
+// line is a command of its own and the report names it, not the comment's line.
+test('checkScenario does not fold the line after a trailing comment ending in a backslash', () => {
+  const root = scenariosRoot();
+  const dir = scenario(root, 's');
+  writeFileSync(
+    join(dir, 'checks.sh'),
+    "pre() {\n  :\n}\npost() {\n  command-succeeds 'true' # see below \\\n  not command-succeeds \\\n    'test -f \"$QUORUM_RUN_DIR/x\"'\n}\n",
+  );
+  const runDir = checkScenario(dir).filter((p) => p.includes('QUORUM_RUN_DIR'));
+  expect(runDir).toEqual([
+    'checks.sh:6: $QUORUM_RUN_DIR is outer-only; expand it with double quotes or use $QUORUM_AGENT_HOME',
+  ]);
+  rmSync(root, { recursive: true, force: true });
+});
+
 test('checkScenario ignores $QUORUM_RUN_DIR in a comment line', () => {
   const root = scenariosRoot();
   const dir = scenario(root, 's');

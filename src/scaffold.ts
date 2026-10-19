@@ -246,16 +246,23 @@ function logicalLines(lines: string[]): { text: string; start: number }[] {
 // Whether a line ends inside a backslash escape, judged with the quote state so
 // a backslash inside single quotes does not continue the line. This is the
 // replay's rule (src/cli/replay-post-checks.ts), kept here rather than imported
-// so `quorum check` does not load the replay module.
+// so `quorum check` does not load the replay module, plus one addition: an
+// unquoted `#` that starts a word opens a comment, which ends at the newline,
+// so a backslash after it continues nothing.
 function endsWithContinuation(line: string): boolean {
   let single = false;
   let double = false;
   let escaped = false;
+  let prev = '';
   for (const ch of line) {
     if (escaped) {
       escaped = false;
+      // An escaped blank is part of a word, so it never lets a `#` start one.
+      prev = '\\';
       continue;
     }
+    const before = prev;
+    prev = ch;
     if (single) {
       if (ch === "'") single = false;
       continue;
@@ -267,6 +274,9 @@ function endsWithContinuation(line: string): boolean {
     if (double) {
       if (ch === '"') double = false;
       continue;
+    }
+    if (ch === '#' && (before === '' || /[\s;&|()<>]/.test(before))) {
+      return false;
     }
     if (ch === "'") {
       single = true;

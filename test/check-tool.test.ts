@@ -12,6 +12,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -760,6 +761,104 @@ test('git-clean: a malformed agent home .gitconfig is never read by projected gi
   );
   expect(out.broken).toBeUndefined();
   expect(out.passed).toBe(false);
+});
+
+// GIT_CONFIG_GLOBAL does not cover git's default excludes and attributes
+// files, which git reads from $XDG_CONFIG_HOME/git/ when core.excludesFile and
+// core.attributesFile are unset. The projection points XDG_CONFIG_HOME into
+// the agent home, so plain git under that home is the precondition each test
+// below checks: the planted file must change plain git's answer.
+function plainStatusUnder(home: string, wd: string): string {
+  const r = spawnSync('git', ['status', '--porcelain'], {
+    cwd: wd,
+    env: {
+      ...process.env,
+      HOME: home,
+      XDG_CONFIG_HOME: join(home, '.config'),
+      GIT_CONFIG_GLOBAL: '/dev/null',
+    },
+    encoding: 'utf8',
+  });
+  if (r.status !== 0) throw new Error(r.stderr);
+  return r.stdout;
+}
+
+// An agent-written ignore entry for an untracked file, under the agent home.
+function excludesFixture(): { home: string; wd: string } {
+  const home = mkdtempSync(join(tmpdir(), 'agent-home-'));
+  writeFile(home, '.config/git/ignore', 'secret.txt\n');
+  const wd = gitRepoWith(() => {});
+  writeFile(wd, 'secret.txt', 'x\n');
+  expect(plainStatusUnder(home, wd)).toBe(''); // precondition: the entry hides the file
+  return { home, wd };
+}
+
+// No filter is needed for an attribute to change the verdict: `text` makes git
+// normalize a committed CRLF file when it re-hashes it, so a clean tree reads
+// as modified (and `not git-clean` would pass on it).
+function attributesFixture(): { home: string; wd: string } {
+  const home = mkdtempSync(join(tmpdir(), 'agent-home-'));
+  const wd = gitRepoWith((git, d) => {
+    writeFile(d, 'crlf.txt', 'a\r\nb\r\n');
+    // The operator's core.autocrlf or attributes file would normalize the
+    // blob; commit it byte for byte.
+    git([
+      '-c',
+      'core.autocrlf=false',
+      '-c',
+      'core.attributesFile=/dev/null',
+      'add',
+      'crlf.txt',
+    ]);
+    git(['commit', '-qm', 'crlf']);
+  });
+  writeFile(home, '.config/git/attributes', '* text\n');
+  // Stat-dirty but unmodified: status re-hashes the file, which is where an
+  // attribute applies.
+  utimesSync(join(wd, 'crlf.txt'), 1_000_000_000, 1_000_000_000);
+  expect(plainStatusUnder(home, wd)).toBe(' M crlf.txt\n'); // precondition
+  return { home, wd };
+}
+
+test("git-clean: projected git does not read the agent home's default excludes file", () => {
+  const { home, wd } = excludesFixture();
+  const out = verbGitClean(
+    [],
+    ctxFor(wd, { QUORUM_INNER_ENV: 'projected', QUORUM_AGENT_HOME: home }),
+  );
+  expect(out.broken).toBeUndefined();
+  expect(out.passed).toBe(false);
+});
+
+test("assert-checkout-clean: projected git does not read the agent home's default excludes file", () => {
+  const { home, wd } = excludesFixture();
+  const out = verbAssertCheckoutClean(
+    ['.'],
+    ctxFor(wd, { QUORUM_INNER_ENV: 'projected', QUORUM_AGENT_HOME: home }),
+  );
+  expect(out.broken).toBeUndefined();
+  expect(out.passed).toBe(false);
+  expect(out.detail).toContain('?? secret.txt');
+});
+
+test("git-clean: projected git does not read the agent home's default attributes file", () => {
+  const { home, wd } = attributesFixture();
+  const out = verbGitClean(
+    [],
+    ctxFor(wd, { QUORUM_INNER_ENV: 'projected', QUORUM_AGENT_HOME: home }),
+  );
+  expect(out.broken).toBeUndefined();
+  expect(out.passed).toBe(true);
+});
+
+test("assert-checkout-clean: projected git does not read the agent home's default attributes file", () => {
+  const { home, wd } = attributesFixture();
+  const out = verbAssertCheckoutClean(
+    ['.'],
+    ctxFor(wd, { QUORUM_INNER_ENV: 'projected', QUORUM_AGENT_HOME: home }),
+  );
+  expect(out.broken).toBeUndefined();
+  expect(out.passed).toBe(true);
 });
 
 test('git-count commits: an unborn HEAD counts as zero commits; a one-commit repo counts one', () => {

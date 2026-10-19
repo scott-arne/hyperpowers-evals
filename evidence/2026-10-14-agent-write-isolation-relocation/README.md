@@ -715,8 +715,19 @@ superseded.
 - A `result.json` symlinked to another run's result is read unflagged: the
   identity checks cover the run directories, not the files in them. A copied
   or hard-linked run whose transcript lists no instruction files passes the
-  foreign-instruction pin vacuously. Both need operator tampering under the
-  "move, never link" rule.
+  foreign-instruction pin vacuously. Both need operator tampering inside the
+  campaign root. "Move, never link" is the analyzer's assumption about that
+  root, from its comment at `tally.py:568` ("The campaign moves a run and
+  never links one"), and the pre-registration's campaign-root rule says the
+  same of links: no run is reached through, or linked to, any other path.
+  "Copy, never move or link" under "The archive" is a stricter rule for a
+  different step: the archive copies runs out of the root so the root stays
+  as quorum wrote it and `control/tally.sh` can be re-run against it. The two
+  differ only on moving: the analyzer flags a link as an alias of a sibling
+  or a way out of the root, and a moved directory is neither. No campaign
+  script moves, copies or links a run into or within the root: quorum wrote
+  the runs there, and `control/archive-runs.sh` copies them out with
+  `cp -Rp`.
 - `Path.resolve()` raises on a looped link under Python 3.12 and earlier, so
   the analyzer needs Python 3.13 or later. This host runs 3.15.
 - A superseded row keeps its manipulation failures, so a superseded run that

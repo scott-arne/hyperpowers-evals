@@ -63,15 +63,24 @@ function broken(detail: string): CheckOutcome {
   return { passed: false, detail, broken: true };
 }
 
-// Flags every harness git spawn carries. They suppress the two hooks a
-// repository can configure to run code during a read-only verb; a content
+// Flags every harness git spawn carries. The first two suppress the two hooks
+// a repository can configure to run code during a read-only verb; a content
 // filter still runs (git invokes it to re-hash a stat-dirty file), which is
-// why those spawns also take the nested environment below.
+// why those spawns also take the nested environment below. The last two stop
+// git reading its default excludes and attributes files, which it looks for
+// under $XDG_CONFIG_HOME/git/ when no config names them and which
+// GIT_CONFIG_GLOBAL does not cover. Under `projected` that directory is in the
+// agent home: an ignore entry there would hide an untracked file from
+// git-clean, and a `text` attribute would read a clean CRLF file as modified.
 const GIT_HYGIENE = [
   '-c',
   'core.fsmonitor=false',
   '-c',
   'core.hooksPath=/dev/null',
+  '-c',
+  'core.excludesFile=/dev/null',
+  '-c',
+  'core.attributesFile=/dev/null',
 ];
 
 // The environment every process below the dispatcher gets: an inner command,
@@ -99,7 +108,8 @@ function nestedEnv(
 // overlay points HOME and XDG_CONFIG_HOME at a directory the agent can write,
 // so git would read agent-authored global config: `status.showUntrackedFiles=no`
 // would hide drift from git-clean, and a malformed file would make git fail.
-// GIT_CONFIG_GLOBAL suppresses both files while the rest of the projection
+// GIT_CONFIG_GLOBAL suppresses both config files (GIT_HYGIENE covers the
+// default excludes and attributes files) while the rest of the projection
 // still reaches content filters. command-succeeds does not use this: it keeps
 // the agent's own git config, as the live run saw it. `legacy` is unchanged.
 function gitNestedEnv(
