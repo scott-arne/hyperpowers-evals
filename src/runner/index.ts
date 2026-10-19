@@ -1151,8 +1151,10 @@ async function runInnerBody(
 
   // setup: isolated config + workdir, claude provisioning, then setup.sh.
   // The workspace holds the fixture AND the throwaway $HOME for the coding
-  // agent under test — always on, every agent. Out-root-relative so it is
-  // reaped with the run (no mkdtemp / no runtimeCleanupDirs). The launchers pin
+  // agent under test — always on, every agent. Out-root-relative (no mkdtemp,
+  // not in runtimeCleanupDirs) because it outlives the run as evidence beside
+  // the record; nothing reaps it, and scripts/strip-runs later removes only the
+  // reinstallable paths under its home/. The launchers pin
   // HOME/XDG/TMPDIR to it via $QUORUM_HOME_ENV; the XDG base dirs + TMPDIR are
   // pre-created so every agent (and opencode's capture subprocess) finds them
   // present.

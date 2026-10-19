@@ -511,13 +511,23 @@ spawns, which may run code the agent wrote. Checks see:
 | `QUORUM_AGENT_HOME` | outer, inner | always | the Coding-Agent's throwaway home; also the inner shell's `HOME` |
 | `QUORUM_CODING_AGENT` | outer, inner | always | the coding-agent config name, for per-agent dispatch |
 | `QUORUM_TRANSCRIPT_PATH` | outer | **post only** | the captured `trajectory.json` (transcript verbs load it) |
-| `QUORUM_RUN_DIR` | outer | pre and post | the record directory (the runner passes it to both phases, `src/runner/index.ts:1208-1217, 1575-1585`; the table's former "post only" did not match production); **outer-only** — expand it with double quotes if an inner command needs a record path. A single-quoted `$QUORUM_RUN_DIR` inside `command-succeeds` is a hard `quorum check` failure |
+| `QUORUM_RUN_DIR` | outer | pre and post | the record directory (the runner passes it to both phases, `src/runner/index.ts:1208-1217, 1575-1585`; the table's former "post only" did not match production); **outer-only** — expand it with double quotes if an inner command needs a record path. A single-quoted `$QUORUM_RUN_DIR` inside `command-succeeds` is a hard `quorum check` failure, read per logical line (backslash continuations folded, comment lines skipped); a quoted argument that spans a newline inside its quotes is not followed |
 | `$QUORUM_WORKDIR` | — | **never** | checks run with **cwd = the workdir**; use workdir-relative paths. Referencing it is a hard `quorum check` failure. |
 
 The inner shell runs under the agent's throwaway home (`HOME`, `XDG_*`,
-`TMPDIR` from `QUORUM_AGENT_HOME`), not the operator's, and receives no
-provider credentials. For the agent's home in a post-check, use
-`$QUORUM_AGENT_HOME`; do not guess a relative path up out of the workdir.
+`TMPDIR` from `QUORUM_AGENT_HOME`), not the operator's. Its environment carries
+none of the operator's provider credentials; the agent's own credential files
+under that home (`$QUORUM_AGENT_HOME`, `$QUORUM_AGENT_CONFIG_DIR`) stay
+readable by design, since the agent held them for its whole phase. For the
+agent's home in a post-check, use `$QUORUM_AGENT_HOME`; do not guess a relative
+path up out of the workdir.
+
+The harness's git verbs (`git-repo`, `git-branch`, `git-clean`, `git-count`,
+`assert-checkout-clean`) run under the same home with
+`GIT_CONFIG_GLOBAL=/dev/null`, so neither the operator's nor the agent's global
+git config is read (`gitNestedEnv` in `src/check/fs-verbs.ts`): an operator
+whose global excludes hid a file from `git-clean` will see a different answer.
+`command-succeeds` keeps the agent's git config, as the live run saw it.
 
 ### Vacuous-pass verbs and empty capture
 

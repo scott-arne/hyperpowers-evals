@@ -42,17 +42,21 @@ mkdir -p "$out" || { echo "cannot create OUT_DIR $out" >&2; exit 1; }
 q_baseline=0; q_new=0; gv_baseline=0; gv_new=0; rl_baseline=0; rl_new=0; rn_baseline=0; rn_new=0; seq=0
 seen=" "                                     # every run id this campaign has launched, space-separated
 id_shape='^[A-Za-z0-9][A-Za-z0-9._-]*$'      # tally.py's RUN_ID_SHAPE
-# The analyzer's reading of a run's result evidence, imported from tally.py
-# rather than restated: a graded verdict (final pass or fail and no error, the
-# test at its result-cardinality check) needs exactly one result_files() entry
-# that read_result() accepts, and classify is handed a result only when
-# read_result() accepts one, as the analyzer hands it one. Prints
-# "reject <reason>", "result <path>", or nothing.
+# The analyzer's reading of a run's result evidence: result_files() and
+# read_result() are loaded from the $TALLY file itself, not restated. The
+# graded test (final pass or fail and no error) is restated from the inline
+# check at the analyzer's result-cardinality step, which no function exposes.
+# A graded verdict needs exactly one result_files() entry that read_result()
+# accepts, and classify is handed a result only when read_result() accepts
+# one, as the analyzer hands it one. Prints "reject <reason>",
+# "result <path>", or nothing.
 evidence_py='
-import json, sys
+import importlib.util, json, sys
 from pathlib import Path
-sys.path.insert(0, str(Path(sys.argv[1]).resolve().parent))
-import tally
+spec = importlib.util.spec_from_file_location("tally", sys.argv[1])
+tally = importlib.util.module_from_spec(spec)
+sys.modules["tally"] = tally
+spec.loader.exec_module(tally)
 run = Path(sys.argv[2])
 verdict = json.loads((run / "verdict.json").read_text(encoding="utf-8"))
 found = tally.result_files(run)
@@ -92,7 +96,7 @@ launch() {  # launch <arm> <proc> <note>
     "reject "*) stop 1 "${evidence#reject } for $run_id (rc=$rc)" ;;
     *) stop 1 "result check failed for $run_id (rc=$rc)" ;;
   esac
-  if [ -n "$res" ]; then kind="$(python3 "$tally" classify "$root/$run_id/verdict.json" "$res" 2>>"$log")"; else kind="$(python3 "$tally" classify "$root/$run_id/verdict.json" 2>>"$log")"; fi || stop 1 "classify failed for $run_id (rc=$rc)"
+  if [ -n "$res" ]; then kind="$(python3 -B -I "$tally" classify "$root/$run_id/verdict.json" "$res" 2>>"$log")"; else kind="$(python3 -B -I "$tally" classify "$root/$run_id/verdict.json" 2>>"$log")"; fi || stop 1 "classify failed for $run_id (rc=$rc)"
   seq=$((seq + 1))
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$seq" "$arm" "$proc" "$run_id" "$rc" "$kind" "$note" >> "$manifest" \
     || { echo "cannot append row $seq to $manifest" >&2; exit 1; }

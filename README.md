@@ -57,10 +57,11 @@ prior sessions. Provisioning seeds the config — and the host OAuth creds each
 agent needs — into that throwaway home before launch, so there is no run-time
 login. Copilot also stages the local Superpowers plugin under the isolated home,
 uses an allowlisted outer environment, and writes a secret-bearing chmod-0600
-`.copilot-env` inside the run dir. That narrows the blast radius but is not a
-sandbox. OpenCode and Copilot launchers additionally use allowlisted
-environments, but live Coding-Agents still run with broad filesystem and
-command execution power.
+`.copilot-env` in its config dir under that home
+(`results/workspaces/<run>/home/.copilot/.copilot-env`). That narrows the blast
+radius but is not a sandbox. OpenCode and Copilot launchers additionally use
+allowlisted environments, but live Coding-Agents still run with broad
+filesystem and command execution power.
 
 Run live evals only from a trusted local environment:
 
@@ -249,8 +250,10 @@ quorum produces a three-valued verdict:
 
 Exit codes are 0 for `pass`, 1 for `fail`, and 2 for `indeterminate`.
 
-Each run produces a record directory under `results/`, plus the agent's own
-tree beside it:
+Each run produces a record directory under `results/`. A run that reaches
+setup also gets the agent's own tree beside it; one that stops before then (an
+excluded agent, a missing `story.md` or `checks.sh`, a missing binary or
+required env var) has only the record:
 
 ```text
 results/<scenario>-<coding-agent>-<timestamp>-<nonce>/

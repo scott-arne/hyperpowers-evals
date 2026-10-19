@@ -266,6 +266,49 @@ test('checkScenario flags $QUORUM_RUN_DIR inside a single-quoted command-succeed
   rmSync(root, { recursive: true, force: true });
 });
 
+test('checkScenario flags $QUORUM_RUN_DIR on a continuation of command-succeeds', () => {
+  const root = scenariosRoot();
+  const dir = scenario(root, 's');
+  writeFileSync(
+    join(dir, 'checks.sh'),
+    'pre() {\n  :\n}\npost() {\n  command-succeeds \\\n    \'test -f "$QUORUM_RUN_DIR/x"\'\n}\n',
+  );
+  const problems = checkScenario(dir);
+  expect(problems).toContain(
+    'checks.sh:5: $QUORUM_RUN_DIR is outer-only; expand it with double quotes or use $QUORUM_AGENT_HOME',
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+// The negated form is the dangerous one: the inner `test -f /x` fails and `not`
+// turns the failure into a pass.
+test('checkScenario flags $QUORUM_RUN_DIR on a continuation of not command-succeeds', () => {
+  const root = scenariosRoot();
+  const dir = scenario(root, 's');
+  writeFileSync(
+    join(dir, 'checks.sh'),
+    'pre() {\n  :\n}\npost() {\n  :\n  not command-succeeds \\\n    \'test -f "${QUORUM_RUN_DIR}/x"\'\n}\n',
+  );
+  const problems = checkScenario(dir);
+  expect(problems).toContain(
+    'checks.sh:6: $QUORUM_RUN_DIR is outer-only; expand it with double quotes or use $QUORUM_AGENT_HOME',
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('checkScenario ignores $QUORUM_RUN_DIR in a comment line', () => {
+  const root = scenariosRoot();
+  const dir = scenario(root, 's');
+  writeFileSync(
+    join(dir, 'checks.sh'),
+    "pre() {\n  :\n}\npost() {\n  # never write command-succeeds '$QUORUM_RUN_DIR/x' here\n  :\n}\n",
+  );
+  expect(checkScenario(dir).some((p) => p.includes('QUORUM_RUN_DIR'))).toBe(
+    false,
+  );
+  rmSync(root, { recursive: true, force: true });
+});
+
 test('checkScenario accepts $QUORUM_RUN_DIR expanded at the outer layer', () => {
   const root = scenariosRoot();
   const dir = scenario(root, 's');

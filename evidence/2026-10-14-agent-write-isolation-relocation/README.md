@@ -698,6 +698,58 @@ and `file-history/`.
   post-check.
 - `runs/baseline/`, `runs/new/`: the archived runs.
 
+### Known limits of the analyzer and launcher
+
+Found by the final branch review, after the campaign. None of them arose in
+it: no archived main transcript records a `null` entrypoint or version, every
+graded run had one readable `result.json` and none is a link, and no row was
+superseded.
+
+- An explicit JSON `null` for a transcript entry's `entrypoint` or `version`
+  reads as absent, not as a value that fails the pin.
+- An OS-level unreadable `result.json` (a dangling link, mode 000, a
+  directory), or a mode-000 `verdict.json`, raises a traceback at exit 1: the
+  same code as a named run without a verdict, never a false proceed. A
+  `verdict.json` that is a dangling link or a directory reads as that missing
+  verdict.
+- A `result.json` symlinked to another run's result is read unflagged: the
+  identity checks cover the run directories, not the files in them. A copied
+  or hard-linked run whose transcript lists no instruction files passes the
+  foreign-instruction pin vacuously. Both need operator tampering under the
+  "move, never link" rule.
+- `Path.resolve()` raises on a looped link under Python 3.12 and earlier, so
+  the analyzer needs Python 3.13 or later. This host runs 3.15.
+- A superseded row keeps its manipulation failures, so a superseded run that
+  misses a pin still stops the campaign. That errs toward stopping.
+- The launcher accepts a planted manifest symlink to a FIFO: noclobber refuses
+  only an existing regular file, so the header write blocks and the launcher
+  hangs.
+- The exactly-three-criteria shape `read_result` requires is specific to this
+  single-scenario campaign, whose story has three criteria.
+
+The launcher that ran the campaign is the one at `66f14d12a`. The same review
+amended it afterwards: its comment now says the graded test is restated from
+the analyzer, it loads `result_files` and `read_result` from the `$TALLY` file
+itself rather than from whatever `tally.py` sits beside it, and its `classify`
+call takes the `-B -I` the evidence check already used. None of this changes
+what the campaign ran: `$TALLY` was the default `../tally.py`, so the file
+imported was the file named. The amended launcher passes the same 16 offline
+cases of `control/launch-all.test.sh`.
+
+## Corrections
+
+- **The `;` leader** ("Decisions taken on this sweep", item 2, last
+  paragraph). The `;` in one result's `tools` array
+  (`sdd-plan-scoped-scratch-claude-auto-20260825T041623Z-d193`) is not a
+  redirect target. It comes from `-exec grep … {} \;` in
+  `scenarios/sdd-plan-scoped-scratch/checks.sh`: `commandLeaders` in
+  `src/cli/replay-post-checks.ts` treats `{` and `}` as command boundaries,
+  so the escaped `;` after `{}` is read as a new command's leader. `/dev/null`
+  and `1` come from redirects as stated, and the conclusion stands: a
+  spurious name can only add to the exercised set. The paragraph itself is
+  left as written: everything down to the end of the pre-registration was
+  committed before the campaign and is not edited after it.
+
 ## Assumptions
 
 The spec carries two Assumptions. Where each was tested:

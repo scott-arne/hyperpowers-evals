@@ -14,11 +14,13 @@ import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { HelperContext } from './context.ts';
 
-// The agent's throwaway $HOME is a sibling of the workdir: the runner creates
-// <runDir>/coding-agent-workdir (the workdir) and <runDir>/home (the agent HOME)
-// before running setup.sh, so dirname(workdir)/home is the agent's home and
-// already exists. (src/runner/index.ts: workdir = join(runDir,
-// 'coding-agent-workdir'); runHomeDir = join(runDir, 'home').)
+// The agent's throwaway $HOME is a sibling of the workdir: before running
+// setup.sh the runner creates <workspace>/coding-agent-workdir (the workdir) and
+// <workspace>/home (the agent HOME), where <workspace> is
+// results/workspaces/<run>, so dirname(workdir)/home is the agent's home and
+// already exists. (src/runner/index.ts allocateWorkspace: workdir =
+// join(workspaceDir, 'coding-agent-workdir'); runHomeDir = join(workspaceDir,
+// 'home').)
 export function agentHomeFromWorkdir(workdir: string): string {
   return join(dirname(workdir), 'home');
 }

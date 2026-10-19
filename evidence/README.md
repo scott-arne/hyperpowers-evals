@@ -10,9 +10,15 @@ deletes it and the reaper reclaims idle siblings — so a note that cites it
 would rot. `evals/results/` is gitignored and per-host. This tree is committed,
 so a citation survives the workspace, the host, and the cache.
 
-Layout:
+Layout, for a legacy run (one tree):
 
     evidence/<YYYY-MM-DD-plan-slug>/task-<N>-runs/<round or arm>/<run>/...
+
+and for a relocated run (the record beside the agent's tree, as `results/`
+holds them live):
+
+    evidence/<YYYY-MM-DD-plan-slug>/task-<N>-runs/<round or arm>/<run>/...
+    evidence/<YYYY-MM-DD-plan-slug>/task-<N>-runs/<round or arm>/workspaces/<run>/...
 
 Rules: copy, never move, from the workspace while the plan is live; do not edit
 an artifact after it is cited; keep JSON and logs as the tools wrote them.

@@ -202,16 +202,79 @@ function validateChecksSh(scenarioDir: string): string[] {
   }
   // $QUORUM_RUN_DIR reaches the outer layer only. Inside a single-quoted
   // command-succeeds it would expand in the nested shell, which never
-  // receives it (spec, "Post-check environment").
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
+  // receives it (spec, "Post-check environment"). Read logical lines: a
+  // command continued with a backslash puts its argument on the next line.
+  for (const { text: line, start } of logicalLines(lines)) {
+    if (/^\s*#/.test(line)) continue;
     if (/command-succeeds\s+'[^']*\$\{?QUORUM_RUN_DIR\b/.test(line)) {
       problems.push(
-        `checks.sh:${i + 1}: $QUORUM_RUN_DIR is outer-only; expand it with double quotes or use $QUORUM_AGENT_HOME`,
+        `checks.sh:${start}: $QUORUM_RUN_DIR is outer-only; expand it with double quotes or use $QUORUM_AGENT_HOME`,
       );
     }
   }
   return problems;
+}
+
+// Fold bash's backslash-newline continuations, pairing each logical line with
+// the 1-based physical line it starts on. A comment line is never folded:
+// bash ends a comment at the newline, backslash or not.
+function logicalLines(lines: string[]): { text: string; start: number }[] {
+  const out: { text: string; start: number }[] = [];
+  let pending = '';
+  let start = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    if (pending === '') {
+      start = i + 1;
+      if (/^\s*#/.test(line)) {
+        out.push({ text: line, start });
+        continue;
+      }
+    }
+    const joined = pending + line;
+    if (endsWithContinuation(joined)) {
+      pending = joined.slice(0, -1);
+      continue;
+    }
+    out.push({ text: joined, start });
+    pending = '';
+  }
+  if (pending !== '') out.push({ text: pending, start });
+  return out;
+}
+
+// Whether a line ends inside a backslash escape, judged with the quote state so
+// a backslash inside single quotes does not continue the line. This is the
+// replay's rule (src/cli/replay-post-checks.ts), kept here rather than imported
+// so `quorum check` does not load the replay module.
+function endsWithContinuation(line: string): boolean {
+  let single = false;
+  let double = false;
+  let escaped = false;
+  for (const ch of line) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (single) {
+      if (ch === "'") single = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (double) {
+      if (ch === '"') double = false;
+      continue;
+    }
+    if (ch === "'") {
+      single = true;
+    } else if (ch === '"') {
+      double = true;
+    }
+  }
+  return escaped;
 }
 
 // Count occurrences of a single character in a string.
