@@ -420,3 +420,98 @@ Per smoke, under `smokes/<agent>/`:
 
 Transcripts, homes and workdirs are not copied: they stay in `results/`, which
 is gitignored, and the run ids above are what makes them findable.
+
+## Paired control
+
+`control/` holds the predeclared paired control (plan Task 16; spec,
+Verification, "Live"): twenty live sessions of one boundary scenario, ten on
+the pre-change harness and ten on this branch, interleaved, and decided by
+`tally.py` under the rule below.
+
+### Pre-registration
+
+Written and committed before the first session launched, in its own commit.
+Nothing in this subsection is edited after launch; the results are appended
+below it.
+
+- **Scenario.** `scenarios/cost-api-field-rename-boundary`. It is
+  byte-identical in both arms, as are `coding-agents/claude-auto.yaml` and
+  `coding-agents/claude-context/` (`git diff --stat b6a923a31 66f14d12a` over
+  those paths is empty).
+- **Arms.**
+  - `baseline`: evals `b6a923a31`, the pre-change revision, in the detached
+    worktree `.worktrees/baseline-b6a923a31` of the evals checkout. It writes
+    the legacy layout, record and agent tree both at `results/<run>/`.
+  - `new`: this branch, harness at `66f14d12a`, run from the feature worktree
+    `.worktrees/agent-write-isolation-relocation`. It writes the relocated
+    layout, the record at `results/<run>/` and the agent tree at
+    `results/workspaces/<run>/`. Evidence-only commits, this pre-registration
+    among them, may follow `66f14d12a`; no harness path changes until the
+    campaign ends.
+- **Campaign root.** One absolute root for every launch in both arms:
+  `/Users/johnss51/Development/agents/hyperpowers/evals/results`, a real
+  directory. The launcher passes it as `--out-root`; the analyzer reads it as
+  `--records`, with `--workspaces` at its `workspaces/`. No run is reached
+  through, or linked to, any other path.
+- **Coding-Agent.** `claude-auto`, which resolves to `claude-opus-5-5` on
+  this host (Vertex). Claude Code `2.1.302`: `claude --version`, with
+  `~/.local/bin/claude` linking to `~/.local/share/claude/versions/2.1.302`.
+  Both are read again immediately before the launch and after the launcher
+  exits. The analyzer pins the version from every session's transcript, in
+  both arms.
+- **Plugin root.** `/Users/johnss51/Development/agents/hyperpowers`
+  (hyperpowers `bab5914`) for both arms, given as `SUPERPOWERS_ROOT` on the
+  launch command only. The analyzer pins it from each run's `--plugin-dir`.
+- **Gauntlet-Agent.** `claude-opus-5-5` (`GAUNTLET_AGENT_MODEL`), the Gauntlet
+  fork at `a35607e` through the `~/.local/bin/gauntlet` shim.
+- **Environment.** The campaign is launched under
+  `env -u CLAUDE_CODE_ENABLE_TODO_TOOLS`, which this host sets to 1. Both
+  arms' `coding-agents/claude-context/launch-agent` also drop every inherited
+  `CLAUDE*` and `ANTHROPIC*` variable before sourcing the run's env file.
+- **Size and order.** n = 10 qualifying sessions per arm, one session at a
+  time, in the order B1 N1 B2 N2 … B10 N10. A replacement or relaunch runs
+  immediately after the row it stands in for.
+- **Observable.** Criterion 1, as the re-baseline defines it: a session
+  passes when `criteria[0]` and `criteria[1]` of the Gauntlet-Agent's
+  `result.json` both read `pass`. A `fail` in either is a fail. Anything else
+  is indeterminate, a real trial that is never a pass. The composed final is
+  not the observable.
+- **Rule.** With `p_b` and `p_n` the criterion-1 pass counts of the baseline
+  and new arms, over exactly ten qualifying sessions each: `p_b - p_n <= 2`
+  proceeds; a larger gap stops for a human decision. The Fisher p the
+  analyzer prints is information, not the rule. The clean baseline on this
+  cell is 5/10 (`docs/experiments/2026-10-03-clean-harness-rebaseline.md`).
+- **Void rule.** A grader-exit void (the Gauntlet-Agent's `status:
+  investigate`, exited "without writing a result") occupies no slot and is
+  replaced as `r<n>`, at most three times per arm; a fourth stops. A baseline
+  setup void (`error.stage: setup`) is relaunched without consuming that cap,
+  at most three times. A new-arm setup void stops.
+- **Automatic stops.**
+  - During the campaign (`control/launch-all.sh`): a new-arm run that is a
+    setup void or `qa-agent-misconfigured`; a baseline run that is
+    `qa-agent-misconfigured`; a log naming no run, several runs, or a run id
+    that is malformed or repeated; a graded run without exactly one
+    well-formed `result.json`; the void cap or the relaunch bound; an arm
+    short of ten qualifying sessions. Exit 1, 2 or 3, with the reason as the
+    manifest's last line.
+  - After both arms (`control/tally.sh`, over `tally.py`): any integrity
+    failure; any manipulation mismatch in either arm (plugin root, model,
+    Claude Code version, an entrypoint other than `cli`, an instruction file
+    loaded from outside the run's own trees, task-tool use); an arm without
+    exactly ten qualifying sessions; a new-arm failure signature,
+    `(verdict.final, error.stage or "none", sorted names of failed checks)`,
+    that the baseline arm lacks; the threshold. Exit 2 to 5, or 1 for a
+    named run without a verdict.
+  - Any non-zero exit of either script is a stop for the human partner.
+    Nothing is relaunched to change an answer, no run is replaced by hand
+    and no log is edited.
+- **Commands of record.** The launch, from the evals checkout, detached:
+
+      cd /Users/johnss51/Development/agents/hyperpowers/evals && OUT_DIR=/Users/johnss51/Development/agents/hyperpowers/evals/.worktrees/agent-write-isolation-relocation/evidence/2026-10-14-agent-write-isolation-relocation/control SUPERPOWERS_ROOT=/Users/johnss51/Development/agents/hyperpowers nohup env -u CLAUDE_CODE_ENABLE_TODO_TOOLS bash /Users/johnss51/Development/agents/hyperpowers/evals/.worktrees/agent-write-isolation-relocation/evidence/2026-10-14-agent-write-isolation-relocation/control/launch-all.sh /Users/johnss51/Development/agents/hyperpowers/evals/results /Users/johnss51/Development/agents/hyperpowers/evals/.worktrees/baseline-b6a923a31 /Users/johnss51/Development/agents/hyperpowers/evals/.worktrees/agent-write-isolation-relocation > /Users/johnss51/Development/agents/hyperpowers/evals/.worktrees/agent-write-isolation-relocation/evidence/2026-10-14-agent-write-isolation-relocation/control/campaign.out 2>&1 &
+
+  The tally, after the launcher exits 0:
+
+      bash evidence/2026-10-14-agent-write-isolation-relocation/control/tally.sh /Users/johnss51/Development/agents/hyperpowers/evals/results /Users/johnss51/Development/agents/hyperpowers 2.1.302
+
+  Both run outside this host's command sandbox, which refuses the fixture's
+  `git init` (see "Smokes").
