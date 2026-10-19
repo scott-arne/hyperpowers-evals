@@ -524,7 +524,10 @@ above, run outside the sandbox: a sandboxed `git init -b main` under a
 `results/` tree failed in the same session with the "Operation not permitted"
 recorded under "Smokes". The tally ran inside the sandbox, because it only
 reads the campaign root and writes `control/tally.txt`. The sandbox sentence
-above holds for the launch alone.
+above holds for the launch alone. The controller then re-ran the analyzer
+outside the sandbox against the recorded campaign: its output was identical
+to `control/tally.txt`, exit 0. Two sandboxed re-runs, the reviewer's and the
+implementer's, were identical too.
 
 - **Window.** First session `…-20261019T064957Z-415e` (06:49:57Z); the
   manifest and `control/campaign.out` were last written at 00:32:34 -0700 on
@@ -616,9 +619,13 @@ These do not enter the decision.
   Claude Code installed `2.1.303` into its throwaway home
   (`home/.claude/.last-update-result.json`: `2.1.302` to `2.1.303`, `success`,
   with `home/.local/bin/claude` linking to the new install). This happened in
-  six sessions per arm, p2 to p5, p7 and p8 in each. The update does not
-  reach the running session: every transcript records `2.1.302` only, and the
-  host's own install stayed at `2.1.302` throughout. In the baseline arm the
+  six sessions per arm, at the same positions in both: p2 to p5, p7 and p8.
+  The update does not reach the running session: every transcript records
+  `2.1.302` only, and the host's own install stayed at `2.1.302` throughout.
+  In 11 of the 12 sessions the update landed after the session's last
+  transcript entry, 11 to 25 s later. The exception is baseline p4, whose
+  update landed about 14 s before its last entry, and that entry still
+  records `2.1.302`. In the baseline arm the
   six updating sessions are exactly its six criterion-1 failures; in the new
   arm five of its six updating sessions passed. The association points
   opposite ways in the two arms, so it is recorded here and not read as an
@@ -655,12 +662,26 @@ removed (none existed). Step 3 staged `runs/` with `git add -f`. Step 4 is
 `strip-runs` removed each copy's cloud-provider env file
 (`home/.claude/.claude-env`) and session locks before staging.
 
-What a copy keeps under its home is what the earlier archives keep: the
-session transcript, `settings.json`, the `.claude.json` files and backups,
-`history.jsonl`, the CLI's `cache/`, `plugins/known_marketplaces.json`, the
-update record above and two symlinks (`home/.local/bin/claude` where the CLI
-updated itself, and the URL-handler app's link to the host's
-`~/.local/share/claude/versions/2.1.302`).
+Under its home, a copy keeps:
+
+- the session transcript, `settings.json`, the `.claude.json` files and
+  backups, `history.jsonl`, the CLI's `cache/`,
+  `plugins/known_marketplaces.json`, and the update record above;
+- two symlinks: `home/.local/bin/claude` where the CLI updated itself, and
+  the URL-handler app's link to the host's
+  `~/.local/share/claude/versions/2.1.302`;
+- `shell-snapshots/`, 4 files across the 20 runs. These are the CLI's shell
+  snapshot, whose tool-wrapper functions are followed by a single export,
+  of `PATH`;
+- `file-history/`, 8 files across the 20 runs: the CLI's saved versions of
+  the fixture's `routes/users.js` as the agent edited it;
+- `plugins/plugin-directory-cache-v2.json`, in two baseline runs only
+  (`…-bfac` and `…-87b4`), 2,719,604 bytes each. It is the CLI's cache of the
+  public plugin catalogue (3,605 listings, no host path), and no earlier
+  archive carries it.
+
+None of these is sensitive. Earlier archives also keep `shell-snapshots/`
+and `file-history/`.
 
 ### Files
 
@@ -694,8 +715,9 @@ The spec carries two Assumptions. Where each was tested:
 2. **No agent CLI inspects the absolute workdir path beyond Antigravity's
    hidden-component rule.** Live, by the smokes ("Smokes"), for Claude Code
    and Codex, and for Claude Code again by the ten new-arm sessions of this
-   control, each with its workdir under `results/workspaces/<run>/`, none
-   showing path trouble and none reading below the baseline. Antigravity was
+   control, each with its workdir under `results/workspaces/<run>/`. No
+   session showed path trouble, and the arm did not read below the baseline.
+   Antigravity was
    not run (the human partner's decision; `smokes/antigravity/README.md`),
    and Gemini, Kimi, OpenCode, Pi and Copilot were not exercised live. The
    Assumption therefore holds live for Claude Code and Codex only, and
