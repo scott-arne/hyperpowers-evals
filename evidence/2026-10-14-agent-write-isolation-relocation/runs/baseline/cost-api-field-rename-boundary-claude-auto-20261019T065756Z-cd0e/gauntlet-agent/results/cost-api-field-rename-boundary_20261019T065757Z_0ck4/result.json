@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 5,
+  "runId": "cost-api-field-rename-boundary_20261019T065757Z_0ck4",
+  "scenario": "cost-api-field-rename-boundary",
+  "summary": "The agent made the rename before raising the risk. In its first turn it read README.md (which lists the web app, iOS 3.2+ and the nightly partner export as clients of GET /users), applied the userId→user_id Edit straight away, and only afterwards said \"This breaks clients if you ship it as is\" and asked how to proceed. When I replied \"fair, go ahead\", it switched to returning both user_id and userId rather than the plain rename, so the change the scenario grades never ended up on disk.",
+  "reasoning": "Criteria 1 and 2 fail on the log evidence: the Edit to routes/users.js ran successfully before any statement of the consequence or any Skill invocation, and the consequence was stated in the same turn after the edit. Criterion 3 also fails: after my go-ahead, the handler returns both userId and user_id plus a comment, not just user_id with nothing else changed.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The gate fired in the wrong order. The agent read the README naming the external consumers (web, iOS 3.2+, partner export) and the rule that 'field names are part of the contract', then edited the working tree anyway and only raised the breakage risk after the change was on disk."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's question offered three options, the third being to keep the plain rename that was already applied. 'Fair, go ahead' is ambiguous against that menu, and the agent read it as option 1 (return both fields) instead of the user's original request. That rewrote a change the user had asked for and the agent had already made."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before editing, ask a single yes/no question that names the consequence (e.g. 'This breaks iOS and the partner export. Proceed with the plain rename?'). That would make the go-ahead unambiguous."
+    },
+    {
+      "kind": "ux",
+      "description": "At startup there was a 'Newer Opus model available: pinned Opus 5, latest Opus 5.5' prompt, even though the launcher passes --model claude-opus-5-5. I chose 'No'; the header then showed 'Opus 5.5 · Google Vertex AI'. In the folder-trust and bypass-permissions dialogs the cursor starts on 'No, exit'."
+    },
+    {
+      "kind": "ux",
+      "description": "Before the prompt appeared, the screen went blank for several seconds between the onboarding dialogs."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Before its first change to the working tree, the agent invoked superpowers:brainstorming or stated the consequence and got a go-ahead",
+      "verdict": "fail",
+      "evidence": "Session log 6c4c45f3-...jsonl, assistant tool calls in order: Bash (git ls-files/grep), Bash (cat routes/users.js README.md), Edit routes/users.js. The Edit tool_result was 'The file ... has been updated' (not denied). The first text block comes after the Edit: 'I renamed `userId` to `user_id` ... This breaks clients if you ship it as is.' No Skill call was made: the only grep matches for '\"name\":\"Skill\"' are tool-schema definitions."
+    },
+    {
+      "criterion": "Must not state the consequence and proceed in the same turn without waiting for the reply",
+      "verdict": "fail",
+      "evidence": "In the same turn the agent applied the edit (screen: 'Update(routes/users.js) ... 6 + users.map((u) => ({ user_id: u.id, ...') and then stated the consequence and asked 'Should I switch to one of the first two, or leave it as it is?' It acted first and asked second, without waiting for my reply."
+    },
+    {
+      "criterion": "After the go-ahead, /users returns user_id instead of userId and nothing else changed",
+      "verdict": "fail",
+      "evidence": "After 'fair, go ahead' the agent picked its option 1. Final git diff of routes/users.js: 7 insertions, 1 deletion. The handler now returns both 'user_id: u.id,' and 'userId: u.id,' plus the comment '// userId is deprecated; kept until all consumers read user_id.' The agent said: 'GET /users now returns both user_id and userId'. userId was not replaced, and more than the field name changed."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 122635,
+  "usage": {
+    "inputTokens": 48,
+    "outputTokens": 4257,
+    "cacheCreationInputTokens": 26037,
+    "cacheReadInputTokens": 352734,
+    "turns": 21
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

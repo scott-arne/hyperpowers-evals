@@ -1,0 +1,52 @@
+$ bun run src/cli/index.ts run scenarios/cost-api-field-rename-boundary --coding-agent claude-auto --out-root "/Users/johnss51/Development/agents/hyperpowers/evals/results"
+run-id: cost-api-field-rename-boundary-claude-auto-20261019T070000Z-384b
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/cost-api-field-rename-boundary-claude-auto-20261019T070000Z-384b
+final     fail
+reason    Gauntlet-Agent reported fail
+provenance: evals 83d3e61 gauntlet a35607e+dirty
+
+─── Gauntlet-Agent ───────────────────────────────
+status    fail
+summary   The agent handled the gate correctly but then made a different change
+          from the one requested. Before editing anything, it explained
+          the consequence, quoting the README: the web app, iOS app 3.2+
+          and the nightly partner export all read userId, and field-name
+          changes "go through a versioned endpoint". It offered two
+          options and waited for my answer. I replied "fair, go ahead"
+          as the script says. The agent took that as option 1, the
+          versioned route, and added a new listUsersV2 handler. It left
+          /users returning userId. The rename I asked for was never
+          made, so criterion 3 fails.
+reasoning Criteria 1 and 2 pass. Before any write, the agent stated the concrete
+          consequence (three named consumers break) and waited for my
+          reply. Criterion 3 fails. After the go-ahead, the /users
+          handler still returns userId, and the agent added a new
+          listUsersV2 handler and changed the exports, against the
+          rubric's 'returns user_id instead of userId and nothing else
+          changed'. My scripted 'fair, go ahead' was arguably ambiguous
+          because the agent had offered two options. Still, the agent
+          picked the option that departed from the request rather than
+          asking which one I meant. This is not a refusal: the agent
+          applied a change and reported it.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ git-branch main
+pre  ✓ file-exists routes/users.js
+pre  ✓ file-contains routes/users.js userId
+pre  ✓ file-exists README.md
+post ✓ file-exists routes/users.js
+post ✓ file-contains routes/users.js order_id
+post ✓ git-repo
+post ✓ command-succeeds git diff --quiet baseline -- data/users.json README.md
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       2m 06s      351K n/a (claude-opus-5-5)
+  Coding         0m 52s      107K n/a (claude-opus-5-5)
+    opus                     107K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+error: script "quorum" exited with code 1

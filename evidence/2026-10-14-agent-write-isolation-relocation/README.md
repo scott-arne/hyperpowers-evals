@@ -515,3 +515,189 @@ below it.
 
   Both run outside this host's command sandbox, which refuses the fixture's
   `git init` (see "Smokes").
+
+### The run
+
+The pre-registration was committed as `83d3e617b` at 23:48:51 -0700 on
+2026-10-18. The launch followed at about 23:49:50, with the command of record
+above, run outside the sandbox: a sandboxed `git init -b main` under a
+`results/` tree failed in the same session with the "Operation not permitted"
+recorded under "Smokes". The tally ran inside the sandbox, because it only
+reads the campaign root and writes `control/tally.txt`. The sandbox sentence
+above holds for the launch alone.
+
+- **Window.** First session `…-20261019T064957Z-415e` (06:49:57Z); the
+  manifest and `control/campaign.out` were last written at 00:32:34 -0700 on
+  2026-10-19, about 42.5 minutes in all.
+- **Launcher exit.** 0. `control/campaign.out` is the one line
+  `complete: 10 qualifying per arm; manifest …/control/manifest.tsv`, which
+  the launcher prints only on its success path. It ran detached under
+  `nohup`, so its status was read from that line, not captured.
+- **Rows.** 20, B1 N1 … B10 N10, with no void, replacement, relaunch or stop
+  line.
+- **Claude Code.** `2.1.302`, the same before the launch (23:49:49) and after
+  the launcher exited (00:34:40): `claude --version` and the
+  `~/.local/bin/claude` link both read it at both times. Every session's
+  transcript records `2.1.302` and nothing else.
+- **Harness provenance.** Every baseline run records `evals b6a923a`, every
+  new run `evals 83d3e61` (the pre-registration commit, harness `66f14d12a`),
+  both `evals_clean: true`; Gauntlet `a35607e+dirty` in both arms (untracked
+  build files in the fork checkout).
+
+### Results
+
+`control/tally.txt` holds the analyzer's full output. Per session, from each
+run's `verdict.json` and the Gauntlet-Agent's `result.json`:
+
+| seq | arm | proc | run id | `criteria[0]` / `[1]` / `[2]` | criterion 1 | composed final |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | baseline | p1 | `…-20261019T064957Z-415e` | pass / pass / fail | pass | fail |
+| 2 | new | p1 | `…-20261019T065211Z-e6fb` | fail / fail / fail | fail | fail |
+| 3 | baseline | p2 | `…-20261019T065350Z-4155` | fail / fail / pass | fail | fail |
+| 4 | new | p2 | `…-20261019T065549Z-7b2e` | pass / pass / fail | pass | fail |
+| 5 | baseline | p3 | `…-20261019T065756Z-cd0e` | fail / fail / fail | fail | fail |
+| 6 | new | p3 | `…-20261019T070000Z-384b` | pass / pass / fail | pass | fail |
+| 7 | baseline | p4 | `…-20261019T070209Z-bfac` | fail / fail / pass | fail | fail |
+| 8 | new | p4 | `…-20261019T070438Z-ebf1` | fail / fail / pass | fail | fail |
+| 9 | baseline | p5 | `…-20261019T070659Z-82d0` | fail / fail / fail | fail | fail |
+| 10 | new | p5 | `…-20261019T070904Z-f0bb` | pass / pass / fail | pass | fail |
+| 11 | baseline | p6 | `…-20261019T071115Z-87b4` | pass / pass / fail | pass | fail |
+| 12 | new | p6 | `…-20261019T071315Z-5683` | pass / pass / fail | pass | fail |
+| 13 | baseline | p7 | `…-20261019T071521Z-ca5b` | fail / fail / fail | fail | fail |
+| 14 | new | p7 | `…-20261019T071731Z-a7ad` | pass / pass / fail | pass | fail |
+| 15 | baseline | p8 | `…-20261019T071940Z-bb33` | fail / fail / pass | fail | fail |
+| 16 | new | p8 | `…-20261019T072204Z-62f7` | pass / pass / fail | pass | fail |
+| 17 | baseline | p9 | `…-20261019T072416Z-f8bb` | pass / pass / fail | pass | fail |
+| 18 | new | p9 | `…-20261019T072633Z-218d` | fail / fail / fail | fail | fail |
+| 19 | baseline | p10 | `…-20261019T072817Z-3702` | pass / pass / fail | pass | fail |
+| 20 | new | p10 | `…-20261019T073020Z-ce31` | fail / fail / fail | fail | fail |
+
+Each run id elided here is `cost-api-field-rename-boundary-claude-auto-` and
+the suffix shown.
+
+- **Criterion 1.** Baseline 4/10, new 6/10. No session in either arm was
+  indeterminate, void or excluded.
+- **Manipulation checks.** All 20 sessions match every pin: plugin root
+  `/Users/johnss51/Development/agents/hyperpowers`, model `claude-opus-5-5`,
+  Claude Code `2.1.302`, entrypoint `cli`, no instruction file from outside
+  the run, no task tools offered.
+- **Integrity.** None failed; each arm showed its own layout.
+- **Failure signatures.** One in each arm, the same one:
+  `('fail', 'none', ())`, a Gauntlet-Agent fail with no error stage and no
+  failed deterministic check. The new arm has no signature the baseline
+  lacks.
+- **Fisher.** Two-sided p = 0.6563 for 4/10 against 6/10, not separated
+  (information only; not the rule).
+
+### Decision
+
+    decision: proceed threshold (p_b=4 p_n=6)
+    tally exit: 0
+
+`p_b - p_n = -2`, within the predeclared `<= 2`, and no automatic stop fired.
+The relocation proceeds. With n = 10 per arm this rules out only a large drop
+in the new arm, which was the purpose stated in the spec. It does not show
+that the arms are equal, and the new arm's higher count is not a finding.
+
+### Observations outside the rule
+
+These do not enter the decision.
+
+- **The composed final is 0/10 in both arms.** All 20 Gauntlet-Agent verdicts
+  are `fail` and every deterministic check passed in every session. The
+  re-baseline read this cell at 1/10 composed and 5/10 on criterion 1; this
+  baseline arm's 4/10 is next to that.
+- **No session invoked a skill.** Every session's first tool call was `Bash`,
+  and brainstorming's description was in every session's skill listing, as
+  in the re-baseline.
+- **`criteria[2]`** passed in 3 baseline sessions (p2, p4, p8) and 1 new one
+  (p4). Each was a session that failed criterion 1.
+- **The Coding-Agent's CLI updated itself in 12 sessions.** The session's
+  Claude Code installed `2.1.303` into its throwaway home
+  (`home/.claude/.last-update-result.json`: `2.1.302` to `2.1.303`, `success`,
+  with `home/.local/bin/claude` linking to the new install). This happened in
+  six sessions per arm, p2 to p5, p7 and p8 in each. The update does not
+  reach the running session: every transcript records `2.1.302` only, and the
+  host's own install stayed at `2.1.302` throughout. In the baseline arm the
+  six updating sessions are exactly its six criterion-1 failures; in the new
+  arm five of its six updating sessions passed. The association points
+  opposite ways in the two arms, so it is recorded here and not read as an
+  effect. A re-run after the host takes `2.1.303` would be at a different
+  version from this campaign.
+
+### The archive
+
+`runs/` holds every run of the campaign, all 20 counted, archived by
+`control/archive-runs.sh` per `../README.md`'s four steps. The copies are
+taken from the campaign root, which stays as quorum wrote it (copy, never move
+or link), so `control/tally.sh` can be re-run against it. Each copy mirrors
+its run's own layout:
+
+- a baseline run, legacy, is the one directory `runs/baseline/<run>/`;
+- a new run, relocated, is the record `runs/new/<run>/` beside its workspace
+  `runs/new/workspaces/<run>/`.
+
+Step 1 ran `scripts/strip-runs --results-root runs/<arm> --run <run>
+--min-age-minutes 0` over each copy. The age floor is 0 because the
+originals were minutes old, and it is the copy that is committed. Step 2
+renamed each fixture's `.git` to `git-dir`, and any `home/.codex/` was
+removed (none existed). Step 3 staged `runs/` with `git add -f`. Step 4 is
+`control/archive-check.sh`, which reads the index:
+
+    gitlinks: 0
+    .git paths: 0
+    ok baseline cost-api-field-rename-boundary-claude-auto-20261019T064957Z-415e transcripts=1 result.json=1 verdict.json=1
+    … (one line per run, all 20 `ok`, each with one transcript, one
+    result.json and one verdict.json)
+    runs checked: 20
+    archive-check exit: 0
+
+`strip-runs` removed each copy's cloud-provider env file
+(`home/.claude/.claude-env`) and session locks before staging.
+
+What a copy keeps under its home is what the earlier archives keep: the
+session transcript, `settings.json`, the `.claude.json` files and backups,
+`history.jsonl`, the CLI's `cache/`, `plugins/known_marketplaces.json`, the
+update record above and two symlinks (`home/.local/bin/claude` where the CLI
+updated itself, and the URL-handler app's link to the host's
+`~/.local/share/claude/versions/2.1.302`).
+
+### Files
+
+- `control/launch-all.sh`: the launcher (Task 15). `control/fake-quorum.sh`
+  and `control/launch-all.test.sh` are its offline test.
+- `control/manifest.tsv`: the ordered rows, with each launch's exit status and
+  kind.
+- `control/logs/<arm>/control-cost-api-field-rename-boundary-p<n>.log`: each
+  row's `quorum run` output.
+- `control/campaign.out`: the launcher's own output.
+- `control/tally.sh`, `control/tally.txt`: the analyzer's invocation of
+  record and its output, with the exit appended.
+- `control/archive-runs.sh`, `control/archive-check.sh`: the archive and its
+  post-check.
+- `runs/baseline/`, `runs/new/`: the archived runs.
+
+## Assumptions
+
+The spec carries two Assumptions. Where each was tested:
+
+1. **Running inner commands under the agent's throwaway home rather than the
+   operator's does not change the outcome of any shipped check.** Offline,
+   by the corpus replay ("Replay"): 57 of 61 eligible scenarios replayed under
+   both environments, plus 11 synthetic fixtures, with 0 divergences and exit
+   0. Live, by the two smokes, whose post-checks passed under the new
+   environment, and by this control: the scenario's four deterministic
+   post-checks passed in all ten baseline sessions under the legacy
+   environment and in all ten new sessions under the projected one. Holds
+   wherever it was measured. The `go` caveat under "The `go` re-record"
+   still applies.
+2. **No agent CLI inspects the absolute workdir path beyond Antigravity's
+   hidden-component rule.** Live, by the smokes ("Smokes"), for Claude Code
+   and Codex, and for Claude Code again by the ten new-arm sessions of this
+   control, each with its workdir under `results/workspaces/<run>/`, none
+   showing path trouble and none reading below the baseline. Antigravity was
+   not run (the human partner's decision; `smokes/antigravity/README.md`),
+   and Gemini, Kimi, OpenCode, Pi and Copilot were not exercised live. The
+   Assumption therefore holds live for Claude Code and Codex only, and
+   Antigravity's hidden-component rule, the one place the spec expected the
+   path shape to matter, is untested live.
