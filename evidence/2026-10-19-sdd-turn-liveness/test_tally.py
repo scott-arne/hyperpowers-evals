@@ -1,4 +1,3 @@
-# evals/evidence/2026-10-19-sdd-turn-liveness/test_tally.py
 """Tests for tally.py on a synthetic campaign."""
 
 from __future__ import annotations
@@ -171,6 +170,29 @@ class Evaluate(unittest.TestCase):
         self.c.arm("control", 10, control_records, STOPS)
         self.c.arm("treatment", 10, treatment_records)
         self.assertEqual(self.c.evaluate()[1]["decision"], "INCOMPLETE")
+
+    def test_interrupted_or_killed_launches_count_toward_the_cap(self) -> None:
+        # Quorum prints run-id only when a run finishes: an interrupted run exits 2
+        # without one (the launcher writes DONE 2), and a killed one leaves FAILED 137.
+        for n in range(4):
+            self.c.launch("treatment", f"r{n + 1}", [], last="DONE 2" if n % 2 == 0 else "FAILED 137")
+        self.c.arm("control", 10, control_records, STOPS)
+        self.c.arm("treatment", 10, treatment_records)
+        rows, d = self.c.evaluate()
+        self.assertEqual([r["status"] for r in rows if r["proc"] == "r1"], ["no-run"])
+        self.assertEqual(d["decision"], "INCOMPLETE")
+
+    def test_a_missing_claude_code_version_is_a_provenance_void(self) -> None:
+        self.c.arm("control", 10, control_records, STOPS)
+        self.c.arm("treatment", 10, treatment_records)
+        # No transcript record carries a version: the Coding-Agent never started.
+        make_run(self.c.results, "treatment-nv", [], plugin_dir=ROOTS["treatment"], final="fail")
+        self.c.launch("treatment", "p0", ["treatment-nv"])
+        rows, d = self.c.evaluate()
+        row = next(r for r in rows if r["run_id"] == "treatment-nv")
+        self.assertEqual(row["status"], "void-provenance")
+        self.assertIn("cc missing", row["problems"])
+        self.assertEqual(d["decision"], "PASS")
 
     def test_a_refused_launch_is_a_replaceable_row(self) -> None:
         self.c.arm("control", 10, control_records, STOPS)

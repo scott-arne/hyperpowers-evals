@@ -1,4 +1,3 @@
-# evals/evidence/2026-10-19-sdd-turn-liveness/tally.py
 """Tally the sdd-turn-liveness campaign against its pre-registered rule.
 
 The rule is spec Design §2's decision rule, pre-registered in ``README.md``
@@ -147,8 +146,13 @@ def _problems(m: Mapping[str, Any], arm: str, launch: Launch, pins: Mapping[str,
         problems.append("root commit")
     if m["model"] != pins["model"]:
         problems.append("model")
-    if not (m["cc"] == f.get("cc_before") == f.get("cc_after") == pins["cc"]):
+    # Only a recorded version that differs from the pin restarts the campaign;
+    # a version nobody recorded is a missing provenance field, which voids the run.
+    versions = [m["cc"], f.get("cc_before"), f.get("cc_after")]
+    if any(v is not None and v != pins["cc"] for v in versions):
         problems.append("cc")
+    elif None in versions:
+        problems.append("cc missing")
     if f.get("cc_path") != pins["cc_path"]:
         problems.append("cc path")
     if f.get("provider") != pins["provider"]:
@@ -224,11 +228,16 @@ def evaluate(
     for launch in launches:
         done = launch.last.startswith("DONE ")
         if not launch.run_ids:
-            # No agent started, so nothing is discarded: uncapped, like a setup
-            # void, and replaced by a new r<n> row once the cause is fixed. A
-            # preflight=cc refusal is the restart signal handled above.
+            # A preflight refusal started no agent, so nothing is discarded:
+            # uncapped, like a setup void, and replaced by a new r<n> row once
+            # the cause is fixed. A preflight=cc refusal is the restart signal
+            # handled above. Quorum prints a run id only when a run finishes,
+            # so any other launch without one was interrupted or killed after
+            # its agent may have run, and it counts toward the cap.
             preflight = launch.fields.get("preflight")
             status = "restart" if preflight == "cc" else "preflight-refused" if preflight else "no-run"
+            if status == "no-run":
+                voids[launch.arm] += 1
             no_run = {"arm": launch.arm, "proc": launch.proc, **analyze.empty_measure(f"({launch.proc}: no run)")}
             no_run["status"] = status
             rows.append(no_run)
