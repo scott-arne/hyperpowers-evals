@@ -76,8 +76,15 @@ CODEX_PRECHECK = "codex@openai-codex"
 CODEX_CACHE_CHECK = "plugins/cache/openai-codex"
 WRITERS = ("Write", "Edit", "MultiEdit")
 SDD_ROLE = re.compile(r"implement|review|fix|takeover", re.IGNORECASE)
-FINAL = re.compile(r"\bfinal\b", re.IGNORECASE)
+FIX = re.compile(r"\bfix", re.IGNORECASE)
 REVIEW = re.compile(r"review", re.IGNORECASE)
+LEDGER_DIR = "hyperpowers/sdd/"
+SEGMENT_SPLIT = re.compile(r"&&|\|\||[;|\n]")
+READ_ONLY = frozenset({
+    "cat", "head", "tail", "grep", "egrep", "fgrep", "rg", "less", "more", "wc", "diff", "cmp",
+    "ls", "stat", "file", "sha256sum", "shasum", "md5", "md5sum", "test", "[", "pytest",
+})
+READ_ONLY_GIT = frozenset({"diff", "show", "log", "status", "blame", "ls-files", "grep", "cat-file"})
 EXIT_ZERO = re.compile(r"\bexit=0(?!\d)")
 STOP_LINE = re.compile(
     r"STOP:\s*\"(?P<quote>[^\"\n]+)\"\s*\|\s*(?P<label>question|blocked|neither)", re.IGNORECASE
@@ -317,13 +324,13 @@ def _ledger_marks(call: Call) -> set[int]:
 
     SDD's Finish deletes the plan workspace, ledger included, so a finished
     run's completion record survives only as these writes in the transcript:
-    an Edit, MultiEdit or Write to ``progress.md``, or a Bash command that
-    writes through a redirect or ``tee`` and names ``progress.md``.
+    an Edit, MultiEdit or Write to an SDD ``progress.md``, or the part of a
+    Bash command that writes to one through a redirect, ``tee`` or heredoc.
     """
     if call.result is None or call.error:
         return set()
     if call.name in WRITERS:
-        if not str(call.inp.get("file_path", "")).endswith(LEDGER_FILE):
+        if not _is_ledger_path(str(call.inp.get("file_path", ""))):
             return set()
         # Only the new content marks a task: an Edit's old_string repeats lines
         # already written, and JSON-encoding the input would hide a mark that
@@ -334,17 +341,52 @@ def _ledger_marks(call: Call) -> set[int]:
             parts += [e.get("new_string") for e in edits if isinstance(e, dict)]
         text = "\n".join(part for part in parts if isinstance(part, str))
     elif call.name == "Bash":
-        text = str(call.inp.get("command", ""))
-        targets = [m.group(2) for m in WRITE_TARGET.finditer(text) if m.group(2) != "/dev/null"]
-        if not targets or LEDGER_FILE not in text:
-            return set()
+        command = str(call.inp.get("command", ""))
+        written: list[str] = []
+        for match in HEREDOC.finditer(command):
+            start = command.rfind("\n", 0, match.start()) + 1
+            target = WRITE_TARGET.search(command[start : match.start()])
+            if target and _is_ledger_path(target.group(2)):
+                written.append(match.group(3))
+        for segment in SEGMENT_SPLIT.split(_strip_heredocs(command)):
+            if any(_is_ledger_path(m.group(2)) for m in WRITE_TARGET.finditer(segment)):
+                written.append(segment)
+        text = "\n".join(written)
     else:
         return set()
     return {int(n) for n in MARK.findall(text)}
 
 
+def _is_ledger_path(path: str) -> bool:
+    return path.endswith(LEDGER_FILE) and LEDGER_DIR in path
+
+
+def _read_only(segment: str) -> bool:
+    """Whether one shell command only reads or runs files (the soak-tamper allowlist)."""
+    words = segment.split()
+    while words and re.match(r"^\w+=", words[0]):
+        words = words[1:]
+    if not words:
+        return True
+    head = words[0].rsplit("/", 1)[-1]
+    if head in READ_ONLY:
+        return True
+    if head == "sed":
+        return not any(w.startswith("-i") or w == "--in-place" for w in words[1:])
+    if head == "git":
+        return len(words) > 1 and words[1] in READ_ONLY_GIT
+    if head in ("python", "python3"):
+        return words[1:3] == ["-m", "unittest"] or (len(words) > 1 and words[1].endswith(SOAK_FILES))
+    return False
+
+
 def _soak_tampered(calls: Sequence[Call]) -> bool:
-    """Whether a successful main-session call wrote to a soak test file (plan deviation 6)."""
+    """Whether a successful main-session call may have written to a soak test file (plan deviation 6).
+
+    Fails closed: any shell command that names a soak file and is not on the
+    read-only allowlist counts, as does a heredoc naming one that feeds a
+    command off the allowlist (``python3 - <<EOF``).
+    """
     for call in calls:
         if call.result is None or call.error:
             continue
@@ -355,9 +397,15 @@ def _soak_tampered(calls: Sequence[Call]) -> bool:
             command = str(call.inp.get("command", ""))
             if not any(name in command for name in SOAK_FILES):
                 continue
-            targets = [m.group(2) for m in WRITE_TARGET.finditer(command)]
-            if any(t.endswith(SOAK_FILES) for t in targets) or IN_PLACE.search(command):
+            if any(m.group(2).endswith(SOAK_FILES) for m in WRITE_TARGET.finditer(command)):
                 return True
+            for match in HEREDOC.finditer(command):
+                start = command.rfind("\n", 0, match.start()) + 1
+                if any(name in match.group(3) for name in SOAK_FILES) and not _read_only(command[start : match.start()]):
+                    return True
+            for segment in SEGMENT_SPLIT.split(_strip_heredocs(command)):
+                if any(name in segment for name in SOAK_FILES) and not _read_only(segment):
+                    return True
     return False
 
 
@@ -388,6 +436,14 @@ def _untracked(calls: Sequence[Call], workspace: Path) -> list[dict[str, str]]:
             content = _final_content(path, workspace)
             if content is None and call.name == "Write":
                 content = str(call.inp.get("content", ""))
+            if content is None:
+                # An Edit to a file gone from the archive (a temporary script,
+                # or a Zed checkout the summary cannot see): judge the new text.
+                parts = [call.inp.get("new_string")]
+                edits = call.inp.get("edits")
+                if isinstance(edits, list):
+                    parts += [e.get("new_string") for e in edits if isinstance(e, dict)]
+                content = "\n".join(part for part in parts if isinstance(part, str)) or None
             if path and content is not None:
                 written.append((index, call.at, path, content, ""))
     for _, when, command in commands:
@@ -438,15 +494,18 @@ def _transcript_measures(
 
     marked: set[int] = set()
     written_at: datetime | None = None
+    last_write: datetime | None = None
     for call in calls:
         tasks_marked = _ledger_marks(call)
         marked |= tasks_marked
+        if tasks_marked:
+            last_write = call.at
         if written_at is None and LAST_TASK in tasks_marked:
             written_at = call.at
     out["ledger_marks"] = sorted(marked)
     complete = set(range(1, LAST_TASK + 1)) <= (file_tasks | marked)
     out["plan_complete"] = complete
-    final_dispatches: list[datetime] = []
+    review_dispatches: list[datetime] = []
     for call in calls:
         if call.name not in ("Agent", "Task"):
             continue
@@ -461,13 +520,14 @@ def _transcript_measures(
             out["dispatch_fg"] += 1
         else:
             out["dispatch_unclassified"] += 1
-        # The description names the role; prompts mention "final review" in
-        # passing (implementer briefs do), so they cannot identify it.
-        if call.result is not None and not call.error and FINAL.search(desc) and REVIEW.search(desc):
-            final_dispatches.append(call.at)
-    plan_at = written_at or (min(final_dispatches) if complete and final_dispatches else None)
+        # The final review is the review dispatched once the last task is
+        # marked complete. Its description varies (the reviewer template says
+        # "Review code changes"), so position identifies it, not wording.
+        if call.result is not None and not call.error and REVIEW.search(desc) and not FIX.search(desc):
+            review_dispatches.append(call.at)
+    plan_at = written_at or (last_write if complete else None)
     out["plan_at"] = iso(plan_at) if plan_at else None
-    out["final_review"] = plan_at is not None and any(t >= plan_at for t in final_dispatches)
+    out["final_review"] = plan_at is not None and any(t >= plan_at for t in review_dispatches)
 
     task_map = tasks(records)
     reload_times = reloads(records)
@@ -486,16 +546,20 @@ def _transcript_measures(
             target = OUT_TARGET.search(command)
             out_file = target.group(2) if target else None
             seen: Call | None = None
+            # The watch must read this job's own output or exit file; any other
+            # exit=0 proves nothing about the soak.
             for later in bash[index + 1 :]:
-                if later.result is None or LAUNCH_BASH in later.result:
+                if out_file is None or later.result is None or LAUNCH_BASH in later.result:
                     continue
-                later_cmd = str(later.inp.get("command", ""))
-                if ((out_file and out_file in later_cmd) or "exit=" in later_cmd) and "exit=" in later.result:
+                if out_file in str(later.inp.get("command", "")) and "exit=" in later.result:
                     seen = later
                     break
             end_at = seen.result_at if seen else None
+            tracked = (
+                call.inp.get("run_in_background") is True and call.result is not None and LAUNCH_BASH in call.result
+            )
             out["long_runs"].append({
-                "at": iso(call.at), "background": background, "timeout": limit,
+                "at": iso(call.at), "background": tracked, "timeout": limit,
                 "detached": shell_detaches(command), "watched": seen is not None,
                 "exit_ok": bool(seen and seen.result and EXIT_ZERO.search(seen.result)),
                 "turn_end_during": end_at is None or any(call.at < e.at < end_at for e in ends),
