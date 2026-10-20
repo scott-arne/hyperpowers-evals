@@ -19,6 +19,7 @@ from synth import (
     RELOAD_RESULT,
     assistant,
     at,
+    compact_summary,
     enqueue,
     human,
     notification,
@@ -116,6 +117,20 @@ class TurnEnds(unittest.TestCase):
         ends = liveness.turn_ends(recs)
         self.assertEqual(len(ends), 1)
         self.assertEqual(ends[0].next_human, "Resume")
+
+    def test_compaction_summary_is_not_a_turn_end(self) -> None:
+        recs = [
+            human(0, "go"),
+            assistant(5, tools=[("t1", "Bash", {"command": "ls"})]),
+            result(6, "t1", "ok"),
+            compact_summary(7),
+            assistant(8, "Tasks 1 and 2 are done. Moving to Task 3."),
+            human(100, "continue"),
+        ]
+        ends = liveness.turn_ends(recs)
+        self.assertEqual(len(ends), 1)
+        self.assertEqual((ends[0].at, ends[0].ended_by, ends[0].next_human), (ts(8), "human", "continue"))
+        self.assertIsNone(liveness.idle_marker(compact_summary(9)))
 
 
 class Load(unittest.TestCase):

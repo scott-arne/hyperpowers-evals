@@ -93,6 +93,18 @@ def attachment(t: float, payload: dict[str, Any]) -> Record:
     return {"type": "attachment", "timestamp": at(t), "isSidechain": False, "attachment": payload}
 
 
+def compact_summary(t: float) -> Record:
+    """A compaction summary record, shaped like the ones Claude Code writes mid-session."""
+    return {
+        "type": "user",
+        "timestamp": at(t),
+        "isSidechain": False,
+        "isCompactSummary": True,
+        "isVisibleInTranscriptOnly": True,
+        "message": {"role": "user", "content": "This session is being continued from a previous conversation."},
+    }
+
+
 def sidechain(rec: Record) -> Record:
     out = dict(rec)
     out["isSidechain"] = True

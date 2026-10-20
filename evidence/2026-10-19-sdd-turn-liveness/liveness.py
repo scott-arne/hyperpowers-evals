@@ -140,9 +140,14 @@ def idle_marker(rec: Record) -> Literal["human", "notification"] | None:
 
     :returns: ``human`` for a typed message, ``notification`` for a completion
         notice delivered as its own message, None for anything else (tool
-        results, meta records, local-command echoes, interrupts).
+        results, meta records, compaction summaries, local-command echoes,
+        interrupts).
     """
     if rec.get("type") != "user" or rec.get("isMeta") or is_tool_result(rec):
+        return None
+    # A compaction summary is a user-type record without isMeta; it marks a
+    # context reset inside a turn, not a message from the human partner.
+    if rec.get("isCompactSummary") or rec.get("isVisibleInTranscriptOnly"):
         return None
     text = text_of(rec).lstrip()
     if text.startswith(TASK_NOTICE):
