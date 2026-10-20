@@ -430,7 +430,18 @@ def _is_ledger_path(path: str) -> bool:
 
 
 def _writes_ledger(command: str, env: Mapping[str, str]) -> bool:
-    return any(_is_ledger_path(_expand(m.group(2), env)) for m in WRITE_TARGET.finditer(command))
+    """Whether a command writes to an SDD ledger.
+
+    A target that still holds ``$`` after expansion was set by a command
+    substitution (``W=$(cat …/sdd-dir.txt)``, a spelling real controllers
+    use); it counts when it ends in ``/progress.md``, since the SDD ledger is
+    the only ``progress.md`` a scenario run writes.
+    """
+    for match in WRITE_TARGET.finditer(command):
+        path = _expand(match.group(2), env)
+        if _is_ledger_path(path) or ("$" in path and path.endswith("/" + LEDGER_FILE)):
+            return True
+    return False
 
 
 def _read_only(segment: str) -> bool:
