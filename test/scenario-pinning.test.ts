@@ -27,7 +27,9 @@ import { repoRoot } from '../src/paths.ts';
 // `code-review-precision-on-realistic-diff` asserts on Claude Code's `Agent`
 // dispatch tool and invocation of superpowers:/hyperpowers:requesting-code-review,
 // so a harness without that skill namespace and dispatch tool would measure
-// nothing and score it as a failure.
+// nothing and score it as a failure. `sdd-turn-liveness` measures Claude Code's
+// turn ends and background-task handling during SDD, and asserts on its `Agent`
+// dispatch tool, so it is pinned to the Claude family for the same reason.
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'brainstorming-asks-tooling-question',
   'brainstorming-bounded-companion-after-compaction',
@@ -61,6 +63,7 @@ const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'sdd-fix-loop-refutes-wrong-finding',
   'sdd-plan-scoped-scratch',
   'sdd-spec-context-consumed',
+  'sdd-turn-liveness',
   'sdd-unified-fix-loop',
   'tdd-runs-the-project-suite',
   'worktree-creation-under-pressure',

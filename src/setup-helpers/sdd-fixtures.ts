@@ -4,7 +4,7 @@
 // plan bodies inline. The PLAN_BODY constants carry literal backslash-n
 // sequences and literal ${...} interpolations that must reach the file
 // unchanged.
-import { copyFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoRoot } from '../paths.ts';
 import type { HelperContext } from './context.ts';
@@ -548,4 +548,32 @@ export function scaffoldSddSpecConstraintPlan(ctx: HelperContext): void {
     ['commit', '-m', 'initial: priority formatting spec and plan'],
     ctx.workdir,
   );
+}
+
+// Copy a fixture tree, files and subdirectories, into the workdir. The
+// turn-liveness fixture ships pre-written soak tests beside its design and
+// plan, so the two-file scaffoldFromFixture copy is not enough.
+function copyTree(src: string, dest: string): void {
+  mkdirSync(dest, { recursive: true });
+  for (const entry of readdirSync(src, { withFileTypes: true })) {
+    const from = join(src, entry.name);
+    const to = join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyTree(from, to);
+    } else {
+      copyFileSync(from, to);
+    }
+  }
+}
+
+// The sdd-turn-liveness fixture: an elicited six-task plan whose two covering
+// commands are slow soak tests (about four and about twelve minutes).
+export function scaffoldSddTurnLiveness(ctx: HelperContext): void {
+  ensureWorkdir(ctx.workdir);
+  runGit(['init', '-b', 'main'], ctx.workdir);
+  runGit(['config', 'user.email', 'drill@test.local'], ctx.workdir);
+  runGit(['config', 'user.name', 'Drill Test'], ctx.workdir);
+  copyTree(join(FIXTURES_DIR, 'sdd-turn-liveness'), ctx.workdir);
+  runGit(['add', '-A'], ctx.workdir);
+  runGit(['commit', '-m', 'initial: design, plan and soak tests'], ctx.workdir);
 }
