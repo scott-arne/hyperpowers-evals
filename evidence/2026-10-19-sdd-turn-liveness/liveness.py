@@ -36,6 +36,8 @@ LAUNCH_AGENT = "Async agent launched"
 LAUNCH_BASH = "Command running in background with ID"
 RELOAD_TOOL_RESULT = "the session ended before this call's result was recorded"
 RELOAD_PREFIX = "[Tool call interrupted:"
+LAUNCH_BASH_AUTO = "Command did not complete within its"
+AUTO_MOVED = "was moved to the background"
 AGENT_TOOLS = frozenset({"Agent", "Task"})
 ASK_TOOL = "AskUserQuestion"
 ASK_ANSWERED = "Your questions have been answered"
@@ -206,11 +208,15 @@ def _launch_kind(name: str | None, background: bool, text: str) -> Kind | None:
     A marker counts only at the start of a result from its own tool, and a
     shell launch also needs ``run_in_background: true`` on the call: a
     foreground command that prints or greps the marker text launches nothing.
+    A Bash call that Claude Code moved to the background after its timeout is
+    a tracked launch too (plan deviation 7).
     """
     head = text.lstrip()
     if name in AGENT_TOOLS and head.startswith(LAUNCH_AGENT):
         return "agent"
     if name == "Bash" and background and head.startswith(LAUNCH_BASH):
+        return "bash"
+    if name == "Bash" and head.startswith(LAUNCH_BASH_AUTO) and AUTO_MOVED in head:
         return "bash"
     return None
 

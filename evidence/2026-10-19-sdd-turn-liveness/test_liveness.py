@@ -249,6 +249,24 @@ class Tasks(unittest.TestCase):
         self.assertEqual(sorted(liveness.tasks(genuine)), ["a1", "b1"])
         self.assertEqual(liveness.reloads(genuine), [ts(6)])
 
+    def test_auto_backgrounded_command_is_a_tracked_launch(self) -> None:
+        moved = (
+            "Command did not complete within its 120s timeout and was moved to the background (ID: b-auto). "
+            "Output is being written to: /tmp/b-auto.output. You will be notified when it completes."
+        )
+        recs = [
+            assistant(5, tools=[("b9", "Bash", {"command": "python3 -m unittest tests.test_soak_short -v"})]),
+            result(125, "b9", moved),
+            enqueue(245, "b9"),
+        ]
+        task = liveness.tasks(recs)["b9"]
+        self.assertEqual((task.kind, task.launched, task.completed), ("bash", ts(125), ts(245)))
+        printed = [
+            assistant(5, tools=[("g9", "Bash", {"command": "grep moved notes.md"})]),
+            result(6, "g9", "notes.md: " + moved),
+        ]
+        self.assertEqual(liveness.tasks(printed), {})
+
     def test_states_live_none_censored_and_killed_by_reload(self) -> None:
         recs = [
             assistant(5, tools=[("a1", "Agent", {})]),
