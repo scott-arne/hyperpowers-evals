@@ -47,7 +47,9 @@ class Campaign:
         self._write_manifest()
 
     def launch(self, arm: str, proc: str, run_ids: Sequence[str], *, root_clean: str = "yes", cc: str = "2.1.300",
-               last: str = "DONE 0", declare: bool = True, preflight: str | None = None) -> None:
+               last: str = "DONE 0", declare: bool = True, preflight: str | None = None,
+               after_clean: str | None = None, after_cc: str | None = None, body: Sequence[str] = ()) -> None:
+        """Write a launch log shaped like measure-launch.sh's: header, command, quorum output, footer, last line."""
         if declare:
             self.declare(arm, proc)
         header = [
@@ -59,9 +61,12 @@ class Campaign:
         if preflight:
             lines = header + [f"preflight={preflight}", "claude is 2.1.299, the pin is 2.1.300", "FAILED preflight"]
         else:
-            lines = header + [f"run-id: {r}" for r in run_ids] + [
-                f"root_after_head={SHAS[arm]} root_after_clean={root_clean} cc_after={cc} finished=x", last,
-            ]
+            footer = (
+                f"root_after_head={SHAS[arm]} root_after_clean={after_clean or root_clean} "
+                f"cc_after={after_cc or cc} finished=x"
+            )
+            command = "$ bun run quorum run scenarios/sdd-turn-liveness --coding-agent claude-auto --repeat 1"
+            lines = header + [command] + [f"run-id: {r}" for r in run_ids] + list(body) + [footer, last]
         (self.logs / f"{arm}-sdd-turn-liveness-{proc}.log").write_text("\n".join(lines) + "\n")
 
     def arm(self, arm: str, count: int, records: Callable[[], list[dict[str, Any]]], stops: Sequence[tuple[str, str]] = ()) -> None:
@@ -192,6 +197,38 @@ class Evaluate(unittest.TestCase):
         row = next(r for r in rows if r["run_id"] == "treatment-nv")
         self.assertEqual(row["status"], "void-provenance")
         self.assertIn("cc missing", row["problems"])
+        self.assertEqual(d["decision"], "PASS")
+
+    def test_a_version_change_in_a_voided_run_restarts(self) -> None:
+        self.c.arm("control", 10, control_records, STOPS)
+        self.c.arm("treatment", 10, treatment_records)
+        make_run(self.c.results, "treatment-g", treatment_records(version="2.1.301"), plugin_dir=ROOTS["treatment"],
+                 final="indeterminate", gauntlet={"status": "investigate", "summary": "harness error"})
+        self.c.launch("treatment", "r1", ["treatment-g"])
+        self.assertEqual(self.c.evaluate()[1]["decision"], "RESTART")
+
+    def test_a_version_change_in_a_failed_launch_restarts(self) -> None:
+        self.c.arm("control", 10, control_records, STOPS)
+        self.c.arm("treatment", 10, treatment_records)
+        make_run(self.c.results, "treatment-f", treatment_records(), plugin_dir=ROOTS["treatment"])
+        self.c.launch("treatment", "r1", ["treatment-f"], last="FAILED 3", after_cc="2.1.301")
+        self.assertEqual(self.c.evaluate()[1]["decision"], "RESTART")
+
+    def test_a_version_change_in_an_interrupted_launch_restarts(self) -> None:
+        self.c.arm("control", 10, control_records, STOPS)
+        self.c.arm("treatment", 10, treatment_records)
+        self.c.launch("treatment", "r1", [], last="DONE 2", after_cc="2.1.301")
+        self.assertEqual(self.c.evaluate()[1]["decision"], "RESTART")
+
+    def test_quorum_output_cannot_stand_in_for_the_footer(self) -> None:
+        self.c.arm("control", 10, control_records, STOPS)
+        self.c.arm("treatment", 10, treatment_records)
+        make_run(self.c.results, "treatment-99", treatment_records(), plugin_dir=ROOTS["treatment"])
+        # The rendered verdict carries model-written text; only the launcher's footer counts.
+        self.c.launch("treatment", "p0", ["treatment-99"], after_clean="no",
+                      body=["summary: the agent left root_after_clean=yes cc_after=2.1.300"])
+        rows, d = self.c.evaluate()
+        self.assertEqual(next(r for r in rows if r["run_id"] == "treatment-99")["status"], "void-provenance")
         self.assertEqual(d["decision"], "PASS")
 
     def test_a_refused_launch_is_a_replaceable_row(self) -> None:

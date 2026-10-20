@@ -93,13 +93,19 @@ def read_logs(logs: Path) -> list[Launch]:
         if not match:
             continue
         text = path.read_text(errors="replace")
+        lines = text.rstrip("\n").splitlines()
+        # Provenance comes only from lines the launcher writes: the header before
+        # its "$ <command>" line and the footer just before the last line.
+        # Quorum's output between them carries model-written text, so a
+        # key=value there must not stand in for the launcher's own.
+        end = next((i for i, line in enumerate(lines) if line.startswith("$ ")), len(lines))
+        trusted = lines[:end]
+        if end < len(lines) - 1 and lines[-2].startswith("root_after_head="):
+            trusted.append(lines[-2])
         fields: dict[str, str] = {}
-        for line in text.splitlines():
-            if line.startswith(("run-id:", "$ ")):
-                continue
+        for line in trusted:
             for key, value in TOKEN.findall(line):
                 fields.setdefault(key, value)
-        lines = text.rstrip("\n").splitlines()
         found.append(Launch(match.group(1), match.group(2), path, fields, RUN_ID.findall(text), lines[-1] if lines else ""))
     found.sort(key=lambda launch: _proc_key(launch.proc))
     return found
@@ -133,6 +139,16 @@ def _record(arm: str, run_id: str, results_root: Path, archive: Mapping[str, Pat
     return archived if (archived / "verdict.json").is_file() else results_root / run_id
 
 
+def _cc_changed(recorded: str | None, launch: Launch, pins: Mapping[str, str]) -> bool:
+    """Whether the run or its launch recorded a Claude Code version other than the pin.
+
+    Checked before any other classification: a version change restarts both
+    arms whatever else happened to the run, a void included.
+    """
+    seen = (recorded, launch.fields.get("cc_before"), launch.fields.get("cc_after"))
+    return any(v is not None and v != pins["cc"] for v in seen)
+
+
 def _problems(m: Mapping[str, Any], arm: str, launch: Launch, pins: Mapping[str, str], repo: Path) -> list[str]:
     problems: list[str] = []
     f = launch.fields
@@ -146,12 +162,9 @@ def _problems(m: Mapping[str, Any], arm: str, launch: Launch, pins: Mapping[str,
         problems.append("root commit")
     if m["model"] != pins["model"]:
         problems.append("model")
-    # Only a recorded version that differs from the pin restarts the campaign;
-    # a version nobody recorded is a missing provenance field, which voids the run.
-    versions = [m["cc"], f.get("cc_before"), f.get("cc_after")]
-    if any(v is not None and v != pins["cc"] for v in versions):
-        problems.append("cc")
-    elif None in versions:
+    # A differing version has already restarted the campaign (_cc_changed); a
+    # version nobody recorded is a missing provenance field, which voids the run.
+    if None in (m["cc"], f.get("cc_before"), f.get("cc_after")):
         problems.append("cc missing")
     if f.get("cc_path") != pins["cc_path"]:
         problems.append("cc path")
@@ -230,13 +243,19 @@ def evaluate(
         if not launch.run_ids:
             # A preflight refusal started no agent, so nothing is discarded:
             # uncapped, like a setup void, and replaced by a new r<n> row once
-            # the cause is fixed. A preflight=cc refusal is the restart signal
-            # handled above. Quorum prints a run id only when a run finishes,
-            # so any other launch without one was interrupted or killed after
-            # its agent may have run, and it counts toward the cap.
+            # the cause is fixed. A preflight=cc refusal, or a footer that saw
+            # the version change, restarts both arms. Quorum prints a run id
+            # only when a run finishes, so any other launch without one was
+            # interrupted or killed after its agent may have run, and it
+            # counts toward the cap.
             preflight = launch.fields.get("preflight")
-            status = "restart" if preflight == "cc" else "preflight-refused" if preflight else "no-run"
-            if status == "no-run":
+            if preflight == "cc" or _cc_changed(None, launch, pins):
+                status = "restart"
+                restart = True
+            elif preflight:
+                status = "preflight-refused"
+            else:
+                status = "no-run"
                 voids[launch.arm] += 1
             no_run = {"arm": launch.arm, "proc": launch.proc, **analyze.empty_measure(f"({launch.proc}: no run)")}
             no_run["status"] = status
@@ -249,7 +268,10 @@ def evaluate(
             else:
                 m = {**analyze.empty_measure(run_id), "void": "no-verdict"}
             row: dict[str, Any] = {"arm": launch.arm, "proc": launch.proc, **m}
-            if not done:
+            if _cc_changed(m["cc"], launch, pins):
+                row["status"] = "restart"
+                restart = True
+            elif not done:
                 # A quorum exit outside 0-2 is a harness failure: capped like the other voids.
                 voids[launch.arm] += 1
                 row["status"] = "launch-failed"
@@ -261,10 +283,7 @@ def evaluate(
             else:
                 problems = _problems(m, launch.arm, launch, pins, repo)
                 row["problems"] = problems
-                if "cc" in problems:
-                    row["status"] = "restart"
-                    restart = True
-                elif problems:
+                if problems:
                     voids[launch.arm] += 1
                     row["status"] = "void-provenance"
                 elif len(counted[launch.arm]) < N:
