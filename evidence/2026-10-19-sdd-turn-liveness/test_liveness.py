@@ -118,6 +118,41 @@ class TurnEnds(unittest.TestCase):
         self.assertEqual(len(ends), 1)
         self.assertEqual(ends[0].next_human, "Resume")
 
+    def test_stop_right_after_a_launch_is_judged_live(self) -> None:
+        for closer in (notification(90, "a1"), human(90, "continue")):
+            recs = [
+                human(0, "go"),
+                assistant(5, tools=[("a1", "Agent", {"description": "Implement Task 1"})]),
+                result(6, "a1", AGENT_BG),
+                closer,
+            ]
+            end = liveness.turn_ends(recs)[0]
+            self.assertEqual(end.at, ts(6))
+            state = liveness.state_at(end.at, liveness.tasks(recs + [enqueue(120, "a1")]), [])
+            self.assertEqual(state, "live")
+
+    def test_dismissed_question_is_a_question_and_an_answered_one_is_not(self) -> None:
+        ask = ("q1", "AskUserQuestion", {"questions": [{"question": "Which option should govern?", "options": []}]})
+        dismissed = [
+            human(0, "go"),
+            assistant(5, tools=[ask]),
+            result(6, "q1", "The user declined to answer the questions.", is_error=True),
+            human(50, "use option A"),
+        ]
+        end = liveness.turn_ends(dismissed)[0]
+        self.assertIn("Which option should govern?", end.text)
+        self.assertTrue(liveness.asks_or_blocks(end.text))
+        answered = [
+            human(0, "go"),
+            assistant(5, tools=[ask]),
+            result(6, "q1", 'Your questions have been answered: "Which option should govern?"="A".'),
+            assistant(7, "Tasks 1 and 2 are done. Moving to Task 3."),
+            human(50, "continue"),
+        ]
+        end = liveness.turn_ends(answered)[0]
+        self.assertEqual(end.text, "Tasks 1 and 2 are done. Moving to Task 3.")
+        self.assertFalse(liveness.asks_or_blocks(end.text))
+
     def test_compaction_summary_is_not_a_turn_end(self) -> None:
         recs = [
             human(0, "go"),
@@ -167,6 +202,30 @@ class Tasks(unittest.TestCase):
         recs = [assistant(5, tools=[("b1", "Bash", {})]), result(6, "b1", BASH_BG), notification(70, "b1")]
         task = liveness.tasks(recs)["b1"]
         self.assertEqual((task.kind, task.completed), ("bash", ts(70)))
+
+    def test_markers_count_only_at_the_start_of_their_own_tools_result(self) -> None:
+        recs = [
+            assistant(1, tools=[("g1", "Bash", {"command": "grep -r 'Async agent' ."})]),
+            result(2, "g1", "notes.md: Async agent launched successfully. agentId: x"),
+            assistant(3, tools=[("g2", "Bash", {"command": "grep -h '^Async' log"})]),
+            result(4, "g2", AGENT_BG),
+            assistant(5, tools=[("r1", "Read", {"file_path": "/x/log"})]),
+            result(6, "r1", "1\t" + BASH_BG),
+            assistant(7, tools=[("g3", "Bash", {"command": "cat run.log"})]),
+            result(8, "g3", "the session ended before this call's result was recorded"),
+        ]
+        self.assertEqual(liveness.tasks(recs), {})
+        self.assertEqual(liveness.reloads(recs), [])
+        genuine = [
+            assistant(1, tools=[("a1", "Agent", {})]),
+            result(2, "a1", AGENT_BG),
+            assistant(3, tools=[("b1", "Bash", {"command": "sleep 900", "run_in_background": True})]),
+            result(4, "b1", BASH_BG),
+            assistant(5, tools=[("z1", "Bash", {"command": "ls"})]),
+            result(6, "z1", RELOAD_RESULT),
+        ]
+        self.assertEqual(sorted(liveness.tasks(genuine)), ["a1", "b1"])
+        self.assertEqual(liveness.reloads(genuine), [ts(6)])
 
     def test_states_live_none_censored_and_killed_by_reload(self) -> None:
         recs = [

@@ -35,6 +35,10 @@ TASK_NOTICE = "<task-notification>"
 LAUNCH_AGENT = "Async agent launched"
 LAUNCH_BASH = "Command running in background with ID"
 RELOAD_TOOL_RESULT = "the session ended before this call's result was recorded"
+RELOAD_PREFIX = "[Tool call interrupted:"
+AGENT_TOOLS = frozenset({"Agent", "Task"})
+ASK_TOOL = "AskUserQuestion"
+ASK_ANSWERED = "Your questions have been answered"
 RELOAD_REPLY = "No response requested."
 INTERRUPTED = "[Request interrupted"
 ERROR_PREFIXES = ("API Error", "Request timed out")
@@ -189,12 +193,42 @@ def _completion_ids(rec: Record) -> list[str]:
     return []
 
 
+def _launch_kind(name: str | None, text: str) -> Kind | None:
+    """The tracked launch a tool result records, or None.
+
+    A marker counts only at the start of a result from its own tool: a
+    foreground command that prints or greps the marker text launches nothing.
+    """
+    head = text.lstrip()
+    if name in AGENT_TOOLS and head.startswith(LAUNCH_AGENT):
+        return "agent"
+    if name == "Bash" and head.startswith(LAUNCH_BASH):
+        return "bash"
+    return None
+
+
+def _is_reload_result(text: str) -> bool:
+    head = text.lstrip()
+    return head.startswith(RELOAD_PREFIX) and RELOAD_TOOL_RESULT in head
+
+
+def _questions(inp: Mapping[str, Any]) -> list[str]:
+    asked = inp.get("questions")
+    if not isinstance(asked, list):
+        return []
+    return [str(q["question"]).strip() for q in asked if isinstance(q, dict) and q.get("question")]
+
+
 def tasks(records: Sequence[Record]) -> dict[str, Task]:
     """Find every tracked background launch and its first recorded completion."""
+    names: dict[str, str] = {}
     launched: dict[str, tuple[Kind, datetime]] = {}
     done: dict[str, datetime] = {}
     for rec in records:
         when = parse_ts(rec["timestamp"])
+        for use in tool_uses(rec):
+            if isinstance(use.get("id"), str):
+                names[use["id"]] = str(use.get("name"))
         if rec.get("type") == "user":
             for block in blocks(rec):
                 if block.get("type") != "tool_result":
@@ -202,11 +236,9 @@ def tasks(records: Sequence[Record]) -> dict[str, Task]:
                 tool_id = block.get("tool_use_id")
                 if not isinstance(tool_id, str) or tool_id in launched:
                     continue
-                text = result_text(block)
-                if LAUNCH_AGENT in text:
-                    launched[tool_id] = ("agent", when)
-                elif LAUNCH_BASH in text:
-                    launched[tool_id] = ("bash", when)
+                kind = _launch_kind(names.get(tool_id), result_text(block))
+                if kind is not None:
+                    launched[tool_id] = (kind, when)
         for tool_id in _completion_ids(rec):
             done.setdefault(tool_id, when)
     out: dict[str, Task] = {}
@@ -221,7 +253,7 @@ def reloads(records: Sequence[Record]) -> list[datetime]:
     out: list[datetime] = []
     for rec in records:
         lost_result = rec.get("type") == "user" and any(
-            b.get("type") == "tool_result" and RELOAD_TOOL_RESULT in result_text(b) for b in blocks(rec)
+            b.get("type") == "tool_result" and _is_reload_result(result_text(b)) for b in blocks(rec)
         )
         reload_reply = rec.get("type") == "assistant" and text_of(rec).strip() == RELOAD_REPLY
         if lost_result or reload_reply:
@@ -233,7 +265,11 @@ def turn_ends(records: Sequence[Record]) -> list[TurnEnd]:
     """Find every turn end (plan deviation 2) with its closing text.
 
     The closing text is the assistant text after the turn's last tool
-    result. A turn end is excluded, not judged, when the turn held a reload
+    result, followed by the questions of any AskUserQuestion call the turn
+    left unanswered (a dismissed question, answered by a typed message). The
+    turn end's time is the turn's last assistant record or tool result, so a
+    stop right after a background launch is judged after the launch. A turn
+    end is excluded, not judged, when the turn held a reload
     (``reload``), an interrupt (``interrupt``), an API error message
     (``error``), or ended the transcript before the assistant answered its
     last tool call or tool result (``killed``).
@@ -241,6 +277,7 @@ def turn_ends(records: Sequence[Record]) -> list[TurnEnd]:
     out: list[TurnEnd] = []
     last_at: datetime | None = None
     final: list[str] = []
+    asked: dict[str, list[str]] = {}
     excluded: Excluded | None = None
     pending = False
     for rec in records:
@@ -253,11 +290,19 @@ def turn_ends(records: Sequence[Record]) -> list[TurnEnd]:
                 excluded = excluded or "error"
             if stripped:
                 final.append(stripped)
+            for use in tool_uses(rec):
+                if use.get("name") == ASK_TOOL and isinstance(use.get("id"), str):
+                    asked[use["id"]] = _questions(tool_input(use))
             pending = bool(tool_uses(rec))
             continue
         if is_tool_result(rec):
-            texts = [result_text(b) for b in blocks(rec) if b.get("type") == "tool_result"]
-            if any(RELOAD_TOOL_RESULT in t for t in texts):
+            last_at = parse_ts(rec["timestamp"])
+            results = [b for b in blocks(rec) if b.get("type") == "tool_result"]
+            for block in results:
+                if block.get("tool_use_id") in asked and result_text(block).lstrip().startswith(ASK_ANSWERED):
+                    asked.pop(str(block["tool_use_id"]))
+            texts = [result_text(b) for b in results]
+            if any(_is_reload_result(t) for t in texts):
                 excluded = "reload"
             elif any(t.lstrip().startswith(INTERRUPTED) for t in texts):
                 excluded = excluded or "interrupt"
@@ -275,10 +320,12 @@ def turn_ends(records: Sequence[Record]) -> list[TurnEnd]:
             continue
         if last_at is not None:
             nxt = text_of(rec).strip() if marker == "human" else None
-            out.append(TurnEnd(last_at, "\n".join(final), marker, nxt, excluded))
-        last_at, final, excluded, pending = None, [], None, False
+            text = "\n".join(final + [q for qs in asked.values() for q in qs])
+            out.append(TurnEnd(last_at, text, marker, nxt, excluded))
+        last_at, final, asked, excluded, pending = None, [], {}, None, False
     if last_at is not None:
-        out.append(TurnEnd(last_at, "\n".join(final), "eof", None, excluded or ("killed" if pending else None)))
+        text = "\n".join(final + [q for qs in asked.values() for q in qs])
+        out.append(TurnEnd(last_at, text, "eof", None, excluded or ("killed" if pending else None)))
     return out
 
 
