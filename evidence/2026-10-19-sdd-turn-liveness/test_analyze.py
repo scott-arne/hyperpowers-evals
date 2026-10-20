@@ -159,6 +159,41 @@ class Measure(unittest.TestCase):
         ]
         m = self.run_of("p8", edited, ledger=0)
         self.assertEqual((m["plan_complete"], m["plan_at"]), (True, liveness.parse_ts(at(1408)).isoformat()))
+        appended = five[:-1] + [
+            assistant(1410, tools=[("e7", "Edit", {
+                "file_path": LEDGER,
+                "old_string": "Task 5: complete (def456)",
+                "new_string": "Task 5: complete (def456)\nTask 6: complete (abc123)",
+            })]),
+            result(1411, "e7", "edited"),
+            five[-1],
+        ]
+        m = self.run_of("p9", appended, ledger=0)
+        self.assertEqual((m["plan_complete"], m["plan_at"]), (True, liveness.parse_ts(at(1410)).isoformat()))
+        rewritten = drop_call(five, "lw5")[:-1] + [
+            assistant(1412, tools=[("w7", "Write", {
+                "file_path": LEDGER,
+                "content": "# SDD ledger\n" + "".join(f"Task {n}: complete\n" for n in range(1, 7)),
+            })]),
+            result(1413, "w7", "written"),
+            five[-1],
+        ]
+        self.assertEqual(self.run_of("p10", rewritten, ledger=0)["ledger_marks"], [1, 2, 3, 4, 5, 6])
+        old_only = five[:-1] + [
+            assistant(1414, tools=[("e8", "Edit", {"file_path": LEDGER, "old_string": "Task 6: complete", "new_string": ""})]),
+            result(1415, "e8", "edited"),
+            five[-1],
+        ]
+        self.assertFalse(self.run_of("p11", old_only, ledger=0)["plan_complete"])
+
+    def test_final_review_is_read_from_the_description_only(self) -> None:
+        five = drop_call(treatment_records(), "lw6")
+        for rec in five:
+            for use in liveness.tool_uses(rec):
+                if use.get("id") == "a1":
+                    use["input"]["prompt"] = "Implement Task 1. The final review runs after Task 6."
+        m = self.run_of("f1", five, ledger=6)
+        self.assertEqual(m["plan_at"], liveness.parse_ts(at(1500)).isoformat())
 
     def test_long_job_needs_a_foreground_watch_that_saw_exit_zero(self) -> None:
         self.assertTrue(self.run_of("l1", long_job())["long_ok"])
@@ -167,6 +202,19 @@ class Measure(unittest.TestCase):
         self.assertFalse(self.run_of("l4", long_job(watch=False))["long_ok"])
         # Deviation 6: an exit=0 seen 300 s after launch is too fast for a 720 s soak.
         self.assertFalse(self.run_of("l5", long_job(done_at=900))["long_ok"])
+
+    def test_auto_backgrounded_short_run_is_not_a_foreground_run(self) -> None:
+        moved = "Command did not complete within its 240s timeout and was moved to the background (ID: b-auto)."
+        records = [
+            result(560, "b1", moved) if r.get("timestamp") == at(560) else r for r in treatment_records()
+        ]
+        for rec in records:
+            for use in liveness.tool_uses(rec):
+                if use.get("id") == "b1":
+                    use["input"]["timeout"] = 240000
+        m = self.run_of("s2", records)
+        self.assertTrue(m["short_runs"][0]["background"])
+        self.assertFalse(m["short_ok"])
 
     def test_short_run_must_take_real_time(self) -> None:
         fast = [result(340, "b1", "OK") if r.get("timestamp") == at(560) else r for r in treatment_records()]
@@ -295,6 +343,10 @@ class Untracked(unittest.TestCase):
         self.assertTrue(analyze.runs_soak("python3 -m unittest discover -s tests", "test_soak_long"))
         self.assertFalse(analyze.runs_soak('python3 -m unittest discover -s tests -p "test_unit_*.py"', "test_soak_long"))
         self.assertFalse(analyze.runs_soak("grep test_soak_short plan.md", "test_soak_short"))
+        self.assertFalse(analyze.runs_soak('grep -n "unittest tests.test_soak_long" plan.md', "test_soak_long"))
+        self.assertFalse(analyze.runs_soak('git commit -m "run python3 -m unittest tests.test_soak_short"', "test_soak_short"))
+        self.assertTrue(analyze.runs_soak("cd /x && PYTHONPATH=. python3 -m unittest tests.test_soak_long -v", "test_soak_long"))
+        self.assertTrue(analyze.runs_soak("nohup python3 -m unittest tests.test_soak_long -v > o 2>&1 &", "test_soak_long"))
 
 
 class Summary(unittest.TestCase):

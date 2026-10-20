@@ -36,6 +36,7 @@ if str(HERE) not in sys.path:
 from liveness import (
     LAUNCH_AGENT,
     LAUNCH_BASH,
+    LAUNCH_BASH_AUTO,
     Record,
     asks_or_blocks,
     blocks,
@@ -63,6 +64,9 @@ SHORT_MIN_ELAPSED_S = 200
 LONG_MIN_ELAPSED_S = 600
 SOAK_FILES = ("test_soak_short.py", "test_soak_long.py")
 IN_PLACE = re.compile(r"\b(?:sed|perl)\b[^\n;|&]*\s-i")
+UNITTEST_CMD = re.compile(
+    r"(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*(?:nohup\s+|timeout\s+\S+\s+)*(?:\S*/)?python3?\s+-m\s+unittest\b([^\n;|&]*)"
+)
 BASH_DEFAULT_TIMEOUT_MS = 120_000
 UNIT_TESTS = "test_unit_"
 SOAK_SHORT_CHECK = "tests.test_soak_short"
@@ -238,14 +242,22 @@ def shell_detaches(text: str) -> bool:
 
 
 def runs_soak(command: str, name: str) -> bool:
-    """Whether a command runs the named soak test, directly or through ``unittest discover``."""
-    if re.search(rf"\bunittest\b[^\n;|]*\b{name}\b", command):
-        return True
-    match = re.search(r"\bunittest\s+discover\b([^\n;|]*)", command)
-    if match is None:
-        return False
-    pattern = re.search(r"-p\s+['\"]?([^\s'\"]+)", match.group(1))
-    return pattern is None or fnmatch.fnmatch(f"{name}.py", pattern.group(1))
+    """Whether a command runs the named soak test, directly or through ``unittest discover``.
+
+    Only a ``python3 -m unittest`` invocation at the start of a shell command
+    counts, so a grep, echo or commit message that mentions the covering
+    command does not.
+    """
+    for match in UNITTEST_CMD.finditer(command):
+        args = match.group(1)
+        if re.search(rf"\b{name}\b", args):
+            return True
+        discover = re.match(r"\s+discover\b(.*)", args)
+        if discover:
+            pattern = re.search(r"-p\s+['\"]?([^\s'\"]+)", discover.group(1))
+            if pattern is None or fnmatch.fnmatch(f"{name}.py", pattern.group(1)):
+                return True
+    return False
 
 
 def _executed(path: str, commands: Sequence[str]) -> bool:
@@ -313,7 +325,14 @@ def _ledger_marks(call: Call) -> set[int]:
     if call.name in WRITERS:
         if not str(call.inp.get("file_path", "")).endswith(LEDGER_FILE):
             return set()
-        text = json.dumps(call.inp)
+        # Only the new content marks a task: an Edit's old_string repeats lines
+        # already written, and JSON-encoding the input would hide a mark that
+        # follows a newline from the word-boundary match.
+        parts = [call.inp.get("content"), call.inp.get("new_string")]
+        edits = call.inp.get("edits")
+        if isinstance(edits, list):
+            parts += [e.get("new_string") for e in edits if isinstance(e, dict)]
+        text = "\n".join(part for part in parts if isinstance(part, str))
     elif call.name == "Bash":
         text = str(call.inp.get("command", ""))
         targets = [m.group(2) for m in WRITE_TARGET.finditer(text) if m.group(2) != "/dev/null"]
@@ -442,8 +461,9 @@ def _transcript_measures(
             out["dispatch_fg"] += 1
         else:
             out["dispatch_unclassified"] += 1
-        text = f"{desc} {call.inp.get('prompt', '')}"
-        if call.result is not None and not call.error and FINAL.search(text) and REVIEW.search(text):
+        # The description names the role; prompts mention "final review" in
+        # passing (implementer briefs do), so they cannot identify it.
+        if call.result is not None and not call.error and FINAL.search(desc) and REVIEW.search(desc):
             final_dispatches.append(call.at)
     plan_at = written_at or (min(final_dispatches) if complete and final_dispatches else None)
     out["plan_at"] = iso(plan_at) if plan_at else None
@@ -456,7 +476,9 @@ def _transcript_measures(
         command = str(call.inp.get("command", ""))
         timeout = call.inp.get("timeout")
         limit = int(timeout) if isinstance(timeout, (int, float)) else BASH_DEFAULT_TIMEOUT_MS
-        background = call.result is not None and LAUNCH_BASH in call.result
+        background = call.result is not None and (
+            LAUNCH_BASH in call.result or call.result.lstrip().startswith(LAUNCH_BASH_AUTO)
+        )
         if runs_soak(command, SHORT_SOAK):
             elapsed = (call.result_at - call.at).total_seconds() if call.result_at else None
             out["short_runs"].append({"at": iso(call.at), "background": background, "timeout": limit, "elapsed": elapsed})
