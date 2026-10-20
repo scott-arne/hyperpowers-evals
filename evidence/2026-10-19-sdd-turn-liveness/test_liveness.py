@@ -86,7 +86,7 @@ class TurnEnds(unittest.TestCase):
         recs = [
             human(0, "go"),
             assistant(5, tools=[("a1", "Agent", {})]),
-            result(400, "a1", RELOAD_RESULT),
+            result(400, "a1", RELOAD_RESULT, is_error=True),
             assistant(401, "No response requested."),
             human(402, "Resume"),
         ]
@@ -108,15 +108,29 @@ class TurnEnds(unittest.TestCase):
         self.assertEqual(liveness.turn_ends(recs)[0].excluded, "killed")
 
     def test_local_command_records_are_not_human_messages(self) -> None:
+        stdout = human(6.5, "<local-command-stdout>ok</local-command-stdout>")
+        del stdout["origin"]
         recs = [
             human(0, "go"),
             assistant(5, "Done for now."),
-            human(6, "<local-command-caveat>Caveat: ...</local-command-caveat>"),
+            human(6, "<local-command-caveat>Caveat: ...</local-command-caveat>", isMeta=True),
+            stdout,
             human(7, "Resume"),
         ]
         ends = liveness.turn_ends(recs)
         self.assertEqual(len(ends), 1)
         self.assertEqual(ends[0].next_human, "Resume")
+
+    def test_typed_slash_command_is_a_human_message(self) -> None:
+        recs = [
+            human(0, "go"),
+            assistant(5, "Done for now."),
+            human(6, "<command-message>hyperpowers:brainstorming</command-message>"),
+        ]
+        ends = liveness.turn_ends(recs)
+        self.assertEqual(len(ends), 1)
+        self.assertEqual(ends[0].ended_by, "human")
+        self.assertTrue((ends[0].next_human or "").startswith("<command-message>"))
 
     def test_stop_right_after_a_launch_is_judged_live(self) -> None:
         for closer in (notification(90, "a1"), human(90, "continue")):
@@ -199,7 +213,11 @@ class Tasks(unittest.TestCase):
         self.assertEqual(liveness.tasks(recs), {})
 
     def test_completion_from_a_delivered_notification(self) -> None:
-        recs = [assistant(5, tools=[("b1", "Bash", {})]), result(6, "b1", BASH_BG), notification(70, "b1")]
+        recs = [
+            assistant(5, tools=[("b1", "Bash", {"command": "sleep 60", "run_in_background": True})]),
+            result(6, "b1", BASH_BG),
+            notification(70, "b1"),
+        ]
         task = liveness.tasks(recs)["b1"]
         self.assertEqual((task.kind, task.completed), ("bash", ts(70)))
 
@@ -213,6 +231,10 @@ class Tasks(unittest.TestCase):
             result(6, "r1", "1\t" + BASH_BG),
             assistant(7, tools=[("g3", "Bash", {"command": "cat run.log"})]),
             result(8, "g3", "the session ended before this call's result was recorded"),
+            assistant(9, tools=[("g4", "Bash", {"command": "head -1 run.log"})]),
+            result(10, "g4", BASH_BG),
+            assistant(11, tools=[("g5", "Bash", {"command": "head -1 reload.log"})]),
+            result(12, "g5", RELOAD_RESULT),
         ]
         self.assertEqual(liveness.tasks(recs), {})
         self.assertEqual(liveness.reloads(recs), [])
@@ -222,7 +244,7 @@ class Tasks(unittest.TestCase):
             assistant(3, tools=[("b1", "Bash", {"command": "sleep 900", "run_in_background": True})]),
             result(4, "b1", BASH_BG),
             assistant(5, tools=[("z1", "Bash", {"command": "ls"})]),
-            result(6, "z1", RELOAD_RESULT),
+            result(6, "z1", RELOAD_RESULT, is_error=True),
         ]
         self.assertEqual(sorted(liveness.tasks(genuine)), ["a1", "b1"])
         self.assertEqual(liveness.reloads(genuine), [ts(6)])
@@ -232,9 +254,9 @@ class Tasks(unittest.TestCase):
             assistant(5, tools=[("a1", "Agent", {})]),
             result(6, "a1", AGENT_BG),
             enqueue(90, "a1"),
-            assistant(99, tools=[("b1", "Bash", {})]),
+            assistant(99, tools=[("b1", "Bash", {"command": "sleep 900", "run_in_background": True})]),
             result(100, "b1", BASH_BG),
-            result(200, "z9", RELOAD_RESULT),
+            result(200, "z9", RELOAD_RESULT, is_error=True),
         ]
         task_map = liveness.tasks(recs)
         reload_times = liveness.reloads(recs)

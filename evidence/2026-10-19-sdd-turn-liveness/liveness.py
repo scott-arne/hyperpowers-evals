@@ -156,7 +156,14 @@ def idle_marker(rec: Record) -> Literal["human", "notification"] | None:
     text = text_of(rec).lstrip()
     if text.startswith(TASK_NOTICE):
         return "notification"
-    if not text or text.startswith(("<", INTERRUPTED)):
+    if not text or text.startswith(INTERRUPTED):
+        return None
+    # Typed slash commands and IDE context start with markup but are the human
+    # partner's own messages, which Claude Code marks human-origin; markup
+    # records without that origin are local-command and system envelopes.
+    if (rec.get("origin") or {}).get("kind") == "human":
+        return "human"
+    if text.startswith("<"):
         return None
     return "human"
 
@@ -193,23 +200,25 @@ def _completion_ids(rec: Record) -> list[str]:
     return []
 
 
-def _launch_kind(name: str | None, text: str) -> Kind | None:
+def _launch_kind(name: str | None, background: bool, text: str) -> Kind | None:
     """The tracked launch a tool result records, or None.
 
-    A marker counts only at the start of a result from its own tool: a
+    A marker counts only at the start of a result from its own tool, and a
+    shell launch also needs ``run_in_background: true`` on the call: a
     foreground command that prints or greps the marker text launches nothing.
     """
     head = text.lstrip()
     if name in AGENT_TOOLS and head.startswith(LAUNCH_AGENT):
         return "agent"
-    if name == "Bash" and head.startswith(LAUNCH_BASH):
+    if name == "Bash" and background and head.startswith(LAUNCH_BASH):
         return "bash"
     return None
 
 
-def _is_reload_result(text: str) -> bool:
-    head = text.lstrip()
-    return head.startswith(RELOAD_PREFIX) and RELOAD_TOOL_RESULT in head
+def _is_reload_result(block: Mapping[str, Any]) -> bool:
+    """A tool result the harness wrote when the session ended mid-call (flagged as an error)."""
+    head = result_text(block).lstrip()
+    return block.get("is_error") is True and head.startswith(RELOAD_PREFIX) and RELOAD_TOOL_RESULT in head
 
 
 def _questions(inp: Mapping[str, Any]) -> list[str]:
@@ -221,14 +230,14 @@ def _questions(inp: Mapping[str, Any]) -> list[str]:
 
 def tasks(records: Sequence[Record]) -> dict[str, Task]:
     """Find every tracked background launch and its first recorded completion."""
-    names: dict[str, str] = {}
+    calls: dict[str, tuple[str, bool]] = {}
     launched: dict[str, tuple[Kind, datetime]] = {}
     done: dict[str, datetime] = {}
     for rec in records:
         when = parse_ts(rec["timestamp"])
         for use in tool_uses(rec):
             if isinstance(use.get("id"), str):
-                names[use["id"]] = str(use.get("name"))
+                calls[use["id"]] = (str(use.get("name")), tool_input(use).get("run_in_background") is True)
         if rec.get("type") == "user":
             for block in blocks(rec):
                 if block.get("type") != "tool_result":
@@ -236,7 +245,8 @@ def tasks(records: Sequence[Record]) -> dict[str, Task]:
                 tool_id = block.get("tool_use_id")
                 if not isinstance(tool_id, str) or tool_id in launched:
                     continue
-                kind = _launch_kind(names.get(tool_id), result_text(block))
+                name, background = calls.get(tool_id, ("", False))
+                kind = _launch_kind(name, background, result_text(block))
                 if kind is not None:
                     launched[tool_id] = (kind, when)
         for tool_id in _completion_ids(rec):
@@ -253,7 +263,7 @@ def reloads(records: Sequence[Record]) -> list[datetime]:
     out: list[datetime] = []
     for rec in records:
         lost_result = rec.get("type") == "user" and any(
-            b.get("type") == "tool_result" and _is_reload_result(result_text(b)) for b in blocks(rec)
+            b.get("type") == "tool_result" and _is_reload_result(b) for b in blocks(rec)
         )
         reload_reply = rec.get("type") == "assistant" and text_of(rec).strip() == RELOAD_REPLY
         if lost_result or reload_reply:
@@ -302,7 +312,7 @@ def turn_ends(records: Sequence[Record]) -> list[TurnEnd]:
                 if block.get("tool_use_id") in asked and result_text(block).lstrip().startswith(ASK_ANSWERED):
                     asked.pop(str(block["tool_use_id"]))
             texts = [result_text(b) for b in results]
-            if any(_is_reload_result(t) for t in texts):
+            if any(_is_reload_result(b) for b in results):
                 excluded = "reload"
             elif any(t.lstrip().startswith(INTERRUPTED) for t in texts):
                 excluded = excluded or "interrupt"
