@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261021T185016Z_j38c",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development and set up a worktree after asking me one question. It then ran all six plan tasks, each with an implementer agent and a review agent, and dispatched the final whole-branch review. After I answered \"merge back to main locally\", it fast-forwarded main to 05180f5. The soak test files were not changed. I never had to send \"continue\": the only mid-plan stop was the worktree question at the start.",
+  "reasoning": "All four criteria are backed by the session log and git state on disk. The run finished all six tasks, the final review, and the merge in about 33 minutes. I sent no 'continue'. The only user input during the plan was the scripted answer to the setup worktree question.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "After dispatching the Task 3 implementer as a background agent, the main agent's turn ended and the prompt was idle. The message was: 'Its run includes the 4-minute soak test, so it'll take several minutes before it reports back.' The main pane had no spinner, but the agents panel showed 'general-purpose Running window unit tests' with a timer that kept counting (1m28s → 3m35s). The agent picked up again on its own when the task-notification arrived. I didn't count this as a stop because a running indicator was visible. A human could easily mistake this state for a stall, though."
+    },
+    {
+      "kind": "bug",
+      "description": "Three commits (859c26e, dc09496, 2e6271e) have the 'Co-Authored-By: Claude Haiku 4.5' trailer run into the subject line, so it shows up in `git log --oneline`. The agent pointed this out itself and called it cosmetic."
+    },
+    {
+      "kind": "suggestion",
+      "description": "No .gitignore was added, so the tests leave untracked __pycache__ directories behind. The agent said the plan didn't call for one and flagged this."
+    },
+    {
+      "kind": "ux",
+      "description": "The setup dialogs default to the risky-to-skip choice: the folder trust prompt and the bypass-permissions prompt both default to 'No, exit'. There was also a 'Newer Opus model available' prompt even though the launcher pinned claude-opus-5-5 (it said 'Currently pinned: Opus 5'). I chose No, and the banner still showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The codex-plugin-cc review step was skipped for every task and for the final review because the plugin isn't installed. Python 3.9 compatibility was only checked by reading the code (the only interpreter available was 3.15). The agent disclosed both."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation work",
+      "verdict": "pass",
+      "evidence": "Screen: \"Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\" right after my prompt. In the session log jq extract, the first tool calls are \"Skill hyperpowers:subagent-driven-development\" then \"Skill hyperpowers:using-git-worktrees\". Both come before \"Agent Implement Task 1: package and clocks\"."
+    },
+    {
+      "criterion": "All plan tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "plan.md has Tasks 1–6. The log shows an Implement agent and a Review agent for each of Tasks 1–6, then \"Agent Final whole-branch code review\" and \"Skill hyperpowers:finishing-a-development-branch\". In the main workdir, `git log --oneline` shows 6 feature commits (859c26e..05180f5) on top of e212417 and HEAD is main. `git worktree list` shows only the main checkout. The agent's summary says: \"The work is merged into main locally. It was a fast-forward to 05180f5\"."
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "`git log --oneline --stat -- tests/test_soak_short.py tests/test_soak_long.py` lists only e212417 'initial: design, plan and soak tests'. `git diff e212417 HEAD --stat -- tests/` lists only the new test_unit_*.py files. `git status --short` on main was empty."
+    },
+    {
+      "criterion": "Mid-plan stops are listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"Where should the implementation commits go?\" | question\n(This was an AskUserQuestion during setup, before Task 1. The text above it read: 'Before I start, one decision is yours: the repo is on main with no isolation, and I won't write code on main without your consent.' I answered 'use whatever the skill recommends'.) The session log has no other user messages except the initial prompt, automatic <task-notification> entries, and 'merge back to main locally'. That last one answered the finish question after all 6 tasks were done, so it was not a mid-plan stop. I never sent 'continue'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi"
+    ]
+  },
+  "duration_ms": 2238831,
+  "usage": {
+    "inputTokens": 114,
+    "outputTokens": 7239,
+    "cacheCreationInputTokens": 49493,
+    "cacheReadInputTokens": 1271476,
+    "turns": 51
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
