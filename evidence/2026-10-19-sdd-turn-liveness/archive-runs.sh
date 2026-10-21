@@ -36,19 +36,20 @@ archive() {
   local dst="$out/$id" wdst="$out/workspaces/$id"
   if [ -e "$dst" ]; then echo "skip $arm $id (archived)"; return; fi
   [ -f "$src/verdict.json" ] || { echo "no verdict: $src" >&2; exit 1; }
+  [ -d "$wsrc" ] || { echo "no workspace: $wsrc" >&2; exit 1; }
   mkdir -p "$out/workspaces"
   rm -rf "$dst.partial" "$wdst.partial"
   cp -Rp "$src" "$dst.partial"
+  cp -Rp "$wsrc" "$wdst.partial"
+  # strip-runs finds a run's home/ at <root>/workspaces/<name>/home, so it can
+  # only strip once both copies exist; the .partial names are the run names here.
   "$EV/scripts/strip-runs" --results-root "$out" --run "$id.partial" --min-age-minutes 0
   clean "$dst.partial"
-  if [ -d "$wsrc" ]; then
-    cp -Rp "$wsrc" "$wdst.partial"
-    if [ -d "$wdst.partial/coding-agent-workdir/.git" ]; then
-      mv "$wdst.partial/coding-agent-workdir/.git" "$wdst.partial/coding-agent-workdir/git-dir"
-    fi
-    clean "$wdst.partial"
-    mv "$wdst.partial" "$wdst"
+  if [ -d "$wdst.partial/coding-agent-workdir/.git" ]; then
+    mv "$wdst.partial/coding-agent-workdir/.git" "$wdst.partial/coding-agent-workdir/git-dir"
   fi
+  clean "$wdst.partial"
+  mv "$wdst.partial" "$wdst"
   mv "$dst.partial" "$dst"
   echo "archived $arm $id"
 }
