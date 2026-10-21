@@ -39,6 +39,8 @@ RELOAD_PREFIX = "[Tool call interrupted:"
 LAUNCH_BASH_AUTO = "Command did not complete within its"
 AUTO_MOVED = "was moved to the background"
 AGENT_TOOLS = frozenset({"Agent", "Task"})
+SEND_OK = '{"success":true,"message":"'
+RESUMED = ("Resuming agent ", "in the background with your message")
 ASK_TOOL = "AskUserQuestion"
 ASK_ANSWERED = "Your questions have been answered"
 RELOAD_REPLY = "No response requested."
@@ -209,7 +211,10 @@ def _launch_kind(name: str | None, background: bool, text: str) -> Kind | None:
     shell launch also needs ``run_in_background: true`` on the call: a
     foreground command that prints or greps the marker text launches nothing.
     A Bash call that Claude Code moved to the background after its timeout is
-    a tracked launch too (plan deviation 7).
+    a tracked launch too (plan deviation 7), and so is an agent that
+    ``SendMessage`` resumed in the background (plan deviation 8). The resume
+    markers sit in the result's message, inside the first 300 characters a
+    slim load keeps.
     """
     head = text.lstrip()
     if name in AGENT_TOOLS and head.startswith(LAUNCH_AGENT):
@@ -218,6 +223,8 @@ def _launch_kind(name: str | None, background: bool, text: str) -> Kind | None:
         return "bash"
     if name == "Bash" and head.startswith(LAUNCH_BASH_AUTO) and AUTO_MOVED in head:
         return "bash"
+    if name == "SendMessage" and head.startswith(SEND_OK) and any(m in head for m in RESUMED):
+        return "agent"
     return None
 
 

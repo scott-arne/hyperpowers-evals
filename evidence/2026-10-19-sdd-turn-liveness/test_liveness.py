@@ -267,6 +267,28 @@ class Tasks(unittest.TestCase):
         ]
         self.assertEqual(liveness.tasks(printed), {})
 
+    def test_an_agent_resumed_with_send_message_is_a_tracked_launch(self) -> None:
+        resumed = '{"success":true,"message":"Resuming agent a101f9c","resumedAgentId":"a101f9c7fb53d3bd5"}'
+        stopped = (
+            '{"success":true,"message":"Agent \\"a5b6c7d8\\" was stopped (completed); resumed it in the background '
+            'with your message. You will be notified when it finishes.","resumedAgentId":"a5b6c7d8"}'
+        )
+        recs = [
+            assistant(5, tools=[("m1", "SendMessage", {"to": "a101f9c7fb53d3bd5", "message": "Fix the finding."})]),
+            result(6, "m1", resumed),
+            enqueue(200, "m1"),
+            assistant(210, tools=[("m2", "SendMessage", {"to": "a5b6c7d8", "message": "Fix the next one."})]),
+            result(211, "m2", stopped),
+            enqueue(300, "m2"),
+            assistant(310, tools=[("m3", "SendMessage", {"to": "worker", "message": "Status?"})]),
+            result(311, "m3", '{"success":true,"message":"Message queued for worker"}'),
+        ]
+        task_map = liveness.tasks(recs)
+        self.assertEqual(sorted(task_map), ["m1", "m2"])
+        self.assertEqual((task_map["m1"].kind, task_map["m1"].launched, task_map["m1"].completed), ("agent", ts(6), ts(200)))
+        self.assertEqual((task_map["m2"].kind, task_map["m2"].launched, task_map["m2"].completed), ("agent", ts(211), ts(300)))
+        self.assertEqual(liveness.state_at(ts(100), task_map, []), "live")
+
     def test_states_live_none_censored_and_killed_by_reload(self) -> None:
         recs = [
             assistant(5, tools=[("a1", "Agent", {})]),
