@@ -245,6 +245,33 @@ class Measure(unittest.TestCase):
         m = self.run_of("f2", early)
         self.assertFalse(m["final_review"])
         self.assertFalse(m["success"])
+        # The controller reviews Task 6, dispatches the final review, and writes
+        # the Task 6 mark only after it returns (three of four counted smoke runs).
+        late = drop_call(treatment_records(), "lw6")
+        tail = late[-3:]
+        late = late[:-3] + [
+            assistant(1410, tools=[("r6", "Agent", {"description": "Review Task 6 (spec + quality)", "run_in_background": False})]),
+            result(1490, "r6", "Approved"),
+            *tail[:2],
+            assistant(1850, tools=[("e6", "Edit", {"file_path": LEDGER, "old_string": "x", "new_string": "Task 6: complete (abc123)"})]),
+            result(1851, "e6", "edited"),
+            tail[2],
+        ]
+        m = self.run_of("f3", late)
+        self.assertEqual(m["plan_at"], liveness.parse_ts(at(1850)).isoformat())
+        self.assertTrue(m["final_review"])
+        self.assertTrue(m["success"])
+        # A task review followed by a re-review, with no final review, is not a final review.
+        no_final = drop_call(late, "a2")
+        for rec in no_final:
+            for use in liveness.tool_uses(rec):
+                if use.get("id") == "r6":
+                    use["input"]["description"] = "Re-review Task 6 fix round 1"
+        no_final[-4:-4] = [
+            assistant(1300, tools=[("r5", "Agent", {"description": "Review Task 6 (spec + quality)", "run_in_background": False})]),
+            result(1305, "r5", "Needs fixes"),
+        ]
+        self.assertFalse(self.run_of("f4", no_final)["final_review"])
 
     def test_long_job_needs_a_foreground_watch_that_saw_exit_zero(self) -> None:
         self.assertTrue(self.run_of("l1", long_job())["long_ok"])

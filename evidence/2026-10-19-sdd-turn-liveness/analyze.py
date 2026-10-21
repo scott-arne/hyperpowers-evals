@@ -78,6 +78,7 @@ WRITERS = ("Write", "Edit", "MultiEdit")
 SDD_ROLE = re.compile(r"implement|review|fix|takeover", re.IGNORECASE)
 FIX = re.compile(r"\bfix", re.IGNORECASE)
 REVIEW = re.compile(r"review", re.IGNORECASE)
+IMPLEMENT = re.compile(r"implement|takeover", re.IGNORECASE)
 LEDGER_DIR = "hyperpowers/sdd/"
 ASSIGN = re.compile(r"(?:^|[\s;&|(])(\w+)=(?:\"([^\"]*)\"|'([^']*)'|([^\s;&|<>()'\"]*))")
 VAR_REF = re.compile(r"\$\{(\w+)\}|\$(\w+)")
@@ -603,6 +604,7 @@ def _transcript_measures(
     complete = set(range(1, LAST_TASK + 1)) <= (file_tasks | marked)
     out["plan_complete"] = complete
     review_dispatches: list[datetime] = []
+    last_implementer: datetime | None = None
     for call in calls:
         if call.name not in ("Agent", "Task"):
             continue
@@ -617,14 +619,25 @@ def _transcript_measures(
             out["dispatch_fg"] += 1
         else:
             out["dispatch_unclassified"] += 1
-        # The final review is the review dispatched once the last task is
-        # marked complete. Its description varies (the reviewer template says
+        # The final review's description varies (the reviewer template says
         # "Review code changes"), so position identifies it, not wording.
+        if IMPLEMENT.search(desc) and not REVIEW.search(desc):
+            last_implementer = call.at
         if call.result is not None and not call.error and REVIEW.search(desc) and not FIX.search(desc):
             review_dispatches.append(call.at)
     plan_at = written_at or (last_write if complete else None)
     out["plan_at"] = iso(plan_at) if plan_at else None
-    out["final_review"] = plan_at is not None and any(t >= plan_at for t in review_dispatches)
+    # The final review is a review dispatched once the last task is marked
+    # complete, or, when the controller writes that mark only after the final
+    # review returns (three of the four counted smoke runs), the last of at
+    # least two review dispatches after the last implementer dispatch: the
+    # task's review and then the final one. Re-reviews and fix rounds name a
+    # fix, so they never make up the pair.
+    after_last = [t for t in review_dispatches if last_implementer is not None and t > last_implementer]
+    out["final_review"] = bool(
+        (plan_at is not None and any(t >= plan_at for t in review_dispatches))
+        or (complete and len(after_last) >= 2)
+    )
 
     task_map = tasks(records)
     reload_times = reloads(records)
