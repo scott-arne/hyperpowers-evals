@@ -89,6 +89,53 @@ class Collect(unittest.TestCase):
             out = field.collect(projects, SINCE, early)
         self.assertEqual((out["boundaries"], out["premature"], out["live_turn_ends"]), (1, 1, 0))
 
+    def test_censored_work_dominates_live_work(self) -> None:
+        # The implementer will finish; the background shell never records a completion.
+        overlap = [
+            human(0, "Execute the plan.", entrypoint="sdk-ts"),
+            assistant(5, tools=[SDD]),
+            result(6, "s1", "Launching skill"),
+            assistant(10, tools=[("k1", "TaskCreate", {"subject": "A"})]),
+            result(11, "k1", "Task #1 created successfully: A"),
+            assistant(20, tools=[("a1", "Agent", {"description": "Implement Task 1"})]),
+            result(21, "a1", AGENT_BG),
+            assistant(22, tools=[("b1", "Bash", {"command": "sleep 900", "run_in_background": True})]),
+            result(23, "b1", BASH_BG),
+            assistant(30, "Waiting for the implementer."),
+            human(40, "Resume"),
+            enqueue(300, "a1"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp)
+            write(projects / "p1" / "zed.jsonl", overlap)
+            out = field.collect(projects, SINCE, UNTIL)
+        self.assertEqual((out["censored_stops"], out["censored_resumes"]), (1, 1))
+        self.assertEqual((out["live_turn_ends"], out["live_resumes"], out["premature"]), (0, 0, 0))
+
+    def test_failed_task_updates_change_nothing(self) -> None:
+        failed = [
+            human(0, "Execute the plan.", entrypoint="sdk-ts"),
+            assistant(5, tools=[SDD]),
+            result(6, "s1", "Launching skill"),
+            assistant(10, tools=[("k1", "TaskCreate", {"subject": "A"})]),
+            result(11, "k1", "Task #1 created successfully: A"),
+            assistant(20, tools=[("u1", "TaskUpdate", {"taskId": "1", "status": "completed"})]),
+            result(21, "u1", "Task not found", is_error=True),
+            assistant(30, "Moving on."),
+            human(40, "Resume"),
+            assistant(50, tools=[("u2", "TaskUpdate", {"taskId": "7", "status": "in_progress"})]),
+            result(51, "u2", "Task not found", is_error=True),
+            assistant(60, tools=[("u3", "TaskUpdate", {"taskId": "1", "status": "completed"})]),
+            result(61, "u3", "Updated task #1 status"),
+            assistant(70, "All done."),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp)
+            write(projects / "p1" / "zed.jsonl", failed)
+            out = field.collect(projects, SINCE, UNTIL)
+        # The stop at 30 is premature (task 1 is still open); the one at 70 is not (task 7 never opened).
+        self.assertEqual((out["premature"], out["premature_resumed"], out["boundaries"]), (1, 1, 1))
+
 
 class Reflog(unittest.TestCase):
     TEXT = (

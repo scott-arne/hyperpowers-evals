@@ -78,11 +78,16 @@ def is_sdd(records: Sequence[Record]) -> bool:
     return False
 
 
-def _open_timeline(records: Sequence[Record]) -> tuple[list[datetime], list[int]]:
-    """When the count of open task-list items changed, and to what, sorted by time."""
+def _open_timeline(records: Sequence[Record]) -> tuple[list[datetime], list[int], list[datetime]]:
+    """When the count of open task-list items changed, and to what, sorted by time; and when a task was completed.
+
+    Only a successful result changes the list: a failed ``TaskUpdate`` (an
+    unknown id, say) completes nothing and opens nothing.
+    """
     names: dict[str, tuple[str, dict[str, Any]]] = {}
     open_ids: set[str] = set()
     changes: list[tuple[datetime, int]] = []
+    completions: list[datetime] = []
     for rec in records:
         for use in tool_uses(rec):
             inp = tool_input(use)
@@ -91,7 +96,7 @@ def _open_timeline(records: Sequence[Record]) -> tuple[list[datetime], list[int]
         if not is_tool_result(rec):
             continue
         for block in blocks(rec):
-            if block.get("type") != "tool_result":
+            if block.get("type") != "tool_result" or block.get("is_error"):
                 continue
             name, inp = names.get(str(block.get("tool_use_id")), ("", {}))
             if name == "TaskCreate":
@@ -103,6 +108,8 @@ def _open_timeline(records: Sequence[Record]) -> tuple[list[datetime], list[int]
                 status = inp.get("status")
                 if status in ("completed", "deleted"):
                     open_ids.discard(task_id)
+                    if status == "completed":
+                        completions.append(parse_ts(rec["timestamp"]))
                 elif status in ("pending", "in_progress") and task_id:
                     open_ids.add(task_id)
             elif name == "TodoWrite":
@@ -114,7 +121,7 @@ def _open_timeline(records: Sequence[Record]) -> tuple[list[datetime], list[int]
                 continue
             changes.append((parse_ts(rec["timestamp"]), len(open_ids)))
     changes.sort(key=lambda item: item[0])
-    return [when for when, _ in changes], [n for _, n in changes]
+    return [when for when, _ in changes], [n for _, n in changes], completions
 
 
 def _open_at(times: Sequence[datetime], counts: Sequence[int], at: datetime) -> bool:
@@ -126,11 +133,14 @@ def _session(records: Sequence[Record], since: datetime, until: datetime) -> tup
     counts: Counter[str] = Counter()
     task_map = tasks(records)
     reload_times = reloads(records)
-    times, open_counts = _open_timeline(records)
+    times, open_counts, completions = _open_timeline(records)
 
     def inside(when: datetime) -> bool:
         return since <= when < until
 
+    boundaries = sum(1 for when in completions if inside(when))
+    if boundaries:
+        counts["boundaries"] = boundaries
     for end in turn_ends(records):
         if not inside(end.at):
             continue
@@ -163,10 +173,6 @@ def _session(records: Sequence[Record], since: datetime, until: datetime) -> tup
                 counts["live_resumes"] += 1
             elif state == "censored":
                 counts["censored_resumes"] += 1
-        for use in tool_uses(rec):
-            inp = tool_input(use)
-            if use.get("name") == "TaskUpdate" and inp.get("status") == "completed":
-                counts["boundaries"] += 1
     return counts, versions, models
 
 
