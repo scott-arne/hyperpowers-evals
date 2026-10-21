@@ -283,6 +283,20 @@ class Tasks(unittest.TestCase):
         self.assertEqual(liveness.state_at(ts(150), task_map, reload_times), "censored")
         self.assertEqual(liveness.state_at(ts(250), task_map, reload_times), "none")
 
+    def test_censored_work_wins_over_live_work(self) -> None:
+        # One task runs to a recorded completion while another never records one.
+        recs = [
+            assistant(5, tools=[("a1", "Agent", {})]),
+            result(6, "a1", AGENT_BG),
+            assistant(7, tools=[("b1", "Bash", {"command": "sleep 900", "run_in_background": True})]),
+            result(8, "b1", BASH_BG),
+            enqueue(90, "a1"),
+        ]
+        task_map = liveness.tasks(recs)
+        self.assertEqual(liveness.state_at(ts(7), task_map, []), "live")
+        self.assertEqual(liveness.state_at(ts(50), task_map, []), "censored")
+        self.assertEqual(liveness.state_at(ts(100), task_map, []), "censored")
+
 
 class Heuristic(unittest.TestCase):
     CASES = (

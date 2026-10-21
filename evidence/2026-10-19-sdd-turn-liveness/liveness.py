@@ -348,22 +348,22 @@ def turn_ends(records: Sequence[Record]) -> list[TurnEnd]:
 def state_at(at: datetime, task_map: Mapping[str, Task], reload_times: Sequence[datetime]) -> State:
     """Classify the background work at ``at`` (spec Design §2 live, §3 censored).
 
-    ``live``: a task launched at or before ``at`` records its completion
-    after it. ``censored``: otherwise, a task launched at or before ``at``
-    never records a completion and no reload ended it before ``at``.
-    ``none``: neither.
+    ``censored``: a task launched at or before ``at`` never records a
+    completion and no reload ended it before ``at``. It wins over a live
+    task: the censored task's liveness is unknown, so the moment counts in
+    neither the premature nor the live-work tally (spec Design §3, plan
+    deviation 3). ``live``: otherwise, a task launched at or before ``at``
+    records its completion after it. ``none``: neither.
     """
-    censored = False
+    live = censored = False
     for task in task_map.values():
         if task.launched > at:
             continue
         if task.completed is not None:
-            if task.completed > at:
-                return "live"
-            continue
-        if not any(task.launched < r <= at for r in reload_times):
+            live = live or task.completed > at
+        elif not any(task.launched < r <= at for r in reload_times):
             censored = True
-    return "censored" if censored else "none"
+    return "censored" if censored else "live" if live else "none"
 
 
 def asks_or_blocks(text: str) -> bool:
