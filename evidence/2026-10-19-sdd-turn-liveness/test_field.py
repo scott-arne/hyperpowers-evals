@@ -136,6 +136,29 @@ class Collect(unittest.TestCase):
         # The stop at 30 is premature (task 1 is still open); the one at 70 is not (task 7 never opened).
         self.assertEqual((out["premature"], out["premature_resumed"], out["boundaries"]), (1, 1, 1))
 
+    def test_records_after_the_window_change_nothing(self) -> None:
+        cutoff = datetime(2026, 10, 20, 10, 5, tzinfo=UTC)
+        late_sdd = [
+            human(0, "Plan first.", entrypoint="sdk-ts"),
+            assistant(5, "Planning."),
+            human(400, "Now execute it."),
+            assistant(410, tools=[SDD]),
+            result(411, "s1", "Launching skill"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp)
+            write(projects / "p1" / "zed.jsonl", session()[:10])
+            seen_at_cutoff = field.collect(projects, SINCE, cutoff)
+            # The same session grows: a resume at 500 answers the stop at 110, and work goes on.
+            write(projects / "p1" / "zed.jsonl", session())
+            grown = field.collect(projects, SINCE, cutoff)
+            # A session that invokes SDD only after the cutoff does not join the window.
+            write(projects / "p2" / "late.jsonl", late_sdd)
+            joined = field.collect(projects, SINCE, cutoff)
+        self.assertEqual((seen_at_cutoff["sessions"], seen_at_cutoff["premature"]), (1, 1))
+        self.assertEqual(grown, seen_at_cutoff)
+        self.assertEqual(joined, seen_at_cutoff)
+
 
 class Reflog(unittest.TestCase):
     TEXT = (

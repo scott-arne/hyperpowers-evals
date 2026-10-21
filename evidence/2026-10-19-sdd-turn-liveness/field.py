@@ -177,7 +177,13 @@ def _session(records: Sequence[Record], since: datetime, until: datetime) -> tup
 
 
 def collect(projects: Path, since: datetime, until: datetime) -> dict[str, Any]:
-    """Aggregate counts over every Zed SDD session with events in the window."""
+    """Aggregate counts over every Zed SDD session with events in the window.
+
+    ``until`` is also the observation cutoff: every record at or after it is
+    dropped before anything is classified, so a session qualifies only by an
+    SDD invocation inside the window, and records appended later (a completion,
+    a resume, a session's first SDD call) cannot change the result.
+    """
     totals: Counter[str] = Counter()
     versions: Counter[str] = Counter()
     models: Counter[str] = Counter()
@@ -185,7 +191,7 @@ def collect(projects: Path, since: datetime, until: datetime) -> dict[str, Any]:
     for path in sorted(projects.glob("*/*.jsonl")):
         if entrypoint(path) != "sdk-ts":
             continue
-        records = load(path, slim=True)
+        records = [rec for rec in load(path, slim=True) if parse_ts(rec["timestamp"]) < until]
         if not is_sdd(records):
             continue
         counts, session_versions, session_models = _session(records, since, until)
