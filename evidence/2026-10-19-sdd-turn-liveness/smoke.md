@@ -6,7 +6,10 @@ of them counts toward the campaign.
 
 - The first smoke (rows p1 and p2) found three problems.
 - Plan Step 3b fixed them, approved by the human partner on 2026-10-21.
-- Rows p3 are the smoke after those fixes.
+- Rows p3 are the smoke after those fixes. They found a fourth problem: no
+  dispatch could run in the foreground.
+- Plan Step 3c turns Claude Code's fork mode off (plan deviation 9), and rows
+  p4 are the smoke after that.
 
 ## Pins and launches
 
@@ -31,6 +34,10 @@ the values those rows ran with.
   with `checkout --detach` and is clean
 - subagent models `claude-opus-5-5,claude-sonnet-5-5,claude-haiku-4-5-20251001`
 
+For p4 one value changes again: harness `80b7bee74`, which allowlists
+`CLAUDE_CODE_FORK_SUBAGENT` so the scenario can turn fork mode off. The
+treatment stays at `c353fc7` and the allowed model set is unchanged.
+
 The Gauntlet-Agent model is `claude-opus-5-5` throughout.
 
 | Row | Run | Sandbox | Result |
@@ -41,6 +48,8 @@ The Gauntlet-Agent model is `claude-opus-5-5` throughout.
 | treatment p2 | `sdd-turn-liveness-claude-auto-20261021T141933Z-4478` | off | pass |
 | control p3 | `sdd-turn-liveness-claude-auto-20261021T185013Z-d4c8` | off | pass |
 | treatment p3 | `sdd-turn-liveness-claude-auto-20261021T185013Z-4471` | off | pass |
+| control p4 | `sdd-turn-liveness-claude-auto-20261021T203614Z-53a6` | off | pass |
+| treatment p4 | `sdd-turn-liveness-claude-auto-20261021T203614Z-631c` | off | pass |
 
 The launches, in order:
 
@@ -52,12 +61,17 @@ The launches, in order:
   Its closing line reads `launchers non-zero: 2`.
 - **p3**, with the sandbox disabled at 18:49:41Z (`logs-smoke/campaign-p3.out`).
   Its closing line reads `launchers non-zero: 4`.
+- **p4**, with the sandbox disabled at 20:35:28Z (`logs-smoke/campaign-p4.out`).
+  Its closing line reads `launchers non-zero: 6`.
 
 The non-zero launchers are the earlier rows. launch-all.sh starts every
 manifest row, and an earlier row's launcher refuses to reopen its existing
 log, as designed. Each campaign's closing line also reads `manifest rows
 without a DONE log: 0`. Every p2 and p3 log ends `DONE 0`, and the roots and
-Claude Code read the same after each run as before it.
+Claude Code read the same after each run as before it. The operator's Claude
+Code session restarted at about 21:47Z, while control p4 was in its
+post-checks; the detached campaign survived, and that run closed `DONE 0` at
+21:49:20Z.
 
 ## Durations (the plan's Assumption)
 
@@ -67,8 +81,12 @@ Claude Code read the same after each run as before it.
 | treatment p2 | 14:19:36 to 14:58:56, 39 min 20 s (2359760 ms) | about 16 min | 14:19:34 to 15:14:57, 55 min 23 s |
 | control p3 | 18:50:16 to 19:29:39, 39 min 23 s (2362621 ms) | about 16 min | 18:50:13 to 19:45:40, 55 min 27 s |
 | treatment p3 | 18:50:16 to 19:27:35, 37 min 19 s (2238831 ms) | about 16 min | 18:50:13 to 19:43:38, 53 min 25 s |
+| control p4 | 20:36:16 to 21:33:19, 57 min 2 s (3422306 ms) | about 16 min | 20:36:14 to 21:49:20, 73 min 6 s |
+| treatment p4 | 20:36:16 to 21:09:04, 32 min 47 s (1967501 ms) | about 16 min | 20:36:14 to 21:25:05, 48 min 51 s |
 
-One full SDD run fits well inside `quorum_max_time` 150m. The Assumption holds.
+One full SDD run fits well inside `quorum_max_time` 150m. The Assumption
+holds. The longest session is control p4 at 57 minutes, and the longest whole
+run is the same one at 73 minutes.
 
 ## Step 3 items, p2
 
@@ -305,6 +323,135 @@ provenance problems.
 | untracked / soak_tampered | [] / false | [] / false |
 | task_tools / codex_absent | true / true | true / true |
 | models | haiku-4-5-20251001, opus-5-5, sonnet-5-5 | haiku-4-5-20251001, opus-5-5, sonnet-5-5 |
+
+## The fix (plan Step 3c, deviation 9)
+
+p3 showed both arms backgrounding every dispatch. A spike traced it to Claude
+Code's fork mode, which is on by default in an interactive terminal (what
+quorum launches) and off in print and SDK sessions (what the field runs). In
+fork mode the Agent tool has no `run_in_background` parameter at all, so the
+flag the treatment's templates now carry was an ignored string.
+
+Harness commit `80b7bee74` adds `CLAUDE_CODE_FORK_SUBAGENT` to
+`CLAUDE_ENV_ALLOWLIST`, and the scenario's directive is now
+`# claude-env: CLAUDE_CODE_ENABLE_TODO_TOOLS=1, CLAUDE_CODE_FORK_SUBAGENT=0`.
+Both p4 `.claude-env` files carry the two export lines.
+
+## Step 3 items, p4
+
+Command: `python3 evidence/2026-10-19-sdd-turn-liveness/analyze.py <control p4> <treatment p4>`.
+It gives identical output on `results/` and on the archived copies.
+
+1. **Time and soak post-checks: pass.** The sessions took 57 min 2 s
+   (control) and 32 min 47 s (treatment), both inside 150 minutes. Both soak
+   post-checks and the soak-files-untouched check passed in both runs.
+2. **Provenance readouts: pass in both runs.** `cc` 2.1.302, `model`
+   claude-opus-5-5, `plugin_dir` equal to each root, `codex_absent` true,
+   `task_tools` true. `models` is `claude-haiku-4-5-20251001,
+   claude-opus-5-5, claude-sonnet-5-5` in both, inside the allowed set.
+   `evals_commit` is `d8ff8a8bb`, the manifest commit, whose harness paths
+   match the pin; `evals_clean` is true.
+3. **Ledger: pass.** `ledger_marks` is 1-6 in both runs and matches the
+   transcripts' successful ledger writes.
+   - Control wrote through Bash at 20:40:47, 20:42:26, 20:55:50, 20:57:29,
+     20:58:58 and 21:28:22.
+   - Treatment used Edits at 20:41:03, 20:42:25, 20:47:59, 20:49:29,
+     20:51:04 and 21:03:28. Two earlier refused Bash writes (20:40:49 and
+     20:40:55) are correctly not counted.
+   - `plan_complete` is true in both, and neither SDD cache holds a file.
+4. **STOP lists: pass.** Each result has one STOP line, and neither run has a
+   candidate (`candidates: []`, `unadjudicated: 0`).
+   - Control: `STOP: "You're on main. Should I do this work in an isolated
+     worktree on a new branch, or commit directly on main?" | question`.
+   - Treatment: `STOP: "You're on main. Where should the six tasks' commits
+     go?" | question`.
+   - Both were AskUserQuestion calls answered as tool results, so neither is
+     a turn end.
+5. **Main-session soak executions: found in both runs, and the treatment's
+   long run now shows a clean foreground watch.**
+   - Control short: one run at 20:51:39, `run_in_background: true`, 120000 ms
+     recorded, result at launch after 0.015 s.
+   - Control long: one run at 21:16:03, the same background form, not
+     watched. So control's `short_ok` and `long_ok` are both false.
+   - Treatment short: one run at 20:43:31 in the foreground, timeout
+     420000 ms, elapsed 240.2 s. `short_ok` is true.
+   - Treatment long: a tracked launch at 20:51:13 in the
+     `> out 2>&1; echo "exit=$?" > out.exit` form, background timeout
+     2160000 ms, watched by one foreground call of 600000 ms from 20:53:40,
+     which returned `exit=0`. Elapsed 723.9 s, `detached` false, and
+     `turn_end_during` **false**: the controller held its turn open for the
+     whole twelve-minute soak. `long_ok` is true.
+
+### What Step 3c asked for: the Agent tool and each dispatch
+
+Both p4 transcripts record the same Agent tool:
+
+- Input-schema properties: `description`, `prompt`, `subagent_type`,
+  `model`, `effort`, **`run_in_background`**, `isolation`. The parameter is
+  back; in p2 and p3 it was absent.
+- Tool description: "Subagents run in the background by default; you'll be
+  notified when one completes." It adds: "Pass `run_in_background: false`
+  only when your very next action depends on the result and nothing else
+  could usefully happen while it runs."
+- The parameter's own description: "Agents run in the background by default;
+  you will be notified when one completes. Set to false only when your very
+  next action depends on this agent's result ..."
+
+Per dispatch, both arms passed a **boolean**, never a string, and the harness
+honored it:
+
+| Arm | Dispatches | `run_in_background: false` | `true` | Foreground results | Async launches |
+|---|---|---|---|---|---|
+| control p4 | 13 | 8 | 5 | 8 | 5 |
+| treatment p4 | 13 | 13 | 0 | 13 | 0 |
+
+- Control's five background dispatches are Task 3's implementer and
+  reviewer, Task 6's implementer and reviewer, and the final review. The
+  other eight came back in the foreground.
+- Treatment passed `false` on 13 of 13 and every result came back in the
+  foreground. (A raw grep of that transcript counts 15 `false` values; two
+  are duplicate records of the same calls, and one separate `true` is the
+  long soak's Bash launch.)
+
+### Agent behavior, p4 (data; nothing changed for it)
+
+- **Treatment ended no turn at all while work ran:** `live_turn_ends` is 0,
+  against 13 in p2 and 10 in p3. `premature` is 0 and `censored_stops` 0.
+- **Control ended 8 turns with work live**, idling up to 990.9 s, then
+  628.4 s and 526.9 s. Those are its five background dispatches and its two
+  background soak runs.
+- **Both arms dispatched the final whole-branch review before marking the
+  last task complete, so `final_review` and `success` are false in both.**
+  - Treatment dispatched it at 20:52:54 and marked Task 6 at 21:03:28,
+    after the long soak returned.
+  - Control dispatched it at 21:16:54 and marked Task 6 at 21:28:22.
+  - analyze.py counts only a review dispatched at or after the last
+    completion mark, so it finds none, although both Gauntlet-Agents passed
+    their runs. This is the same ordering p3's treatment showed; it is
+    recorded as data, and nothing in analyze.py changed.
+- `untracked` is [] and `soak_tampered` false in both.
+- Both p4 controllers worked in a Claude Code worktree and left it behind at
+  `coding-agent-workdir/.claude/worktrees/ratelimit`. The archive keeps each
+  on disk but out of the commit, as in p3: the repository ignores `.claude/`,
+  and the worktree's `.git` file would commit as a gitlink.
+
+### analyze.py key fields, p4
+
+| Field | control p4 (53a6) | treatment p4 (631c) |
+|---|---|---|
+| dispatch_fg / bg / unclassified | 8 / 5 / 0 | **13 / 0 / 0** |
+| live_turn_ends | 8 (longest idle 990.9 s) | **0** |
+| candidates | none | none |
+| premature / unadjudicated / censored | 0 / 0 / 0 | 0 / 0 / 0 |
+| short_runs | 1: bg, 120000, 0.015 s | 1: fg, 420000, 240.235 s |
+| long_runs | 1: bg, 120000, watched false, exit_ok false, elapsed null, turn_end_during true | 1: tracked, 2160000, watched, exit_ok, 723.906 s, **turn_end_during false** |
+| short_ok / long_ok | false / false | **true / true** |
+| ledger_marks / plan_complete | [1..6] / true | [1..6] / true |
+| final_review / success | false / false | false / false |
+| untracked / soak_tampered | [] / false | [] / false |
+| task_tools / codex_absent | true / true | true / true |
+| models | claude-haiku-4-5-20251001, claude-opus-5-5, claude-sonnet-5-5 | same |
+| final / void | pass / null | pass / null |
 
 ## Other observations
 

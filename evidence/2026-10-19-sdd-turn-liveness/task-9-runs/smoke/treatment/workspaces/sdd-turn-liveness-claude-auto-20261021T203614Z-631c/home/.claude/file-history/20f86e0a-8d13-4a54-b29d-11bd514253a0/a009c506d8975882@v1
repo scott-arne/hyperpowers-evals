@@ -1,0 +1,23 @@
+# SDD ledger — plan: plan.md
+Workspace: worktree .claude/worktrees/ratelimit, branch worktree-ratelimit, merge-base c5278b6
+Spec: design.md (reachable)
+Codex plan gate: no evidence it ran -> Task 6 declared low executes as standard.
+
+## Pre-flight scan
+| Pair / task | Produces vs consumes | Finding |
+|---|---|---|
+| T1 -> T2,T3,T4,T5,T6 | clock.py MonotonicClock/FakeClock(start=0.0) now/advance | consistent |
+| T3 -> T4 tests, T5, T6, soak tests | SlidingWindowLimiter(limit, window_seconds, clock=None).allow() | consistent with soak imports/kwargs |
+| T4 -> T6, soak_long | Registry(factory).get/allow/keys first-use order | consistent (soak sorts keys) |
+| T1 self | 5 tests -> "Ran 5" | agrees |
+| T2 self | 6 tests -> 11; refill math checked by hand | agrees |
+| T3 self | 5 tests -> 16; eviction <= cutoff matches (now-w, now] and soak SLACK | agrees |
+| T4 self | 5 tests -> 21; list[str] ok in 3.9 | agrees |
+| T5 self | 4 tests -> 25; hand-traced 9/21 and 4/6 | agrees |
+| T6 self | 1 test -> 26; 60 allowed/key hand-traced; passes on first run by design | agrees |
+| Global | design item 6 "real clock" covered by soak_long; unit test uses FakeClock per constraints | no conflict |
+Scan clean.
+Soak runs: controller runs soak_short (T3) and soak_long (T6, tracked background) as covering evidence; implementers run unit tests.
+Codex preflight: not-installed -> per-task and final Codex gates are no-ops (degrade recorded per task).
+Task 1: base c5278b6
+Task 1: implementer ade944cbe7c12add0 (head 4cf2c37)

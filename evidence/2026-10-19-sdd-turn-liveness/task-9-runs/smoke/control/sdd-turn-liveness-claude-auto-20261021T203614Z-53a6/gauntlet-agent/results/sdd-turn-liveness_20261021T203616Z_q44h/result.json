@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261021T203616Z_q44h",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development first and finished all six tasks: an implementer and a reviewer subagent for each, plus a final whole-branch review. It then fast-forward merged to main after I answered \"merge back to main locally\". Neither soak test file was touched. I never had to send \"continue\". The agent asked me two questions: the worktree question at the start and the finish question once all tasks were done. Whenever it waited on background soak runs, it picked up again on its own when they finished.",
+  "reasoning": "All three functional criteria are backed by on-disk git state and the session log. The stop list is complete: the only times the agent waited for my input were the worktree question before any task began and the finish question after all tasks were done. I never had to send \"continue\".",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Several times the main agent ended its turn while background subagents or shells ran the soak tests. The prompt was idle, with only a grey 'Waiting for 1 background agent to finish' or '1 shell still running' footer showing. It resumed on its own through task-notifications, but a human watching might think it had stalled, and the turn did not stay continuously alive."
+    },
+    {
+      "kind": "bug",
+      "description": "Five of the six commits now on main have the 'Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>' trailer stuck onto the subject line (e.g. '9c494ea test: add registry and sliding window integration test Co-Authored-By: ...'). The implementer subagents format commit messages wrongly. The agent noticed this itself and flagged it."
+    },
+    {
+      "kind": "ux",
+      "description": "The finish prompt mixed the merge/PR/keep question with a second question about rewriting the commit messages, so a single scripted answer did not cover both. After the merge, the agent left the worktree at .claude/worktrees/ratelimit and the branch worktree-ratelimit in place, and .claude/ shows as untracked in main."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Startup showed several dialogs in a row (theme, security notes, trust folder with 'No, exit' as the default, 'Newer Opus model available', bypass-permissions warning with 'No, exit' as the default). In the trust and bypass dialogs, pressing Enter on the default exits."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent said Codex review gates were skipped because the Codex plugin isn't installed and that each skip was recorded in the ungated-review ledger."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation work",
+      "verdict": "pass",
+      "evidence": "Session log tool calls in order: 'Skill hyperpowers:subagent-driven-development', then 'Skill hyperpowers:using-git-worktrees', AskUserQuestion, EnterWorktree, then 'Agent Implement Task 1: package and clocks'. The screen also showed '⏺ Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "All plan tasks completed, final whole-branch review dispatched, work on the main checkout",
+      "verdict": "pass",
+      "evidence": "The log has 'Agent Implement Task N' and 'Agent Review Task N' for N=1..6, then 'Agent Final whole-branch code review' and 'Skill hyperpowers:finishing-a-development-branch'. In the main workdir, `git branch --show-current` gives 'main' and `git log --oneline` shows 6 feature commits (3e0c77c..9c494ea) on top of c5278b6. Agent on screen: 'I merged worktree-ratelimit into main locally. It was a fast-forward to 9c494ea'. Six '### Task' headings in plan.md match the six commits."
+    },
+    {
+      "criterion": "tests/test_soak_short.py and tests/test_soak_long.py not modified",
+      "verdict": "pass",
+      "evidence": "`git log --oneline -- tests/test_soak_short.py tests/test_soak_long.py` returns only 'c5278b6 initial: design, plan and soak tests'. `git diff c5278b6 HEAD --stat` lists 12 files, none of them soak tests. `git status` shows only untracked .claude/ and __pycache__/."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: 'You're on main. Should I do this work in an isolated worktree on a new branch, or commit directly on main?' | question\n(This was the AskUserQuestion before any task started; I answered 'use whatever the skill recommends'. I never had to send 'continue'. The agent ended its turn several times while background soak work ran: 'Task 3's implementer is running in the background, including the 4-minute soak. I'll pick it up when it reports.', 'Ledger updated. The soak re-run is still going...', 'Task 6's implementer is running in the background...', 'The last thing outstanding is my Task 6 soak re-run.', 'My own soak re-run is still going.' Each time a 'Waiting for 1 background agent to finish' or 'N shell(s) still running' indicator was on screen, and the agent resumed by itself via <task-notification> messages at 20:51, 20:52, 20:55, 21:15, 21:16, 21:17, 21:20 and 21:28 (log timestamps). The only other user message in the log is my 'merge back to main locally' answer at 21:31, sent after all tasks and the final review were done.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi"
+    ]
+  },
+  "duration_ms": 3422306,
+  "usage": {
+    "inputTokens": 150,
+    "outputTokens": 9701,
+    "cacheCreationInputTokens": 64228,
+    "cacheReadInputTokens": 2124360,
+    "turns": 68
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
