@@ -397,8 +397,21 @@ test('parseClaudeEnvDirective reads an allowlisted KEY=VALUE pair', () => {
   });
 });
 
-test('the claude-env allowlist holds exactly the task-tools opt-in', () => {
-  expect([...CLAUDE_ENV_ALLOWLIST]).toEqual(['CLAUDE_CODE_ENABLE_TODO_TOOLS']);
+test('the claude-env allowlist holds exactly the task-tools and fork-mode keys', () => {
+  expect([...CLAUDE_ENV_ALLOWLIST]).toEqual([
+    'CLAUDE_CODE_ENABLE_TODO_TOOLS',
+    'CLAUDE_CODE_FORK_SUBAGENT',
+  ]);
+});
+
+test('parseClaudeEnvDirective reads the task-tools and fork-mode keys together', () => {
+  const checksSh = checksShWith(
+    '# claude-env: CLAUDE_CODE_ENABLE_TODO_TOOLS=1, CLAUDE_CODE_FORK_SUBAGENT=0\npre() { :; }\n',
+  );
+  expect(parseClaudeEnvDirective(checksSh)).toEqual({
+    CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+    CLAUDE_CODE_FORK_SUBAGENT: '0',
+  });
 });
 
 test('parseClaudeEnvDirective splits comma-separated pairs', () => {

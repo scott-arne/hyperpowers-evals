@@ -223,10 +223,14 @@ const CLAUDE_ENV_RE = /^\s*#\s*claude-env:\s*(.+?)\s*$/;
  * The Claude Code variables a scenario may set for the agent under test. The
  * launcher drops every inherited CLAUDE* variable so the operator's shell cannot
  * leak opt-ins into a campaign; this list is the only way back in, so it stays
- * as narrow as the scenarios that need it.
+ * as narrow as the scenarios that need it. CLAUDE_CODE_FORK_SUBAGENT is here
+ * because the field's SDK sessions run without fork mode, while an interactive
+ * session (quorum's) runs with it and dispatches every subagent in the
+ * background.
  */
 export const CLAUDE_ENV_ALLOWLIST: ReadonlySet<string> = new Set([
   'CLAUDE_CODE_ENABLE_TODO_TOOLS',
+  'CLAUDE_CODE_FORK_SUBAGENT',
 ]);
 
 /**
