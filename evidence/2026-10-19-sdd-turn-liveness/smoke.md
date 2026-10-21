@@ -291,9 +291,11 @@ provenance problems.
   19:13:43.
   - The controller marked Task 6 complete at 19:23:11, after the soak
     passed, in the same command that deleted the SDD workspace.
-  - analyze.py takes the final review to be one dispatched once the last
-    task is marked complete. So `final_review` is false, and therefore
-    `success` is false, although the Gauntlet-Agent passed the run.
+  - As first measured, `final_review` was false and so `success` was false,
+    although the Gauntlet-Agent passed the run: analyze.py took the final
+    review to be one dispatched at or after the last completion mark. The
+    refined rule (Step 3d) reads both as **true**; see "The refined
+    final-review rule" below.
 - **Live-work turn ends:** control 14 (longest idle 713.0 s, on the long
   soak), treatment 10 (longest 284.1 s).
 - In both runs `premature` is 0, `censored_stops` 0, `untracked` [] and
@@ -319,7 +321,7 @@ provenance problems.
 | long_runs | 1: bg, 120000 ms, not watched, elapsed null | 1: tracked, 2160000 ms, watched, exit=0, 725.0 s, turn end during |
 | short_ok / long_ok | false / false | true / false |
 | ledger_marks / plan_complete | 1-6 / true | 1-6 / true |
-| final_review / success | true / true | false / false |
+| final_review / success | true / true | false / false, now **true / true** |
 | untracked / soak_tampered | [] / false | [] / false |
 | task_tools / codex_absent | true / true | true / true |
 | models | haiku-4-5-20251001, opus-5-5, sonnet-5-5 | haiku-4-5-20251001, opus-5-5, sonnet-5-5 |
@@ -421,14 +423,14 @@ honored it:
   628.4 s and 526.9 s. Those are its five background dispatches and its two
   background soak runs.
 - **Both arms dispatched the final whole-branch review before marking the
-  last task complete, so `final_review` and `success` are false in both.**
+  last task complete.**
   - Treatment dispatched it at 20:52:54 and marked Task 6 at 21:03:28,
     after the long soak returned.
   - Control dispatched it at 21:16:54 and marked Task 6 at 21:28:22.
-  - analyze.py counts only a review dispatched at or after the last
-    completion mark, so it finds none, although both Gauntlet-Agents passed
-    their runs. This is the same ordering p3's treatment showed; it is
-    recorded as data, and nothing in analyze.py changed.
+  - As first measured, that made `final_review` and `success` false in both,
+    although both Gauntlet-Agents passed. The refined rule (Step 3d) reads
+    all four counted runs as **true**; see "The refined final-review rule"
+    below.
 - `untracked` is [] and `soak_tampered` false in both.
 - Both p4 controllers worked in a Claude Code worktree and left it behind at
   `coding-agent-workdir/.claude/worktrees/ratelimit`. The archive keeps each
@@ -447,11 +449,44 @@ honored it:
 | long_runs | 1: bg, 120000, watched false, exit_ok false, elapsed null, turn_end_during true | 1: tracked, 2160000, watched, exit_ok, 723.906 s, **turn_end_during false** |
 | short_ok / long_ok | false / false | **true / true** |
 | ledger_marks / plan_complete | [1..6] / true | [1..6] / true |
-| final_review / success | false / false | false / false |
+| final_review / success | false / false, now **true / true** | false / false, now **true / true** |
 | untracked / soak_tampered | [] / false | [] / false |
 | task_tools / codex_absent | true / true | true / true |
 | models | claude-haiku-4-5-20251001, claude-opus-5-5, claude-sonnet-5-5 | same |
 | final / void | pass / null | pass / null |
+
+## The refined final-review rule (plan Step 3d)
+
+In three of the four counted runs (treatment p3, and both p4 arms) the
+controller received the Task 6 review, dispatched the final whole-branch
+review, and wrote the `Task 6: complete` ledger line only after that review
+returned, 10 to 11 minutes later. Control p3 wrote its mark first. The
+analyzer's position rule — a review at or after the last completion mark —
+therefore read `final_review` false for the three, which would have made R
+measure ledger bookkeeping order rather than whether a final review ran.
+
+Approved by the human partner on 2026-10-21 and applied in `analyze.py`
+(commit `2bdb93a10`): `final_review` is now also true when the plan is
+complete and at least two clean review-role dispatches follow the last
+implementer dispatch — the task's own review, then the final one. Re-reviews
+and fix rounds name a fix, so they never make up that pair. The original
+at-or-after-the-mark condition stays. `test_analyze.py` gained the late-mark
+case and a no-final-review case; the four suites pass, 79 tests.
+
+Re-running the analyzer over the archived runs, with no new quorum run:
+
+| Run | Arm, row | Before | After |
+|---|---|---|---|
+| d4c8 | control p3 | true / true | true / true |
+| 4471 | treatment p3 | false / false | **true / true** |
+| 53a6 | control p4 | false / false | **true / true** |
+| 631c | treatment p4 | false / false | **true / true** |
+
+(`final_review` / `success` in each cell.) The two uncounted p2 runs were
+already true and are unchanged. Nothing else moved: F's call-shape measures
+are not part of `success`, so control p4's `short_ok` and `long_ok` stay
+false, and every dispatch, turn-end and provenance reading is as recorded
+above.
 
 ## Other observations
 
