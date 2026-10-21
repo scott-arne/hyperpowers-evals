@@ -43,7 +43,13 @@ archive() {
   cp -Rp "$wsrc" "$wdst.partial"
   # strip-runs finds a run's home/ at <root>/workspaces/<name>/home, so it can
   # only strip once both copies exist; the .partial names are the run names here.
+  # strip-runs skips a record touched within the last minute and still exits 0,
+  # and cp -p keeps the run's timestamps; git keeps none, so backdating is free.
+  touch -t 200001010000 "$dst.partial" "$dst.partial/verdict.json"
   "$EV/scripts/strip-runs" --results-root "$out" --run "$id.partial" --min-age-minutes 0
+  for left in .claude/.claude-env .claude/sessions; do
+    [ ! -e "$wdst.partial/home/$left" ] || { echo "strip-runs left $wdst.partial/home/$left" >&2; exit 1; }
+  done
   clean "$dst.partial"
   if [ -d "$wdst.partial/coding-agent-workdir/.git" ]; then
     mv "$wdst.partial/coding-agent-workdir/.git" "$wdst.partial/coding-agent-workdir/git-dir"

@@ -33,7 +33,7 @@ MANIFEST="$E/$(basename "$manifest")"; export MANIFEST
 logs="${LOGS:-$E/logs}"
 [ -f "$manifest" ] || { echo "no manifest at $manifest" >&2; exit 1; }
 [ -x "$launcher" ] || [ -f "$launcher" ] || { echo "no launcher at $launcher" >&2; exit 1; }
-arms=(); scens=(); reps=(); procs=(); budgets=(); keys=" "; bad=0; tab=$'\t'
+arms=(); scens=(); reps=(); procs=(); budgets=(); keys=" "; pins=" "; bad=0; tab=$'\t'
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in ''|'#'*) continue ;; esac
   case "$line" in "$tab"*|*"$tab"|*"$tab$tab"*) echo "malformed row '$line' (empty field)" >&2; bad=1; continue ;; esac
@@ -41,8 +41,18 @@ while IFS= read -r line || [ -n "$line" ]; do
   IFS=$'\t' read -r -a f <<< "$line"
   [ "${#f[@]}" -eq $((ntab + 1)) ] || { echo "malformed row '$line'" >&2; bad=1; continue; }
   case "${#f[@]}" in
-    2) case "${f[0]}" in harness|control|treatment|control_root|treatment_root|model|cc|cc_path|provider|subagent_models|codex|task_tools) continue ;; esac
-       echo "malformed row '$line'" >&2; bad=1; continue ;;
+    2) case "${f[0]}" in
+         harness|control|treatment|control_root|treatment_root|model|cc|cc_path|provider|subagent_models|codex|task_tools) ;;
+         *) echo "malformed row '$line'" >&2; bad=1; continue ;;
+       esac
+       case "$pins" in *" ${f[0]} "*) echo "duplicate pin ${f[0]}" >&2; bad=1; continue ;; esac
+       pins="$pins${f[0]} "
+       case "${f[1]}" in *'<'*) echo "pin ${f[0]} is a placeholder: ${f[1]}" >&2; bad=1 ;; esac
+       case "${f[0]}" in
+         codex) [ "${f[1]}" = absent ] || { echo "pin codex must be absent, not '${f[1]}'" >&2; bad=1; } ;;
+         task_tools) [ "${f[1]}" = on ] || { echo "pin task_tools must be on, not '${f[1]}'" >&2; bad=1; } ;;
+       esac
+       continue ;;
     5) ;;
     *) echo "malformed row '$line'" >&2; bad=1; continue ;;
   esac
@@ -56,6 +66,9 @@ while IFS= read -r line || [ -n "$line" ]; do
   keys="$keys$arm-$scen-$proc "
   arms+=("$arm"); scens+=("$scen"); reps+=("$rep"); procs+=("$proc"); budgets+=("$budget")
 done < "$manifest"
+for k in harness control treatment control_root treatment_root model cc cc_path provider subagent_models codex task_tools; do
+  case "$pins" in *" $k "*) ;; *) echo "missing pin $k" >&2; bad=1 ;; esac
+done
 [ "$bad" -eq 0 ] || { echo "manifest has malformed rows; nothing was launched" >&2; exit 1; }
 [ "${#arms[@]}" -gt 0 ] || { echo "manifest has no launch rows" >&2; exit 1; }
 tmp="${TMPDIR:-/tmp}"

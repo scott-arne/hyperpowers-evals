@@ -23,7 +23,8 @@ export LAUNCHER="$stub"
 t=$'\t'
 pins() {
   for k in harness control treatment control_root treatment_root model cc cc_path provider subagent_models codex task_tools; do
-    printf '%s\tvalue\n' "$k"
+    case "$k" in codex) v=absent ;; task_tools) v=on ;; *) v=value ;; esac
+    printf '%s\t%s\n' "$k" "$v"
   done
 }
 manifest() { pins > "$tmp/manifest.tsv"; printf '%b' "$1" >> "$tmp/manifest.tsv"; }
@@ -44,6 +45,24 @@ bash "$script" "$tmp/manifest.tsv" 2>/dev/null && fail "other scenario launched"
 # 4. an unknown pin key is malformed
 reset; { pins; printf 'bogus\tx\n'; printf 'control\tsdd-turn-liveness\t1\tp1\tdefault\n'; } > "$tmp/manifest.tsv"
 bash "$script" "$tmp/manifest.tsv" 2>/dev/null && fail "unknown pin key launched"
+row="control${t}sdd-turn-liveness${t}1${t}p1${t}default\n"
+# 4b. a missing pin, a duplicated pin, a placeholder and a wrong codex pin each stop everything
+reset; { pins | grep -v '^cc_path'; printf '%b' "$row"; } > "$tmp/manifest.tsv"
+bash "$script" "$tmp/manifest.tsv" 2> "$tmp/err" && fail "missing pin launched"
+grep -qF "missing pin cc_path" "$tmp/err" || fail "missing pin message: $(cat "$tmp/err")"
+[ ! -e "$LOGS" ] || fail "missing pin still launched something"
+reset; { pins; printf 'model\tvalue\n'; printf '%b' "$row"; } > "$tmp/manifest.tsv"
+bash "$script" "$tmp/manifest.tsv" 2> "$tmp/err" && fail "duplicate pin launched"
+grep -qF "duplicate pin model" "$tmp/err" || fail "duplicate pin message: $(cat "$tmp/err")"
+[ ! -e "$LOGS" ] || fail "duplicate pin still launched something"
+reset; { pins | sed 's/^cc\tvalue$/cc\t<fill me>/'; printf '%b' "$row"; } > "$tmp/manifest.tsv"
+bash "$script" "$tmp/manifest.tsv" 2> "$tmp/err" && fail "placeholder pin launched"
+grep -qF "pin cc is a placeholder" "$tmp/err" || fail "placeholder message: $(cat "$tmp/err")"
+[ ! -e "$LOGS" ] || fail "placeholder pin still launched something"
+reset; { pins | sed 's/^codex\tabsent$/codex\tpresent/'; printf '%b' "$row"; } > "$tmp/manifest.tsv"
+bash "$script" "$tmp/manifest.tsv" 2> "$tmp/err" && fail "codex pin launched"
+grep -qF "pin codex must be absent" "$tmp/err" || fail "codex message: $(cat "$tmp/err")"
+[ ! -e "$LOGS" ] || fail "codex pin still launched something"
 # 5. a non-zero child fails the closing status
 reset; manifest "control${t}sdd-turn-liveness${t}1${t}p1${t}default\ntreatment${t}sdd-turn-liveness${t}1${t}p2${t}default\n"
 out="$tmp/out5"
