@@ -44,6 +44,18 @@ test('buildRunHome names the record directory as runDir', () => {
   );
   expect(home.runDir).toBe('/out/run-1');
   expect(home.workdir).toBe('/ws/coding-agent-workdir');
+  expect('claudeEnv' in home).toBe(false);
+});
+
+test("buildRunHome carries a scenario's claude-env map", () => {
+  const home = buildRunHome(
+    '/ws/home/.claude',
+    '/ws/coding-agent-workdir',
+    '/out/run-1',
+    undefined,
+    { CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
+  );
+  expect(home.claudeEnv).toEqual({ CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' });
 });
 
 test('the dashboard scan ignores the workspaces directory', () => {

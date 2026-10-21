@@ -3,7 +3,12 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { parseCodingAgentsDirective, runPhase } from '../src/checks/index.ts';
+import {
+  CLAUDE_ENV_ALLOWLIST,
+  parseClaudeEnvDirective,
+  parseCodingAgentsDirective,
+  runPhase,
+} from '../src/checks/index.ts';
 
 const REPO = resolve(import.meta.dir, '..');
 
@@ -360,6 +365,89 @@ test('parseCodingAgentsDirective honors a directive on the 21st physical line', 
     `${filler}\n# coding-agents: claude\npre() { :; }\npost() { :; }\n`,
   );
   expect(parseCodingAgentsDirective(checksSh)).toEqual(['claude']);
+});
+
+// The `# claude-env:` directive is a scenario's scoped opt-in to Claude Code
+// environment the launcher otherwise drops. It follows the `# coding-agents:`
+// matching rules (first 21 lines, leading whitespace allowed, a bare directive
+// does not match), and only allowlisted keys pass, so a scenario cannot inject
+// arbitrary environment into the agent under test.
+test('parseClaudeEnvDirective returns undefined when no directive is present', () => {
+  expect(
+    parseClaudeEnvDirective(checksShWith('pre() { :; }\npost() { :; }\n')),
+  ).toBeUndefined();
+  expect(
+    parseClaudeEnvDirective(
+      join(mkdtempSync(join(tmpdir(), 'scn-')), 'checks.sh'),
+    ),
+  ).toBeUndefined();
+  expect(
+    parseClaudeEnvDirective(
+      checksShWith('# claude-env:\npre() { :; }\npost() { :; }\n'),
+    ),
+  ).toBeUndefined();
+});
+
+test('parseClaudeEnvDirective reads an allowlisted KEY=VALUE pair', () => {
+  const checksSh = checksShWith(
+    '# coding-agents: claude\n  # claude-env: CLAUDE_CODE_ENABLE_TODO_TOOLS=1\npre() { :; }\npost() { :; }\n',
+  );
+  expect(parseClaudeEnvDirective(checksSh)).toEqual({
+    CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+  });
+});
+
+test('the claude-env allowlist holds exactly the task-tools opt-in', () => {
+  expect([...CLAUDE_ENV_ALLOWLIST]).toEqual(['CLAUDE_CODE_ENABLE_TODO_TOOLS']);
+});
+
+test('parseClaudeEnvDirective splits comma-separated pairs', () => {
+  const checksSh = checksShWith(
+    '# claude-env: FIRST_KEY=1 , SECOND_KEY=a=b\npre() { :; }\npost() { :; }\n',
+  );
+  expect(
+    parseClaudeEnvDirective(checksSh, new Set(['FIRST_KEY', 'SECOND_KEY'])),
+  ).toEqual({ FIRST_KEY: '1', SECOND_KEY: 'a=b' });
+});
+
+test('parseClaudeEnvDirective throws on a key outside the allowlist', () => {
+  for (const [directive, key] of [
+    ['# claude-env: ANTHROPIC_API_KEY=sk-test', 'ANTHROPIC_API_KEY'],
+    [
+      '# claude-env: CLAUDE_CODE_ENABLE_TODO_TOOLS=1, ANTHROPIC_MODEL=x',
+      'ANTHROPIC_MODEL',
+    ],
+  ] as const) {
+    const checksSh = checksShWith(`${directive}\npre() { :; }\n`);
+    expect(() => parseClaudeEnvDirective(checksSh)).toThrow(
+      new RegExp(`${key} is not on the claude-env allowlist`),
+    );
+  }
+});
+
+test('parseClaudeEnvDirective throws on a pair without "=" or with an empty value', () => {
+  for (const directive of [
+    '# claude-env: CLAUDE_CODE_ENABLE_TODO_TOOLS',
+    '# claude-env: CLAUDE_CODE_ENABLE_TODO_TOOLS=',
+    '# claude-env: CLAUDE_CODE_ENABLE_TODO_TOOLS=1,',
+  ]) {
+    const checksSh = checksShWith(`${directive}\npre() { :; }\n`);
+    expect(() => parseClaudeEnvDirective(checksSh)).toThrow(/claude-env/);
+  }
+});
+
+test('parseClaudeEnvDirective reads the first 21 lines only', () => {
+  const filler = Array.from({ length: 20 }, () => '#').join('\n');
+  const line21 = checksShWith(
+    `${filler}\n# claude-env: CLAUDE_CODE_ENABLE_TODO_TOOLS=1\npre() { :; }\n`,
+  );
+  expect(parseClaudeEnvDirective(line21)).toEqual({
+    CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+  });
+  const line22 = checksShWith(
+    `${filler}\n#\n# claude-env: CLAUDE_CODE_ENABLE_TODO_TOOLS=1\npre() { :; }\n`,
+  );
+  expect(parseClaudeEnvDirective(line22)).toBeUndefined();
 });
 
 // Negative-assertion empty-capture guard (oracle 0f6af56, in the

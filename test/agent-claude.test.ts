@@ -889,6 +889,53 @@ test('provision forwards gateway base URLs that are set, in every mode', () => {
   }
 });
 
+// A scenario's `# claude-env:` opt-in reaches provisioning as RunHome.claudeEnv.
+// The launcher drops every inherited CLAUDE* var, so the env-file is the only
+// way the opt-in reaches the agent: one export line per entry, after the shared
+// lines, and nothing at all without the map.
+test('provision writes the scenario claude-env entries after the shared lines, in the vertex and api-key modes', () => {
+  for (const [config, vars] of [
+    [vertexConfig(), VERTEX_ENV],
+    [claudeConfig(), { ...PROVIDER_ENV_CLEARED, ANTHROPIC_API_KEY: API_KEY }],
+  ] as const) {
+    const without = makeTempHome();
+    try {
+      withEnv(vars, () => {
+        resolveAgent(config).provision(without.home, undefined as never);
+        const body = readFileSync(
+          join(without.home.configDir, '.claude-env'),
+          'utf8',
+        );
+        expect(body).not.toContain('CLAUDE_CODE_ENABLE_TODO_TOOLS');
+      });
+    } finally {
+      without.cleanup();
+    }
+    const opted = makeTempHome({
+      claudeEnv: { CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' },
+    });
+    try {
+      withEnv({ ...vars, ANTHROPIC_DEFAULT_HAIKU_MODEL: 'host-haiku' }, () => {
+        resolveAgent(config).provision(opted.home, undefined as never);
+        const lines = readFileSync(
+          join(opted.home.configDir, '.claude-env'),
+          'utf8',
+        )
+          .trimEnd()
+          .split('\n');
+        expect(lines.at(-1)).toBe("export CLAUDE_CODE_ENABLE_TODO_TOOLS='1'");
+        const shared = lines.indexOf(
+          "export ANTHROPIC_DEFAULT_HAIKU_MODEL='host-haiku'",
+        );
+        expect(shared).toBeGreaterThanOrEqual(0);
+        expect(shared).toBeLessThan(lines.length - 1);
+      });
+    } finally {
+      opted.cleanup();
+    }
+  }
+});
+
 // Vertex provisioning fails at setup when a required provider var is unset,
 // rather than writing a half-configured auth file.
 test('provision (vertex) throws when CLOUD_ML_REGION is unset', () => {

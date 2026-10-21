@@ -16,6 +16,9 @@
 # post-checks have no time limit (src/check/fs-verbs.ts spawns command-succeeds
 # without one).
 # coding-agents: claude, claude-auto, claude-vertex, claude-bedrock
+# claude-env: CLAUDE_CODE_ENABLE_TODO_TOOLS=1
+# The task tools are on to match the field sessions (the campaign pin's
+# task_tools on); the launcher drops the operator's own opt-in.
 
 pre() {
     git-repo

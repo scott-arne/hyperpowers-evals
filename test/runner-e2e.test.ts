@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { runScenario } from '../src/runner/index.ts';
 
 // The mock-gauntlet dir holds the executable `gauntlet` shim that execs
@@ -22,7 +22,7 @@ const REAL_CODING_AGENTS = resolve(import.meta.dir, '..', 'coding-agents');
 // executable no-op setup.sh, and a checks.sh whose pre/post phases assert
 // nothing (no trace primitives), so the verdict is decided by the gauntlet
 // fixture's status alone.
-function makeScenario(): string {
+function makeScenario(checksSh = 'pre() { :; }\npost() { :; }\n'): string {
   const dir = mkdtempSync(join(tmpdir(), 'scn-'));
   writeFileSync(
     join(dir, 'story.md'),
@@ -30,7 +30,7 @@ function makeScenario(): string {
   );
   writeFileSync(join(dir, 'setup.sh'), '#!/usr/bin/env bash\n:\n');
   chmodSync(join(dir, 'setup.sh'), 0o755);
-  writeFileSync(join(dir, 'checks.sh'), 'pre() { :; }\npost() { :; }\n');
+  writeFileSync(join(dir, 'checks.sh'), checksSh);
   return dir;
 }
 
@@ -42,8 +42,9 @@ function makeScenario(): string {
 // substitution reads it.
 async function runWithFixture(
   fixture: string,
+  checksSh?: string,
 ): Promise<Awaited<ReturnType<typeof runScenario>>> {
-  const scenarioDir = makeScenario();
+  const scenarioDir = makeScenario(checksSh);
   const outRoot = mkdtempSync(join(tmpdir(), 'out-'));
 
   // process.env is an index signature, so noPropertyAccessFromIndexSignature
@@ -115,4 +116,45 @@ test('mock-gauntlet drives a fail fixture to a fail verdict', async () => {
   // economics is tolerated as partial/null when usage is absent (no assertion
   // on its contents — the e2e is a genuine obol round-trip, not a fixture).
   expect(verdict.error).toBe(null);
+});
+
+// The run's .claude-env, in the workspace beside the record.
+function claudeEnvOf(runDir: string): string {
+  return readFileSync(
+    join(
+      dirname(runDir),
+      'workspaces',
+      basename(runDir),
+      'home',
+      '.claude',
+      '.claude-env',
+    ),
+    'utf8',
+  );
+}
+
+test("a scenario's claude-env directive reaches the agent's env-file, and only with the directive", async () => {
+  const opted = await runWithFixture(
+    'pass',
+    '# claude-env: CLAUDE_CODE_ENABLE_TODO_TOOLS=1\npre() { :; }\npost() { :; }\n',
+  );
+  expect(opted.verdict.final).toBe('pass');
+  expect(claudeEnvOf(opted.runDir)).toContain(
+    "export CLAUDE_CODE_ENABLE_TODO_TOOLS='1'",
+  );
+  const plain = await runWithFixture('pass');
+  expect(claudeEnvOf(plain.runDir)).not.toContain(
+    'CLAUDE_CODE_ENABLE_TODO_TOOLS',
+  );
+});
+
+test('a claude-env directive naming a key off the allowlist is a setup indeterminate', async () => {
+  const { verdict } = await runWithFixture(
+    'pass',
+    '# claude-env: ANTHROPIC_MODEL=other\npre() { :; }\npost() { :; }\n',
+  );
+  expect(verdict.final).toBe('indeterminate');
+  expect(verdict.gauntlet).toBe(null);
+  expect(verdict.error?.stage).toBe('setup');
+  expect(verdict.error?.message).toContain('ANTHROPIC_MODEL');
 });

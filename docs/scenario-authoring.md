@@ -342,6 +342,12 @@ of launching from an accidental directory. The sentinel is harness plumbing:
   directive (`# coding-agents: ,`) means **skip all agents**; a true absence means
   un-gated. (This directive lives in `checks.sh`, not `setup.sh`, but it governs
   which agents the scenario runs against.)
+- **`# claude-env: KEY=VALUE[, …]`**, in the same first 21 lines, gives a
+  Claude-family agent environment the launcher otherwise drops
+  (`parseClaudeEnvDirective`, `src/checks/index.ts`). Only keys on
+  `CLAUDE_ENV_ALLOWLIST` pass, currently `CLAUDE_CODE_ENABLE_TODO_TOOLS`; any
+  other key, a pair without `=`, or an empty value fails the run at setup.
+  Provisioning writes each entry to the run's `.claude-env`.
 - **`requires-tool <name…>`** in `pre()` guards local toolchain dependencies, for
   example `requires-tool go`. A missing tool fails the pre-check, which the
   composer maps to **`indeterminate`** (env-missing), not `fail`; a machine
