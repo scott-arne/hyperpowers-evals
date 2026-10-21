@@ -261,17 +261,25 @@ class Measure(unittest.TestCase):
         self.assertEqual(m["plan_at"], liveness.parse_ts(at(1850)).isoformat())
         self.assertTrue(m["final_review"])
         self.assertTrue(m["success"])
-        # A task review followed by a re-review, with no final review, is not a final review.
+        # Two task-scoped reviews with no final review are not a final review:
+        # a task review then a re-review described without the word fix, and
+        # a task review dispatched twice.
         no_final = drop_call(late, "a2")
         for rec in no_final:
             for use in liveness.tool_uses(rec):
                 if use.get("id") == "r6":
-                    use["input"]["description"] = "Re-review Task 6 fix round 1"
+                    use["input"]["description"] = "Re-review Task 6 (quality)"
         no_final[-4:-4] = [
             assistant(1300, tools=[("r5", "Agent", {"description": "Review Task 6 (spec + quality)", "run_in_background": False})]),
             result(1305, "r5", "Needs fixes"),
         ]
         self.assertFalse(self.run_of("f4", no_final)["final_review"])
+        repeated = drop_call(late, "a2")
+        repeated[-4:-4] = [
+            assistant(1300, tools=[("r5", "Agent", {"description": "Review Task 6 (spec + quality)", "run_in_background": False})]),
+            result(1305, "r5", "Approved"),
+        ]
+        self.assertFalse(self.run_of("f5", repeated)["final_review"])
 
     def test_long_job_needs_a_foreground_watch_that_saw_exit_zero(self) -> None:
         self.assertTrue(self.run_of("l1", long_job())["long_ok"])

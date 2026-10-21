@@ -79,6 +79,7 @@ SDD_ROLE = re.compile(r"implement|review|fix|takeover", re.IGNORECASE)
 FIX = re.compile(r"\bfix", re.IGNORECASE)
 REVIEW = re.compile(r"review", re.IGNORECASE)
 IMPLEMENT = re.compile(r"implement|takeover", re.IGNORECASE)
+TASK_REF = re.compile(r"\bTask\s*#?\d+", re.IGNORECASE)
 LEDGER_DIR = "hyperpowers/sdd/"
 ASSIGN = re.compile(r"(?:^|[\s;&|(])(\w+)=(?:\"([^\"]*)\"|'([^']*)'|([^\s;&|<>()'\"]*))")
 VAR_REF = re.compile(r"\$\{(\w+)\}|\$(\w+)")
@@ -603,7 +604,7 @@ def _transcript_measures(
     out["ledger_marks"] = sorted(marked)
     complete = set(range(1, LAST_TASK + 1)) <= (file_tasks | marked)
     out["plan_complete"] = complete
-    review_dispatches: list[datetime] = []
+    reviews: list[tuple[datetime, str]] = []
     last_implementer: datetime | None = None
     for call in calls:
         if call.name not in ("Agent", "Task"):
@@ -624,19 +625,20 @@ def _transcript_measures(
         if IMPLEMENT.search(desc) and not REVIEW.search(desc):
             last_implementer = call.at
         if call.result is not None and not call.error and REVIEW.search(desc) and not FIX.search(desc):
-            review_dispatches.append(call.at)
+            reviews.append((call.at, desc))
     plan_at = written_at or (last_write if complete else None)
     out["plan_at"] = iso(plan_at) if plan_at else None
     # The final review is a review dispatched once the last task is marked
     # complete, or, when the controller writes that mark only after the final
     # review returns (three of the four counted smoke runs), the last of at
-    # least two review dispatches after the last implementer dispatch: the
-    # task's review and then the final one. Re-reviews and fix rounds name a
-    # fix, so they never make up the pair.
-    after_last = [t for t in review_dispatches if last_implementer is not None and t > last_implementer]
+    # least two review dispatches after the last implementer dispatch, when
+    # that last one names no task: task reviews and re-reviews name theirs
+    # ("Review Task 6 (spec + quality)", "Re-review Task 6 fix round 1"), the
+    # whole-branch review does not ("Review code changes").
+    after_last = [(t, d) for t, d in reviews if last_implementer is not None and t > last_implementer]
     out["final_review"] = bool(
-        (plan_at is not None and any(t >= plan_at for t in review_dispatches))
-        or (complete and len(after_last) >= 2)
+        (plan_at is not None and any(t >= plan_at for t, _ in reviews))
+        or (complete and len(after_last) >= 2 and not TASK_REF.search(after_last[-1][1]))
     )
 
     task_map = tasks(records)
