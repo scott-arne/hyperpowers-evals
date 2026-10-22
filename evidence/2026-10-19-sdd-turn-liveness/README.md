@@ -364,6 +364,15 @@ The record is `smoke.md`; all eight runs, two per round, are archived under
    r6 wrote their marks in `printf` format strings). Pin after the Correction:
    `analyze.py` `20e2abae141fbe700d4a6372706c4ca5486c111f` (`liveness.py` and
    `tally.py` unchanged).
+4. 2026-10-22, before the treatment arm's launch (Task 12 Step 0).
+   `_interpret_escapes` located `echo -e` in the original segment but sliced
+   the text an interpreted `printf` format earlier in the same pipeline had
+   already shortened, so such a segment lost its mark (a false negative found
+   by Task 11's re-review; no control run has the shape). It now locates
+   `echo -e` in the interpreted text. Recomputed from the archive: no control
+   field changes. Pin after the Correction: `analyze.py`
+   `c893ea32925b9b9e329b93238f5c9ea216392ef3` (`liveness.py` and `tally.py`
+   unchanged).
 
 ## Results
 

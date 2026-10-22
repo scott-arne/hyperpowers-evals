@@ -210,6 +210,8 @@ class Measure(unittest.TestCase):
             f"echo -e 'soak OK\\nTask 6: complete' >> {LEDGER}",
             f"printf $'soak OK\\nTask 6: complete\\n' >> {LEDGER}",
             f"printf 'soak OK\\\\\\nTask 6: complete\\n' >> {LEDGER}",
+            # Correction 4: an interpreted printf format before an echo -e in one pipeline.
+            f"printf 'soak OK\\n' | tee -a /dev/null | echo -e 'ok\\nTask 6: complete' >> {LEDGER}",
             # A path set by command substitution cannot be resolved statically.
             "W=$(cat /tmp/claude/b2b/sdd-dir.txt); cat >> \"$W/progress.md\" <<'EOF'\n- Task 6: complete (abc123)\nEOF",
             "D=\"$(bash scripts/sdd-dir plan.md)\"\necho 'Task 6: complete' >> \"$D/progress.md\"",

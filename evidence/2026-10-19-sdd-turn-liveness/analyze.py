@@ -434,7 +434,7 @@ def _interpret_escapes(segment: str) -> str:
     out = segment
     for match in PRINTF_FORMAT.finditer(segment):
         out = out.replace(match.group(1), _requote(match.group(1)), 1)
-    echo = ECHO_E.search(segment)
+    echo = ECHO_E.search(out)
     if echo and "e" in echo.group(1) and "E" not in echo.group(1):
         head, tail = out[: echo.end()], out[echo.end():]
         out = head + QUOTED.sub(lambda m: _requote(m.group(0)), tail)
