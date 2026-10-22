@@ -216,6 +216,8 @@ class Measure(unittest.TestCase):
             f"cd {folder} && printf '%s\\n' 'Task 6: complete (abc123)' >> progress.md",
             f"cd {folder} && cat >> progress.md <<'EOF'\nTask 6: complete (abc123)\nEOF",
             f"D={folder}; cd \"$D\" && echo 'Task 6: complete' >> progress.md",
+            # Correction 6: a cd joined by a semicolon still carries.
+            f"cd {folder}; echo 'Task 6: complete' >> progress.md",
             # A path set by command substitution cannot be resolved statically.
             "W=$(cat /tmp/claude/b2b/sdd-dir.txt); cat >> \"$W/progress.md\" <<'EOF'\n- Task 6: complete (abc123)\nEOF",
             "D=\"$(bash scripts/sdd-dir plan.md)\"\necho 'Task 6: complete' >> \"$D/progress.md\"",
@@ -239,6 +241,8 @@ class Measure(unittest.TestCase):
             # Correction 5: a relative ledger name with no cd, or after a cd elsewhere, is not the ledger.
             "echo 'Task 6: complete' >> progress.md",
             "cd /elsewhere && echo 'Task 6: complete' >> progress.md",
+            # Correction 6: the || branch runs only when the cd failed.
+            f"cd {folder} || echo 'Task 6: complete' >> progress.md",
         )):
             stray = five[:-1] + [
                 assistant(1420, tools=[(f"w{n}", "Bash", {"command": command})]),
@@ -342,12 +346,18 @@ class Measure(unittest.TestCase):
                     if use.get("id") == "b4":
                         use["input"]["command"] = watch
             self.assertTrue(self.run_of(f"w{n}", records)["long_ok"], watch)
-        records = long_job()
-        for rec in records:
-            for use in liveness.tool_uses(rec):
-                if use.get("id") == "b4":
-                    use["input"]["command"] = "cd /elsewhere && cat long.out.exit"
-        self.assertFalse(self.run_of("w9", records)["long_ok"])
+        for n, watch in enumerate((
+            "cd /elsewhere && cat long.out.exit",
+            # Correction 6: the name must sit in a segment the cd put in the file's directory.
+            "echo long.out.exit; cd /tmp; echo exit=0",
+            "cd /tmp && cd /elsewhere && cat long.out.exit",
+        )):
+            records = long_job()
+            for rec in records:
+                for use in liveness.tool_uses(rec):
+                    if use.get("id") == "b4":
+                        use["input"]["command"] = watch
+            self.assertFalse(self.run_of(f"x{n}", records)["long_ok"], watch)
 
     def test_long_job_launch_names_its_output_through_a_variable(self) -> None:
         # Treatment p3 set W in the launch ("> $W/soak-long.out") and watched
@@ -363,6 +373,13 @@ class Measure(unittest.TestCase):
                 if use.get("id") == "b4":
                     use["input"]["command"] = watch
         self.assertTrue(self.run_of("w10", records)["long_ok"])
+
+    def test_split_ops_records_the_operators(self) -> None:
+        self.assertEqual(
+            analyze._split_ops("a; b && c || d | e\nf"),
+            [("", "a"), (";", " b "), ("&&", " c "), ("||", " d "), ("|", " e"), (";", "f")],
+        )
+        self.assertEqual(analyze._split_ops("a | b", pipes=False), [("", "a | b")])
 
     def test_auto_backgrounded_short_run_is_not_a_foreground_run(self) -> None:
         moved = "Command did not complete within its 240s timeout and was moved to the background (ID: b-auto)."

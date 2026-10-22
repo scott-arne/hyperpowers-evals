@@ -264,14 +264,17 @@ def _strip_heredocs(command: str) -> str:
     return HEREDOC.sub(lambda m: m.group(0).split("\n", 1)[0], command)
 
 
-def _segments(command: str, pipes: bool = True) -> list[str]:
+def _split_ops(command: str, pipes: bool = True) -> list[tuple[str, str]]:
     """Split a command at ``;``, ``&&``, ``||`` and newlines outside quotes, and at ``|`` when ``pipes``.
 
-    Comments are dropped, and a backslash keeps the next character (a quote or
-    a newline) inside the current segment.
+    Each segment comes with the operator that introduced it: ``""`` for the
+    first, ``;`` for a semicolon or a newline, ``&&``, ``||``, or ``|``.
+    Comments are dropped, and a backslash keeps the next character (a quote
+    or a newline) inside the current segment.
     """
-    out: list[str] = []
+    out: list[tuple[str, str]] = []
     current: list[str] = []
+    op = ""
     quote = ""
     i = 0
     while i < len(command):
@@ -294,14 +297,24 @@ def _segments(command: str, pipes: bool = True) -> list[str]:
             i = len(command) if end < 0 else end
             continue
         elif ch in ";\n" or command.startswith(("&&", "||"), i) or (pipes and ch == "|"):
-            out.append("".join(current))
+            out.append((op, "".join(current)))
             current = []
-            i += 2 if command.startswith(("&&", "||"), i) else 1
+            if command.startswith(("&&", "||"), i):
+                op = command[i : i + 2]
+                i += 2
+            else:
+                op = ";" if ch in ";\n" else "|"
+                i += 1
             continue
         current.append(ch)
         i += 1
-    out.append("".join(current))
+    out.append((op, "".join(current)))
     return out
+
+
+def _segments(command: str, pipes: bool = True) -> list[str]:
+    """The segments of ``_split_ops`` without their operators."""
+    return [segment for _, segment in _split_ops(command, pipes)]
 
 
 def _heredoc_command(command: str, match: re.Match[str]) -> str:
@@ -490,29 +503,37 @@ def _is_ledger_path(path: str) -> bool:
 
 
 def _cwd_segments(command: str, env: Mapping[str, str]) -> list[tuple[str, str | None]]:
-    """Each ``;``/``&&`` segment with the directory a preceding ``cd`` put it in (None before any ``cd``)."""
+    """Each ``;``/``&&``/``||`` segment with the directory a preceding ``cd`` put it in.
+
+    None before any ``cd``. A ``cd`` joined by ``;`` or ``&&`` is taken to have
+    succeeded; a segment introduced by ``||`` runs only when the command before
+    it failed, so it gets no directory, and a ``cd`` inside it leaves the
+    directory unknown for what follows (Correction 6).
+    """
     out: list[tuple[str, str | None]] = []
     cwd: str | None = None
-    for segment in _segments(_strip_heredocs(command), pipes=False):
-        out.append((segment, cwd))
+    for op, segment in _split_ops(_strip_heredocs(command), pipes=False):
+        branch = op == "||"
+        out.append((segment, None if branch else cwd))
         move = CD.match(segment)
         if move:
-            cwd = _expand(move.group(2), env)
+            cwd = None if branch else _expand(move.group(2), env)
     return out
 
 
 def _names_file(command: str, path: str) -> bool:
-    """Whether a command refers to ``path``: literally, through a shell variable, or by name after a ``cd`` into its directory.
+    """Whether a command refers to ``path``: literally, through a shell variable, or by name in a segment a ``cd`` put in its directory.
 
     Treatment p8 watched its long soak through ``W=<dir>; ... "$W/soak-long.out.exit"``
-    and p10 through ``cd <dir> && ... soak-long.out.exit`` (README Correction 5).
+    and p10 through ``cd <dir> && ... soak-long.out.exit`` (README Correction 5);
+    the name counts only inside a segment whose directory is the file's
+    (Correction 6).
     """
     env = _assignments(command)
-    expanded = _expand(command, env)
-    if path in expanded:
+    if path in _expand(command, env):
         return True
     parent, name = str(Path(path).parent), Path(path).name
-    return name in expanded and any(cwd == parent for _, cwd in _cwd_segments(command, env))
+    return any(cwd == parent and name in _expand(segment, env) for segment, cwd in _cwd_segments(command, env))
 
 
 def _writes_ledger(command: str, env: Mapping[str, str], cwd: str | None = None) -> bool:

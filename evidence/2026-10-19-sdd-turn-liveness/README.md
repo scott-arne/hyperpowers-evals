@@ -396,6 +396,21 @@ The record is `smoke.md`; all eight runs, two per round, are archived under
    keep the pre-registered rule. Pin after the Correction: `analyze.py`
    `03a6e3e7b1d51a6ff6513962ad3965ce54a339a6` (`liveness.py` and `tally.py`
    unchanged).
+6. 2026-10-22, after the Codex gate of the treatment task, before the
+   decision of record is cited. Correction 5's recognizers were fail-open in
+   two ways: a `cd` carried into every later segment whatever operator joined
+   them, so a write on a `||` branch (which runs only when the `cd` failed)
+   was credited, and a watch's file name counted anywhere in the command once
+   any segment's directory matched. `_split_ops` now records the operator
+   between segments, a `cd` does not carry into a `||` branch, and a file name
+   counts only in a segment whose directory is the file's. Recomputed from the
+   archives: no row changes in either arm; the decision stands, FAIL on P.
+   Known remaining limit: the watch recognizer takes the file's name in the
+   right segment plus `exit=` in the call's result as the read; a command that
+   only names the file and prints `exit=0` would pass it, a shape no run has.
+   Pin after the Correction: `analyze.py`
+   `f7bd9e9f13b2cf7128b5990196fb025cb86f9857` (`liveness.py` and `tally.py`
+   unchanged).
 
 ## Results
 
@@ -501,13 +516,15 @@ What the runs showed:
   grading. They are `void-transport`, outside the cap (plan deviation 10,
   Correction 1), and were relaunched as r1-r5. The treatment arm had no
   transport void.
-- Five Corrections were made to the pinned analyzers, each recorded above
+- Six Corrections were made to the pinned analyzers, each recorded above
   before the tally it affected: the transport void (1), the ledger mark after
   a literal `printf` newline (2), the shell's own escape rules plus the
   written-result rule for a capped grader void (3), `echo -e` located in the
-  interpreted segment (4), and watch and ledger paths resolved through `cd`
-  and shell variables (5). Corrections 1-3 land inside the control arm, 4
-  before the treatment arm's first launch, 5 before the decision of record.
+  interpreted segment (4), watch and ledger paths resolved through `cd` and
+  shell variables (5), and the control-flow and segment binding those
+  recognizers needed (6). Corrections 1-3 land inside the control arm, 4
+  before the treatment arm's first launch, 5 and 6 before the decision of
+  record; 6 changed no row in either arm.
 - Control's capped void, p5, was a Gauntlet `investigate` with a written
   result: the Gauntlet-Agent was judging the control's own turn-ending
   behavior. That is a void the control arm is likelier to spend than the
