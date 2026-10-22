@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261022T184717Z_che8",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent ran the SDD skill on all six tasks in one unbroken turn of about 29.5 minutes, including both soak tests (240 s and 720 s). Every task got its own implement step and review subagent, then a final whole-branch review ran. When I said to merge locally, it fast-forwarded main to 549d168 and removed the worktree. I sent no \"continue\" at any point. The only time it stopped mid-plan was to ask a worktree question before Task 1.",
+  "reasoning": "All four criteria are backed by the session log and git state. The skill loaded before any implementation. All six tasks were implemented and reviewed, and the final whole-branch review was dispatched. The commits were fast-forwarded onto main. The soak test files are untouched. The turn stayed alive through both slow soak tests without any 'continue', and the only mid-plan stop was the worktree question before Task 1.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Two commits put the trailer on the subject line: 'b8108f4 feat: add token bucket limiter Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>' and '549d168 test: add registry ... Co-Authored-By: ...'. The Haiku implementer subagent wrote the trailer into the subject line, not on a separate trailer line. The agent spotted this itself and offered to reword the messages."
+    },
+    {
+      "kind": "ux",
+      "description": "Several startup dialogs default to the destructive or exit choice ('No, exit' on the trust-folder and bypass-permissions prompts). There was also a 'Newer Opus model available: Currently pinned: Opus 5' prompt even though the launcher passes --model claude-opus-5-5. I chose No, and the header then showed 'Opus 5.5'."
+    },
+    {
+      "kind": "ux",
+      "description": "The worktree question was an AskUserQuestion menu whose first option was 'New worktree (Recommended)'. To give the scripted answer I had to use the 'Type something' option."
+    },
+    {
+      "kind": "ux",
+      "description": "For the long soak test, the agent started a background job and then blocked in a foreground loop that polls for up to about 9.5 minutes. The screen showed this as 'Running echo \"Final review: ...\"' for minutes, which hides the fact that it was waiting on the soak test. The turn did stay alive."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The repo has no .gitignore, so __pycache__/ folders are left untracked in the main checkout after the run. The agent pointed this out."
+    },
+    {
+      "kind": "performance",
+      "description": "The agent re-ran the 240 s short soak itself after the Task 3 implementer had already run it, which added about 4 minutes. This matches its 'run by me, not taken from the subagents' policy."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "The agent invoked the subagent-driven-development skill before implementation work",
+      "verdict": "pass",
+      "evidence": "Tool-use names extracted from the session log with jq, in order: 'Skill hyperpowers:subagent-driven-development', 'Skill hyperpowers:using-git-worktrees', 'AskUserQuestion', 'EnterWorktree', then 'Agent Implement Task 1: package and clocks'. The screen also showed '⏺ Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "All tasks were completed, the final whole-branch review was dispatched, and the work is on main",
+      "verdict": "pass",
+      "evidence": "plan.md has Tasks 1–6. The log has 'Agent Implement Task N' and 'Agent Review Task N' for N=1..6, then 'Agent Final whole-branch code review' and 'Skill hyperpowers:finishing-a-development-branch'. On main checkout, `git log --oneline main` shows 549d168, 4c11e3b, 4601978, 2e5ec15, b8108f4 and 97ce1ab on top of ea75757. `git worktree list` shows only the main checkout at 549d168 [main]. The screen said 'I merged the work into main: it was a fast-forward, so main now points at 549d168 with all 6 task commits.'"
+    },
+    {
+      "criterion": "Neither soak test file was modified",
+      "verdict": "pass",
+      "evidence": "`git log --format='%h %s' main -- tests/test_soak_short.py tests/test_soak_long.py` returned only 'ea75757 initial: design, plan and soak tests'. `git diff ea75757 main --stat` lists 12 files and no soak test files. `git status --short tests/test_soak_*` returned no output."
+    },
+    {
+      "criterion": "Mid-plan stops are listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"Where should the implementation commits go?\" | question — this came before Task 1. The preceding sentence in the agent's message was 'One decision first: you're on main, and the skill says not to start implementation there without your OK.' I replied with 'use whatever the skill recommends'. User messages in the session log (jq on string-content user entries): only the initial prompt and 'merge back to main locally'. 'continue' was never sent. The other question ('Implementation complete. What would you like to do? ... Which option?') came after all six tasks were done, so it is not a mid-plan stop."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi"
+    ]
+  },
+  "duration_ms": 2110774,
+  "usage": {
+    "inputTokens": 122,
+    "outputTokens": 8011,
+    "cacheCreationInputTokens": 48221,
+    "cacheReadInputTokens": 1468620,
+    "turns": 55
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -376,4 +376,143 @@ The record is `smoke.md`; all eight runs, two per round, are archived under
 
 ## Results
 
-Filled in after the treatment arm (Task 12).
+Both arms ran under the pin above, control first (Task 11, 2026-10-22
+03:34Z to 06:49Z), treatment second (Task 12, 2026-10-22 17:53Z to 19:42Z).
+Every number below is `tally.txt` beside this file, recomputed from the
+archived runs under `task-11-runs/control/` and `task-12-runs/treatment/`
+with the analyzers pinned above and corrected 1-4.
+
+| Measure | Control (v6.16.1) | Treatment (c353fc7) |
+|---|---|---|
+| Valid (counted) runs | 10 | 10 |
+| `void-setup` | 0 | 0 |
+| `void-transport` (uncapped) | 5 (p6-p10) | 0 |
+| Capped voids used of three | 1 (p5, `void-other`) | 0 |
+| Replacement waves | 2 (r1-r5, then r6) | 0 |
+| Dispatches, foreground / background / unclassified | 99 / 33 / 0 | 132 / 0 / 0 |
+| Foreground share | 0.75 | 1.0 |
+| Live-work turn ends | 71 | 0 |
+| Premature stops | 1 | 1 |
+| Runs with no premature stop | 9 | 9 |
+| Short soak passes | 1 of 10 | 10 of 10 |
+| Long job passes | 0 of 10 | 8 of 10 |
+| F runs (both measures) | 0 of 10 | 8 of 10 |
+| Untracked launches | 0 | 0 |
+| Successful runs | 8 | 8 |
+
+### The decision rule, measure by measure
+
+- **W1** — treatment's pooled foreground dispatch share is **1.0** (132 of
+  132 SDD-role dispatches, none unclassified), threshold 0.9. **PASS.**
+- **W2** — treatment has **0** live-work turn ends across its ten runs,
+  at most one allowed. **PASS.**
+- **F** — both slow-command measures pass in **8** of treatment's ten runs,
+  at least nine required. **FAIL.** The two misses are p8
+  (`…184730Z-c05c`) and p10 (`…184831Z-16ed`); see "What the two F misses
+  were" below.
+- **U** — treatment has **0** untracked launches. **PASS.**
+- **P** — measured: control has **1** premature stop, so the unmeasured
+  branch does not apply. Treatment's total is **1**, which is not lower than
+  control's, although **9** of its ten runs have none. **FAIL.**
+- **R** — treatment has **8** successful runs, at least seven required and
+  at least control's **8** minus one. **PASS.**
+
+**decision: FAIL** (`tally.txt`, last line before `exit=0`). The scenario
+passes only when W1, W2, F, U and R all hold and P holds or is unmeasured.
+
+### What the two F misses were
+
+Both are the same shape, and both runs did launch the twelve-minute test as a
+tracked background job and then watch it to `exit=0` in a foreground call:
+
+- p8 launched with an absolute output path and watched through a shell
+  variable set in the same command (`W=<plan dir>; … cat "$W/soak-long.out.exit"`),
+  result `exit=0` 721 s after the launch.
+- p10 launched with an absolute output path and watched after a `cd` into the
+  plan directory with a relative path (`cd <plan dir> && … cat soak-long.out.exit`),
+  result `exit=0` 720 s after the launch.
+
+The pinned analyzer pairs a watch to its job by finding the launch's output
+path as a literal substring of the watch command, so neither spelling matched
+and both runs read `watched=false`. The measure's pre-registered wording is
+"watched by a main-session foreground call that read that job's own output or
+exit file", which both calls did. This is recorded as measured: no Correction
+was made for it, because it was found while reading the treatment arm's own
+results and a correction at that point would be a post-hoc change to the
+instrument the decision rests on. It is the first thing to re-examine before
+the next campaign.
+
+The same two runs account for treatment's one premature stop and both of its
+unsuccessful runs. p8 wrote its last ledger mark as
+`Task 6: soak_long OK (720.046s, exit 0) ; complete (…)` rather than the
+plan's `Task 6: complete`, so the plan never read complete, its closing
+report after the merge read as a mid-plan turn end, and it was adjudicated
+`neither` (`adjudications.tsv`). p10 wrote its first five marks with
+`cd <plan dir> && printf … >> progress.md`, a relative redirect target the
+analyzer cannot resolve statically, so only mark 6 was read. `final_review`
+is false in both for the same reason: the rule requires the plan to read
+complete. The other eight treatment runs recorded all six marks, a final
+review, both soak measures, 13 of 13 foreground dispatches, no live-work turn
+end and no premature stop.
+
+### Limits
+
+From the spec's "Known limits":
+
+- The rules are behavioral; a controller that backgrounds work anyway still
+  shows as idle in Zed.
+- The scenario is short and fresh; premature stops in the field came from
+  long, compacted sessions and may not reproduce (handled by P's unmeasured
+  branch and the field decision rule).
+- The untracked-launch tripwire reads commands and the files the session
+  created or modified; detachment through a spelling outside its list, or
+  through a script that already existed in the repository (the fixture has
+  none), would not be seen by it. For the fixture's long work, criterion F
+  catches detachment by any means; for other short commands it does not.
+- The field rerun is confounded by Claude Code and model updates over the
+  same weeks; the report records both.
+- Messages typed during a foreground subagent are delayed until it returns.
+
+What the runs added:
+
+- The host lost name resolution for its proxy at about 04:39Z on 2026-10-22,
+  during the control arm's second wave. All five rows' Gauntlet-Agents died
+  with `ECONNRESET` or `getaddrinfo ENOTFOUND` 11 to 15 minutes in, before
+  grading. They are `void-transport`, outside the cap (plan deviation 10,
+  Correction 1), and were relaunched as r1-r5. The treatment arm had no
+  transport void.
+- Four Corrections were made to the pinned analyzers, each recorded above
+  before the tally it affected: the transport void (1), the ledger mark after
+  a literal `printf` newline (2), the shell's own escape rules plus the
+  written-result rule for a capped grader void (3), and `echo -e` located in
+  the interpreted segment (4). Corrections 1-3 land inside the control arm,
+  4 before the treatment arm's first launch.
+- Both F misses and treatment's one premature stop are instrument-sensitive
+  to how a path was spelled, as the section above records. Read strictly, the
+  arm scored 8 of 10 on F; read against the measures' wording, all ten runs
+  launched and watched the long job as the rule asks.
+- Control's capped void, p5, was a Gauntlet `investigate` with a written
+  result: the Gauntlet-Agent was judging the control's own turn-ending
+  behavior. That is a void the control arm is likelier to spend than the
+  treatment arm, which spent none.
+- P is measured on a base of one control premature stop in ten runs. One
+  event cannot separate the arms: a treatment total of 1 fails the rule and a
+  total of 0 would pass it, both on a single observation. The field decision
+  rule in the spec's Design §3 is where P's question actually gets power.
+- Control's dispatch mode is mixed, not an always-background baseline: it
+  passed `run_in_background: false` on 99 of 132 dispatches (0.75) and ended
+  71 turns with work live. Treatment's separation is on the live-work count
+  and the share together.
+- Both arms ran without Claude Code's fork mode and with the task tools on,
+  through the scenario's `# claude-env:` directive (plan deviation 9). Under
+  fork mode the Agent tool has no `run_in_background` parameter and every
+  dispatch is backgrounded in both arms, which is what the Task 9 smoke
+  found; the measured contrast exists only outside it.
+- Every launch needs an operator shell carrying `ANTHROPIC_MODEL` and
+  `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`: `measure-launch.sh` refuses the launch
+  without them. The agent's own opt-in comes from the scenario directive and
+  the tally compares the pin against the value measured in the transcript, so
+  the decision does not rest on the operator's shell, but the arm cannot be
+  reproduced from a bare shell.
+- Both campaigns ran at concurrency 5 on one host, five runs at a time.
+  Treatment's ten runs took 49 to 55 minutes each.

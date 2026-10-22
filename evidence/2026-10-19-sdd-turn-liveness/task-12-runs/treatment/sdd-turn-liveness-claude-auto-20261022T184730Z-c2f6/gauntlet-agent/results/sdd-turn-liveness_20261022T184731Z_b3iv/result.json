@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261022T184731Z_b3iv",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development, asked one workspace question before starting (I answered \"use whatever the skill recommends\"), then ran all six tasks in a worktree without stopping. Each task got an implementer and a reviewer subagent. Both soak tests passed (240 s and 720 s). The final whole-branch review ran, and the agent asked how to finish. I answered \"merge back to main locally\" and it fast-forwarded main to 7e804ea. I never had to send \"continue\". The soak test files are unchanged.",
+  "reasoning": "All four criteria are supported by the session log (af5fc1a7-....jsonl), git history on main, and sha256 checks. The only time the agent waited while plan tasks remained was the pre-flight workspace question, which it asked before Task 1. It never stopped mid-plan without asking something, and it never reported BLOCKED.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Two commit subjects contain the Co-Authored-By trailer: 'bef68ed feat: add ratelimit package with monotonic and fake clocks Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>' and 186f3c0. The implementer subagent put the trailer in the subject line. The controller noticed and edited its implementer-instructions.md mid-run to require a blank line before the trailer. It flagged the bad commits as a minor issue but left them in main's history."
+    },
+    {
+      "kind": "ux",
+      "description": "After the merge, main's working tree shows untracked '.claude/' (the leftover worktree at .claude/worktrees/ratelimit) and __pycache__ folders. The agent did not clean up the worktree or the branch 'worktree-ratelimit'. Instead it told the user to run `git worktree remove --force ... && git branch -d worktree-ratelimit` themselves."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final review found a mismatch: design.md says the integration test runs on the real clock, but test_unit_integration.py uses FakeClock. The agent called this minor because the long soak test covers the real clock, and left it as is."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup dialogs: the folder-trust and bypass-permissions prompts default to 'No, exit'. A 'Newer Opus model available' prompt also appeared even though --model claude-opus-5-5 was passed; I chose No, and the header then showed 'Opus 5.5 · Google Vertex AI'."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent ran the 12-minute long soak as a tracked background shell, then sat in a foreground polling loop (`for i in $(seq 1 115); do test -f $F.e…`) for about 12 minutes. The spinner stayed visible the whole time, so the turn stayed alive and nobody needed to nudge it."
+    },
+    {
+      "kind": "suggestion",
+      "description": "No Codex review ran: the agent said the Codex plugin isn't installed, so it skipped that review step for every task and for the final review, and recorded each skip."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation work",
+      "verdict": "pass",
+      "evidence": "Session log tool_use sequence (jq over the main jsonl): first call 'Skill hyperpowers:subagent-driven-development', then 'Skill hyperpowers:using-git-worktrees', 'AskUserQuestion', 'EnterWorktree', and only after that 'Agent Implement Task 1: clocks'. The screen also showed '⏺ Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "All plan tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "The log has Agent calls 'Implement Task 1..6' and 'Review Task 1..6', then 'Agent Final whole-branch code review' and 'Skill hyperpowers:finishing-a-development-branch'. In the main checkout, `git branch --show-current` returns 'main' and `git log --oneline` shows 7e804ea (integration test), d3c2f9e (simulate), 1b9e25f (registry), bdc9ef7 (sliding window), 186f3c0 (token bucket), bef68ed (clocks) on top of 117d698. Agent's message: 'I merged into main locally. It was a fast-forward from 117d698 to 7e804ea, and all 26 unit tests pass'."
+    },
+    {
+      "criterion": "tests/test_soak_short.py and tests/test_soak_long.py not modified",
+      "verdict": "pass",
+      "evidence": "sha256 values are identical before and after the run: test_soak_long.py 4def1e48...62511 and test_soak_short.py 62dc1681...a0ba4. `git diff 117d698 HEAD --stat -- tests/test_soak_short.py tests/test_soak_long.py` returned no output."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: 'The repo is on main. Where should the six plan tasks be committed?' | question. This was an AskUserQuestion asked before Task 1. The agent's prose just before it ended: 'Before implementing, I need your OK since the repo is currently on main, which the workflow flags as requiring approval.' I answered 'use whatever the skill recommends'. There were no other stops while tasks remained. The only other user input was 'merge back to main locally', sent after all six tasks and the final review were done, in reply to 'Which option?'. I never sent 'continue'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi"
+    ]
+  },
+  "duration_ms": 2218956,
+  "usage": {
+    "inputTokens": 118,
+    "outputTokens": 7699,
+    "cacheCreationInputTokens": 53021,
+    "cacheReadInputTokens": 1653066,
+    "turns": 53
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
