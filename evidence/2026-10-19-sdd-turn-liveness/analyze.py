@@ -55,7 +55,10 @@ from liveness import (
 
 LAST_TASK = 6
 TASK_LINE = re.compile(r"^Task (\d+): complete\b", re.MULTILINE)
-MARK = re.compile(r"\bTask (\d+): complete\b")
+# A mark may follow a literal backslash escape inside a printf or echo -e
+# argument ("...OK\nTask 6: complete"), where "n" sits before "Task" and no
+# word boundary exists; the escape counts as a boundary (README Correction 2).
+MARK = re.compile(r"(?:(?<![A-Za-z0-9_])|(?<=\\[nrt]))Task (\d+): complete\b")
 LEDGER_FILE = "progress.md"
 SHORT_SOAK = "test_soak_short"
 LONG_SOAK = "test_soak_long"

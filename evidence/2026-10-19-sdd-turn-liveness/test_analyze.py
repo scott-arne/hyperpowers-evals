@@ -203,6 +203,8 @@ class Measure(unittest.TestCase):
             f"D={folder}; echo 'Task 6: complete' >> \"${{D}}/progress.md\"",
             f"cat <<'EOF' >> {LEDGER}\nTask 6: complete (abc123)\nEOF",
             f"printf 'Task 6: complete (abc123)\\n' | tee -a {LEDGER} > /dev/null",
+            # The control arm's r5 and r6 wrote the mark after a literal \n (README Correction 2).
+            f"printf 'test_soak_long: Ran 1 test in 720.037s OK\\nTask 6: complete (abc123)\\n' >> {LEDGER}",
             # A path set by command substitution cannot be resolved statically.
             "W=$(cat /tmp/claude/b2b/sdd-dir.txt); cat >> \"$W/progress.md\" <<'EOF'\n- Task 6: complete (abc123)\nEOF",
             "D=\"$(bash scripts/sdd-dir plan.md)\"\necho 'Task 6: complete' >> \"$D/progress.md\"",

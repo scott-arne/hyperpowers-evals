@@ -336,6 +336,19 @@ The record is `smoke.md`; all eight runs, two per round, are archived under
    launch log are redacted: the resolver error named the host's proxy, and
    that hostname is replaced by `<proxy-host>`; the error code the
    classification reads is kept.
+2. 2026-10-22, after the control arm's commit and before any treatment tally.
+   `analyze.MARK` becomes
+   `(?:(?<![A-Za-z0-9_])|(?<=\\[nrt]))Task (\d+): complete\b`: a ledger mark
+   written after a literal backslash escape in a `printf` argument
+   (`'…OK\nTask 6: complete'`) has `n` directly before `Task`, so the pinned
+   `\b` never matched and the run read as incomplete. Found by the control
+   arm's implementer in r5 (`…-b041`) and r6 (`…-31fe`); with the corrected
+   pattern both read plan-complete and successful, control's success count
+   moves from 6 to 8 of 10 (p2 and r1 stay unsuccessful for other reasons),
+   and no other field changes. Recomputed from the archive; no run was
+   repeated. Pin after the Correction: `analyze.py`
+   `0df45b0b3e8a236f7372577f65b9f0aa22c659fc` (`liveness.py` and `tally.py`
+   unchanged).
 
 ## Results
 
