@@ -40,7 +40,7 @@ output in `tally.txt`, the hand labels in `adjudications.tsv`, the per-row
 launch logs in `logs/`, the sixteen control runs in `task-11-runs/control/`
 and the ten treatment runs in `task-12-runs/treatment/`, each beside its
 `workspaces/` copy. The analyzers are `liveness.py`, `analyze.py` and
-`tally.py` in the same directory, pinned by blob in `README.md` with four
+`tally.py` in the same directory, pinned by blob in `README.md` with five
 recorded Corrections.
 
 **Verdict.** **FAIL**, on P alone; W1, W2, F, U and R pass.
