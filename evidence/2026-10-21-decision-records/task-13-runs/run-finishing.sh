@@ -7,6 +7,9 @@
 # CLAUDE.md is in play. SUITE_SLEEP in the environment sets how long the
 # fixture's test suite runs. The working copy and config dir live outside the
 # evidence tree so the session's cwd has no CLAUDE.md or AGENTS.md above it.
+# Environment: SUITE_SLEEP (suite seconds), PAD_LINES (pad the diff), UNDOCUMENTED (1 adds a choice the spec lacks),
+# EXCLUDE_ANCESTORS (default 1; 0 skips the claudeMdExcludes file, as the first
+# three runs), TURNS (default 3 when prompt-3.txt exists, else 2).
 set -uo pipefail
 RUN_NAME=$1
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -58,6 +61,44 @@ sleep "${SUITE_SLEEP:-0}"
 echo "ok"
 exit 0
 EOF
+# UNDOCUMENTED=1 adds one visible design choice the spec does not mention, so
+# the extractor has an undocumented decision to propose.
+if [ "${UNDOCUMENTED:-0}" = 1 ]; then
+  cat > "$WORK/notes.sh" <<'EOF'
+#!/usr/bin/env bash
+# notes.sh add TEXT | list [--tag TAG] : a tiny notes CLI backed by notes.txt.
+# Tags are a #tag suffix on the note line; filtering happens here, not in a library.
+set -euo pipefail
+FILE="${NOTES_FILE:-notes.txt}"
+case "${1:-}" in
+  add) shift; printf '%s\n' "$*" >> "$FILE" ;;
+  list)
+    [ -f "$FILE" ] || exit 0
+    if [ "${2:-}" = "--tag" ]; then
+      # Tag matching is case-insensitive: #Home and #home are one tag, chosen over exact-case matching so a typo in case does not hide a note.
+      grep -E -i -- "#${3:?tag required}\$" "$FILE" || true
+    else
+      cat "$FILE"
+    fi
+    ;;
+  *) echo "usage: notes.sh add TEXT | list [--tag TAG]" >&2; exit 64 ;;
+esac
+EOF
+  cat > "$WORK/test.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+NOTES_FILE="$(mktemp)"
+export NOTES_FILE
+bash notes.sh add "first note"
+bash notes.sh add "second note #home"
+[ "$(bash notes.sh list | wc -l | tr -d ' ')" = "2" ] || { echo "expected two lines" >&2; exit 1; }
+[ "$(bash notes.sh list --tag home | wc -l | tr -d ' ')" = "1" ] || { echo "expected one tagged line" >&2; exit 1; }
+[ "$(bash notes.sh list --tag HOME | wc -l | tr -d ' ')" = "1" ] || { echo "expected the #home note for --tag HOME" >&2; exit 1; }
+sleep "${SUITE_SLEEP:-0}"
+echo "ok"
+exit 0
+EOF
+fi
 # PAD_LINES > 0 makes the merge-base diff large so the extractor outlasts an
 # instant suite.
 if [ "${PAD_LINES:-0}" -gt 0 ]; then
@@ -72,6 +113,7 @@ printf '%s\n' "$PLUGIN" > "$SCRATCH/plugin-dir.txt"
 # (evals/src/agents/index.ts ancestorClaudeMdExcludes), so the host user-level
 # CLAUDE.md stays out. The work dir itself is not excluded.
 excludes=""
+if [ "${EXCLUDE_ANCESTORS:-1}" = 1 ]; then
 dir=$(dirname "$WORK")
 while :; do
   for glob in CLAUDE.md CLAUDE.local.md .claude/CLAUDE.md '.claude/rules/**' AGENTS.md .claude/AGENTS.md; do
@@ -82,6 +124,7 @@ while :; do
   dir=$parent
 done
 printf '{"claudeMdExcludes":[%s]}\n' "${excludes%,}" > "$SCRATCH/config/settings.json"
+fi
 
 run_turn() {
   local n=$1 prompt_file=$2; shift 2
@@ -110,9 +153,14 @@ snapshot() {
     git -C "$WORK" branch --show-current
     echo "== plan present?"
     if [ -e "$WORK/docs/hyperpowers/plans/2026-10-20-tags.md" ]; then echo yes; else echo no; fi
+    echo "== commit body (git show -s --format=%B HEAD)"
+    git -C "$WORK" show -s --format=%B HEAD
   } > "$OUT/fixture-state-$1.txt" 2>&1
 }
 
+TURNS=${TURNS:-3}
+[ -f "$HERE/prompt-3.txt" ] || TURNS=2
+echo "config: SUITE_SLEEP=${SUITE_SLEEP:-0} PAD_LINES=${PAD_LINES:-0} UNDOCUMENTED=${UNDOCUMENTED:-0} EXCLUDE_ANCESTORS=${EXCLUDE_ANCESTORS:-1} TURNS=$TURNS model=${TRIGGER_MODEL:-claude-opus-5-5} plugin=$PLUGIN" > "$OUT/status.txt"
 run_turn 1 "$HERE/prompt-1.txt"
 snapshot 1
 SID=$("$PY" - "$OUT/turn1.jsonl" <<'PY'
@@ -130,6 +178,11 @@ if [ -n "$SID" ]; then
   date -u +%Y-%m-%dT%H:%M:%SZ > "$OUT/turn2-start.txt"
   run_turn 2 "$HERE/prompt-2.txt" --resume "$SID"
   snapshot 2
+  if [ "$TURNS" -ge 3 ]; then
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$OUT/turn3-start.txt"
+    run_turn 3 "$HERE/prompt-3.txt" --resume "$SID"
+    snapshot 3
+  fi
 else
   echo "turn2 skipped: no session id" >> "$OUT/status.txt"
 fi
