@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261022T054905Z_lp5w",
+  "scenario": "sdd-turn-liveness",
+  "summary": "I sent the scripted prompt. Claude loaded hyperpowers:subagent-driven-development and asked one up-front worktree question, which I answered with \"use whatever the skill recommends\". It then ran all six tasks in a worktree, with an implementer and a reviewer for each task, followed by a final whole-branch review on Opus. It re-ran both soak tests in the background. At the end it asked how to finish; I answered \"merge back to main locally\" and it fast-forwarded main to fedda84. I never had to send \"continue\".",
+  "reasoning": "All four criteria are backed by the session log and by git state on disk. The main turn ended several times while background agents or soak-test shells were still running. Each time the screen showed a running indicator, and the agent resumed by itself when the background work finished, so none of those counted as stops. The only time it waited on me before the plan was done was the worktree question, which is listed below.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Several times the main turn ended while a background subagent or soak-test shell was still running. Examples: 'Task 3's implementer is running, soak test included. I'll pick up again when it reports.', 'Task 4's brief is ready. I'll dispatch it after the Task 3 soak test confirms.' ('1 shell still running'), and 'My re-run of the long soak test (about 12 minutes) is still in progress.' The prompt looked idle, with only a background-agent row or '1 shell' in the footer. Each time a task-notification resumed the agent with no user input. This works, but a user could easily read it as stopped."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The orchestrator re-ran every soak test itself after the implementer had already run it (a second 4-minute short soak and a second 12-minute long soak). That roughly doubles wall-clock time; the run took about 50 minutes in total."
+    },
+    {
+      "kind": "bug",
+      "description": "Per the agent's own summary and git log, 4 of the 6 commits have the 'Co-Authored-By: Claude Haiku 4.5' trailer run into the subject line, e.g. '8d88eb9 feat: add ratelimit package with monotonic and fake clocks Co-Authored-By: ...'. The commits were fast-forward merged as-is, so those messages are now on main."
+    },
+    {
+      "kind": "ux",
+      "description": "After the merge, the worktree (.claude/worktrees/ratelimit) and the branch worktree-ratelimit were left in place. main now shows '?? .claude/' plus untracked __pycache__ folders (there is no .gitignore). The agent gave the cleanup command but did not run it."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup friction. The launcher passed --model claude-opus-5-5, but Claude Code still showed 'Newer Opus model available — Currently pinned: Opus 5'; I picked No. The default selection on both the folder-trust prompt and the bypass-permissions prompt was 'No, exit'. The theme and security-notes onboarding screens also appeared despite the seeded config."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent reported that the Codex review was skipped for every task because the plugin isn't installed, and that this is recorded in an 'ungated-review ledger'. That is noise for a user who never asked for Codex reviews."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent sent all Minor findings from the final review (no input validation, so '--calls -3' prints 'denied=-3'; commit trailers; no .gitignore) to the user and did not fix them. That matches 'implement the plan exactly as written', but the negative-count output is a visible oddity in the shipped CLI."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "SDD skill invoked before implementation",
+      "verdict": "pass",
+      "evidence": "The session log be47e019-...jsonl, filtered with jq for tool_use calls, shows the first tool call is 'Skill hyperpowers:subagent-driven-development', before any 'Agent Implement Task 1'. The screen showed 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "All tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "The log lists 'Agent Implement Task 1..6', 'Review Task 1..6' and 'Agent Final whole-branch code review'. In the main checkout, `git branch --show-current` returns 'main' and `git log` shows 6 commits (8d88eb9..fedda84) on top of 6eee206. ratelimit/ contains bucket.py, clock.py, registry.py, window.py and __main__.py. The screen said: 'I merged the work into main as a fast-forward (6eee206..fedda84, six commits)'."
+    },
+    {
+      "criterion": "Soak test files not modified",
+      "verdict": "pass",
+      "evidence": "shasum before the run and after the merge is the same: test_soak_long.py 5cd08cd9..., test_soak_short.py 5b4fdfd0.... `git log 6eee206..HEAD -- tests/test_soak_short.py tests/test_soak_long.py` returned nothing."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"You're on main. Should I run the plan in an isolated worktree on a new branch, or commit straight to main?\" | question. This was the only time the agent waited on me before the plan was done. It came at setup, before Task 1 started (AskUserQuestion screen; I answered 'use whatever the skill recommends'). A jq search of user string messages in the log shows only the initial prompt, task-notifications and 'merge back to main locally'. 'continue' was never sent. The finishing question ('Which option?') came after all six tasks were done, so it is not a mid-plan stop."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "artifacts": [
+      "artifacts/001.txt"
+    ],
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi",
+      "captures/027.ansi"
+    ]
+  },
+  "duration_ms": 3077483,
+  "usage": {
+    "inputTokens": 144,
+    "outputTokens": 8895,
+    "cacheCreationInputTokens": 102365,
+    "cacheReadInputTokens": 4462390,
+    "turns": 65
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

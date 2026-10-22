@@ -1,0 +1,8 @@
+Global constraints (verbatim from plan.md Global Constraints / design.md):
+- Standard library only. No third-party dependencies and no `requirements.txt` or packaging metadata.
+- Python 3.9 or later. Do not use syntax newer than 3.9: no `match`, no `X | Y` type unions, no `except*`. Built-in generics such as `list[str]` are fine in 3.9.
+- `clock=None` means `MonotonicClock()`.
+- Unit tests live in `tests/test_unit_<component>.py`, use `FakeClock`, and run with `python3 -m unittest discover -s tests -p "test_unit_*.py"`.
+- `tests/test_soak_short.py` and `tests/test_soak_long.py` already exist and must not be modified.
+- CLI output format is exactly `allowed=<a> denied=<d>`.
+- Use the names in design.md exactly (`MonotonicClock`, `FakeClock`, `TokenBucket`, `SlidingWindowLimiter`, `Registry`).

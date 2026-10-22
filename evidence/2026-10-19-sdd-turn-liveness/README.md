@@ -331,6 +331,11 @@ The record is `smoke.md`; all eight runs, two per round, are archived under
    stays a capped void. Pins after the Correction: `analyze.py`
    `8fc5ce5b2a1eec8ef7d29fa59b2f357985634dd0`, `tally.py`
    `3ba4826a81b29a1c56ecb9dad17ec262200a0b35` (`liveness.py` unchanged).
+   The record of p10 (`…-b7be`: `verdict.json`,
+   `gauntlet-agent/gauntlet-stderr.log`, the Gauntlet's `run.jsonl`) and its
+   launch log are redacted: the resolver error named the host's proxy, and
+   that hostname is replaced by `<proxy-host>`; the error code the
+   classification reads is kept.
 
 ## Results
 

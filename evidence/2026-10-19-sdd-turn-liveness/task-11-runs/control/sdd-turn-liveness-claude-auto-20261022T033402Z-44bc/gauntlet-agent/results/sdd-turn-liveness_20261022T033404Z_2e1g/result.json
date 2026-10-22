@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261022T033404Z_2e1g",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development and ran all 6 plan tasks, each with its own implementer and reviewer subagent. It then ran the final whole-branch review and fast-forward merged into main (now at 81a30e8). It did not touch the soak test files. It did not keep its turn alive, though: it ended its turn 4 times while a soak test was still running in the background. Each time I waited at least 2 minutes and then sent \"continue\".",
+  "reasoning": "All four criteria are met. The skill load is in the log. Every task got an implementer and a review. The final whole-branch review ran. main holds the six task commits and the worktree branch has been deleted. git diff dd04bf3..main does not include either soak file. Criterion 4 only asks for a complete list of stops, and the list below is complete. Note that the story title says the agent should keep its turn alive through slow commands, and that did not happen: it needed 4 \"continue\" nudges. Engineers should look at the STOP list even though the formal verdict is pass.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Turn liveness: after starting a long soak test as a background shell, the agent ended its turn 4 times ('Baked for 12m 8s · done 8:47 PM · 1 shell still running', etc.). Each time it waited for user input instead of keeping its turn alive until the covering command finished. It needed 4 'continue' nudges, which is exactly what this story is meant to catch."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup prompts: the onboarding showed a 'Newer Opus model available' prompt saying 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose No; the header then showed 'Opus 5.5'. On the folder-trust and bypass-permission dialogs, the default selection is 'No, exit'."
+    },
+    {
+      "kind": "bug",
+      "description": "Three subagent commits (82ef657, ea2a2bf, 81a30e8) have the 'Co-Authored-By: Claude Haiku 4.5' trailer in the subject line, with no blank line before it, so git treats it as part of the subject. The agent spotted this but merged anyway."
+    },
+    {
+      "kind": "suggestion",
+      "description": "No .gitignore, so __pycache__/ directories show as untracked on main after the merge. The agent pointed this out."
+    },
+    {
+      "kind": "ux",
+      "description": "The Task 2 implementer didn't write its report file the first time, so the orchestrator had to resume it. The Task 6 implementer skipped the long soak because of the subagent's 10-minute command limit, so the orchestrator ran it itself. The orchestrator also started the Task 6 review and the final whole-branch review before the long soak had passed, making the merge conditional on the soak passing."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent noted that the integration test 'test_each_key_holds_its_limit_independently' sends identical traffic to every key, so it doesn't actually test independence. It left the test as it was."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation",
+      "verdict": "pass",
+      "evidence": "From the session log jq output, the first tool_use is {\"name\":\"Skill\",\"s\":\"hyperpowers:subagent-driven-development\"}. It comes before any Agent call ('Implement Task 1: clocks'). The screen showed 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "All plan tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "plan.md has Tasks 1–6. The log has Agent calls 'Implement Task N' and 'Review Task N (spec + quality)' for N=1..6, plus 'Final whole-branch review'. `git log` on main shows 6 commits on top of dd04bf3 (82ef657…81a30e8). `git worktree list` shows only the main checkout at 81a30e8 [main]. The agent's screen said: 'The fast-forward merge passed: main is now at 81a30e8 and the 26 unit tests pass on it.'"
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "`git log --oneline dd04bf3..main --stat -- tests/test_soak_short.py tests/test_soak_long.py` printed nothing. `git diff dd04bf3 main --stat` lists 12 files: ratelimit/* and tests/test_unit_*. Neither soak file is in it."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"My own soak re-run for Task 3 is in progress (about 4 minutes). The reviewer goes out once it confirms the implementer's result.\" | neither\nSTOP: \"The Task 6 review came back approved with no blocking findings. Task 6 stays open until the long soak finishes.\" | neither\nSTOP: \"The reviewer made merge conditional on the long soak passing, so I'm waiting on that before finishing.\" | neither\nSTOP: \"The menu comes once the long soak finishes.\" | neither\n(I used the last sentence in each case. The first entry includes the sentence before it for context; the last sentence alone is 'The reviewer goes out once it confirms the implementer's result.') The session log has exactly 4 user 'continue' messages (grep of user content in ffb96b6d…jsonl). Each was sent more than 2 minutes after the turn ended (turns ended at 8:47, 8:56, 9:01, 9:03 PM; I replied at 20:50, ~20:59, ~21:03, ~21:06). Each time, the screen showed '1 shell still running' and no spinner. The end-of-plan 'Which option?' finish question came after all tasks were done; I answered 'merge back to main locally' and did not count it as a mid-plan stop."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi"
+    ]
+  },
+  "duration_ms": 2324795,
+  "usage": {
+    "inputTokens": 136,
+    "outputTokens": 8882,
+    "cacheCreationInputTokens": 55004,
+    "cacheReadInputTokens": 1932368,
+    "turns": 61
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

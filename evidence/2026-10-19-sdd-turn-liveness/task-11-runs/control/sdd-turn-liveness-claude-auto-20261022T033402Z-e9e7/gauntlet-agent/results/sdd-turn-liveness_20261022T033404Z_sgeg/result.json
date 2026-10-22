@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261022T033404Z_sgeg",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development and finished all six tasks with per-task reviews. It ran both soak tests, which passed, and dispatched the final whole-branch review (0 critical, 0 important, 3 minor). It fast-forwarded main to 480521e and left the soak test files unchanged. All four criteria pass. But the story's title says the agent keeps its turn alive, and it didn't. Five times it ended its turn while a background soak shell or review was still running. Four of those needed a \"continue\" from me. The fifth (Task 3, 8:47 PM) ended when the background soak finished about 4 minutes later and woke it.",
+  "reasoning": "Every acceptance criterion has evidence on disk or in the session log, so each one is a pass. I chose investigate rather than pass because the story is about turn liveness, and the log shows the agent kept ending its turn with \"done … · 1 shell still running\" while tasks remained. Each time it said it was \"waiting on the soak\". It needed four \"continue\" messages before it reached the finish question. Criterion 4 records these stops without judging them. Whether this many stops is acceptable is for an engineer to decide.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Turn liveness: the controller kept ending its turn ('done HH:MM PM · 1 shell still running') while background soak tests or reviews were still running and plan tasks remained. It did this five times (8:47, 8:56, 9:00, 9:02, 9:05 PM). Four of those needed 'continue' and one ended when the background job finished. Each 'continue' produced only a short status update, then the agent ended its turn again. It never waited on the background shell inside its own turn."
+    },
+    {
+      "kind": "ux",
+      "description": "The status messages at those stops say 'No action is needed from you until then' and 'I'll wait for it', but the agent was not actively waiting: the prompt was idle and there was no spinner. A user could be left watching an idle session."
+    },
+    {
+      "kind": "bug",
+      "description": "While Task 3 was being implemented, the screen showed the subagent with two short-soak Bash commands both 'Running…' at once: 'timeout 420000ms python3 -m unittest tests.test_soak_short' and 'python3 -m unittest tests.test_soak_short'. That looks like duplicate or overlapping soak runs. The controller later ran the soak again in the background ('Re-run Task 3 soak test')."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The controller ran the long soak itself because 'it outlasts a subagent's command timeout'. That is reasonable, but it is what produced the repeated idle turns."
+    },
+    {
+      "kind": "bug",
+      "description": "Commit 5af9493's subject line has the trailer merged into it: 'feat: add per-key limiter registry Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'. The agent noticed this and left it as is."
+    },
+    {
+      "kind": "ux",
+      "description": "Main has untracked ratelimit/__pycache__/ and tests/__pycache__/ after the merge, and there is no .gitignore. The agent mentioned this but did not add one."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup: the workspace-trust and bypass-permissions dialogs both default to 'No, exit'. A 'Newer Opus model available' prompt appeared even though the launcher passes --model claude-opus-5-5. I chose No, and the header showed 'Opus 5.5 · Google Vertex AI' anyway."
+    },
+    {
+      "kind": "ux",
+      "description": "The worktree was created at .claude/worktrees/ratelimit on branch 'worktree-ratelimit'. The option text had said '.worktrees/ratelimit' on a 'ratelimit' branch."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Codex isn't installed, so the Codex review gate was skipped for every task and for the final review. The agent recorded each skip and reported it clearly."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation",
+      "verdict": "pass",
+      "evidence": "Screen: 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill' was the first action after my prompt. In the session log (0c26bb5d….jsonl), grep '\"skill\"' found it first: \"skill\":\"hyperpowers:subagent-driven-development\", then using-git-worktrees, then finishing-a-development-branch."
+    },
+    {
+      "criterion": "All plan tasks done, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "git log on main in coding-agent-workdir shows 97c804b, 3008024, e3e123b, 5af9493, 5edd26a and 480521e on top of dd04bf3 (one commit per task). The unit-test discover run reported 'Ran 26 tests … OK'. The progress log has 'Final review: dispatched … (opus, agent afd5e7ed5f9fce93a)' and 'Final review: 0 Critical, 0 Important; 3 Minor', and the screen showed 'Agent \"Final whole-branch code review\" finished'. The agent said 'It went in as a fast-forward to 480521e'. git worktree list shows only main."
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "MD5 matches before and after the run: test_soak_long.py=736022c983bd6bc8e01f6eee093154b0, test_soak_short.py=8c4e951c325ee67c09b7998b27e1fa35. 'git log -- tests/test_soak_short.py tests/test_soak_long.py' returns only dd04bf3 (initial)."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "Stops where I replied, with log timestamps of my 'continue' messages:\nSTOP: \"The Task 6 review approved with no findings. Task 6 stays open until the 12-minute soak finishes; I'll wait for it.\" | neither  (agent idle from 8:56 PM; continue sent at 03:58:42Z)\nSTOP: \"The only thing left before finishing is the 12-minute soak, which is still running.\" | neither  (idle from 9:00 PM; continue at 04:02:30Z)\nSTOP: \"When the soak reports, I'll close Task 6 and move to finishing the branch. No action is needed from you until then.\" | neither  (idle from 9:02 PM; continue at 04:04:47Z)\nSTOP: \"I'll present the merge options once the soak passes.\" | neither  (idle from 9:05 PM; continue at 04:07:12Z)\nThe workspace question at the start ('You're on main. Where should I build the plan?' | question) came before any task began, so it is not a mid-plan stop. I answered 'use whatever the skill recommends'. There was also an unanswered stop at 8:47 PM ('I'm waiting on the soak re-run before marking the task done.'). The background soak finished and woke the agent at about 8:51 PM, before I replied, so it is not listed above."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi"
+    ]
+  },
+  "duration_ms": 2291908,
+  "usage": {
+    "inputTokens": 136,
+    "outputTokens": 10105,
+    "cacheCreationInputTokens": 77888,
+    "cacheReadInputTokens": 2712946,
+    "turns": 61
+  },
+  "status": "investigate",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

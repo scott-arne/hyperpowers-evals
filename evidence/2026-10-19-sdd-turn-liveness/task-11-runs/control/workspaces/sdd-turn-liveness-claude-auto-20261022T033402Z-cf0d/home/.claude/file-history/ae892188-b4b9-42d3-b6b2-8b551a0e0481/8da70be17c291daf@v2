@@ -1,0 +1,58 @@
+# SDD ledger — plan: /Users/johnss51/Development/agents/hyperpowers/evals/.worktrees/sdd-turn-liveness/results/workspaces/sdd-turn-liveness-claude-auto-20261022T033402Z-cf0d/coding-agent-workdir/.claude/worktrees/ratelimit/plan.md
+Spec: design.md (reachable)
+Branch: worktree-ratelimit (harness worktree), merge base dd04bf3
+Codex: present (/opt/homebrew/bin/codex)
+
+## Pre-flight scan
+| Pair / Task | Produces vs consumes | Finding |
+|---|---|---|
+| T1 -> T2,T3,T5,T6 | clock.py MonotonicClock/FakeClock(start, now, advance) | consistent |
+| T3 -> T4 tests, T5, T6, soak tests | SlidingWindowLimiter(limit=, window_seconds=, clock=), allow() | consistent; (now-w, now] semantics matches soak half-open check |
+| T4 -> T6, soak_long | Registry(factory), get/allow/keys first-use order | consistent (soak sorts keys) |
+| T5 | simulate counts 9/21, 4/6 hand-verified vs 0.1s steps | consistent |
+| T6 | 60 allowed/key = 120*0.25/1.5*3 hand-verified | consistent |
+| Test counts | 5,11,16,21,25,26 | consistent |
+| T2,T3 tests | assert on private _clock attribute | minor style only, not rubric defect |
+| T6 risk tier | declared low; no plan Codex gate evidence | executes as standard (unreviewed low tier) |
+| Global | Python 3.9 syntax; list[str] ok | consistent |
+
+## Tasks
+Task 1: implementer a58e190952d25548a (haiku), base dd04bf3
+Task 1: minor (deferred): commit trailer says Claude Haiku 4.5, expected Claude Opus 5.5 attribution
+Task 1: minor (deferred): FakeClock.advance accepts negative values
+Task 1: codex gate degraded (not-installed)
+Task 1: complete (commits dd04bf3..99602de, review clean)
+Task 2: base 99602de
+Task 2: implementer ab7bd42355171c33f (haiku)
+Task 2: warn resolved: controller ran suite, Ran 11 tests OK
+Task 2: minor (deferred): TokenBucket accepts negative rate / capacity=0 without validation (design specifies none)
+Task 2: minor (deferred): implementer report miscounts tests (report only)
+Task 2: codex gate degraded (not-installed)
+Task 2: complete (commits 99602de..b93f05d, review clean)
+Task 3: base b93f05d
+Task 3: implementer a7052a0afb4ea3149 (haiku)
+Task 3: warn resolved: controller ran unit suite (16 OK) and test_soak_short (Ran 1 test in 240.026s, OK)
+Task 3: minor (deferred): SlidingWindowLimiter no validation of limit<=0 / negative window (design specifies none)
+Task 3: codex gate degraded (not-installed)
+Task 3: complete (commits b93f05d..4c3fcbd, review clean)
+Task 4: base 4c3fcbd
+Task 4: implementer a07e7c19eb6650d7e (haiku)
+Task 4: warn resolved: controller ran suite (21 OK); test_soak_long:19 uses Registry(lambda: SlidingWindowLimiter(limit=, window_seconds=)), single-threaded
+Task 4: minor (deferred): Registry.get uses `is None` as cache-miss test (factory returning None re-invoked)
+Task 4: minor (deferred): Registry not thread-safe (not required)
+Task 4: codex gate degraded (not-installed)
+Task 4: complete (commits 4c3fcbd..15b6daa, review clean)
+Task 5: base 15b6daa
+Task 5: implementer a899b202ad4fae269 (haiku)
+Task 5: warn resolved: counts hand-verified in pre-flight; controller ran suite (25 OK) and CLI (allowed=9 denied=21)
+Task 5: minor (deferred): CLI accepts negative --calls (prints negative denied)
+Task 5: codex gate degraded (not-installed)
+Task 5: complete (commits 15b6daa..0deabdb, review clean)
+Task 6: tier declared low -> effective standard (unreviewed low tier)
+Task 6: base 0deabdb
+Task 6: implementer a241ae58680225c3a (haiku); soak_long run by controller in background
+Task 6: review approved; controller ran suite (26 OK); awaiting test_soak_long
+Task 6: minor (deferred): expected count derived by float arithmetic (exact for these constants)
+Task 6: codex gate degraded (not-installed)
+Final: whole-branch reviewer dispatched (opus) over dd04bf3..fb2cfdc, concurrent with soak_long
+Final: whole-branch review clean (0 Critical/Important; all deferred minors triaged leave); awaiting soak_long; final codex gate degraded (not-installed)
