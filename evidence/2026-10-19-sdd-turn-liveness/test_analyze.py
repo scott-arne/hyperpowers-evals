@@ -205,6 +205,11 @@ class Measure(unittest.TestCase):
             f"printf 'Task 6: complete (abc123)\\n' | tee -a {LEDGER} > /dev/null",
             # The control arm's r5 and r6 wrote the mark after a literal \n (README Correction 2).
             f"printf 'test_soak_long: Ran 1 test in 720.037s OK\\nTask 6: complete (abc123)\\n' >> {LEDGER}",
+            # Correction 3: the forms whose escapes the shell interprets.
+            f"printf \"soak OK\\nTask 6: complete (abc123)\\n\" >> {LEDGER}",
+            f"echo -e 'soak OK\\nTask 6: complete' >> {LEDGER}",
+            f"printf $'soak OK\\nTask 6: complete\\n' >> {LEDGER}",
+            f"printf 'soak OK\\\\\\nTask 6: complete\\n' >> {LEDGER}",
             # A path set by command substitution cannot be resolved statically.
             "W=$(cat /tmp/claude/b2b/sdd-dir.txt); cat >> \"$W/progress.md\" <<'EOF'\n- Task 6: complete (abc123)\nEOF",
             "D=\"$(bash scripts/sdd-dir plan.md)\"\necho 'Task 6: complete' >> \"$D/progress.md\"",
@@ -220,6 +225,11 @@ class Measure(unittest.TestCase):
             "cat >> \"$UNSET\" <<'EOF'\nTask 6: complete\nEOF",
             "W=$(pwd); echo 'Task 6: complete' >> \"$W/notes.md\"",
             f"echo 'ok' >> {LEDGER} # Task 6: complete",
+            # Correction 3: a literal backslash the shell never interprets marks nothing.
+            f"echo 'soak OK\\nTask 6: complete' >> {LEDGER}",
+            f"printf '%s\\n' 'soak OK\\nTask 6: complete' >> {LEDGER}",
+            f"printf 'soak OK\\\\nTask 6: complete\\n' >> {LEDGER}",
+            f"cat >> {LEDGER} <<'EOF'\nsoak OK\\nTask 6: complete\nEOF",
         )):
             stray = five[:-1] + [
                 assistant(1420, tools=[(f"w{n}", "Bash", {"command": command})]),
@@ -417,6 +427,8 @@ class Measure(unittest.TestCase):
         self.assertEqual(analyze.void_kind(reset), "void-transport")
         judged = {**lost, "gauntlet": {**lost["gauntlet"], "reasoning": "the agent never answered"}}
         self.assertEqual(analyze.void_kind(judged), "void-grader")
+        written = {**lost, "gauntlet": {**lost["gauntlet"], "run_id": "sdd-turn-liveness_x_r1"}}
+        self.assertEqual(analyze.void_kind(written), "void-other")
         self.assertEqual(analyze.void_kind({"final": "indeterminate", "final_reason": "API error", "gauntlet": {"status": "investigate"}}), "void-other")
         self.assertEqual(analyze.void_kind({"final": None}), "void-other")
         self.assertIsNone(analyze.void_kind({"final": "fail"}))

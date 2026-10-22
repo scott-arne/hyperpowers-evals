@@ -55,10 +55,7 @@ from liveness import (
 
 LAST_TASK = 6
 TASK_LINE = re.compile(r"^Task (\d+): complete\b", re.MULTILINE)
-# A mark may follow a literal backslash escape inside a printf or echo -e
-# argument ("...OK\nTask 6: complete"), where "n" sits before "Task" and no
-# word boundary exists; the escape counts as a boundary (README Correction 2).
-MARK = re.compile(r"(?:(?<![A-Za-z0-9_])|(?<=\\[nrt]))Task (\d+): complete\b")
+MARK = re.compile(r"\bTask (\d+): complete\b")
 LEDGER_FILE = "progress.md"
 SHORT_SOAK = "test_soak_short"
 LONG_SOAK = "test_soak_long"
@@ -112,6 +109,11 @@ REDIRECT = re.compile(r"(?<![<>&0-9])>{1,2}\s*(['\"]?)([^\s'\"<>|;&()]+)\1")
 OUT_TARGET = re.compile(r">\s*(['\"]?)([^\s'\";|&<>]+)\1\s*2>&1")
 SH_C = re.compile(r"\b(?:bash|sh|zsh)\s+-c\s+(['\"])(.*?)(?<!\\)\1", re.DOTALL)
 UNICODE_QUOTES = {"\u2018": "'", "\u2019": "'", "\u201c": "'", "\u201d": "'", '"': "'"}
+PRINTF_FORMAT = re.compile(r"\bprintf\s+(?:-v\s+\w+\s+)?(?:--\s+)?('[^']*'|\"(?:\\.|[^\"\\])*\")")
+ECHO_E = re.compile(r"\becho\s+((?:-[a-zA-Z]+\s+)+)")
+ANSI_C = re.compile(r"\$'((?:\\.|[^'\\])*)'")
+ESCAPE = re.compile(r"(?<!\\)((?:\\\\)*)\\([nrt])")
+ESCAPES = {"n": "\n", "r": "\r", "t": "\t"}
 
 
 @dataclass(frozen=True)
@@ -155,7 +157,14 @@ def void_kind(verdict: Mapping[str, Any]) -> str | None:
     gauntlet = verdict.get("gauntlet") or {}
     if not gauntlet and "quorum error (setup)" in reason:
         return "void-setup"
-    if gauntlet.get("status") == "investigate" and "without writing a result" in str(gauntlet.get("summary") or ""):
+    # Quorum synthesizes the gauntlet record with run_id None when the
+    # Gauntlet-Agent exits without a result; a written result carries its run
+    # id and stays a capped void whatever its text says (Correction 3).
+    if (
+        gauntlet.get("status") == "investigate"
+        and gauntlet.get("run_id") is None
+        and "without writing a result" in str(gauntlet.get("summary") or "")
+    ):
         # The Gauntlet-Agent died before grading. When its recorded stderr names
         # a transport error the host lost its network and no behavior was
         # observed to completion, so the attempt is outside the cap (plan
@@ -397,6 +406,41 @@ def _calls(records: Sequence[Record]) -> list[Call]:
     return [calls[t] for t in order]
 
 
+def _unescape(text: str, double_quoted: bool = False) -> str:
+    """The text as printf or echo -e emits it.
+
+    An odd run of backslashes before n, r or t ends in that character; an
+    even run stays literal. Bash halves backslash pairs inside double quotes
+    before the command sees them.
+    """
+    if double_quoted:
+        text = text.replace("\\\\", "\\")
+    return ESCAPE.sub(lambda m: m.group(1) + ESCAPES[m.group(2)], text)
+
+
+def _requote(quoted: str) -> str:
+    return quoted[0] + _unescape(quoted[1:-1], quoted[0] == '"') + quoted[0]
+
+
+def _interpret_escapes(segment: str) -> str:
+    """The segment with the escapes the shell interprets written out.
+
+    Three forms turn a literal ``\\n`` into a newline: a printf format string,
+    the arguments of ``echo -e``, and ``$'...'`` quoting. Everywhere else (plain
+    echo, a printf ``%s`` argument, a heredoc body) the two characters reach the
+    ledger as they are and mark nothing. Correction 3 (Codex gate, Task 11): the
+    earlier pattern credited every literal escape.
+    """
+    out = segment
+    for match in PRINTF_FORMAT.finditer(segment):
+        out = out.replace(match.group(1), _requote(match.group(1)), 1)
+    echo = ECHO_E.search(segment)
+    if echo and "e" in echo.group(1) and "E" not in echo.group(1):
+        head, tail = out[: echo.end()], out[echo.end():]
+        out = head + QUOTED.sub(lambda m: _requote(m.group(0)), tail)
+    return ANSI_C.sub(lambda m: "$'" + _unescape(m.group(1)) + "'", out)
+
+
 def _ledger_marks(call: Call) -> set[int]:
     """Task numbers that one successful write to an SDD ledger marks complete.
 
@@ -430,7 +474,7 @@ def _ledger_marks(call: Call) -> set[int]:
                 written.append(match.group(3))
         for segment in _segments(_strip_heredocs(command), pipes=False):
             if _writes_ledger(segment, env):
-                written.append(segment)
+                written.append(_interpret_escapes(segment))
         text = "\n".join(written)
     else:
         return set()

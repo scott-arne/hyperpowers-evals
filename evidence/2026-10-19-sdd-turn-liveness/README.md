@@ -349,6 +349,21 @@ The record is `smoke.md`; all eight runs, two per round, are archived under
    repeated. Pin after the Correction: `analyze.py`
    `0df45b0b3e8a236f7372577f65b9f0aa22c659fc` (`liveness.py` and `tally.py`
    unchanged).
+3. 2026-10-22, before any treatment tally (Task 11's Codex gate). Two analyzer
+   changes in one commit. `analyze.void_kind` names `void-grader` or
+   `void-transport` only for the record quorum synthesizes when the
+   Gauntlet-Agent exits without a result (`gauntlet.run_id` null); a written
+   result stays `void-other`, capped, whatever its text says. Ledger marks:
+   `MARK` returns to `\bTask (\d+): complete\b`, and the Bash branch of
+   `_ledger_marks` first writes out the escapes the shell interprets, in a
+   `printf` format string, the arguments of `echo -e` and `$'…'` quoting, an
+   odd run of backslashes producing the character and an even run staying
+   literal; Correction 2's pattern had credited every literal `\n`, `\r` or
+   `\t`, including plain `echo`, a `printf '%s'` argument, an even run and a
+   heredoc body. Recomputed from the archive: no control field changes (r5 and
+   r6 wrote their marks in `printf` format strings). Pin after the Correction:
+   `analyze.py` `20e2abae141fbe700d4a6372706c4ca5486c111f` (`liveness.py` and
+   `tally.py` unchanged).
 
 ## Results
 
