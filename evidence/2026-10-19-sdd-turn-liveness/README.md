@@ -373,6 +373,29 @@ The record is `smoke.md`; all eight runs, two per round, are archived under
    field changes. Pin after the Correction: `analyze.py`
    `c893ea32925b9b9e329b93238f5c9ea216392ef3` (`liveness.py` and `tally.py`
    unchanged).
+5. 2026-10-22, after the treatment arm's first tally and before the decision
+   of record. The analyzer paired a long-job watch to its launch by the
+   literal output path and read a Bash ledger write only when its target was
+   an absolute SDD path, so a watch that names the exit file through a shell
+   variable (`W=<dir>; … "$W/soak-long.out.exit"`, treatment p8) or by name
+   after `cd <dir>` (treatment p10), and ledger marks written after
+   `cd <ledger dir>` (treatment p10, Tasks 1-5), were missed: both runs read
+   `long_ok` false and p10 read plan-incomplete, although each watched a
+   tracked background launch to `exit=0` 720 s later with no turn end
+   between. `_names_file` and `_cwd_segments` now resolve shell-variable
+   assignments and `cd` prefixes for both recognizers, and the output path a
+   watch is matched against is resolved with the launch's own assignments,
+   because a launch may name its own output through a variable it sets
+   (`> $W/soak-long.out`, treatment p3); a watch that spells the path the
+   same unexpanded way still matches literally, so no run loses a match.
+   Recomputed from the archives: control unchanged; treatment F 10 of 10 and
+   p10 plan-complete; the decision is unchanged, FAIL on P: p8's last ledger
+   line reads `Task 6: soak_long OK (…) ; complete (…)`, not the canonical
+   `Task 6: complete`, so p8 stays plan-incomplete and its end-of-run closing
+   stays the treatment's premature stop, by the human partner's decision to
+   keep the pre-registered rule. Pin after the Correction: `analyze.py`
+   `03a6e3e7b1d51a6ff6513962ad3965ce54a339a6` (`liveness.py` and `tally.py`
+   unchanged).
 
 ## Results
 

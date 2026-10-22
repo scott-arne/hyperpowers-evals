@@ -212,6 +212,10 @@ class Measure(unittest.TestCase):
             f"printf 'soak OK\\\\\\nTask 6: complete\\n' >> {LEDGER}",
             # Correction 4: an interpreted printf format before an echo -e in one pipeline.
             f"printf 'soak OK\\n' | tee -a /dev/null | echo -e 'ok\\nTask 6: complete' >> {LEDGER}",
+            # Correction 5: the ledger named relative to a cd into its directory.
+            f"cd {folder} && printf '%s\\n' 'Task 6: complete (abc123)' >> progress.md",
+            f"cd {folder} && cat >> progress.md <<'EOF'\nTask 6: complete (abc123)\nEOF",
+            f"D={folder}; cd \"$D\" && echo 'Task 6: complete' >> progress.md",
             # A path set by command substitution cannot be resolved statically.
             "W=$(cat /tmp/claude/b2b/sdd-dir.txt); cat >> \"$W/progress.md\" <<'EOF'\n- Task 6: complete (abc123)\nEOF",
             "D=\"$(bash scripts/sdd-dir plan.md)\"\necho 'Task 6: complete' >> \"$D/progress.md\"",
@@ -232,6 +236,9 @@ class Measure(unittest.TestCase):
             f"printf '%s\\n' 'soak OK\\nTask 6: complete' >> {LEDGER}",
             f"printf 'soak OK\\\\nTask 6: complete\\n' >> {LEDGER}",
             f"cat >> {LEDGER} <<'EOF'\nsoak OK\\nTask 6: complete\nEOF",
+            # Correction 5: a relative ledger name with no cd, or after a cd elsewhere, is not the ledger.
+            "echo 'Task 6: complete' >> progress.md",
+            "cd /elsewhere && echo 'Task 6: complete' >> progress.md",
         )):
             stray = five[:-1] + [
                 assistant(1420, tools=[(f"w{n}", "Bash", {"command": command})]),
@@ -322,6 +329,40 @@ class Measure(unittest.TestCase):
         m = self.run_of("l7", auto)
         self.assertFalse(m["long_runs"][0]["background"])
         self.assertFalse(m["long_ok"])
+
+    def test_long_job_watch_names_its_file_through_a_variable_or_a_cd(self) -> None:
+        # The launch writes /tmp/long.out (LONG_CMD); treatment p8 and p10 watched this way.
+        for n, watch in enumerate((
+            'W=/tmp; for i in $(seq 1 58); do [ -f "$W/long.out.exit" ] && break; sleep 10; done; cat "$W/long.out.exit"; tail -5 "$W/long.out"',
+            "cd /tmp && for i in $(seq 1 58); do [ -f long.out.exit ] && break; sleep 10; done; cat long.out.exit; tail -5 long.out",
+        )):
+            records = long_job()
+            for rec in records:
+                for use in liveness.tool_uses(rec):
+                    if use.get("id") == "b4":
+                        use["input"]["command"] = watch
+            self.assertTrue(self.run_of(f"w{n}", records)["long_ok"], watch)
+        records = long_job()
+        for rec in records:
+            for use in liveness.tool_uses(rec):
+                if use.get("id") == "b4":
+                    use["input"]["command"] = "cd /elsewhere && cat long.out.exit"
+        self.assertFalse(self.run_of("w9", records)["long_ok"])
+
+    def test_long_job_launch_names_its_output_through_a_variable(self) -> None:
+        # Treatment p3 set W in the launch ("> $W/soak-long.out") and watched
+        # the same way, so the path a watch is matched against is resolved
+        # with the launch's own assignments (README Correction 5).
+        records = long_job()
+        launch = 'W=/tmp; python3 -m unittest tests.test_soak_long -v > $W/long.out 2>&1; echo "exit=$?" > $W/long.out.exit'
+        watch = 'W=/tmp; for i in $(seq 1 58); do test -f $W/long.out.exit && break; sleep 5; done; cat $W/long.out.exit; tail -4 $W/long.out'
+        for rec in records:
+            for use in liveness.tool_uses(rec):
+                if use.get("id") == "b2":
+                    use["input"]["command"] = launch
+                if use.get("id") == "b4":
+                    use["input"]["command"] = watch
+        self.assertTrue(self.run_of("w10", records)["long_ok"])
 
     def test_auto_backgrounded_short_run_is_not_a_foreground_run(self) -> None:
         moved = "Command did not complete within its 240s timeout and was moved to the background (ID: b-auto)."

@@ -84,6 +84,7 @@ TASK_REF = re.compile(r"\bTask\s*#?\d+", re.IGNORECASE)
 LEDGER_DIR = "hyperpowers/sdd/"
 ASSIGN = re.compile(r"(?:^|[\s;&|(])(\w+)=(?:\"([^\"]*)\"|'([^']*)'|([^\s;&|<>()'\"]*))")
 VAR_REF = re.compile(r"\$\{(\w+)\}|\$(\w+)")
+CD = re.compile(r"^\s*cd\s+(['\"]?)([^\s'\"]+)\1\s*$")
 READ_ONLY = frozenset({
     "cat", "head", "tail", "grep", "egrep", "fgrep", "rg", "less", "more", "wc", "diff", "cmp",
     "ls", "stat", "file", "sha256sum", "shasum", "md5", "md5sum", "test", "[", "pytest",
@@ -468,12 +469,15 @@ def _ledger_marks(call: Call) -> set[int]:
         # put the target after the heredoc marker, or append through tee, so
         # targets are expanded and a pipeline stays whole.
         env = _assignments(command)
+        located = _cwd_segments(command, env)
         written: list[str] = []
         for match in HEREDOC.finditer(command):
-            if _writes_ledger(_heredoc_command(command, match), env):
+            pipeline = _heredoc_command(command, match)
+            cwd = next((c for s, c in located if s.strip() == pipeline.strip()), None)
+            if _writes_ledger(pipeline, env, cwd):
                 written.append(match.group(3))
-        for segment in _segments(_strip_heredocs(command), pipes=False):
-            if _writes_ledger(segment, env):
+        for segment, cwd in located:
+            if _writes_ledger(segment, env, cwd):
                 written.append(_interpret_escapes(segment))
         text = "\n".join(written)
     else:
@@ -485,16 +489,46 @@ def _is_ledger_path(path: str) -> bool:
     return path.endswith(LEDGER_FILE) and LEDGER_DIR in path
 
 
-def _writes_ledger(command: str, env: Mapping[str, str]) -> bool:
+def _cwd_segments(command: str, env: Mapping[str, str]) -> list[tuple[str, str | None]]:
+    """Each ``;``/``&&`` segment with the directory a preceding ``cd`` put it in (None before any ``cd``)."""
+    out: list[tuple[str, str | None]] = []
+    cwd: str | None = None
+    for segment in _segments(_strip_heredocs(command), pipes=False):
+        out.append((segment, cwd))
+        move = CD.match(segment)
+        if move:
+            cwd = _expand(move.group(2), env)
+    return out
+
+
+def _names_file(command: str, path: str) -> bool:
+    """Whether a command refers to ``path``: literally, through a shell variable, or by name after a ``cd`` into its directory.
+
+    Treatment p8 watched its long soak through ``W=<dir>; ... "$W/soak-long.out.exit"``
+    and p10 through ``cd <dir> && ... soak-long.out.exit`` (README Correction 5).
+    """
+    env = _assignments(command)
+    expanded = _expand(command, env)
+    if path in expanded:
+        return True
+    parent, name = str(Path(path).parent), Path(path).name
+    return name in expanded and any(cwd == parent for _, cwd in _cwd_segments(command, env))
+
+
+def _writes_ledger(command: str, env: Mapping[str, str], cwd: str | None = None) -> bool:
     """Whether a command writes to an SDD ledger.
 
     A target that still holds ``$`` after expansion was set by a command
     substitution (``W=$(cat …/sdd-dir.txt)``, a spelling real controllers
     use); it counts when it ends in ``/progress.md``, since the SDD ledger is
-    the only ``progress.md`` a scenario run writes.
+    the only ``progress.md`` a scenario run writes. A relative target is
+    joined to the directory a preceding ``cd`` chose (``cwd``), the way
+    treatment p10 wrote its marks (Correction 5).
     """
     for match in WRITE_TARGET.finditer(command):
         path = _expand(match.group(2), env)
+        if cwd and not path.startswith(("/", "$")):
+            path = f"{cwd.rstrip('/')}/{path}"
         if _is_ledger_path(path) or ("$" in path and path.endswith("/" + LEDGER_FILE)):
             return True
     return False
@@ -711,13 +745,19 @@ def _transcript_measures(
         if runs_soak(command, LONG_SOAK):
             target = OUT_TARGET.search(command)
             out_file = target.group(2) if target else None
+            # A launch may name its own output through a variable it sets in
+            # the same command ("> $W/soak-long.out", treatment p3), so the
+            # path a watch is matched against is resolved first; a watch that
+            # spells it the same unexpanded way still matches literally.
+            resolved = _expand(out_file, _assignments(command)) if out_file else ""
             seen: Call | None = None
             # The watch must read this job's own output or exit file; any other
             # exit=0 proves nothing about the soak.
             for later in bash[index + 1 :]:
                 if out_file is None or later.result is None or LAUNCH_BASH in later.result:
                     continue
-                if out_file in str(later.inp.get("command", "")) and "exit=" in later.result:
+                watch = str(later.inp.get("command", ""))
+                if (out_file in watch or _names_file(watch, resolved)) and "exit=" in later.result:
                     seen = later
                     break
             end_at = seen.result_at if seen else None
