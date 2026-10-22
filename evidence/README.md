@@ -41,7 +41,11 @@ In order:
    copy mirrors that run's live layout: a relocated run's `<run>/` beside
    `workspaces/<run>/`; a legacy run's single `<run>/`.
 4. Post-check the staged tree across both layouts: every run has at least one
-   transcript and one `result.json`, and there are no gitlinks.
+   transcript; a run whose Gauntlet wrote a result has one `result.json`, and a
+   run whose Gauntlet wrote none (`gauntlet.run_id` is null in its
+   `verdict.json`: a setup or transport void) has that `verdict.json`, the
+   Gauntlet's `run.jsonl` event stream and, when the Gauntlet left one, its
+   `gauntlet-stderr.log` instead; and there are no gitlinks.
 
 Commit ids cited in the evidence before 2026-09-16 may predate a history rewrite of the then-unpushed range (session key files removed); `history-rewrite-2026-09-16.tsv` maps old ids to new.
 
