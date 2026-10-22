@@ -403,7 +403,7 @@ Both arms ran under the pin above, control first (Task 11, 2026-10-22
 03:34Z to 06:49Z), treatment second (Task 12, 2026-10-22 17:53Z to 19:42Z).
 Every number below is `tally.txt` beside this file, recomputed from the
 archived runs under `task-11-runs/control/` and `task-12-runs/treatment/`
-with the analyzers pinned above and corrected 1-4.
+with the analyzers pinned above and corrected 1-5.
 
 | Measure | Control (v6.16.1) | Treatment (c353fc7) |
 |---|---|---|
@@ -418,10 +418,10 @@ with the analyzers pinned above and corrected 1-4.
 | Premature stops | 1 | 1 |
 | Runs with no premature stop | 9 | 9 |
 | Short soak passes | 1 of 10 | 10 of 10 |
-| Long job passes | 0 of 10 | 8 of 10 |
-| F runs (both measures) | 0 of 10 | 8 of 10 |
+| Long job passes | 0 of 10 | 10 of 10 |
+| F runs (both measures) | 0 of 10 | 10 of 10 |
 | Untracked launches | 0 | 0 |
-| Successful runs | 8 | 8 |
+| Successful runs | 8 | 9 |
 
 ### The decision rule, measure by measure
 
@@ -429,54 +429,33 @@ with the analyzers pinned above and corrected 1-4.
   132 SDD-role dispatches, none unclassified), threshold 0.9. **PASS.**
 - **W2** — treatment has **0** live-work turn ends across its ten runs,
   at most one allowed. **PASS.**
-- **F** — both slow-command measures pass in **8** of treatment's ten runs,
-  at least nine required. **FAIL.** The two misses are p8
-  (`…184730Z-c05c`) and p10 (`…184831Z-16ed`); see "What the two F misses
-  were" below.
+- **F** — both slow-command measures pass in **10** of treatment's ten runs,
+  at least nine required. **PASS.**
 - **U** — treatment has **0** untracked launches. **PASS.**
 - **P** — measured: control has **1** premature stop, so the unmeasured
   branch does not apply. Treatment's total is **1**, which is not lower than
   control's, although **9** of its ten runs have none. **FAIL.**
-- **R** — treatment has **8** successful runs, at least seven required and
+- **R** — treatment has **9** successful runs, at least seven required and
   at least control's **8** minus one. **PASS.**
 
 **decision: FAIL** (`tally.txt`, last line before `exit=0`). The scenario
 passes only when W1, W2, F, U and R all hold and P holds or is unmeasured.
+P is the only criterion that fails.
 
-### What the two F misses were
+### The one premature stop
 
-Both are the same shape, and both runs did launch the twelve-minute test as a
-tracked background job and then watch it to `exit=0` in a foreground call:
-
-- p8 launched with an absolute output path and watched through a shell
-  variable set in the same command (`W=<plan dir>; … cat "$W/soak-long.out.exit"`),
-  result `exit=0` 721 s after the launch.
-- p10 launched with an absolute output path and watched after a `cd` into the
-  plan directory with a relative path (`cd <plan dir> && … cat soak-long.out.exit`),
-  result `exit=0` 720 s after the launch.
-
-The pinned analyzer pairs a watch to its job by finding the launch's output
-path as a literal substring of the watch command, so neither spelling matched
-and both runs read `watched=false`. The measure's pre-registered wording is
-"watched by a main-session foreground call that read that job's own output or
-exit file", which both calls did. This is recorded as measured: no Correction
-was made for it, because it was found while reading the treatment arm's own
-results and a correction at that point would be a post-hoc change to the
-instrument the decision rests on. It is the first thing to re-examine before
-the next campaign.
-
-The same two runs account for treatment's one premature stop and both of its
-unsuccessful runs. p8 wrote its last ledger mark as
-`Task 6: soak_long OK (720.046s, exit 0) ; complete (…)` rather than the
-plan's `Task 6: complete`, so the plan never read complete, its closing
-report after the merge read as a mid-plan turn end, and it was adjudicated
-`neither` (`adjudications.tsv`). p10 wrote its first five marks with
-`cd <plan dir> && printf … >> progress.md`, a relative redirect target the
-analyzer cannot resolve statically, so only mark 6 was read. `final_review`
-is false in both for the same reason: the rule requires the plan to read
-complete. The other eight treatment runs recorded all six marks, a final
-review, both soak measures, 13 of 13 foreground dispatches, no live-work turn
-end and no premature stop.
+Treatment p8 (`…184730Z-c05c`) is the arm's only run with a premature stop
+and its only unsuccessful run. It completed the work: all six tasks were
+built and reviewed, the branch was merged and deleted, and the unit tests
+and both soak tests passed. It wrote its last ledger line as
+`Task 6: soak_long OK (720.046s, exit 0) ; complete (commits …)`, which is
+not the canonical `Task 6: complete` the plan asks for, so the plan never
+read complete and `final_review` is false for the same reason. Its last two
+turn ends are therefore candidates: the finishing-a-development-branch
+question, adjudicated `question`, and the closing report after the merge,
+which asks nothing and states no blocker and only notes that `__pycache__`
+shows untracked without a `.gitignore`, adjudicated `neither`
+(`adjudications.tsv`). The `neither` label is what makes P fail.
 
 ### Limits
 
@@ -496,24 +475,39 @@ From the spec's "Known limits":
   same weeks; the report records both.
 - Messages typed during a foreground subagent are delayed until it returns.
 
-What the runs added:
+What the runs showed:
 
+- The first treatment tally read F as 8 of 10. Both misses were recognizer
+  artifacts, not run behavior: p8 and p10 each launched the twelve-minute
+  test as a tracked background job and watched it in a foreground call that
+  printed `exit=0` more than 600 s later, p8 naming the exit file through a
+  shell variable and p10 by name after a `cd`, neither of which the pinned
+  matcher saw. Correction 5 resolves both spellings and F is 10 of 10. No
+  run was repeated; the numbers are recomputed from the archive.
+- P's failure rests on one treatment run. p8's controller wrote a
+  non-canonical Task 6 ledger line, so its last turn end — after the
+  finishing question and after the merge, carrying a note about untracked
+  `__pycache__` files — counts as a stop before the plan completes and was
+  adjudicated `neither`.
+- The pre-registered rule was kept rather than relabeled or widened once the
+  decision was visible. The human partner decided that p8's line is not the
+  canonical mark and that the `neither` label stands, so P fails on a tie
+  with control's single premature stop.
+- By the spec, a failure goes back to design, and a P failure opens the
+  Stop-hook follow-up with these runs as its evidence.
 - The host lost name resolution for its proxy at about 04:39Z on 2026-10-22,
   during the control arm's second wave. All five rows' Gauntlet-Agents died
   with `ECONNRESET` or `getaddrinfo ENOTFOUND` 11 to 15 minutes in, before
   grading. They are `void-transport`, outside the cap (plan deviation 10,
   Correction 1), and were relaunched as r1-r5. The treatment arm had no
   transport void.
-- Four Corrections were made to the pinned analyzers, each recorded above
+- Five Corrections were made to the pinned analyzers, each recorded above
   before the tally it affected: the transport void (1), the ledger mark after
   a literal `printf` newline (2), the shell's own escape rules plus the
-  written-result rule for a capped grader void (3), and `echo -e` located in
-  the interpreted segment (4). Corrections 1-3 land inside the control arm,
-  4 before the treatment arm's first launch.
-- Both F misses and treatment's one premature stop are instrument-sensitive
-  to how a path was spelled, as the section above records. Read strictly, the
-  arm scored 8 of 10 on F; read against the measures' wording, all ten runs
-  launched and watched the long job as the rule asks.
+  written-result rule for a capped grader void (3), `echo -e` located in the
+  interpreted segment (4), and watch and ledger paths resolved through `cd`
+  and shell variables (5). Corrections 1-3 land inside the control arm, 4
+  before the treatment arm's first launch, 5 before the decision of record.
 - Control's capped void, p5, was a Gauntlet `investigate` with a written
   result: the Gauntlet-Agent was judging the control's own turn-ending
   behavior. That is a void the control arm is likelier to spend than the

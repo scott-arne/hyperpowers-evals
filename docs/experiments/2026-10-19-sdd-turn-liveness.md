@@ -43,45 +43,54 @@ and the ten treatment runs in `task-12-runs/treatment/`, each beside its
 `tally.py` in the same directory, pinned by blob in `README.md` with four
 recorded Corrections.
 
-**Verdict.** **FAIL**, on F and P; W1, W2, U and R pass.
+**Verdict.** **FAIL**, on P alone; W1, W2, F, U and R pass.
 
 | Measure | Threshold | Treatment | Verdict |
 |---|---|---|---|
 | W1 foreground dispatch share | ≥ 0.9 | 1.0 (132 of 132) | PASS |
 | W2 live-work turn ends | ≤ 1 | 0 | PASS |
-| F runs with both slow-command measures | ≥ 9 of 10 | 8 | FAIL |
+| F runs with both slow-command measures | ≥ 9 of 10 | 10 | PASS |
 | U untracked launches | 0 | 0 | PASS |
 | P premature stops | < control's 1, and ≥ 9 runs with none | 1, 9 runs with none | FAIL |
-| R successful runs | ≥ 7 and ≥ control's 8 − 1 | 8 | PASS |
+| R successful runs | ≥ 7 and ≥ control's 8 − 1 | 9 | PASS |
 
 Control, for contrast: foreground share 0.75 (99 of 132), 71 live-work turn
 ends, 1 premature stop, 8 successful runs, both slow-command measures in 0 of
 10 runs. The behavioral separation the change was written for is large and
-one-sided — every treatment dispatch ran in the foreground and no treatment
-turn ended with work live, against 33 background dispatches and 71 live-work
-turn ends in control — and the campaign still fails its own rule, because F
-needs nine of ten and P needs a strictly lower premature total than a control
-base of one.
+one-sided — every treatment dispatch ran in the foreground, no treatment turn
+ended with work live, and every treatment run ran the four-minute command in
+the foreground and watched the twelve-minute one to `exit=0`, against 33
+background dispatches and 71 live-work turn ends in control — and the
+campaign still fails its own rule, because P needs a strictly lower premature
+total than a control base of one and the arms tie at one each.
 
-**Limits.** Both F misses are one shape. p8 (`…184730Z-c05c`) and p10
+**Limits.** The first tally read F as 8 of 10. Both misses were recognizer
+artifacts rather than run behavior: p8 (`…184730Z-c05c`) and p10
 (`…184831Z-16ed`) each launched the twelve-minute test as a tracked
-background job and watched it in a foreground call that printed `exit=0` more
-than 600 s later, p8 through a shell variable (`"$W/soak-long.out.exit"`) and
-p10 through a relative path after a `cd`. The pinned analyzer pairs a watch
-to its job by finding the launch's output path as a literal substring of the
-watch command, so neither matched and both read `watched=false`. No
-Correction was made: the shape was found while reading the treatment arm's
-own results, and changing the instrument there would be a post-hoc change to
-what the decision rests on. The same two runs are treatment's only
-unsuccessful ones and the source of its single premature stop: p8 wrote its
-last ledger mark as `Task 6: soak_long OK (…) ; complete (…)` instead of
-`Task 6: complete`, so its closing report after the merge read as a mid-plan
-turn end; p10 wrote five of six marks with a relative redirect after a `cd`,
-which the analyzer cannot resolve statically.
+background job and watched it in a foreground call that printed `exit=0`
+more than 600 s later, p8 naming the exit file through a shell variable
+(`W=<dir>; … "$W/soak-long.out.exit"`) and p10 by name after a `cd`; p10 also
+wrote its Task 1-5 ledger marks after a `cd` into the ledger directory. The
+pinned analyzer matched only literal absolute paths. Correction 5, recorded
+in the campaign README before the decision of record, resolves shell-variable
+assignments and `cd` prefixes for both recognizers; F became 10 of 10 and p10
+plan-complete, recomputed from the archive with no run repeated.
 
-P rests on one control event in ten runs, which cannot separate the arms
-either way. The control arm also lost five rows to a host name-resolution
-failure at about 04:39Z; those are `void-transport`, outside the cap by plan
+P's failure rests on a single treatment run. p8 completed and merged the
+work, but wrote its last ledger line as `Task 6: soak_long OK (…) ; complete
+(…)` rather than the canonical `Task 6: complete`, so the plan never read
+complete and its last turn end — after the finishing question and after the
+merge, carrying a note that `__pycache__` shows untracked without a
+`.gitignore` — counts as a stop before the plan completes and was adjudicated
+`neither`. The pre-registered rule was kept rather than relabeled or widened
+once the decision was visible: the human partner decided p8's line is not the
+canonical mark and the `neither` label stands. By the spec, the failure goes
+back to design, and the P failure opens the Stop-hook follow-up with these
+runs as its evidence.
+
+P also rests on one control event in ten runs, which cannot separate the arms
+either way. The control arm lost five rows to a host name-resolution failure
+at about 04:39Z; those are `void-transport`, outside the cap by plan
 deviation 10, and were relaunched. The scenario is short and fresh while the
 field's premature stops come from long, compacted sessions, so this campaign
 was never the whole case; the field decision rule in the spec is where P's
