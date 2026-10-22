@@ -40,7 +40,7 @@ output in `tally.txt`, the hand labels in `adjudications.tsv`, the per-row
 launch logs in `logs/`, the sixteen control runs in `task-11-runs/control/`
 and the ten treatment runs in `task-12-runs/treatment/`, each beside its
 `workspaces/` copy. The analyzers are `liveness.py`, `analyze.py` and
-`tally.py` in the same directory, pinned by blob in `README.md` with five
+`tally.py` in the same directory, pinned by blob in `README.md` with six
 recorded Corrections.
 
 **Verdict.** **FAIL**, on P alone; W1, W2, F, U and R pass.
@@ -74,7 +74,10 @@ wrote its Task 1-5 ledger marks after a `cd` into the ledger directory. The
 pinned analyzer matched only literal absolute paths. Correction 5, recorded
 in the campaign README before the decision of record, resolves shell-variable
 assignments and `cd` prefixes for both recognizers; F became 10 of 10 and p10
-plan-complete, recomputed from the archive with no run repeated.
+plan-complete, recomputed from the archive with no run repeated. Correction 6
+then tightened those recognizers, which had been fail-open on a `cd` carried
+into a `||` branch and on a file name counted outside the segment the `cd`
+applied to; it changed no row in either arm.
 
 P's failure rests on a single treatment run. p8 completed and merged the
 work, but wrote its last ledger line as `Task 6: soak_long OK (…) ; complete
