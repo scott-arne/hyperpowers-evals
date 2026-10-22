@@ -134,6 +134,21 @@ class Evaluate(unittest.TestCase):
         self.assertEqual(next(r for r in rows if r["run_id"] == "control-00")["status"], "void-setup")
         self.assertEqual(d["decision"], "PASS")
 
+    def test_transport_void_is_not_counted(self) -> None:
+        lost = {
+            "status": "investigate",
+            "summary": "gauntlet exited (status 1) without writing a result",
+            "reasoning": 'gauntlet stderr (tail): {"error":{"message":"ECONNRESET: The socket connection was closed unexpectedly."}}',
+        }
+        for n in range(4):
+            make_run(self.c.results, f"control-t{n}", [], plugin_dir=ROOTS["control"], final="indeterminate", gauntlet=lost)
+            self.c.launch("control", f"r{n + 1}", [f"control-t{n}"])
+        self.c.arm("control", 10, control_records, STOPS)
+        self.c.arm("treatment", 10, treatment_records)
+        rows, d = self.c.evaluate()
+        self.assertEqual({r["status"] for r in rows if r["run_id"].startswith("control-t")}, {"void-transport"})
+        self.assertEqual(d["decision"], "PASS")
+
     def test_dirty_root_is_a_provenance_void(self) -> None:
         self.c.arm("control", 10, control_records, STOPS)
         self.c.arm("treatment", 10, treatment_records)

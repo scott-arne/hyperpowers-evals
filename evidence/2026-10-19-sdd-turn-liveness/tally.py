@@ -30,6 +30,7 @@ import analyze
 
 N = 10
 VOID_CAP = 3
+UNCAPPED_VOIDS = ("void-setup", "void-transport")
 ARMS = ("control", "treatment")
 SCENARIO = "sdd-turn-liveness"
 ARCHIVE = {"control": HERE / "task-11-runs" / "control", "treatment": HERE / "task-12-runs" / "treatment"}
@@ -275,8 +276,10 @@ def evaluate(
                 # A quorum exit outside 0-2 is a harness failure: capped like the other voids.
                 voids[launch.arm] += 1
                 row["status"] = "launch-failed"
-            elif m["void"] == "void-setup":
-                row["status"] = "void-setup"
+            elif m["void"] in UNCAPPED_VOIDS:
+                # No agent behavior was observed to completion: a setup failure
+                # started none, a transport failure lost the grader (deviation 10).
+                row["status"] = m["void"]
             elif m["void"] is not None:
                 voids[launch.arm] += 1
                 row["status"] = m["void"]

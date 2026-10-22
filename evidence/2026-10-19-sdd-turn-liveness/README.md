@@ -151,6 +151,8 @@ The rest of the measures, with the approved plan deviations that shape them
 From the plan's Global Constraints, unchanged here:
 
 - A harness setup failure is void, relaunched, with no cap.
+- A Gauntlet lost to a transport failure before it wrote a result is
+  `void-transport`: relaunched, no cap (Correction 1, plan deviation 10).
 - Every other non-pass, non-fail outcome (a grader exit without a result, an
   API or harness failure, anything unrecognized) is void, replaced, at most
   three such replacements per arm combined.
@@ -312,6 +314,23 @@ The record is `smoke.md`; all eight runs, two per round, are archived under
 - **p4** ran with fork mode off. Treatment dispatched 13 of 13 in the
   foreground with no live-work turn end, and both F measures passed; control
   passed `false` on 8 of 13 and ended 8 turns with work live.
+
+## Corrections
+
+1. 2026-10-22, before the control arm's first relaunch (plan deviation 10).
+   `analyze.void_kind` names a new void, `void-transport`: a Gauntlet exit
+   without a result whose recorded stderr names a transport error
+   (`ECONNRESET`, `ENOTFOUND`, `ETIMEDOUT`, `ECONNREFUSED`);
+   `tally.evaluate` relaunches it outside the cap, like `void-setup`.
+   Reason: at about 04:39Z the host lost name resolution for its proxy for a
+   few minutes, the Gauntlet-Agent of all five second-wave control rows
+   (p6-p10) exited with `ECONNRESET` or `getaddrinfo ENOTFOUND` 11 to 15
+   minutes into the runs, and the five rows exhausted the cap of three with
+   no agent behavior observed to completion and nothing re-rolled. The rule
+   is symmetric across arms; a Gauntlet `investigate` with a written result
+   stays a capped void. Pins after the Correction: `analyze.py`
+   `8fc5ce5b2a1eec8ef7d29fa59b2f357985634dd0`, `tally.py`
+   `3ba4826a81b29a1c56ecb9dad17ec262200a0b35` (`liveness.py` unchanged).
 
 ## Results
 

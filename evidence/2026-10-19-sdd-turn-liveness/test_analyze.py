@@ -402,6 +402,19 @@ class Measure(unittest.TestCase):
             analyze.void_kind({"final": "indeterminate", "gauntlet": {"status": "investigate", "summary": "gauntlet exited (status 1) without writing a result"}}),
             "void-grader",
         )
+        lost = {
+            "final": "indeterminate",
+            "gauntlet": {
+                "status": "investigate",
+                "summary": "gauntlet exited (status 1) without writing a result",
+                "reasoning": 'gauntlet stderr (tail): {"error":{"message":"getaddrinfo ENOTFOUND proxy.example"}}',
+            },
+        }
+        self.assertEqual(analyze.void_kind(lost), "void-transport")
+        reset = {**lost, "gauntlet": {**lost["gauntlet"], "reasoning": 'gauntlet stderr (tail): {"error":{"message":"ECONNRESET: The socket connection was closed unexpectedly."}}'}}
+        self.assertEqual(analyze.void_kind(reset), "void-transport")
+        judged = {**lost, "gauntlet": {**lost["gauntlet"], "reasoning": "the agent never answered"}}
+        self.assertEqual(analyze.void_kind(judged), "void-grader")
         self.assertEqual(analyze.void_kind({"final": "indeterminate", "final_reason": "API error", "gauntlet": {"status": "investigate"}}), "void-other")
         self.assertEqual(analyze.void_kind({"final": None}), "void-other")
         self.assertIsNone(analyze.void_kind({"final": "fail"}))

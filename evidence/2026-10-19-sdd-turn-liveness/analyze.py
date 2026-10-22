@@ -63,6 +63,7 @@ SHORT_RUNTIME_MS = 240_000
 LONG_RUNTIME_MS = 720_000
 SHORT_MIN_ELAPSED_S = 200
 LONG_MIN_ELAPSED_S = 600
+TRANSPORT_ERRORS = ("ECONNRESET", "ENOTFOUND", "ETIMEDOUT", "ECONNREFUSED")
 SOAK_FILES = ("test_soak_short.py", "test_soak_long.py")
 UNITTEST_CMD = re.compile(
     r"(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*(?:nohup\s+|timeout\s+\S+\s+)*(?:\S*/)?python3?\s+-m\s+unittest\b([^\n;|&]*)"
@@ -152,6 +153,12 @@ def void_kind(verdict: Mapping[str, Any]) -> str | None:
     if not gauntlet and "quorum error (setup)" in reason:
         return "void-setup"
     if gauntlet.get("status") == "investigate" and "without writing a result" in str(gauntlet.get("summary") or ""):
+        # The Gauntlet-Agent died before grading. When its recorded stderr names
+        # a transport error the host lost its network and no behavior was
+        # observed to completion, so the attempt is outside the cap (plan
+        # deviation 10); any other grader exit stays a capped void.
+        if any(code in str(gauntlet.get("reasoning") or "") for code in TRANSPORT_ERRORS):
+            return "void-transport"
         return "void-grader"
     return "void-other"
 
