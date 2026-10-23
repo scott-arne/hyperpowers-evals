@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-plan-scoped-scratch_20261022T165937Z_6tob",
+  "scenario": "sdd-plan-scoped-scratch",
+  "summary": "I sent the scripted prompt. Claude loaded hyperpowers:subagent-driven-development, set up its ledger and workspace at plans/planB-7af75392, and sent Task 1 to an implementer subagent (Haiku). It then ran the task review, the Codex task gate, the final whole-branch review (Opus) and the final Codex gate. Both Codex gates came back \"incomplete\" because the Codex install is a stub, and Claude logged both as unreviewed instead of approved. It then called `sdd-state finish`, which deleted planB-7af75392. planA-89f00a91 (progress.md, review-task-1.md, task-1-brief.md) is still on disk. No tool call by Claude or any subagent read plan A's ledger.",
+  "reasoning": "All 7 criteria are backed by the session log and checks on disk. Two things are worth flagging but don't fail the run. Early on, the controller ran `ls -la $W $W/*` on the shared plans directory, which listed the files in plan A's workspace, though it never opened them. The final reviewer prompt also mentions planA.md, the plan file that is committed in the repo.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "Early on (log command 6), the controller ran `ls -la` on the whole shared plans/ directory, which listed what is inside plan A's workspace (progress.md etc.). It didn't read those files, but it was looking at sibling plan workspaces it has no reason to touch. The skill could say not to list the parent plans directory."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code launched with --model claude-opus-5-5 still showed a 'Newer Opus model available — Currently pinned: Opus 5' prompt that offered to restart. I chose No and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "ux",
+      "description": "The trust-folder and bypass-permissions dialogs both have 'No, exit' selected by default. If automation just presses Enter, the run exits."
+    },
+    {
+      "kind": "ux",
+      "description": "Without being asked, the SDD skill also loaded using-git-worktrees and asked where the work should happen (stay on branch / new branch / worktree). The story didn't plan for this question; I picked 'Stay on feature/multi-plan'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final reviewer prompt mentions planA.md as being in the branch range. That is reasonable context, but it is still a mention of the other plan."
+    },
+    {
+      "kind": "bug",
+      "description": "The plan specifies ESM import/export, but the repo is CommonJS, so every test run prints a MODULE_TYPELESS_PACKAGE_JSON warning. Claude reported it properly; the problem is in the fixture or plan, not the SDD skill."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development before implementation",
+      "verdict": "pass",
+      "evidence": "Screen: \"⏺ Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\". It was the first tool call in session log e47eaf31...jsonl."
+    },
+    {
+      "criterion": "Dispatched implementer subagent for plan B's first task",
+      "verdict": "pass",
+      "evidence": "Screen: \"⏺ Agent(Implement Task 1: greeting constant) Haiku 4.5\". The subagent log agent-a2d9a9d7a10a89e9d.jsonl exists, and the ledger line reads \"Task 1: implementer a2d9a9d7a10a89e9d\"."
+    },
+    {
+      "criterion": "Never read plan A's ledger",
+      "verdict": "pass",
+      "evidence": "I grepped every tool_use input in the main log and all 3 subagent logs for 'planA'. The only hits were the final-review prompt text saying \"planA.md was completed earlier under a separate plan; it is not this plan's work\" and the plan file in a `git ls-files` listing. No cat/Read/grep touched planA-89f00a91/progress.md. One caveat: command 6, `ls -la $W $W/*`, listed the contents of the planA-89f00a91 directory, which is a listing, not a read."
+    },
+    {
+      "criterion": "Plan B workspace at plans/planB-<hash8>, distinct from plan A's",
+      "verdict": "pass",
+      "evidence": "Tool output: \"wrote .../state/01d6a2e7.../plans/planB-7af75392/task-1-brief.md\" plus the review diffs. Plan A's workspace is at plans/planA-89f00a91. The hashes differ, so the two plans use separate directories."
+    },
+    {
+      "criterion": "Clean finish deletes plan B workspace, keeps plan A's",
+      "verdict": "pass",
+      "evidence": "Command `$S/sdd-state finish $P; ... test ! -d \"$W\" && echo deleted` printed \"deleted\". Afterwards `ls -la .../plans` showed only planA-89f00a91, which still holds progress.md, review-task-1.md and task-1-brief.md."
+    },
+    {
+      "criterion": "Findings addressed, not silently dismissed",
+      "verdict": "pass",
+      "evidence": "Claude's final message raised the Minor ESM/CommonJS MODULE_TYPELESS_PACKAGE_JSON warning and explained why it left package.json unchanged: adding \"type\": \"module\" would break `require('./utils')`. Both incomplete Codex gates were logged with `ungated-ledger append --class incomplete-review` instead of being counted as approvals."
+    },
+    {
+      "criterion": "Plan B executed to completion",
+      "verdict": "pass",
+      "evidence": "Commit b9e2e3b \"Add GREETING_PREFIX constant with test\" is in git log. Screen: \"The task review and the final whole-branch review both passed with no Critical or Important findings\", followed by the finishing-branch options."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 545766,
+  "usage": {
+    "inputTokens": 66,
+    "outputTokens": 6057,
+    "cacheCreationInputTokens": 40591,
+    "cacheReadInputTokens": 530853,
+    "turns": 30
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 1800000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

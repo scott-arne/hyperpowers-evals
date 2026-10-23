@@ -34,12 +34,16 @@ In order:
    `<workspace>` is `results/workspaces/<run>/` for a relocated run and
    `results/<run>/` itself for a legacy run (the baseline arm of a paired
    control is legacy). Left alone, the fixture repository commits as a gitlink
-   and its contents are lost.
+   and its contents are lost. A run home that holds a hyperpowers state
+   checkout carries a second `.git` entry, a gitfile pointer, at
+   `home/.cache/hyperpowers/state/<key>/.git`; rename that one the same way.
 3. Stage `<run>/gauntlet-agent/results/` and `<workspace>/home/.claude/` with
    `git add -f`. The repository's `results/` and `.claude/` ignore patterns
    are unanchored, so they match those directories at any depth. A committed
    copy mirrors that run's live layout: a relocated run's `<run>/` beside
-   `workspaces/<run>/`; a legacy run's single `<run>/`.
+   `workspaces/<run>/`; a legacy run's single `<run>/`. The state checkout's
+   own `.gitignore` excludes briefs and review packages, so stage
+   `home/.cache/hyperpowers/state/` with `git add -f` as well.
 4. Post-check the staged tree across both layouts: there are no gitlinks, and
    each run carries what its outcome leaves behind. A run whose Gauntlet wrote
    a result has one `result.json` and at least one transcript. A run whose

@@ -1,0 +1,54 @@
+$ bun run src/cli/index.ts run scenarios/sdd-plan-scoped-scratch --coding-agent claude-auto
+run-id: sdd-plan-scoped-scratch-claude-auto-20261022T165919Z-9490
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/.worktrees/portable-sdd-dossiers/results/sdd-plan-scoped-scratch-claude-auto-20261022T165919Z-9490
+final     pass
+reason    Gauntlet-Agent passed; 5 post-check(s) passed
+provenance: evals 8828441 gauntlet a35607e+dirty
+
+─── Gauntlet-Agent ───────────────────────────────
+status    pass
+summary   I sent the scripted prompt. Claude loaded
+          hyperpowers:subagent-driven-development, set up its ledger and
+          workspace at plans/planB-7af75392, and sent Task 1 to an
+          implementer subagent (Haiku). It then ran the task review, the
+          Codex task gate, the final whole-branch review (Opus) and the
+          final Codex gate. Both Codex gates came back "incomplete"
+          because the Codex install is a stub, and Claude logged both as
+          unreviewed instead of approved. It then called `sdd-state
+          finish`, which deleted planB-7af75392. planA-89f00a91
+          (progress.md, review-task-1.md, task-1-brief.md) is still on
+          disk. No tool call by Claude or any subagent read plan A's
+          ledger.
+reasoning All 7 criteria are backed by the session log and checks on disk. Two
+          things are worth flagging but don't fail the run. Early on,
+          the controller ran `ls -la $W $W/*` on the shared plans
+          directory, which listed the files in plan A's workspace,
+          though it never opened them. The final reviewer prompt also
+          mentions planA.md, the plan file that is committed in the
+          repo.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ git-branch feature/multi-plan
+pre  ✓ file-exists docs/superpowers/plans/planA.md
+pre  ✓ file-exists docs/superpowers/plans/planB.md
+pre  ✓ command-succeeds find ../home/.cache -type f -name "progress.md" -exec grep -l "^# SDD ledger — plan: docs/superpowers/plans/planA.md" {} \; 2>/dev/null | grep -q .
+pre  ✓ command-succeeds test -f "$QUORUM_AGENT_CONFIG_DIR/plugins/installed_plugins.json"
+pre  ✓ command-succeeds grep -q "codex@openai-codex" "$QUORUM_AGENT_CONFIG_DIR/plugins/installed_plugins.json"
+post ✓ skill-called superpowers:subagent-driven-development hyperpowers:subagent-driven-development
+post ✓ tool-arg-match Bash --matches command=codex-companion[.]mjs
+post ✓ tool-called Agent
+post ✓ command-succeeds find ../home/.cache -type f -name "progress.md" -exec grep -l "^# SDD ledger — plan: docs/superpowers/plans/planA.md" {} \; 2>/dev/null | grep -q .
+post ✓ NOT command-succeeds find ../home/.cache -type f -name "progress.md" -path "*/plans/planB-*" -exec grep -l "^# SDD ledger — plan: docs/superpowers/plans/planB.md" {} \; 2>/dev/null | grep -q .
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       9m 05s      578K n/a (claude-opus-5-5)
+  Coding         6m 28s      2.8M
+    haiku                    228K
+    opus                     2.5M       n/a
+    sonnet                    32K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
