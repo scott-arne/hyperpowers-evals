@@ -209,6 +209,27 @@ result is appended to the evidence note and never holds or reverts the
 release by itself.
 ```
 
+**Correction owed before the after-window.** The final-gate Codex review of
+this branch found that `collect`, once a session qualifies by an in-window SDD
+invocation, still counts that session's events from the window's start, so
+events before the session's first in-window invocation count. Spec Design §3
+defines the cohort per session and the baseline over sessions that loaded
+6.16.1 or earlier, which every event in the baseline window satisfies, so the
+baseline below stands as recorded. The after-window cannot use that reading: a
+session that invoked SDD before the release boundary and again after it would
+have pre-release events attributed to the release. Before any after-window is
+measured, `collect` must bound each session's measurement at its first
+in-window SDD invocation, keeping earlier records for state reconstruction
+only, with a regression test, and the baseline must be re-recorded under that
+same instrument. Replayed that way over this window on 2026-10-22, the
+baseline reads 14 sessions, 1434 task boundaries, 296 premature stops (20.64
+per 100), 21 followed by a resume, 2211 live-work turn ends, 9 live-work
+resumes (0.63 per 100), 1423 censored stops and 144 censored resumes, excluded
+error 373, interrupt 17, killed 2, reload 69. No session straddles the window
+start; the events the bound drops are each session's brainstorming and
+planning phase before SDD was invoked. The field rule's threshold is half the
+baseline rate under whichever instrument measures both windows.
+
 ### The baseline
 
 `field/baseline.json`, recomputed by `field.py` over the host's Zed SDD
