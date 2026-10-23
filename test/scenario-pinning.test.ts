@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseCodingAgentsDirective } from '../src/checks/index.ts';
+import {
+  parseClaudeEnvDirective,
+  parseCodingAgentsDirective,
+} from '../src/checks/index.ts';
 import { repoRoot } from '../src/paths.ts';
 
 // Scenario unpin fence (oracle 08c3c6a, mirrors tests/quorum/test_scenario_pinning.py).
@@ -87,4 +90,24 @@ test('harness pins are exactly the explicitly intentional scenarios', () => {
     }
   }
   expect(pinned).toEqual(INTENTIONAL_PINNED_SCENARIOS);
+});
+
+// `sdd-turn-liveness` declares its `# claude-env:` directive under a long
+// comment block, and parseClaudeEnvDirective reads only the first 21 lines of
+// checks.sh. A comment added above the directive would push it out of that
+// window with no other symptom: the scenario would then run with Claude Code's
+// fork mode on and the task tools off, where every dispatch is backgrounded in
+// both arms and the campaign's contrast disappears (plan deviation 9). This
+// reads the live file, so the window is what it asserts on.
+test('the sdd-turn-liveness claude-env directive is read inside the window', () => {
+  const checksSh = join(
+    repoRoot(),
+    'scenarios',
+    'sdd-turn-liveness',
+    'checks.sh',
+  );
+  expect(parseClaudeEnvDirective(checksSh)).toEqual({
+    CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+    CLAUDE_CODE_FORK_SUBAGENT: '0',
+  });
 });
