@@ -35,7 +35,7 @@ In order:
    `results/<run>/` itself for a legacy run (the baseline arm of a paired
    control is legacy). Left alone, the fixture repository commits as a gitlink
    and its contents are lost. A run home that holds a hyperpowers state
-   checkout carries a second repository at
+   checkout carries a second `.git` entry, a gitfile pointer, at
    `home/.cache/hyperpowers/state/<key>/.git`; rename that one the same way.
 3. Stage `<run>/gauntlet-agent/results/` and `<workspace>/home/.claude/` with
    `git add -f`. The repository's `results/` and `.claude/` ignore patterns
