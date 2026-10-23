@@ -67,9 +67,9 @@ The launches, in order:
 The non-zero launchers are the earlier rows. launch-all.sh starts every
 manifest row, and an earlier row's launcher refuses to reopen its existing
 log, as designed. Each campaign's closing line also reads `manifest rows
-without a DONE log: 0`. Every p2 and p3 log ends `DONE 0`, and the roots and
-Claude Code read the same after each run as before it. The operator's Claude
-Code session restarted at about 21:47Z, while control p4 was in its
+without a DONE log: 0`. Every p2, p3 and p4 log ends `DONE 0`, and the roots
+and Claude Code read the same after each run as before it. The operator's
+Claude Code session restarted at about 21:47Z, while control p4 was in its
 post-checks; the detached campaign survived, and that run closed `DONE 0` at
 21:49:20Z.
 
@@ -212,8 +212,10 @@ It gives identical output on `results/` and on the archived copies under
 
 Command: `python3 evidence/2026-10-19-sdd-turn-liveness/analyze.py <control p3> <treatment p3>`.
 It gives identical output on `results/` and on the archived copies.
-`tally.evaluate` over the current manifest would count both p3 runs, with no
-provenance problems.
+`tally.evaluate` counted both p3 runs with no provenance problems under the
+manifest they were measured under, whose harness pin is `c7cf1c198`. Under
+the committed campaign manifest, whose harness pin is `dfa45712d`, their
+recorded `harness_pin` token differs from it and both read `void-provenance`.
 
 1. **Time and soak post-checks: pass.** The sessions took 39 min 23 s
    (control) and 37 min 19 s (treatment). Both soak post-checks and the
@@ -501,5 +503,5 @@ strip-runs, renames `.git` to `git-dir`, and removes caches and plugin state.
 
 Inside the sandbox, each arm's archive stopped on "Operation not permitted"
 while copying `coding-agent-workdir/.git` files. The p1 runs have no hooks, so
-they archived there. The p2 and p3 runs were archived with the sandbox
+they archived there. The p2, p3 and p4 runs were archived with the sandbox
 disabled.

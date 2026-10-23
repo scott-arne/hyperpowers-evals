@@ -3,8 +3,10 @@
 Written before the first counted run. The commit that adds this file is the
 pre-registration record: it lands before any run exists under `task-11-runs/`
 or `task-12-runs/`, and the rules below are fixed from that point. The
-campaign pin is `manifest.tsv` beside this file, which `logs/measure-launch.sh`
-re-checks before every launch and refuses the launch when a value differs.
+campaign pin is `manifest.tsv` beside this file. `logs/measure-launch.sh`
+re-checks the launch-time pins (eight of the twelve keys; `subagent_models`
+and `codex` are checked by the tally) before every launch and refuses the
+launch when one differs.
 
 ## Question
 
@@ -12,8 +14,9 @@ Does the SDD skill text change remove premature mid-plan stops and background
 waits against 6.16.1, without lowering run success?
 
 Treatment is the hyperpowers branch at
-`c353fc7b3856e6cd69c05caf9a735606d26ede38`: its five SDD dispatch templates
-carry `run_in_background: false`, `subagent-driven-development/SKILL.md`
+`c353fc7b3856e6cd69c05caf9a735606d26ede38`: its four SDD dispatch templates
+and `requesting-code-review/code-reviewer.md` carry
+`run_in_background: false`, `subagent-driven-development/SKILL.md`
 states the foreground and watch rules, and two entries are added to that
 skill's rationalization list. Control is
 `f1fd935cbf79898430e4aac740b547c40d9c1103`, tag v6.16.1. Both arms run the
@@ -23,9 +26,14 @@ Task 11), then treatment (plan Task 12).
 The behavior under test is the one the field shows. In Zed SDD sessions the
 controller dispatches its subagents in the background, ends its turn while
 they work, and the human partner, seeing an idle session, types "Resume".
-Over the baseline window the field instrument counts 301 premature stops
-against 1495 task boundaries, 20.13 per 100 (`field/baseline.json`, repeated
-under "Field decision rule" below).
+The instrument counts that turn end and a premature stop as two different
+things. A turn end taken while a dispatched subagent or a background command
+is still running is a live-work turn end, and over the baseline window 9 of
+those were followed by a resume message, 0.6 per 100 task boundaries. A
+premature stop is a turn end with nothing live: the baseline window counts
+301 of them against 1495 task boundaries, 20.13 per 100, of which 21 were
+followed by a resume message (`field/baseline.json`, repeated under "Field
+decision rule" below).
 
 Spec: hyperpowers `docs/hyperpowers/specs/2026-10-19-sdd-turn-liveness-design.md`.
 Plan: hyperpowers `docs/hyperpowers/plans/2026-10-19-sdd-turn-liveness.md`.
@@ -220,9 +228,9 @@ appended later cannot change these numbers (Task 7 Step 0b).
 | Censored stops, censored resumes | 1424, 144 |
 | Excluded turn ends | error 383, interrupt 20, killed 2, reload 71 |
 
-The window spans 14 Claude Code versions, 2.1.207 to 2.1.300, and six model
-ids, `claude-opus-5-5` and `claude-opus-5` among them; both lists are in
-`baseline.json`.
+The window spans 14 Claude Code versions, 2.1.207 to 2.1.300. Its records
+carry five model ids and the `<synthetic>` bucket, `claude-opus-5-5` and
+`claude-opus-5` among them; both lists are in `baseline.json`.
 
 **The after-window** is defined by time, not by an install path (deviation
 1). Every Skill call on this host loads from the same
@@ -235,7 +243,7 @@ candidate, the version bump commit, and ends at the first later checkout of a
 commit with a different `skills/` tree. The baseline window above ends before
 the 6.17.0 install.
 
-**Three notes on the baseline's definitions.**
+**Four notes on the baseline's definitions.**
 
 - A task boundary is a successful `TaskUpdate` completion, timestamped at its
   result. A failed update completes nothing.
@@ -245,6 +253,14 @@ the 6.17.0 install.
 - Part of the premature count is stops made after task-list items were left
   open and never closed later in the session. The measure asks whether an
   item was open at the stop, not whether it was finished afterwards.
+- `field.py` counts an open `TodoWrite` item toward a premature stop, while a
+  boundary is only a successful `TaskUpdate` completion. The spec's Design §3
+  scopes both measures to the task list, so a session that tracks its work
+  with `TodoWrite` contributes premature stops and no boundaries, and the
+  20.13 per 100 published above is inflated by an amount this record did not
+  measure. The same instrument measures the baseline window and the
+  after-window, so the field rule compares like with like, and the campaign
+  decision does not use `field.py`.
 
 ## Config
 
@@ -405,9 +421,13 @@ The record is `smoke.md`; all eight runs, two per round, are archived under
    between segments, a `cd` does not carry into a `||` branch, and a file name
    counts only in a segment whose directory is the file's. Recomputed from the
    archives: no row changes in either arm; the decision stands, FAIL on P.
-   Known remaining limit: the watch recognizer takes the file's name in the
-   right segment plus `exit=` in the call's result as the read; a command that
-   only names the file and prints `exit=0` would pass it, a shape no run has.
+   Known remaining limits, none of them a shape any run in either arm has: a
+   `cd` joined by `;` or `&&` is taken to have succeeded; the file's basename
+   counts anywhere in a segment whose directory is the file's, so
+   `cd /w && cat other/long.out.exit` matches `/w/long.out`; a mark written
+   by `echo -E -e` or by `printf '%b'` is not read, a false negative; and a
+   command that names the file in the right segment and prints `exit=0`
+   passes the watch recognizer.
    Pin after the Correction: `analyze.py`
    `f7bd9e9f13b2cf7128b5990196fb025cb86f9857` (`liveness.py` and `tally.py`
    unchanged).
@@ -415,10 +435,12 @@ The record is `smoke.md`; all eight runs, two per round, are archived under
 ## Results
 
 Both arms ran under the pin above, control first (Task 11, 2026-10-22
-03:34Z to 06:49Z), treatment second (Task 12, 2026-10-22 17:53Z to 19:42Z).
+03:34Z to 06:56Z), treatment second (Task 12, 2026-10-22 17:53Z to 19:42Z).
 Every number below is `tally.txt` beside this file, recomputed from the
 archived runs under `task-11-runs/control/` and `task-12-runs/treatment/`
-with the analyzers pinned above and corrected 1-5.
+with the analyzers pinned above and corrected 1-6 (Correction 6 changed no
+row; `tally.txt` was generated under Correction 5 and reproduces at the
+head).
 
 | Measure | Control (v6.16.1) | Treatment (c353fc7) |
 |---|---|---|
@@ -523,8 +545,8 @@ What the runs showed:
   interpreted segment (4), watch and ledger paths resolved through `cd` and
   shell variables (5), and the control-flow and segment binding those
   recognizers needed (6). Corrections 1-3 land inside the control arm, 4
-  before the treatment arm's first launch, 5 and 6 before the decision of
-  record; 6 changed no row in either arm.
+  before the treatment arm's first launch, 5 before the decision of record,
+  6 before it is cited; 6 changed no row in either arm.
 - Control's capped void, p5, was a Gauntlet `investigate` with a written
   result: the Gauntlet-Agent was judging the control's own turn-ending
   behavior. That is a void the control arm is likelier to spend than the
@@ -537,6 +559,15 @@ What the runs showed:
   passed `run_in_background: false` on 99 of 132 dispatches (0.75) and ended
   71 turns with work live. Treatment's separation is on the live-work count
   and the share together.
+- The skill's foreground rule covers dispatches, not the resumes a fix round
+  sends. On Claude Code a `SendMessage` resume runs the agent in the
+  background and offers no foreground option (plan deviation 8), and that
+  wait was the largest premature-stop category Task 7's probe found in the
+  field, about 41% of the stops in the three sessions it read. `SendMessage`
+  is used in 2 of the 26 archived runs (control `…033402Z-44bc`, treatment
+  `…184730Z-c2f6`), so W2's 0 live-work turn ends was measured on an arm
+  that barely exercised that path. The gap goes to the redesign the P
+  failure opens.
 - Both arms ran without Claude Code's fork mode and with the task tools on,
   through the scenario's `# claude-env:` directive (plan deviation 9). Under
   fork mode the Agent tool has no `run_in_background` parameter and every

@@ -2,8 +2,12 @@
 
 **Hypothesis.** In Zed SDD sessions the controller dispatches its subagents in
 the background, ends its turn while they work, and the human partner, seeing
-an idle session, types "Resume". Over the field baseline window that is 301
-premature stops against 1495 task boundaries, 20.13 per 100
+an idle session, types "Resume". The instrument counts that turn end and a
+premature stop as two different things. A turn end taken while work is still
+running is a live-work turn end, and the field baseline window has 9 of them
+followed by a resume message, 0.6 per 100 task boundaries. A premature stop
+is a turn end with nothing live: 301 of them against 1495 task boundaries,
+20.13 per 100, of which 21 were followed by a resume message
 (`evidence/2026-10-19-sdd-turn-liveness/field/baseline.json`). The
 `subagent-driven-development` skill text was changed to say the turn stays
 open: five dispatch templates carry `run_in_background: false`, SKILL.md
@@ -31,7 +35,7 @@ tools on and Claude Code's fork mode off through the scenario's
 accepted while the harness path set is unchanged. The full pin is
 `evidence/2026-10-19-sdd-turn-liveness/manifest.tsv`, re-checked by
 `logs/measure-launch.sh` before every launch. Control ran 2026-10-22 03:34Z
-to 06:49Z, treatment 17:53Z to 19:42Z, both detached at concurrency 5 and
+to 06:56Z, treatment 17:53Z to 19:42Z, both detached at concurrency 5 and
 outside the host's command sandbox, which quorum's `git init` cannot run in.
 
 **Run pointers.** `evidence/2026-10-19-sdd-turn-liveness/`: the
