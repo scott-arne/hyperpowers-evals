@@ -29,6 +29,11 @@ PINS = {
 }
 
 
+def without_task_tools() -> list[dict[str, Any]]:
+    """Treatment records with no ``deferred_tools_delta``: the session never got the task tools."""
+    return [r for r in treatment_records() if r.get("type") != "attachment"]
+
+
 class Campaign:
     def __init__(self, base: Path) -> None:
         self.base = base
@@ -48,14 +53,15 @@ class Campaign:
 
     def launch(self, arm: str, proc: str, run_ids: Sequence[str], *, root_clean: str = "yes", cc: str = "2.1.300",
                last: str = "DONE 0", declare: bool = True, preflight: str | None = None,
-               after_clean: str | None = None, after_cc: str | None = None, body: Sequence[str] = ()) -> None:
+               after_clean: str | None = None, after_cc: str | None = None, body: Sequence[str] = (),
+               harness_pin: str | None = None) -> None:
         """Write a launch log shaped like measure-launch.sh's: header, command, quorum output, footer, last line."""
         if declare:
             self.declare(arm, proc)
         header = [
             f"arm={arm} scenario=sdd-turn-liveness repeat={len(run_ids)} proc={proc} budget=default",
             f"root={ROOTS[arm]} root_head={SHAS[arm]} root_clean={root_clean}",
-            f"harness_pin={PINS['harness']} cc_path={PINS['cc_path']} provider=vertex",
+            f"harness_pin={harness_pin or PINS['harness']} cc_path={PINS['cc_path']} provider=vertex",
             f"model=claude-opus-5-5 cc_before={cc} task_tools=1",
         ]
         if preflight:
@@ -268,6 +274,66 @@ class Evaluate(unittest.TestCase):
         self.c.arm("control", 10, control_records, STOPS)
         self.c.arm("treatment", 10, treatment_records)
         self.assertEqual(self.c.evaluate()[1]["decision"], "INCOMPLETE")
+
+    def four_voided_rows(
+        self,
+        arm: str,
+        prefix: str,
+        *,
+        records: Callable[[], list[dict[str, Any]]] = treatment_records,
+        launch: dict[str, Any] | None = None,
+        **run_kw: Any,
+    ) -> list[str]:
+        """Launch four rows that each differ from the pin in one way: one more than the cap of three."""
+        run_kw.setdefault("plugin_dir", ROOTS[arm])
+        ids: list[str] = []
+        for n in range(4):
+            run_id = f"{arm}-{prefix}{n}"
+            make_run(self.c.results, run_id, records(), **run_kw)
+            self.c.launch(arm, f"r{n + 1}", [run_id], **(launch or {}))
+            ids.append(run_id)
+        return ids
+
+    def assert_capped_provenance_voids(self, arm: str, ids: Sequence[str], problem: str) -> None:
+        """Each listed row is a provenance void named by ``problem``, and together they pass the cap."""
+        rows, decision = self.c.evaluate()
+        voided = [r for r in rows if r["run_id"] in set(ids)]
+        self.assertEqual({r["status"] for r in voided}, {"void-provenance"})
+        self.assertEqual({tuple(r["problems"]) for r in voided}, {(problem,)})
+        self.assertIn(f"{arm}: {len(ids)} capped voids exceed the cap of 3", decision["reasons"])
+
+    def test_a_harness_pin_other_than_the_manifests_is_a_provenance_void(self) -> None:
+        self.c.arm("control", 10, control_records, STOPS)
+        self.c.arm("treatment", 10, treatment_records)
+        ids = self.four_voided_rows("treatment", "h", launch={"harness_pin": "f" * 40})
+        self.assert_capped_provenance_voids("treatment", ids, "harness pin")
+
+    def test_a_plugin_dir_other_than_the_arms_root_is_a_provenance_void(self) -> None:
+        self.c.arm("control", 10, control_records, STOPS)
+        self.c.arm("treatment", 10, treatment_records)
+        # The run loaded the other arm's skills, whatever the launcher checked.
+        ids = self.four_voided_rows("treatment", "d", plugin_dir=ROOTS["control"])
+        self.assert_capped_provenance_voids("treatment", ids, "root path")
+
+    def test_a_model_outside_the_allowed_set_is_a_provenance_void(self) -> None:
+        self.c.arm("control", 10, control_records, STOPS)
+        self.c.arm("treatment", 10, treatment_records)
+        # A subagent model the pin does not allow (deviation 4 fixes the set).
+        ids = self.four_voided_rows("treatment", "m", models=("claude-opus-5-5", "claude-sonnet-4-6"))
+        self.assert_capped_provenance_voids("treatment", ids, "models")
+
+    def test_a_failed_codex_pre_check_is_a_provenance_void(self) -> None:
+        self.c.arm("control", 10, control_records, STOPS)
+        self.c.arm("treatment", 10, treatment_records)
+        # Codex absence is affirmative: an unchecked run cannot stand in for it.
+        ids = self.four_voided_rows("treatment", "x", codex_check=False)
+        self.assert_capped_provenance_voids("treatment", ids, "codex")
+
+    def test_a_session_without_the_task_tools_is_a_provenance_void(self) -> None:
+        self.c.arm("control", 10, control_records, STOPS)
+        self.c.arm("treatment", 10, treatment_records)
+        ids = self.four_voided_rows("treatment", "t", records=without_task_tools)
+        self.assert_capped_provenance_voids("treatment", ids, "task tools")
 
     def test_unadjudicated_candidate_blocks_the_decision(self) -> None:
         self.c.arm("control", 9, control_records, STOPS)

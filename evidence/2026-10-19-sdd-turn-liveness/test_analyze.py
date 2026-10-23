@@ -15,6 +15,7 @@ if str(HERE) not in sys.path:
 import analyze
 import liveness
 from synth import (
+    AGENT_BG,
     BASH_BG,
     LEDGER,
     LONG_CMD,
@@ -25,6 +26,7 @@ from synth import (
     enqueue,
     human,
     make_run,
+    notification,
     result,
     treatment_records,
     write,
@@ -250,6 +252,55 @@ class Measure(unittest.TestCase):
                 five[-1],
             ]
             self.assertFalse(self.run_of(f"w{n}", stray, ledger=0)["plan_complete"], command)
+
+    def test_multiedit_ledger_marks_come_from_the_new_strings(self) -> None:
+        five = drop_call(treatment_records(), "lw6")
+        edited = five[:-1] + [
+            assistant(1420, tools=[("m6", "MultiEdit", {
+                "file_path": LEDGER,
+                "edits": [
+                    {"old_string": "- soak short: running", "new_string": "- soak short: done"},
+                    {"old_string": "- soak long: running", "new_string": "- soak long: done\nTask 6: complete (abc123)"},
+                ],
+            })]),
+            result(1421, "m6", "edited"),
+            five[-1],
+        ]
+        m = self.run_of("me1", edited, ledger=0)
+        self.assertEqual((m["plan_complete"], m["plan_at"]), (True, liveness.parse_ts(at(1420)).isoformat()))
+        # An old_string repeats what the ledger already holds, so it marks nothing.
+        old_only = five[:-1] + [
+            assistant(1422, tools=[("m7", "MultiEdit", {
+                "file_path": LEDGER,
+                "edits": [{"old_string": "Task 6: complete", "new_string": "Task 6: reverted"}],
+            })]),
+            result(1423, "m7", "edited"),
+            five[-1],
+        ]
+        self.assertFalse(self.run_of("me2", old_only, ledger=0)["plan_complete"])
+
+    def test_a_censored_task_overlapping_a_live_one_excludes_the_stop(self) -> None:
+        # One launch records its completion, the other never does; a stop while
+        # both are open is censored, not live (deviation 3, liveness.state_at).
+        def records(censored: bool) -> list[dict[str, Any]]:
+            recs = [
+                human(0, "I have a plan at plan.md. Use subagent-driven-development."),
+                assistant(10, tools=[("a1", "Agent", {"description": "Implement Task 1"})]),
+                result(11, "a1", AGENT_BG),
+            ]
+            if censored:
+                recs += [
+                    assistant(20, tools=[("b1", "Bash", {"command": "sleep 900", "run_in_background": True})]),
+                    result(21, "b1", BASH_BG),
+                ]
+            return [*recs, assistant(30, "Dispatched; waiting."), notification(200, "a1")]
+
+        live = self.run_of("ov1", records(False), ledger=0)
+        self.assertEqual([e["idle_seconds"] for e in live["live_turn_ends"]], [170.0])
+        self.assertEqual((live["censored_stops"], live["premature"], live["unadjudicated"]), (0, 0, 0))
+        overlap = self.run_of("ov2", records(True), ledger=0)
+        self.assertEqual(overlap["live_turn_ends"], [])
+        self.assertEqual((overlap["censored_stops"], overlap["premature"], overlap["unadjudicated"]), (1, 0, 0))
 
     def test_final_review_is_the_review_after_the_last_task(self) -> None:
         records = treatment_records()
