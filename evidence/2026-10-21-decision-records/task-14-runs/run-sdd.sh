@@ -13,7 +13,9 @@
 # Environment: SUITE_SLEEP (suite seconds), PAD_LINES (length of the
 # data/sample.txt the plan generates, default 5000; rewrites the plan's seq
 # bound; every 5000 in the plan), EXCLUDE_ANCESTORS (default 1; 0 skips the claudeMdExcludes file),
-# TURNS (default 3 when prompt-3.txt exists, else 2).
+# TURNS (default 3 when prompt-3.txt exists, else 2), EXTRACTOR_DELAY (seconds a
+# Write|Edit|MultiEdit|Bash hook delays a subagent's call naming decision-notes.md,
+# default 0 = no hook; the hook's log is copied to the run directory as hook.log).
 set -uo pipefail
 RUN_NAME=$1
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -53,6 +55,19 @@ done
 printf '{"claudeMdExcludes":[%s]}\n' "${excludes%,}" > "$SCRATCH/config/settings.json"
 fi
 
+# EXTRACTOR_DELAY > 0 adds a PreToolUse hook on Write|Edit|MultiEdit|Bash that sleeps
+# before a subagent's tool call names decision-notes.md, so the extractor is still running when the finishing suite
+# ends. The settings file is merged with the claudeMdExcludes written above.
+if [ "${EXTRACTOR_DELAY:-0}" -gt 0 ]; then
+  "$PY" - "$SCRATCH/config/settings.json" "$HERE/extractor-delay-hook.sh" <<'PYEOF' || exit 1
+import json, os, sys
+path, hook = sys.argv[1], sys.argv[2]
+cfg = json.load(open(path)) if os.path.exists(path) else {}
+cfg["hooks"] = {"PreToolUse": [{"matcher": "Write|Edit|MultiEdit|Bash", "hooks": [{"type": "command", "command": f"bash {hook}", "timeout": 900}]}]}
+json.dump(cfg, open(path, "w"))
+PYEOF
+fi
+
 run_turn() {
   local n=$1 prompt_file=$2; shift 2
   (cd "$WORK" && env -u CLAUDECODE -u CLAUDE_CODE_CHILD_SESSION -u CLAUDE_CODE_SESSION_ID \
@@ -62,6 +77,8 @@ run_turn() {
       CLAUDE_CONFIG_DIR="$SCRATCH/config" \
       XDG_CACHE_HOME="$SCRATCH/cache" \
       HYPERPOWERS_PLUGINS_FILE=/nonexistent \
+      EXTRACTOR_DELAY="${EXTRACTOR_DELAY:-0}" \
+      EXTRACTOR_DELAY_LOG="$SCRATCH/hook.log" \
       SUITE_SLEEP="${SUITE_SLEEP:-0}" \
       PATH="/Users/johnss51/Applications/micromamba/envs/main/bin:$PATH" \
       timeout 3600 claude -p "$(cat "$prompt_file")" --plugin-dir "$PLUGIN" \
@@ -93,9 +110,10 @@ snapshot() {
 
 TURNS=${TURNS:-3}
 [ -f "$HERE/prompt-3.txt" ] || TURNS=2
-echo "config: SUITE_SLEEP=${SUITE_SLEEP:-0} PAD_LINES=$PAD EXCLUDE_ANCESTORS=${EXCLUDE_ANCESTORS:-1} TURNS=$TURNS XDG_CACHE_HOME=\$SCRATCH/cache HYPERPOWERS_PLUGINS_FILE=/nonexistent model=${TRIGGER_MODEL:-claude-opus-5-5} plugin=$PLUGIN" > "$OUT/status.txt"
+echo "config: SUITE_SLEEP=${SUITE_SLEEP:-0} PAD_LINES=$PAD EXTRACTOR_DELAY=${EXTRACTOR_DELAY:-0} EXCLUDE_ANCESTORS=${EXCLUDE_ANCESTORS:-1} TURNS=$TURNS XDG_CACHE_HOME=\$SCRATCH/cache HYPERPOWERS_PLUGINS_FILE=/nonexistent model=${TRIGGER_MODEL:-claude-opus-5-5} plugin=$PLUGIN" > "$OUT/status.txt"
 run_turn 1 "$HERE/prompt-1.txt"
 snapshot 1
+[ -f "$SCRATCH/hook.log" ] && cp "$SCRATCH/hook.log" "$OUT/hook.log"
 SID=$("$PY" - "$OUT/turn1.jsonl" <<'PY'
 import json, sys
 for line in open(sys.argv[1]):

@@ -193,3 +193,63 @@ for n in turns:
         if re.search(r"budget|error", line, re.IGNORECASE):
             bad.append((n, line[:120]))
 print(f"check 7d: {'yes' if not bad else 'NO'} (stderr lines naming budget or error: {bad}; scan-needle mentions: {sum((run / f'turn{n}.jsonl').read_text().count('realval-scan') for n in turns)})")
+
+# Stopped-extractor and ordering checks (the `stop` run; harmless on others).
+print("--- stop-path checks")
+stop_calls = [c for c in calls if c[1] == "TaskStop"]
+ext_notifs = [(i, d.get("status")) for i, d in t1 if d.get("subtype") == "task_notification" and d.get("task_id") == ext_task]
+first_stop = stop_calls[0] if stop_calls else None
+stop_after_suite = bool(first_stop and suite_c and first_stop[0] > suite_c[0])
+stop_before_compile = bool(first_stop and compile_calls and first_stop[0] < compile_calls[0][0])
+notif_before_stop = [n for n in ext_notifs if first_stop and n[0] < first_stop[0]]
+stopped_notif = [n for n in ext_notifs if n[1] == "stopped"]
+print(
+    f"check 5 fast clause: TaskStop at line {first_stop[0] if first_stop else None} (after the suite call: {stop_after_suite}; before the compile call: {stop_before_compile}); "
+    f"extractor notifications (line, status): {ext_notifs}; completion notification before the TaskStop: {bool(notif_before_stop)}; "
+    f"a notification with status stopped: {bool(stopped_notif)}"
+)
+nothing = len(re.findall(r"Nothing recorded\.", raw1))
+print(f"check 5 records: 'Nothing recorded.' occurrences in turn 1: {nothing}; menu text mentions stopped/unfinished extractor: {bool(re.search(r'stopp|unfinished|did not finish|had not finished', text1, re.IGNORECASE))}")
+led = [c for c in calls if c[1] in ("Bash", "Write", "Edit") and "Decision extractor:" in json.dumps(c[2])]
+print(f"ledger line `Decision extractor:` written: {bool(led)} (line {led[0][0] if led else None}, ts {led[0][4] if led else None}; immediately after the dispatch at line {ext_i}: {bool(led) and ext_i is not None and led[0][0] > ext_i and not [c for c in calls if ext_i < c[0] < led[0][0]]})")
+order = [("dispatch", ext[0][4] if ext else None), ("workspace rm -rf", rm[0][4] if rm else None), ("suite call", suite_c[4] if suite_c else None), ("suite result", suite_result[0] if suite_result else None), ("TaskStop", first_stop[4] if first_stop else None), ("compile", compile_calls[0][4] if compile_calls else None)]
+print(f"timestamp order: {order}; monotonic: {[o[1] for o in order] == sorted(o[1] for o in order if o[1])}")
+# Hook evidence: the extractor's own Read of the package, and the gap to its next event.
+if ext_task:
+    sub = [(i, d) for i, d in t1 if d.get("parent_tool_use_id") == ext[0][3]] if ext else []
+    reads = []
+    for i, d in sub:
+        if d.get("type") == "assistant":
+            for b in d["message"]["content"]:
+                if b.get("type") == "tool_use" and b["name"] == "Read" and re.search(r"review-[0-9a-f]+\.\.[0-9a-f]+\.diff", json.dumps(b["input"])):
+                    reads.append((i, d.get("timestamp")))
+    print(f"hook evidence: extractor Reads of the package (line, ts): {reads}; extractor subagent events: {len(sub)}")
+    if reads:
+        nxt = [(i, d.get("timestamp")) for i, d in sub if i > reads[0][0] and d.get("timestamp")]
+        if nxt:
+            print(f"hook evidence: next extractor event after the Read at line {nxt[0][0]} ts {nxt[0][1]}: gap {(ts(nxt[0][1]) - ts(reads[0][1])).total_seconds():.1f} s")
+        else:
+            print("hook evidence: no extractor event after the package Read (the agent was inside that call when stopped)")
+
+# Hook-log checks: did the delay hook fire for the extractor, and does its
+# window contain the TaskStop.
+hook_log = run / "hook.log"
+if hook_log.exists():
+    lines = [ln for ln in hook_log.read_text().splitlines() if ln.strip()]
+    print(f"hook.log lines: {lines}")
+    sub_ids = {d.get("agent_id") or d.get("task_id") for _i, d in t1 if d.get("subtype") == "task_started"}
+    for ln in lines:
+        m = re.match(r"(\S+) delay (\d+)s tool=(\S*) agent=(\S*)", ln)
+        if not m:
+            continue
+        t_hook = ts(m.group(1).replace("Z", "+00:00"))
+        window_end = t_hook.timestamp() + int(m.group(2))
+        stop_t = ts(first_stop[4]).timestamp() if first_stop else None
+        inside = stop_t is not None and stop_t < window_end and stop_t >= t_hook.timestamp()
+        print(
+            f"hook line: tool={m.group(3)} agent={m.group(4)} (extractor task id {ext_task}: {m.group(4) == ext_task}; "
+            f"agent is a started subagent: {m.group(4) in sub_ids}); TaskStop inside the delay window "
+            f"(hook ts + {m.group(2)} s = {datetime.fromtimestamp(window_end, UTC).isoformat()} after TaskStop {first_stop[4] if first_stop else None}): {inside}"
+        )
+else:
+    print("hook.log: absent (the hook never fired, or EXTRACTOR_DELAY was 0)")
