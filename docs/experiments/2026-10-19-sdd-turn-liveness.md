@@ -45,7 +45,8 @@ launch logs in `logs/`, the sixteen control runs in `task-11-runs/control/`
 and the ten treatment runs in `task-12-runs/treatment/`, each beside its
 `workspaces/` copy. The analyzers are `liveness.py`, `analyze.py` and
 `tally.py` in the same directory, pinned by blob in `README.md` with six
-recorded Corrections.
+recorded Corrections; a seventh, to the field instrument `field.py`, changed
+no number.
 
 **Verdict.** **FAIL**, on P alone; W1, W2, F, U and R pass.
 

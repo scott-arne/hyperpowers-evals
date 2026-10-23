@@ -253,14 +253,16 @@ the 6.17.0 install.
 - Part of the premature count is stops made after task-list items were left
   open and never closed later in the session. The measure asks whether an
   item was open at the stop, not whether it was finished afterwards.
-- `field.py` counts an open `TodoWrite` item toward a premature stop, while a
-  boundary is only a successful `TaskUpdate` completion. The spec's Design §3
-  scopes both measures to the task list, so a session that tracks its work
-  with `TodoWrite` contributes premature stops and no boundaries, and the
-  20.13 per 100 published above is inflated by an amount this record did not
-  measure. The same instrument measures the baseline window and the
-  after-window, so the field rule compares like with like, and the campaign
-  decision does not use `field.py`.
+- `field.py` originally counted an open `TodoWrite` item toward a premature
+  stop, while a boundary is only a successful `TaskUpdate` completion. The
+  spec's Design §3 scopes both measures to the task list, so a session that
+  tracked its work with `TodoWrite` contributed premature stops and no
+  boundaries. Correction 7 removed that branch, and the instrument re-run
+  over this window reproduces every number above, so the 20.13 per 100
+  published above carries no `TodoWrite` inflation. The same instrument
+  measures the baseline window and the after-window, so the field rule
+  compares like with like, and the campaign decision does not use
+  `field.py`.
 
 ## Config
 
@@ -431,6 +433,23 @@ The record is `smoke.md`; all eight runs, two per round, are archived under
    Pin after the Correction: `analyze.py`
    `f7bd9e9f13b2cf7128b5990196fb025cb86f9857` (`liveness.py` and `tally.py`
    unchanged).
+7. 2026-10-22, after the final whole-branch Codex gate and before the branch
+   merges; before any after-window is measured. Two defects in the field
+   instrument, outside the pinned campaign analyzers (the campaign decision
+   does not use `field.py`): `field.collect` qualified a session by any SDD
+   invocation before `until`, including one before `since`, against its own
+   docstring and the after-window of spec Design §3 (a session that loaded
+   the old skill before a release and kept working after it would have
+   counted toward the released version); and `_open_timeline` counted an
+   open `TodoWrite` item toward a premature stop while a boundary is only a
+   successful `TaskUpdate` completion, outside the spec's task-list scope.
+   `collect` now requires an SDD invocation inside `[since, until)` and
+   `_open_timeline` reads the task list only. Re-run over the baseline
+   window: `field/baseline.json` is byte-identical (14 sessions, 1495
+   boundaries, 301 premature stops, 20.13 per 100), so no published number
+   changes, and the `TodoWrite` inflation the baseline note above called
+   unmeasured is zero on this window. Pin after the Correction: `field.py`
+   `d333939650a16e79ae35659390848c15f5ce69eb`.
 
 ## Results
 
@@ -440,7 +459,8 @@ Every number below is `tally.txt` beside this file, recomputed from the
 archived runs under `task-11-runs/control/` and `task-12-runs/treatment/`
 with the analyzers pinned above and corrected 1-6 (Correction 6 changed no
 row; `tally.txt` was generated under Correction 5 and reproduces at the
-head).
+head; Correction 7 is to the field instrument, which the decision does not
+use).
 
 | Measure | Control (v6.16.1) | Treatment (c353fc7) |
 |---|---|---|
