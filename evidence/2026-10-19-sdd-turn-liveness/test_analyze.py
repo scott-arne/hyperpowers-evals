@@ -525,7 +525,7 @@ class Measure(unittest.TestCase):
             analyze.void_kind({"final": "indeterminate", "gauntlet": {"status": "investigate", "summary": "gauntlet exited (status 1) without writing a result"}}),
             "void-grader",
         )
-        lost = {
+        lost: dict[str, Any] = {
             "final": "indeterminate",
             "gauntlet": {
                 "status": "investigate",
