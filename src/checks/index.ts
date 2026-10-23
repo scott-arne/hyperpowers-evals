@@ -214,3 +214,63 @@ export function parseCodingAgentsDirective(
   }
   return undefined;
 }
+
+// The `# claude-env:` directive matcher, with the `# coding-agents:` rules: a
+// bare `# claude-env:` (no value) does not match.
+const CLAUDE_ENV_RE = /^\s*#\s*claude-env:\s*(.+?)\s*$/;
+
+/**
+ * The Claude Code variables a scenario may set for the agent under test. The
+ * launcher drops every inherited CLAUDE* variable so the operator's shell cannot
+ * leak opt-ins into a campaign; this list is the only way back in, so it stays
+ * as narrow as the scenarios that need it. CLAUDE_CODE_FORK_SUBAGENT is here
+ * because the field's SDK sessions run without fork mode, while an interactive
+ * session (quorum's) runs with it and dispatches every subagent in the
+ * background.
+ */
+export const CLAUDE_ENV_ALLOWLIST: ReadonlySet<string> = new Set([
+  'CLAUDE_CODE_ENABLE_TODO_TOOLS',
+  'CLAUDE_CODE_FORK_SUBAGENT',
+]);
+
+/**
+ * Read a leading `# claude-env: KEY=VALUE, …` directive from a checks.sh (first
+ * 21 lines, like `# coding-agents:`). Returns undefined when the directive or
+ * the file is absent. Throws on a key outside `allowed`, a pair without `=`,
+ * or an empty value, so a malformed opt-in fails the run at setup instead of
+ * running the agent without it.
+ */
+export function parseClaudeEnvDirective(
+  checksSh: string,
+  allowed: ReadonlySet<string> = CLAUDE_ENV_ALLOWLIST,
+): Record<string, string> | undefined {
+  if (!existsSync(checksSh)) {
+    return undefined;
+  }
+  const head = readFileSync(checksSh, 'utf8').split('\n').slice(0, 21);
+  for (const line of head) {
+    const pairs = CLAUDE_ENV_RE.exec(line)?.[1];
+    if (pairs === undefined) {
+      continue;
+    }
+    const env: Record<string, string> = {};
+    for (const pair of pairs.split(',').map((s) => s.trim())) {
+      const eq = pair.indexOf('=');
+      const key = eq < 0 ? '' : pair.slice(0, eq).trim();
+      const value = eq < 0 ? '' : pair.slice(eq + 1).trim();
+      if (key === '' || value === '') {
+        throw new Error(
+          `${checksSh}: claude-env pair '${pair}' is not KEY=VALUE with a non-empty value`,
+        );
+      }
+      if (!allowed.has(key)) {
+        throw new Error(
+          `${checksSh}: ${key} is not on the claude-env allowlist (${[...allowed].join(', ')})`,
+        );
+      }
+      env[key] = value;
+    }
+    return env;
+  }
+  return undefined;
+}

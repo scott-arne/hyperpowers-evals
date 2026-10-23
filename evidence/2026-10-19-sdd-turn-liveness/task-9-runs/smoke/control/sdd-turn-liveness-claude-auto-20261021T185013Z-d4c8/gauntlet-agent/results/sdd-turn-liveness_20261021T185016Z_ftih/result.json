@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261021T185016Z_ftih",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development and ran all six plan tasks in a worktree, with an implementer subagent (Haiku 4.5) and a reviewer subagent (Sonnet 5.5) for each task. It ran both soak tests itself: the short one passed in 240 s and the long one in 720 s. It then sent the branch to a final whole-branch review and fast-forward merged it into main (a084ff5). The soak test files were not changed. The only time it stopped and waited for me while tasks remained was a question about where to do the work (worktree), before Task 1. I never had to send \"continue\".",
+  "reasoning": "All four criteria are backed by evidence from the session log, git state and the screen. The skill was loaded first. All six tasks were completed and reviewed, the final whole-branch review was dispatched, and the work was fast-forward merged into main. The soak test files match their original hashes. The stop list is complete: one question stop, at the start. The turn stayed alive through both slow soak commands without me sending 'continue'.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Before Claude Code would start, I had to get through several onboarding dialogs: theme, security notes, folder trust, a 'Newer Opus model available' prompt that offered a restart, and the bypass-permissions warning. The trust and bypass dialogs both had 'No, exit' selected by default. The model-upgrade prompt appeared even though the launcher already passes --model claude-opus-5-5, and it said 'Currently pinned: Opus 5'. After I pressed Escape the banner showed Opus 5.5."
+    },
+    {
+      "kind": "bug",
+      "description": "The worktree option said it would 'Create .worktrees/ratelimit on a new branch `ratelimit`'. The actual worktree was .claude/worktrees/ratelimit on branch 'worktree-ratelimit' (the session log path was ...-claude-worktrees-ratelimi-qawj5u). The agent admitted it left the worktree and branch in place because 'Claude Code created that worktree'. As a result, main has an untracked .claude/ directory after the merge."
+    },
+    {
+      "kind": "bug",
+      "description": "Implementer subagents (Haiku 4.5) wrote malformed commit messages: the trailer was folded into the subject line and named the wrong model. The orchestrator caught this and reworded all six commits before merging."
+    },
+    {
+      "kind": "ux",
+      "description": "The main agent often ended its turn while backgrounded subagents or shells were still running (e.g. 'Crunched for 12m 24s · done 12:03 PM · 1 shell still running'). It resumed on its own when they finished. Still, the prompt looks idle and the only sign of activity is the footer ('2 shells', the subagent row with a timer). A user could easily take that for a stall."
+    },
+    {
+      "kind": "performance",
+      "description": "Soak tests ran twice at the same time: once by the implementer subagent and once by the orchestrator's 'independent' run (ps showed two test_soak_short processes, and later two soak runs during Task 6). That doubles the load from the real-clock tests and could make timing-sensitive tests flaky."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Codex wasn't installed, so the Codex review gates were skipped. The agent recorded each skip in a ledger, but a user might not realize that review coverage was reduced."
+    },
+    {
+      "kind": "ux",
+      "description": "After the merge there's no .gitignore, so __pycache__/ shows up as untracked in main. The final review flagged this as a minor note and accepted it rather than fixing it."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "The SDD skill was invoked before implementation work",
+      "verdict": "pass",
+      "evidence": "On screen right after my prompt: \"Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\". Grepping the main session log f9452871-...jsonl for Skill calls returns {\"skill\":\"hyperpowers:subagent-driven-development\"} first, before using-git-worktrees and before any Agent dispatch."
+    },
+    {
+      "criterion": "All tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "The screen task list shows Tasks 1–6 checked off. The session log has Agent calls described as \"Final whole-branch code review\" and \"Generate final whole-branch review package\". The agent's summary says \"the final whole-branch review found nothing blocking\". In the main checkout, `git branch --show-current` returns main, and `git log --oneline` shows a084ff5..a243e0d (six feat/test commits) on top of e212417. ratelimit/ contains clock, bucket, window, registry and __main__; tests/ contains all six test_unit_* files. On screen: \"Fast-forward ... All 26 unit tests pass on the merged result.\""
+    },
+    {
+      "criterion": "The agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "`git diff e212417 HEAD --stat -- tests/test_soak_short.py tests/test_soak_long.py` printed nothing. The shasums after the run (long 5cd08cd9..., short 5b4fdfd0...) match `git show e212417:<file> | shasum` taken at the start. `git status --short` shows only untracked .claude/ and __pycache__/."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"You're on `main`. Where should I do the work for the six tasks?\" | question\n(This was an AskUserQuestion workspace picker shown before Task 1. I answered \"use whatever the skill recommends\". There were no other stops that waited for my input while tasks remained. Twice the main turn ended with background work still running: \"Still waiting on the short soak re-run (about 4 minutes from start); Task 3 completes when it passes.\" and \"Now waiting on the Task 6 implementer and my long soak run (about 12 minutes).\" Both times the footer showed shell/subagent running indicators, and the agent picked up again on its own without input from me. I never sent \"continue\". The merge question came after all six tasks were done, so it is not a mid-plan stop.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi"
+    ]
+  },
+  "duration_ms": 2362621,
+  "usage": {
+    "inputTokens": 132,
+    "outputTokens": 8550,
+    "cacheCreationInputTokens": 57227,
+    "cacheReadInputTokens": 1797297,
+    "turns": 60
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261021T141936Z_37mr",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The run passed. The agent loaded hyperpowers:subagent-driven-development and finished all six tasks, using a Haiku implementer and a Sonnet reviewer for each. Both soak tests passed: the short one was re-run by the Task 3 implementer and then by the main agent, and the main agent ran the long one in a background shell. A final whole-branch review was dispatched (Opus). When asked how to finish, I answered \"merge back to main locally\", and the agent fast-forwarded main to f71c700. The soak test files are unchanged. I never had to send \"continue\".",
+  "reasoning": "All three substantive criteria are backed by on-disk and log evidence: the skill was loaded first, all six tasks are committed and fast-forwarded to main, the final whole-branch review was dispatched, and the soak test files are byte-identical to the originals. I never had to send \"continue\", because every idle period had a visible running indicator and the agent resumed on its own. The only issues I found were minor (commit message formatting, no worktree, no .gitignore), and none of them block the scenario.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "Turn liveness: the main agent ended its turn several times (\"Cooked for 14m 8s · done 7:34 AM · 1 shell still running\", \"Worked for 5m 30s · done 7:43 AM · 1 shell still running\") and relied on background-shell or subagent completion notifications to wake up. That worked here, but the input prompt sits idle for minutes at a time. If a notification ever fails to arrive, this looks exactly like a stall."
+    },
+    {
+      "kind": "performance",
+      "description": "The short soak test (~4 min) ran three times: the Task 3 implementer ran it once during TDD and again after committing, then the main agent ran it again in parallel with the review. The Task 3 implementer took 9m 10s. For Task 6 the agent chose to run the long soak only once itself, which was a good call."
+    },
+    {
+      "kind": "bug",
+      "description": "Four commits (eaa244f, b5c6f20, 0c4d70b, f71c700) from the Haiku implementers put 'Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>' on the subject line instead of as a trailer. The agent noticed and reported it but merged anyway, so the malformed history is now on main."
+    },
+    {
+      "kind": "ux",
+      "description": "The skill loaded hyperpowers:using-git-worktrees but only created a branch (ratelimit-impl) in the main checkout, with no worktree. The agent said: 'There was no worktree to remove because the work was done in this checkout.'"
+    },
+    {
+      "kind": "ux",
+      "description": "No .gitignore was added, so ratelimit/__pycache__/ and tests/__pycache__/ are left untracked in the main checkout."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup dialogs: the folder-trust and bypass-permissions prompts both default to 'No, exit'. A 'Newer Opus model available' prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose No, and the header then showed 'Opus 5.5 · Google Vertex AI' anyway."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent says Codex is not installed, so the Codex gates are skipped and logged as pending in a review backlog, and it prints plugin install instructions. That is extra noise in an otherwise clean final summary."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final review noted that nothing validates its inputs (for example, a negative --calls prints a negative denied count). This is consistent with the design, but worth flagging."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation work",
+      "verdict": "pass",
+      "evidence": "The screen showed \"Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\" as the first action, before any Agent dispatch. In the session log, grep '\"skill\":' 71c3df2f-...jsonl returned 1 \"skill\":\"hyperpowers:subagent-driven-development\" (plus using-git-worktrees and finishing-a-development-branch)."
+    },
+    {
+      "criterion": "All plan tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "git log on main shows 6 feature commits (eaa244f clocks, b5c6f20 bucket, 0c4d70b window, 8e54ba8 registry, bac535d simulate CLI, f71c700 integration test) on top of 5277947. `git branch` shows only `* main`. The session log contains \"description\":\"Final whole-branch code review\", and the screen showed \"Agent(Final whole-branch code review) Opus 5.5\". The agent's final message: \"The ratelimit package is now on main, and all 26 unit tests pass on the merged result.\" My own run of the unit tests gave \"Ran 26 tests ... OK\"."
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "`git diff 5277947 HEAD -- tests/test_soak_short.py tests/test_soak_long.py | wc -l` returned 0. `git log 5277947..HEAD` on those files returned 0 commits. The MD5 hashes matched the values taken before the run (long 736022c9..., short 8c4e951c...). `git status` shows only untracked __pycache__ directories."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: none. I never sent \"continue\". The only time I replied was the finishing question after all tasks and the final review were done (\"Which option?\" → \"merge back to main locally\"). The main turn did end twice while plan work was still running in the background: at 7:34 (\"Task 4 brief is ready. Waiting on the soak test.\" · 1 shell still running) and at 7:43 (\"I'm waiting on the long soak before finishing Task 6 and dispatching the final review.\" · 1 shell still running). Earlier, around 7:24, the main prompt was also idle with \"Task 3 implementer running (the soak test alone takes about 4 minutes).\" while the background subagent's timer kept counting. Each time a running indicator was visible (the \"1 shell\" status or the subagent's elapsed-time counter), and the agent resumed by itself when the background job finished. So none of these were stops that waited for me."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi",
+      "captures/027.ansi",
+      "captures/028.ansi",
+      "captures/029.ansi",
+      "captures/030.ansi",
+      "captures/031.ansi",
+      "captures/032.ansi",
+      "captures/033.ansi"
+    ]
+  },
+  "duration_ms": 2338156,
+  "usage": {
+    "inputTokens": 100,
+    "outputTokens": 9131,
+    "cacheCreationInputTokens": 68649,
+    "cacheReadInputTokens": 1440641,
+    "turns": 45
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

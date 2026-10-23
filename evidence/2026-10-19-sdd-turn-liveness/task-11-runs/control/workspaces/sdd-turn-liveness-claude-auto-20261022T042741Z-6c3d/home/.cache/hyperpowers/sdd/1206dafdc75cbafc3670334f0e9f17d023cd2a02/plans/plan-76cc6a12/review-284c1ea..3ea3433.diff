@@ -1,0 +1,87 @@
+# Review package: 284c1ea..HEAD
+
+## Commits
+3ea3433 feat: add ratelimit package with monotonic and fake clocks Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
+
+## Files changed
+ ratelimit/__init__.py    |  1 +
+ ratelimit/clock.py       | 19 +++++++++++++++++++
+ tests/test_unit_clock.py | 37 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 57 insertions(+)
+
+## Diff
+diff --git a/ratelimit/__init__.py b/ratelimit/__init__.py
+new file mode 100644
+index 0000000..362b097
+--- /dev/null
++++ b/ratelimit/__init__.py
+@@ -0,0 +1 @@
++"""ratelimit: an in-process rate limiter."""
+diff --git a/ratelimit/clock.py b/ratelimit/clock.py
+new file mode 100644
+index 0000000..f622481
+--- /dev/null
++++ b/ratelimit/clock.py
+@@ -0,0 +1,19 @@
++"""Clocks: the real monotonic clock and a manually advanced clock for tests."""
++
++import time
++
++
++class MonotonicClock:
++    def now(self) -> float:
++        return time.monotonic()
++
++
++class FakeClock:
++    def __init__(self, start: float = 0.0):
++        self._now = start
++
++    def now(self) -> float:
++        return self._now
++
++    def advance(self, seconds: float) -> None:
++        self._now += seconds
+diff --git a/tests/test_unit_clock.py b/tests/test_unit_clock.py
+new file mode 100644
+index 0000000..d9e8547
+--- /dev/null
++++ b/tests/test_unit_clock.py
+@@ -0,0 +1,37 @@
++"""Unit tests for ratelimit.clock."""
++
++import time
++import unittest
++
++from ratelimit.clock import FakeClock, MonotonicClock
++
++
++class FakeClockTest(unittest.TestCase):
++    def test_starts_at_zero_by_default(self):
++        self.assertEqual(FakeClock().now(), 0.0)
++
++    def test_starts_at_given_time(self):
++        self.assertEqual(FakeClock(start=10.0).now(), 10.0)
++
++    def test_advance_moves_time_forward(self):
++        clock = FakeClock()
++        clock.advance(1.5)
++        clock.advance(0.25)
++        self.assertEqual(clock.now(), 1.75)
++
++    def test_now_does_not_move_by_itself(self):
++        clock = FakeClock(start=3.0)
++        self.assertEqual(clock.now(), clock.now())
++
++
++class MonotonicClockTest(unittest.TestCase):
++    def test_now_tracks_time_monotonic(self):
++        before = time.monotonic()
++        value = MonotonicClock().now()
++        after = time.monotonic()
++        self.assertLessEqual(before, value)
++        self.assertLessEqual(value, after)
++
++
++if __name__ == "__main__":
++    unittest.main()

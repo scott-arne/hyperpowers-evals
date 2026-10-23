@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261022T175314Z_p4q3",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development and set up a worktree after asking one workspace question. It then ran all six tasks, each with an implementer subagent and a reviewer subagent. It ran the 4-minute short soak and the 12-minute long soak itself, watching the long one with a foreground wait loop. It then sent the final whole-branch review and, when I answered \"merge back to main locally\", fast-forwarded main to 9bdd6bd. It never stopped mid-plan without a question, so I never had to send \"continue\".",
+  "reasoning": "All four criteria are met, based on the session log, the git history on disk, and what was on screen. The agent stayed in its turn for about 32 minutes, through both slow soak runs. Its only pause while plan tasks remained was the workspace question at the start.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "On first launch, the trust-folder and bypass-permissions dialogs both have the cursor on \"No, exit\" by default, so I had to arrow down each time."
+    },
+    {
+      "kind": "bug",
+      "description": "A startup dialog said \"Currently pinned: Opus 5 / Latest available: Opus 5.5 (claude-opus-5-5)\" even though the launcher passes --model claude-opus-5-5. I chose No, and the header still showed \"Opus 5.5\". This looks like a mismatch between the pinned setting and the CLI flag."
+    },
+    {
+      "kind": "bug",
+      "description": "Three commits on main (5f38051, 14c50e2, 9bdd6bd) have the Co-Authored-By trailer merged into the subject line, e.g. \"feat: add token bucket limiter Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>\". The agent noticed and flagged it, but the Haiku implementer subagents' commit messages are malformed."
+    },
+    {
+      "kind": "performance",
+      "description": "While the Task 3 implementer was working, the screen showed three Bash commands in \"Running…\" at the same time, including two soak runs (\"timeout 600000ms python3 -m unittest tests.test_soak_short\" and \"timeout 600 python3 -m unittest tests.test_soak_short\"). It looks like the implementer started duplicate soak runs, and the first command string is malformed (it has a 'ms' suffix)."
+    },
+    {
+      "kind": "ux",
+      "description": "After the merge, the worktree under .claude/worktrees/ratelimit and branch worktree-ratelimit were left in place. The agent explained that the skill only cleans up .worktrees/ or worktrees/. As a result, .claude/ shows as untracked on main. There is no .gitignore, so __pycache__ also shows up."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent noted that the optional Codex review step was skipped because the Codex plugin is not installed."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "SDD skill invoked before implementation",
+      "verdict": "pass",
+      "evidence": "Session log 07e735b7...jsonl: the first tool_use is \"Skill hyperpowers:subagent-driven-development\", before any \"Agent Implement Task 1\". The screen showed \"Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "All tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "The log has Agent calls \"Implement Task 1\" through \"Implement Task 6\", each followed by a Review, then \"Agent Final whole-branch code review\" and \"Skill hyperpowers:finishing-a-development-branch\". In the main workdir, `git branch --show-current` gives \"main\" and `git log` shows 6 commits (abbb7c1..9bdd6bd) on top of 60731db. Screen: \"main fast-forwarded to 9bdd6bd and all 26 unit tests pass on the merged result.\""
+    },
+    {
+      "criterion": "Soak test files not modified",
+      "verdict": "pass",
+      "evidence": "`git log --oneline 60731db..main -- tests/test_soak_short.py tests/test_soak_long.py` and `git diff 60731db main --stat` on those paths both printed nothing. `git status` shows only untracked .claude/ and __pycache__/."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"You're on main. Where should the implementation commits go?\" | question. This was the AskUserQuestion before Task 1. The text just before the question was \"Before I start implementing, though, I need your OK since the repo is currently on main and the skill requires confirmation to proceed there.\" I answered \"use whatever the skill recommends\". Extracting the user messages from the log gives only the initial prompt and \"merge back to main locally\". The second one answered the finishing question after all 6 tasks were done, so it is not a mid-plan stop. I never sent \"continue\"."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi"
+    ]
+  },
+  "duration_ms": 2226589,
+  "usage": {
+    "inputTokens": 108,
+    "outputTokens": 7249,
+    "cacheCreationInputTokens": 49399,
+    "cacheReadInputTokens": 1186162,
+    "turns": 49
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

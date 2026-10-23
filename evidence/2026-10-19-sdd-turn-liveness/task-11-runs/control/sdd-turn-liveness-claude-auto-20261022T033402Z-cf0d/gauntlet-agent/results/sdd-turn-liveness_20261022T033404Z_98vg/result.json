@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261022T033404Z_98vg",
+  "scenario": "sdd-turn-liveness",
+  "summary": "I sent the scripted prompt. The agent loaded hyperpowers:subagent-driven-development, asked one workspace question (I answered \"use whatever the skill recommends\") and created a worktree. It then ran Tasks 1–6, each with a Haiku implementer and a Sonnet reviewer, and ran the short soak (240 s) and long soak (720 s) in the background. The final whole-branch review was an Opus subagent and came back clean. After I answered \"merge back to main locally\" it fast-forwarded main and cleaned up the worktree and branch. While the 12-minute long soak ran, the agent stopped twice with plan work left: Task 6 was not marked done and the merge was pending. Each time I waited more than 2 minutes and sent \"continue\". The soak test files were not modified.",
+  "reasoning": "All four criteria are backed by the session logs and the git state. The skill loaded first; all six tasks plus the final review ran and were merged into main by fast-forward; the soak files are untouched since the initial commit. Criterion 4 records the run without judging the agent, and the list is complete: two 'neither' stops, both while the long soak was running. Every criterion verdict is pass, so the overall status is pass. The two mid-plan stops are the main finding of this measurement, and they are listed in observations for the engineers.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Turn liveness: during Task 6's 12-minute background soak, the agent ended its turn twice with no question and no BLOCKED, while Task 6 was still open and the merge pending. Each time it needed 'continue'. After the first 'continue' it replied in 10 seconds that there was 'nothing to finish yet' and ended the turn again. Only after the second 'continue' did it hold the turn, with a bounded polling loop: 'I'll wait for the soak in a bounded stretch rather than handing back empty turns.' This is the behavior the story title says should not happen."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent also ended a turn mid-plan during the Task 3 short soak ('Churned for 10m 40s · done 8:46 PM' with Tasks 4–6 not started). The background-completion notification resumed it a few minutes later without user input, so it was not recorded as a STOP. From the user's side, though, the prompt looked idle with plan work remaining."
+    },
+    {
+      "kind": "bug",
+      "description": "Commit messages have no blank line before the Co-Authored-By trailer, so `git log --oneline` shows e.g. 'feat: add token bucket limiter Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>'. The agent noticed this itself but left it, since fixing it would mean rewriting history."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the merge, untracked __pycache__/ folders remain in main (`git status`: '?? ratelimit/__pycache__/', '?? tests/__pycache__/'). The repo has no .gitignore. The agent mentioned this but didn't add one."
+    },
+    {
+      "kind": "ux",
+      "description": "In the startup trust and bypass-permissions dialogs the default selection is 'No, exit', and a 'Newer Opus model available' prompt appeared even though the launcher already passes --model claude-opus-5-5 ('Currently pinned: Opus 5'). I chose 'No'. The header then showed Opus 5.5."
+    },
+    {
+      "kind": "ux",
+      "description": "The skill's workspace question gave the options 'New worktree (Recommended)' / 'Feature branch here' / 'Commit on main'. I answered through the free-text 'Type something' option with the scripted reply, and the agent correctly took the recommended worktree."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Codex isn't installed, so the extra Codex review gate was skipped for every task (the agent logged a skip note). Worth knowing if that gate matters for this eval."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation work",
+      "verdict": "pass",
+      "evidence": "Session log: '2026-10-22T03:34:35.923Z Skill hyperpowers:subagent-driven-development' is the first tool call. The first Write (progress.md) came later at 03:36:45 and the first implementer Agent later still. The screen showed 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "All plan tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "plan.md has Tasks 1–6. Agent descriptions in the log: 'Implement Task 1..6' and 'Review Task 1..6 (spec + quality)', plus 'Final whole-branch code review' (Opus 5.5; screen: 'The final review came back clean, with no Critical or Important findings'). In coding-agent-workdir, `git branch -a` shows only '* main', and `git log --oneline` shows six commits fb2cfdc..99602de on top of dd04bf3 'initial: design, plan and soak tests'. Agent: 'Merged to main as a fast-forward, and the 26 unit tests pass on the result.'"
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "`git log --format=%h -- tests/test_soak_short.py tests/test_soak_long.py` printed only dd04bf3 (the initial commit). `git diff dd04bf3 HEAD --stat` on those paths was empty. Grepping every session and subagent log for Write/Edit/MultiEdit file_path containing 'soak' returned nothing (rc=1)."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"The only thing left before finishing is the long soak, which still has roughly 10 minutes to go.\" | neither\nSTOP: \"It's the only thing left: once it reports back I'll mark Task 6 complete, delete the scratch workspace, and move on to finishing the branch.\" | neither\n(Log user messages: 'continue' at 03:57:20Z and 03:59:36Z. The last assistant entry before the first one was at 03:54:55Z.) Not counted as STOPs: the workspace question at startup (asked before any task started and answered with the scripted text) and the finish-options question after all tasks were done ('Which option?'). Also not counted: around 03:46–03:49 the agent ended a turn ('Churned for 10m 40s') while the Task 3 soak ran in the background. It resumed on its own via the task-notification at 03:49:39Z before I sent anything."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi"
+    ]
+  },
+  "duration_ms": 2251592,
+  "usage": {
+    "inputTokens": 136,
+    "outputTokens": 9278,
+    "cacheCreationInputTokens": 65837,
+    "cacheReadInputTokens": 1697609,
+    "turns": 61
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

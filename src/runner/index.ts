@@ -52,7 +52,11 @@ import {
   diagnoseKimiUnmatchedLogs,
   snapshotDir,
 } from '../capture/index.ts';
-import { parseCodingAgentsDirective, runPhase } from '../checks/index.ts';
+import {
+  parseClaudeEnvDirective,
+  parseCodingAgentsDirective,
+  runPhase,
+} from '../checks/index.ts';
 import { compose } from '../composer.ts';
 import {
   agentConfigDir,
@@ -884,14 +888,22 @@ export function allocateWorkspace(
 }
 
 // The RunHome a run hands its agent: the workspace paths it provisions into,
-// plus the record directory an agent needs to keep its artifacts out of.
+// plus the record directory an agent needs to keep its artifacts out of, and
+// the scenario's `# claude-env:` opt-in when it declares one.
 export function buildRunHome(
   configDir: string,
   workdir: string,
   runDir: string,
   skeletonRoot: string | undefined,
+  claudeEnv?: Readonly<Record<string, string>>,
 ): RunHome {
-  return { configDir, workdir, runDir, skeletonRoot };
+  return {
+    configDir,
+    workdir,
+    runDir,
+    skeletonRoot,
+    ...(claudeEnv !== undefined ? { claudeEnv } : {}),
+  };
 }
 
 // Reap the agent runtime's secret temp dirs. Each dir is removed recursively; an
@@ -1135,6 +1147,15 @@ async function runInnerBody(
     });
   }
 
+  // 5b. The scenario's `# claude-env:` opt-in. A malformed or disallowed entry
+  //     fails setup loudly rather than running the agent without the opt-in.
+  let claudeEnv: Record<string, string> | undefined;
+  try {
+    claudeEnv = parseClaudeEnvDirective(checksSh);
+  } catch (e: unknown) {
+    throw new RunnerError(e instanceof Error ? e.message : String(e), 'setup');
+  }
+
   // 6. Claude-family binary PATH preflight: fail fast at setup if the CLI is
   //    not installed, rather than deep in the gauntlet run.
   preflightCodingAgentBinary(cfg);
@@ -1174,6 +1195,7 @@ async function runInnerBody(
     workdir,
     runDir,
     a.skeletonRoot ?? a.codingAgentsDir,
+    claudeEnv,
   );
   // copilot is special-cased: it mints a per-run session id, threads it through
   // provisionCopilot, and returns the rich CopilotProvisioning record the runner

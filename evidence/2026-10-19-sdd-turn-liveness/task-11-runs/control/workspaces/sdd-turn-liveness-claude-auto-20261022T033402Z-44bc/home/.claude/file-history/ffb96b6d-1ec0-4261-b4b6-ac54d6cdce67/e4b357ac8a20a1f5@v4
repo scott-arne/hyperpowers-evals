@@ -1,0 +1,55 @@
+# SDD ledger — plan: /Users/johnss51/Development/agents/hyperpowers/evals/.worktrees/sdd-turn-liveness/results/workspaces/sdd-turn-liveness-claude-auto-20261022T033402Z-44bc/coding-agent-workdir/.claude/worktrees/ratelimit/plan.md
+
+Worktree: .claude/worktrees/ratelimit, branch worktree-ratelimit, branched from main dd04bf3.
+Spec: design.md (reachable).
+Codex preflight: not-installed. All Codex gates degrade to no-ops.
+Plan gate evidence: none, so Task 6's declared low tier runs as standard.
+
+## Pre-flight scan
+
+| Pair / task | Produces vs consumes | Finding |
+|---|---|---|
+| T1 -> T2,T3,T5,T6 | clock.py MonotonicClock/FakeClock(start, now, advance) | consistent |
+| T3 -> T4,T5,T6, soak tests | SlidingWindowLimiter(limit=, window_seconds=, clock=None).allow() | consistent with soak_short:16, soak_long:19 |
+| T4 -> T6, soak_long | Registry(factory), allow(key), keys() | consistent; soak_long sorts keys(), T6 checks first-use order (plan decision) |
+| T5 vs T3 | simulate uses window semantics (now-w, now] | expected counts 9/21 and 4/6 match the eviction rule; margins >= 0.05 s |
+| T1 self | 5 tests vs code | consistent |
+| T2 self | 6 tests, starts full, power-of-two steps | consistent; total 11 |
+| T3 self | 5 tests vs deque eviction <= cutoff | consistent; total 16 |
+| T4 self | 5 tests vs dict-ordered registry; list[str] annotation is fine on 3.9 | consistent; total 21 |
+| T5 self | 4 tests vs argparse subcommand | consistent; total 25 |
+| T6 self | 60 stamps/key = 120*0.25/1.5*3 | consistent; total 26; passes on first run by design (no RED) |
+| Global constraints | stdlib, 3.9 syntax, soak tests untouched | no task violates them |
+| Rubric conflicts | empty tests / duplicated logic | none mandated |
+
+Scan clean.
+
+Task 6: tier declared low -> effective standard (unreviewed low tier)
+Task 1: implementer a278a65c61886bd3d (base dd04bf3)
+Task 1: minor (deferred): report claims class docstrings that do not exist (report-only inaccuracy)
+Task 1: minor (deferred): no .gitignore, so __pycache__/ shows as untracked (outside plan scope)
+Task 1: codex gate degraded (not-installed), recorded in ungated-ledger
+Task 1: complete (commits dd04bf3..82ef657, review clean)
+Task 2: implementer a2ea15755539a485c (base 82ef657); resumed to write missing report file
+Task 1-2: minor (deferred): commit subjects carry the Co-Authored-By trailer on the subject line (no blank-line separation)
+Task 2: warning item (test count) resolved: controller re-run shows Ran 11 OK
+Task 2: codex gate degraded (not-installed), recorded in ungated-ledger
+Task 2: complete (commits 82ef657..ea2a2bf, review clean)
+Task 3: implementer a2c7d9eb4881776df (base ea2a2bf)
+Task 3: controller re-ran soak_short: Ran 1 test in 240.038s OK; unit suite Ran 16 OK
+Task 3: warning items resolved: unit suite 16 OK and soak_short OK on controller re-run
+Task 3: minor (deferred): report miscounts window tests (says 6, actual 5); report-only
+Task 3: codex gate degraded (not-installed), recorded in ungated-ledger
+Task 3: complete (commits ea2a2bf..d5794f4, review clean)
+Task 4: implementer a13164b5b88fcc1b8 (base d5794f4)
+Task 4: warning items resolved: window signature verified in Task 3 review (window.py:9-12); unit suite 21 OK on controller re-run
+Task 4: codex gate degraded (not-installed), recorded in ungated-ledger
+Task 4: complete (commits d5794f4..6070433, review clean)
+Task 5: implementer ad4db8d5be862587d (base 6070433)
+Task 5: warning item resolved: unit suite 25 OK and CLI prints allowed=9 denied=21 on controller re-run
+Task 5: codex gate degraded (not-installed), recorded in ungated-ledger
+Task 5: complete (commits 6070433..b8e3228, review clean)
+Task 6: implementer abf7e988df8c89e90 (base b8e3228); soak_long delegated to controller (exceeds subagent 10-min command timeout)
+Task 6: minor (deferred): commit 81a30e8 subject also carries the Co-Authored-By trailer on the subject line
+Task 6: minor (deferred): integration test name says 'independently' but every key sees identical traffic (cross-key independence is covered by test_unit_registry.test_keys_are_limited_independently)
+Final review: clean (0 Critical, 0 Important; all deferred minors accepted); merge contingent on soak_long

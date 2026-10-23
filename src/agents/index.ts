@@ -34,6 +34,9 @@ export interface RunHome {
   /** The run's record directory (<outRoot>/<run>), distinct from the workspace
    *  that holds configDir and workdir. Kimi roots its artifact-root guard here. */
   readonly runDir: string;
+  /** The scenario's `# claude-env:` opt-in (parseClaudeEnvDirective), written to
+   *  the Claude env-file by Claude provisioning; other agents ignore it. */
+  readonly claudeEnv?: Readonly<Record<string, string>>;
 }
 
 /** Behavior contract for a coding agent (§5.4): config plus a single
@@ -382,20 +385,24 @@ class ClaudeAgent implements CodingAgent {
     //     the matching mode, so one agent name works on Vertex, Bedrock, and
     //     API-key hosts alike.
     const envFile = join(configDir, CLAUDE_ENV_FILE_NAME);
+    // The scenario's opt-in goes last, after every provider and shared line.
+    const scenarioLines = Object.entries(home.claudeEnv ?? {}).map(
+      ([key, value]) => `export ${key}=${shellSingleQuote(value)}`,
+    );
     if (this.config.required_env.includes('CLAUDE_CODE_USE_VERTEX')) {
-      this.seedVertexAuth(envFile);
+      this.seedVertexAuth(envFile, scenarioLines);
     } else if (this.config.required_env.includes('CLAUDE_CODE_USE_BEDROCK')) {
-      this.seedBedrockAuth(envFile, dirname(configDir));
+      this.seedBedrockAuth(envFile, dirname(configDir), scenarioLines);
     } else if (this.config.required_env.includes('ANTHROPIC_API_KEY')) {
-      this.seedApiKeyAuth(envFile, claudeJsonPath);
+      this.seedApiKeyAuth(envFile, claudeJsonPath, scenarioLines);
     } else {
       const provider = detectClaudeProvider();
       if (provider === 'vertex') {
-        this.seedVertexAuth(envFile);
+        this.seedVertexAuth(envFile, scenarioLines);
       } else if (provider === 'bedrock') {
-        this.seedBedrockAuth(envFile, dirname(configDir));
+        this.seedBedrockAuth(envFile, dirname(configDir), scenarioLines);
       } else if (provider === 'api-key') {
-        this.seedApiKeyAuth(envFile, claudeJsonPath);
+        this.seedApiKeyAuth(envFile, claudeJsonPath, scenarioLines);
       } else {
         throw new ProvisionError(
           'claude-auto: no Claude provider detected — set CLAUDE_CODE_USE_VERTEX, CLAUDE_CODE_USE_BEDROCK, or ANTHROPIC_API_KEY',
@@ -407,14 +414,24 @@ class ClaudeAgent implements CodingAgent {
 
   /** Seed Vertex auth: write the .claude-env with the Vertex provider vars and
    *  the Google ADC anchor (see vertexAdcExportLine). */
-  private seedVertexAuth(envFile: string): void {
-    writePrivateFileNoFollow(envFile, this.vertexEnvFileContents());
+  private seedVertexAuth(envFile: string, scenarioLines: string[]): void {
+    writePrivateFileNoFollow(
+      envFile,
+      this.vertexEnvFileContents(scenarioLines),
+    );
   }
 
   /** Seed Bedrock auth: write the .claude-env with the Bedrock + AWS vars and,
    *  for profile auth, anchor the operator's SSO/CLI token caches. */
-  private seedBedrockAuth(envFile: string, runHome: string): void {
-    writePrivateFileNoFollow(envFile, this.bedrockEnvFileContents());
+  private seedBedrockAuth(
+    envFile: string,
+    runHome: string,
+    scenarioLines: string[],
+  ): void {
+    writePrivateFileNoFollow(
+      envFile,
+      this.bedrockEnvFileContents(scenarioLines),
+    );
     // The SDK finds the SSO/assume-role token cache via HOME (which the
     // launcher pins to the run home), not via the anchored AWS_*_FILE vars.
     // For profile auth, symlink the operator's real token caches in so the
@@ -426,7 +443,11 @@ class ClaudeAgent implements CodingAgent {
 
   /** Seed API-key auth: write the key and record the approval fingerprint so
    *  claude does not prompt headless. */
-  private seedApiKeyAuth(envFile: string, claudeJsonPath: string): void {
+  private seedApiKeyAuth(
+    envFile: string,
+    claudeJsonPath: string,
+    scenarioLines: string[],
+  ): void {
     // Read the key through the one sanctioned env module (§6.5), never
     // process.env. Empty means unset; fail at the setup stage rather than
     // silently writing a blank key.
@@ -443,6 +464,7 @@ class ClaudeAgent implements CodingAgent {
     const lines = [
       `export ANTHROPIC_API_KEY=${shellSingleQuote(apiKey)}`,
       ...claudeSharedEnvLines('api-key'),
+      ...scenarioLines,
     ];
     writePrivateFileNoFollow(envFile, `${lines.join('\n')}\n`);
     approveClaudeApiKey(claudeJsonPath, apiKey);
@@ -455,7 +477,7 @@ class ClaudeAgent implements CodingAgent {
    *  ~/.config/gcloud — see vertexAdcExportLine), and forwards the optional
    *  Google Cloud context vars that are actually set. Every value is
    *  shell-quoted; the file is sourced by the launcher under `set -u`. */
-  private vertexEnvFileContents(): string {
+  private vertexEnvFileContents(scenarioLines: string[]): string {
     const lines: string[] = [];
     const useVertex = getEnv('CLAUDE_CODE_USE_VERTEX') ?? '';
     const region = getEnv('CLOUD_ML_REGION') ?? '';
@@ -489,7 +511,7 @@ class ClaudeAgent implements CodingAgent {
         lines.push(`export ${key}=${shellSingleQuote(value)}`);
       }
     }
-    lines.push(...claudeSharedEnvLines('vertex'));
+    lines.push(...claudeSharedEnvLines('vertex'), ...scenarioLines);
     return `${lines.join('\n')}\n`;
   }
 
@@ -499,7 +521,7 @@ class ClaudeAgent implements CodingAgent {
    *  throwaway dir — anchors AWS_CONFIG_FILE / AWS_SHARED_CREDENTIALS_FILE at the
    *  operator's real home so the SDK still resolves a named profile. Every value
    *  is shell-quoted; the file is sourced by the launcher under `set -u`. */
-  private bedrockEnvFileContents(): string {
+  private bedrockEnvFileContents(scenarioLines: string[]): string {
     const lines: string[] = [];
     const useBedrock = getEnv('CLAUDE_CODE_USE_BEDROCK') ?? '';
     const region = getEnv('AWS_REGION') ?? '';
@@ -543,7 +565,7 @@ class ClaudeAgent implements CodingAgent {
         lines.push(`export ${key}=${shellSingleQuote(value)}`);
       }
     }
-    lines.push(...claudeSharedEnvLines('bedrock'));
+    lines.push(...claudeSharedEnvLines('bedrock'), ...scenarioLines);
     return `${lines.join('\n')}\n`;
   }
 }

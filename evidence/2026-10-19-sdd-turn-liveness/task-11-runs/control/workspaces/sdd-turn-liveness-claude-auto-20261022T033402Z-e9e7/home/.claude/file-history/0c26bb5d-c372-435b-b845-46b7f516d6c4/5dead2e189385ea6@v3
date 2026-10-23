@@ -1,0 +1,60 @@
+# SDD ledger — plan: /Users/johnss51/Development/agents/hyperpowers/evals/.worktrees/sdd-turn-liveness/results/workspaces/sdd-turn-liveness-claude-auto-20261022T033402Z-e9e7/coding-agent-workdir/.claude/worktrees/ratelimit/plan.md
+Spec: design.md (reachable)
+Codex preflight: not-installed — per-task and final Codex gates run as no-ops (degrade recorded per gate)
+
+## Pre-flight scan
+| Pair / Task | Produces vs consumes | Finding |
+|---|---|---|
+| T1 -> T2,T3,T5,T6 | clock.py MonotonicClock/FakeClock(start, now, advance) | signatures match every consumer |
+| T3 -> T4 tests, T5, T6, soak tests | SlidingWindowLimiter(limit, window_seconds, clock=None).allow() | matches soak_short:16, soak_long:19, T5 simulate, T6 |
+| T4 -> T6, soak_long | Registry(factory).get/allow/keys | soak_long sorts keys; T6 expects first-use order = T4 decision; consistent |
+| T5 vs T3 | simulate counts 9/21 and 4/6 | hand-checked against (now-w, now] eviction: consistent |
+| T6 vs T3/T4 | 60 allowed/key over 30 s, 1.5 s window | hand-checked: stamp at 1.5 evicts 0.0 (<=); 60.0 exact; consistent |
+| T1 self | 5 tests vs code | consistent; Ran 5 |
+| T2 self | 6 tests vs code (start full, cap, denied spends nothing) | consistent; Ran 11 |
+| T3 self | 5 tests vs code; soak window 1.99 stricter subset of limiter's 2.0 | consistent; Ran 16 |
+| T4 self | 5 tests vs code; list[str] annotation ok on 3.9 | consistent; Ran 21 |
+| T5 self | 4 tests vs code; subprocess test needs repo-root cwd | consistent; Ran 25 |
+| T6 self | 1 test, no prod code; declared low but plan gate unreviewed | consistent; Ran 26; executes as standard |
+| Global | stdlib only, 3.9 syntax, soak files untouched | no conflicts |
+Scan result: clean.
+Task 6: tier declared low -> effective standard (unreviewed low tier)
+Worktree: .claude/worktrees/ratelimit (native EnterWorktree), branch worktree-ratelimit, branched from dd04bf3; baseline: 0 unit tests (none exist yet)
+Ledger moved here from the main-checkout workspace key (worktree changes the repo key).
+Task 1: implementer a3adcc13b07e3f06f (BASE dd04bf3)
+Task 1: minor (deferred): __pycache__ dirs untracked, no ignore file
+Task 1: ⚠️ items resolved by controller (mirror copied verbatim; commit-body attribution not a task requirement)
+Task 1: codex gate degraded (not-installed), event recorded
+Task 1: complete (commits dd04bf3..97c804b, review clean)
+Task 2: BASE 97c804b
+Task 2: implementer a477bcf06a188b4aa
+Task 2: minor (deferred): commit trailer attributes "Claude Haiku 4.5", not the session attribution line
+Task 2: ⚠️ FakeClock semantics from Task 1 — resolved: Task 1 reviewed, 11/11 pass on controller re-run
+Task 2: codex gate degraded (not-installed), event recorded
+Task 2: complete (commits 97c804b..3008024, review clean)
+Task 3: BASE 3008024
+Task 3: implementer ac820b2ffd162c551
+Task 3: minor (deferred): report test counts inconsistent (report-only; 16 confirmed by controller)
+Task 3: reviewer attribution "minor" refuted — Opus 5.5 trailer is the session attribution
+Task 3: ⚠️ soak resolved — controller re-run tests.test_soak_short: Ran 1 test in 240.024s, OK
+Task 3: codex gate degraded (not-installed), event recorded
+Task 3: complete (commits 3008024..e3e123b, review clean)
+Task 4: BASE e3e123b
+Task 4: implementer a38e5e49aaf31ac1d
+Task 4: minor (deferred): commit 5af9493 subject line has the Co-Authored-By trailer appended inline instead of as a trailer
+Task 4: ⚠️ test count resolved — controller re-run Ran 21 tests OK (16 prior + 5 new); report's 17 baseline is a miscount
+Task 4: minor (deferred): registry.get uses `is None` sentinel (factory returning None would re-create each call)
+Task 4: codex gate degraded (not-installed), event recorded
+Task 4: complete (commits e3e123b..5af9493, review clean)
+Task 5: BASE 5af9493
+Task 5: implementer a6e1f1aca45e9899b
+Task 5: minor (deferred): no CLI arg validation (--calls -5 prints denied=-5); design specifies none
+Task 5: ⚠️ 25-test count resolved — controller re-run Ran 25 tests OK; CLI printed allowed=9 denied=21
+Task 5: codex gate degraded (not-installed), event recorded
+Task 5: complete (commits 5af9493..5edd26a, review clean)
+Task 6: BASE 5edd26a
+Task 6: implementer a84bb3355a847a459 (soak_long run by controller — exceeds subagent timeout)
+Task 6: task review approved, no findings; awaiting controller soak_long (bg bjajfpibi) to close ⚠️
+Final review: dispatched in parallel with soak_long on dd04bf3..480521e (opus, agent afd5e7ed5f9fce93a); redo if soak fails
+Final review: 0 Critical, 0 Important; 3 Minor (bucket tokens() returns int at cap — plan's own code; 5af9493 subject/trailer; mixed Haiku/Opus trailers). No fix wave: minors only, and the two metadata items need a history rewrite (user's call); bucket nit deviates from plan text (user's call)
+Final codex gate degraded (not-installed), event recorded

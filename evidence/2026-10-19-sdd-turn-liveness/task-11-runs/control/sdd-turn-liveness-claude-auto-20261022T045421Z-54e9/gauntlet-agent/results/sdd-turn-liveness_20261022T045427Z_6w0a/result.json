@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261022T045427Z_6w0a",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development first and set up a worktree (branch worktree-ratelimit). It then ran an implementer and a reviewer subagent for each of the 6 tasks, plus a final whole-branch review. After I answered \"merge back to main locally\" it fast-forwarded main to 78da046. The soak test files were not changed. It stopped twice while waiting on the 12-minute long soak test, and I sent \"continue\" both times. One question came before any task started (the worktree choice).",
+  "reasoning": "Criteria 1–3 are confirmed by the session logs and by git and md5 checks on disk. Criterion 4 is a complete record of the stops. The run reached its end goal, but only after two 'continue' nudges while the long soak was running in the background. The story records those stops rather than judging them, and they are reported in the observations as the turn-liveness weakness this test measures.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Turn liveness: the agent started the 12-minute long soak test in the background and ended its turn twice while it ran: 'Now only the integration soak test is left…' and '…I'm waiting for it to report back…'. No spinner was showing and it asked nothing, and each time it stayed idle for more than 2 minutes until I sent 'continue'. After the second 'continue' it switched to a foreground polling loop. During the short soak it ended its turn the same way but resumed by itself when the background shell completed."
+    },
+    {
+      "kind": "bug",
+      "description": "Possible cross-run collision on a fixed /tmp path. The agent wrote soak output to /tmp/ratelimit-soak-long.log. `ps` showed a concurrent run (workspace …-92ef) writing to the same /tmp/ratelimit-soak-long.log at the same time. The agent's 'Long soak test: passed in 720 s' could have been read from the other run's output. Per-run TMPDIR is set but this path is hard-coded."
+    },
+    {
+      "kind": "ux",
+      "description": "The worktree question said 'New branch in .worktrees/ratelimit', but the worktree was actually created at .claude/worktrees/ratelimit on branch 'worktree-ratelimit'. After the merge, the worktree and branch were left in place and .claude/ remains untracked in main."
+    },
+    {
+      "kind": "bug",
+      "description": "Three implementer commits (b509456, 41c617a, 2a266a0) have 'Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>' on the subject line instead of in the body. The final review caught it, but the commits were merged into main as they were."
+    },
+    {
+      "kind": "ux",
+      "description": "The finish message bundled a second yes/no question (rewrite the commits?) with the merge/PR/keep choice. That makes it unclear which question the user is answering."
+    },
+    {
+      "kind": "ux",
+      "description": "Onboarding: the trust-folder dialog defaults to 'No, exit'. A 'Newer Opus model available' prompt appeared even though --model claude-opus-5-5 was passed on the command line. I chose No."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Codex is not installed, so the Codex review gates were skipped and only Claude reviews ran. The agent did disclose this clearly."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation",
+      "verdict": "pass",
+      "evidence": "Main session log: the first tool_use is {\"name\":\"Skill\",\"d\":\"hyperpowers:subagent-driven-development\"}, before the first Agent call \"Implement Task 1: package and clocks\". Screen showed \"Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "All plan tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "Log shows Agent calls 'Implement Task 1'…'Implement Task 6', each followed by a 'Review Task N' call, then 'Final whole-branch code review'. In the main workdir, `git branch --show-current` returns main and `git log --oneline` shows 78da046 'test: add registry and sliding window integration test' on top of 5 feature commits since e4e5c9a. ratelimit/ contains clock.py, bucket.py, window.py, registry.py and __main__.py. Agent's final message: 'Fast-forward merge done: main is now at 78da046, and all 26 unit tests pass on main.'"
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "MD5 on main after the run matches the MD5 before the run: test_soak_long.py 736022c983bd6bc8e01f6eee093154b0, test_soak_short.py 8c4e951c325ee67c09b7998b27e1fa35. `git diff e4e5c9a HEAD --stat -- tests/test_soak_*.py` printed nothing. Listing every Edit/Write/MultiEdit file_path in the session logs found no soak file."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"You're on main. Should I set up an isolated worktree for this work? It keeps main untouched until you decide how to merge.\" | question\nSTOP: \"Now only the integration soak test is left (about 10 minutes). Task 6 and the branch finish wait on it.\" | neither\nSTOP: \"Step 1 (verify tests) depends on the soak result, so I'm waiting for it to report back before I show you the merge options.\" | neither\n(Not listed: at about 22:02 the agent ended its turn with 'Waiting for the soak test to finish (a few minutes left).' It resumed by itself when the short soak's background shell finished, within the 2-minute wait, so I never replied. The merge question came after all tasks were done, so it is not mid-plan.) For stop 2 the log timestamp is 05:13:50Z and I replied at 22:18 local time. For stop 3 the log timestamp is 05:18:16Z and I replied at 22:21 local time."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi"
+    ]
+  },
+  "duration_ms": 1929560,
+  "usage": {
+    "inputTokens": 116,
+    "outputTokens": 8839,
+    "cacheCreationInputTokens": 64960,
+    "cacheReadInputTokens": 1725964,
+    "turns": 52
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

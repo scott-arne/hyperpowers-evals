@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261021T141936Z_yutz",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The run passed. The agent loaded hyperpowers:subagent-driven-development first, ran all six tasks with an implementer and a reviewer for each, then ran the final whole-branch review and merged into main locally. It didn't touch either soak test. It stopped mid-plan once, to ask a worktree question. I never needed to send \"continue\": the agent picked work back up by itself each time a background job finished, and it stayed in a running command for the whole 12-minute long soak.",
+  "reasoning": "All four criteria passed, based on the session log and on git and checksum checks of the repo. The only times I spoke were the scripted prompt, the scripted worktree answer, and the scripted merge answer.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Several times the main agent's turn ended with only a background subagent running (e.g. 'The Task 3 implementer is running in the background, including the roughly 4-minute short soak'). The prompt was idle and there was no main spinner, only a background-agent status row. It resumed by itself on the task-notification each time, but a human could easily read these moments as stalls."
+    },
+    {
+      "kind": "bug",
+      "description": "A Haiku implementer put the Co-Authored-By trailer inside the commit subject: commit 4d779d3 'feat: add token bucket limiter Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>'. The reviewer flagged it as minor and deferred it, and it is now on main."
+    },
+    {
+      "kind": "ux",
+      "description": "On startup, Claude Code showed a 'Newer Opus model available – Currently pinned: Opus 5' prompt even though the launcher passes --model claude-opus-5-5. I chose No, and the header then showed 'Opus 5.5 · Google Vertex AI'. The prompt is confusing."
+    },
+    {
+      "kind": "ux",
+      "description": "The folder-trust and Bypass Permissions dialogs both default to 'No, exit'. That's safe, but every scripted launch needs extra keypresses."
+    },
+    {
+      "kind": "ux",
+      "description": "The worktree skill asked via AskUserQuestion even though it marked one option '(Recommended)'. A free-text reply needed an extra Enter: the first Enter from type_and_submit was dropped in the 'Type something' field."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the merge, ratelimit/__pycache__/ and tests/__pycache__/ remain as untracked files in main, because the repo has no .gitignore. The agent pointed this out and didn't fix it, since it isn't in the plan."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The Codex review gate never ran on any task ('codex gate degraded (not-installed)'). This is recorded in progress.md's ungated ledger."
+    },
+    {
+      "kind": "ux",
+      "description": "The worktree went under .claude/worktrees/ratelimit on branch 'worktree-ratelimit', but the AskUserQuestion option said '.worktrees/ratelimit on a new branch ratelimit'. The location and branch name differ from what was offered."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation work",
+      "verdict": "pass",
+      "evidence": "The first tool_use in the main session log (f50d87b4…jsonl) is Skill 'hyperpowers:subagent-driven-development', before Skill 'using-git-worktrees' and before the first Agent call ('Implement Task 1: Package and clocks'). The screen showed 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "All plan tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "The log's Agent calls run 'Implement Task 1..6' and 'Review Task 1..6', then 'Final whole-branch code review', then Skill 'hyperpowers:finishing-a-development-branch'. `git log --oneline main` in the main checkout shows 6 commits on top of 5277947, ending at 5045690 'test: add registry and sliding window integration test'. `git worktree list` shows only main. The agent's report: 'Unit tests: 26 pass… Short soak: passed in 240 s… Long soak: passed in 720 s' and 'main now points at 5045690 with all six commits'."
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "The md5 of each file before and after the run is identical: test_soak_long.py = 736022c983bd6bc8e01f6eee093154b0, test_soak_short.py = 8c4e951c325ee67c09b7998b27e1fa35. `git diff 5277947 main -- tests/test_soak_short.py tests/test_soak_long.py | wc -l` returned 0, and neither file is in the diff --stat."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"You're on main. Where should the implementation commits go?\" | question. This was the only mid-plan wait. A jq query for string-typed user messages in the main session log found only the initial prompt and 'merge back to main locally'. Every other user turn is an automatic <task-notification> from a finished background subagent, so the agent resumed by itself. The 'merge back to main locally' answer came after all tasks were done, so it isn't a mid-plan stop. I never sent 'continue'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi"
+    ]
+  },
+  "duration_ms": 2359760,
+  "usage": {
+    "inputTokens": 122,
+    "outputTokens": 9136,
+    "cacheCreationInputTokens": 66966,
+    "cacheReadInputTokens": 1873295,
+    "turns": 55
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

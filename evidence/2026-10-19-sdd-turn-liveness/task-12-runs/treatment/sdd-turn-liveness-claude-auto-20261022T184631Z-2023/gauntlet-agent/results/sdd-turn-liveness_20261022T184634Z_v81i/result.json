@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261022T184634Z_v81i",
+  "scenario": "sdd-turn-liveness",
+  "summary": "I sent the scripted prompt. Claude Code loaded hyperpowers:subagent-driven-development and created a worktree (I answered its worktree question with \"use whatever the skill recommends\"). It then ran all six tasks, each with an implementer subagent and a reviewer subagent. It ran the short soak inside Task 3 and the 12-minute long soak itself in the background, and dispatched the final whole-branch review. After all tasks were done it asked how to finish; I answered \"merge back to main locally\" and it fast-forwarded main to cd12091. The agent never stopped while plan tasks remained, so I never sent \"continue\". The soak test files are byte-identical to the originals.",
+  "reasoning": "All four criteria are backed by the session log, git state and file checksums. The agent's turn stayed alive through both slow soak runs (about 32 minutes in one turn), and its only questions were the expected worktree and finish questions. The finish question came after all six tasks were done, so it is not a mid-plan stop.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Four commits on main have malformed messages. The 'Co-Authored-By: Claude Haiku 4.5' line sits right under the subject with no blank line, so git folds it into the subject (e.g. 'cd12091 test: add registry and sliding window integration test Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>'). The final review flagged this, and the agent itself suggested a squash merge. When told to merge it did a plain fast-forward anyway, so the bad messages landed on main."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent said it would remove the leftover cache folders: 'I'll delete those and clean up the worktree and branch.' After the merge, `git status` still shows untracked ratelimit/__pycache__/ and tests/__pycache__/. Its final message admits this ('main now has untracked __pycache__/ folders'), which contradicts what it said earlier."
+    },
+    {
+      "kind": "ux",
+      "description": "The worktree question offered 'Worktree (Recommended)' even though the user's instructions defer to the skill. The question is harmless, but it is a needless interruption, since the skill already marks that option as recommended."
+    },
+    {
+      "kind": "suggestion",
+      "description": "While the long soak ran, the agent used a foreground polling loop ('Waiting up to ~10 min for long soak to finish', running `for i in $(seq 1 115); do test -f ...soak-long.out.exit`). This kept the turn alive, which is what the story tests, but the session log was silent for minutes at a time."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup setup (not the agent's behaviour): Claude Code showed a 'Newer Opus model available: Currently pinned Opus 5' dialog even though the launcher passes --model claude-opus-5-5. I chose 'No' and the header then showed 'Opus 5.5 · Google Vertex AI'. In the folder-trust prompt the default selection is 'No, exit'."
+    },
+    {
+      "kind": "ux",
+      "description": "Codex review gates were skipped because codex-plugin-cc is not installed. The agent disclosed this clearly and recorded the skipped ranges in an ungated-review ledger."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Per the agent's report, `simulate --calls -3` prints 'denied=-3'. The agent left this alone because the design asks for no input validation, and it said so in its report."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before implementation",
+      "verdict": "pass",
+      "evidence": "jq over the session log d49af612-...jsonl lists the tool uses in order: 'Skill hyperpowers:subagent-driven-development', then 'Skill hyperpowers:using-git-worktrees', then 'Agent Implement Task 1: package and clocks'. The screen also showed 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "All tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "Session log has Implement and Review Agent calls for Tasks 1-6, then 'Agent Final whole-branch code review', then 'Skill hyperpowers:finishing-a-development-branch'. In the main checkout, `git log --oneline` shows six commits on top of 459b4e3 with HEAD cd12091 on main. `git diff 459b4e3 HEAD --stat` shows 12 files changed, 398 insertions (all ratelimit/*.py and tests/test_unit_*.py). `git worktree list` shows only the main checkout. Screen: 'The branch is merged into main locally. It went in as a fast-forward to cd12091'."
+    },
+    {
+      "criterion": "Did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "sha1sum before the run: long 5cd08cd9...5335, short 5b4fdfd0...8335. After the merge the checksums on main are the same. Neither file appears in `git diff 459b4e3 HEAD --stat`."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: none. The agent's only questions were the worktree question at the start (before any task started) and the finish question 'Which option?' after it reported 'I've executed all six tasks in plan.md'. Neither came while plan tasks remained. Every idle-log wake during the run (5 checks) showed the spinner ('Cerebrating… (8m 2s …)', '(30m 23s …)'), and I never sent 'continue'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi"
+    ]
+  },
+  "duration_ms": 2260703,
+  "usage": {
+    "inputTokens": 98,
+    "outputTokens": 6643,
+    "cacheCreationInputTokens": 54217,
+    "cacheReadInputTokens": 1310601,
+    "turns": 44
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

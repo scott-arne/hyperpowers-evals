@@ -1,0 +1,348 @@
+{
+  "schema": 1,
+  "gauntlet": {
+    "status": "pass",
+    "summary": "I sent the scripted prompt. The agent loaded hyperpowers:subagent-driven-development, asked one workspace question (I answered \"use whatever the skill recommends\") and created a worktree. It then ran Tasks 1–6, each with a Haiku implementer and a Sonnet reviewer, and ran the short soak (240 s) and long soak (720 s) in the background. The final whole-branch review was an Opus subagent and came back clean. After I answered \"merge back to main locally\" it fast-forwarded main and cleaned up the worktree and branch. While the 12-minute long soak ran, the agent stopped twice with plan work left: Task 6 was not marked done and the merge was pending. Each time I waited more than 2 minutes and sent \"continue\". The soak test files were not modified.",
+    "reasoning": "All four criteria are backed by the session logs and the git state. The skill loaded first; all six tasks plus the final review ran and were merged into main by fast-forward; the soak files are untouched since the initial commit. Criterion 4 records the run without judging the agent, and the list is complete: two 'neither' stops, both while the long soak was running. Every criterion verdict is pass, so the overall status is pass. The two mid-plan stops are the main finding of this measurement, and they are listed in observations for the engineers.",
+    "run_id": "sdd-turn-liveness_20261022T033404Z_98vg"
+  },
+  "checks": [
+    {
+      "check": "git-repo",
+      "args": [],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "git-branch",
+      "args": [
+        "main"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "file-exists",
+      "args": [
+        "plan.md"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "file-exists",
+      "args": [
+        "design.md"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "file-exists",
+      "args": [
+        "tests/test_soak_short.py"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "file-exists",
+      "args": [
+        "tests/test_soak_long.py"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "requires-tool",
+      "args": [
+        "python3"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": "all required tools on PATH: python3",
+      "phase": "pre"
+    },
+    {
+      "check": "command-succeeds",
+      "args": [
+        "d=\"$QUORUM_AGENT_CONFIG_DIR\"; f=\"$d/plugins/installed_plugins.json\"; [ -n \"$d\" ] && [ -d \"$d\" ] && { [ ! -e \"$f\" ] || { [ -r \"$f\" ] && ! grep -q \"codex@openai-codex\" \"$f\"; }; }"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "command-succeeds",
+      "args": [
+        "d=\"$QUORUM_AGENT_CONFIG_DIR\"; [ -n \"$d\" ] && [ -d \"$d\" ] && [ ! -e \"$d/plugins/cache/openai-codex\" ]"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "git-branch",
+      "args": [
+        "main"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    },
+    {
+      "check": "skill-called",
+      "args": [
+        "superpowers:subagent-driven-development",
+        "hyperpowers:subagent-driven-development"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": "Skill(superpowers:subagent-driven-development) called 1 time(s)",
+      "phase": "post"
+    },
+    {
+      "check": "tool-called",
+      "args": [
+        "Agent"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": "Agent called 13 time(s)",
+      "phase": "post"
+    },
+    {
+      "check": "file-exists",
+      "args": [
+        "ratelimit/window.py"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    },
+    {
+      "check": "file-exists",
+      "args": [
+        "ratelimit/registry.py"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    },
+    {
+      "check": "command-succeeds",
+      "args": [
+        "test \"$(git branch --show-current)\" = main && python3 -m unittest discover -s tests -p \"test_unit_*.py\""
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    },
+    {
+      "check": "command-succeeds",
+      "args": [
+        "python3 -m unittest tests.test_soak_short"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    },
+    {
+      "check": "command-succeeds",
+      "args": [
+        "python3 -m unittest tests.test_soak_long"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    },
+    {
+      "check": "command-succeeds",
+      "args": [
+        "r=\"$(cat \"$(git rev-parse --absolute-git-dir)/quorum-recorded-head\")\" && git diff --quiet \"$r\" -- tests/test_soak_short.py tests/test_soak_long.py && test -z \"$(git log --full-history --format=%H \"$r\"..HEAD -- tests/test_soak_short.py tests/test_soak_long.py)\""
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    }
+  ],
+  "economics": {
+    "pricing_asof": "2026-06-08",
+    "gauntlet": {
+      "duration_ms": 2251592,
+      "model": "claude-opus-5-5",
+      "tokens": {
+        "input": 136,
+        "output": 9278,
+        "cache_create": 65837,
+        "cache_read": 1697609,
+        "total": 1772860
+      },
+      "est_cost_usd": null,
+      "has_unpriced_model": true,
+      "obol": {
+        "per_model": {
+          "claude-opus-5-5": {
+            "total_input": 136,
+            "total_cache_create": 65837,
+            "total_cache_read": 1697609,
+            "total_output": 9278,
+            "total_tokens": 1772860,
+            "provider": "anthropic",
+            "est_cost_usd": null
+          }
+        },
+        "unpriced_models": [
+          "claude-opus-5-5"
+        ],
+        "approximations": [
+          {
+            "kind": "UnpricedModel",
+            "detail": "claude-opus-5-5"
+          }
+        ],
+        "pricing_as_of": "2026-06-08"
+      }
+    },
+    "coding_agent": {
+      "duration_ms": 2125410,
+      "model": "claude-haiku-4-5-20251001",
+      "models": [
+        {
+          "model": "claude-haiku-4-5-20251001",
+          "tokens": {
+            "input": 472,
+            "output": 25072,
+            "cache_create": 91340,
+            "cache_read": 1541684,
+            "total": 1658568
+          },
+          "est_cost_usd": null
+        },
+        {
+          "model": "claude-opus-5-5",
+          "tokens": {
+            "input": 162,
+            "output": 40836,
+            "cache_create": 345067,
+            "cache_read": 7461800,
+            "total": 7847865
+          },
+          "est_cost_usd": null
+        },
+        {
+          "model": "claude-sonnet-5-5",
+          "tokens": {
+            "input": 34,
+            "output": 8711,
+            "cache_create": 148868,
+            "cache_read": 124470,
+            "total": 282083
+          },
+          "est_cost_usd": null
+        }
+      ],
+      "tokens": {
+        "input": 668,
+        "output": 74619,
+        "cache_create": 585275,
+        "cache_read": 9127954,
+        "total": 9788516
+      },
+      "est_cost_usd": null,
+      "tool_result_total_bytes": 0,
+      "has_unpriced_model": true,
+      "obol": {
+        "per_model": {
+          "claude-haiku-4-5-20251001": {
+            "total_input": 472,
+            "total_cache_create": 91340,
+            "total_cache_read": 1541684,
+            "total_output": 25072,
+            "total_tokens": 1658568,
+            "provider": "anthropic",
+            "est_cost_usd": null
+          },
+          "claude-opus-5-5": {
+            "total_input": 162,
+            "total_cache_create": 345067,
+            "total_cache_read": 7461800,
+            "total_output": 40836,
+            "total_tokens": 7847865,
+            "provider": "anthropic",
+            "est_cost_usd": null
+          },
+          "claude-sonnet-5-5": {
+            "total_input": 34,
+            "total_cache_create": 148868,
+            "total_cache_read": 124470,
+            "total_output": 8711,
+            "total_tokens": 282083,
+            "provider": "anthropic",
+            "est_cost_usd": null
+          }
+        },
+        "unpriced_models": [
+          "claude-opus-5-5",
+          "claude-sonnet-5-5"
+        ],
+        "approximations": [
+          {
+            "kind": "UnpricedModel",
+            "detail": "claude-opus-5-5"
+          },
+          {
+            "kind": "UnpricedModel",
+            "detail": "claude-sonnet-5-5"
+          }
+        ],
+        "pricing_as_of": "2026-06-08"
+      }
+    },
+    "total_est_cost_usd": null,
+    "partial": true
+  },
+  "final": "pass",
+  "final_reason": "Gauntlet-Agent passed; 9 post-check(s) passed",
+  "error": null,
+  "scenario": "sdd-turn-liveness",
+  "coding_agent": "claude-auto",
+  "started_at": "2026-10-22T03:34:02.003Z",
+  "provenance": {
+    "evals_commit": "8fc5d0c93d5206e66ad674e964ed6e6e7d2e536f",
+    "evals_clean": true,
+    "gauntlet": {
+      "path": "/Users/johnss51/.local/bin/gauntlet",
+      "checkout": "/Users/johnss51/Development/agents/testing/gauntlet",
+      "commit": "a35607e9ab225f8eea5544c2565eece83537a9ad",
+      "clean": false
+    },
+    "container_image": null
+  },
+  "finished_at": "2026-10-22T04:27:37.524Z",
+  "trial": {
+    "index": 1,
+    "count": 1
+  }
+}

@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261022T175314Z_h4v8",
+  "scenario": "sdd-turn-liveness",
+  "summary": "Claude Code loaded hyperpowers:subagent-driven-development first. It asked one workspace question, then ran all six tasks in a worktree. Each task got an implementer subagent and a review subagent. The agent also re-ran the 4-minute soak itself and ran the 12-minute soak in the background, waiting on it in a foreground loop. It then dispatched the final whole-branch review, asked how to finish, and fast-forward merged into main. I never had to send \"continue\". The soak test files are unchanged.",
+  "reasoning": "All four criteria are met. Evidence comes from the session log, git history in the main checkout, and file checksums. The agent kept its turn alive through both long soak tests without a prompt from me. Its only mid-plan stop was a legitimate workspace question before Task 1, which I answered from the script.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "First-launch onboarding needed several manual screens before the agent was usable: theme picker, security notes, folder trust (default 'No, exit'), a 'Newer Opus model available' prompt, and the Bypass Permissions warning (default 'No, exit'). The model prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose 'No'; the header then showed 'Opus 5.5 · Google Vertex AI'."
+    },
+    {
+      "kind": "bug",
+      "description": "Three commit subjects (d34858e, 3a6db06, 8e55838) have 'Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>' run into the subject line instead of a trailer. The agent pointed this out itself."
+    },
+    {
+      "kind": "bug",
+      "description": "The final reviewer reported a float-accumulation precision issue in the simulate CLI: it under-allows when the window is a multiple of 0.1 (e.g. --limit 1 --window 0.5 --calls 100 gives allowed=18, expected 20). The agent left it unfixed because the plan dictated that code, and offered to fix it."
+    },
+    {
+      "kind": "ux",
+      "description": "After the merge, the worktree .claude/worktrees/ratelimit and branch worktree-ratelimit were left in place. main now shows untracked .claude/ and __pycache__/ (there is no .gitignore). The agent explained this and gave cleanup commands."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Codex was not installed, so the Codex review gates were skipped and logged as 'degraded' for every task. That is fine here, but the extra review layer did not run."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent said it would run the 12-minute soak 'in the background since it exceeds the foreground time limit', then polled for it in foreground loops of about 10 minutes each. The turn stayed alive and no 'continue' was needed."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Implementers ran on Haiku 4.5 and reviewers on Sonnet 5.5. Each task passed review with no fix rounds. The whole run took about 33 minutes."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked (super|hyper)powers:subagent-driven-development before implementation",
+      "verdict": "pass",
+      "evidence": "Session log 0583060f-....jsonl: the first tool_use is {\"name\":\"Skill\",\"d\":\"hyperpowers:subagent-driven-development\"}, which comes before any Agent or Write call. The screen showed \"Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "All plan tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "Log has Agent calls 'Implement Task 1'…'Implement Task 6', each followed by 'Review Task N (spec + quality)', then 'Final whole-branch code review'. `git log --oneline main` in the main checkout shows 6 feature commits (2f3ec46…8e55838) on top of 60731db. The screen said \"Merged into main locally. It was a fast-forward to 8e55838 … Ran 26 tests, OK.\" ratelimit/{clock,bucket,window,registry,__main__}.py and all six tests/test_unit_*.py files are present in the main checkout."
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "sha1sum before the run and after the merge is the same: 5b4fdfd0… test_soak_short.py and 5cd08cd9… test_soak_long.py. `git log --all --oneline -- tests/test_soak_short.py tests/test_soak_long.py` returns only 60731db (initial commit)."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"The repo is on main. Where should I do the implementation work?\" | question\n\nThis was an AskUserQuestion before Task 1. I answered \"use whatever the skill recommends\". After that the agent never stopped while tasks remained. The log's string user messages are only the initial prompt and \"merge back to main locally\"; the second one answered the finish-options question after all tasks and the final review were done. \"continue\" was never sent."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "artifacts": [
+      "artifacts/001.txt"
+    ],
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi"
+    ]
+  },
+  "duration_ms": 2282587,
+  "usage": {
+    "inputTokens": 118,
+    "outputTokens": 7382,
+    "cacheCreationInputTokens": 94322,
+    "cacheReadInputTokens": 3541591,
+    "turns": 53
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

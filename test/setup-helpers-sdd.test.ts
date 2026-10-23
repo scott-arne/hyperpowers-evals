@@ -1,6 +1,6 @@
 // test/setup-helpers-sdd.test.ts
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runGit } from '../src/setup-helpers/git.ts';
@@ -10,6 +10,7 @@ import {
   scaffoldSddGoFractalsGpt55,
   scaffoldSddQualityDefectPlan,
   scaffoldSddSpecConstraintPlan,
+  scaffoldSddTurnLiveness,
   scaffoldSddYagniPlan,
 } from '../src/setup-helpers/sdd-fixtures.ts';
 
@@ -30,6 +31,51 @@ describe('sdd fixtures', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test('scaffoldSddTurnLiveness copies the tree and commits it', () => {
+    const dir = tmp();
+    try {
+      scaffoldSddTurnLiveness({ workdir: dir } as never);
+      expect(runGit(['log', '--format=%s'], dir).trim()).toBe(
+        'initial: design, plan and soak tests',
+      );
+      for (const f of [
+        'design.md',
+        'plan.md',
+        'tests/__init__.py',
+        'tests/test_soak_short.py',
+        'tests/test_soak_long.py',
+      ]) {
+        expect(runGit(['ls-files', '--error-unmatch', f], dir).trim()).toBe(f);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('the turn-liveness fixture plan has six tasks, names both slow covering commands, and says nothing about how to wait', () => {
+    const plan = readFileSync(
+      join(import.meta.dir, '..', 'fixtures', 'sdd-turn-liveness', 'plan.md'),
+      'utf8',
+    );
+    const headings = [...plan.matchAll(/^### Task (\d+)\b/gm)].map((m) =>
+      Number(m[1]),
+    );
+    expect(headings).toEqual([1, 2, 3, 4, 5, 6]);
+    const sections = plan.split(/^### Task \d+\b/m).slice(1);
+    const short = 'python3 -m unittest tests.test_soak_short -v';
+    const long = 'python3 -m unittest tests.test_soak_long -v';
+    expect(
+      sections.some((s) => s.includes(short) && /(four|4)\s*min/i.test(s)),
+    ).toBe(true);
+    expect(
+      sections.some((s) => s.includes(long) && /(twelve|12)\s*min/i.test(s)),
+    ).toBe(true);
+    // Deviation 5: the stimulus must not tell the executor how to run or wait.
+    expect(plan).not.toMatch(
+      /run_in_background|in the background|foreground|completion notification/i,
+    );
   });
 
   test('scaffoldSddBrokenPlan keeps the literal backslash-n in the plan', () => {

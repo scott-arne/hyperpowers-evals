@@ -40,8 +40,18 @@ In order:
    are unanchored, so they match those directories at any depth. A committed
    copy mirrors that run's live layout: a relocated run's `<run>/` beside
    `workspaces/<run>/`; a legacy run's single `<run>/`.
-4. Post-check the staged tree across both layouts: every run has at least one
-   transcript and one `result.json`, and there are no gitlinks.
+4. Post-check the staged tree across both layouts: there are no gitlinks, and
+   each run carries what its outcome leaves behind. A run whose Gauntlet wrote
+   a result has one `result.json` and at least one transcript. A run whose
+   Gauntlet ran but wrote no result (`gauntlet.run_id` null, `gauntlet.status`
+   present in its `verdict.json`: a transport void) has that `verdict.json`,
+   the Gauntlet's `run.jsonl` event stream, its `gauntlet-stderr.log` when the
+   Gauntlet left one, and at least one transcript. A run whose setup failed
+   before the Gauntlet started (`gauntlet` null, `error.stage` `setup`: a setup
+   void) has its `verdict.json`, `phase.json` and `provenance.json`, no
+   `gauntlet-agent/` directory and no transcript; the two setup voids in
+   `evidence/2026-10-19-sdd-turn-liveness/task-9-runs/smoke/{control,treatment}`
+   (`…141804Z-e3ae`, `…141804Z-35b5`) are the shape.
 
 Commit ids cited in the evidence before 2026-09-16 may predate a history rewrite of the then-unpushed range (session key files removed); `history-rewrite-2026-09-16.tsv` maps old ids to new.
 

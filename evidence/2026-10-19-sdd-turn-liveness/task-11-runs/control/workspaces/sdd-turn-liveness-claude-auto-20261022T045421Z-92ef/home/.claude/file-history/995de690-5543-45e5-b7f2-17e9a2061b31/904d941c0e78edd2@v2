@@ -1,0 +1,56 @@
+# SDD ledger — plan: /Users/johnss51/Development/agents/hyperpowers/evals/.worktrees/sdd-turn-liveness/results/workspaces/sdd-turn-liveness-claude-auto-20261022T045421Z-92ef/coding-agent-workdir/.claude/worktrees/ratelimit/plan.md
+
+Worktree: .claude/worktrees/ratelimit, branch worktree-ratelimit, branched from e4e5c9a (main)
+Spec: design.md (present)
+Codex preflight: not-installed — per-task and final Codex gates are no-ops (degraded-gate events recorded per gate)
+Plan gate evidence: none — Task 6 declared low executes as standard
+
+## Pre-flight conflict scan
+
+| Pair / Task | Produces vs consumes | Finding |
+|---|---|---|
+| T1 -> T2,T3,T4,T5,T6 | clock.py MonotonicClock/FakeClock(start, now, advance) | consistent with every consumer |
+| T3 -> soak_short, soak_long | SlidingWindowLimiter(limit=, window_seconds=, clock=None) in ratelimit/window.py | matches the soak imports and keywords; window (now-w, now] satisfies the soak's (stamp-(W-SLACK), stamp] check |
+| T3 -> T4 (tests) | SlidingWindowLimiter used as the factory product | consistent |
+| T4 -> soak_long, T6 | Registry(factory), allow, keys() in first-use order | soak sorts keys; T6 compares to KEYS in order = first-use order; consistent |
+| T3 -> T5 | simulate drives SlidingWindowLimiter with FakeClock 0.1 s steps | hand-checked expected counts 9/21 and 4/6: consistent |
+| T3,T4 -> T6 | integration test expects 60 allowed per key, boundary at <= now-WINDOW | hand-checked against T3 eviction (<= cutoff): consistent |
+| T1 self | 5 tests, code passes them | consistent; Ran 5 |
+| T2 self | 6 tests (+5 = 11); starts full, refill capped | consistent; power-of-two steps exact |
+| T3 self | 5 tests (=16); boundary test matches <= cutoff | consistent |
+| T4 self | 5 tests (=21); dict order for keys() | consistent; list[str] is 3.9-safe |
+| T5 self | 4 tests (=25); subprocess test needs cwd=repo root | consistent with discover command |
+| T6 self | 1 test (=26); low tier, no prod code | consistent |
+| Global | design item 6 says "under the real clock"; T6 unit test uses FakeClock but T6 also runs soak_long under the real clock | not a conflict: the real-clock coverage is soak_long |
+
+Scan clean — no question to human partner.
+Note: soak_short ~4 min, soak_long ~12 min (exceeds a 10-min foreground tool timeout; must run in background).
+
+## Tasks
+Task 1: implementer a96df1b05dba22330 (BASE e4e5c9a)
+Task 1: controller verified covering command: Ran 5 tests OK
+Task 1: minor (deferred): no .gitignore; __pycache__ dirs untracked in worktree (plan did not ask for one)
+Task 1: complete (commits e4e5c9a..2553c25, review clean; Codex gate degraded not-installed)
+Task 2: implementer af5219f21e58dba7b (BASE 2553c25)
+Task 2: controller verified covering command: Ran 11 tests OK
+Task 2: minor (deferred): commit 263d19a subject line has Co-Authored-By (Haiku) trailer fused onto it — cosmetic history issue
+Task 2: minor (deferred): test_default_clock_is_monotonic reads private _clock (plan-mandated, same in Task 3)
+Task 2: complete (commits 2553c25..263d19a, review clean; Codex gate degraded not-installed)
+Task 3: implementer a0c7995212731aa8d (BASE 263d19a)
+Task 3: controller verified: unit Ran 16 OK; soak_short Ran 1 test in 240.024s OK
+Task 3: ⚠️ resolved: soak tests unmodified (git diff e4e5c9a..HEAD on soak files empty)
+Task 3: minor (deferred): Haiku Co-Authored-By trailers on implementer commits (cosmetic)
+Task 3: complete (commits 263d19a..b631d0a, review clean; Codex gate degraded not-installed)
+Task 4: implementer ab3547189273a170c (BASE b631d0a)
+Task 4: controller verified covering command: Ran 21 tests OK (resolves ⚠️ count)
+Task 4: minor (deferred): registry.get uses 'is None' as missing-key check; factory returning None would be recreated each call (plan code)
+Task 4: complete (commits b631d0a..0a9b6ef, review clean; Codex gate degraded not-installed)
+Task 5: implementer aa8e93af2eec6ff3e (BASE 0a9b6ef)
+Task 5: controller verified: Ran 25 tests OK; simulate --limit 3 --window 1.05 --calls 30 -> allowed=9 denied=21 (resolves ⚠️ items)
+Task 5: minor (deferred): CLI does not validate negative --calls / non-positive --limit/--window (design specifies no validation)
+Task 5: complete (commits 0a9b6ef..7093a9a, review clean; Codex gate degraded not-installed)
+Task 6: tier declared low -> effective standard (unreviewed low tier)
+Task 6: implementer a6b5093a2456fce95 (BASE 7093a9a)
+Task 6: soak_long started by controller in background (log /tmp/ratelimit-soak-long.log)
+Task 6: review approved (spec ✅, quality Approved); ⚠️ resolved: unit 26 OK (controller), keys() order covered by Task 4 test; awaiting soak_long
+Task 6: minor (deferred): integration test compares len() to float expression (plan-verbatim; exact values)
