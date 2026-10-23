@@ -112,11 +112,6 @@ def _open_timeline(records: Sequence[Record]) -> tuple[list[datetime], list[int]
                         completions.append(parse_ts(rec["timestamp"]))
                 elif status in ("pending", "in_progress") and task_id:
                     open_ids.add(task_id)
-            elif name == "TodoWrite":
-                todos = inp.get("todos") or []
-                open_ids = {k for k in open_ids if not k.startswith("todo:")} | {
-                    f"todo:{i}" for i, t in enumerate(todos) if isinstance(t, dict) and t.get("status") != "completed"
-                }
             else:
                 continue
             changes.append((parse_ts(rec["timestamp"]), len(open_ids)))
@@ -179,10 +174,12 @@ def _session(records: Sequence[Record], since: datetime, until: datetime) -> tup
 def collect(projects: Path, since: datetime, until: datetime) -> dict[str, Any]:
     """Aggregate counts over every Zed SDD session with events in the window.
 
-    ``until`` is also the observation cutoff: every record at or after it is
-    dropped before anything is classified, so a session qualifies only by an
-    SDD invocation inside the window, and records appended later (a completion,
-    a resume, a session's first SDD call) cannot change the result.
+    A session qualifies only by an SDD invocation inside the window, which is
+    the skill text the window measures; its earlier records still reconstruct
+    the state its in-window events are read against. ``until`` is also the
+    observation cutoff: every record at or after it is dropped before anything
+    is classified, so records appended later (a completion, a resume, a
+    session's first SDD call) cannot change the result.
     """
     totals: Counter[str] = Counter()
     versions: Counter[str] = Counter()
@@ -192,7 +189,7 @@ def collect(projects: Path, since: datetime, until: datetime) -> dict[str, Any]:
         if entrypoint(path) != "sdk-ts":
             continue
         records = [rec for rec in load(path, slim=True) if parse_ts(rec["timestamp"]) < until]
-        if not is_sdd(records):
+        if not is_sdd([rec for rec in records if since <= parse_ts(rec["timestamp"]) < until]):
             continue
         counts, session_versions, session_models = _session(records, since, until)
         if not counts and not session_versions:

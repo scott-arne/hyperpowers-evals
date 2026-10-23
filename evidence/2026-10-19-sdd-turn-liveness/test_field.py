@@ -159,6 +159,52 @@ class Collect(unittest.TestCase):
         self.assertEqual(grown, seen_at_cutoff)
         self.assertEqual(joined, seen_at_cutoff)
 
+    def test_a_session_qualifies_only_by_an_in_window_sdd_invocation(self) -> None:
+        # synth's base is ten hours into the window, so ten hours and a minute earlier is before SINCE.
+        before = -36_060
+        early_sdd = [
+            human(before, "Execute the plan.", entrypoint="sdk-ts"),
+            assistant(before + 5, tools=[SDD]),
+            result(before + 6, "s1", "Launching skill"),
+            assistant(10, tools=[("k1", "TaskCreate", {"subject": "A"})]),
+            result(11, "k1", "Task #1 created successfully: A"),
+            assistant(20, "Working on Task 1."),
+            human(30, "Resume"),
+        ]
+        # The same work, with the skill loaded again inside the window.
+        reloaded = [
+            *early_sdd[:3],
+            assistant(5, tools=[("s2", "Skill", {"skill": "hyperpowers:subagent-driven-development"})]),
+            result(6, "s2", "Launching skill"),
+            *early_sdd[3:],
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp)
+            write(projects / "p1" / "zed.jsonl", early_sdd)
+            out = field.collect(projects, SINCE, UNTIL)
+            write(projects / "p1" / "zed.jsonl", reloaded)
+            again = field.collect(projects, SINCE, UNTIL)
+        self.assertEqual((out["sessions"], out["premature"], out["boundaries"]), (0, 0, 0))
+        self.assertEqual((again["sessions"], again["premature"], again["boundaries"]), (1, 1, 0))
+
+    def test_todo_items_are_not_task_list_items(self) -> None:
+        todos = [
+            human(0, "Execute the plan.", entrypoint="sdk-ts"),
+            assistant(5, tools=[SDD]),
+            result(6, "s1", "Launching skill"),
+            assistant(10, tools=[("t1", "TodoWrite", {"todos": [{"content": "A", "status": "in_progress"}]})]),
+            result(11, "t1", "Todos have been modified successfully"),
+            assistant(20, "Working through the list."),
+            human(30, "Resume"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp)
+            write(projects / "p1" / "zed.jsonl", todos)
+            out = field.collect(projects, SINCE, UNTIL)
+        self.assertEqual((out["premature"], out["boundaries"]), (0, 0))
+        # The session still counts: it invoked the skill in the window and carries records there.
+        self.assertEqual(out["sessions"], 1)
+
 
 class Reflog(unittest.TestCase):
     TEXT = (
