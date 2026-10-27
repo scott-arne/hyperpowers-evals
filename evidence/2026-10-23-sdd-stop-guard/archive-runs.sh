@@ -17,7 +17,10 @@
 # treatment to task-20-runs, smoke and t1 to task-19-runs, and the Z4
 # contingency's repeat to task-21-runs. Staging (git add -f) and the leak scan
 # are done at commit time; the post-check below runs here, over the copies, and
-# archive-runs.test.sh covers it against synthetic runs.
+# archive-runs.test.sh covers it against synthetic runs. It reads whether a run
+# reached Finish from the helper's own `status=finished` line in a Bash result,
+# whatever command printed it; a line an agent echoed therefore counts as a
+# Finish, which only makes an evidence-loss check stricter.
 # Adapted from ../2026-10-19-sdd-turn-liveness/archive-runs.sh.
 set -euo pipefail
 arm="$1"; task_dir="$2"
@@ -116,11 +119,11 @@ ledger_complete() {
 }
 
 finish_state() {
-  # Whether the run reached Finish, read from its archived main transcript:
-  # a Bash call running `sdd-state finish` whose tool result carries the
-  # helper's `status=finished` line. Prints two words, `<yes|no> <yes|no|na>`:
-  # whether Finish ran, and whether that line published a receipt
-  # (`receipt=none` is a Finish that could not publish one).
+  # Whether the run reached Finish, read from its archived main transcript: a
+  # non-error Bash tool result carrying the helper's own `status=finished ...
+  # receipt=` line. Prints two words, `<yes|no> <yes|no|na>`: whether Finish
+  # ran, and whether that line published a receipt (`receipt=none` is a Finish
+  # that could not publish one).
   #
   # The receipt and the mirror cannot answer this question themselves: they are
   # the artifacts whose loss the post-check exists to detect, so a run that
@@ -128,14 +131,17 @@ finish_state() {
   # transcript is the independent record, and analyze.main_transcript picks it,
   # so the archive and the analyzer read the same session.
   #
-  # The command is matched by text, not parsed: a session reaches Finish
-  # through ordinary shell syntax as readily as through a bare call -- the
-  # output captured into a variable, the call tested by `if`, an `sh -c`
-  # operand, a `cd ... &&` compound -- and a recognizer that only accepted a
-  # top-level invocation let a run whose cache was lost archive clean. This
-  # check guards against evidence loss, not against an agent forging a status
-  # line, so it over-recognizes on purpose: a false positive only makes the
-  # check stricter, since it then demands the receipt and the mirror.
+  # What the call looked like is not consulted at all. Only `sdd-state finish`
+  # prints that line, while a session can spell the call any way the shell
+  # allows -- a compound, a captured substitution, an `if`, an `sh -c` operand,
+  # a backslash continuation, the helper's path held in a variable, `eval` --
+  # and every recognizer written against the command text has let some
+  # spelling through, archiving a run whose cache was lost as one that never
+  # finished. Reading only the output closes them all at once. The result must
+  # still belong to a Bash call, so a Read of a log that quotes the line is not
+  # a Finish. A line an agent echoed is: this check guards against evidence
+  # loss, not against forged output, and a false Finish only makes it stricter,
+  # since it then demands the receipt and the mirror.
   python3 -IB - "$1" "$E" <<'PY'
 import re
 import sys
@@ -145,24 +151,23 @@ workspace = Path(sys.argv[1])
 sys.path.insert(0, sys.argv[2])
 import analyze
 
-FINISHED = re.compile(r"^status=finished\b")
-# `sdd-state` and, with no operator between them, the subcommand `finish`:
-# the helper under any wrapper, and not two commands that merely mention both.
-FINISH_CALL = re.compile(r"\bsdd-state\b[^;&|\n]*\bfinish\b")
+# The helper's report: `status=finished` and the `receipt=` field it always
+# carries, whether it names a published receipt or `none`. Nothing else in a
+# run prints it.
+FINISHED = re.compile(r"^status=finished\b.*\breceipt=")
 
 transcript = analyze.main_transcript(workspace)
 finished = published = unpublished = False
 if transcript is not None:
-    calls: set[str] = set()
+    bash_calls: set[str] = set()
     for rec in analyze.load(transcript):
         for use in analyze.tool_uses(rec):
-            command = analyze.tool_input(use).get("command")
-            if use.get("name") == "Bash" and isinstance(use.get("id"), str) and isinstance(command, str) and FINISH_CALL.search(command):
-                calls.add(use["id"])
+            if use.get("name") == "Bash" and isinstance(use.get("id"), str):
+                bash_calls.add(use["id"])
         if not analyze.is_tool_result(rec):
             continue
         for block in analyze.blocks(rec):
-            if block.get("type") != "tool_result" or block.get("tool_use_id") not in calls:
+            if block.get("type") != "tool_result" or block.get("tool_use_id") not in bash_calls:
                 continue
             if block.get("is_error") is True:
                 continue

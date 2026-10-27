@@ -5,8 +5,10 @@
 # per-run line and the script's exit status for the five outcomes that decide
 # whether a run's evidence is intact. The question the post-check answers is
 # whether a run that reached Finish kept its receipt and its session mirror,
-# and Finish is read from the transcript, never from those artifacts: a run
-# that lost its whole cache must fail, not read as one that never finished.
+# and Finish is read from the helper's status line in the transcript -- never
+# from those artifacts, and never from the command that printed the line: a
+# run that lost its whole cache must fail, not read as one that never
+# finished.
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 script="$here/archive-runs.sh"
@@ -25,33 +27,46 @@ FINISH_CMD='cd /w && scripts/sdd-state finish plans/plan.md --session s1'
 CAPTURED_CMD="finish_out=\$(bash /w/scripts/sdd-state finish plans/plan.md); printf '%s\\n' \"\$finish_out\""
 CONDITIONAL_CMD='if bash /w/scripts/sdd-state finish plans/plan.md; then echo done; fi'
 SHELL_C_CMD="sh -c 'cd /w && bash scripts/sdd-state finish plans/plan.md'"
+# And the two spellings no reading of the command text catches: a backslash
+# continuation splitting the call across lines, and the helper's path held in
+# a variable, where the words `sdd-state finish` never appear at all.
+CONTINUED_CMD='bash /w/scripts/sdd-state \
+  finish plans/plan.md'
+VARIABLE_CMD='"$SDD" finish plans/plan.md'
 OTHER_CMD='python3 -m unittest tests.test_soak_long'
 PUBLISHED='status=finished sha=abc1234 last=def5678 push=no receipt=/h/.cache/hyperpowers/receipts/ws-20261027T100000Z'
 STAGED='status=finished sha=abc1234 last=def5678 push=no receipt=none staging=/h/.cache/hyperpowers/receipts/.staging-ws-20261027T100000Z'
+# An echo of the line, which the post-check takes at face value on purpose.
+FORGED='status=finished backend=plain receipt=/x/receipts/ws-1'
+FORGED_CMD="echo '$FORGED'"
 
 # A run's record and workspace, with one main-session transcript holding one
 # Bash call and its result. The transcript is what the post-check reads Finish
 # from, so every case has one.
-mkrun() { # mkrun <id> <command> <result text> [error]
+mkrun() { # mkrun <id> <command> <result text> [error] [tool]
   local ws="$EV/results/workspaces/$1" d
   mkdir -p "$EV/results/$1" "$ws"
   echo '{"final":"pass"}' > "$EV/results/$1/verdict.json"
   d="$ws/home/.claude/projects/-w"
   mkdir -p "$d"
-  python3 -IB - "$d/session.jsonl" "$2" "$3" "${4:-}" <<'PY'
+  python3 -IB - "$d/session.jsonl" "$2" "$3" "${4:-}" "${5:-Bash}" <<'PY'
 import json
 import sys
 
-path, command, result, error = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+path, command, result, error, tool = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 block = {"type": "tool_result", "tool_use_id": "toolu_1", "content": result}
 if error == "error":
     block["is_error"] = True
+# A Bash call carries the command; any other tool (case 14's Read) carries a
+# path, so the status line can only reach the transcript through the result.
+use = {"type": "tool_use", "id": "toolu_1", "name": tool}
+use["input"] = {"command": command} if tool == "Bash" else {"file_path": command}
 records = [
     {"type": "user", "timestamp": "2026-10-27T10:00:00.000Z", "message": {"role": "user", "content": "go"}},
     {
         "type": "assistant",
         "timestamp": "2026-10-27T10:00:01.000Z",
-        "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_1", "name": "Bash", "input": {"command": command}}]},
+        "message": {"role": "assistant", "content": [use]},
     },
     {
         "type": "user",
@@ -157,5 +172,34 @@ mkrun errored "$FINISH_CMD" "$PUBLISHED" error
 archive errored
 [ "$rc" -eq 0 ] || fail "an errored Finish failed the post-check: $(cat "$tmp/out.txt")"
 line errored "finish=no receipt_published=na receipts=0 mirrors=0 ledger_last_task=no"
+# 11. A Finish split across lines by a backslash continuation: the command
+# text reads as two lines, the status line in its result does not change, and
+# a run that lost its cache must still fail.
+mkrun continued "$CONTINUED_CMD" "$PUBLISHED"
+archive continued
+[ "$rc" -ne 0 ] || fail "a continued Finish with no cache passed: $(cat "$tmp/out.txt")"
+line continued "finish=yes receipt_published=yes receipts=0 mirrors=0"
+says continued "reached Finish with no receipt"
+says continued "reached Finish with no session mirror"
+# 12. Nor does holding the helper's path in a variable hide the Finish, though
+# the command never spells the helper's name.
+mkrun variable "$VARIABLE_CMD" "$PUBLISHED"
+archive variable
+[ "$rc" -ne 0 ] || fail "a variable-held Finish with no cache passed: $(cat "$tmp/out.txt")"
+line variable "finish=yes receipt_published=yes receipts=0 mirrors=0"
+says variable "reached Finish with no receipt"
+# 13. An echoed status line reads as a Finish, which is the documented
+# over-recognition: the check guards against evidence loss, so taking the line
+# at face value only demands the receipt and the mirror, which this run kept.
+mkrun forged "$FORGED_CMD" "$FORGED"; receipt forged ws-1; mirror forged
+archive forged
+[ "$rc" -eq 0 ] || fail "a forged status line with both artifacts failed: $(cat "$tmp/out.txt")"
+line forged "finish=yes receipt_published=yes receipts=1 mirrors=1"
+# 14. A line a non-Bash call returned is not a Finish: reading a log that
+# quotes one leaves nothing to demand of the archive.
+mkrun quoted /w/logs/finish.log "$PUBLISHED" "" Read
+archive quoted
+[ "$rc" -eq 0 ] || fail "a quoted status line failed the post-check: $(cat "$tmp/out.txt")"
+line quoted "finish=no receipt_published=na receipts=0 mirrors=0 ledger_last_task=no"
 echo "PASS: archive-runs.sh reads Finish from the transcript and fails a run whose evidence is missing"
 echo "STATUS: PASSED"
