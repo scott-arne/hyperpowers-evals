@@ -76,6 +76,13 @@ describe('sdd fixtures', () => {
     expect(plan).not.toMatch(
       /run_in_background|in the background|foreground|completion notification/i,
     );
+    // The deliberate conflict (stop-guard spec, Design §4): Task 1 and Task 5 give DEFAULT_WINDOW_SECONDS two values.
+    expect(sections[0]).toContain(
+      '`DEFAULT_WINDOW_SECONDS = 1.0` in `ratelimit/__init__.py`',
+    );
+    expect(sections[4]).toContain(
+      '`--window` is optional and defaults to `DEFAULT_WINDOW_SECONDS` from Task 1, which is 1.5 seconds.',
+    );
   });
 
   test('scaffoldSddBrokenPlan keeps the literal backslash-n in the plan', () => {

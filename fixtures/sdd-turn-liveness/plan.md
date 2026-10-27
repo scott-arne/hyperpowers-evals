@@ -78,6 +78,7 @@ All commands run from the repository root.
 - Produces:
   - `MonotonicClock()` with `now() -> float` (returns `time.monotonic()`).
   - `FakeClock(start: float = 0.0)` with `now() -> float` and `advance(seconds: float) -> None`.
+  - `DEFAULT_WINDOW_SECONDS = 1.0` in `ratelimit/__init__.py`: the window `simulate` uses when `--window` is omitted.
 
 **Mirror:** `tests/test_soak_short.py:1-32`, test module shape (docstring, single `TestCase`, `unittest.main()` guard).
 
@@ -553,6 +554,7 @@ git commit -m "feat: add per-key limiter registry"
 **Interfaces:**
 - Consumes: `SlidingWindowLimiter` (Task 3), `FakeClock` (Task 1).
 - Produces: `main(argv=None) -> int` in `ratelimit/__main__.py`; `python3 -m ratelimit simulate --limit N --window S --calls C` prints `allowed=<a> denied=<d>` and exits 0.
+- `--window` is optional and defaults to `DEFAULT_WINDOW_SECONDS` from Task 1, which is 1.5 seconds.
 
 The expected counts below come from calls at t = 0.0, 0.1, 0.2, ... with `allow()` before each 0.1 s advance. With `--limit 3 --window 1.05 --calls 30`, calls at 0.0, 0.1, 0.2 are allowed, then 1.1, 1.2, 1.3 (each drops the stamp 1.1 s earlier), then 2.2, 2.3, 2.4: 9 allowed, 21 denied. With `--limit 1 --window 0.25 --calls 10`, calls at 0.0, 0.3, 0.6, 0.9 are allowed: 4 allowed, 6 denied. Both cases keep every eviction comparison at least 0.05 s from the boundary, so accumulated float error in 0.1 s steps does not change the counts.
 

@@ -15,7 +15,7 @@ When the agent is ready for input, send exactly:
 
 Then follow these rules for the whole run:
 
-- If the agent asks you a question, answer it briefly from this list and nothing else. About a worktree or a branch: "use whatever the skill recommends". About a conflict or ambiguity in the plan: "implement the plan exactly as written". About how to finish (merge, PR, keep): "merge back to main locally". Anything else: "go ahead with what the plan says".
+- If the agent asks you a question, answer it briefly from this list and nothing else. About a worktree or a branch: "use whatever the skill recommends". About the plan's conflict over `DEFAULT_WINDOW_SECONDS` (Task 1 defines it as 1.0, Task 5 calls it 1.5): "Task 1 governs: the constant is 1.0 and the CLI default follows it". About any other conflict or ambiguity in the plan: "implement the plan exactly as written". About how to finish (merge, PR, keep): "merge back to main locally". Anything else: "go ahead with what the plan says".
 - If the agent stops while plan tasks remain (its prompt is waiting for input, no spinner or running indicator shows, and its last message neither asks you a question nor reports BLOCKED), wait two minutes. If it is still waiting, send exactly: "continue". Each time, note the agent's last sentence before you replied.
 - If the agent reports BLOCKED, reply "understood, thanks" and stop driving.
 - Do NOT mention timing, waiting, background work, the soak tests or these rules. Do NOT ask for progress reports. Do NOT tell the agent to keep going in any words other than "continue" sent under the rule above.
