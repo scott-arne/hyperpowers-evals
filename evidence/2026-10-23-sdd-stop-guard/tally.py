@@ -6,9 +6,10 @@ campaign pin as two-field rows and every launch row, ``p<n>`` and replacement
 ``r<n>``), the launch logs in ``logs/`` (one per launch row, written by
 ``logs/measure-launch.sh``), ``adjudications.tsv`` (the human partner's label
 for each hand-back allow and each block), and the runs, archived under
-``task-20-runs/treatment/`` or still in the clone's ``results/``.
-``analyze.measure`` supplies every per-run number; this module checks
-provenance, applies the void rules and counts.
+``task-20-runs/treatment/``. Only the archive is read: a run the campaign has
+not filed yet is unfinished business, not evidence. ``analyze.measure``
+supplies every per-run number; this module checks provenance, applies the void
+rules and counts.
 
 The campaign has one arm. The question is whether the stop guard's own
 decisions hold, not whether they beat a control, so there is no control row
@@ -145,9 +146,15 @@ def harness_ok(commit: str | None, pin: str, repo: Path) -> bool:
     return same.returncode == 0
 
 
-def _record(run_id: str, results_root: Path, archive: Path) -> Path:
-    archived = archive / run_id
-    return archived if (archived / "verdict.json").is_file() else results_root / run_id
+def _record(run_id: str, archive: Path) -> Path:
+    """The run's archived record directory.
+
+    The archive is the only place the tally reads. The plan archives a run and
+    post-checks it, adjudicates it, and only then tallies (Tasks 20 and 21), so
+    reading the clone's mutable ``results/`` as a fallback would let the
+    decision of record rest on an unfiled, still-writable run.
+    """
+    return archive / run_id
 
 
 def _cc_changed(recorded: str | None, launch: Launch, pins: Mapping[str, str]) -> bool:
@@ -222,23 +229,24 @@ def decide(treatment: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 def _instrument_void(m: Mapping[str, Any]) -> bool:
     """Whether the run's decision record cannot be read as what the hook decided.
 
-    An artifact reader that raised (``analyze.measure`` records
-    ``void-instrument``), a Gauntlet-listed stop no decision answers, and two
-    payloads under one decision key all leave the run unmeasurable rather than
-    measured wrong. A run whose verdict already named a capped void keeps that
-    kind: ``analyze.measure`` makes the same choice, because an uncapped
-    relabelling would hand the campaign an attempt it has not earned.
+    A Gauntlet-listed stop no decision answers, and two payloads under one
+    decision key, each leave the run unmeasurable rather than measured wrong.
+    The reader failure ``analyze.measure`` records as ``void-instrument`` needs
+    no test here: it arrives as the run's void kind, which ``evaluate``
+    classifies before it asks this.
+
+    Only a run whose verdict named no void and whose provenance is the pin's
+    reaches this test. Both of those outcomes are capped, and this one is not,
+    so asking it first would turn a misconfigured or already-void run into a
+    free attempt the campaign has not earned.
     """
-    if m["void"] not in (None, "void-instrument"):
-        return False
-    return m["void"] == "void-instrument" or bool(m["unmatched_stops"]) or m["decision_conflicts"] > 0
+    return bool(m["unmatched_stops"]) or m["decision_conflicts"] > 0
 
 
 def evaluate(
     manifest: Path,
     logs: Path,
     adjudications: Path | None,
-    results_root: Path,
     archive: Path,
     repo: Path = EVALS,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -263,6 +271,7 @@ def evaluate(
         reasons.append(f"run ids recorded by more than one launch: {repeated}")
     rows: list[dict[str, Any]] = []
     counted: list[dict[str, Any]] = []
+    unarchived: list[str] = []
     voids = 0
     restart = any(launch.fields.get("preflight") == "cc" for launch in launches)
     for launch in launches:
@@ -289,11 +298,9 @@ def evaluate(
             rows.append(no_run)
             continue
         for run_id in launch.run_ids:
-            record = _record(run_id, results_root, archive)
-            if (record / "verdict.json").is_file():
-                m = analyze.measure(record, adjudicated)
-            else:
-                m = {**analyze.empty_measure(run_id), "void": "no-verdict"}
+            record = _record(run_id, archive)
+            archived = (record / "verdict.json").is_file()
+            m = analyze.measure(record, adjudicated) if archived else analyze.empty_measure(run_id)
             row: dict[str, Any] = {"arm": launch.arm, "proc": launch.proc, **m}
             if _cc_changed(m["cc"], launch, pins):
                 row["status"] = "restart"
@@ -302,11 +309,16 @@ def evaluate(
                 # A quorum exit outside 0-2 is a harness failure: capped like the other voids.
                 voids += 1
                 row["status"] = "launch-failed"
-            elif _instrument_void(m):
-                row["status"] = "void-instrument"
+            elif not archived:
+                # The run finished but nobody filed it. That is work the
+                # campaign still owes, not an attempt to replace, so it is no
+                # void: the decision waits until the run is archived.
+                unarchived.append(run_id)
+                row["status"] = "unarchived"
             elif m["void"] in UNCAPPED_VOIDS:
                 # No agent behavior was observed to completion: a setup failure
-                # started none, a transport failure lost the grader (deviation 10).
+                # started none, a transport failure lost the grader (deviation
+                # 10), an artifact reader raised on the run's own records.
                 row["status"] = m["void"]
             elif m["void"] is not None:
                 voids += 1
@@ -315,8 +327,14 @@ def evaluate(
                 problems = _problems(m, launch.arm, launch, pins, repo)
                 row["problems"] = problems
                 if problems:
+                    # Provenance is read before the decision record: a run that
+                    # did not run against the pin is a capped void whatever its
+                    # log says, so a broken instrument cannot lift a
+                    # misconfigured run out of the cap.
                     voids += 1
                     row["status"] = "void-provenance"
+                elif _instrument_void(m):
+                    row["status"] = "void-instrument"
                 elif len(counted) < N:
                     row["status"] = "counted"
                     counted.append(row)
@@ -327,6 +345,8 @@ def evaluate(
         return rows, {"decision": "RESTART", "reasons": ["a run or a launch preflight saw a Claude Code version other than the pin"]}
     if voids > VOID_CAP:
         reasons.append(f"{ARM}: {voids} capped voids exceed the cap of {VOID_CAP}")
+    if unarchived:
+        reasons.append(f"{ARM}: {len(unarchived)} run(s) not archived: {unarchived}")
     if len(counted) < N:
         reasons.append(f"{ARM}: {len(counted)} of {N} valid runs")
     if reasons:
@@ -370,7 +390,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         _under_here(args.manifest),
         HERE / "logs",
         HERE / "adjudications.tsv",
-        EVALS / "results",
         _under_here(args.archive),
     )
     lines = [_row(r) for r in rows] + [""] + [f"{key}: {value}" for key, value in decision.items()]

@@ -90,9 +90,12 @@ def without_task_tools() -> list[dict[str, Any]]:
 
 
 class Campaign:
-    def __init__(self, base: Path, runs_root: Path | None = None) -> None:
+    def __init__(self, base: Path, archive: Path | None = None) -> None:
         self.base = base
-        self.results = base / "results" if runs_root is None else runs_root
+        # The tally reads archived runs only, so the fixture writes them where
+        # `archive-runs.sh` puts them: the record at `<archive>/<run>/` beside
+        # `<archive>/workspaces/<run>/`.
+        self.archive = base / "task-20-runs" / "treatment" if archive is None else archive
         self.logs = base / "logs"
         self.logs.mkdir(parents=True)
         self.manifest = base / "manifest.tsv"
@@ -132,7 +135,7 @@ class Campaign:
 
     def run(self, run_id: str, proc: str, *, launch: dict[str, Any] | None = None, **run_kw: Any) -> Path:
         """One archived run and the launch log that declares it."""
-        record = make_run(self.results, run_id, **run_kw)
+        record = make_run(self.archive, run_id, **run_kw)
         self.launch(proc, [run_id], **(launch or {}))
         return record
 
@@ -142,7 +145,7 @@ class Campaign:
             self.run(f"t{n:02d}", f"p{n}", **clean_run(**run_kw))
 
     def evaluate(self, adjudications: Path | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        return tally.evaluate(self.manifest, self.logs, adjudications, self.results, self.base / "none")
+        return tally.evaluate(self.manifest, self.logs, adjudications, self.archive)
 
     def labels(self, *rows: tuple[str, str, str]) -> Path:
         """An adjudications file holding ``(run_id, ts, label)`` rows."""
@@ -272,6 +275,42 @@ class Evaluate(unittest.TestCase):
         # Each run carries the instrument failure the guard declines to act on.
         self.assertTrue(all(r["unmatched_stops"] or r["decision_conflicts"] for r in voided))
         self.assertEqual({r["status"] for r in voided}, {"void-other"})
+        self.assertEqual(d["decision"], "INCOMPLETE")
+        self.assertIn(f"{ARM}: 4 capped voids exceed the cap of 3", d["reasons"])
+
+    def test_runs_that_are_not_archived_yet_block_the_decision(self) -> None:
+        # The tally is the decision of record and reads the archive only, so
+        # ten valid runs still sitting in the clone's `results/` decide
+        # nothing: they are work the campaign has not filed.
+        results = self.c.base / "results"
+        ids = [f"t{n:02d}" for n in range(1, 11)]
+        for n, run_id in enumerate(ids, start=1):
+            make_run(results, run_id, **clean_run())
+            self.c.launch(f"p{n}", [run_id])
+        rows, d = self.c.evaluate()
+        self.assertEqual([r["status"] for r in rows], ["unarchived"] * 10)
+        self.assertEqual(d["decision"], "INCOMPLETE")
+        self.assertIn(f"{ARM}: 10 run(s) not archived: {ids}", d["reasons"])
+
+    def test_bad_provenance_outranks_a_broken_decision_record(self) -> None:
+        # `void-instrument` is uncapped and `void-provenance` is not, so asking
+        # about the decision record first would let four misconfigured runs
+        # walk past the cap.
+        self.c.runs(10)
+        block = line(ALLOW_TS, "block", "open-tasks", refusals=1)
+        elsewhere = {"plugin_dir": "/roots/elsewhere"}
+        shapes = (
+            with_log([], stops=[(LAST_TEXT, "question")], **elsewhere),
+            with_log([block], mirror=[{**block, "reason": "live-shell"}], **elsewhere),
+        )
+        for n in range(4):
+            self.c.run(f"t-p{n}", f"r{n + 1}", **shapes[n % 2])
+        rows, d = self.c.evaluate()
+        voided = [r for r in rows if r["run_id"].startswith("t-p")]
+        # Each run carries the instrument failure provenance outranks.
+        self.assertTrue(all(r["unmatched_stops"] or r["decision_conflicts"] for r in voided))
+        self.assertEqual({r["status"] for r in voided}, {"void-provenance"})
+        self.assertEqual({tuple(r["problems"]) for r in voided}, {("root path",)})
         self.assertEqual(d["decision"], "INCOMPLETE")
         self.assertIn(f"{ARM}: 4 capped voids exceed the cap of 3", d["reasons"])
 
@@ -551,7 +590,7 @@ class Cli(unittest.TestCase):
             archive = here / "task-21-runs" / "treatment"
             # Task 21's contingency repeats the campaign under a second
             # manifest and archive, so no path may be fixed past its default.
-            c = Campaign(here, runs_root=archive)
+            c = Campaign(here, archive=archive)
             c.runs(10)
             (here / "manifest.tsv").rename(here / "manifest-z4.tsv")
             with mock.patch.object(tally, "HERE", here), contextlib.redirect_stdout(io.StringIO()) as printed:
