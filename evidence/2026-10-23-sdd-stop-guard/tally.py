@@ -36,9 +36,18 @@ import analyze
 
 N = 10
 VOID_CAP = 3
-# An instrument failure observed no behavior to completion either, so it joins
-# the two void kinds that do not consume the cap.
-UNCAPPED_VOIDS = ("void-setup", "void-transport", "void-instrument")
+INSTRUMENT_VOID = "void-instrument"
+# A setup failure started no agent and a transport failure lost the grader, so
+# neither observed behavior to completion; a run that never started may also
+# be missing the fields `_problems` reads, which is why `evaluate` settles
+# these two before it looks at provenance.
+NO_BEHAVIOR_VOIDS = ("void-setup", "void-transport")
+# The campaign's vocabulary for the kinds that never consume the three-void
+# cap (evidence/2026-10-19-sdd-turn-liveness/README.md "Void rules", plus this
+# campaign's instrument kind). `evaluate` routes the instrument kind by its own
+# branch rather than by membership here, because it is weighed after
+# provenance; see that branch.
+UNCAPPED_VOIDS = (*NO_BEHAVIOR_VOIDS, INSTRUMENT_VOID)
 ARM = "treatment"
 ARMS = (ARM,)
 SCENARIO = "sdd-turn-liveness"
@@ -231,14 +240,14 @@ def _instrument_void(m: Mapping[str, Any]) -> bool:
 
     A Gauntlet-listed stop no decision answers, and two payloads under one
     decision key, each leave the run unmeasurable rather than measured wrong.
-    The reader failure ``analyze.measure`` records as ``void-instrument`` needs
-    no test here: it arrives as the run's void kind, which ``evaluate``
-    classifies before it asks this.
+    The reader failure ``analyze.measure`` records as ``void-instrument`` is
+    the third of these; it arrives as the run's void kind, so ``evaluate``
+    reads it from there rather than from this test.
 
-    Only a run whose verdict named no void and whose provenance is the pin's
-    reaches this test. Both of those outcomes are capped, and this one is not,
-    so asking it first would turn a misconfigured or already-void run into a
-    free attempt the campaign has not earned.
+    Only a run whose verdict named no capped void and whose provenance is the
+    pin's reaches either test. Both of those outcomes are capped and this one
+    is not, so asking it first would turn a misconfigured or already-void run
+    into a free attempt the campaign has not earned.
     """
     return bool(m["unmatched_stops"]) or m["decision_conflicts"] > 0
 
@@ -315,26 +324,30 @@ def evaluate(
                 # void: the decision waits until the run is archived.
                 unarchived.append(run_id)
                 row["status"] = "unarchived"
-            elif m["void"] in UNCAPPED_VOIDS:
-                # No agent behavior was observed to completion: a setup failure
-                # started none, a transport failure lost the grader (deviation
-                # 10), an artifact reader raised on the run's own records.
+            elif m["void"] in NO_BEHAVIOR_VOIDS:
+                # Uncapped: a setup failure started no agent, a transport
+                # failure lost the grader (deviation 10).
                 row["status"] = m["void"]
-            elif m["void"] is not None:
+            elif m["void"] is not None and m["void"] != INSTRUMENT_VOID:
+                # A capped verdict void: `void-grader`, `void-other`.
                 voids += 1
                 row["status"] = m["void"]
             else:
                 problems = _problems(m, launch.arm, launch, pins, repo)
                 row["problems"] = problems
                 if problems:
-                    # Provenance is read before the decision record: a run that
-                    # did not run against the pin is a capped void whatever its
-                    # log says, so a broken instrument cannot lift a
-                    # misconfigured run out of the cap.
+                    # Provenance outranks both the decision record and the
+                    # instrument kind: a run that did not run against the pin
+                    # is a capped void whichever reader broke on it, so a
+                    # failure to read its records buys it no free retry.
                     voids += 1
                     row["status"] = "void-provenance"
-                elif _instrument_void(m):
-                    row["status"] = "void-instrument"
+                elif m["void"] == INSTRUMENT_VOID or _instrument_void(m):
+                    # Uncapped, and reached only with the pin's provenance: an
+                    # artifact reader raised on the run's own records
+                    # (`analyze.measure` names the kind), a listed stop went
+                    # unanswered, or two payloads shared one decision key.
+                    row["status"] = INSTRUMENT_VOID
                 elif len(counted) < N:
                     row["status"] = "counted"
                     counted.append(row)

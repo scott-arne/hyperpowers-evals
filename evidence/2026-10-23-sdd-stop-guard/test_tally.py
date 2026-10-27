@@ -44,6 +44,10 @@ LAST_END = 2510.0
 ALLOW_TS = at(1920)
 # A verdict the Gauntlet-Agent errored out of: a void the cap counts.
 CAPPED_VOID = {"final": "indeterminate", "gauntlet": {"status": "investigate", "summary": "harness error"}}
+# Two live workspaces claim the session, so `analyze.measure` cannot say
+# whose records are the run's and names the void itself.
+TWO_WORKSPACES = {"workspace_ledger": ledger_text(done=[1]),
+                  "extra_workspaces": [{"ledger": ledger_text(done=[2])}]}
 STOP_ALLOW_TS = at(LAST_END + 5)
 
 
@@ -313,6 +317,37 @@ class Evaluate(unittest.TestCase):
         self.assertEqual({tuple(r["problems"]) for r in voided}, {("root path",)})
         self.assertEqual(d["decision"], "INCOMPLETE")
         self.assertIn(f"{ARM}: 4 capped voids exceed the cap of 3", d["reasons"])
+
+    def four_two_workspace_rows(self, **over: Any) -> list[dict[str, Any]]:
+        """Four runs the analyzer could not read, one more than the cap of three."""
+        for n in range(4):
+            self.c.run(f"t-w{n}", f"r{n + 1}", **clean_run(**TWO_WORKSPACES, **over))
+        rows, _ = self.c.evaluate()
+        voided = [r for r in rows if r["run_id"].startswith("t-w")]
+        self.assertEqual({r["void"] for r in voided}, {"void-instrument"})
+        self.assertTrue(all("2 live workspaces" in r["void_detail"] for r in voided))
+        return voided
+
+    def test_an_analyzer_named_instrument_void_with_bad_provenance_is_capped(self) -> None:
+        # The analyzer names the void itself here, and the verdict still
+        # carries every provenance field, so the run can be judged against the
+        # pin: a misconfigured attempt earns no free retry whichever reader
+        # broke on it.
+        self.c.runs(10)
+        voided = self.four_two_workspace_rows(plugin_dir="/roots/elsewhere")
+        self.assertEqual({r["status"] for r in voided}, {"void-provenance"})
+        self.assertEqual({tuple(r["problems"]) for r in voided}, {("root path",)})
+        d = self.c.evaluate()[1]
+        self.assertEqual(d["decision"], "INCOMPLETE")
+        self.assertIn(f"{ARM}: 4 capped voids exceed the cap of 3", d["reasons"])
+
+    def test_an_analyzer_named_instrument_void_with_clean_provenance_stays_uncapped(self) -> None:
+        # The same failure against the pin is still outside the cap: the fix
+        # above is an ordering, not a blanket demotion.
+        self.c.runs(10)
+        voided = self.four_two_workspace_rows()
+        self.assertEqual({r["status"] for r in voided}, {"void-instrument"})
+        self.assertEqual(self.c.evaluate()[1]["decision"], "PASS")
 
     def test_claude_code_change_in_a_run_restarts(self) -> None:
         self.c.runs(9)
