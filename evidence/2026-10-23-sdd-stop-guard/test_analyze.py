@@ -527,6 +527,7 @@ class Measures(unittest.TestCase):
             ("committed", watch_records(f'git commit -m "watched with tracked-job wait {jobdir}"')),
             ("backgrounded", watch_records(wait_command(job), background=True)),
             ("backgrounded by the shell", watch_records(f"{wait_command(job)} &")),
+            ("backgrounded with a command after it", watch_records(f"{wait_command(job)} & sleep 1")),
             ("a trailing ampersand the lexer kept as a word", watch_records(f"{wait_command(job)} \\&")),
             ("errored", watch_records(wait_command(job), is_error=True)),
             ("answered before the job ended", watch_records(wait_command(job), result_s=700.0)),
@@ -631,6 +632,12 @@ class Measures(unittest.TestCase):
             ("alone", ["bash", "-c", f"{soak} &"]),
             ("after setup", ["bash", "-c", f"sleep 601; {soak} &"]),
             ("inside a nested shell", ["bash", "-c", nested(f"{soak} &", 1)]),
+            ("with a command after it", ["bash", "-c", f"{soak} & sleep 601"]),
+            ("detached and waited out", ["bash", "-c", f"nohup {soak} & sleep 601"]),
+            # An accepted false negative: `nohup` without `&` does wait for
+            # the soak, but it is one word away from the shape that does not
+            # and the tripwire cannot tell the two apart, so this fails closed.
+            ("under nohup in the foreground", ["bash", "-c", f"nohup {soak}"]),
         ):
             with self.subTest(label):
                 job = {**LONG_JOB, "command": command}

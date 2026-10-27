@@ -98,11 +98,6 @@ SHELL_RUNNERS = frozenset({"bash", "sh", "zsh"})
 # failed, and a pipeline's exit status is its last command's, so neither
 # shape lets an exit 0 say the segment executed.
 PROVEN_OPS = frozenset({"", ";", "&&"})
-# A trailing `&` backgrounds the command before it: the shell goes on and
-# exits with whatever ran next, so that exit is not the command's. `&&`
-# never reaches this test, because `_split_ops` consumes it as an operator,
-# and a backslash keeps an escaped `&` a literal argument.
-BACKGROUNDED = re.compile(r"(?<!\\)&\s*$")
 # How many nested `sh -c` wrappers a command is read through before it is
 # treated as unproven. Real launches nest one or two deep; a stack past the
 # bound is not worth trusting.
@@ -792,15 +787,21 @@ def _proven_final(command: str, pipes: bool = True) -> str | None:
     ``PROVEN_OPS``; an empty segment carries its operator forward, because
     a ``||`` at the end of a line still governs the line below it.
 
-    A segment the shell backgrounds proves nothing either: ``<command> &``
-    returns the shell to the next thing immediately, so the exit status
-    belongs to that and the backgrounded command may still be running, or
-    dead with the shell that launched it.
+    A segment the shell does not wait for proves nothing either, and that
+    is the untracked-launch tripwire's question (``shell_detaches``): an
+    ``&`` outside quotes returns the shell to the next command immediately,
+    whether it ends the segment or sits in the middle of it, and ``nohup``,
+    ``setsid`` and the Python detach forms put the work beyond the shell the
+    same way. The exit status then belongs to whatever ran next, and the
+    command itself may still be running or already dead with its parent.
+    A foreground ``nohup <command>`` is read as unproven too, a false
+    negative the rule accepts: it is one character away from the shape that
+    detaches and an exit 0 cannot tell them apart.
 
     :param command: one shell command's text.
     :param pipes: whether ``|`` separates segments as the other operators do.
     :returns: the final segment, or None when it is empty, the shell may
-        have skipped it, or a trailing ``&`` backgrounded it.
+        have skipped it, or the shell never waited for it.
     """
     final: str | None = None
     proven = False
@@ -810,7 +811,7 @@ def _proven_final(command: str, pipes: bool = True) -> str | None:
         if segment.strip():
             final, proven = segment, all(join in PROVEN_OPS for join in joins)
             joins = []
-    if final is None or not proven or BACKGROUNDED.search(final):
+    if final is None or not proven or shell_detaches(final):
         return None
     return final
 
@@ -1014,11 +1015,11 @@ def _runs_long_soak(job: Mapping[str, Any]) -> bool:
     belongs to the last command the shell reached, so only a soak that is
     that command counts (``_proven_innermost``). A soak after ``||`` ran only
     if its left side failed, a piped soak's status is the pipeline's last
-    command's, a backgrounded soak (``<soak> &``) owns no exit status at all,
-    and a soak with anything after it (``<soak>; true``) hands the exit to
-    that command — an exit 0 cannot tell any of them from a soak that never
-    ran. The last is a false negative the rule accepts for the forgeries it
-    keeps out. A nested shell is read through to the command it ran, so the
+    command's, a soak the shell does not wait for (``<soak> &``, wherever
+    the ``&`` falls) owns no exit status at all, and a soak with anything
+    after it (``<soak>; true``) hands the exit to that command — an exit 0
+    cannot tell any of them from a soak that never ran. The last is a false
+    negative the rule accepts for the forgeries it keeps out. A nested shell is read through to the command it ran, so the
     soak is looked for in that command and never in the operand carrying it.
     """
     argv = [str(part) for part in job.get("command") or []]
@@ -1044,8 +1045,9 @@ def _waited_job(command: str) -> str | None:
     call ending in ``; echo status=exited code=0`` reports a success the
     helper never gave. A wait after ``||`` ran only if its left side failed,
     which the call's exit 0 cannot show, so ``echo status=exited code=0; true
-    || <wait>`` is no watch either. Nor is a backgrounded wait: the call
-    returns before the helper answers, so its output is not the verdict. A
+    || <wait>`` is no watch either. Nor is a wait the shell does not wait
+    for: the call returns before the helper answers, so its output is not
+    the verdict (``_proven_final`` again, over the same tripwire). A
     real watch in any of those shapes is read as none, a false negative the
     rule accepts to keep the forgery out, and so is a watch nested in
     another shell (``bash -c "<wait>"``), which is not recognized at all.
@@ -1057,8 +1059,9 @@ def _waited_job(command: str) -> str | None:
     if not words:
         return None
     if words[-1] == "&":
-        # A `&` the lexer kept as a word is either a background the splitter
-        # did not see or an argument the helper does not take: no watch.
+        # `_proven_final` already refused every `&` the shell would act on,
+        # so a `&` the lexer still hands back is a quoted one: an argument
+        # the helper does not take, from a call that is no watch either.
         return None
     if Path(words[0]).name in WAIT_SHELLS and len(words) > 1:
         words = words[1:]
