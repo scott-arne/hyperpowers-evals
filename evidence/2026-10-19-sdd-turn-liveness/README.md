@@ -29,11 +29,12 @@ they work, and the human partner, seeing an idle session, types "Resume".
 The instrument counts that turn end and a premature stop as two different
 things. A turn end taken while a dispatched subagent or a background command
 is still running is a live-work turn end, and over the baseline window 9 of
-those were followed by a resume message, 0.6 per 100 task boundaries. A
+those were followed by a resume message, 0.63 per 100 task boundaries. A
 premature stop is a turn end with nothing live: the baseline window counts
-301 of them against 1495 task boundaries, 20.13 per 100, of which 21 were
+296 of them against 1434 task boundaries, 20.64 per 100, of which 21 were
 followed by a resume message (`field/baseline.json`, repeated under "Field
-decision rule" below).
+decision rule" below; before Correction 8: 301 of 1495, 20.13 per 100, and 9
+live-work resumes at 0.6 per 100).
 
 Spec: hyperpowers `docs/hyperpowers/specs/2026-10-19-sdd-turn-liveness-design.md`.
 Plan: hyperpowers `docs/hyperpowers/plans/2026-10-19-sdd-turn-liveness.md`.
@@ -209,26 +210,21 @@ result is appended to the evidence note and never holds or reverts the
 release by itself.
 ```
 
-**Correction owed before the after-window.** The final-gate Codex review of
-this branch found that `collect`, once a session qualifies by an in-window SDD
-invocation, still counts that session's events from the window's start, so
-events before the session's first in-window invocation count. Spec Design §3
-defines the cohort per session and the baseline over sessions that loaded
-6.16.1 or earlier, which every event in the baseline window satisfies, so the
-baseline below stands as recorded. The after-window cannot use that reading: a
-session that invoked SDD before the release boundary and again after it would
-have pre-release events attributed to the release. Before any after-window is
-measured, `collect` must bound each session's measurement at its first
+**Correction 8 landed on 2026-10-23, before any after-window.** The final-gate
+Codex review of this branch found that `collect`, once a session qualified by
+an in-window SDD invocation, still counted that session's events from the
+window's start, so events before the session's first in-window invocation
+counted. Spec Design §3 defines the cohort per session, and the after-window
+cannot use that reading: a session that invoked SDD before the release
+boundary and again after it would have pre-release events attributed to the
+release. `collect` now bounds each session's measurement at its first
 in-window SDD invocation, keeping earlier records for state reconstruction
-only, with a regression test, and the baseline must be re-recorded under that
-same instrument. Replayed that way over this window on 2026-10-22, the
-baseline reads 14 sessions, 1434 task boundaries, 296 premature stops (20.64
-per 100), 21 followed by a resume, 2211 live-work turn ends, 9 live-work
-resumes (0.63 per 100), 1423 censored stops and 144 censored resumes, excluded
-error 373, interrupt 17, killed 2, reload 69. No session straddles the window
-start; the events the bound drops are each session's brainstorming and
-planning phase before SDD was invoked. The field rule's threshold is half the
-baseline rate under whichever instrument measures both windows.
+only, with a regression test, and the baseline below was re-recorded under
+that instrument; the numbers it moved and the ones it supersedes are
+Correction 8 under "Corrections". No session straddles the window start; the
+events the bound drops are each session's brainstorming and planning phase
+before SDD was invoked. The field rule's threshold is half the baseline rate
+under whichever instrument measures both windows.
 
 ### The baseline
 
@@ -238,16 +234,16 @@ sessions (plan Task 7). The window is 2026-07-01T00:00:00+00:00 to
 record at or after it is dropped before anything is classified, so records
 appended later cannot change these numbers (Task 7 Step 0b).
 
-| Measure | Baseline |
-|---|---|
-| Sessions | 14 |
-| Task boundaries | 1495 |
-| Premature stops | 301, 20.13 per 100 boundaries |
-| Premature stops followed by a resume message | 21 |
-| Live-work turn ends | 2228 |
-| Live-work resumes | 9, 0.6 per 100 boundaries |
-| Censored stops, censored resumes | 1424, 144 |
-| Excluded turn ends | error 383, interrupt 20, killed 2, reload 71 |
+| Measure | Baseline | Before Correction 8 |
+|---|---|---|
+| Sessions | 14 | 14 |
+| Task boundaries | 1434 | 1495 |
+| Premature stops | 296, 20.64 per 100 boundaries | 301, 20.13 per 100 boundaries |
+| Premature stops followed by a resume message | 21 | 21 |
+| Live-work turn ends | 2211 | 2228 |
+| Live-work resumes | 9, 0.63 per 100 boundaries | 9, 0.6 per 100 boundaries |
+| Censored stops, censored resumes | 1423, 144 | 1424, 144 |
+| Excluded turn ends | error 373, interrupt 17, killed 2, reload 69 | error 383, interrupt 20, killed 2, reload 71 |
 
 The window spans 14 Claude Code versions, 2.1.207 to 2.1.300. Its records
 carry five model ids and the `<synthetic>` bucket, `claude-opus-5-5` and
@@ -279,10 +275,10 @@ the 6.17.0 install.
   spec's Design §3 scopes both measures to the task list, so a session that
   tracked its work with `TodoWrite` contributed premature stops and no
   boundaries. Correction 7 removed that branch, and the instrument re-run
-  over this window reproduces every number above, so the 20.13 per 100
-  published above carries no `TodoWrite` inflation. The same instrument
-  measures the baseline window and the after-window, so the field rule
-  compares like with like, and the campaign decision does not use
+  over this window reproduced every number it had published, so the 20.13
+  per 100 in the second column above carries no `TodoWrite` inflation. The
+  same instrument measures the baseline window and the after-window, so the
+  field rule compares like with like, and the campaign decision does not use
   `field.py`.
 
 ## Config
@@ -471,6 +467,22 @@ The record is `smoke.md`; all eight runs, two per round, are archived under
    changes, and the `TodoWrite` inflation the baseline note above called
    unmeasured is zero on this window. Pin after the Correction: `field.py`
    `d333939650a16e79ae35659390848c15f5ce69eb`.
+8. 2026-10-23, before any after-window and before the stop-guard campaign.
+   `field.collect` measured a qualifying session from the window's start, so
+   a session's brainstorming and planning events before it invoked SDD
+   counted as SDD boundaries and stops. It now measures from the session's
+   first in-window SDD invocation, keeping earlier records for state
+   (`field.cohort`); the premature classification moved into
+   `field.premature_ends` for the hook-record reader, with no number changed
+   by that move. This closes the per-session field bound Correction 7 left
+   owed before any after-window, and the re-record reproduces the replay
+   recorded there on 2026-10-22. Re-recorded: 14 sessions, 1434 boundaries
+   (1495 before), 296 premature stops (301), 20.64 per 100 (20.13), 21
+   resumed (21), 2211 live-work turn ends (2228), 9 live-work resumes at
+   0.63 per 100 (9 at 0.6), 1423 and 144 censored (1424 and 144), excluded
+   error 373, interrupt 17, killed 2, reload 69 (383, 20, 2, 71). No session
+   straddles the window start. Pin after the Correction: `field.py`
+   `d26493d9f2e2a6bd45c35f8657a9c1e6b6112109`.
 
 ## Results
 

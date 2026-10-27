@@ -20,7 +20,7 @@ import re
 import subprocess
 import sys
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -31,6 +31,8 @@ if str(HERE) not in sys.path:
 
 from liveness import (
     Record,
+    Task,
+    TurnEnd,
     asks_or_blocks,
     blocks,
     idle_marker,
@@ -124,6 +126,40 @@ def _open_at(times: Sequence[datetime], counts: Sequence[int], at: datetime) -> 
     return i > 0 and counts[i - 1] > 0
 
 
+def cohort(projects: Path, since: datetime, until: datetime) -> Iterator[tuple[Path, list[Record], datetime]]:
+    """Every Zed session with an SDD invocation inside the window.
+
+    Yields the transcript path, its records before ``until`` (the observation
+    cutoff), and the time of its first in-window SDD invocation, which is
+    where its measurement starts (Correction 8).
+    """
+    for path in sorted(projects.glob("*/*.jsonl")):
+        if entrypoint(path) != "sdk-ts":
+            continue
+        records = [rec for rec in load(path, slim=True) if parse_ts(rec["timestamp"]) < until]
+        inwin = [rec for rec in records if since <= parse_ts(rec["timestamp"]) < until]
+        if not is_sdd(inwin):
+            continue
+        yield path, records, min(parse_ts(rec["timestamp"]) for rec in inwin if is_sdd([rec]))
+
+
+def _premature(end: TurnEnd, task_map: Mapping[str, Task], reload_times: Sequence[datetime], times: Sequence[datetime], open_counts: Sequence[int]) -> bool:
+    return (
+        end.excluded is None
+        and state_at(end.at, task_map, reload_times) == "none"
+        and _open_at(times, open_counts, end.at)
+        and not asks_or_blocks(end.text)
+    )
+
+
+def premature_ends(records: Sequence[Record], since: datetime, until: datetime) -> list[TurnEnd]:
+    """The in-window turn ends the measure scores as premature stops."""
+    task_map = tasks(records)
+    reload_times = reloads(records)
+    times, open_counts, _ = _open_timeline(records)
+    return [end for end in turn_ends(records) if since <= end.at < until and _premature(end, task_map, reload_times, times, open_counts)]
+
+
 def _session(records: Sequence[Record], since: datetime, until: datetime) -> tuple[Counter[str], set[str], set[str]]:
     counts: Counter[str] = Counter()
     task_map = tasks(records)
@@ -147,7 +183,7 @@ def _session(records: Sequence[Record], since: datetime, until: datetime) -> tup
             counts["live_turn_ends"] += 1
         elif state == "censored":
             counts["censored_stops"] += 1
-        elif _open_at(times, open_counts, end.at) and not asks_or_blocks(end.text):
+        elif _premature(end, task_map, reload_times, times, open_counts):
             counts["premature"] += 1
             if is_resume(end.next_human):
                 counts["premature_resumed"] += 1
@@ -175,23 +211,19 @@ def collect(projects: Path, since: datetime, until: datetime) -> dict[str, Any]:
     """Aggregate counts over every Zed SDD session with events in the window.
 
     A session qualifies only by an SDD invocation inside the window, which is
-    the skill text the window measures; its earlier records still reconstruct
-    the state its in-window events are read against. ``until`` is also the
-    observation cutoff: every record at or after it is dropped before anything
-    is classified, so records appended later (a completion, a resume, a
-    session's first SDD call) cannot change the result.
+    the skill text the window measures. The session is measured from its first
+    in-window SDD invocation; its earlier records still reconstruct the state
+    its later events are read against. ``until`` is also the observation
+    cutoff: every record at or after it is dropped before anything is
+    classified, so records appended later (a completion, a resume, a session's
+    first SDD call) cannot change the result.
     """
     totals: Counter[str] = Counter()
     versions: Counter[str] = Counter()
     models: Counter[str] = Counter()
     sessions = 0
-    for path in sorted(projects.glob("*/*.jsonl")):
-        if entrypoint(path) != "sdk-ts":
-            continue
-        records = [rec for rec in load(path, slim=True) if parse_ts(rec["timestamp"]) < until]
-        if not is_sdd([rec for rec in records if since <= parse_ts(rec["timestamp"]) < until]):
-            continue
-        counts, session_versions, session_models = _session(records, since, until)
+    for _path, records, first in cohort(projects, since, until):
+        counts, session_versions, session_models = _session(records, first, until)
         if not counts and not session_versions:
             continue
         sessions += 1
