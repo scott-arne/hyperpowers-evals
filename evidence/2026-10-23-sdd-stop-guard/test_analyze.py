@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -335,6 +336,26 @@ class Readers(unittest.TestCase):
         self.assertIsNotNone(live)
         self.assertEqual(live.resolve(), state.resolve())  # type: ignore[union-attr]
 
+    def test_an_import_alias_copied_into_an_archive_does_not_compete(self) -> None:
+        # `cp -Rp` keeps the absolute symlink sdd-state's import left, so in the
+        # archive the alias still points at the source run while its target was
+        # copied in: two paths that do not resolve to one, carrying one session.
+        run = make_run(workspace_ledger=ledger_text(done=[1]))
+        ws = analyze.workspace_of(run)
+        plans = ws / "home" / ".cache" / "hyperpowers"
+        (plans / "sdd" / "k" / "plans").mkdir(parents=True, exist_ok=True)
+        (plans / "sdd" / "k" / "plans" / "imported").symlink_to(
+            plans / "state" / "k" / "plans" / "p", target_is_directory=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            archived = Path(tmp) / "workspaces" / "r1"
+            shutil.copytree(ws, archived, symlinks=True)
+            alias = archived / "home" / ".cache" / "hyperpowers" / "sdd" / "k" / "plans" / "imported"
+            self.assertFalse(str(alias.resolve()).startswith(str(archived)), "the fixture must keep the alias absolute")
+            self.assertEqual(
+                analyze.live_workspace_for(archived, "sess-1"),
+                archived / "home" / ".cache" / "hyperpowers" / "state" / "k" / "plans" / "p",
+            )
+
     def test_a_retry_suffix_outranks_the_name_it_fell_from_and_a_pid_does_not(self) -> None:
         # Two finishes of one second: the second falls to `-2`, so it is the
         # later; a staging that took a private `-<pid>` name is not a retry.
@@ -451,6 +472,38 @@ class Readers(unittest.TestCase):
         results = next((run / "gauntlet-agent" / "results").iterdir())
         (results / "result.md").write_text('STOP: "Which option do you want?" | question\n')
         self.assertEqual(analyze.stop_lines(run), [("which option do you want?", "question")])
+
+    def test_only_the_stops_criterion_lists_stops(self) -> None:
+        # The grader's prose quotes the form it was asked for; those sentences
+        # are not stops the run made.
+        run = make_run(stops=[("Which option do you want?", "question")])
+        results = next((run / "gauntlet-agent" / "results").iterdir())
+        verdict = json.loads((results / "result.json").read_text())
+        verdict["reasoning"] = (
+            'I looked for lines such as STOP: "an example the agent never said" | neither and\n'
+            'STOP: "another example" | blocked before settling the list.'
+        )
+        verdict["criteria"].insert(0, {"criterion": "Agent invoked the skill", "verdict": "pass",
+                                       "evidence": 'the log shows STOP: "a third example" | neither quoted back'})
+        (results / "result.json").write_text(json.dumps(verdict))
+        self.assertEqual(analyze.stop_lines(run), [("which option do you want?", "question")])
+
+    def test_the_grader_s_wording_of_the_stops_criterion_still_matches(self) -> None:
+        for wording in ("Mid-plan stops listed", "Mid-plan stops are listed", "List of mid-plan stops"):
+            run = make_run(stops=[("Which option do you want?", "question")])
+            results = next((run / "gauntlet-agent" / "results").iterdir())
+            verdict = json.loads((results / "result.json").read_text())
+            verdict["criteria"][0]["criterion"] = wording
+            (results / "result.json").write_text(json.dumps(verdict))
+            self.assertEqual(analyze.stop_lines(run), [("which option do you want?", "question")], wording)
+
+    def test_the_markdown_rendering_answers_only_without_the_structured_one(self) -> None:
+        run = make_run(stops=[("Which option do you want?", "question")])
+        results = next((run / "gauntlet-agent" / "results").iterdir())
+        (results / "result.md").write_text('STOP: "Task 1 done. Moving on." | neither\n')
+        self.assertEqual(analyze.stop_lines(run), [("which option do you want?", "question")])
+        (results / "result.json").unlink()
+        self.assertEqual(analyze.stop_lines(run), [("task 1 done. moving on", "neither")])
 
     def test_adjudications_carry_this_campaign_s_labels(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

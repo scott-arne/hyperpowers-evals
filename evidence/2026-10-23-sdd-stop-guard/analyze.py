@@ -105,6 +105,7 @@ READ_ONLY_GIT = frozenset({"diff", "show", "log", "status", "blame", "ls-files",
 GIT_VALUE_OPTIONS = ("-C", "-c", "--git-dir", "--work-tree")
 COMMAND_PREFIXES = frozenset({"env", "nohup", "time", "timeout"})
 SED_IN_PLACE = re.compile(r"-[A-Za-z]*i|--in-place")
+STOPS_WORD = re.compile(r"\bstops?\b")
 STOP_LINE = re.compile(
     r"STOP:\s*\"(?P<quote>[^\"\n]+)\"\s*\|\s*(?P<label>question|blocked|neither)", re.IGNORECASE
 )
@@ -314,21 +315,21 @@ def live_workspace_for(workspace: Path, sid: str) -> Path | None:
     :raises ArtifactError: two workspaces carry the session, which leaves no
         answer to whose log and job records are the run's.
     """
-    hits: list[Path] = []
-    seen: set[Path] = set()
-    # A physical workspace before an alias of it, and a stable order for the
-    # rest: sdd-state's import leaves the plain-cache path a symlink to the
-    # state path, so one ledger is reachable twice and is still one workspace.
-    # The hook settles the same duplicate by the resolved path.
-    for p in sorted(workspace.glob("home/.cache/hyperpowers/*/*/plans/*/progress.md"),
-                    key=lambda p: (p.parent.is_symlink(), str(p))):
+    # sdd-state's import leaves the plain-cache path a symlink to the state
+    # path, so one workspace is reachable twice. The hook settles that by the
+    # resolved path, which is not enough over an archive: ``cp -Rp`` keeps the
+    # absolute link while copying its target in, so the alias still resolves to
+    # the source run where the copy resolves inside the archive. An alias is
+    # therefore never counted beside a physical workspace, and answers only when
+    # the archive kept no physical one.
+    physical: dict[Path, Path] = {}
+    aliases: dict[Path, Path] = {}
+    for p in sorted(workspace.glob("home/.cache/hyperpowers/*/*/plans/*/progress.md")):
         if not _is_plan_workspace(p.parent) or not _carries(p, sid):
             continue
-        real = p.resolve()
-        if real in seen:
-            continue
-        seen.add(real)
-        hits.append(p.parent)
+        found = aliases if p.parent.is_symlink() else physical
+        found.setdefault(p.resolve(), p.parent)
+    hits = list(physical.values()) or list(aliases.values())
     if len(hits) > 1:
         raise ArtifactError(f"{len(hits)} live workspaces carry session {sid}")
     return hits[0] if hits else None
@@ -486,6 +487,19 @@ def normalize(text: str) -> str:
     return " ".join(text.lower().split()).strip(" .")
 
 
+def _is_stops_criterion(name: str) -> bool:
+    """Whether a result's criterion is the story's "Mid-plan stops are listed".
+
+    The grader paraphrases it: the previous campaign's archived runs spell it
+    "Mid-plan stops listed", "Mid-plan stops are listed" and "List of mid-plan
+    stops". The test is on the words rather than the sentence — it names stops,
+    and either the plan phase or the listing — because the entries must come
+    from the criterion that holds the list and from nowhere else.
+    """
+    low = name.lower()
+    return bool(STOPS_WORD.search(low)) and ("mid-plan" in low or "list" in low)
+
+
 def _stop_occurrences(text: str) -> list[tuple[str, str]]:
     """Every ``STOP:`` entry one text lists, normalized, in the order it lists them."""
     found = [
@@ -497,36 +511,39 @@ def _stop_occurrences(text: str) -> list[tuple[str, str]]:
 def stop_lines(record: Path) -> list[tuple[str, str]]:
     """The Gauntlet-Agent's ``STOP: "<quote>" | <label>`` entries, normalized, in order.
 
-    One results directory is one grading, and its ``result.json`` and
-    ``result.md`` are two renderings of that one list, so the entries come from
-    a single rendering of each grading: the richest one, which is the string of
-    the structured result that carries the most entries, else the Markdown. The
-    duplicates that matter are between renderings, not inside a list: the
-    Gauntlet writes one entry per stop, so two stops quoting one sentence are
-    two entries, each owed its own allow. Collapsing them would hide the
-    second's missing decision from the one-to-one match ``stop_times`` makes.
+    One results directory is one grading, and the entries come from the one
+    criterion of its ``result.json`` that holds the list. The grader's own prose
+    quotes the form it was asked for ("I looked for lines such as STOP: ...")
+    and a summary may repeat an entry, so reading the whole result would list
+    stops the run never made. ``result.md`` is the same grading rendered for a
+    reader, and answers only when the structured result is not there.
+
+    Inside the list every entry counts: the Gauntlet writes one per stop, so two
+    stops quoting one sentence are two entries, each owed its own allow.
+    Collapsing them would hide the second's missing decision from the one-to-one
+    match ``stop_times`` makes.
     """
     found: list[tuple[str, str]] = []
     results = record / "gauntlet-agent" / "results"
     for run in sorted({p.parent for p in results.glob("*/result.*")}):
-        renderings: list[list[tuple[str, str]]] = []
+        listed: list[tuple[str, str]] | None = None
         structured = run / "result.json"
         if structured.is_file():
             try:
-                renderings += [_stop_occurrences(s) for s in _strings(json.loads(structured.read_text()))]
+                verdict = json.loads(structured.read_text())
             except (OSError, ValueError):
-                pass
+                verdict = {}
+            criteria = verdict.get("criteria") if isinstance(verdict, dict) else None
+            for c in criteria or []:
+                if isinstance(c, dict) and _is_stops_criterion(str(c.get("criterion") or "")):
+                    listed = (listed or []) + _stop_occurrences(str(c.get("evidence") or ""))
         markdown = run / "result.md"
-        if markdown.is_file():
+        if listed is None and markdown.is_file():
             try:
-                renderings.append(_stop_occurrences(markdown.read_text(errors="replace")))
+                listed = _stop_occurrences(markdown.read_text(errors="replace"))
             except OSError:
-                pass
-        richest: list[tuple[str, str]] = []
-        for rendering in renderings:
-            if len(rendering) > len(richest):
-                richest = rendering
-        found += richest
+                listed = None
+        found += listed or []
     return found
 
 
