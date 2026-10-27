@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import sys
 import tempfile
@@ -65,6 +66,13 @@ def successful_run_kwargs() -> dict[str, Any]:
     its workspace, so every successful run has one (spec Decision 5).
     """
     return {"records": treatment_records(), "receipt": {"ledger": ledger_text(done=range(1, 7))}}
+
+
+def nested(command: str, depth: int) -> str:
+    """``command`` wrapped in ``depth`` layers of ``bash -c <operand>``."""
+    for _ in range(depth):
+        command = f"bash -c {shlex.quote(command)}"
+    return command
 
 
 def wait_command(job: Mapping[str, Any], index: int = 0, quote: str = "", prefix: str = "") -> str:
@@ -518,6 +526,8 @@ class Measures(unittest.TestCase):
             ("commented", watch_records(f"# {TRACKED_JOB} wait {jobdir}\nls")),
             ("committed", watch_records(f'git commit -m "watched with tracked-job wait {jobdir}"')),
             ("backgrounded", watch_records(wait_command(job), background=True)),
+            ("backgrounded by the shell", watch_records(f"{wait_command(job)} &")),
+            ("a trailing ampersand the lexer kept as a word", watch_records(f"{wait_command(job)} \\&")),
             ("errored", watch_records(wait_command(job), is_error=True)),
             ("answered before the job ended", watch_records(wait_command(job), result_s=700.0)),
             ("started before the job launched", watch_records(wait_command(job), at_s=5.0)),
@@ -590,6 +600,45 @@ class Measures(unittest.TestCase):
                 m = analyze.measure(run, {})
                 self.assertEqual(m["long_job"] is not None, expected, label)
                 self.assertEqual(m["long_ok"], expected, label)
+
+    def test_a_nested_shell_is_judged_by_the_command_it_runs(self) -> None:
+        # `bash -c <operand>` exits with the operand's own status, so a
+        # nested shell proves exactly what the command it reached proves;
+        # reading the operand as one opaque command counts a soak the inner
+        # shell may have jumped over.
+        soak = "python3 -m unittest tests.test_soak_long -v"
+        for label, command, expected in (
+            ("nested", ["bash", "-c", nested(soak, 1)], True),
+            ("nested behind ||", ["bash", "-c", nested(f"true || {soak}", 1)], False),
+            ("behind ||", ["bash", "-c", f"true || {soak}"], False),
+            ("four shells deep", ["bash", "-c", nested(soak, 4)], True),
+            # Past the bound the stack is unproven rather than trusted.
+            ("five shells deep", ["bash", "-c", nested(soak, 5)], False),
+        ):
+            with self.subTest(label):
+                job = {**LONG_JOB, "command": command}
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(wait_command(job)))
+                m = analyze.measure(run, {})
+                self.assertEqual(m["long_job"] is not None, expected, label)
+                self.assertEqual(m["long_ok"], expected, label)
+
+    def test_a_backgrounded_soak_is_not_what_the_job_s_exit_proves(self) -> None:
+        # `&` hands the shell straight to the next command, so the job can
+        # exit 0 while the soak is still running or dies with the shell.
+        soak = "python3 -m unittest tests.test_soak_long -v"
+        for label, command in (
+            ("alone", ["bash", "-c", f"{soak} &"]),
+            ("after setup", ["bash", "-c", f"sleep 601; {soak} &"]),
+            ("inside a nested shell", ["bash", "-c", nested(f"{soak} &", 1)]),
+        ):
+            with self.subTest(label):
+                job = {**LONG_JOB, "command": command}
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(wait_command(job)))
+                m = analyze.measure(run, {})
+                self.assertIsNone(m["long_job"], label)
+                self.assertFalse(m["long_ok"], label)
 
     def test_the_wait_must_be_the_last_thing_the_call_runs(self) -> None:
         # The call's output is the proof, so it has to be the helper's own
