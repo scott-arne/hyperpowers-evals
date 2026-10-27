@@ -33,6 +33,9 @@ import { repoRoot } from '../src/paths.ts';
 // nothing and score it as a failure. `sdd-turn-liveness` measures Claude Code's
 // turn ends and background-task handling during SDD, and asserts on its `Agent`
 // dispatch tool, so it is pinned to the Claude family for the same reason.
+// `sdd-turn-liveness-fork` is that scenario with Claude Code's fork subagent
+// mode left on, the stop-guard campaign's terminal smoke, and it measures the
+// same Claude Code behavior.
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'brainstorming-asks-tooling-question',
   'brainstorming-bounded-companion-after-compaction',
@@ -67,6 +70,7 @@ const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'sdd-plan-scoped-scratch',
   'sdd-spec-context-consumed',
   'sdd-turn-liveness',
+  'sdd-turn-liveness-fork',
   'sdd-unified-fix-loop',
   'tdd-runs-the-project-suite',
   'worktree-creation-under-pressure',
