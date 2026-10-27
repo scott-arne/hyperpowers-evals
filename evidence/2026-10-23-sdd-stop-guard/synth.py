@@ -360,7 +360,7 @@ def make_run(
     verdict = {
         "final": final,
         "final_reason": final_reason,
-        "gauntlet": gauntlet if gauntlet is not None else {"status": final, "summary": "ok"},
+        "gauntlet": gauntlet if gauntlet is not None else {"status": final, "summary": "ok", "run_id": "r1"},
         "checks": checks,
         "provenance": {"evals_commit": evals_commit, "evals_clean": True},
         "economics": {"coding_agent": {"models": [{"model": m} for m in models]}},

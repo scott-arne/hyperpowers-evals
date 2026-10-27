@@ -290,6 +290,18 @@ class Measure(unittest.TestCase):
         self.assertEqual(analyze.workspace_of(record), record)
 
 
+def grading(run: Path, name: str, stops: list[tuple[str, str]]) -> Path:
+    """Another Gauntlet grading directory beside the one ``make_run`` writes."""
+    out = run / "gauntlet-agent" / "results" / name
+    out.mkdir(parents=True, exist_ok=True)
+    evidence = "\n".join(f'STOP: "{quote}" | {label}' for quote, label in stops)
+    (out / "result.json").write_text(json.dumps({
+        "status": "pass",
+        "criteria": [{"criterion": "Mid-plan stops are listed", "verdict": "pass", "evidence": evidence}],
+    }))
+    return out
+
+
 class Readers(unittest.TestCase):
     def test_receipt_for_picks_the_newest_receipt_carrying_the_session_and_skips_unfinished_staging(self) -> None:
         run = make_run(receipt={"ledger": ledger_text(done=[1]), "name": "p-20261023T100000Z"},
@@ -504,6 +516,32 @@ class Readers(unittest.TestCase):
         self.assertEqual(analyze.stop_lines(run), [("which option do you want?", "question")])
         (results / "result.json").unlink()
         self.assertEqual(analyze.stop_lines(run), [("task 1 done. moving on", "neither")])
+
+    def test_only_the_grading_the_verdict_names_lists_stops(self) -> None:
+        # Quorum grades one results directory and records its name, so a stale
+        # or retried grading beside it graded nothing and its entries are not
+        # stops the run made. "r2" sorts after the canonical "r1", so a
+        # newest-wins rule would answer with the wrong directory here.
+        run = make_run(stops=[("Which option do you want?", "question")])
+        grading(run, "r2", [("Task 1 done. Moving on.", "neither")])
+        self.assertEqual(analyze.stop_lines(run), [("which option do you want?", "question")])
+
+    def test_a_verdict_without_a_run_id_takes_the_newest_grading(self) -> None:
+        # A verdict archived before quorum recorded the name leaves only
+        # quorum's own rule: the newest directory that graded.
+        run = make_run(stops=[("Which option do you want?", "question")], gauntlet={"status": "pass", "summary": "ok"})
+        grading(run, "r2", [("Task 1 done. Moving on.", "neither")])
+        self.assertEqual(analyze.stop_lines(run), [("task 1 done. moving on", "neither")])
+
+    def test_a_verdict_without_a_run_id_skips_an_unparseable_newest_grading(self) -> None:
+        # Quorum skips a directory whose result.json does not parse and grades
+        # the next one down; the skipped directory's rendering is skipped with
+        # it, since quorum never read that grading at all.
+        run = make_run(stops=[("Which option do you want?", "question")], gauntlet={"status": "pass", "summary": "ok"})
+        stale = grading(run, "r2", [("Task 1 done. Moving on.", "neither")])
+        (stale / "result.json").write_text("{not json")
+        (stale / "result.md").write_text('STOP: "Task 1 done. Moving on." | neither\n')
+        self.assertEqual(analyze.stop_lines(run), [("which option do you want?", "question")])
 
     def test_adjudications_carry_this_campaign_s_labels(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

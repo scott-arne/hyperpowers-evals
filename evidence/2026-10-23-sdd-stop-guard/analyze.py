@@ -508,43 +508,93 @@ def _stop_occurrences(text: str) -> list[tuple[str, str]]:
     return [item for item in found if item[0]]
 
 
+def _parsed_result(run: Path) -> dict[str, Any] | None:
+    """One grading's ``result.json`` as an object, or None when it is not one.
+
+    :param run: a ``gauntlet-agent/results/<runId>/`` directory.
+    :returns: the parsed object, or None when the file is absent, unreadable,
+        malformed, or holds anything but a JSON object.
+    """
+    try:
+        data = json.loads((run / "result.json").read_text())
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _grading(record: Path) -> Path | None:
+    """The one results directory quorum graded, chosen the way quorum chose it.
+
+    ``verdict.json``'s ``gauntlet.run_id`` is the name of the directory quorum
+    composed its verdict from, so it settles the choice whenever the verdict
+    carries it. Without it this mirrors ``gauntletLayerFromRunDir``
+    (``src/runner/index.ts``): newest name first, skipping a directory whose
+    ``result.json`` is missing or is not an object. The last resort is the
+    newest directory holding any ``result.*``, so a grading that left only a
+    rendering still answers.
+
+    :param record: the archived run's record directory.
+    :returns: the directory to read, or None when the run holds no grading.
+    """
+    results = record / "gauntlet-agent" / "results"
+    try:
+        verdict = json.loads((record / "verdict.json").read_text())
+    except (OSError, ValueError):
+        verdict = None
+    gauntlet = verdict.get("gauntlet") if isinstance(verdict, dict) else None
+    named = gauntlet.get("run_id") if isinstance(gauntlet, dict) else None
+    dirs = sorted(p for p in results.iterdir() if p.is_dir()) if results.is_dir() else []
+    # Match on the directory's own name rather than joining the recorded one,
+    # so a run_id that is not a plain name cannot reach outside ``results``.
+    by_name = {p.name: p for p in dirs}
+    if isinstance(named, str) and named in by_name:
+        return by_name[named]
+    for run in reversed(dirs):
+        if _parsed_result(run) is not None:
+            return run
+    rendered = sorted({p.parent for p in results.glob("*/result.*")})
+    return rendered[-1] if rendered else None
+
+
 def stop_lines(record: Path) -> list[tuple[str, str]]:
     """The Gauntlet-Agent's ``STOP: "<quote>" | <label>`` entries, normalized, in order.
 
-    One results directory is one grading, and the entries come from the one
-    criterion of its ``result.json`` that holds the list. The grader's own prose
-    quotes the form it was asked for ("I looked for lines such as STOP: ...")
-    and a summary may repeat an entry, so reading the whole result would list
-    stops the run never made. ``result.md`` is the same grading rendered for a
+    Exactly one grading answers. Quorum composes its verdict from a single
+    results directory and records that directory's name as
+    ``gauntlet.run_id``, so a stale or retried grading beside it graded
+    nothing and its entries are not stops the run made; ``_grading`` picks the
+    same directory quorum did.
+
+    Within that directory the entries come from the one criterion of
+    ``result.json`` that holds the list. The grader's own prose quotes the
+    form it was asked for ("I looked for lines such as STOP: ...") and a
+    summary may repeat an entry, so reading the whole result would list stops
+    the run never made. ``result.md`` is the same grading rendered for a
     reader, and answers only when the structured result is not there.
 
     Inside the list every entry counts: the Gauntlet writes one per stop, so two
     stops quoting one sentence are two entries, each owed its own allow.
     Collapsing them would hide the second's missing decision from the one-to-one
     match ``stop_times`` makes.
+
+    :param record: the archived run's record directory.
+    :returns: each listed stop as a normalized ``(quote, label)`` pair.
     """
-    found: list[tuple[str, str]] = []
-    results = record / "gauntlet-agent" / "results"
-    for run in sorted({p.parent for p in results.glob("*/result.*")}):
-        listed: list[tuple[str, str]] | None = None
-        structured = run / "result.json"
-        if structured.is_file():
-            try:
-                verdict = json.loads(structured.read_text())
-            except (OSError, ValueError):
-                verdict = {}
-            criteria = verdict.get("criteria") if isinstance(verdict, dict) else None
-            for c in criteria or []:
-                if isinstance(c, dict) and _is_stops_criterion(str(c.get("criterion") or "")):
-                    listed = (listed or []) + _stop_occurrences(str(c.get("evidence") or ""))
-        markdown = run / "result.md"
-        if listed is None and markdown.is_file():
-            try:
-                listed = _stop_occurrences(markdown.read_text(errors="replace"))
-            except OSError:
-                listed = None
-        found += listed or []
-    return found
+    run = _grading(record)
+    if run is None:
+        return []
+    listed: list[tuple[str, str]] | None = None
+    verdict = _parsed_result(run)
+    for c in (verdict or {}).get("criteria") or []:
+        if isinstance(c, dict) and _is_stops_criterion(str(c.get("criterion") or "")):
+            listed = (listed or []) + _stop_occurrences(str(c.get("evidence") or ""))
+    markdown = run / "result.md"
+    if listed is None and markdown.is_file():
+        try:
+            listed = _stop_occurrences(markdown.read_text(errors="replace"))
+        except OSError:
+            listed = None
+    return listed or []
 
 
 def stop_times(
