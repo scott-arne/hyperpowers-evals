@@ -1,0 +1,492 @@
+"""Tests for analyze.py on synthetic runs."""
+
+from __future__ import annotations
+
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from typing import Any
+
+HERE = Path(__file__).resolve().parent
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
+import analyze
+import liveness
+from liveness import parse_ts
+from synth import (
+    AGENT_BG,
+    BASH_BG,
+    LEDGER,
+    assistant,
+    at,
+    control_records,
+    human,
+    ledger_text,
+    line,
+    make_run,
+    notification,
+    result,
+    treatment_records,
+    write,
+)
+
+CONTROL_STOPS = (("Moving to Task 3.", "neither"),)
+
+
+def drop_call(records: list[dict[str, Any]], tool_id: str) -> list[dict[str, Any]]:
+    """The records without one tool call and its result."""
+    def mentions(rec: dict[str, Any]) -> bool:
+        return any(b.get("id") == tool_id or b.get("tool_use_id") == tool_id for b in liveness.blocks(rec))
+
+    return [r for r in records if not mentions(r)]
+
+
+class Measure(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def run_of(self, run_id: str, records: list[dict[str, Any]], **kw: Any) -> dict[str, Any]:
+        kw.setdefault("plugin_dir", "/roots/treatment")
+        return analyze.measure(make_run(self.root, run_id, records, **kw), {})
+
+    def test_treatment_like_run_meets_every_measure(self) -> None:
+        m = self.run_of("t1", treatment_records())
+        self.assertEqual((m["dispatch_fg"], m["dispatch_bg"], m["dispatch_unclassified"]), (2, 0, 0))
+        self.assertTrue(m["short_ok"])
+        self.assertEqual(m["censored_stops"], 0)
+        self.assertEqual(m["live_turn_ends"], [])
+        self.assertEqual(m["untracked"], [])
+        self.assertTrue(m["plan_complete"] and m["final_review"] and m["success"])
+        self.assertEqual((m["plugin_dir"], m["model"], m["cc"]), ("/roots/treatment", "claude-opus-5-5", "2.1.300"))
+        self.assertTrue(m["task_tools"])
+        self.assertTrue(m["codex_absent"])
+
+    def test_control_like_run(self) -> None:
+        m = self.run_of("c1", control_records(), plugin_dir="/roots/control", stops=CONTROL_STOPS)
+        self.assertEqual((m["dispatch_fg"], m["dispatch_bg"]), (0, 2))
+        self.assertEqual(len(m["live_turn_ends"]), 1)
+        self.assertEqual(m["live_turn_ends"][0]["idle_seconds"], 170.0)
+        self.assertFalse(m["short_ok"])
+        self.assertEqual([u["where"] for u in m["untracked"]], ["command"])
+        self.assertTrue(m["success"])
+
+    def test_dispatch_needs_the_explicit_false_and_a_clean_result(self) -> None:
+        records = treatment_records()
+        records += [
+            assistant(2000, tools=[("x1", "Agent", {"description": "Review Task 2"})]),
+            result(2100, "x1", "DONE: reviewed"),
+            assistant(2110, tools=[("x2", "Agent", {"description": "Fix Task 2", "run_in_background": False})]),
+            result(2120, "x2", "API Error", is_error=True),
+        ]
+        m = self.run_of("t5", records)
+        self.assertEqual((m["dispatch_fg"], m["dispatch_bg"], m["dispatch_unclassified"]), (2, 0, 2))
+
+    def test_a_censored_task_overlapping_a_live_one_excludes_the_stop(self) -> None:
+        # One launch records its completion, the other never does; a stop while
+        # both are open is censored, not live (deviation 3, liveness.state_at).
+        def records(censored: bool) -> list[dict[str, Any]]:
+            recs = [
+                human(0, "I have a plan at plan.md. Use subagent-driven-development."),
+                assistant(10, tools=[("a1", "Agent", {"description": "Implement Task 1"})]),
+                result(11, "a1", AGENT_BG),
+            ]
+            if censored:
+                recs += [
+                    assistant(20, tools=[("b1", "Bash", {"command": "sleep 900", "run_in_background": True})]),
+                    result(21, "b1", BASH_BG),
+                ]
+            return [*recs, assistant(30, "Dispatched; waiting."), notification(200, "a1")]
+
+        live = self.run_of("ov1", records(False), ledger=0)
+        self.assertEqual([e["idle_seconds"] for e in live["live_turn_ends"]], [170.0])
+        self.assertEqual(live["censored_stops"], 0)
+        overlap = self.run_of("ov2", records(True), ledger=0)
+        self.assertEqual(overlap["live_turn_ends"], [])
+        self.assertEqual(overlap["censored_stops"], 1)
+
+    def test_final_review_is_the_review_after_the_last_task(self) -> None:
+        records = treatment_records()
+        for rec in records:
+            for use in liveness.tool_uses(rec):
+                if use.get("id") == "a1":
+                    use["input"]["prompt"] = "Implement Task 1. The final review runs after Task 6."
+                if use.get("id") == "a2":
+                    use["input"]["description"] = "Review code changes"
+        m = self.run_of("f1", records)
+        self.assertTrue(m["final_review"])
+        early = [r for r in drop_call(treatment_records(), "a2")]
+        early[4:4] = [
+            assistant(25, tools=[("r6", "Agent", {"description": "Review Task 6", "run_in_background": False})]),
+            result(26, "r6", "Approved"),
+        ]
+        m = self.run_of("f2", early)
+        self.assertFalse(m["final_review"])
+        self.assertFalse(m["success"])
+        # The controller reviews Task 6, dispatches the final review, and writes
+        # the Task 6 mark only after it returns (three of four counted smoke runs).
+        late = drop_call(treatment_records(), "lw6")
+        tail = late[-3:]
+        late = late[:-3] + [
+            assistant(1410, tools=[("r6", "Agent", {"description": "Review Task 6 (spec + quality)", "run_in_background": False})]),
+            result(1490, "r6", "Approved"),
+            *tail[:2],
+            assistant(1850, tools=[("e6", "Edit", {"file_path": LEDGER, "old_string": "x", "new_string": "Task 6: complete (abc123)"})]),
+            result(1851, "e6", "edited"),
+            tail[2],
+        ]
+        m = self.run_of("f3", late)
+        self.assertTrue(m["final_review"])
+        self.assertTrue(m["success"])
+        # Two task-scoped reviews with no final review are not a final review:
+        # a task review then a re-review described without the word fix, and
+        # a task review dispatched twice.
+        no_final = drop_call(late, "a2")
+        for rec in no_final:
+            for use in liveness.tool_uses(rec):
+                if use.get("id") == "r6":
+                    use["input"]["description"] = "Re-review Task 6 (quality)"
+        no_final[-4:-4] = [
+            assistant(1300, tools=[("r5", "Agent", {"description": "Review Task 6 (spec + quality)", "run_in_background": False})]),
+            result(1305, "r5", "Needs fixes"),
+        ]
+        self.assertFalse(self.run_of("f4", no_final)["final_review"])
+        repeated = drop_call(late, "a2")
+        repeated[-4:-4] = [
+            assistant(1300, tools=[("r5", "Agent", {"description": "Review Task 6 (spec + quality)", "run_in_background": False})]),
+            result(1305, "r5", "Approved"),
+        ]
+        self.assertFalse(self.run_of("f5", repeated)["final_review"])
+
+    def test_split_ops_records_the_operators(self) -> None:
+        self.assertEqual(
+            analyze._split_ops("a; b && c || d | e\nf"),
+            [("", "a"), (";", " b "), ("&&", " c "), ("||", " d "), ("|", " e"), (";", "f")],
+        )
+        self.assertEqual(analyze._split_ops("a | b", pipes=False), [("", "a | b")])
+
+    def test_auto_backgrounded_short_run_is_not_a_foreground_run(self) -> None:
+        moved = "Command did not complete within its 240s timeout and was moved to the background (ID: b-auto)."
+        records = [
+            result(560, "b1", moved) if r.get("timestamp") == at(560) else r for r in treatment_records()
+        ]
+        for rec in records:
+            for use in liveness.tool_uses(rec):
+                if use.get("id") == "b1":
+                    use["input"]["timeout"] = 240000
+        m = self.run_of("s2", records)
+        self.assertTrue(m["short_runs"][0]["background"])
+        self.assertFalse(m["short_ok"])
+
+    def test_short_run_must_take_real_time(self) -> None:
+        fast = [result(340, "b1", "OK") if r.get("timestamp") == at(560) else r for r in treatment_records()]
+        m = self.run_of("s1", fast)
+        self.assertEqual(m["short_runs"][0]["elapsed"], 30.0)
+        self.assertFalse(m["short_ok"])
+
+    def test_soak_file_writes_fail_success(self) -> None:
+        edit = treatment_records() + [
+            assistant(2000, tools=[("e1", "Edit", {"file_path": "/x/coding-agent-workdir/tests/test_soak_short.py", "old_string": "240", "new_string": "5"})]),
+            result(2001, "e1", "edited"),
+        ]
+        m = self.run_of("k1", edit)
+        self.assertTrue(m["soak_tampered"])
+        self.assertFalse(m["success"])
+        sed = treatment_records() + [
+            assistant(2000, tools=[("e2", "Bash", {"command": "sed -i '' 's/720/5/' tests/test_soak_long.py"})]),
+            result(2001, "e2", ""),
+        ]
+        self.assertTrue(self.run_of("k2", sed)["soak_tampered"])
+        read = treatment_records() + [
+            assistant(2000, tools=[("e3", "Bash", {"command": "cat tests/test_soak_long.py"})]),
+            result(2001, "e3", "SOAK_SECONDS = 720"),
+        ]
+        self.assertFalse(self.run_of("k3", read)["soak_tampered"])
+        self.assertFalse(self.run_of("k4", treatment_records())["soak_tampered"])
+        for n, command in enumerate((
+            "cp /tmp/short.py tests/test_soak_short.py",
+            "python3 -c \"from pathlib import Path; Path('tests/test_soak_long.py').write_text('')\"",
+            "python3 - <<'EOF'\nopen('tests/test_soak_short.py', 'w').write('')\nEOF",
+            "git checkout -- tests/test_soak_long.py",
+            "sed -Ei 's/720/5/' tests/test_soak_long.py",
+            "sed --in-place=.bak 's/240/5/' tests/test_soak_short.py",
+            "cat <<'EOF' | python3\nopen('tests/test_soak_short.py', 'w').write('')\nEOF",
+            "grep -n 'x' tests/test_soak_long.py; perl -pi -e 's/720/5/' tests/test_soak_long.py",
+        )):
+            written = treatment_records() + [
+                assistant(2000, tools=[("m1", "Bash", {"command": command})]),
+                result(2001, "m1", ""),
+            ]
+            self.assertTrue(self.run_of(f"k5{n}", written)["soak_tampered"], command)
+        for n, command in enumerate((
+            "git diff --quiet HEAD -- tests/test_soak_short.py tests/test_soak_long.py",
+            "sed -n '1,20p' tests/test_soak_long.py | head -5",
+            "python3 tests/test_soak_short.py",
+            "grep -n SOAK_SECONDS tests/test_soak_long.py",
+            # Routine reads seen in real runs: quoted pipes, git options, prefixes, echo banners.
+            'grep -nE "SOAK|sleep" tests/test_soak_long.py',
+            "git -C /x/coding-agent-workdir diff -- tests/test_soak_short.py",
+            "git --no-pager diff HEAD -- tests/test_soak_long.py",
+            "timeout 900 python3 -m unittest tests/test_soak_long.py",
+            "python3 -m pytest tests/test_soak_short.py",
+            "nl -ba tests/test_soak_short.py | sed -n '1,40p'",
+            'echo "--- tests/test_soak_short.py ---"; cat tests/test_soak_short.py',
+            "# look at tests/test_soak_long.py\ncat tests/test_soak_long.py",
+        )):
+            reads = treatment_records() + [
+                assistant(2000, tools=[("m2", "Bash", {"command": command})]),
+                result(2001, "m2", ""),
+            ]
+            self.assertFalse(self.run_of(f"k6{n}", reads)["soak_tampered"], command)
+
+    def test_codex_needs_the_affirmative_precheck(self) -> None:
+        self.assertFalse(self.run_of("t2", treatment_records(), codex_check=False)["codex_absent"])
+        records = treatment_records()
+        records.insert(4, assistant(15, tools=[("c9", "Bash", {"command": 'node "$C/scripts/codex-companion.mjs" status --json'})]))
+        records.insert(5, result(16, "c9", "{}"))
+        self.assertFalse(self.run_of("t3", records)["codex_absent"])
+
+    def test_failed_post_check_is_not_success(self) -> None:
+        m = self.run_of("t4", treatment_records(), checks_pass=False)
+        self.assertFalse(m["unit_tests_passed"])
+        self.assertFalse(m["soak_tests_passed"])
+        self.assertFalse(m["success"])
+
+    def test_void_kinds_fail_closed(self) -> None:
+        self.assertEqual(analyze.void_kind({"final": "indeterminate", "final_reason": "quorum error (setup): setup.sh failed", "gauntlet": {}}), "void-setup")
+        self.assertEqual(
+            analyze.void_kind({"final": "indeterminate", "gauntlet": {"status": "investigate", "summary": "gauntlet exited (status 1) without writing a result"}}),
+            "void-grader",
+        )
+        lost: dict[str, Any] = {
+            "final": "indeterminate",
+            "gauntlet": {
+                "status": "investigate",
+                "summary": "gauntlet exited (status 1) without writing a result",
+                "reasoning": 'gauntlet stderr (tail): {"error":{"message":"getaddrinfo ENOTFOUND proxy.example"}}',
+            },
+        }
+        self.assertEqual(analyze.void_kind(lost), "void-transport")
+        reset = {**lost, "gauntlet": {**lost["gauntlet"], "reasoning": 'gauntlet stderr (tail): {"error":{"message":"ECONNRESET: The socket connection was closed unexpectedly."}}'}}
+        self.assertEqual(analyze.void_kind(reset), "void-transport")
+        judged = {**lost, "gauntlet": {**lost["gauntlet"], "reasoning": "the agent never answered"}}
+        self.assertEqual(analyze.void_kind(judged), "void-grader")
+        written = {**lost, "gauntlet": {**lost["gauntlet"], "run_id": "sdd-turn-liveness_x_r1"}}
+        self.assertEqual(analyze.void_kind(written), "void-other")
+        self.assertEqual(analyze.void_kind({"final": "indeterminate", "final_reason": "API error", "gauntlet": {"status": "investigate"}}), "void-other")
+        self.assertEqual(analyze.void_kind({"final": None}), "void-other")
+        self.assertIsNone(analyze.void_kind({"final": "fail"}))
+
+    def test_legacy_layout_reads_its_own_home(self) -> None:
+        record = self.root / "legacy"
+        (record / "home").mkdir(parents=True)
+        self.assertEqual(analyze.workspace_of(record), record)
+
+
+class Readers(unittest.TestCase):
+    def test_receipt_for_picks_the_newest_receipt_carrying_the_session_and_skips_unfinished_staging(self) -> None:
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "name": "p-20261023T100000Z"},
+                       extra_receipts=[{"ledger": ledger_text(done=[1]), "name": "p-20261023T090000Z"},
+                                       {"ledger": ledger_text(done=[1], sid="other"), "name": "p-20261023T110000Z"},
+                                       {"ledger": ledger_text(done=[1]), "name": ".staging-p-20261023T120000Z"}])
+        ws = analyze.workspace_of(run)
+        self.assertEqual(analyze.receipt_for(ws, "sess-1").name, "p-20261023T100000Z")  # type: ignore[union-attr]
+        self.assertIsNone(analyze.receipt_for(ws, "nobody"))
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "name": "p-20261023T100000Z"},
+                       extra_receipts=[{"ledger": ledger_text(done=[1]), "name": ".staging-p-20261023T130000Z", "finished": True}])
+        self.assertEqual(analyze.receipt_for(analyze.workspace_of(run), "sess-1").name, ".staging-p-20261023T130000Z")  # type: ignore[union-attr]
+
+    def test_live_workspace_for_needs_exactly_one_ledger_with_the_session(self) -> None:
+        run = make_run(workspace_ledger=ledger_text(done=[1]), extra_workspaces=[{"ledger": ledger_text(done=[2], sid="other")}])
+        self.assertIsNotNone(analyze.live_workspace_for(analyze.workspace_of(run), "sess-1"))
+        self.assertIsNone(analyze.live_workspace_for(analyze.workspace_of(run), "nobody"))
+        run = make_run(workspace_ledger=ledger_text(done=[1]), extra_workspaces=[{"ledger": ledger_text(done=[2])}])
+        with self.assertRaises(analyze.ArtifactError):
+            analyze.live_workspace_for(analyze.workspace_of(run), "sess-1")
+
+    def test_decisions_are_the_union_by_timestamp_and_session(self) -> None:
+        a = line("2026-10-23T10:05:00.000Z", "block", "open-tasks", refusals=1)
+        b = line("2026-10-23T10:06:00.000Z", "allow", "handback-text")
+        c = line("2026-10-23T10:07:00.000Z", "block", "open-tasks", refusals=1)
+        d = line("2026-10-23T11:00:00.000Z", "allow", "no-ledger", plan=None)  # after Finish: mirror only
+        other = line("2026-10-23T10:05:30.000Z", "block", "open-tasks", session="stranger")
+        # the mirror lost a middle line (b) and its final line (c); the receipt has them; the mirror alone has d
+        run = make_run(receipt={"ledger": ledger_text(done=[1, 2, 3, 4, 5, 6]), "log": [a, b, c]}, mirror=[a, other, d])
+        ws = analyze.workspace_of(run)
+        decisions, conflicts = analyze.decisions_for(ws, analyze.receipt_for(ws, "sess-1"), None, "sess-1")
+        self.assertEqual([x["reason"] for x in decisions], ["open-tasks", "handback-text", "open-tasks", "no-ledger"])
+        self.assertEqual(conflicts, [])
+
+    def test_two_payloads_under_one_key_are_a_conflict(self) -> None:
+        a = line("2026-10-23T10:05:00.000Z", "block", "open-tasks", refusals=1)
+        a2 = {**a, "reason": "live-shell"}
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "log": [a]}, mirror=[a2])
+        ws = analyze.workspace_of(run)
+        decisions, conflicts = analyze.decisions_for(ws, analyze.receipt_for(ws, "sess-1"), None, "sess-1")
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual([(x["reason"], y["reason"]) for x, y in conflicts], [("open-tasks", "live-shell")])
+
+    def test_an_unfinished_run_reads_the_live_workspace_log_and_jobs(self) -> None:
+        a = line("2026-10-23T10:05:00.000Z", "block", "open-tasks", refusals=1)
+        run = make_run(workspace_ledger=ledger_text(done=[1]), workspace_log=[a], workspace_jobs=[{"name": "soak", "state": "running"}])
+        ws = analyze.workspace_of(run)
+        live = analyze.live_workspace_for(ws, "sess-1")
+        decisions, _ = analyze.decisions_for(ws, None, live, "sess-1")
+        self.assertEqual([x["reason"] for x in decisions], ["open-tasks"])
+        self.assertEqual([j["name"] for j in analyze.jobs_for(None, live)], ["soak"])
+        self.assertEqual(analyze.ledger_tasks_from(analyze.ledger_text_for(None, live)), {1})
+        self.assertEqual(analyze.plan_path_from(analyze.ledger_text_for(None, live)), "plan.md")
+
+    def test_jobs_come_from_the_receipt_when_there_is_one(self) -> None:
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [{"name": "soak", "state": "exited", "code": 0}]},
+                       workspace_ledger=ledger_text(done=[1], sid="stale"), workspace_jobs=[{"name": "stale", "state": "lost"}])
+        ws = analyze.workspace_of(run)
+        jobs = analyze.jobs_for(analyze.receipt_for(ws, "sess-1"), None)
+        self.assertEqual([(j["name"], j["state"]) for j in jobs], [("soak", "exited")])
+        self.assertTrue(jobs[0]["_dir"].endswith("soak-x-0"))
+
+    def test_stop_times_come_from_the_main_transcript_in_order(self) -> None:
+        recs = [human(0, "go"), assistant(10, "Task 1 done. Moving to Task 2."), human(100, "continue"),
+                assistant(110, "Which option do you want?"), human(200, "Task 1 governs"),
+                assistant(210, "Task 1 done. Moving to Task 2."), human(300, "continue"), assistant(310, "All done.")]
+        stops = [("Task 1 done. Moving to Task 2.", "neither"), ("Which option do you want?", "question"),
+                 ("Task 1 done. Moving to Task 2.", "neither"), ("never said", "neither")]
+        timed = analyze.stop_times(stops, recs)
+        self.assertEqual([t for _, _, t in timed], [parse_ts(at(10)), parse_ts(at(110)), parse_ts(at(210)), None])
+
+    def test_the_session_id_is_the_transcript_name_and_a_torn_write_is_not_a_record(self) -> None:
+        run = make_run(sid="sess-2", receipt={"ledger": ledger_text(done=[1], sid="sess-2")})
+        ws = analyze.workspace_of(run)
+        transcript = analyze.main_transcript(ws)
+        self.assertIsNotNone(transcript)
+        sid = analyze.session_id(transcript)  # type: ignore[arg-type]
+        self.assertEqual(sid, "sess-2")
+        self.assertIsNotNone(analyze.receipt_for(ws, sid))
+        # A write that failed part-way leaves an unterminated tail, and the next
+        # append fences it; neither line is a record, however it reads.
+        torn = ledger_text(done=[1]) + "Task 2: complete (commits 0000002..0000003, rev"
+        self.assertEqual(analyze.ledger_tasks_from(torn), {1})
+        fenced = ledger_text(done=[1]) + "Task 2: complete (commits 0000002..0000003, rev\t#fragment\n"
+        self.assertEqual(analyze.ledger_tasks_from(fenced), {1})
+        self.assertIsNone(analyze.plan_path_from("# SDD ledger — plan: plan.md"))
+
+    def test_a_malformed_decision_line_is_skipped_not_fatal(self) -> None:
+        good = line("2026-10-23T10:05:00.000Z", "block", "open-tasks", refusals=1)
+        naive = line("2026-10-23T10:06:00", "allow", "handback-text")
+        run = make_run(receipt={"ledger": ledger_text(done=[1]),
+                                "log": [good, naive, {"ts": "2026-10-23T10:07:00.000Z", "session": "sess-1"}]})
+        ws = analyze.workspace_of(run)
+        log = analyze.receipt_for(ws, "sess-1")
+        assert log is not None
+        (log / "stop-guard.jsonl").write_text(
+            (log / "stop-guard.jsonl").read_text() + "{not json\n" + json.dumps(good) + "\n{\"ts\""
+        )
+        decisions, conflicts = analyze.decisions_for(ws, log, None, "sess-1")
+        self.assertEqual([x["reason"] for x in decisions], ["open-tasks"])
+        self.assertEqual(conflicts, [])
+
+
+class Untracked(unittest.TestCase):
+    def test_shell_spellings(self) -> None:
+        cases = [
+            ("python3 -m unittest tests.test_soak_long -v > out 2>&1", False),
+            ("sleep 100 &", True),
+            ("make && make test", False),
+            ("nohup python3 x.py > o 2>&1", True),
+            ("echo 'nohup sleep &'", False),
+            ("cat > s.sh <<'EOF'\nnohup sleep 9 &\nEOF", False),
+            ("python3 -c 'import subprocess; subprocess.Popen([\"x\"], start_new_session=True)'", True),
+            ("setsid python3 x.py", True),
+            ("grep -n setsid notes.md", False),
+            ("ls &>/dev/null", False),
+            ("cmd; disown", True),
+        ]
+        for command, expected in cases:
+            with self.subTest(command=command):
+                self.assertEqual(analyze.shell_detaches(command), expected)
+
+    def test_executed_session_written_scripts_are_flagged(self) -> None:
+        records = treatment_records()
+        records += [
+            assistant(2000, tools=[("w1", "Write", {"file_path": "/nowhere/run.sh", "content": "nohup sleep 1 &\n"})]),
+            result(2001, "w1", "written"),
+            assistant(2002, tools=[("w2", "Bash", {"command": "bash /nowhere/run.sh"})]),
+            result(2003, "w2", ""),
+            assistant(2010, tools=[("w3", "Bash", {"command": "cat > /nowhere/go.sh <<'EOF'\nsetsid sleep 5\nEOF"})]),
+            result(2011, "w3", ""),
+            assistant(2012, tools=[("w4", "Bash", {"command": "sh /nowhere/go.sh"})]),
+            result(2013, "w4", ""),
+            assistant(2020, tools=[("w5", "Write", {"file_path": "/nowhere/idle.sh", "content": "nohup sleep 1 &\n"})]),
+            result(2021, "w5", "written"),
+            assistant(2030, tools=[("w6", "Bash", {"command": "printf 'nohup sleep 2 &\\n' > /nowhere/r.sh"})]),
+            result(2031, "w6", ""),
+            assistant(2032, tools=[("w7", "Bash", {"command": "bash /nowhere/r.sh"})]),
+            result(2033, "w7", ""),
+            assistant(2040, tools=[("w8", "Edit", {"file_path": "/x/coding-agent-workdir/tools/e.sh", "old_string": "a", "new_string": "b"})]),
+            result(2041, "w8", "edited"),
+            assistant(2042, tools=[("w9", "Bash", {"command": "sh tools/e.sh"})]),
+            result(2043, "w9", ""),
+            assistant(2044, tools=[("wt", "Write", {"file_path": "/nowhere/t.sh", "content": "echo hi\n"})]),
+            result(2045, "wt", "written"),
+            assistant(2046, tools=[("we", "Edit", {"file_path": "/nowhere/t.sh", "old_string": "echo hi", "new_string": "nohup sleep 1 &"})]),
+            result(2047, "we", "edited"),
+            assistant(2048, tools=[("wx", "Bash", {"command": "bash /nowhere/t.sh"})]),
+            result(2049, "wx", ""),
+            assistant(2050, tools=[("wa", "Bash", {"command": "bash -c 'nohup sleep 9 &'"})]),
+            result(2051, "wa", ""),
+            assistant(2060, tools=[("wb", "Bash", {"command": "cat > /nowhere/inline.sh <<'EOF'\nnohup sleep 7 &\nEOF\nbash /nowhere/inline.sh"})]),
+            result(2061, "wb", ""),
+            assistant(2062, tools=[("wc", "Bash", {"command": "printf 'setsid sleep 1\\n' > /nowhere/r2.sh && sh /nowhere/r2.sh"})]),
+            result(2063, "wc", ""),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            record = make_run(Path(tmp), "t9", records, plugin_dir="/roots/treatment")
+            edited = Path(tmp) / "workspaces" / "t9" / "coding-agent-workdir" / "tools" / "e.sh"
+            edited.parent.mkdir(parents=True)
+            edited.write_text("setsid sleep 3\n")
+            found = analyze.measure(record, {})["untracked"]
+        files = sorted(u["detail"] for u in found if u["where"] == "file")
+        self.assertEqual(
+            files,
+            [
+                "/nowhere/go.sh",
+                "/nowhere/inline.sh",
+                "/nowhere/r.sh",
+                "/nowhere/r2.sh",
+                "/nowhere/run.sh",
+                "/nowhere/t.sh",
+                "/x/coding-agent-workdir/tools/e.sh",
+            ],
+        )
+        self.assertEqual([u["detail"] for u in found if u["where"] == "command"], ["bash -c 'nohup sleep 9 &'"])
+
+    def test_soak_execution_matching(self) -> None:
+        self.assertTrue(analyze.runs_soak("python3 -m unittest tests.test_soak_short -v", "test_soak_short"))
+        self.assertTrue(analyze.runs_soak("python3 -m unittest discover -s tests", "test_soak_long"))
+        self.assertFalse(analyze.runs_soak('python3 -m unittest discover -s tests -p "test_unit_*.py"', "test_soak_long"))
+        self.assertFalse(analyze.runs_soak("grep test_soak_short plan.md", "test_soak_short"))
+        self.assertFalse(analyze.runs_soak('grep -n "unittest tests.test_soak_long" plan.md', "test_soak_long"))
+        self.assertFalse(analyze.runs_soak('git commit -m "run python3 -m unittest tests.test_soak_short"', "test_soak_short"))
+        self.assertTrue(analyze.runs_soak("cd /x && PYTHONPATH=. python3 -m unittest tests.test_soak_long -v", "test_soak_long"))
+        self.assertTrue(analyze.runs_soak("nohup python3 -m unittest tests.test_soak_long -v > o 2>&1 &", "test_soak_long"))
+
+
+class Summary(unittest.TestCase):
+    def test_transcript_summary_counts_the_dispatches_and_the_waits(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = write(Path(tmp) / "s.jsonl", control_records())
+            summary = analyze.transcript_summary(path)
+        self.assertEqual((summary["dispatch_fg"], summary["dispatch_bg"]), (0, 2))
+        self.assertEqual(summary["live_turn_ends"], 1)
+        self.assertEqual(summary["censored_stops"], 0)
+        self.assertEqual(summary["untracked"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
