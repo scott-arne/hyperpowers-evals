@@ -37,6 +37,11 @@ from synth import (
 
 CONTROL_STOPS = (("Moving to Task 3.", "neither"),)
 TRACKED_JOB = "bash /roots/treatment/skills/subagent-driven-development/scripts/tracked-job"
+LONG_JOB = {
+    "name": "soak-long", "state": "exited", "code": 0,
+    "command": ["python3", "-m", "unittest", "tests.test_soak_long", "-v"],
+    "launched": "2026-10-23T10:00:00.000Z", "ended": "2026-10-23T10:12:30.000Z",
+}
 
 
 def drop_call(records: list[dict[str, Any]], tool_id: str) -> list[dict[str, Any]]:
@@ -56,10 +61,14 @@ def successful_run_kwargs() -> dict[str, Any]:
     return {"records": treatment_records(), "receipt": {"ledger": ledger_text(done=range(1, 7))}}
 
 
-def watch_records(job: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Main-session records whose one foreground Bash call watches ``job`` to its exit."""
+def watch_records(job: Mapping[str, Any], quote: str = "") -> list[dict[str, Any]]:
+    """Main-session records whose one foreground Bash call watches ``job`` to its exit.
+
+    :param job: the tracked-job record the wait names.
+    :param quote: the quote character the session wrapped the job path in, if any.
+    """
     # ``_record_dir`` names the first job directory of a receipt after the job.
-    jobdir = f"jobs/{job['name']}-x-0"
+    jobdir = f"{quote}jobs/{job['name']}-x-0{quote}"
     command = f"{TRACKED_JOB} wait {jobdir} --max-ms 600000"
     return [
         human(0, "go"),
@@ -405,6 +414,41 @@ class Measures(unittest.TestCase):
             [],
         )
 
+    def test_one_allow_in_two_windows_answers_only_the_first_stop(self) -> None:
+        # The windows of two stops a few seconds apart overlap, so an allow can
+        # sit in both; it still answers one of them, and the stop left over is
+        # a stop the hook recorded no decision for.
+        stops = [("first", "question", parse_ts(at(10))), ("second", "question", parse_ts(at(20)))]
+        matched, unmatched = analyze.match_allows(stops, [line(at(22), "allow", "handback-text")])
+        self.assertEqual([q for q, _, _, _ in matched], ["first"])
+        self.assertEqual([q for q, _, _ in unmatched], ["second"])
+
+    def test_a_stop_takes_the_nearest_allow_and_a_tie_takes_the_earlier(self) -> None:
+        stop = [("q", "question", parse_ts(at(100)))]
+        # 98.5 s is inside the 2 s backward tolerance but further away than 101 s.
+        matched, _ = analyze.match_allows(
+            stop, [line(at(98.5), "allow", "handback-line"), line(at(101), "allow", "handback-text")]
+        )
+        self.assertEqual(matched[0][3]["ts"], at(101))
+        # Equally far on either side, and handed over in the wrong order: the
+        # earlier allow wins, so the answer does not depend on log order.
+        matched, _ = analyze.match_allows(
+            stop, [line(at(101), "allow", "handback-text"), line(at(99), "allow", "handback-line")]
+        )
+        self.assertEqual(matched[0][3]["ts"], at(99))
+
+    def test_only_a_hand_back_allow_is_owed_an_adjudication(self) -> None:
+        # H2 asks whether each hand-back allow was a genuine hand-back. A
+        # `no-ledger` or `ambiguous` allow says the hook found no plan to judge,
+        # so there is nothing for the human partner to label.
+        run = make_run(receipt={"ledger": ledger_text(done=[1]),
+                                "log": [line(at(10), "allow", "no-ledger", plan=None),
+                                        line(at(20), "allow", "ambiguous", plan=None)]})
+        self.assertEqual(analyze.measure(run, {})["unadjudicated_allows"], 0)
+        run = make_run(receipt={"ledger": ledger_text(done=[1]),
+                                "log": [line(at(10), "allow", "handback-text")]})
+        self.assertEqual(analyze.measure(run, {})["unadjudicated_allows"], 1)
+
     def test_adjudication_labels_blocks_and_allows_by_timestamp(self) -> None:
         log = [line(at(10), "block", "open-tasks", refusals=1), line(at(20), "allow", "handback-text"),
                line(at(30), "allow", "handback-line"), line(at(40), "block", "open-tasks", refusals=1)]
@@ -420,9 +464,7 @@ class Measures(unittest.TestCase):
         self.assertEqual(analyze.measure(run, {})["decision_conflicts"], 1)
 
     def test_long_ok_needs_the_job_record_and_the_foreground_watch(self) -> None:
-        job = {"name": "soak-long", "state": "exited", "code": 0,
-               "command": ["python3", "-m", "unittest", "tests.test_soak_long", "-v"],
-               "launched": "2026-10-23T10:00:00.000Z", "ended": "2026-10-23T10:12:30.000Z"}
+        job = dict(LONG_JOB)
         run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]}, records=watch_records(job))
         self.assertTrue(analyze.measure(run, {})["long_ok"])
         job_fast = {**job, "ended": "2026-10-23T10:03:00.000Z"}
@@ -434,6 +476,26 @@ class Measures(unittest.TestCase):
         run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [{**job, "state": "lost"}]},
                        records=watch_records(job))
         self.assertFalse(analyze.measure(run, {})["long_ok"])
+
+    def test_a_quoted_job_path_in_the_wait_command_still_matches(self) -> None:
+        # A session that quotes the job path waited on the same job; the shell
+        # strips the quotes before tracked-job ever sees them.
+        job = dict(LONG_JOB)
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                       records=watch_records(job, quote='"'))
+        self.assertTrue(analyze.measure(run, {})["long_ok"])
+
+    def test_a_verdict_void_keeps_its_kind_when_the_archive_is_also_broken(self) -> None:
+        # `void-instrument` is uncapped, so relabelling a capped void would give
+        # the campaign a free attempt it has not earned.
+        run = make_run(final="indeterminate",
+                       gauntlet={"status": "investigate", "run_id": "r1",
+                                 "summary": "gauntlet exited (status 1) without writing a result"},
+                       workspace_ledger=ledger_text(done=[1]),
+                       extra_workspaces=[{"ledger": ledger_text(done=[2])}])
+        m = analyze.measure(run, {})
+        self.assertEqual(m["void"], "void-other")
+        self.assertIn("2 live workspaces", m["void_detail"])
 
     def test_live_shell_turn_ends_count_only_shells(self) -> None:
         run = make_run(records=turn_end_with_live("shell"))

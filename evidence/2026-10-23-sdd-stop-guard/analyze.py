@@ -713,7 +713,11 @@ def long_ok_from(job: Mapping[str, Any] | None, calls: Sequence[Call]) -> bool:
         if call.name != "Bash" or call.inp.get("run_in_background"):
             continue
         m = TJ_WAIT.search(str(call.inp.get("command") or ""))
-        if m and Path(m.group(1)).name == name and "status=exited code=0" in (call.result or ""):
+        if m is None:
+            continue
+        # The capture runs to the next space, so a quoted job path keeps its
+        # quote characters; the shell does not pass those on to tracked-job.
+        if Path(m.group(1).strip("'\"")).name == name and "status=exited code=0" in (call.result or ""):
             return True
     return False
 
@@ -1166,8 +1170,12 @@ def measure(record: Path, adjudicated: Mapping[tuple[str, str], str]) -> dict[st
             live = live_workspace_for(workspace, sid)
         except ArtifactError as err:
             # Two workspaces claiming one session leaves no answer to whose log
-            # and job records are the run's, so the run is not measurable.
-            out["void"] = "void-instrument"
+            # and job records are the run's, so the run is not measurable. A
+            # verdict that already named a void keeps its kind: that kind is
+            # what decides whether the attempt counts against the capped-void
+            # budget, and `void-instrument` is uncapped, so relabelling a
+            # capped void here would hand the campaign a free retry.
+            out["void"] = out["void"] or "void-instrument"
             out["void_detail"] = str(err)
     out["receipt"] = str(receipt) if receipt is not None else None
     out["plan_path"] = plan_path_from(ledger_text_for(receipt, live))
