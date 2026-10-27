@@ -16,7 +16,8 @@
 # subdirectory and the caller names the task directory, so the campaign files
 # treatment to task-20-runs, smoke and t1 to task-19-runs, and the Z4
 # contingency's repeat to task-21-runs. Staging (git add -f) and the leak scan
-# are done at commit time; the post-check below runs here, over the copies.
+# are done at commit time; the post-check below runs here, over the copies, and
+# archive-runs.test.sh covers it against synthetic runs.
 # Adapted from ../2026-10-19-sdd-turn-liveness/archive-runs.sh.
 set -euo pipefail
 arm="$1"; task_dir="$2"
@@ -103,7 +104,9 @@ receipts_in() {
 ledger_complete() {
   # Whether a ledger in the archived cache records the plan's last task
   # complete: the receipt's copy at receipts/<ws>/progress.md, or a live plan
-  # workspace's at {state,sdd}/<key>/plans/<ws>/progress.md.
+  # workspace's at {state,sdd}/<key>/plans/<ws>/progress.md. Reported, never
+  # decided on: the design lets every task be complete while the final review
+  # and Finish remain, so this line says nothing about whether Finish ran.
   local cache=$1 f
   [ -d "$cache" ] || return 1
   while IFS= read -r f; do
@@ -112,27 +115,113 @@ ledger_complete() {
   return 1
 }
 
+finish_state() {
+  # Whether the run reached Finish, read from its archived main transcript:
+  # a Bash call running `sdd-state finish` whose tool result carries the
+  # helper's `status=finished` line. Prints two words, `<yes|no> <yes|no|na>`:
+  # whether Finish ran, and whether that line published a receipt
+  # (`receipt=none` is a Finish that could not publish one).
+  #
+  # The receipt and the mirror cannot answer this question themselves: they are
+  # the artifacts whose loss the post-check exists to detect, so a run that
+  # lost its whole cache would read as "never finished" and pass. The
+  # transcript is the independent record. The reader is the campaign's own
+  # (analyze.main_transcript picks the transcript, analyze's lexer splits the
+  # command) so that the archive and the analyzer never disagree about what a
+  # run did.
+  python3 -IB - "$1" "$E" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+workspace = Path(sys.argv[1])
+sys.path.insert(0, sys.argv[2])
+import analyze
+
+FINISHED = re.compile(r"^status=finished\b")
+
+
+def runs_finish(command: str) -> bool:
+    """Whether one Bash command runs `sdd-state finish`."""
+    for segment in analyze._segments(command):
+        words = analyze._command_words(segment)
+        if not words:
+            continue
+        # `bash <path>/sdd-state finish ...` is the same call as the bare one.
+        head = 1 if Path(words[0]).name in ("bash", "sh") and len(words) > 1 else 0
+        if Path(words[head]).name == "sdd-state" and words[head + 1:head + 2] == ["finish"]:
+            return True
+    return False
+
+
+transcript = analyze.main_transcript(workspace)
+finished = published = unpublished = False
+if transcript is not None:
+    calls: set[str] = set()
+    for rec in analyze.load(transcript):
+        for use in analyze.tool_uses(rec):
+            command = analyze.tool_input(use).get("command")
+            if use.get("name") == "Bash" and isinstance(use.get("id"), str) and isinstance(command, str) and runs_finish(command):
+                calls.add(use["id"])
+        if not analyze.is_tool_result(rec):
+            continue
+        for block in analyze.blocks(rec):
+            if block.get("type") != "tool_result" or block.get("tool_use_id") not in calls:
+                continue
+            if block.get("is_error") is True:
+                continue
+            for line in analyze.result_text(block).splitlines():
+                if not FINISHED.match(line):
+                    continue
+                finished = True
+                # A retry that published wins over an earlier staging failure.
+                if "receipt=none" in line.split():
+                    unpublished = True
+                else:
+                    published = True
+print("yes" if finished else "no", "yes" if published else ("no" if unpublished else "na"))
+PY
+}
+
 post_check() {
   # ../README.md step 4 asks whether each archived run carries what its outcome
   # leaves behind. For this campaign that is the stop guard's own record: a run
-  # that reached Finish wrote a receipt, and every run the hook ran in wrote the
-  # session mirror the analyzer unions with the receipt's log. Both are read
-  # from the copy, because the copy is what the analyzer and the tally read.
+  # that reached Finish wrote a receipt (the ledger and job records the
+  # analyzer reads) and the session mirror it unions with the receipt's log.
+  # Both are read from the copy, because the copy is what the analyzer and the
+  # tally read, and Finish is read from the transcript rather than from the
+  # artifacts themselves. A run that never reached Finish is reported and
+  # passes: the analyzer reads it from its live plan workspace.
   local id=$1
-  local cache="$out/workspaces/$id/home/.cache/hyperpowers"
-  local receipts mirrors finish=no
+  local ws="$out/workspaces/$id"
+  local cache="$ws/home/.cache/hyperpowers"
+  local receipts mirrors ledger state finish published rc=0
   receipts=$(receipts_in "$cache/receipts" | wc -l | tr -d ' ')
   mirrors=0
   if [ -d "$cache/stop-guard" ]; then
     mirrors=$(find "$cache/stop-guard" -maxdepth 1 -type f -name '*.jsonl' | wc -l | tr -d ' ')
   fi
-  if [ "$receipts" -gt 0 ] || ledger_complete "$cache"; then finish=yes; fi
-  echo "post-check $arm $id: finish=$finish receipts=$receipts mirrors=$mirrors"
-  if [ "$finish" = yes ] && { [ "$receipts" -eq 0 ] || [ "$mirrors" -eq 0 ]; }; then
-    echo "post-check failed: $arm $id reached Finish with receipts=$receipts mirrors=$mirrors" >&2
+  if ledger_complete "$cache"; then ledger=yes; else ledger=no; fi
+  if ! state=$(finish_state "$ws"); then
+    echo "post-check $arm $id: the transcript reader failed" >&2
     return 1
   fi
-  return 0
+  finish=${state% *}; published=${state#* }
+  echo "post-check $arm $id: finish=$finish receipt_published=$published receipts=$receipts mirrors=$mirrors ledger_last_task=$ledger"
+  [ "$finish" = yes ] || return 0
+  if [ "$receipts" -eq 0 ]; then
+    echo "post-check failed: $arm $id reached Finish with no receipt under home/.cache/hyperpowers/receipts" >&2
+    rc=1
+  fi
+  if [ "$mirrors" -eq 0 ]; then
+    echo "post-check failed: $arm $id reached Finish with no session mirror under home/.cache/hyperpowers/stop-guard" >&2
+    rc=1
+  fi
+  if [ "$published" = no ]; then
+    echo "post-check failed: $arm $id finished with receipt=none: Finish could not publish its receipt" >&2
+    rc=1
+  fi
+  return $rc
 }
 
 for id in $ids; do archive "$id"; done
