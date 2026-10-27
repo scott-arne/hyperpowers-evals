@@ -42,6 +42,8 @@ TRACKED_JOB = f"bash {ROOT}/skills/subagent-driven-development/scripts/tracked-j
 LAST_TEXT = "The long soak exited 0."
 LAST_END = 2510.0
 ALLOW_TS = at(1920)
+# A verdict the Gauntlet-Agent errored out of: a void the cap counts.
+CAPPED_VOID = {"final": "indeterminate", "gauntlet": {"status": "investigate", "summary": "harness error"}}
 STOP_ALLOW_TS = at(LAST_END + 5)
 
 
@@ -252,6 +254,26 @@ class Evaluate(unittest.TestCase):
             self.c.run(f"t1{n}", f"r{n}", **broken)
         self.c.run("t20", "r1", **clean_run())
         self.assertEqual(self.c.evaluate()[1]["decision"], "PASS")
+
+    def test_a_capped_void_keeps_its_kind_when_its_decision_record_is_also_broken(self) -> None:
+        # `void-instrument` is uncapped, so promoting a capped void because its
+        # record is unreadable too would hand the campaign an attempt it has
+        # not earned; `analyze.measure` refuses the same relabelling.
+        self.c.runs(10)
+        block = line(ALLOW_TS, "block", "open-tasks", refusals=1)
+        shapes = (
+            with_log([], stops=[(LAST_TEXT, "question")], **CAPPED_VOID),
+            with_log([block], mirror=[{**block, "reason": "live-shell"}], **CAPPED_VOID),
+        )
+        for n in range(4):
+            self.c.run(f"t-c{n}", f"r{n + 1}", **shapes[n % 2])
+        rows, d = self.c.evaluate()
+        voided = [r for r in rows if r["run_id"].startswith("t-c")]
+        # Each run carries the instrument failure the guard declines to act on.
+        self.assertTrue(all(r["unmatched_stops"] or r["decision_conflicts"] for r in voided))
+        self.assertEqual({r["status"] for r in voided}, {"void-other"})
+        self.assertEqual(d["decision"], "INCOMPLETE")
+        self.assertIn(f"{ARM}: 4 capped voids exceed the cap of 3", d["reasons"])
 
     def test_claude_code_change_in_a_run_restarts(self) -> None:
         self.c.runs(9)
