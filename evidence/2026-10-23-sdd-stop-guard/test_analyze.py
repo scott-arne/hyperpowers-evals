@@ -676,6 +676,31 @@ class Measures(unittest.TestCase):
                 self.assertIsNone(m["long_job"], label)
                 self.assertFalse(m["long_ok"], label)
 
+    def test_a_command_substitution_hides_the_soak_s_exit(self) -> None:
+        # `_split_ops` reads a `;` inside `$( )` as a top-level operator, so
+        # the fragment after it would pose as the final command while the
+        # exit belongs to the command the substitution feeds; any `$(` or
+        # backtick in the judged text fails closed instead.
+        soak = "python3 -m unittest tests.test_soak_long"
+        for label, command in (
+            ("a failing soak inside echo's substitution",
+             ["bash", "-c", f"sleep 601; echo $(true; {soak}.NoSuch)"]),
+            ("the soak as a substitution's whole body", ["bash", "-c", f"echo $({soak})"]),
+            ("a backtick substitution", ["bash", "-c", f"sleep 601; echo `true; {soak}`"]),
+        ):
+            with self.subTest(label):
+                job = {**LONG_JOB, "command": command}
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(wait_command(job)))
+                m = analyze.measure(run, {})
+                self.assertIsNone(m["long_job"], label)
+                self.assertFalse(m["long_ok"], label)
+        # The watch is read by the same rule: a wait reached through a
+        # substitution is a documented false negative, a plain one still answers.
+        jobdir = f"jobs/{LONG_JOB['name']}-x-0"
+        self.assertIsNone(analyze._waited_job(f"cd $(pwd) && {TRACKED_JOB} wait {jobdir} --max-ms 600000"))
+        self.assertEqual(analyze._waited_job(f"{TRACKED_JOB} wait {jobdir} --max-ms 600000"), jobdir)
+
     def test_the_wait_must_be_the_last_thing_the_call_runs(self) -> None:
         # The call's output is the proof, so it has to be the helper's own
         # answer: anything running after the wait can print over it.

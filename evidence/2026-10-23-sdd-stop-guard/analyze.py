@@ -807,8 +807,18 @@ def _proven_final(command: str, pipes: bool = True) -> str | None:
     :param command: one shell command's text.
     :param pipes: whether ``|`` separates segments as the other operators do.
     :returns: the final segment, or None when it is empty, the shell may
-        have skipped it, or the shell never waited for it.
+        have skipped it, the shell never waited for it, or the text carries
+        a command substitution.
     """
+    # A command substitution runs its body inside the word that carries it,
+    # and `_split_ops` reads the body's `;` as a top-level operator, so a
+    # fragment of the body would pose as the final command while the exit
+    # belongs to the command the substitution feeds (`echo $(true; <soak>)`
+    # exits 0 whatever the soak did). Nothing proves such a fragment ran, so
+    # the whole text is unproven; a watch reached through `$(...)` is the
+    # false negative this accepts.
+    if "$(" in command or "`" in command:
+        return None
     final: str | None = None
     proven = False
     joins: list[str] = []
