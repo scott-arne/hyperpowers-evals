@@ -568,6 +568,29 @@ class Measures(unittest.TestCase):
                        records=watch_records(wait_command(ran)))
         self.assertTrue(analyze.measure(run, {})["long_ok"])
 
+    def test_the_soak_must_be_the_command_the_job_s_exit_belongs_to(self) -> None:
+        # The record proves only that the job exited 0, so the soak has to be
+        # the command that exit belongs to. A soak the shell may have skipped
+        # or whose status another command replaced reads the same from here.
+        soak = "python3 -m unittest tests.test_soak_long -v"
+        for label, command, expected in (
+            ("skipped after ||", ["bash", "-c", f"sleep 601; true || {soak}"], False),
+            ("reached after ;", ["bash", "-c", f"sleep 601; {soak}"], True),
+            ("reached after &&", ["bash", "-c", "cd /x && python3 -m unittest tests.test_soak_long"], True),
+            # An accepted false negative: `true` owns the job's exit status,
+            # so an exit 0 says nothing about the soak that ran before it.
+            ("followed by another command", ["bash", "-c", f"{soak}; true"], False),
+            ("the target of a pipe", ["bash", "-c", f"cat names.txt | {soak}"], False),
+            ("the direct argv", ["python3", "-m", "unittest", "tests.test_soak_long"], True),
+        ):
+            with self.subTest(label):
+                job = {**LONG_JOB, "command": command}
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(wait_command(job)))
+                m = analyze.measure(run, {})
+                self.assertEqual(m["long_job"] is not None, expected, label)
+                self.assertEqual(m["long_ok"], expected, label)
+
     def test_the_wait_must_be_the_last_thing_the_call_runs(self) -> None:
         # The call's output is the proof, so it has to be the helper's own
         # answer: anything running after the wait can print over it.
@@ -586,6 +609,26 @@ class Measures(unittest.TestCase):
                 run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
                                records=watch_records(command, text=text))
                 self.assertFalse(analyze.measure(run, {})["long_ok"], label)
+
+    def test_the_wait_must_run_whatever_it_follows(self) -> None:
+        # `||` runs its right side only when the left side failed, so the
+        # call exiting 0 cannot tell a wait that ran from one the shell
+        # jumped over; `;` and `&&` reach their right side either way.
+        job = dict(LONG_JOB)
+        wait = f"{TRACKED_JOB} wait jobs/{job['name']}-x-0 --max-ms 600000"
+        for label, command, expected in (
+            ("skipped behind a forged status line", f"echo status=exited code=0; true || {wait}", False),
+            # An accepted false negative: this wait did run, and its own
+            # verdict is the result, but `false || ` is the shape a forgery
+            # hides in and the exit status cannot separate the two.
+            ("after ||", f"false || {wait}", False),
+            ("after a newline continuing ||", f"true ||\n{wait}", False),
+            ("after &&", f"cd /x/coding-agent-workdir && {wait}", True),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command))
+                self.assertEqual(analyze.measure(run, {})["long_ok"], expected, label)
 
     def test_the_verdict_is_the_last_line_the_wait_printed(self) -> None:
         job = dict(LONG_JOB)

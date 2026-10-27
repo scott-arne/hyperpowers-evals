@@ -92,6 +92,12 @@ WAIT_SHELLS = frozenset({"bash", "sh"})
 # The shells a job record's argv can name, which run the operand after `-c`
 # and take the words beyond it as `$0` and its arguments.
 SHELL_RUNNERS = frozenset({"bash", "sh", "zsh"})
+# The operators under which a command exiting 0 proves the segment after
+# them ran: nothing (one command), `;` (which `_split_ops` also reports for
+# a newline) and `&&`. After `||` the segment runs only when its left side
+# failed, and a pipeline's exit status is its last command's, so neither
+# shape lets an exit 0 say the segment executed.
+PROVEN_OPS = frozenset({"", ";", "&&"})
 # `tracked-job wait` prints its verdict last on stdout, after any note it
 # makes, so the verdict is the result's last non-blank line and nowhere else.
 WAIT_EXITED = re.compile(r"^status=exited code=0\r?$")
@@ -768,6 +774,31 @@ def _segments(command: str, pipes: bool = True) -> list[str]:
     return [segment for _, segment in _split_ops(command, pipes)]
 
 
+def _proven_final(command: str, pipes: bool = True) -> str | None:
+    """The command's last non-empty segment, when exiting 0 proves it ran.
+
+    Exit status is all a job record or a tool result carries, and it answers
+    for one command: the last one the shell reached. So the final segment
+    counts only when every operator joining it to what precedes it is in
+    ``PROVEN_OPS``; an empty segment carries its operator forward, because
+    a ``||`` at the end of a line still governs the line below it.
+
+    :param command: one shell command's text.
+    :param pipes: whether ``|`` separates segments as the other operators do.
+    :returns: the final segment, or None when it is empty or the shell may
+        have skipped it.
+    """
+    final: str | None = None
+    proven = False
+    joins: list[str] = []
+    for op, segment in _split_ops(command, pipes):
+        joins.append(op)
+        if segment.strip():
+            final, proven = segment, all(join in PROVEN_OPS for join in joins)
+            joins = []
+    return final if proven else None
+
+
 def _heredoc_command(command: str, match: re.Match[str]) -> str:
     """The pipeline a heredoc feeds: its line on both sides of the ``<<``, cut at ``;``, ``&&`` and ``||``."""
     start = command.rfind("\n", 0, match.start()) + 1
@@ -910,17 +941,29 @@ def _runs_long_soak(job: Mapping[str, Any]) -> bool:
     The argv is read the way the shell reads it, not as a bag of strings.
     ``sh -c <command> <argv0> <args...>`` executes the one operand after
     ``-c``; the words beyond it become ``$0`` and its arguments, so a soak
-    command parked there never runs. Every other argv is one command, which
-    ``runs_soak`` judges after the argv is quoted back into shell form. A job
-    that only mentions the soak (``echo test_soak_long``) runs nothing.
+    command parked there never runs. Every other argv is one command, read
+    after the argv is quoted back into shell form. A job that only mentions
+    the soak (``echo test_soak_long``) runs nothing.
+
+    What the record then proves is that the job exited 0, and that exit
+    belongs to the last command the shell reached, so only a soak that is
+    that command counts (``_proven_final``). A soak after ``||`` ran only if
+    its left side failed, a piped soak's status is the pipeline's last
+    command's, and a soak with anything after it (``<soak>; true``) hands the
+    exit to that command — an exit 0 cannot tell any of them from a soak that
+    never ran. The last is a false negative the rule accepts for the
+    forgeries it keeps out.
     """
     argv = [str(part) for part in job.get("command") or []]
     if not argv:
         return False
     if Path(argv[0]).name in SHELL_RUNNERS and "-c" in argv[1:]:
         operand = argv[argv.index("-c", 1) + 1 :]
-        return bool(operand) and runs_soak(operand[0], LONG_SOAK)
-    return runs_soak(shlex.join(argv), LONG_SOAK)
+        text = operand[0] if operand else ""
+    else:
+        text = shlex.join(argv)
+    final = _proven_final(text)
+    return final is not None and runs_soak(final, LONG_SOAK)
 
 
 def _waited_job(command: str) -> str | None:
@@ -931,17 +974,20 @@ def _waited_job(command: str) -> str | None:
     message quoting the wait launches nothing and watches nothing. A segment
     the shell lexer cannot split is not a watch either.
 
-    The wait also has to be the last thing the call runs. Setup may precede it
-    — a ``cd``, an assignment — but anything after it, a pipe included, can
-    print over the helper's answer, and that answer is the whole proof: a call
-    ending in ``; echo status=exited code=0`` reports a success the helper
-    never gave. A watch whose output is piped is read as no watch, a false
-    negative the rule accepts to keep the forgery out.
+    The wait also has to be the last thing the call runs, and the call has to
+    have reached it (``_proven_final``). Setup may precede it under ``;`` or
+    ``&&`` — a ``cd``, an assignment — but anything after it, a pipe included,
+    can print over the helper's answer, and that answer is the whole proof: a
+    call ending in ``; echo status=exited code=0`` reports a success the
+    helper never gave. A wait after ``||`` ran only if its left side failed,
+    which the call's exit 0 cannot show, so ``echo status=exited code=0; true
+    || <wait>`` is no watch either. A real watch in either shape is read as
+    none, a false negative the rule accepts to keep the forgery out.
     """
-    segments = [segment for segment in _segments(_strip_heredocs(command)) if segment.strip()]
-    if not segments:
+    final = _proven_final(_strip_heredocs(command))
+    if final is None:
         return None
-    words = _command_words(segments[-1])
+    words = _command_words(final)
     if not words:
         return None
     if Path(words[0]).name in WAIT_SHELLS and len(words) > 1:
