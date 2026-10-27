@@ -226,6 +226,19 @@ events the bound drops are each session's brainstorming and planning phase
 before SDD was invoked. The field rule's threshold is half the baseline rate
 under whichever instrument measures both windows.
 
+**The hook's record is the after-window's second measure.** Beside `field.py`
+over the window, `python3 field_hook.py --since <window start> --until <window
+end>` reads the same cohort's per-session mirrors at
+`<cache>/hyperpowers/stop-guard/<session id>.jsonl` and reports blocks per 100
+boundaries on the transcript measure's denominator, allows by reason, and the
+counts of `cap`, `log-failed` and `hook-error` events, `mirror_failed` marks
+and malformed lines. Its `misses` list is the "hook's misses" the rule names:
+hand-back allows the hook made within a minute of a turn end the transcript
+measure scores as premature, each with its session, with the `cap` events
+counted beside them. A session the cohort holds and the mirror does not is
+reported as a session without a log rather than as a session without
+decisions.
+
 ### The baseline
 
 `field/baseline.json`, recomputed by `field.py` over the host's Zed SDD
