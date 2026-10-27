@@ -92,6 +92,12 @@ WAIT_SHELLS = frozenset({"bash", "sh"})
 # The shells a job record's argv can name, which run the operand after `-c`
 # and take the words beyond it as `$0` and its arguments.
 SHELL_RUNNERS = frozenset({"bash", "sh", "zsh"})
+# The shell options whose value is the next word, which the scan for the
+# `-c` operand has to step over rather than read as an option of its own.
+SHELL_VALUE_OPTIONS = frozenset({"-o", "+o", "-O", "+O", "--rcfile", "--init-file"})
+# The interpreters that run a test module with `-m unittest`; no other head
+# executes the soak, whatever its arguments quote.
+PYTHON_RUNNERS = frozenset({"python", "python3"})
 # The operators under which a command exiting 0 proves the segment after
 # them ran: nothing (one command), `;` (which `_split_ops` also reports for
 # a newline) and `&&`. After `||` the segment runs only when its left side
@@ -959,6 +965,13 @@ def _shell_operand(words: Sequence[str]) -> str | None:
     operand after ``-c``; the words beyond it become ``$0`` and its
     arguments, so a command parked there never runs.
 
+    The scan walks the shell's own options, which may be introduced by ``-``
+    or by ``+`` (``bash +o posix -c ...``). An option that takes a value
+    carries its value in the next word, and reading that word as an option
+    would end the scan at the first ``bash -o pipefail -c <command>``: the
+    operand would be missed, and whatever stood in for it read as the
+    command the shell ran.
+
     :param words: one command's words, its assignments and prefixes already
         dropped (``_command_words``), or a job record's argv.
     :returns: the operand after ``-c``, or None when the words do not run a
@@ -967,8 +980,11 @@ def _shell_operand(words: Sequence[str]) -> str | None:
     if not words or Path(words[0]).name not in SHELL_RUNNERS:
         return None
     rest = list(words[1:])
-    while rest and rest[0].startswith("-") and len(rest[0]) > 1:
+    while rest and len(rest[0]) > 1 and rest[0][0] in "-+":
         option, rest = rest[0], rest[1:]
+        if option in SHELL_VALUE_OPTIONS:
+            rest = rest[1:]
+            continue
         # `-c` may travel clustered with other short flags (`bash -ec ...`),
         # and whichever flag carries it, the operand is the next word.
         if not option.startswith("--") and "c" in option:
@@ -1001,33 +1017,75 @@ def _proven_innermost(command: str) -> str | None:
     return None
 
 
+def _is_soak_command(segment: str, name: str) -> bool:
+    """Whether one command is itself a ``python -m unittest`` run of the named soak.
+
+    A job record carries an exit status and nothing else, so the soak counts
+    only when the soak is the command that exited. That makes the head of the
+    command the question: an ``echo`` quoting the covering command in an
+    argument, an ``eval`` or an ``exec`` of it, or a command substitution
+    carrying it (``echo $(<soak>)``, whose status is echo's) all run some
+    other program over the soak's words.
+
+    The words are re-joined before ``runs_soak`` reads them, so the pattern
+    sees the invocation with its environment prefix already dropped
+    (``env VAR=1 python3 -m unittest ...``) and sees an operator quoted
+    inside an argument as the quoted text it is.
+
+    :param segment: one shell command's text.
+    :param name: the soak test's module name.
+    :returns: whether the segment is a direct invocation of that soak.
+    """
+    words = _command_words(segment)
+    if not words or Path(words[0]).name not in PYTHON_RUNNERS or words[1:3] != ["-m", "unittest"]:
+        return False
+    return runs_soak(shlex.join(words), name)
+
+
 def _runs_long_soak(job: Mapping[str, Any]) -> bool:
     """Whether a job record's argv actually runs the long soak.
 
-    The argv is read the way the shell reads it, not as a bag of strings.
-    ``sh -c <command> <argv0> <args...>`` executes the one operand after
-    ``-c``; the words beyond it become ``$0`` and its arguments, so a soak
-    command parked there never runs. Every other argv is one command, read
-    after the argv is quoted back into shell form. A job that only mentions
-    the soak (``echo test_soak_long``) runs nothing.
+    The argv is read the way it is executed, not as a bag of strings, and
+    only two shapes can be the soak. A shell argv0 (after its assignments
+    and prefixes) runs the one operand after ``-c``; the words beyond it
+    become ``$0`` and its arguments, so a soak parked there never runs, and
+    a shell with no ``-c`` at all runs a script this measure cannot see
+    into. Every other argv is one command, read after the argv is quoted
+    back into shell form. Either way the command has to be the soak itself
+    (``_is_soak_command``), because the record proves only that something
+    exited 0: a job that merely carries the soak's words (``echo
+    test_soak_long``, ``echo "a | <soak>"``) ran nothing.
 
-    What the record then proves is that the job exited 0, and that exit
-    belongs to the last command the shell reached, so only a soak that is
-    that command counts (``_proven_innermost``). A soak after ``||`` ran only
-    if its left side failed, a piped soak's status is the pipeline's last
-    command's, a soak the shell does not wait for (``<soak> &``, wherever
-    the ``&`` falls) owns no exit status at all, and a soak with anything
-    after it (``<soak>; true``) hands the exit to that command — an exit 0
-    cannot tell any of them from a soak that never ran. The last is a false
-    negative the rule accepts for the forgeries it keeps out. A nested shell is read through to the command it ran, so the
+    That exit belongs to the last command the shell reached, so only a soak
+    that is that command counts (``_proven_innermost``). A soak after ``||``
+    ran only if its left side failed, a piped soak's status is the
+    pipeline's last command's, a soak the shell does not wait for (``<soak>
+    &``, wherever the ``&`` falls) owns no exit status at all, and a soak
+    with anything after it (``<soak>; true``) hands the exit to that
+    command — an exit 0 cannot tell any of them from a soak that never ran.
+    The last is a false negative the rule accepts for the forgeries it keeps
+    out, and so is an argv the untracked-launch tripwire reads as detaching
+    (``nohup bash -c <soak>``), which fails closed here as it does inside a
+    command. A nested shell is read through to the command it ran, so the
     soak is looked for in that command and never in the operand carrying it.
     """
     argv = [str(part) for part in job.get("command") or []]
     if not argv:
         return False
-    operand = _shell_operand(argv)
-    final = _proven_innermost(shlex.join(argv) if operand is None else operand)
-    return final is not None and runs_soak(final, LONG_SOAK)
+    joined = shlex.join(argv)
+    if _proven_final(joined) is None:
+        # The tripwire answers for the argv as a whole, before the operand
+        # hides a detaching prefix from it (`nohup bash -c <soak>`).
+        return False
+    words = _command_words(joined)
+    if words and Path(words[0]).name in SHELL_RUNNERS:
+        operand = _shell_operand(words)
+        if operand is None:
+            return False
+        final = _proven_innermost(operand)
+    else:
+        final = _proven_innermost(joined)
+    return final is not None and _is_soak_command(final, LONG_SOAK)
 
 
 def _waited_job(command: str) -> str | None:

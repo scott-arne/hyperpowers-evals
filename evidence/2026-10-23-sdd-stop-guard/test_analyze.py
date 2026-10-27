@@ -579,6 +579,35 @@ class Measures(unittest.TestCase):
                        records=watch_records(wait_command(ran)))
         self.assertTrue(analyze.measure(run, {})["long_ok"])
 
+    def test_only_a_direct_soak_invocation_the_shell_ran_counts(self) -> None:
+        # Two argv shapes can be the soak: a shell running it as its `-c`
+        # operand, and a direct `python -m unittest` run. Everything else
+        # only carries the soak's words — an option's value the operand scan
+        # must step over, a command substitution whose status belongs to the
+        # command around it, an argument of another program.
+        soak = "python3 -m unittest tests.test_soak_long"
+        for label, command, expected in (
+            ("forged with || behind an option value",
+             ["bash", "-o", "pipefail", "-c", f"true || {soak} -v"], False),
+            ("run behind an option value", ["bash", "-o", "pipefail", "-c", soak], True),
+            ("inside a command substitution", ["bash", "-c", f"echo $({soak})"], False),
+            ("quoted in another program's argument", ["echo", f"a | {soak}"], False),
+            ("the direct argv", ["python3", "-m", "unittest", "tests.test_soak_long"], True),
+            ("discover over the soak file",
+             ["python3", "-m", "unittest", "discover", "-s", "tests", "-p", "test_soak_long.py"], True),
+            ("behind an environment prefix",
+             ["env", "PYTHONDONTWRITEBYTECODE=1", "python3", "-m", "unittest", "tests.test_soak_long"], True),
+            ("a login shell reaching it after cd", ["bash", "-lc", f"cd /x && {soak}"], True),
+            ("a shell running a script instead", ["bash", "run-soak.sh"], False),
+        ):
+            with self.subTest(label):
+                job = {**LONG_JOB, "command": command}
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(wait_command(job)))
+                m = analyze.measure(run, {})
+                self.assertEqual(m["long_job"] is not None, expected, label)
+                self.assertEqual(m["long_ok"], expected, label)
+
     def test_the_soak_must_be_the_command_the_job_s_exit_belongs_to(self) -> None:
         # The record proves only that the job exited 0, so the soak has to be
         # the command that exit belongs to. A soak the shell may have skipped
