@@ -33,6 +33,12 @@ SHELL_C_CMD="sh -c 'cd /w && bash scripts/sdd-state finish plans/plan.md'"
 CONTINUED_CMD='bash /w/scripts/sdd-state \
   finish plans/plan.md'
 VARIABLE_CMD='"$SDD" finish plans/plan.md'
+# A pure capture: Finish runs, its output goes into a variable and is never
+# printed, so the result the transcript holds is empty and only the call is
+# left to read -- as a bare command and split across lines.
+CAPTURE_ONLY_CMD='out=$(bash /w/scripts/sdd-state finish plans/plan.md)'
+CAPTURE_CONTINUED_CMD='out=$(bash /w/scripts/sdd-state \
+  finish plans/plan.md)'
 OTHER_CMD='python3 -m unittest tests.test_soak_long'
 PUBLISHED='status=finished sha=abc1234 last=def5678 push=no receipt=/h/.cache/hyperpowers/receipts/ws-20261027T100000Z'
 STAGED='status=finished sha=abc1234 last=def5678 push=no receipt=none staging=/h/.cache/hyperpowers/receipts/.staging-ws-20261027T100000Z'
@@ -161,9 +167,10 @@ mkrun operand "$SHELL_C_CMD" "$PUBLISHED"; receipt operand ws-20261027T100000Z; 
 archive operand
 [ "$rc" -eq 0 ] || fail "a shell-operand Finish failed the post-check: $(cat "$tmp/out.txt")"
 line operand "finish=yes receipt_published=yes receipts=1 mirrors=1"
-# 9. A Finish the helper refused never finished: the status line, not the call,
-# is what says the workspace was published and removed.
-mkrun refused "$FINISH_CMD" "status=busy"
+# 9. A Finish the helper refused never finished. `finish` refuses a racing
+# call with `status=busy` and exit 3, so its result comes back an error, which
+# neither the status line nor the call survives.
+mkrun refused "$FINISH_CMD" "status=busy" error
 archive refused
 [ "$rc" -eq 0 ] || fail "a refused Finish failed the post-check: $(cat "$tmp/out.txt")"
 line refused "finish=no receipt_published=na receipts=0 mirrors=0 ledger_last_task=no"
@@ -201,5 +208,33 @@ mkrun quoted /w/logs/finish.log "$PUBLISHED" "" Read
 archive quoted
 [ "$rc" -eq 0 ] || fail "a quoted status line failed the post-check: $(cat "$tmp/out.txt")"
 line quoted "finish=no receipt_published=na receipts=0 mirrors=0 ledger_last_task=no"
+# 15. A pure capture prints nothing, so no status line ever reaches the
+# transcript and the call itself is all that says Finish ran. A run that lost
+# its cache must still fail, with the publication reported as unknown.
+mkrun capture "$CAPTURE_ONLY_CMD" ""
+archive capture
+[ "$rc" -ne 0 ] || fail "a pure capture with no cache passed: $(cat "$tmp/out.txt")"
+line capture "finish=yes receipt_published=unknown receipts=0 mirrors=0"
+says capture "reached Finish with no receipt"
+says capture "reached Finish with no session mirror"
+# 16. The same capture with both artifacts kept passes: an unknown publication
+# is not a failure, a missing artifact is.
+mkrun capture-kept "$CAPTURE_ONLY_CMD" ""; receipt capture-kept ws-20261027T100000Z; mirror capture-kept
+archive capture-kept
+[ "$rc" -eq 0 ] || fail "a pure capture with both artifacts failed: $(cat "$tmp/out.txt")"
+line capture-kept "finish=yes receipt_published=unknown receipts=1 mirrors=1"
+# 17. A capture whose call came back an error never finished: the error guard
+# holds for the call as it does for the line.
+mkrun capture-failed "$CAPTURE_ONLY_CMD" "" error
+archive capture-failed
+[ "$rc" -eq 0 ] || fail "a failed capture failed the post-check: $(cat "$tmp/out.txt")"
+line capture-failed "finish=no receipt_published=na receipts=0 mirrors=0 ledger_last_task=no"
+# 18. A capture split by a backslash continuation is one command: joining the
+# continuation is what lets the call be read at all.
+mkrun capture-continued "$CAPTURE_CONTINUED_CMD" ""
+archive capture-continued
+[ "$rc" -ne 0 ] || fail "a continued pure capture with no cache passed: $(cat "$tmp/out.txt")"
+line capture-continued "finish=yes receipt_published=unknown receipts=0 mirrors=0"
+says capture-continued "reached Finish with no receipt"
 echo "PASS: archive-runs.sh reads Finish from the transcript and fails a run whose evidence is missing"
 echo "STATUS: PASSED"

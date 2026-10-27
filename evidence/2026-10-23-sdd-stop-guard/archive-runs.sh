@@ -19,8 +19,9 @@
 # are done at commit time; the post-check below runs here, over the copies, and
 # archive-runs.test.sh covers it against synthetic runs. It reads whether a run
 # reached Finish from the helper's own `status=finished` line in a Bash result,
-# whatever command printed it; a line an agent echoed therefore counts as a
-# Finish, which only makes an evidence-loss check stricter.
+# whatever command printed it, and failing that from a Bash call that runs
+# `sdd-state finish` and printed nothing; a line an agent echoed therefore
+# counts as a Finish, which only makes an evidence-loss check stricter.
 # Adapted from ../2026-10-19-sdd-turn-liveness/archive-runs.sh.
 set -euo pipefail
 arm="$1"; task_dir="$2"
@@ -121,9 +122,11 @@ ledger_complete() {
 finish_state() {
   # Whether the run reached Finish, read from its archived main transcript: a
   # non-error Bash tool result carrying the helper's own `status=finished ...
-  # receipt=` line. Prints two words, `<yes|no> <yes|no|na>`: whether Finish
-  # ran, and whether that line published a receipt (`receipt=none` is a Finish
-  # that could not publish one).
+  # receipt=` line, or a non-error Bash call whose command runs `sdd-state
+  # finish`. Prints two words, `<yes|no> <yes|no|unknown|na>`: whether Finish
+  # ran, and whether a line published a receipt (`receipt=none` is a Finish
+  # that could not publish one; `unknown` is a call whose output never carried
+  # the line at all).
   #
   # The receipt and the mirror cannot answer this question themselves: they are
   # the artifacts whose loss the post-check exists to detect, so a run that
@@ -131,17 +134,30 @@ finish_state() {
   # transcript is the independent record, and analyze.main_transcript picks it,
   # so the archive and the analyzer read the same session.
   #
-  # What the call looked like is not consulted at all. Only `sdd-state finish`
-  # prints that line, while a session can spell the call any way the shell
-  # allows -- a compound, a captured substitution, an `if`, an `sh -c` operand,
+  # Either reading is a Finish. The line is the primary one, because only
+  # `sdd-state finish` prints it and the shell can spell the call any way it
+  # likes -- a compound, a captured substitution, an `if`, an `sh -c` operand,
   # a backslash continuation, the helper's path held in a variable, `eval` --
-  # and every recognizer written against the command text has let some
-  # spelling through, archiving a run whose cache was lost as one that never
-  # finished. Reading only the output closes them all at once. The result must
-  # still belong to a Bash call, so a Read of a log that quotes the line is not
-  # a Finish. A line an agent echoed is: this check guards against evidence
-  # loss, not against forged output, and a false Finish only makes it stricter,
-  # since it then demands the receipt and the mirror.
+  # so reading the output recognizes them all at once, where every recognizer
+  # written against the command text let some spelling through and archived a
+  # run whose cache was lost as one that never finished. But a pure capture,
+  # `out=$(... finish plan.md)` with the output never printed, reaches Finish
+  # and leaves the result empty, so the command text is read too, as
+  # `sdd-state` and the subcommand `finish` with no operator between them,
+  # continuations joined first because a continued call is one command.
+  #
+  # The result must still belong to a Bash call, so a Read of a log that
+  # quotes the line is not a Finish, and an errored result is not a Finish on
+  # either reading: the helper refuses a racing finish with `status=busy` and
+  # exit 3. A call whose output never showed the line says nothing about the
+  # receipt, so `receipt_published` is `unknown` there; every published or
+  # `receipt=none` reading comes from a line, and a later published line still
+  # wins over an earlier `receipt=none`.
+  #
+  # Both readings over-recognize on purpose -- a line an agent echoed counts,
+  # and so does a call whose output went nowhere -- because this check guards
+  # against evidence loss, not against forged or silent output: a false Finish
+  # only makes it stricter, since it then demands the receipt and the mirror.
   python3 -IB - "$1" "$E" <<'PY'
 import re
 import sys
@@ -155,15 +171,25 @@ import analyze
 # carries, whether it names a published receipt or `none`. Nothing else in a
 # run prints it.
 FINISHED = re.compile(r"^status=finished\b.*\breceipt=")
+# `sdd-state` and, with no operator between them, the subcommand `finish`:
+# the helper under any wrapper, and not two commands that merely mention both.
+FINISH_CALL = re.compile(r"\bsdd-state\b[^;&|\n]*\bfinish\b")
+# A command the shell continues across lines is one command.
+CONTINUATION = re.compile(r"\\\n")
 
 transcript = analyze.main_transcript(workspace)
 finished = published = unpublished = False
 if transcript is not None:
     bash_calls: set[str] = set()
+    finish_calls: set[str] = set()
     for rec in analyze.load(transcript):
         for use in analyze.tool_uses(rec):
-            if use.get("name") == "Bash" and isinstance(use.get("id"), str):
-                bash_calls.add(use["id"])
+            if use.get("name") != "Bash" or not isinstance(use.get("id"), str):
+                continue
+            bash_calls.add(use["id"])
+            command = analyze.tool_input(use).get("command")
+            if isinstance(command, str) and FINISH_CALL.search(CONTINUATION.sub(" ", command)):
+                finish_calls.add(use["id"])
         if not analyze.is_tool_result(rec):
             continue
         for block in analyze.blocks(rec):
@@ -171,6 +197,9 @@ if transcript is not None:
                 continue
             if block.get("is_error") is True:
                 continue
+            # The call alone says Finish ran; only a line says what it published.
+            if block["tool_use_id"] in finish_calls:
+                finished = True
             for line in analyze.result_text(block).splitlines():
                 if not FINISHED.match(line):
                     continue
@@ -180,7 +209,15 @@ if transcript is not None:
                     unpublished = True
                 else:
                     published = True
-print("yes" if finished else "no", "yes" if published else ("no" if unpublished else "na"))
+if published:
+    receipt = "yes"
+elif unpublished:
+    receipt = "no"
+elif finished:
+    receipt = "unknown"
+else:
+    receipt = "na"
+print("yes" if finished else "no", receipt)
 PY
 }
 
