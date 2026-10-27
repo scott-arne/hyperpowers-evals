@@ -552,6 +552,52 @@ class Measures(unittest.TestCase):
         self.assertIsNone(m["long_job"])
         self.assertFalse(m["long_ok"])
 
+    def test_a_shell_job_runs_only_the_operand_after_dash_c(self) -> None:
+        # `sh -c <command> <argv0> <args...>` runs the operand after -c and
+        # nothing else: the words after it become $0 and friends, so a soak
+        # command parked there was never executed.
+        parked = {**LONG_JOB,
+                  "command": ["bash", "-c", "sleep 601", "python3 -m unittest tests.test_soak_long -v"]}
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [parked]},
+                       records=watch_records(wait_command(parked)))
+        m = analyze.measure(run, {})
+        self.assertIsNone(m["long_job"])
+        self.assertFalse(m["long_ok"])
+        ran = {**LONG_JOB, "command": ["bash", "-c", "python3 -m unittest tests.test_soak_long"]}
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [ran]},
+                       records=watch_records(wait_command(ran)))
+        self.assertTrue(analyze.measure(run, {})["long_ok"])
+
+    def test_the_wait_must_be_the_last_thing_the_call_runs(self) -> None:
+        # The call's output is the proof, so it has to be the helper's own
+        # answer: anything running after the wait can print over it.
+        job = dict(LONG_JOB)
+        jobdir = f"jobs/{job['name']}-x-0"
+        for label, command, text in (
+            ("a success line forged after a one-millisecond wait",
+             f"{TRACKED_JOB} wait {jobdir} --max-ms 1; sleep 601; echo status=exited code=0", WAIT_OK),
+            ("a success line printed before the real answer",
+             f"echo status=exited code=0; {TRACKED_JOB} wait {jobdir} --max-ms 600000",
+             "status=exited code=0\nstatus=running\n"),
+            ("piped into another command",
+             f"{TRACKED_JOB} wait {jobdir} --max-ms 600000 | tee wait.log", WAIT_OK),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command, text=text))
+                self.assertFalse(analyze.measure(run, {})["long_ok"], label)
+
+    def test_the_verdict_is_the_last_line_the_wait_printed(self) -> None:
+        job = dict(LONG_JOB)
+        for label, text in (
+            ("after the helper's own note", "job soak-long exited code=0\nstatus=exited code=0\n"),
+            ("followed only by blank lines", "status=exited code=0\n\n   \n"),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(wait_command(job), text=text))
+                self.assertTrue(analyze.measure(run, {})["long_ok"], label)
+
     def test_the_watched_attempt_answers_for_a_retried_soak(self) -> None:
         # A lost first attempt and a watched retry are two records of one
         # obligation; H4 asks about the attempt the session actually watched.

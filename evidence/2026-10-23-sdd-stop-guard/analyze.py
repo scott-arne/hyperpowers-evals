@@ -89,9 +89,12 @@ SHORT_MIN_ELAPSED_S = 200
 LONG_MIN_ELAPSED_S = 600
 TRACKED_JOB = "tracked-job"
 WAIT_SHELLS = frozenset({"bash", "sh"})
-# `tracked-job wait` prints its verdict as a line of its own, so a result that
-# merely contains the words (an echo, a quoted log line) is not that verdict.
-WAIT_EXITED = re.compile(r"^status=exited code=0\s*$", re.MULTILINE)
+# The shells a job record's argv can name, which run the operand after `-c`
+# and take the words beyond it as `$0` and its arguments.
+SHELL_RUNNERS = frozenset({"bash", "sh", "zsh"})
+# `tracked-job wait` prints its verdict last on stdout, after any note it
+# makes, so the verdict is the result's last non-blank line and nowhere else.
+WAIT_EXITED = re.compile(r"^status=exited code=0\r?$")
 TRANSPORT_ERRORS = ("ECONNRESET", "ENOTFOUND", "ETIMEDOUT", "ECONNREFUSED")
 SOAK_FILES = ("test_soak_short.py", "test_soak_long.py")
 UNITTEST_CMD = re.compile(
@@ -904,47 +907,70 @@ def _read_only(segment: str) -> bool:
 def _runs_long_soak(job: Mapping[str, Any]) -> bool:
     """Whether a job record's argv actually runs the long soak.
 
-    ``runs_soak`` judges a shell command, so the argv is read back as one —
-    quoted the way a shell would need it — and each element is judged on its
-    own, because a ``bash -c "<command>"`` launch keeps the whole command in a
-    single element where a plain launch spreads it over several. A job that
-    only mentions the soak (``echo test_soak_long``) runs nothing.
+    The argv is read the way the shell reads it, not as a bag of strings.
+    ``sh -c <command> <argv0> <args...>`` executes the one operand after
+    ``-c``; the words beyond it become ``$0`` and its arguments, so a soak
+    command parked there never runs. Every other argv is one command, which
+    ``runs_soak`` judges after the argv is quoted back into shell form. A job
+    that only mentions the soak (``echo test_soak_long``) runs nothing.
     """
     argv = [str(part) for part in job.get("command") or []]
     if not argv:
         return False
-    return runs_soak(shlex.join(argv), LONG_SOAK) or any(runs_soak(part, LONG_SOAK) for part in argv)
+    if Path(argv[0]).name in SHELL_RUNNERS and "-c" in argv[1:]:
+        operand = argv[argv.index("-c", 1) + 1 :]
+        return bool(operand) and runs_soak(operand[0], LONG_SOAK)
+    return runs_soak(shlex.join(argv), LONG_SOAK)
 
 
 def _waited_job(command: str) -> str | None:
-    """The job directory a ``tracked-job wait`` in one Bash call names, or None.
+    """The job directory a Bash call's closing ``tracked-job wait`` names, or None.
 
     The helper is recognized by the word a segment actually runs, not by the
     words appearing somewhere in the text: an echo, a comment, or a commit
     message quoting the wait launches nothing and watches nothing. A segment
     the shell lexer cannot split is not a watch either.
+
+    The wait also has to be the last thing the call runs. Setup may precede it
+    — a ``cd``, an assignment — but anything after it, a pipe included, can
+    print over the helper's answer, and that answer is the whole proof: a call
+    ending in ``; echo status=exited code=0`` reports a success the helper
+    never gave. A watch whose output is piped is read as no watch, a false
+    negative the rule accepts to keep the forgery out.
     """
-    for segment in _segments(_strip_heredocs(command)):
-        words = _command_words(segment)
-        if not words:
-            continue
-        if Path(words[0]).name in WAIT_SHELLS and len(words) > 1:
-            words = words[1:]
-        if Path(words[0]).name != TRACKED_JOB or words[1:2] != ["wait"]:
-            continue
-        # tracked-job's own argument order: `wait <jobdir> [--max-ms N]`.
-        return next((w for w in words[2:] if not w.startswith("-")), None)
-    return None
+    segments = [segment for segment in _segments(_strip_heredocs(command)) if segment.strip()]
+    if not segments:
+        return None
+    words = _command_words(segments[-1])
+    if not words:
+        return None
+    if Path(words[0]).name in WAIT_SHELLS and len(words) > 1:
+        words = words[1:]
+    if Path(words[0]).name != TRACKED_JOB or words[1:2] != ["wait"]:
+        return None
+    # tracked-job's own argument order: `wait <jobdir> [--max-ms N]`.
+    return next((w for w in words[2:] if not w.startswith("-")), None)
+
+
+def _wait_verdict(result: str) -> bool:
+    """Whether a call's result ends in the helper's success line.
+
+    ``tracked-job wait`` prints ``status=<state> code=<n>`` last, after any
+    note it makes, so its verdict is the last non-blank line; a success line
+    anywhere above that is some other command's output.
+    """
+    lines = [line for line in result.split("\n") if line.strip()]
+    return bool(lines) and WAIT_EXITED.match(lines[-1]) is not None
 
 
 def _watched(job: Mapping[str, Any], calls: Sequence[Call]) -> bool:
     """Whether a foreground ``tracked-job wait`` watched this job to its recorded exit.
 
-    The watch has to be a call that ran the helper on this job's own directory,
-    in the foreground, returning without an error and carrying the helper's
-    ``status=exited code=0`` line. It also has to be causal — started no
-    earlier than the launch and answered no earlier than the job's end — so a
-    watch of an earlier attempt is not read as this attempt's.
+    The watch has to be a call that closed by running the helper on this job's
+    own directory, in the foreground, returning without an error and ending in
+    the helper's ``status=exited code=0`` verdict. It also has to be causal —
+    started no earlier than the launch and answered no earlier than the job's
+    end — so a watch of an earlier attempt is not read as this attempt's.
     """
     name = Path(str(job.get("_dir", ""))).name
     if not name:
@@ -957,7 +983,7 @@ def _watched(job: Mapping[str, Any], calls: Sequence[Call]) -> bool:
     for call in calls:
         if call.name != "Bash" or call.inp.get("run_in_background") or call.error:
             continue
-        if call.result is None or not WAIT_EXITED.search(call.result):
+        if call.result is None or not _wait_verdict(call.result):
             continue
         if call.at < launched or call.result_at is None or call.result_at < ended:
             continue
