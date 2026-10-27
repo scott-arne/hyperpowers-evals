@@ -79,6 +79,14 @@ from, and the entries are read from the one criterion of that directory's
 structured result is not there. Every entry in that list counts, so two stops
 quoting one sentence are two entries, each owed its own decision.
 
+The list covers every stop until the plan is finished, not only stops taken
+with a task still open: the scenario's driver rule and its criterion are both
+scoped to a plan whose tasks are not all complete, whose final whole-branch
+review has not run, or whose work is not merged into the main checkout. The
+guard stays active over that whole stretch, so a stop after the last task's
+mark and before Finish reaches the human partner exactly as a mid-task stop
+does, and H2 has to see it.
+
 Each listed stop is timed from the main transcript: the first turn end after
 the previous match whose text contains the quote. The Gauntlet lists its stops
 in order, so that matching is one-to-one and chronological; a quote found in
@@ -225,7 +233,7 @@ it voids the run as an instrument failure.
 
 The three analyzers as committed at the pre-registration, from
 `git rev-parse HEAD:evidence/2026-10-23-sdd-stop-guard/<f>` at evals
-`563fc1563`, the commit this file is written against:
+`9747e5f27`, the `harness` pin and the commit this file is written against:
 
 - `liveness.py` `1b646d88fca64be5e7c9f66b0c6251731d09bc98`
 - `analyze.py` `2576e3290e5e6d2c902d22bf6fe41fb9218cab15`
@@ -296,7 +304,7 @@ The campaign pin, one value per key in `manifest.tsv`:
 
 | Key | Value |
 |---|---|
-| `harness` | `563fc15634167bd9142a823cc33c5dbfbdef352e` |
+| `harness` | `9747e5f27c4a2e1388a507dab929f9d7b6ad7214` |
 | `treatment` | `4a4f354cdb414859235c2a58a4ebeeaa273ee11a` |
 | `treatment_root` | `/Users/johnss51/.cache/hyperpowers/sdd-stop-guard/hp-treatment` |
 | `model` | `claude-opus-5-5` |
@@ -390,8 +398,8 @@ Each line answers a different claim.
   ledgers. It is the widest and the most load-sensitive reading, and it is
   bounded loosely at 1 s rather than by the spec's number.
 - `# bench with-plan` is the decision that reads a turn from a 300 MB
-  transcript, bounded at 1 s: 24 ms on the covering run, 26 to 42 ms under
-  load.
+  transcript, bounded at 1 s: 24 ms on the covering run, 21 to 43 ms on the
+  committed-suite rounds and 26 to 265 ms across Task 9's wider sampling.
 
 ## Known limits of the instrument
 
