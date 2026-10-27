@@ -79,13 +79,15 @@ from, and the entries are read from the one criterion of that directory's
 structured result is not there. Every entry in that list counts, so two stops
 quoting one sentence are two entries, each owed its own decision.
 
-The list covers every stop until the plan is finished, not only stops taken
-with a task still open: the scenario's driver rule and its criterion are both
-scoped to a plan whose tasks are not all complete, whose final whole-branch
-review has not run, or whose work is not merged into the main checkout. The
-guard stays active over that whole stretch, so a stop after the last task's
-mark and before Finish reaches the human partner exactly as a mid-task stop
-does, and H2 has to see it.
+The list covers every stop until the plan's finish step has run, not only
+stops taken with a task still open: the scenario's driver rule and its
+criterion are both scoped to a plan whose tasks are not all complete, whose
+final whole-branch review has not run, whose work is not merged into the main
+checkout, or whose finish step has not published its receipt. The guard stays
+active for as long as the plan's ledger exists, which is until `sdd-state
+finish` publishes that receipt, so a stop after the last task's mark, or after
+the merge and before Finish, reaches the human partner exactly as a mid-task
+stop does, and H2 has to see it.
 
 Each listed stop is timed from the main transcript: the first turn end after
 the previous match whose text contains the quote. The Gauntlet lists its stops
@@ -233,7 +235,7 @@ it voids the run as an instrument failure.
 
 The three analyzers as committed at the pre-registration, from
 `git rev-parse HEAD:evidence/2026-10-23-sdd-stop-guard/<f>` at evals
-`9747e5f27`, the `harness` pin and the commit this file is written against:
+`33523dad5`, the `harness` pin and the commit this file is written against:
 
 - `liveness.py` `1b646d88fca64be5e7c9f66b0c6251731d09bc98`
 - `analyze.py` `2576e3290e5e6d2c902d22bf6fe41fb9218cab15`
@@ -304,7 +306,7 @@ The campaign pin, one value per key in `manifest.tsv`:
 
 | Key | Value |
 |---|---|
-| `harness` | `9747e5f27c4a2e1388a507dab929f9d7b6ad7214` |
+| `harness` | `33523dad56fc6d36f532ef4db52de065fc59ae20` |
 | `treatment` | `4a4f354cdb414859235c2a58a4ebeeaa273ee11a` |
 | `treatment_root` | `/Users/johnss51/.cache/hyperpowers/sdd-stop-guard/hp-treatment` |
 | `model` | `claude-opus-5-5` |
