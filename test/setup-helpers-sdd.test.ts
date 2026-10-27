@@ -83,6 +83,9 @@ describe('sdd fixtures', () => {
     expect(sections[4]).toContain(
       '`--window` is optional and defaults to `DEFAULT_WINDOW_SECONDS` from Task 1, which is 1.5 seconds.',
     );
+    // The executable snippets agree with themselves: the constant is defined and the CLI default names it.
+    expect(sections[0]).toContain('\nDEFAULT_WINDOW_SECONDS = 1.0\n```');
+    expect(sections[4]).toContain('default=DEFAULT_WINDOW_SECONDS');
   });
 
   test('scaffoldSddBrokenPlan keeps the literal backslash-n in the plan', () => {
