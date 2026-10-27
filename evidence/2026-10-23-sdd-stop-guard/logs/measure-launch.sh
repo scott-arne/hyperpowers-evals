@@ -7,7 +7,9 @@
 # PATH at the cc and cc_path pins, the provider pin, and the task tools on.
 # The campaign has one plugin under test, so every arm runs the one treatment
 # root: an arm says what a launch is for (the counted runs, the smoke, the
-# fork-mode T1), not which hyperpowers commit it loads. Claims
+# fork-mode T1), not which hyperpowers commit it loads; T1 alone runs the
+# fork-mode copy of the scenario, and a mispaired arm and scenario is refused.
+# Claims
 # logs/<arm>-<scenario>-<proc>.log exclusively (a row is never relaunched into
 # its old log), writes key=value header lines the tally reads, the exact
 # command, quorum's output (its run-id lines), the root and Claude Code
@@ -28,6 +30,12 @@ claude_bin="${CLAUDE_BIN:-claude}"
 HARNESS_PATHS="src coding-agents package.json bun.lock bunfig.toml tsconfig.json container scripts/evals-container scenarios fixtures"
 case "$arm" in treatment|smoke|t1) ;; *) echo "arm must be treatment, smoke or t1" >&2; exit 2 ;; esac
 case "$scen" in sdd-turn-liveness|sdd-turn-liveness-fork) ;; *) echo "scenario must be sdd-turn-liveness or sdd-turn-liveness-fork" >&2; exit 2 ;; esac
+# The launcher refuses a mispaired row before anything starts; this is the same
+# rule at the one place a hand-run launch can still bypass it.
+case "$arm-$scen" in
+  treatment-sdd-turn-liveness|smoke-sdd-turn-liveness|t1-sdd-turn-liveness-fork) ;;
+  *) echo "t1 runs sdd-turn-liveness-fork; treatment and smoke run sdd-turn-liveness" >&2; exit 2 ;;
+esac
 case "$proc" in p[0-9]|p[0-9][0-9]|r[0-9]|r[0-9][0-9]) ;; *) echo "proc must be p<n> or r<n>" >&2; exit 2 ;; esac
 case "$rep" in [1-9]) ;; *) echo "repeat must be 1-9" >&2; exit 2 ;; esac
 case "$budget" in default) ;; *) echo "budget must be default" >&2; exit 2 ;; esac

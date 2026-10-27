@@ -8,10 +8,11 @@
 # campaign) through the launcher, at most N at a time (default 8), waits for
 # every child, and fails closed: a malformed row (wrong field count, an empty
 # field, a misspelled arm, a scenario other than sdd-turn-liveness or
-# sdd-turn-liveness-fork, a bad proc, repeat, or a budget other than default)
-# or a duplicate row stops the campaign before anything is launched; a child
-# that exits non-zero, or a manifest row whose log is missing or does not end
-# with DONE, makes the exit status 1 and the closing line say so. LAUNCHER
+# sdd-turn-liveness-fork, an arm paired with the scenario it does not run, a
+# bad proc, repeat, or a budget other than default) or a duplicate row stops
+# the campaign before anything is launched; a child that exits non-zero, or a
+# manifest row whose log is missing or does not end with DONE, makes the exit
+# status 1 and the closing line say so. LAUNCHER
 # overrides the launcher path (the stub test uses it); the default is
 # logs/measure-launch.sh beside the manifest. The manifest is exported to the
 # launcher as MANIFEST so its pins come from the same file; LOGS names the log
@@ -60,6 +61,14 @@ while IFS= read -r line || [ -n "$line" ]; do
   arm="${f[0]}"; scen="${f[1]}"; rep="${f[2]}"; proc="${f[3]}"; budget="${f[4]}"
   case "$arm" in treatment|smoke|t1) ;; *) echo "malformed arm '$arm' in row '$line'" >&2; bad=1; continue ;; esac
   case "$scen" in sdd-turn-liveness|sdd-turn-liveness-fork) ;; *) echo "malformed scenario '$scen' in row '$line'" >&2; bad=1; continue ;; esac
+  # T1 alone runs the fork-mode copy. The pair is checked as well as its two
+  # halves because either mispairing survives both: t1 on sdd-turn-liveness
+  # measures the wrong mode, and treatment or smoke on the fork copy writes a
+  # log name the tally does not read, so the run would vanish from the decision.
+  case "$arm-$scen" in
+    treatment-sdd-turn-liveness|smoke-sdd-turn-liveness|t1-sdd-turn-liveness-fork) ;;
+    *) echo "malformed pair '$arm $scen' in row '$line'" >&2; bad=1; continue ;;
+  esac
   case "$proc" in p[0-9]|p[0-9][0-9]|r[0-9]|r[0-9][0-9]) ;; *) echo "malformed proc id '$proc' in row $arm $scen" >&2; bad=1; continue ;; esac
   case "$rep" in [1-9]) ;; *) echo "malformed repeat '$rep' in row $arm $scen $proc" >&2; bad=1; continue ;; esac
   case "$budget" in default) ;; *) echo "malformed budget '$budget' in row $arm $scen $proc" >&2; bad=1; continue ;; esac

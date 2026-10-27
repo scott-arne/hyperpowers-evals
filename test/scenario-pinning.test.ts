@@ -115,3 +115,19 @@ test('the sdd-turn-liveness claude-env directive is read inside the window', () 
     CLAUDE_CODE_FORK_SUBAGENT: '0',
   });
 });
+
+// The fork copy carries the same long comment block and runs with fork mode
+// deliberately on, so its directive sets the task tools alone. Out of the
+// window it would read as undefined: the task tools would be off and the mode
+// would be on by accident rather than by design.
+test('the sdd-turn-liveness-fork claude-env directive is read inside the window', () => {
+  const checksSh = join(
+    repoRoot(),
+    'scenarios',
+    'sdd-turn-liveness-fork',
+    'checks.sh',
+  );
+  expect(parseClaudeEnvDirective(checksSh)).toEqual({
+    CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+  });
+});

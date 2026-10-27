@@ -48,6 +48,17 @@ reset; manifest "control${t}sdd-turn-liveness${t}1${t}p1${t}default\n"
 bash "$script" "$tmp/manifest.tsv" 2> "$tmp/err" && fail "control arm launched"
 grep -qF "malformed arm 'control'" "$tmp/err" || fail "control arm message: $(cat "$tmp/err")"
 [ ! -e "$LOGS" ] || fail "control arm still launched something"
+# 3c. t1 runs the fork copy and nothing else; treatment and smoke run the base
+# scenario and nothing else. Both halves of a mispaired row are legal on their
+# own, so only the pair check refuses it.
+reset; manifest "t1${t}sdd-turn-liveness${t}1${t}p1${t}default\n"
+bash "$script" "$tmp/manifest.tsv" 2> "$tmp/err" && fail "t1 on the base scenario launched"
+grep -qF "malformed pair 't1 sdd-turn-liveness'" "$tmp/err" || fail "t1 pair message: $(cat "$tmp/err")"
+[ ! -e "$LOGS" ] || fail "t1 on the base scenario still launched something"
+reset; manifest "treatment${t}sdd-turn-liveness-fork${t}1${t}p1${t}default\n"
+bash "$script" "$tmp/manifest.tsv" 2> "$tmp/err" && fail "treatment on the fork copy launched"
+grep -qF "malformed pair 'treatment sdd-turn-liveness-fork'" "$tmp/err" || fail "treatment pair message: $(cat "$tmp/err")"
+[ ! -e "$LOGS" ] || fail "treatment on the fork copy still launched something"
 # 4. an unknown pin key is malformed
 reset; { pins; printf 'bogus\tx\n'; printf 'treatment\tsdd-turn-liveness\t1\tp1\tdefault\n'; } > "$tmp/manifest.tsv"
 bash "$script" "$tmp/manifest.tsv" 2>/dev/null && fail "unknown pin key launched"
