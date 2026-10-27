@@ -62,10 +62,15 @@ PLAN_LOG = "stop-guard.jsonl"
 # word and may be preceded by a list marker.
 LEDGER_HEAD = re.compile(r"^# SDD ledger — plan: (.+)$", re.MULTILINE)
 COMPLETE_LINE = re.compile(r"(?:^|[^A-Za-z0-9])Task (\d+): complete")
-SESSION_LINE = "session {sid}:"
 # A receipt directory is `<workspace name>-<UTC stamp>` with, when a finish of
 # the same second took that name, a numeric suffix the later finish falls to.
 RECEIPT_STAMP = re.compile(r"(\d{8}T\d{6}Z)(?:-(\d+))?$")
+# `publish_receipt` falls from the plain name to `-2`, `-3` and so on; any other
+# trailing number is a staging's pid, not a retry.
+RETRY_SUFFIXES = range(2, 11)
+# sdd-state's import copies, which keep a plan workspace's name (the hook's
+# LIFECYCLE_COPY).
+LIFECYCLE_COPY = re.compile(r"\.import(ing)?-[0-9]+$")
 FRAGMENT = "\t#fragment"
 DECISIONS = ("allow", "block")
 SHORT_SOAK = "test_soak_short"
@@ -202,6 +207,18 @@ def session_id(transcript: Path) -> str:
     return transcript.stem
 
 
+def _read(path: Path) -> str:
+    """One artifact's text, as the bytes its writers wrote it.
+
+    ``newline=""`` keeps Python's universal-newline translation out of the
+    read: a carriage return inside a ledger line is an ordinary character to
+    node and to the shell, and translating it to a newline would split one
+    record into two and let a line claim a session it never names.
+    """
+    with path.open("r", errors="replace", newline="") as fh:
+        return fh.read()
+
+
 def ledger_records(text: str) -> list[str]:
     """The lines of a ledger or a decision log that are records.
 
@@ -211,19 +228,34 @@ def ledger_records(text: str) -> list[str]:
     and both writers read their own files this way, so a reader that counted
     the remains would credit a completion line no writer counts.
     """
-    lines = text.splitlines()
-    if text and not text.endswith("\n"):
-        lines = lines[:-1]
+    lines = text.split("\n")
+    # The last element is the empty tail of a terminated file, or the write that
+    # never terminated. Splitting on the newline byte alone is the parity that
+    # matters: ``str.splitlines`` would also break on a carriage return or a
+    # Unicode separator and make two records of one line the writers see whole.
+    lines.pop()
     return [line for line in lines if not line.endswith(FRAGMENT)]
 
 
 def _carries(ledger: Path, sid: str) -> bool:
     """Whether a ledger holds the session's own line, the hook's discovery test."""
     try:
-        text = ledger.read_text(errors="replace")
+        text = _read(ledger)
     except OSError:
         return False
     return any(line.startswith(f"session {sid}:") for line in ledger_records(text))
+
+
+def _is_plan_workspace(d: Path) -> bool:
+    """A plan workspace, not one of sdd-state's copies of one.
+
+    Finish's tomb ``plans/.removing-<ws>-<pid>`` and import's
+    ``plans/<ws>.import-<pid>`` staging and ``plans/<ws>.importing-<pid>``
+    backup each hold a whole ledger, this session's line included. The hook
+    skips them by these same two rules, so a run archived while one of them
+    was on disk must not read as two workspaces for one session.
+    """
+    return not d.name.startswith(".") and not LIFECYCLE_COPY.search(d.name)
 
 
 def _is_receipt(d: Path) -> bool:
@@ -231,16 +263,23 @@ def _is_receipt(d: Path) -> bool:
     return not d.name.startswith(".") or (d / "FINISHED").is_file()
 
 
-def _stamp(name: str) -> tuple[str, int]:
+def _stamp(name: str) -> tuple[str, int, str]:
     """A receipt's ordering key: its UTC stamp, then the suffix a same-second finish fell to.
 
-    Finish names a receipt ``<workspace>-<UTC stamp>`` and, when another
-    finish of that same second holds the name, retries with ``-2``, ``-3``;
-    the suffixed one is therefore the later. A name with no stamp sorts below
-    every stamped one rather than winning on its spelling.
+    Finish names a receipt ``<workspace>-<UTC stamp>`` and, when another finish
+    of that same second holds the name, retries with ``-2`` through ``-9``; the
+    suffixed one is therefore the later. A trailing number outside that range is
+    a staging's own pid (``.staging-<ws>-<stamp>-$$``, taken when two finishes
+    collide in one second), which says nothing about order and must not outrank
+    a real retry. A name with no stamp sorts below every stamped one rather than
+    winning on its spelling, and the name breaks a remaining tie so the answer
+    is stable: a published receipt beats a staging of the same second.
     """
     m = RECEIPT_STAMP.search(name)
-    return (m.group(1), int(m.group(2) or 0)) if m else ("", 0)
+    if m is None:
+        return ("", 0, name)
+    suffix = int(m.group(2)) if m.group(2) else 0
+    return (m.group(1), suffix if suffix in RETRY_SUFFIXES else 0, name)
 
 
 def receipt_for(workspace: Path, sid: str) -> Path | None:
@@ -267,7 +306,11 @@ def live_workspace_for(workspace: Path, sid: str) -> Path | None:
     :raises ArtifactError: two workspaces carry the session, which leaves no
         answer to whose log and job records are the run's.
     """
-    hits = [p.parent for p in workspace.glob("home/.cache/hyperpowers/*/*/plans/*/progress.md") if _carries(p, sid)]
+    hits = [
+        p.parent
+        for p in workspace.glob("home/.cache/hyperpowers/*/*/plans/*/progress.md")
+        if _is_plan_workspace(p.parent) and _carries(p, sid)
+    ]
     if len(hits) > 1:
         raise ArtifactError(f"{len(hits)} live workspaces carry session {sid}")
     return hits[0] if hits else None
@@ -277,7 +320,7 @@ def ledger_text_for(receipt: Path | None, live: Path | None) -> str:
     """The run's ledger: the receipt's copy, else the live workspace's, else empty."""
     for root in (receipt, live):
         if root is not None and (root / LEDGER_FILE).is_file():
-            return (root / LEDGER_FILE).read_text(errors="replace")
+            return _read(root / LEDGER_FILE)
     return ""
 
 
@@ -319,7 +362,9 @@ def _lines(path: Path, sid: str) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     if not path.is_file():
         return out
-    for raw in path.read_text(errors="replace").splitlines():
+    # The hook reads its own logs through the ledger's rule, so a torn append
+    # here is dropped rather than parsed (``tailLines`` in the hook module).
+    for raw in ledger_records(_read(path)):
         try:
             d = json.loads(raw)
         except ValueError:
@@ -330,16 +375,25 @@ def _lines(path: Path, sid: str) -> list[dict[str, Any]]:
     return out
 
 
+def _key(d: Mapping[str, Any]) -> tuple[str, str]:
+    """The key both logs are reconciled on, as the hook's ``keyOf`` spells it."""
+    return (str(d.get("ts")), str(d.get("session")))
+
+
 def decisions_for(
     workspace: Path, receipt: Path | None, live: Path | None, sid: str
 ) -> tuple[list[dict[str, Any]], list[tuple[dict[str, Any], dict[str, Any]]]]:
     """The union of the plan log (the receipt's, else the live workspace's) and the session mirror.
 
-    Keyed by ``(ts, session)``, the key the hook itself merges on; a line
-    present in one log only is kept, so a mirror that lost a line and a plan
-    log that ends at Finish together make one record. Two different payloads
-    under one key are returned as a conflict, which the tally voids as an
-    instrument failure.
+    The plan log is the authoritative one and is keyed by ``(ts, session)``, the
+    key the hook itself merges on: the mirror's twin of a plan line is the same
+    decision, and a twin whose payload differs is a conflict, which the tally
+    voids as an instrument failure. A mirror line with no twin is a decision of
+    its own, kept in file order and never merged with another mirror line: the
+    bash wrapper's ``hook-error`` lines reach the mirror alone with whole-second
+    timestamps, so two of them in one second are two Stops, neither one decision
+    nor a contradiction. A mirror that lost a line and a plan log that ends at
+    Finish therefore still make one record between them.
 
     :param workspace: the run's ``workspaces/<run>/`` copy, which holds the mirror.
     :param receipt: the run's receipt, when Finish wrote one.
@@ -348,20 +402,25 @@ def decisions_for(
     :returns: the decisions in timestamp order, and the conflicting pairs.
     """
     plan_root = receipt if receipt is not None else live
-    sources = ([plan_root / PLAN_LOG] if plan_root is not None else []) + [
-        workspace / "home" / ".cache" / MIRROR_DIR / f"{sid}.jsonl"
-    ]
-    seen: dict[tuple[str, str], dict[str, Any]] = {}
+    plan_lines = _lines(plan_root / PLAN_LOG, sid) if plan_root is not None else []
+    mirror_lines = _lines(workspace / "home" / ".cache" / MIRROR_DIR / f"{sid}.jsonl", sid)
+    authoritative: dict[tuple[str, str], dict[str, Any]] = {}
     conflicts: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    for path in sources:
-        for d in _lines(path, sid):
-            key = (str(d.get("ts")), str(d.get("session")))
-            prior = seen.get(key)
-            if prior is None:
-                seen[key] = d
-            elif prior != d:
-                conflicts.append((prior, d))
-    return sorted(seen.values(), key=lambda d: str(d.get("ts"))), conflicts
+    for d in plan_lines:
+        prior = authoritative.get(_key(d))
+        if prior is None:
+            authoritative[_key(d)] = d
+        elif prior != d:
+            conflicts.append((prior, d))
+    out = list(authoritative.values())
+    for d in mirror_lines:
+        prior = authoritative.get(_key(d))
+        if prior is None:
+            out.append(d)
+        elif prior != d:
+            conflicts.append((prior, d))
+    # Stable, so two decisions of one second keep the order their file gave them.
+    return sorted(out, key=lambda d: str(d.get("ts"))), conflicts
 
 
 def jobs_for(receipt: Path | None, live: Path | None) -> list[dict[str, Any]]:
@@ -376,7 +435,7 @@ def jobs_for(receipt: Path | None, live: Path | None) -> list[dict[str, Any]]:
         return out
     for meta in sorted(root.glob("jobs/*/meta.json")):
         try:
-            m = json.loads(meta.read_text(errors="replace"))
+            m = json.loads(_read(meta))
         except (OSError, ValueError):
             continue
         if not isinstance(m, dict):
@@ -391,7 +450,7 @@ def ledger_tasks(workspace: Path) -> set[int]:
     done: set[int] = set()
     for path in (workspace / "home" / ".cache" / "hyperpowers" / "sdd").glob("**/progress.md"):
         try:
-            done |= ledger_tasks_from(path.read_text(errors="replace"))
+            done |= ledger_tasks_from(_read(path))
         except OSError:
             continue
     return done

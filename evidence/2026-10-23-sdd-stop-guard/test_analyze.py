@@ -310,6 +310,38 @@ class Readers(unittest.TestCase):
         with self.assertRaises(analyze.ArtifactError):
             analyze.live_workspace_for(analyze.workspace_of(run), "sess-1")
 
+    def test_live_workspace_for_skips_the_lifecycle_copies_of_one_workspace(self) -> None:
+        # finish's tomb and import's two copies each hold the whole ledger, this
+        # session's line included; the hook skips them by name and so must this.
+        run = make_run(workspace_ledger=ledger_text(done=[1]), extra_workspaces=[
+            {"ledger": ledger_text(done=[1]), "name": ".removing-p-4321"},
+            {"ledger": ledger_text(done=[1]), "name": "p.import-4321"},
+            {"ledger": ledger_text(done=[1]), "name": "p.importing-4321"},
+        ])
+        live = analyze.live_workspace_for(analyze.workspace_of(run), "sess-1")
+        self.assertIsNotNone(live)
+        self.assertEqual(live.name, "p")  # type: ignore[union-attr]
+
+    def test_a_retry_suffix_outranks_the_name_it_fell_from_and_a_pid_does_not(self) -> None:
+        # Two finishes of one second: the second falls to `-2`, so it is the
+        # later; a staging that took a private `-<pid>` name is not a retry.
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "name": "p-20261023T100000Z"},
+                       extra_receipts=[{"ledger": ledger_text(done=[1]), "name": "p-20261023T100000Z-2"},
+                                       {"ledger": ledger_text(done=[1]), "name": ".staging-p-20261023T100000Z-94144",
+                                        "finished": True}])
+        ws = analyze.workspace_of(run)
+        self.assertEqual(analyze.receipt_for(ws, "sess-1").name, "p-20261023T100000Z-2")  # type: ignore[union-attr]
+
+    def test_a_job_record_that_is_not_an_object_is_skipped(self) -> None:
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [{"name": "soak", "state": "exited", "code": 0}]})
+        receipt = analyze.receipt_for(analyze.workspace_of(run), "sess-1")
+        assert receipt is not None
+        for name, text in (("broken-x-8", "[1, 2]"), ("torn-x-9", '{"name": "torn"')):
+            jobdir = receipt / "jobs" / name
+            jobdir.mkdir(parents=True)
+            (jobdir / "meta.json").write_text(text)
+        self.assertEqual([j["name"] for j in analyze.jobs_for(receipt, None)], ["soak"])
+
     def test_decisions_are_the_union_by_timestamp_and_session(self) -> None:
         a = line("2026-10-23T10:05:00.000Z", "block", "open-tasks", refusals=1)
         b = line("2026-10-23T10:06:00.000Z", "allow", "handback-text")
@@ -331,6 +363,21 @@ class Readers(unittest.TestCase):
         decisions, conflicts = analyze.decisions_for(ws, analyze.receipt_for(ws, "sess-1"), None, "sess-1")
         self.assertEqual(len(decisions), 1)
         self.assertEqual([(x["reason"], y["reason"]) for x, y in conflicts], [("open-tasks", "live-shell")])
+
+    def test_two_mirror_only_lines_of_one_second_are_two_decisions(self) -> None:
+        # The bash wrapper's hook-error line reaches the mirror alone and carries
+        # a whole-second timestamp, so two Stops of one second share a key
+        # without being one decision or contradicting each other.
+        logged = line("2026-10-23T10:05:00.000Z", "block", "open-tasks", refusals=1)
+        first = line("2026-10-23T10:06:00Z", "allow", "hook-error", plan=None, detail="node not found")
+        second = line("2026-10-23T10:06:00Z", "allow", "hook-error", plan=None, detail="module failed")
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "log": [logged]},
+                       mirror=[logged, first, second, dict(second)])
+        ws = analyze.workspace_of(run)
+        decisions, conflicts = analyze.decisions_for(ws, analyze.receipt_for(ws, "sess-1"), None, "sess-1")
+        self.assertEqual([x["reason"] for x in decisions], ["open-tasks", "hook-error", "hook-error", "hook-error"])
+        self.assertEqual([x.get("detail") for x in decisions[1:]], ["node not found", "module failed", "module failed"])
+        self.assertEqual(conflicts, [])
 
     def test_an_unfinished_run_reads_the_live_workspace_log_and_jobs(self) -> None:
         a = line("2026-10-23T10:05:00.000Z", "block", "open-tasks", refusals=1)
@@ -375,6 +422,14 @@ class Readers(unittest.TestCase):
         fenced = ledger_text(done=[1]) + "Task 2: complete (commits 0000002..0000003, rev\t#fragment\n"
         self.assertEqual(analyze.ledger_tasks_from(fenced), {1})
         self.assertIsNone(analyze.plan_path_from("# SDD ledger — plan: plan.md"))
+        # The writers break a ledger on the newline byte alone, so a carriage
+        # return inside a line makes neither a second record nor a second claim.
+        returns = ledger_text(done=[1]) + "Task 2: complete (abc)\rTask 3: complete (commits 0000003..0000"
+        self.assertEqual(analyze.ledger_tasks_from(returns), {1})
+        claimed = make_run(workspace_ledger=ledger_text(done=[1]) + "note: resumed\rsession other-1: mode worktree\n")
+        ws = analyze.workspace_of(claimed)
+        self.assertIsNotNone(analyze.live_workspace_for(ws, "sess-1"))
+        self.assertIsNone(analyze.live_workspace_for(ws, "other-1"))
 
     def test_a_malformed_decision_line_is_skipped_not_fatal(self) -> None:
         good = line("2026-10-23T10:05:00.000Z", "block", "open-tasks", refusals=1)
