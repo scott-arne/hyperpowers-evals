@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,7 @@ from synth import (
 )
 
 CONTROL_STOPS = (("Moving to Task 3.", "neither"),)
+TRACKED_JOB = "bash /roots/treatment/skills/subagent-driven-development/scripts/tracked-job"
 
 
 def drop_call(records: list[dict[str, Any]], tool_id: str) -> list[dict[str, Any]]:
@@ -43,6 +45,47 @@ def drop_call(records: list[dict[str, Any]], tool_id: str) -> list[dict[str, Any
         return any(b.get("id") == tool_id or b.get("tool_use_id") == tool_id for b in liveness.blocks(rec))
 
     return [r for r in records if not mentions(r)]
+
+
+def successful_run_kwargs() -> dict[str, Any]:
+    """The ``make_run`` arguments of a run the success definition accepts.
+
+    A receipt is part of them now: the plan is unfinished until Finish removed
+    its workspace, so every successful run has one (spec Decision 5).
+    """
+    return {"records": treatment_records(), "receipt": {"ledger": ledger_text(done=range(1, 7))}}
+
+
+def watch_records(job: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Main-session records whose one foreground Bash call watches ``job`` to its exit."""
+    # ``_record_dir`` names the first job directory of a receipt after the job.
+    jobdir = f"jobs/{job['name']}-x-0"
+    command = f"{TRACKED_JOB} wait {jobdir} --max-ms 600000"
+    return [
+        human(0, "go"),
+        assistant(10, tools=[("w1", "Bash", {"command": command, "timeout": 600000})]),
+        result(900, "w1", "status=exited code=0"),
+        assistant(910, "The long soak exited 0."),
+    ]
+
+
+def turn_end_with_live(kind: str) -> list[dict[str, Any]]:
+    """A turn that ends while a launch of ``kind`` is live; the completions come after it."""
+    agent = kind in ("agent", "both")
+    shell = kind in ("shell", "both")
+    recs: list[dict[str, Any]] = [human(0, "go")]
+    if agent:
+        recs += [assistant(10, tools=[("a1", "Agent", {"description": "Implement Task 1"})]),
+                 result(11, "a1", AGENT_BG)]
+    if shell:
+        recs += [assistant(20, tools=[("b1", "Bash", {"command": "sleep 900", "run_in_background": True})]),
+                 result(21, "b1", BASH_BG)]
+    recs.append(human(100, "continue"))
+    if agent:
+        recs.append(notification(200, "a1"))
+    if shell:
+        recs.append(notification(210, "b1"))
+    return recs
 
 
 class Measure(unittest.TestCase):
@@ -55,6 +98,9 @@ class Measure(unittest.TestCase):
 
     def run_of(self, run_id: str, records: list[dict[str, Any]], **kw: Any) -> dict[str, Any]:
         kw.setdefault("plugin_dir", "/roots/treatment")
+        # A finished plan is a receipt now, not a ledger left in the cache, so
+        # every run these cases measure publishes one.
+        kw.setdefault("receipt", {"ledger": ledger_text(done=range(1, 7))})
         return analyze.measure(make_run(self.root, run_id, records, **kw), {})
 
     def test_treatment_like_run_meets_every_measure(self) -> None:
@@ -288,6 +334,114 @@ class Measure(unittest.TestCase):
         record = self.root / "legacy"
         (record / "home").mkdir(parents=True)
         self.assertEqual(analyze.workspace_of(record), record)
+
+
+class Measures(unittest.TestCase):
+    def test_plan_completion_reads_the_receipt_ledger(self) -> None:
+        run = make_run(receipt={"ledger": ledger_text(done=[1, 2, 3, 4, 5, 6])})
+        m = analyze.measure(run, {})
+        self.assertTrue(m["plan_complete"]); self.assertEqual(m["plan_path"], "plan.md")
+
+    def test_an_unfinished_run_reads_the_live_workspace(self) -> None:
+        run = make_run(workspace_ledger=ledger_text(done=[1, 2, 3]))
+        m = analyze.measure(run, {})
+        self.assertIsNone(m["receipt"]); self.assertFalse(m["plan_complete"]); self.assertFalse(m["live_complete"])
+
+    def test_every_task_done_without_a_receipt_is_not_a_success(self) -> None:
+        run = make_run(**{**successful_run_kwargs(), "receipt": None,
+                          "workspace_ledger": ledger_text(done=[1, 2, 3, 4, 5, 6])})
+        m = analyze.measure(run, {})
+        self.assertTrue(m["live_complete"]); self.assertFalse(m["plan_complete"]); self.assertFalse(m["success"])
+        run = make_run(**successful_run_kwargs())
+        self.assertTrue(analyze.measure(run, {})["success"])
+
+    def test_two_live_workspaces_void_the_run(self) -> None:
+        # Nothing says whose log and job records are the run's, so the run is
+        # not measurable rather than measured wrong.
+        run = make_run(workspace_ledger=ledger_text(done=[1]),
+                       extra_workspaces=[{"ledger": ledger_text(done=[2])}])
+        m = analyze.measure(run, {})
+        self.assertEqual(m["void"], "void-instrument")
+        self.assertIn("2 live workspaces", m["void_detail"])
+
+    def test_plan_decisions_count_lines_for_the_plan_only(self) -> None:
+        run = make_run(receipt={"ledger": ledger_text(done=[1]),
+                                "log": [line("2026-10-23T10:05:00.000Z", "allow", "handback-text")]},
+                       mirror=[line("2026-10-23T11:00:00.000Z", "allow", "no-ledger", plan=None),
+                               line("2026-10-23T11:01:00.000Z", "allow", "ambiguous", plan=None)])
+        m = analyze.measure(run, {})
+        self.assertEqual((m["plan_decisions"], m["blocks"], m["allows"]),
+                         (1, 0, {"ambiguous": 1, "handback-text": 1, "no-ledger": 1}))
+        run = make_run(mirror=[line("2026-10-23T11:00:00.000Z", "allow", "no-ledger", plan=None)])
+        self.assertEqual(analyze.measure(run, {})["plan_decisions"], 0)
+
+    def test_listed_stops_match_allows_one_to_one_within_a_minute(self) -> None:
+        recs = [human(0, "go"), assistant(10, "Which option do you want?"), human(100, "Task 1 governs"),
+                assistant(110, "Second question?"), human(200, "yes"), assistant(300, "Moving to Task 3.")]
+        allow = line(at(12), "allow", "handback-text")
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "log": [allow]}, records=recs,
+                       stops=[("Which option do you want?", "question"), ("Second question?", "question"),
+                              ("Moving to Task 3.", "neither"), ("never said", "neither")])
+        m = analyze.measure(run, {(run.name, at(12)): "handback"})
+        self.assertEqual(m["neither_listed"], 2)
+        # ``stop_lines`` normalizes every quote it lists, so the measures carry
+        # the normalized spelling of the sentence the Gauntlet quoted.
+        self.assertEqual([q for q, _, _ in m["unmatched_stops"]],
+                         ["second question?", "moving to task 3", "never said"])
+
+    def test_an_allow_before_the_stop_does_not_match_it(self) -> None:
+        recs = [human(0, "go"), assistant(10, "Which option do you want?"), human(100, "Task 1 governs"),
+                assistant(110, "Second question?"), human(200, "yes")]
+        early = line(at(80), "allow", "handback-text")
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "log": [early]}, records=recs,
+                       stops=[("Second question?", "question")])
+        m = analyze.measure(run, {(run.name, at(80)): "handback"})
+        self.assertEqual([q for q, _, _ in m["unmatched_stops"]], ["second question?"])
+        late = line(at(111), "allow", "handback-text")
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "log": [early, late]}, records=recs,
+                       stops=[("Second question?", "question")])
+        self.assertEqual(
+            analyze.measure(run, {(run.name, at(80)): "handback", (run.name, at(111)): "handback"})["unmatched_stops"],
+            [],
+        )
+
+    def test_adjudication_labels_blocks_and_allows_by_timestamp(self) -> None:
+        log = [line(at(10), "block", "open-tasks", refusals=1), line(at(20), "allow", "handback-text"),
+               line(at(30), "allow", "handback-line"), line(at(40), "block", "open-tasks", refusals=1)]
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "log": log})
+        m = analyze.measure(run, {(run.name, at(10)): "handback", (run.name, at(20)): "neither",
+                                  (run.name, at(30)): "handback"})
+        self.assertEqual((m["false_blocks"], m["false_handbacks"], m["unadjudicated_allows"],
+                          m["unadjudicated_blocks"]), (1, 1, 0, 1))
+
+    def test_a_decision_conflict_is_counted(self) -> None:
+        a = line(at(10), "block", "open-tasks", refusals=1)
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "log": [a]}, mirror=[{**a, "reason": "live-shell"}])
+        self.assertEqual(analyze.measure(run, {})["decision_conflicts"], 1)
+
+    def test_long_ok_needs_the_job_record_and_the_foreground_watch(self) -> None:
+        job = {"name": "soak-long", "state": "exited", "code": 0,
+               "command": ["python3", "-m", "unittest", "tests.test_soak_long", "-v"],
+               "launched": "2026-10-23T10:00:00.000Z", "ended": "2026-10-23T10:12:30.000Z"}
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]}, records=watch_records(job))
+        self.assertTrue(analyze.measure(run, {})["long_ok"])
+        job_fast = {**job, "ended": "2026-10-23T10:03:00.000Z"}
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job_fast]}, records=watch_records(job_fast))
+        self.assertFalse(analyze.measure(run, {})["long_ok"])
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                       records=[human(0, "go"), assistant(5, "ok.")])
+        self.assertFalse(analyze.measure(run, {})["long_ok"])
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [{**job, "state": "lost"}]},
+                       records=watch_records(job))
+        self.assertFalse(analyze.measure(run, {})["long_ok"])
+
+    def test_live_shell_turn_ends_count_only_shells(self) -> None:
+        run = make_run(records=turn_end_with_live("shell"))
+        self.assertEqual(len(analyze.measure(run, {})["live_shell_turn_ends"]), 1)
+        run = make_run(records=turn_end_with_live("agent"))
+        self.assertEqual(len(analyze.measure(run, {})["live_shell_turn_ends"]), 0)
+        run = make_run(records=turn_end_with_live("both"))
+        self.assertEqual(len(analyze.measure(run, {})["live_shell_turn_ends"]), 0)
 
 
 def grading(run: Path, name: str, stops: list[tuple[str, str]]) -> Path:

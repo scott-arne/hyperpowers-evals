@@ -24,9 +24,10 @@ import json
 import re
 import shlex
 import sys
+from collections import Counter
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,7 @@ from liveness import (
     Record,
     blocks,
     is_tool_result,
+    live_kinds_at,
     load,
     parse_ts,
     reloads,
@@ -53,6 +55,7 @@ from liveness import (
 )
 
 LAST_TASK = 6
+PLAN_TASKS = frozenset(range(1, LAST_TASK + 1))
 LEDGER_FILE = "progress.md"
 RECEIPTS_DIR = "hyperpowers/receipts"
 MIRROR_DIR = "hyperpowers/stop-guard"
@@ -74,10 +77,17 @@ LIFECYCLE_COPY = re.compile(r"\.import(ing)?-[0-9]+$")
 FRAGMENT = "\t#fragment"
 DECISIONS = ("allow", "block")
 ADJUDICATION_LABELS = ("handback", "neither")
+HANDBACK_REASONS = ("handback-text", "handback-line")
+# The allow-to-stop window, [stop - SKEW, stop + MINUTE]: SKEW covers the clock
+# difference between the transcript's timestamps and the hook's own.
+MINUTE = timedelta(minutes=1)
+SKEW = timedelta(seconds=2)
 SHORT_SOAK = "test_soak_short"
 LONG_SOAK = "test_soak_long"
 SHORT_RUNTIME_MS = 240_000
 SHORT_MIN_ELAPSED_S = 200
+LONG_MIN_ELAPSED_S = 600
+TJ_WAIT = re.compile(r"tracked-job\s+wait\s+(\S+)")
 TRANSPORT_ERRORS = ("ECONNRESET", "ENOTFOUND", "ETIMEDOUT", "ECONNREFUSED")
 SOAK_FILES = ("test_soak_short.py", "test_soak_long.py")
 UNITTEST_CMD = re.compile(
@@ -459,17 +469,6 @@ def jobs_for(receipt: Path | None, live: Path | None) -> list[dict[str, Any]]:
     return out
 
 
-def ledger_tasks(workspace: Path) -> set[int]:
-    """Task numbers the run's SDD ledger records as complete."""
-    done: set[int] = set()
-    for path in (workspace / "home" / ".cache" / "hyperpowers" / "sdd").glob("**/progress.md"):
-        try:
-            done |= ledger_tasks_from(_read(path))
-        except OSError:
-            continue
-    return done
-
-
 def _strings(value: Any) -> Iterator[str]:
     if isinstance(value, str):
         yield value
@@ -622,6 +621,101 @@ def stop_times(
             out.append((quote, label, ends[hit].at))
             start = hit + 1
     return out
+
+
+ListedStop = tuple[str, str, datetime | None]
+TimedStop = tuple[str, str, datetime]
+
+
+def match_allows(
+    stops: Sequence[ListedStop], decisions: Sequence[Mapping[str, Any]]
+) -> tuple[list[tuple[str, str, datetime, Mapping[str, Any]]], list[ListedStop]]:
+    """Pair every timed stop, in time order, with the nearest unused allow in its window.
+
+    The Stop hook runs after the assistant message the Gauntlet quotes, so a
+    genuine decision lies in ``[stop - 2 s, stop + 1 min]``; an allow before
+    that window belongs to an earlier stop and never satisfies a later one.
+    The pairing is one-to-one: an allow answers at most one stop, and each
+    stop, taken in time order, claims the unused allow nearest to it. The tie
+    the window leaves open — two unused allows equally far from one stop —
+    goes to the earlier allow, so the answer does not depend on log order.
+
+    :param stops: the Gauntlet's listed stops with their times, as
+        ``stop_times`` returns them.
+    :param decisions: the run's decision record.
+    :returns: the matched stops with the allow each took, and the stops left
+        without one (an untimed stop among them, which has no window at all).
+    """
+    allows = sorted((d for d in decisions if d.get("decision") == "allow"), key=lambda d: str(d.get("ts")))
+    allowed_at = [parse_ts(str(d.get("ts"))) for d in allows]
+    used: set[int] = set()
+    matched: list[tuple[str, str, datetime, Mapping[str, Any]]] = []
+    unmatched: list[ListedStop] = []
+    timed: list[TimedStop] = sorted(
+        ((quote, label, when) for quote, label, when in stops if when is not None), key=lambda s: s[2]
+    )
+    for quote, label, when in timed:
+        # The index breaks a tie, and the allows are in timestamp order, so two
+        # allows equally far from one stop leave the earlier one the match.
+        candidates = [
+            (abs(at - when), i)
+            for i, at in enumerate(allowed_at)
+            if i not in used and -SKEW <= at - when <= MINUTE
+        ]
+        if not candidates:
+            unmatched.append((quote, label, when))
+            continue
+        _, hit = min(candidates)
+        used.add(hit)
+        matched.append((quote, label, when, allows[hit]))
+    unmatched.extend(s for s in stops if s[2] is None)
+    return matched, unmatched
+
+
+def live_shell_turn_ends(records: Sequence[Record]) -> list[str]:
+    """Turn ends at which the only live tracked work is a shell (Design §4 H4)."""
+    task_map = tasks(records)
+    reload_times = reloads(records)
+    return [
+        iso(end.at)
+        for end in turn_ends(records)
+        if end.excluded is None
+        and state_at(end.at, task_map, reload_times) == "live"
+        and live_kinds_at(end.at, task_map) == {"shell"}
+    ]
+
+
+def long_job_of(jobs: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | None:
+    """The tracked-job record of the long soak, or None when no job ran it."""
+    for job in jobs:
+        if any(LONG_SOAK in str(part) for part in job.get("command") or []):
+            return job
+    return None
+
+
+def long_ok_from(job: Mapping[str, Any] | None, calls: Sequence[Call]) -> bool:
+    """The long soak passed F: exited 0 after at least 600 s, and a foreground wait saw it.
+
+    :param job: the long soak's tracked-job record, as ``long_job_of`` finds it.
+    :param calls: the main session's tool calls.
+    :returns: True when the record and the watch agree the job ran to its end.
+    """
+    if job is None or job.get("state") != "exited" or job.get("code") != 0:
+        return False
+    try:
+        elapsed = (parse_ts(str(job["ended"])) - parse_ts(str(job["launched"]))).total_seconds()
+    except (KeyError, ValueError):
+        return False
+    if elapsed < LONG_MIN_ELAPSED_S:
+        return False
+    name = Path(str(job.get("_dir", ""))).name
+    for call in calls:
+        if call.name != "Bash" or call.inp.get("run_in_background"):
+            continue
+        m = TJ_WAIT.search(str(call.inp.get("command") or ""))
+        if m and Path(m.group(1)).name == name and "status=exited code=0" in (call.result or ""):
+            return True
+    return False
 
 
 def _check_passed(verdict: Mapping[str, Any], needle: str, phase: str = "post") -> bool | None:
@@ -899,23 +993,28 @@ def _untracked(calls: Sequence[Call], workspace: Path) -> list[dict[str, str]]:
 def empty_measure(run_id: str) -> dict[str, Any]:
     """Every ``measure`` key at its no-evidence value."""
     return {
-        "run_id": run_id, "final": None, "void": None, "plugin_dir": None, "model": None, "cc": None,
+        "run_id": run_id, "final": None, "void": None, "void_detail": None, "plugin_dir": None,
+        "model": None, "cc": None,
         "models": [], "evals_commit": None, "evals_clean": None, "task_tools": False, "codex_absent": False,
-        "unit_tests_passed": None, "soak_tests_passed": None, "soaks_unchanged": None, "soak_tampered": False, "plan_complete": False,
+        "unit_tests_passed": None, "soak_tests_passed": None, "soaks_unchanged": None, "soak_tampered": False,
+        "receipt": None, "plan_path": None, "plan_complete": False, "live_complete": False,
         "final_review": False, "success": False,
+        "decisions": [], "decision_conflicts": 0, "plan_decisions": 0, "blocks": 0, "allows": {},
+        "listed_stops": [], "neither_listed": 0, "unmatched_stops": [],
+        "false_blocks": 0, "false_handbacks": 0, "unadjudicated_allows": 0, "unadjudicated_blocks": 0,
         "censored_stops": 0, "dispatch_fg": 0, "dispatch_bg": 0, "dispatch_unclassified": 0,
-        "dispatch_other": 0, "short_runs": [], "short_ok": False,
-        "live_turn_ends": [], "untracked": [],
+        "dispatch_other": 0, "short_runs": [], "short_ok": False, "long_job": None, "long_ok": False,
+        "live_turn_ends": [], "live_shell_turn_ends": [], "untracked": [],
     }
 
 
 def _transcript_measures(
     records: Sequence[Record],
+    calls: Sequence[Call],
     out: dict[str, Any],
     workspace: Path,
-    file_tasks: set[int],
+    complete: bool,
 ) -> None:
-    calls = _calls(records)
     out["cc"] = next((r.get("version") for r in records if r.get("version")), None)
     out["task_tools"] = any(
         (r.get("attachment") or {}).get("type") == "deferred_tools_delta"
@@ -925,8 +1024,6 @@ def _transcript_measures(
     bash = [c for c in calls if c.name == "Bash"]
     out["companion_used"] = any("codex-companion.mjs" in str(c.inp.get("command", "")) for c in bash)
 
-    complete = set(range(1, LAST_TASK + 1)) <= file_tasks
-    out["plan_complete"] = complete
     reviews: list[tuple[datetime, str]] = []
     last_implementer: datetime | None = None
     for call in calls:
@@ -995,6 +1092,45 @@ def _transcript_measures(
     out["untracked"] = _untracked(calls, workspace)
 
 
+def _decision_measures(
+    out: dict[str, Any],
+    record: Path,
+    workspace: Path,
+    receipt: Path | None,
+    live: Path | None,
+    sid: str | None,
+    adjudicated: Mapping[tuple[str, str], str],
+) -> None:
+    """Tally the run's decision record: its union, its reasons, and its adjudications.
+
+    H1 counts only the lines the hook wrote for this plan, so a ``no-ledger``
+    or ``ambiguous`` line, which names no plan, is not one of them. H2 and H3
+    read the labels the human partner gave each hand-back allow and each
+    block, keyed by the run and the decision's timestamp.
+    """
+    if not sid:
+        return
+    decisions, conflicts = decisions_for(workspace, receipt, live, sid)
+    out["decisions"] = decisions
+    out["decision_conflicts"] = len(conflicts)
+    plan_path = out["plan_path"]
+    out["plan_decisions"] = sum(1 for d in decisions if plan_path is not None and d.get("plan") == plan_path)
+    out["blocks"] = sum(1 for d in decisions if d.get("decision") == "block")
+    out["allows"] = dict(Counter(str(d.get("reason")) for d in decisions if d.get("decision") == "allow"))
+    for d in decisions:
+        label = adjudicated.get((record.name, str(d.get("ts"))))
+        if d.get("decision") == "block":
+            if label == "handback":
+                out["false_blocks"] += 1
+            elif label is None:
+                out["unadjudicated_blocks"] += 1
+        elif d.get("reason") in HANDBACK_REASONS:
+            if label == "neither":
+                out["false_handbacks"] += 1
+            elif label is None:
+                out["unadjudicated_allows"] += 1
+
+
 def measure(record: Path, adjudicated: Mapping[tuple[str, str], str]) -> dict[str, Any]:
     """Every Design §4 measure and the provenance readouts for one run."""
     out = empty_measure(record.name)
@@ -1019,11 +1155,38 @@ def measure(record: Path, adjudicated: Mapping[tuple[str, str], str]) -> dict[st
         and _check_passed(verdict, SOAK_LONG_CHECK) is True,
         "soaks_unchanged": _check_passed(verdict, SOAKS_UNCHANGED),
     })
-    file_tasks = ledger_tasks(workspace)
-    out["plan_complete"] = set(range(1, LAST_TASK + 1)) <= file_tasks
     transcript = main_transcript(workspace)
-    if transcript is not None:
-        _transcript_measures(load(transcript), out, workspace, file_tasks)
+    records = load(transcript) if transcript is not None else []
+    calls = _calls(records)
+    sid = session_id(transcript) if transcript is not None else None
+    receipt = receipt_for(workspace, sid) if sid else None
+    live = None
+    if sid:
+        try:
+            live = live_workspace_for(workspace, sid)
+        except ArtifactError as err:
+            # Two workspaces claiming one session leaves no answer to whose log
+            # and job records are the run's, so the run is not measurable.
+            out["void"] = "void-instrument"
+            out["void_detail"] = str(err)
+    out["receipt"] = str(receipt) if receipt is not None else None
+    out["plan_path"] = plan_path_from(ledger_text_for(receipt, live))
+    # The plan is unfinished until Finish removed its workspace and wrote a
+    # receipt (spec Decision 5), so a complete ledger in the live workspace is
+    # a diagnosis of a run that stopped short, never a completed plan.
+    out["plan_complete"] = receipt is not None and PLAN_TASKS <= ledger_tasks_from(ledger_text_for(receipt, None))
+    out["live_complete"] = live is not None and PLAN_TASKS <= ledger_tasks_from(ledger_text_for(None, live))
+    _transcript_measures(records, calls, out, workspace, out["plan_complete"])
+    _decision_measures(out, record, workspace, receipt, live, sid, adjudicated)
+    listed = stop_times(stop_lines(record), records)
+    out["listed_stops"] = [(quote, label, iso(when) if when else None) for quote, label, when in listed]
+    out["neither_listed"] = sum(1 for _, label, _ in listed if label == "neither")
+    _, unmatched = match_allows(listed, out["decisions"])
+    out["unmatched_stops"] = [(quote, label, iso(when) if when else None) for quote, label, when in unmatched]
+    out["live_shell_turn_ends"] = live_shell_turn_ends(records)
+    long_job = long_job_of(jobs_for(receipt, live))
+    out["long_job"] = long_job
+    out["long_ok"] = long_ok_from(long_job, calls)
     companion_used = out.pop("companion_used", False)
     out["codex_absent"] = (
         _check_passed(verdict, CODEX_PRECHECK, "pre") is True
@@ -1032,6 +1195,7 @@ def measure(record: Path, adjudicated: Mapping[tuple[str, str], str]) -> dict[st
     )
     out["success"] = bool(
         out["plan_complete"]
+        and out["receipt"] is not None
         and out["final_review"]
         and out["unit_tests_passed"] is True
         and out["soak_tests_passed"]
@@ -1044,7 +1208,8 @@ def measure(record: Path, adjudicated: Mapping[tuple[str, str], str]) -> dict[st
 def transcript_summary(path: Path) -> dict[str, Any]:
     """The waits and dispatch mode of one transcript, read without its run's artifacts."""
     out = empty_measure(path.stem)
-    _transcript_measures(load(path), out, path.parent, set())
+    records = load(path)
+    _transcript_measures(records, _calls(records), out, path.parent, False)
     return {
         "dispatch_fg": out["dispatch_fg"],
         "dispatch_bg": out["dispatch_bg"],

@@ -39,6 +39,9 @@ RELOAD_PREFIX = "[Tool call interrupted:"
 LAUNCH_BASH_AUTO = "Command did not complete within its"
 AUTO_MOVED = "was moved to the background"
 AGENT_TOOLS = frozenset({"Agent", "Task"})
+# The Stop hook's own vocabulary for the two tracked kinds, which the refusal
+# messages and the decision lines use.
+KIND_NAMES: Mapping[Kind, str] = {"agent": "agent", "bash": "shell"}
 SEND_OK = '{"success":true,"message":"'
 RESUMED = ("Resuming agent ", "in the background with your message")
 ASK_TOOL = "AskUserQuestion"
@@ -371,6 +374,19 @@ def state_at(at: datetime, task_map: Mapping[str, Task], reload_times: Sequence[
         elif not any(task.launched < r <= at for r in reload_times):
             censored = True
     return "censored" if censored else "live" if live else "none"
+
+
+def live_kinds_at(at: datetime, task_map: Mapping[str, Task]) -> set[str]:
+    """The kinds of tracked tasks launched at or before ``at`` and not yet complete then.
+
+    The names are the Stop hook's, not the transcript's: a background Bash
+    call is a ``shell`` there, which is what the live-shell refusal is about.
+    """
+    return {
+        KIND_NAMES[task.kind]
+        for task in task_map.values()
+        if task.launched <= at and (task.completed is None or task.completed > at)
+    }
 
 
 def asks_or_blocks(text: str) -> bool:
