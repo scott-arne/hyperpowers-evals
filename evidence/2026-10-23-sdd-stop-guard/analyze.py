@@ -73,6 +73,7 @@ RETRY_SUFFIXES = range(2, 11)
 LIFECYCLE_COPY = re.compile(r"\.import(ing)?-[0-9]+$")
 FRAGMENT = "\t#fragment"
 DECISIONS = ("allow", "block")
+ADJUDICATION_LABELS = ("handback", "neither")
 SHORT_SOAK = "test_soak_short"
 LONG_SOAK = "test_soak_long"
 SHORT_RUNTIME_MS = 240_000
@@ -180,7 +181,14 @@ def void_kind(verdict: Mapping[str, Any]) -> str | None:
 
 
 def read_adjudications(path: Path) -> dict[tuple[str, str], str]:
-    """Read ``run_id<TAB>at<TAB>label<TAB>note`` rows; ``#`` lines are comments."""
+    """Read ``run_id<TAB>key<TAB>label<TAB>note`` rows; ``#`` lines are comments.
+
+    The labels are this campaign's: a decision the human partner read as a
+    genuine hand-back is ``handback``, one that was neither a question nor a
+    BLOCKED report is ``neither`` (H2 and H3). The previous campaign's
+    ``question`` and ``blocked`` are not labels here: they are what the
+    Gauntlet's own STOP list says, which ``stop_lines`` reads.
+    """
     out: dict[tuple[str, str], str] = {}
     if not path.is_file():
         return out
@@ -188,7 +196,7 @@ def read_adjudications(path: Path) -> dict[tuple[str, str], str]:
         if not line.strip() or line.startswith("#"):
             continue
         fields = line.split("\t")
-        if len(fields) >= 3 and fields[2] in ("neither", "question", "blocked"):
+        if len(fields) >= 3 and fields[2] in ADJUDICATION_LABELS:
             out[(fields[0], fields[1])] = fields[2]
     return out
 
@@ -306,11 +314,21 @@ def live_workspace_for(workspace: Path, sid: str) -> Path | None:
     :raises ArtifactError: two workspaces carry the session, which leaves no
         answer to whose log and job records are the run's.
     """
-    hits = [
-        p.parent
-        for p in workspace.glob("home/.cache/hyperpowers/*/*/plans/*/progress.md")
-        if _is_plan_workspace(p.parent) and _carries(p, sid)
-    ]
+    hits: list[Path] = []
+    seen: set[Path] = set()
+    # A physical workspace before an alias of it, and a stable order for the
+    # rest: sdd-state's import leaves the plain-cache path a symlink to the
+    # state path, so one ledger is reachable twice and is still one workspace.
+    # The hook settles the same duplicate by the resolved path.
+    for p in sorted(workspace.glob("home/.cache/hyperpowers/*/*/plans/*/progress.md"),
+                    key=lambda p: (p.parent.is_symlink(), str(p))):
+        if not _is_plan_workspace(p.parent) or not _carries(p, sid):
+            continue
+        real = p.resolve()
+        if real in seen:
+            continue
+        seen.add(real)
+        hits.append(p.parent)
     if len(hits) > 1:
         raise ArtifactError(f"{len(hits)} live workspaces carry session {sid}")
     return hits[0] if hits else None
@@ -385,15 +403,15 @@ def decisions_for(
 ) -> tuple[list[dict[str, Any]], list[tuple[dict[str, Any], dict[str, Any]]]]:
     """The union of the plan log (the receipt's, else the live workspace's) and the session mirror.
 
-    The plan log is the authoritative one and is keyed by ``(ts, session)``, the
-    key the hook itself merges on: the mirror's twin of a plan line is the same
-    decision, and a twin whose payload differs is a conflict, which the tally
-    voids as an instrument failure. A mirror line with no twin is a decision of
-    its own, kept in file order and never merged with another mirror line: the
-    bash wrapper's ``hook-error`` lines reach the mirror alone with whole-second
-    timestamps, so two of them in one second are two Stops, neither one decision
-    nor a contradiction. A mirror that lost a line and a plan log that ends at
-    Finish therefore still make one record between them.
+    The whole union is keyed by ``(ts, session)``, the key the hook itself
+    merges on and the one the pre-registration fixes: a line present in one log
+    only is kept, so a mirror that lost a line and a plan log that ends at
+    Finish make one record between them, and two payloads under one key are
+    returned as a conflict, which the tally voids as an instrument failure. The
+    bash wrapper's ``hook-error`` lines are mirror-only and carry whole-second
+    timestamps, so two of them in one second meet as one key: identical, they
+    are one decision; different, they void the run. That is a recorded residual
+    of the design, not a case to work around here.
 
     :param workspace: the run's ``workspaces/<run>/`` copy, which holds the mirror.
     :param receipt: the run's receipt, when Finish wrote one.
@@ -402,25 +420,20 @@ def decisions_for(
     :returns: the decisions in timestamp order, and the conflicting pairs.
     """
     plan_root = receipt if receipt is not None else live
-    plan_lines = _lines(plan_root / PLAN_LOG, sid) if plan_root is not None else []
-    mirror_lines = _lines(workspace / "home" / ".cache" / MIRROR_DIR / f"{sid}.jsonl", sid)
-    authoritative: dict[tuple[str, str], dict[str, Any]] = {}
+    sources = ([plan_root / PLAN_LOG] if plan_root is not None else []) + [
+        workspace / "home" / ".cache" / MIRROR_DIR / f"{sid}.jsonl"
+    ]
+    seen: dict[tuple[str, str], dict[str, Any]] = {}
     conflicts: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    for d in plan_lines:
-        prior = authoritative.get(_key(d))
-        if prior is None:
-            authoritative[_key(d)] = d
-        elif prior != d:
-            conflicts.append((prior, d))
-    out = list(authoritative.values())
-    for d in mirror_lines:
-        prior = authoritative.get(_key(d))
-        if prior is None:
-            out.append(d)
-        elif prior != d:
-            conflicts.append((prior, d))
-    # Stable, so two decisions of one second keep the order their file gave them.
-    return sorted(out, key=lambda d: str(d.get("ts"))), conflicts
+    for path in sources:
+        for d in _lines(path, sid):
+            prior = seen.get(_key(d))
+            if prior is None:
+                seen[_key(d)] = d
+            elif prior != d:
+                conflicts.append((prior, d))
+    # Stable, so two decisions of one second keep the order their log gave them.
+    return sorted(seen.values(), key=lambda d: str(d.get("ts"))), conflicts
 
 
 def jobs_for(receipt: Path | None, live: Path | None) -> list[dict[str, Any]]:
@@ -473,26 +486,47 @@ def normalize(text: str) -> str:
     return " ".join(text.lower().split()).strip(" .")
 
 
+def _stop_occurrences(text: str) -> list[tuple[str, str]]:
+    """Every ``STOP:`` entry one text lists, normalized, in the order it lists them."""
+    found = [
+        (normalize(m.group("quote")), m.group("label").lower()) for m in STOP_LINE.finditer(text)
+    ]
+    return [item for item in found if item[0]]
+
+
 def stop_lines(record: Path) -> list[tuple[str, str]]:
-    """The Gauntlet-Agent's ``STOP: "<quote>" | <label>`` lines, normalized."""
-    texts: list[str] = []
-    results = record / "gauntlet-agent" / "results"
-    for path in sorted(results.glob("*/result.json")):
-        try:
-            texts.extend(_strings(json.loads(path.read_text())))
-        except (OSError, ValueError):
-            continue
-    for path in sorted(results.glob("*/result.md")):
-        try:
-            texts.append(path.read_text(errors="replace"))
-        except OSError:
-            continue
+    """The Gauntlet-Agent's ``STOP: "<quote>" | <label>`` entries, normalized, in order.
+
+    One results directory is one grading, and its ``result.json`` and
+    ``result.md`` are two renderings of that one list, so the entries come from
+    a single rendering of each grading: the richest one, which is the string of
+    the structured result that carries the most entries, else the Markdown. The
+    duplicates that matter are between renderings, not inside a list: the
+    Gauntlet writes one entry per stop, so two stops quoting one sentence are
+    two entries, each owed its own allow. Collapsing them would hide the
+    second's missing decision from the one-to-one match ``stop_times`` makes.
+    """
     found: list[tuple[str, str]] = []
-    for text in texts:
-        for match in STOP_LINE.finditer(text):
-            item = (normalize(match.group("quote")), match.group("label").lower())
-            if item[0] and item not in found:
-                found.append(item)
+    results = record / "gauntlet-agent" / "results"
+    for run in sorted({p.parent for p in results.glob("*/result.*")}):
+        renderings: list[list[tuple[str, str]]] = []
+        structured = run / "result.json"
+        if structured.is_file():
+            try:
+                renderings += [_stop_occurrences(s) for s in _strings(json.loads(structured.read_text()))]
+            except (OSError, ValueError):
+                pass
+        markdown = run / "result.md"
+        if markdown.is_file():
+            try:
+                renderings.append(_stop_occurrences(markdown.read_text(errors="replace")))
+            except OSError:
+                pass
+        richest: list[tuple[str, str]] = []
+        for rendering in renderings:
+            if len(rendering) > len(richest):
+                richest = rendering
+        found += richest
     return found
 
 

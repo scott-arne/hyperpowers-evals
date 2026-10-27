@@ -322,6 +322,19 @@ class Readers(unittest.TestCase):
         self.assertIsNotNone(live)
         self.assertEqual(live.name, "p")  # type: ignore[union-attr]
 
+    def test_an_imported_workspace_reached_by_two_paths_is_one_workspace(self) -> None:
+        # sdd-state's import leaves the plain-cache path a symlink to the state
+        # path, so one ledger answers twice unless the match is by real path.
+        run = make_run(workspace_ledger=ledger_text(done=[1]))
+        ws = analyze.workspace_of(run)
+        state = ws / "home" / ".cache" / "hyperpowers" / "state" / "k" / "plans" / "p"
+        plain = ws / "home" / ".cache" / "hyperpowers" / "sdd" / "k" / "plans" / "imported"
+        plain.parent.mkdir(parents=True, exist_ok=True)
+        plain.symlink_to(state, target_is_directory=True)
+        live = analyze.live_workspace_for(ws, "sess-1")
+        self.assertIsNotNone(live)
+        self.assertEqual(live.resolve(), state.resolve())  # type: ignore[union-attr]
+
     def test_a_retry_suffix_outranks_the_name_it_fell_from_and_a_pid_does_not(self) -> None:
         # Two finishes of one second: the second falls to `-2`, so it is the
         # later; a staging that took a private `-<pid>` name is not a retry.
@@ -364,20 +377,26 @@ class Readers(unittest.TestCase):
         self.assertEqual(len(decisions), 1)
         self.assertEqual([(x["reason"], y["reason"]) for x, y in conflicts], [("open-tasks", "live-shell")])
 
-    def test_two_mirror_only_lines_of_one_second_are_two_decisions(self) -> None:
-        # The bash wrapper's hook-error line reaches the mirror alone and carries
-        # a whole-second timestamp, so two Stops of one second share a key
-        # without being one decision or contradicting each other.
+    def test_mirror_only_lines_reconcile_under_the_same_key_as_the_rest(self) -> None:
+        # The pre-registered rule keys the whole union: the bash wrapper's
+        # hook-error lines are mirror-only and carry whole-second timestamps, so
+        # two of them in one second are one decision when identical and a
+        # conflict when not. Task 9's design accepts that residual.
         logged = line("2026-10-23T10:05:00.000Z", "block", "open-tasks", refusals=1)
         first = line("2026-10-23T10:06:00Z", "allow", "hook-error", plan=None, detail="node not found")
-        second = line("2026-10-23T10:06:00Z", "allow", "hook-error", plan=None, detail="module failed")
         run = make_run(receipt={"ledger": ledger_text(done=[1]), "log": [logged]},
-                       mirror=[logged, first, second, dict(second)])
+                       mirror=[logged, first, dict(first)])
         ws = analyze.workspace_of(run)
         decisions, conflicts = analyze.decisions_for(ws, analyze.receipt_for(ws, "sess-1"), None, "sess-1")
-        self.assertEqual([x["reason"] for x in decisions], ["open-tasks", "hook-error", "hook-error", "hook-error"])
-        self.assertEqual([x.get("detail") for x in decisions[1:]], ["node not found", "module failed", "module failed"])
+        self.assertEqual([x["reason"] for x in decisions], ["open-tasks", "hook-error"])
         self.assertEqual(conflicts, [])
+        second = {**first, "detail": "module failed"}
+        run = make_run(receipt={"ledger": ledger_text(done=[1])}, mirror=[first, second])
+        ws = analyze.workspace_of(run)
+        decisions, conflicts = analyze.decisions_for(ws, analyze.receipt_for(ws, "sess-1"), None, "sess-1")
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual([(x.get("detail"), y.get("detail")) for x, y in conflicts],
+                         [("node not found", "module failed")])
 
     def test_an_unfinished_run_reads_the_live_workspace_log_and_jobs(self) -> None:
         a = line("2026-10-23T10:05:00.000Z", "block", "open-tasks", refusals=1)
@@ -406,6 +425,48 @@ class Readers(unittest.TestCase):
                  ("Task 1 done. Moving to Task 2.", "neither"), ("never said", "neither")]
         timed = analyze.stop_times(stops, recs)
         self.assertEqual([t for _, _, t in timed], [parse_ts(at(10)), parse_ts(at(110)), parse_ts(at(210)), None])
+
+    def test_two_identical_listed_stops_stay_two_stops(self) -> None:
+        # The Gauntlet lists one entry per stop, so two stops that quote one
+        # sentence are two stops, each owed its own allow; collapsing them would
+        # hide the second's missing decision from the one-to-one match.
+        recs = [human(0, "go"), assistant(10, "Task 1 done. Moving to Task 2."), human(100, "continue"),
+                assistant(110, "Task 1 done. Moving to Task 2."), human(200, "continue"), assistant(210, "All done.")]
+        quoted = ("Task 1 done. Moving to Task 2.", "neither")
+        allow = line(at(12), "allow", "handback-text")
+        run = make_run(records=recs, stops=[quoted, quoted],
+                       receipt={"ledger": ledger_text(done=[1]), "log": [allow]})
+        listed = analyze.stop_lines(run)
+        self.assertEqual(listed, [("task 1 done. moving to task 2", "neither")] * 2)
+        timed = analyze.stop_times(listed, recs)
+        self.assertEqual([t for _, _, t in timed], [parse_ts(at(10)), parse_ts(at(110))])
+        # One allow for two stops: the second stop has no decision to pair with,
+        # which is what Task 15's matcher reports as void-instrument.
+        ws = analyze.workspace_of(run)
+        decisions, _ = analyze.decisions_for(ws, analyze.receipt_for(ws, "sess-1"), None, "sess-1")
+        self.assertEqual(len(decisions), 1)
+
+    def test_a_result_rendered_twice_lists_its_stops_once(self) -> None:
+        run = make_run(stops=[("Which option do you want?", "question")])
+        results = next((run / "gauntlet-agent" / "results").iterdir())
+        (results / "result.md").write_text('STOP: "Which option do you want?" | question\n')
+        self.assertEqual(analyze.stop_lines(run), [("which option do you want?", "question")])
+
+    def test_adjudications_carry_this_campaign_s_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "adjudications.tsv"
+            path.write_text(
+                "# run_id\tts\tlabel\tnote\n"
+                "r1\t2026-10-23T10:05:00.000Z\thandback\tthe reviewer asked a question\n"
+                "r1\t2026-10-23T10:07:00.000Z\tneither\tit had the next step in hand\n"
+                "r1\t2026-10-23T10:09:00.000Z\tnonsense\tnot a label\n"
+                "\n"
+            )
+            self.assertEqual(
+                analyze.read_adjudications(path),
+                {("r1", "2026-10-23T10:05:00.000Z"): "handback", ("r1", "2026-10-23T10:07:00.000Z"): "neither"},
+            )
+        self.assertEqual(analyze.read_adjudications(Path(tmp) / "gone.tsv"), {})
 
     def test_the_session_id_is_the_transcript_name_and_a_torn_write_is_not_a_record(self) -> None:
         run = make_run(sid="sess-2", receipt={"ledger": ledger_text(done=[1], sid="sess-2")})
