@@ -29,10 +29,13 @@ PINS = {
     "subagent_models": "claude-opus-5-5,claude-sonnet-5-5,claude-haiku-5-5",
     "codex": "absent", "task_tools": "on",
 }
+# The job runs on the records' own timeline: treatment_records launches the
+# long soak at 600 s and its completion lands at 1330 s, and the watch below
+# has to start after the launch and answer after the exit to count.
 LONG_JOB = {
     "name": "soak-long", "state": "exited", "code": 0,
     "command": ["python3", "-m", "unittest", "tests.test_soak_long", "-v"],
-    "launched": "2026-10-23T10:00:00.000Z", "ended": "2026-10-23T10:12:30.000Z",
+    "launched": at(600), "ended": at(1330),
 }
 TRACKED_JOB = f"bash {ROOT}/skills/subagent-driven-development/scripts/tracked-job"
 # The clean run's one turn end, and the window its decision has to fall in.

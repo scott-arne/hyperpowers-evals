@@ -316,9 +316,25 @@ class Tasks(unittest.TestCase):
             notification(90, "b1"),
         ]
         task_map = liveness.tasks(recs)
-        self.assertEqual(liveness.live_kinds_at(ts(30), task_map), {"agent", "shell"})
-        self.assertEqual(liveness.live_kinds_at(ts(60), task_map), {"shell"})
-        self.assertEqual(liveness.live_kinds_at(ts(95), task_map), set())
+        self.assertEqual(liveness.live_kinds_at(ts(30), task_map, []), {"agent", "shell"})
+        self.assertEqual(liveness.live_kinds_at(ts(60), task_map, []), {"shell"})
+        self.assertEqual(liveness.live_kinds_at(ts(95), task_map, []), set())
+
+    def test_live_kinds_at_keeps_an_uncompleted_task_until_a_reload_ends_it(self) -> None:
+        # Both launches run on with no completion recorded, which is the Stop
+        # hook's own reading of them, until the reload ends the session.
+        recs = [
+            human(0, "go"),
+            assistant(10, tools=[("a1", "Agent", {"description": "x"})]),
+            result(11, "a1", AGENT_BG),
+            assistant(20, tools=[("b1", "Bash", {"command": "sleep 9", "run_in_background": True})]),
+            result(21, "b1", BASH_BG),
+            result(60, "z9", RELOAD_RESULT, is_error=True),
+        ]
+        task_map = liveness.tasks(recs)
+        reload_times = liveness.reloads(recs)
+        self.assertEqual(liveness.live_kinds_at(ts(50), task_map, reload_times), {"agent", "shell"})
+        self.assertEqual(liveness.live_kinds_at(ts(70), task_map, reload_times), set())
 
     def test_censored_work_wins_over_live_work(self) -> None:
         # One task runs to a recorded completion while another never records one.

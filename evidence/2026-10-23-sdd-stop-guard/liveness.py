@@ -376,17 +376,29 @@ def state_at(at: datetime, task_map: Mapping[str, Task], reload_times: Sequence[
     return "censored" if censored else "live" if live else "none"
 
 
-def live_kinds_at(at: datetime, task_map: Mapping[str, Task]) -> set[str]:
-    """The kinds of tracked tasks launched at or before ``at`` and not yet complete then.
+def live_kinds_at(
+    at: datetime, task_map: Mapping[str, Task], reload_times: Sequence[datetime]
+) -> set[str]:
+    """The kinds of the tracked tasks that were still running at ``at``.
 
-    The names are the Stop hook's, not the transcript's: a background Bash
-    call is a ``shell`` there, which is what the live-shell refusal is about.
+    A task launched at or before ``at`` was running then unless it recorded a
+    completion by then, or a reload between its launch and ``at`` ended the
+    session that owned it — the same reload rule ``state_at`` applies, without
+    which a task the session never saw again reads as live for the rest of the
+    transcript. The names are the Stop hook's, not the transcript's: a
+    background Bash call is a ``shell`` there, which is what the live-shell
+    refusal is about.
     """
-    return {
-        KIND_NAMES[task.kind]
-        for task in task_map.values()
-        if task.launched <= at and (task.completed is None or task.completed > at)
-    }
+    kinds: set[str] = set()
+    for task in task_map.values():
+        if task.launched > at:
+            continue
+        if task.completed is not None:
+            if task.completed > at:
+                kinds.add(KIND_NAMES[task.kind])
+        elif not any(task.launched < r <= at for r in reload_times):
+            kinds.add(KIND_NAMES[task.kind])
+    return kinds
 
 
 def asks_or_blocks(text: str) -> bool:

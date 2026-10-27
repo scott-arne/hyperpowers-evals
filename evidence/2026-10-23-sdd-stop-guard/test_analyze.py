@@ -22,6 +22,7 @@ from synth import (
     AGENT_BG,
     BASH_BG,
     LEDGER,
+    RELOAD_RESULT,
     assistant,
     at,
     control_records,
@@ -37,11 +38,16 @@ from synth import (
 
 CONTROL_STOPS = (("Moving to Task 3.", "neither"),)
 TRACKED_JOB = "bash /roots/treatment/skills/subagent-driven-development/scripts/tracked-job"
+WAIT_OK = "status=exited code=0\n"
+# The long soak and its watch share the synthetic timeline, because the watch
+# has to be causal: it starts after the launch and answers after the exit.
 LONG_JOB = {
     "name": "soak-long", "state": "exited", "code": 0,
     "command": ["python3", "-m", "unittest", "tests.test_soak_long", "-v"],
-    "launched": "2026-10-23T10:00:00.000Z", "ended": "2026-10-23T10:12:30.000Z",
+    "launched": at(20), "ended": at(800),
 }
+WATCH_AT = 30.0
+WATCH_DONE = 810.0
 
 
 def drop_call(records: list[dict[str, Any]], tool_id: str) -> list[dict[str, Any]]:
@@ -61,25 +67,48 @@ def successful_run_kwargs() -> dict[str, Any]:
     return {"records": treatment_records(), "receipt": {"ledger": ledger_text(done=range(1, 7))}}
 
 
-def watch_records(job: Mapping[str, Any], quote: str = "") -> list[dict[str, Any]]:
-    """Main-session records whose one foreground Bash call watches ``job`` to its exit.
+def wait_command(job: Mapping[str, Any], index: int = 0, quote: str = "", prefix: str = "") -> str:
+    """The foreground watch an SDD session runs on one of a receipt's tracked jobs.
+
+    ``_record_dir`` writes a receipt's job records to ``jobs/<name>-x-<n>`` in
+    the order it was handed them.
 
     :param job: the tracked-job record the wait names.
+    :param index: the job's position among the receipt's records.
     :param quote: the quote character the session wrapped the job path in, if any.
+    :param prefix: anything the session ran before the wait in the same call.
     """
-    # ``_record_dir`` names the first job directory of a receipt after the job.
-    jobdir = f"{quote}jobs/{job['name']}-x-0{quote}"
-    command = f"{TRACKED_JOB} wait {jobdir} --max-ms 600000"
+    return f"{prefix}{TRACKED_JOB} wait {quote}jobs/{job['name']}-x-{index}{quote} --max-ms 600000"
+
+
+def watch_records(
+    command: str,
+    *,
+    at_s: float = WATCH_AT,
+    result_s: float = WATCH_DONE,
+    background: bool = False,
+    is_error: bool = False,
+    text: str = WAIT_OK,
+) -> list[dict[str, Any]]:
+    """Main-session records holding one Bash call that claims to watch a tracked job."""
+    inp: dict[str, Any] = {"command": command, "timeout": 600000}
+    if background:
+        inp["run_in_background"] = True
     return [
         human(0, "go"),
-        assistant(10, tools=[("w1", "Bash", {"command": command, "timeout": 600000})]),
-        result(900, "w1", "status=exited code=0"),
-        assistant(910, "The long soak exited 0."),
+        assistant(at_s, tools=[("w1", "Bash", inp)]),
+        result(result_s, "w1", text, is_error=is_error),
+        assistant(result_s + 10, "The long soak exited 0."),
     ]
 
 
-def turn_end_with_live(kind: str) -> list[dict[str, Any]]:
-    """A turn that ends while a launch of ``kind`` is live; the completions come after it."""
+def turn_end_with_live(kind: str, complete: bool = True) -> list[dict[str, Any]]:
+    """A turn that ends while a launch of ``kind`` is live.
+
+    :param kind: ``agent``, ``shell``, or ``both``.
+    :param complete: whether each launch records a completion after the turn
+        end; without one the session walked away and never saw it finish.
+    """
     agent = kind in ("agent", "both")
     shell = kind in ("shell", "both")
     recs: list[dict[str, Any]] = [human(0, "go")]
@@ -90,9 +119,9 @@ def turn_end_with_live(kind: str) -> list[dict[str, Any]]:
         recs += [assistant(20, tools=[("b1", "Bash", {"command": "sleep 900", "run_in_background": True})]),
                  result(21, "b1", BASH_BG)]
     recs.append(human(100, "continue"))
-    if agent:
+    if complete and agent:
         recs.append(notification(200, "a1"))
-    if shell:
+    if complete and shell:
         recs.append(notification(210, "b1"))
     return recs
 
@@ -465,25 +494,80 @@ class Measures(unittest.TestCase):
 
     def test_long_ok_needs_the_job_record_and_the_foreground_watch(self) -> None:
         job = dict(LONG_JOB)
-        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]}, records=watch_records(job))
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                       records=watch_records(wait_command(job)))
         self.assertTrue(analyze.measure(run, {})["long_ok"])
-        job_fast = {**job, "ended": "2026-10-23T10:03:00.000Z"}
-        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job_fast]}, records=watch_records(job_fast))
+        job_fast = {**job, "ended": at(200)}
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job_fast]},
+                       records=watch_records(wait_command(job_fast)))
         self.assertFalse(analyze.measure(run, {})["long_ok"])
         run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
                        records=[human(0, "go"), assistant(5, "ok.")])
         self.assertFalse(analyze.measure(run, {})["long_ok"])
         run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [{**job, "state": "lost"}]},
-                       records=watch_records(job))
+                       records=watch_records(wait_command(job)))
         self.assertFalse(analyze.measure(run, {})["long_ok"])
 
-    def test_a_quoted_job_path_in_the_wait_command_still_matches(self) -> None:
-        # A session that quotes the job path waited on the same job; the shell
-        # strips the quotes before tracked-job ever sees them.
+    def test_the_watch_must_be_a_command_the_session_ran(self) -> None:
+        # Every one of these carries the words of a watch and a result that
+        # reads like the helper's, and none of them watched anything.
         job = dict(LONG_JOB)
-        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
-                       records=watch_records(job, quote='"'))
+        jobdir = f"jobs/{job['name']}-x-0"
+        for label, records in (
+            ("echoed", watch_records(f'echo "status=exited code=0 from {TRACKED_JOB} wait {jobdir}"')),
+            ("commented", watch_records(f"# {TRACKED_JOB} wait {jobdir}\nls")),
+            ("committed", watch_records(f'git commit -m "watched with tracked-job wait {jobdir}"')),
+            ("backgrounded", watch_records(wait_command(job), background=True)),
+            ("errored", watch_records(wait_command(job), is_error=True)),
+            ("answered before the job ended", watch_records(wait_command(job), result_s=700.0)),
+            ("started before the job launched", watch_records(wait_command(job), at_s=5.0)),
+            ("partial line", watch_records(wait_command(job), text="status=exited code=0 (still polling)")),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]}, records=records)
+                self.assertFalse(analyze.measure(run, {})["long_ok"], label)
+
+    def test_the_watch_survives_a_quoted_path_and_a_leading_cd(self) -> None:
+        # A session that quotes the job path or changes directory first waited
+        # on the same job; the shell strips the quotes and `cd` runs no helper.
+        job = dict(LONG_JOB)
+        for label, command in (
+            ("quoted", wait_command(job, quote='"')),
+            ("after cd", wait_command(job, prefix="cd /x/coding-agent-workdir && ")),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command))
+                self.assertTrue(analyze.measure(run, {})["long_ok"], label)
+
+    def test_a_soak_job_is_one_that_runs_the_soak(self) -> None:
+        shell = {**LONG_JOB, "command": ["bash", "-c", "cd /x && python3 -m unittest tests.test_soak_long -v"]}
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [shell]},
+                       records=watch_records(wait_command(shell)))
         self.assertTrue(analyze.measure(run, {})["long_ok"])
+        mention = {**LONG_JOB, "command": ["echo", "test_soak_long"]}
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [mention]},
+                       records=watch_records(wait_command(mention)))
+        m = analyze.measure(run, {})
+        self.assertIsNone(m["long_job"])
+        self.assertFalse(m["long_ok"])
+
+    def test_the_watched_attempt_answers_for_a_retried_soak(self) -> None:
+        # A lost first attempt and a watched retry are two records of one
+        # obligation; H4 asks about the attempt the session actually watched.
+        lost = {**LONG_JOB, "state": "lost"}
+        retry = dict(LONG_JOB)
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [lost, retry]},
+                       records=watch_records(wait_command(retry, index=1)))
+        m = analyze.measure(run, {})
+        self.assertTrue(m["long_ok"])
+        self.assertTrue(m["long_job"]["_dir"].endswith("soak-long-x-1"))
+        # With neither attempt watched the last one is the state the run ended in.
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [lost, retry]},
+                       records=[human(0, "go"), assistant(5, "ok.")])
+        m = analyze.measure(run, {})
+        self.assertFalse(m["long_ok"])
+        self.assertTrue(m["long_job"]["_dir"].endswith("soak-long-x-1"))
 
     def test_a_verdict_void_keeps_its_kind_when_the_archive_is_also_broken(self) -> None:
         # `void-instrument` is uncapped, so relabelling a capped void would give
@@ -504,6 +588,62 @@ class Measures(unittest.TestCase):
         self.assertEqual(len(analyze.measure(run, {})["live_shell_turn_ends"]), 0)
         run = make_run(records=turn_end_with_live("both"))
         self.assertEqual(len(analyze.measure(run, {})["live_shell_turn_ends"]), 0)
+
+    def test_an_abandoned_shell_is_a_live_shell_turn_end(self) -> None:
+        # The session walked away and never saw the shell finish, which is the
+        # H4 failure; `state_at` would call that moment censored.
+        run = make_run(records=turn_end_with_live("shell", complete=False))
+        self.assertEqual(len(analyze.measure(run, {})["live_shell_turn_ends"]), 1)
+        run = make_run(records=turn_end_with_live("both", complete=False))
+        self.assertEqual(len(analyze.measure(run, {})["live_shell_turn_ends"]), 0)
+
+    def test_an_abandoned_shell_at_the_end_of_the_transcript_counts(self) -> None:
+        recs = [human(0, "go"),
+                assistant(20, tools=[("b1", "Bash", {"command": "sleep 900", "run_in_background": True})]),
+                result(21, "b1", BASH_BG),
+                assistant(30, "The soak is running; I will check it later.")]
+        run = make_run(records=recs)
+        self.assertEqual(len(analyze.measure(run, {})["live_shell_turn_ends"]), 1)
+
+    def test_a_reload_clears_the_launches_it_ended(self) -> None:
+        # A reload ends the session that owned the launch, so the shell is not
+        # still running at the next turn end, and the agent the reload killed
+        # does not keep a later shell-only stop from counting.
+        def after_reload(*tail: dict[str, Any]) -> list[dict[str, Any]]:
+            return [human(0, "go"),
+                    assistant(10, tools=[("b1", "Bash", {"command": "sleep 900", "run_in_background": True})]),
+                    result(11, "b1", BASH_BG),
+                    result(50, "z9", RELOAD_RESULT, is_error=True),
+                    assistant(51, "No response requested."),
+                    human(60, "Resume"),
+                    *tail]
+
+        quiet = after_reload(assistant(70, tools=[("t1", "Bash", {"command": "ls"})]),
+                             result(71, "t1", "ok"),
+                             assistant(80, "Nothing is running now."),
+                             human(200, "continue"))
+        self.assertEqual(analyze.measure(make_run(records=quiet), {})["live_shell_turn_ends"], [])
+        relaunched = after_reload(
+            assistant(70, tools=[("b2", "Bash", {"command": "sleep 900", "run_in_background": True})]),
+            result(71, "b2", BASH_BG),
+            assistant(80, "The soak is running in the background."),
+            human(200, "continue"),
+            notification(400, "b2"))
+        self.assertEqual(len(analyze.measure(make_run(records=relaunched), {})["live_shell_turn_ends"]), 1)
+
+    def test_an_agent_a_reload_ended_does_not_mask_a_live_shell(self) -> None:
+        recs = [human(0, "go"),
+                assistant(10, tools=[("a1", "Agent", {"description": "Implement Task 1"})]),
+                result(11, "a1", AGENT_BG),
+                result(50, "z9", RELOAD_RESULT, is_error=True),
+                assistant(51, "No response requested."),
+                human(60, "Resume"),
+                assistant(70, tools=[("b1", "Bash", {"command": "sleep 900", "run_in_background": True})]),
+                result(71, "b1", BASH_BG),
+                assistant(80, "The soak is running in the background."),
+                human(300, "continue"),
+                notification(400, "b1")]
+        self.assertEqual(len(analyze.measure(make_run(records=recs), {})["live_shell_turn_ends"]), 1)
 
 
 def grading(run: Path, name: str, stops: list[tuple[str, str]]) -> Path:
