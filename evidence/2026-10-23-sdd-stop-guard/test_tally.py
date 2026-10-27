@@ -447,6 +447,28 @@ class Harness(unittest.TestCase):
             self.assertFalse(tally.harness_ok(git("rev-parse", "HEAD"), pin, repo))
 
 
+class Pins(unittest.TestCase):
+    def write(self, pins: dict[str, str]) -> Path:
+        path = Path(self.tmp.name) / "manifest.tsv"
+        path.write_text("".join(f"{k}\t{v}\n" for k, v in pins.items()))
+        return path
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_the_old_control_pins_are_extra_rows_not_missing_values(self) -> None:
+        # The campaign dropped the control arm, so a manifest copied from the
+        # 2026-10-19 one still names it; the pin it has to carry is this arm's.
+        manifest = self.write({**PINS, "control": "c" * 40, "control_root": "/roots/control"})
+        self.assertEqual(tally.read_pins(manifest)["treatment_root"], ROOT)
+
+    def test_an_unfilled_treatment_pin_is_still_an_error(self) -> None:
+        manifest = self.write({**PINS, "treatment": "<commit>"})
+        with self.assertRaises(ValueError):
+            tally.read_pins(manifest)
+
+
 class Decide(unittest.TestCase):
     def row(self, **kw: Any) -> dict[str, Any]:
         base: dict[str, Any] = {
