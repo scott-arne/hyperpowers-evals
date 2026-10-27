@@ -108,7 +108,12 @@ The adjudication labels answer H2's second half and H3. For a `block`, the
 label `handback` means the human partner read it as a legitimate hand-back and
 it counts as a false block; no label counts as unadjudicated. For an `allow`
 whose reason is `handback-text`, `handback-line` or `cap`, the label `neither`
-counts as a false hand-back; no label counts as unadjudicated. The tally
+counts as a false hand-back; no label counts as unadjudicated. A `log-failed`
+allow is read as the decision it displaced, which is the token before the
+first `:` in its `detail` (the whole field when that decision carried no
+detail of its own): displaced `open-tasks`, `live-shell` or `cap` it is owed a
+label like a `cap` allow, displaced `handback-text` or `handback-line` like a
+hand-back allow, and displaced any other allow it is owed none. The tally
 returns `UNADJUDICATED` rather than a decision while any counted run has an
 unlabelled block or adjudicated allow.
 
@@ -119,15 +124,23 @@ legitimate hand-back the guard refused twice, which H3's false-block count
 already punishes; labelled `neither` it is a false hand-back, which is H2's
 failure.
 
+A `log-failed` allow that displaced `open-tasks`, `live-shell` or `cap` is
+adjudicated for the same reason. `log-failed` is the hook's fail-open path:
+the guard had decided to refuse, or to give up, the authoritative plan log
+could not be written, and the hook allowed instead, recording the displaced
+decision in `detail`. The stop it releases reaches the human partner exactly
+as a `cap` allow's does, and the driver's list is no likelier to hold it.
+
 That is a recorded deviation from the spec, in the direction of its intent.
 The spec's H2 names the Gauntlet's STOP list and the hand-back allows. The
-campaign also adjudicates `cap` allows, because the driver's list ends at a
-done condition the agent's own report controls: an agent that falsely reports
+campaign also adjudicates `cap` allows and the `log-failed` allows that
+displaced a refusal or a release, because the driver's list ends at a done
+condition the agent's own report controls: an agent that falsely reports
 every task, the review, the merge and the finish step done leaves a later
-stop off the list. A `cap` allow is by construction a stop that reached the
-human partner, so reading it from the transcript rather than from the list
-makes H2 independent of the driver there, which is stricter than the letter
-of the spec.
+stop off the list. Each of those allows is by construction a stop that
+reached the human partner, so reading them from the transcript rather than
+from the list makes H2 independent of the driver there, which is stricter
+than the letter of the spec.
 
 The dispatch classification and the untracked-launch tripwire are carried over
 unchanged from `../2026-10-19-sdd-turn-liveness/README.md`, "What each measure
@@ -239,8 +252,10 @@ How `tally.evaluate` implements that, in the order it asks:
 
 ### Adjudication
 
-Every `block`, and every `allow` whose reason is `handback-text`,
-`handback-line` or `cap`, gets one row in `adjudications.tsv`:
+Every `block`, every `allow` whose reason is `handback-text`, `handback-line`
+or `cap`, and every `log-failed` allow whose displaced reason is one of those
+three or a refusal (`open-tasks`, `live-shell`), gets one row in
+`adjudications.tsv`:
 `run_id<TAB>ts<TAB>label<TAB>note`, keyed by the decision's own `ts`. The
 label is `handback` or `neither`, read from the archived transcript's last
 assistant text before that timestamp. Labelling happens before `tally.py` is
@@ -254,10 +269,11 @@ The three analyzers as committed at the pre-registration, from
 `git rev-parse HEAD:evidence/2026-10-23-sdd-stop-guard/<f>` at the commit
 this file is written against. `liveness.py` and `tally.py` are the blobs the
 `harness` pin `33523dad5` carries; `analyze.py` is the later blob that
-adjudicates `cap` allows, which does not move that pin for the reason below:
+adjudicates `cap` allows and the `log-failed` allows that displaced a refusal
+or a release, which does not move that pin for the reason below:
 
 - `liveness.py` `1b646d88fca64be5e7c9f66b0c6251731d09bc98`
-- `analyze.py` `4ad355325ffdbc3985b8a0e275800d0808e04c5f`
+- `analyze.py` `5d19560ba7342edbba7832c6054c0379785e324f`
 - `tally.py` `c5b371b17029cd6bc886d167b141b4ee19cd26e1`
 
 `synth.py` builds the synthetic runs the analyzer's own tests read; no tally

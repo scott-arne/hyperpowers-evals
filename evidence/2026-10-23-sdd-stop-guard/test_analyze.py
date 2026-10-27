@@ -500,6 +500,28 @@ class Measures(unittest.TestCase):
         m = analyze.measure(run, {(run.name, at(10)): "handback"})
         self.assertEqual((m["false_handbacks"], m["unadjudicated_allows"]), (0, 0))
 
+    def test_a_log_failed_allow_is_adjudicated_by_the_decision_it_displaced(self) -> None:
+        # A failed plan-log write turns the decision the guard had settled into
+        # an allow, so a displaced refusal or `cap` released the stop exactly as
+        # a `cap` allow does and owes the same label. A displaced allow reason
+        # is owed whatever that reason would be owed.
+        def counts(detail: str, label: str | None = None) -> tuple[int, int]:
+            run = make_run(receipt={"ledger": ledger_text(done=[1]),
+                                    "log": [line(at(10), "allow", "log-failed", detail=detail)]})
+            m = analyze.measure(run, {(run.name, at(10)): label} if label else {})
+            return m["false_handbacks"], m["unadjudicated_allows"]
+
+        self.assertEqual(counts("open-tasks: 3 of 6 tasks open"), (0, 1))
+        self.assertEqual(counts("open-tasks: 3 of 6 tasks open", "neither"), (1, 0))
+        self.assertEqual(counts("open-tasks: 3 of 6 tasks open", "handback"), (0, 0))
+        self.assertEqual(counts("live-shell: job soak-long is live"), (0, 1))
+        self.assertEqual(counts("cap: two refusals already"), (0, 1))
+        self.assertEqual(counts("cap: two refusals already", "neither"), (1, 0))
+        # `no-plan` was already an allow, so the failed write displaced nothing
+        # the human partner has to judge.
+        self.assertEqual(counts("no-plan: the ledger names no plan"), (0, 0))
+        self.assertEqual(counts("handback-text: BLOCKED, I need a decision"), (0, 1))
+
     def test_adjudication_labels_blocks_and_allows_by_timestamp(self) -> None:
         log = [line(at(10), "block", "open-tasks", refusals=1), line(at(20), "allow", "handback-text"),
                line(at(30), "allow", "handback-line"), line(at(40), "block", "open-tasks", refusals=1)]

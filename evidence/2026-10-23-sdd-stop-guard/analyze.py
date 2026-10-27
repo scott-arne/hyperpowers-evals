@@ -81,6 +81,11 @@ ADJUDICATION_LABELS = ("handback", "neither")
 # the guard reading a hand-back in the turn; `cap` is the guard giving up
 # after two refusals, which releases the stop whatever it was.
 ADJUDICATED_REASONS = ("handback-text", "handback-line", "cap")
+# The reasons a `log-failed` allow can displace and still release a stop the
+# guard had settled: `open-tasks` and `live-shell` are refusals and `cap` is
+# the guard giving up, so when the authoritative write fails the fail-open
+# allow sends that stop to the human partner exactly as a `cap` allow does.
+RELEASING_REASONS = ("open-tasks", "live-shell", "cap")
 # The allow-to-stop window, [stop - SKEW, stop + MINUTE]: SKEW covers the clock
 # difference between the transcript's timestamps and the hook's own.
 MINUTE = timedelta(minutes=1)
@@ -1400,6 +1405,30 @@ def _transcript_measures(
     out["untracked"] = _untracked(calls, workspace)
 
 
+def _is_adjudicated_allow(d: Mapping[str, Any]) -> bool:
+    """Whether this allow owes the human partner an adjudication label.
+
+    An allow is owed one when its reason is in :data:`ADJUDICATED_REASONS`, or
+    when a failed authoritative write displaced a decision that would itself
+    have reached the human partner. A ``log-failed`` line carries the
+    displaced reason as the token before the first ``:`` in ``detail`` (the
+    whole field when the displaced decision had no detail of its own), and
+    that reason is owed a label when it is a refusal or a release
+    (:data:`RELEASING_REASONS`) or an adjudicated allow reason in its own
+    right.
+
+    :param d: one decision line of the run's record.
+    :returns: ``True`` when the line is an allow H2 has to see labelled.
+    """
+    reason = d.get("reason")
+    if reason in ADJUDICATED_REASONS:
+        return True
+    if reason != "log-failed":
+        return False
+    displaced = str(d.get("detail") or "").split(":", 1)[0].strip()
+    return displaced in RELEASING_REASONS or displaced in ADJUDICATED_REASONS
+
+
 def _decision_measures(
     out: dict[str, Any],
     record: Path,
@@ -1416,10 +1445,11 @@ def _decision_measures(
     read the labels the human partner gave each adjudicated allow and each
     block, keyed by the run and the decision's timestamp.
 
-    An adjudicated allow is a hand-back allow or a ``cap`` allow. ``cap`` is
-    adjudicated because the guard has stopped refusing: the stop it releases
-    reaches the human partner whatever the driver's STOP list holds, so H2
-    cannot read it from that list and asks the transcript instead.
+    An adjudicated allow is one :func:`_is_adjudicated_allow` accepts: a
+    hand-back allow, a ``cap`` allow, or a ``log-failed`` allow that displaced
+    one of those or a refusal. Each of them reaches the human partner whatever
+    the driver's STOP list holds, so H2 cannot read it from that list and asks
+    the transcript instead.
     """
     if not sid:
         return
@@ -1437,7 +1467,7 @@ def _decision_measures(
                 out["false_blocks"] += 1
             elif label is None:
                 out["unadjudicated_blocks"] += 1
-        elif d.get("reason") in ADJUDICATED_REASONS:
+        elif _is_adjudicated_allow(d):
             if label == "neither":
                 out["false_handbacks"] += 1
             elif label is None:

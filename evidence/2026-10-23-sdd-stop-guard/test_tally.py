@@ -221,6 +221,23 @@ class Evaluate(unittest.TestCase):
         labels = self.c.labels(("t10", ALLOW_TS, "handback"))
         self.assertEqual(self.c.evaluate(labels)[1]["decision"], "PASS")
 
+    def test_h2_adjudicates_a_log_failed_allow_that_displaced_a_refusal(self) -> None:
+        # The guard had decided to refuse; the plan-log write failed and the
+        # hook allowed instead, so that stop reached the human partner with
+        # nothing on the Gauntlet's list to say so. H2 has to read it from the
+        # run's own record, which leaves the campaign undecided until it is
+        # labelled and failing once it is labelled `neither`.
+        self.c.runs(9)
+        self.c.run("t10", "p10", **with_log([line(ALLOW_TS, "allow", "log-failed",
+                                                  detail="open-tasks: 3 of 6 tasks open")]))
+        rows, d = self.c.evaluate()
+        self.assertEqual(d["decision"], "UNADJUDICATED")
+        self.assertEqual(next(r for r in rows if r["run_id"] == "t10")["status"], "counted")
+        _, d = self.c.evaluate(self.c.labels(("t10", ALLOW_TS, "neither")))
+        self.assertEqual((d["false_handbacks_total"], d["unadjudicated_allows_total"]), (1, 0))
+        self.assertFalse(d["H2"])
+        self.assertEqual(d["decision"], "FAIL")
+
     def test_h3_fails_on_a_block_the_labeller_calls_a_hand_back(self) -> None:
         self.c.runs(9)
         self.c.run("t10", "p10", **with_log([line(ALLOW_TS, "block", "open-tasks", refusals=1)]))
