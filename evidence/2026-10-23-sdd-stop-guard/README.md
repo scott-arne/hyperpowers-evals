@@ -107,10 +107,27 @@ that list, which is H2's first half.
 The adjudication labels answer H2's second half and H3. For a `block`, the
 label `handback` means the human partner read it as a legitimate hand-back and
 it counts as a false block; no label counts as unadjudicated. For an `allow`
-whose reason is `handback-text` or `handback-line`, the label `neither` counts
-as a false hand-back; no label counts as unadjudicated. The tally returns
-`UNADJUDICATED` rather than a decision while any counted run has an unlabelled
-block or hand-back allow.
+whose reason is `handback-text`, `handback-line` or `cap`, the label `neither`
+counts as a false hand-back; no label counts as unadjudicated. The tally
+returns `UNADJUDICATED` rather than a decision while any counted run has an
+unlabelled block or adjudicated allow.
+
+A `cap` allow is adjudicated like a hand-back allow because it is the guard
+giving up: after two refusals the third stop is released whatever the turn
+said, so that stop reached the human partner. Labelled `handback` it was a
+legitimate hand-back the guard refused twice, which H3's false-block count
+already punishes; labelled `neither` it is a false hand-back, which is H2's
+failure.
+
+That is a recorded deviation from the spec, in the direction of its intent.
+The spec's H2 names the Gauntlet's STOP list and the hand-back allows. The
+campaign also adjudicates `cap` allows, because the driver's list ends at a
+done condition the agent's own report controls: an agent that falsely reports
+every task, the review, the merge and the finish step done leaves a later
+stop off the list. A `cap` allow is by construction a stop that reached the
+human partner, so reading it from the transcript rather than from the list
+makes H2 independent of the driver there, which is stricter than the letter
+of the spec.
 
 The dispatch classification and the untracked-launch tripwire are carried over
 unchanged from `../2026-10-19-sdd-turn-liveness/README.md`, "What each measure
@@ -222,8 +239,8 @@ How `tally.evaluate` implements that, in the order it asks:
 
 ### Adjudication
 
-Every `block`, and every `allow` whose reason is `handback-text` or
-`handback-line`, gets one row in `adjudications.tsv`:
+Every `block`, and every `allow` whose reason is `handback-text`,
+`handback-line` or `cap`, gets one row in `adjudications.tsv`:
 `run_id<TAB>ts<TAB>label<TAB>note`, keyed by the decision's own `ts`. The
 label is `handback` or `neither`, read from the archived transcript's last
 assistant text before that timestamp. Labelling happens before `tally.py` is
@@ -234,11 +251,13 @@ it voids the run as an instrument failure.
 ## Analyzer pins
 
 The three analyzers as committed at the pre-registration, from
-`git rev-parse HEAD:evidence/2026-10-23-sdd-stop-guard/<f>` at evals
-`33523dad5`, the `harness` pin and the commit this file is written against:
+`git rev-parse HEAD:evidence/2026-10-23-sdd-stop-guard/<f>` at the commit
+this file is written against. `liveness.py` and `tally.py` are the blobs the
+`harness` pin `33523dad5` carries; `analyze.py` is the later blob that
+adjudicates `cap` allows, which does not move that pin for the reason below:
 
 - `liveness.py` `1b646d88fca64be5e7c9f66b0c6251731d09bc98`
-- `analyze.py` `2576e3290e5e6d2c902d22bf6fe41fb9218cab15`
+- `analyze.py` `4ad355325ffdbc3985b8a0e275800d0808e04c5f`
 - `tally.py` `c5b371b17029cd6bc886d167b141b4ee19cd26e1`
 
 `synth.py` builds the synthetic runs the analyzer's own tests read; no tally

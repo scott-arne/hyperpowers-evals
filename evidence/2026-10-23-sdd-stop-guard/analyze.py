@@ -77,7 +77,10 @@ LIFECYCLE_COPY = re.compile(r"\.import(ing)?-[0-9]+$")
 FRAGMENT = "\t#fragment"
 DECISIONS = ("allow", "block")
 ADJUDICATION_LABELS = ("handback", "neither")
-HANDBACK_REASONS = ("handback-text", "handback-line")
+# The allow reasons the human partner labels. The two hand-back reasons are
+# the guard reading a hand-back in the turn; `cap` is the guard giving up
+# after two refusals, which releases the stop whatever it was.
+ADJUDICATED_REASONS = ("handback-text", "handback-line", "cap")
 # The allow-to-stop window, [stop - SKEW, stop + MINUTE]: SKEW covers the clock
 # difference between the transcript's timestamps and the hook's own.
 MINUTE = timedelta(minutes=1)
@@ -1410,8 +1413,13 @@ def _decision_measures(
 
     H1 counts only the lines the hook wrote for this plan, so a ``no-ledger``
     or ``ambiguous`` line, which names no plan, is not one of them. H2 and H3
-    read the labels the human partner gave each hand-back allow and each
+    read the labels the human partner gave each adjudicated allow and each
     block, keyed by the run and the decision's timestamp.
+
+    An adjudicated allow is a hand-back allow or a ``cap`` allow. ``cap`` is
+    adjudicated because the guard has stopped refusing: the stop it releases
+    reaches the human partner whatever the driver's STOP list holds, so H2
+    cannot read it from that list and asks the transcript instead.
     """
     if not sid:
         return
@@ -1429,7 +1437,7 @@ def _decision_measures(
                 out["false_blocks"] += 1
             elif label is None:
                 out["unadjudicated_blocks"] += 1
-        elif d.get("reason") in HANDBACK_REASONS:
+        elif d.get("reason") in ADJUDICATED_REASONS:
             if label == "neither":
                 out["false_handbacks"] += 1
             elif label is None:

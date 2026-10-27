@@ -189,10 +189,12 @@ class Evaluate(unittest.TestCase):
         self.assertEqual(d["decision"], "FAIL")
 
     def test_h2_fails_on_a_listed_stop_the_gauntlet_called_neither(self) -> None:
+        # The `cap` allow is adjudicated like a hand-back allow, so it is
+        # labelled here to leave the listed `neither` stop as H2's only failure.
         self.c.runs(9)
         self.c.run("t10", "p10", **with_log([line(STOP_ALLOW_TS, "allow", "cap")],
                                             stops=[(LAST_TEXT, "neither")]))
-        rows, d = self.c.evaluate()
+        rows, d = self.c.evaluate(self.c.labels(("t10", STOP_ALLOW_TS, "handback")))
         row = next(r for r in rows if r["run_id"] == "t10")
         self.assertEqual((row["status"], row["unmatched_stops"]), ("counted", []))
         self.assertEqual(d["neither_listed_total"], 1)

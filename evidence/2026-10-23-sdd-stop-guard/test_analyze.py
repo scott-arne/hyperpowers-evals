@@ -474,10 +474,10 @@ class Measures(unittest.TestCase):
         )
         self.assertEqual(matched[0][3]["ts"], at(99))
 
-    def test_only_a_hand_back_allow_is_owed_an_adjudication(self) -> None:
-        # H2 asks whether each hand-back allow was a genuine hand-back. A
-        # `no-ledger` or `ambiguous` allow says the hook found no plan to judge,
-        # so there is nothing for the human partner to label.
+    def test_only_an_adjudicated_reason_is_owed_an_adjudication(self) -> None:
+        # H2 asks whether each allow that released a stop was a genuine
+        # hand-back. A `no-ledger` or `ambiguous` allow says the hook found no
+        # plan to judge, so there is nothing for the human partner to label.
         run = make_run(receipt={"ledger": ledger_text(done=[1]),
                                 "log": [line(at(10), "allow", "no-ledger", plan=None),
                                         line(at(20), "allow", "ambiguous", plan=None)]})
@@ -485,6 +485,20 @@ class Measures(unittest.TestCase):
         run = make_run(receipt={"ledger": ledger_text(done=[1]),
                                 "log": [line(at(10), "allow", "handback-text")]})
         self.assertEqual(analyze.measure(run, {})["unadjudicated_allows"], 1)
+
+    def test_a_cap_allow_is_adjudicated_like_a_hand_back_allow(self) -> None:
+        # A `cap` allow is the guard giving up after two refusals, so the stop
+        # it releases reached the human partner whatever the driver listed. H2
+        # therefore owes it a label: unlabelled it is pending, `neither` makes
+        # it a false hand-back, `handback` makes it a legitimate one.
+        run = make_run(receipt={"ledger": ledger_text(done=[1]),
+                                "log": [line(at(10), "allow", "cap", refusals=2)]})
+        m = analyze.measure(run, {})
+        self.assertEqual((m["false_handbacks"], m["unadjudicated_allows"]), (0, 1))
+        m = analyze.measure(run, {(run.name, at(10)): "neither"})
+        self.assertEqual((m["false_handbacks"], m["unadjudicated_allows"]), (1, 0))
+        m = analyze.measure(run, {(run.name, at(10)): "handback"})
+        self.assertEqual((m["false_handbacks"], m["unadjudicated_allows"]), (0, 0))
 
     def test_adjudication_labels_blocks_and_allows_by_timestamp(self) -> None:
         log = [line(at(10), "block", "open-tasks", refusals=1), line(at(20), "allow", "handback-text"),
