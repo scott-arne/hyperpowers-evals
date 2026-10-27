@@ -19,6 +19,12 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$EV/scripts/strip-runs"
 chmod 755 "$EV/scripts/strip-runs"
 
 FINISH_CMD='cd /w && scripts/sdd-state finish plans/plan.md --session s1'
+# The shapes a session reaches Finish through besides a bare call: the output
+# captured into a variable, the call tested by `if`, and the call handed to a
+# shell as a `-c` operand. Each runs Finish and returns its status line.
+CAPTURED_CMD="finish_out=\$(bash /w/scripts/sdd-state finish plans/plan.md); printf '%s\\n' \"\$finish_out\""
+CONDITIONAL_CMD='if bash /w/scripts/sdd-state finish plans/plan.md; then echo done; fi'
+SHELL_C_CMD="sh -c 'cd /w && bash scripts/sdd-state finish plans/plan.md'"
 OTHER_CMD='python3 -m unittest tests.test_soak_long'
 PUBLISHED='status=finished sha=abc1234 last=def5678 push=no receipt=/h/.cache/hyperpowers/receipts/ws-20261027T100000Z'
 STAGED='status=finished sha=abc1234 last=def5678 push=no receipt=none staging=/h/.cache/hyperpowers/receipts/.staging-ws-20261027T100000Z'
@@ -26,17 +32,20 @@ STAGED='status=finished sha=abc1234 last=def5678 push=no receipt=none staging=/h
 # A run's record and workspace, with one main-session transcript holding one
 # Bash call and its result. The transcript is what the post-check reads Finish
 # from, so every case has one.
-mkrun() { # mkrun <id> <command> <result text>
+mkrun() { # mkrun <id> <command> <result text> [error]
   local ws="$EV/results/workspaces/$1" d
   mkdir -p "$EV/results/$1" "$ws"
   echo '{"final":"pass"}' > "$EV/results/$1/verdict.json"
   d="$ws/home/.claude/projects/-w"
   mkdir -p "$d"
-  python3 -IB - "$d/session.jsonl" "$2" "$3" <<'PY'
+  python3 -IB - "$d/session.jsonl" "$2" "$3" "${4:-}" <<'PY'
 import json
 import sys
 
-path, command, result = sys.argv[1], sys.argv[2], sys.argv[3]
+path, command, result, error = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+block = {"type": "tool_result", "tool_use_id": "toolu_1", "content": result}
+if error == "error":
+    block["is_error"] = True
 records = [
     {"type": "user", "timestamp": "2026-10-27T10:00:00.000Z", "message": {"role": "user", "content": "go"}},
     {
@@ -47,7 +56,7 @@ records = [
     {
         "type": "user",
         "timestamp": "2026-10-27T10:00:02.000Z",
-        "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": result}]},
+        "message": {"role": "user", "content": [block]},
     },
 ]
 with open(path, "w") as fh:
@@ -120,5 +129,33 @@ archive staged
 [ "$rc" -ne 0 ] || fail "a staging failure passed: $(cat "$tmp/out.txt")"
 line staged "finish=yes receipt_published=no receipts=1 mirrors=1"
 says staged "finished with receipt=none"
+# 6. The same loss behind a captured Finish: `out=$(... sdd-state finish ...)`
+# runs Finish as surely as a bare call does, so a lost cache must still fail.
+mkrun captured "$CAPTURED_CMD" "$PUBLISHED"
+archive captured
+[ "$rc" -ne 0 ] || fail "a captured Finish with no cache passed: $(cat "$tmp/out.txt")"
+line captured "finish=yes receipt_published=yes receipts=0 mirrors=0"
+says captured "reached Finish with no receipt"
+# 7. A Finish tested by `if` is a Finish.
+mkrun conditional "$CONDITIONAL_CMD" "$PUBLISHED"; receipt conditional ws-20261027T100000Z; mirror conditional
+archive conditional
+[ "$rc" -eq 0 ] || fail "a conditional Finish failed the post-check: $(cat "$tmp/out.txt")"
+line conditional "finish=yes receipt_published=yes receipts=1 mirrors=1"
+# 8. So is one handed to a shell as a -c operand.
+mkrun operand "$SHELL_C_CMD" "$PUBLISHED"; receipt operand ws-20261027T100000Z; mirror operand
+archive operand
+[ "$rc" -eq 0 ] || fail "a shell-operand Finish failed the post-check: $(cat "$tmp/out.txt")"
+line operand "finish=yes receipt_published=yes receipts=1 mirrors=1"
+# 9. A Finish the helper refused never finished: the status line, not the call,
+# is what says the workspace was published and removed.
+mkrun refused "$FINISH_CMD" "status=busy"
+archive refused
+[ "$rc" -eq 0 ] || fail "a refused Finish failed the post-check: $(cat "$tmp/out.txt")"
+line refused "finish=no receipt_published=na receipts=0 mirrors=0 ledger_last_task=no"
+# 10. Nor did one whose tool result came back an error.
+mkrun errored "$FINISH_CMD" "$PUBLISHED" error
+archive errored
+[ "$rc" -eq 0 ] || fail "an errored Finish failed the post-check: $(cat "$tmp/out.txt")"
+line errored "finish=no receipt_published=na receipts=0 mirrors=0 ledger_last_task=no"
 echo "PASS: archive-runs.sh reads Finish from the transcript and fails a run whose evidence is missing"
 echo "STATUS: PASSED"

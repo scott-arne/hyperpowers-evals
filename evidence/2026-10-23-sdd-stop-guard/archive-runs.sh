@@ -125,10 +125,17 @@ finish_state() {
   # The receipt and the mirror cannot answer this question themselves: they are
   # the artifacts whose loss the post-check exists to detect, so a run that
   # lost its whole cache would read as "never finished" and pass. The
-  # transcript is the independent record. The reader is the campaign's own
-  # (analyze.main_transcript picks the transcript, analyze's lexer splits the
-  # command) so that the archive and the analyzer never disagree about what a
-  # run did.
+  # transcript is the independent record, and analyze.main_transcript picks it,
+  # so the archive and the analyzer read the same session.
+  #
+  # The command is matched by text, not parsed: a session reaches Finish
+  # through ordinary shell syntax as readily as through a bare call -- the
+  # output captured into a variable, the call tested by `if`, an `sh -c`
+  # operand, a `cd ... &&` compound -- and a recognizer that only accepted a
+  # top-level invocation let a run whose cache was lost archive clean. This
+  # check guards against evidence loss, not against an agent forging a status
+  # line, so it over-recognizes on purpose: a false positive only makes the
+  # check stricter, since it then demands the receipt and the mirror.
   python3 -IB - "$1" "$E" <<'PY'
 import re
 import sys
@@ -139,20 +146,9 @@ sys.path.insert(0, sys.argv[2])
 import analyze
 
 FINISHED = re.compile(r"^status=finished\b")
-
-
-def runs_finish(command: str) -> bool:
-    """Whether one Bash command runs `sdd-state finish`."""
-    for segment in analyze._segments(command):
-        words = analyze._command_words(segment)
-        if not words:
-            continue
-        # `bash <path>/sdd-state finish ...` is the same call as the bare one.
-        head = 1 if Path(words[0]).name in ("bash", "sh") and len(words) > 1 else 0
-        if Path(words[head]).name == "sdd-state" and words[head + 1:head + 2] == ["finish"]:
-            return True
-    return False
-
+# `sdd-state` and, with no operator between them, the subcommand `finish`:
+# the helper under any wrapper, and not two commands that merely mention both.
+FINISH_CALL = re.compile(r"\bsdd-state\b[^;&|\n]*\bfinish\b")
 
 transcript = analyze.main_transcript(workspace)
 finished = published = unpublished = False
@@ -161,7 +157,7 @@ if transcript is not None:
     for rec in analyze.load(transcript):
         for use in analyze.tool_uses(rec):
             command = analyze.tool_input(use).get("command")
-            if use.get("name") == "Bash" and isinstance(use.get("id"), str) and isinstance(command, str) and runs_finish(command):
+            if use.get("name") == "Bash" and isinstance(use.get("id"), str) and isinstance(command, str) and FINISH_CALL.search(command):
                 calls.add(use["id"])
         if not analyze.is_tool_result(rec):
             continue
