@@ -685,4 +685,251 @@ The numbering continues the series in
 
 ## Results
 
-Filled in by Task 20.
+Recorded by Task 20 on 2026-10-28, from the archive under
+`task-20-runs/treatment/`, with the analyzers at the pins entry 10 records
+(`liveness.py` `4b56247c`, `analyze.py` `6dd98e4b`, `tally.py` `3457937e`).
+
+The campaign passes its rule. `tally.py` reads ten counted runs and prints
+`decision: PASS`, with H1, H2, H3, H4 and R true. The same ten runs never put
+the guard to a decision under a plan. Each session ran its plan from the first
+prompt to Finish's result inside one turn, so both of its turn ends came after
+Finish had removed the ledger, and the hook's record in every run is two
+`no-ledger` allows. `plan_decisions` is 0 in all ten runs. The refusal paths
+(`open-tasks`, `live-shell`), the hand-back allows, the cap, `live-agent` and
+`log-failed` did not run in any counted run, and H2's adjudication half and H3
+hold with no cases.
+
+Correction 10 was made after these runs were archived and read with the
+Correction 9 analyzer: six of the ten (`82f7`, `88ee`, `f445`, `de8b`, `cd9b`
+and `cc92`) had listed entries quoting the displayed lead-in of an answered
+AskUserQuestion call, which that analyzer left untimed and so read as
+`void-instrument`, and the Correction moves only stop timing and so only the
+void classification (Corrections, entry 10).
+
+### Launches
+
+The controller launched the arm from this directory. The first try ran `p1`
+inside the command sandbox from the one-row view `manifest-treatment-p1.tsv`,
+and quorum's setup stopped on the known signature, `git init -b main` refused
+the copy of the git template's `commit-msg.sample` with "Operation not
+permitted" (`logs/treatment-sdd-turn-liveness-p1.log`). That attempt is
+`void-setup`, uncapped. The replacement row `treatment sdd-turn-liveness 1 r1
+default` was appended to `manifest.tsv` and `manifest-treatment.tsv`, and
+`launch-all.sh manifest-treatment.tsv 5` ran outside the sandbox. The launcher
+refused `p1` because its log existed, then ran `p2` to `p10` and `r1`.
+`logs/campaign-treatment.out` closes with `all launches finished; launchers
+non-zero: 1; manifest rows without a DONE log: 0`, and the one non-zero
+launcher is that refusal. Every launch log reads the treatment root at
+`4a4f354`, clean, before and after its run, with Claude Code 2.1.302 both
+times.
+
+| Row | Run id | Sandbox | Started | Finished | Closing | Tally |
+|---|---|---|---|---|---|---|
+| p1 | `sdd-turn-liveness-claude-auto-20261028T013913Z-1716` | inside | 01:39:13Z | 01:39:14Z | `DONE 2` | void-setup |
+| p2 | `sdd-turn-liveness-claude-auto-20261028T014044Z-340f` | outside | 01:40:44Z | 02:37:41Z | `DONE 0` | counted |
+| p3 | `sdd-turn-liveness-claude-auto-20261028T014044Z-82f7` | outside | 01:40:44Z | 02:31:32Z | `DONE 0` | counted |
+| p4 | `sdd-turn-liveness-claude-auto-20261028T014044Z-81fb` | outside | 01:40:44Z | 02:35:16Z | `DONE 0` | counted |
+| p5 | `sdd-turn-liveness-claude-auto-20261028T014044Z-f445` | outside | 01:40:44Z | 02:36:08Z | `DONE 0` | counted |
+| p6 | `sdd-turn-liveness-claude-auto-20261028T014044Z-88ee` | outside | 01:40:44Z | 02:40:19Z | `DONE 0` | counted |
+| p7 | `sdd-turn-liveness-claude-auto-20261028T023136Z-3425` | outside | 02:31:35Z | 03:26:46Z | `DONE 0` | counted |
+| p8 | `sdd-turn-liveness-claude-auto-20261028T023520Z-de8b` | outside | 02:35:20Z | 03:31:47Z | `DONE 0` | counted |
+| p9 | `sdd-turn-liveness-claude-auto-20261028T023621Z-cd9b` | outside | 02:36:21Z | 03:31:38Z | `DONE 0` | counted |
+| p10 | `sdd-turn-liveness-claude-auto-20261028T023755Z-cc92` | outside | 02:37:52Z | 03:42:46Z | `DONE 0` | counted |
+| r1 | `sdd-turn-liveness-claude-auto-20261028T024023Z-e136` | outside | 02:40:22Z | 03:33:59Z | `DONE 0` | counted |
+
+The ten counted runs have quorum's final status `pass` and the Gauntlet's
+status `pass`. No capped void occurred.
+
+### Archive
+
+The controller ran `bash archive-runs.sh treatment task-20-runs` from this
+directory outside the sandbox, because inside it the script's copies of
+`.git/config` and the plugins' `.mcp.json` files are refused. It exited 0,
+archived all eleven attempts, the `p1` void included, and printed:
+
+```
+post-check treatment sdd-turn-liveness-claude-auto-20261028T013913Z-1716: finish=no receipt_published=na receipts=0 mirrors=0 ledger_last_task=no
+post-check treatment sdd-turn-liveness-claude-auto-20261028T023755Z-cc92: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261028T014044Z-340f: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261028T014044Z-82f7: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261028T014044Z-81fb: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261028T014044Z-f445: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261028T014044Z-88ee: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261028T023136Z-3425: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261028T023520Z-de8b: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261028T023621Z-cd9b: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261028T024023Z-e136: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+```
+
+Every counted run reached Finish, published one receipt, kept its session
+mirror and recorded the last task's mark. The void wrote none of them.
+
+### The ten runs
+
+Each run was read with `python3 analyze.py task-20-runs/treatment/<run>`.
+Every counted run reads `void` none, `final` pass, no decision conflict, `h1`
+true with `h1_bound` `finish-result` and `off_plan_lines` 0, and provenance
+matching the pin: `cc` 2.1.302, `model` claude-opus-5-5, recorded models
+inside the allowed set, the plugin directory the treatment root, Codex absent,
+the task tools on, and `evals_commit` `9cbc8b0` (harness paths identical to
+the pin) with a clean tree. The tally prints no problem for any row.
+
+The decision record and the STOP list:
+
+| Row | Run | `decisions_total` | `plan_decisions` | `no-ledger` allows | Blocks | Listed stops | In-turn | Unmatched | `neither` |
+|---|---|---|---|---|---|---|---|---|---|
+| p2 | `340f` | 2 | 0 | 2 | 0 | 3 | 2 | 0 | 0 |
+| p3 | `82f7` | 2 | 0 | 2 | 0 | 2 | 1 | 0 | 0 |
+| p4 | `81fb` | 2 | 0 | 2 | 0 | 1 | 0 | 0 | 0 |
+| p5 | `f445` | 2 | 0 | 2 | 0 | 3 | 2 | 0 | 0 |
+| p6 | `88ee` | 2 | 0 | 2 | 0 | 2 | 1 | 0 | 0 |
+| p7 | `3425` | 2 | 0 | 2 | 0 | 1 | 0 | 0 | 0 |
+| p8 | `de8b` | 2 | 0 | 2 | 0 | 3 | 2 | 0 | 0 |
+| p9 | `cd9b` | 2 | 0 | 2 | 0 | 2 | 1 | 0 | 0 |
+| p10 | `cc92` | 2 | 0 | 2 | 0 | 4 | 3 | 0 | 0 |
+| r1 | `e136` | 2 | 0 | 2 | 0 | 1 | 0 | 0 | 0 |
+| Total | | 20 | 0 | 20 | 0 | 22 | 12 | 0 | 0 |
+
+The mechanism measures (seconds from each call or launch to its result or
+exit):
+
+| Row | Run | Foreground dispatches | Background | Unclassified | Untracked | Short soak s | `short_ok` | Long job s | `long_ok` | Live-shell turn ends | `success` |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| p2 | `340f` | 13 | 0 | 0 | 0 | 241.8 | true | 721.4 | true | 0 | true |
+| p3 | `82f7` | 13 | 0 | 0 | 0 | 1.8, 241.8 | false | 721.0 | true | 0 | true |
+| p4 | `81fb` | 13 | 0 | 0 | 0 | 240.4 | true | 721.3 | true | 0 | true |
+| p5 | `f445` | 13 | 0 | 0 | 0 | 243.0 | true | 721.1 | true | 0 | true |
+| p6 | `88ee` | 13 | 0 | 0 | 0 | 241.2 | true | 721.3 | true | 0 | true |
+| p7 | `3425` | 15 | 0 | 0 | 0 | 241.6 | true | 721.6 | true | 0 | true |
+| p8 | `de8b` | 13 | 0 | 0 | 0 | 240.5 | true | 721.6 | true | 0 | true |
+| p9 | `cd9b` | 13 | 0 | 0 | 0 | 241.1 | true | 721.7 | true | 0 | true |
+| p10 | `cc92` | 13 | 0 | 0 | 0 | 241.2 | true | 721.8 | true | 0 | true |
+| r1 | `e136` | 13 | 0 | 0 | 0 | 241.9 | true | 722.1 | true | 0 | true |
+
+Every counted run has exactly two turn ends, and both come after Finish's
+result. The first is the finishing menu, which ends "Which option?"; the
+second is the session's last report, after the merge. The hook answered each
+of the twenty with a `no-ledger` allow 0.14 to 0.94 s after the turn end; the
+first allow of a run came 15.2 to 22.9 s after Finish's result, the second
+123.6 to 183.2 s after it. The hook's own `elapsed_ms` on those twenty
+decisions runs from 25 to 264. Both lines of each run are in the session
+mirror alone: no receipt holds a `stop-guard.jsonl`, because the hook writes
+the plan's own log only when it finds the plan's workspace, and it never ran
+while one existed. No turn end fell between a run's `ledger_started` and its
+`receipt_published`, so there was no turn end at which the hook could have
+judged the plan.
+
+The Gauntlet listed 22 STOP entries across the ten runs, every one labelled
+`question`. Ten are turn ends, the finishing menu once per run, each matched
+to that run's first `no-ledger` allow. Twelve are in-turn stops, timed by
+AskUserQuestion calls answered inside their turn: eleven are pre-flight
+questions before Task 1 in seven runs, and one is `cc92`'s question at
+03:20:14Z, after its final review and with its ledger live, whether the final
+fix pass should depart from the plan's verbatim CLI code to correct a drift in
+`simulate`'s default window, answered inside the turn at 03:21:57Z ("implement
+the plan exactly as written"). It is the only question any counted run asked
+after Task 1 began, and no Stop hook ran for it. Every counted run asked the
+fixture's `DEFAULT_WINDOW_SECONDS` question with AskUserQuestion before Task 1
+and had it answered inside the turn. In `81fb`, `3425` and `e136` the
+Gauntlet listed only the finishing menu, although each of those sessions also
+asked its pre-flight questions that way.
+
+`82f7` is the one run whose `short_ok` is false. Its first main-session call
+that names the short soak returned after 1.76 s, because it redirected the
+soak's output into a `reports/` directory that did not exist yet: the shell
+refused the redirection, so the soak never started. Six seconds after that
+call the session created the directory and ran the soak in a foreground call
+(timeout 420000 ms) that returned after 241.8 s. The rule counts every
+main-session execution, so the run reads as not handling the short command as
+the rule says, and F is 9 of 10. The rule was applied as written.
+
+### Adjudication
+
+No counted run holds a `block`, an allow whose reason is `handback-text`,
+`handback-line` or `cap`, or a `log-failed` allow. The only decisions are
+post-Finish `no-ledger` allows, which owe none. `adjudications.tsv` gains no
+row, no agent message was read for a label, and `false_handbacks`,
+`false_blocks`, `unadjudicated_allows` and `unadjudicated_blocks` are 0 in
+every run because there was nothing to count.
+
+### Tally
+
+`python3 tally.py` from this directory wrote `tally.txt`. Its decision lines:
+
+```
+runs_h1: 10
+runs_with_plan_decisions: 0
+H1: True
+neither_listed_total: 0
+false_handbacks_total: 0
+unadjudicated_allows_total: 0
+H2: True
+false_blocks_total: 0
+unadjudicated_blocks_total: 0
+H3: True
+foreground_share: 1.0
+untracked_total: 0
+f_runs: 9
+live_shell_turn_ends_total: 0
+H4: True
+success_runs: 10
+R: True
+decision: PASS
+```
+
+| Criterion | Threshold | Reading | Holds |
+|---|---|---|---|
+| H1 | `h1` in every counted run | 10 of 10; `plan_decisions` 0 in 10 of 10 | yes, with no decision under a plan |
+| H2 | `neither_listed` 0; false hand-backs 0; unadjudicated allows 0 | 0 of 22 listed; 0; 0, with no allow owing a label | yes, its adjudication half with no cases |
+| H3 | false blocks 0; unadjudicated blocks 0 | 0; 0, with no block | yes, with no cases |
+| H4 | foreground share at least 0.9; untracked 0; F at least 9 of 10; live-shell turn ends 0 | 1.0 (132 of 132); 0; 9; 0 | yes |
+| R | at least 7 successful runs | 10 | yes |
+
+### What the counted runs show and do not show
+
+Under Correction 9, a PASS means that no stop reached the human partner as a
+`neither` stop on the Gauntlet's list and that the mechanism criteria held.
+Both are what these runs show. All 132 SDD dispatches ran in the foreground,
+no launch was untracked, every run watched the long soak through
+`tracked-job wait` to `status=exited code=0`, nine of ten ran the short soak in
+the foreground as the rule reads it, no turn ended with only a tracked shell
+live, and all ten plans completed with a receipt, a final review and passing
+tests. The hook ran at every one of the twenty turn ends, within a second of
+each, its record holds no conflicting line, and its `no-ledger` answer after
+Finish is the correct one.
+
+The runs do not show the guard deciding anything about a plan. Its refusal of
+a premature stop, its refusal while a tracked shell is live, its release of a
+recorded hand-back, its cap and its fail-open path were not exercised live in
+any counted run, so H2's adjudication half and H3 held with no cases and H1
+holds because no line fell in its window at all. The absence of a premature
+stop in these runs is a property of the sessions, each of which ran its plan
+in one turn; it cannot be credited to the hook, which made no decision while a
+plan's ledger existed. The uncounted T1 is the only run of this campaign in
+which the hook judged a plan: 12 `live-agent` allows under fork mode (section
+T1).
+
+Read with H1 as the spec and the pre-registration first wrote it
+(`plan_decisions >= 1`), every counted run fails H1 and the campaign is FAIL
+on H1. Correction 9 restated H1 after the smoke and after these runs were
+launched, before any of them was archived or tallied; this decision is read
+under that restatement and under Correction 10.
+
+### Limits
+
+H2's first half is the Gauntlet's reading of each run. Its list omitted the
+pre-flight questions in three runs that asked them, and in six runs it quoted
+the lead-in Claude Code showed before an answered question, or quoted text
+without the markdown the terminal hides, which is why Correction 10 exists.
+Nothing on any list was labelled `neither`.
+
+F is 9 of 10 on a shape reading of `82f7`, where the first call that names
+the short soak never ran it. The threshold is met either way.
+
+There is no control arm, so nothing here compares the guard against a
+session without it. The scenario is short and fresh, and under its fixture
+every legitimate hand-back was an AskUserQuestion call answered inside its
+turn, which no Stop hook sees, as Correction 9 anticipated. The premature
+stops the field baseline counts come from long, compacted sessions whose
+turns end mid-plan; the field rule over the after-window is where the guard's
+decisions under a plan will be read.

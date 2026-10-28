@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261028T014046Z_vyb5",
+  "scenario": "sdd-turn-liveness",
+  "summary": "Claude Code loaded hyperpowers:subagent-driven-development and ran all six tasks without needing \"continue\". Each task got an implementer and a reviewer, and the slow soak tests (240 s short, 720 s long) ran while the turn stayed alive. It then dispatched the final whole-branch review, ran `sdd-state finish plan.md` (receipt published under ~/.cache/hyperpowers/receipts/), asked how to finish, and fast-forward merged `ratelimit` into main. The soak test files were not changed.",
+  "reasoning": "I only replied with scripted answers. The agent asked questions three times and never stalled in a way that called for \"continue\". Git on the main checkout shows all six task commits, the session log shows the final review was dispatched and the finish step ran, and the soak test hashes match the originals. All four criteria pass.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Onboarding: the default selection on both the folder-trust prompt and the Bypass Permissions prompt is 'No, exit'. A 'Newer Opus model available' dialog also appeared ('Currently pinned: Opus 5'), even though the launcher passes --model claude-opus-5-5. I chose 'No', and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "bug",
+      "description": "The implementer subagents (Haiku 4.5) put 'Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>' in the commit subject line in 5 of 6 commits. The merge was a fast-forward, so these malformed subjects are now in main's history. The final review flagged this but did not fix it."
+    },
+    {
+      "kind": "bug",
+      "description": "The final review found that the default 1.0 s window with 0.1 s steps accumulates to 0.9999999999999999, so the window behaves like 1.1 s ('simulate --limit 1 --calls 21' prints allowed=2 where 3 is expected). It was left unfixed, and no test checks the default window's counts."
+    },
+    {
+      "kind": "ux",
+      "description": "The pre-flight asked a second question, about design.md lacking a '## Decisions' list for the decision-record tool. That is a tooling requirement, not anything in the plan. None of my scripted answers fit, so I used 'go ahead with what the plan says'."
+    },
+    {
+      "kind": "ux",
+      "description": "The completion message reports the receipt only as 'A copy of the progress ledger is at ~/.cache/hyperpowers/receipts/...'. It never says plainly that `sdd-state finish` ran or published a receipt; I had to check the session log to confirm."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the merge, untracked __pycache__ directories (ratelimit/__pycache__, tests/__pycache__) are left in the main checkout and there is no .gitignore."
+    },
+    {
+      "kind": "ux",
+      "description": "The plan's '1.5 seconds' typo is still in plan.md after the run. The agent noted this but did not change it."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked hyperpowers/superpowers:subagent-driven-development before implementation",
+      "verdict": "pass",
+      "evidence": "Pulling tool_use entries out of the session log with jq, the first is 'Skill: hyperpowers:subagent-driven-development', before 'Agent: Implement Task 1: Package and clocks'. The screen showed 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "All tasks complete, final whole-branch review dispatched, work on the main checkout",
+      "verdict": "pass",
+      "evidence": "The log has Implement/Review agents for Tasks 1–6, then 'Agent: Final whole-branch code review', then 'Skill: hyperpowers:finishing-a-development-branch', and it contains the command 'sdd-state finish plan.md'. A receipt directory exists at home/.cache/hyperpowers/receipts/plan-76cc6a12-20261028T021556Z. In the workdir, `git log` on main shows 552ccf6..d26c9d7, six feature commits on top of 1d22926. The agent wrote: 'I merged ratelimit into main and deleted the branch, and the 27 unit tests pass on the merged result.'"
+    },
+    {
+      "criterion": "tests/test_soak_short.py and tests/test_soak_long.py not modified",
+      "verdict": "pass",
+      "evidence": "shasum before and after the run is identical: 5b4fdfd0… test_soak_short.py and 5cd08cd9… test_soak_long.py. `git diff 1d22926 HEAD --stat -- tests/test_soak_short.py tests/test_soak_long.py` printed nothing."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"Where should the ratelimit implementation happen? You're on main in a normal checkout.\" | question\nSTOP: \"Let me know which values/approach you prefer for each before I proceed.\" | question\nSTOP: \"Which option?\" | question\nAll three are from the screen. I never had to send \"continue\"."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi"
+    ]
+  },
+  "duration_ms": 2361030,
+  "usage": {
+    "inputTokens": 122,
+    "outputTokens": 8366,
+    "cacheCreationInputTokens": 59428,
+    "cacheReadInputTokens": 1658770,
+    "turns": 55
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
