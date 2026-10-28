@@ -1240,6 +1240,23 @@ def started_ledger(started: str, sid: str = SID) -> str:
     return ledger_text(done=range(1, 7), sid=sid).replace(f"started {SESSION_START}", f"started {started}")
 
 
+FINISH_CMD = "bash /roots/treatment/skills/subagent-driven-development/scripts/sdd-state finish plan.md"
+
+
+def finish(t: float, name: str, *, report: bool = True, tool_id: str = "fin", command: str = FINISH_CMD,
+           error: bool = False) -> list[dict[str, Any]]:
+    """A Bash call that runs Finish, and its result recorded at ``t``.
+
+    :param name: the receipt directory the helper's ``status=finished`` line names.
+    :param report: False for a call whose output was captured and never printed.
+    :param command: the call's command, for a call that only prints a line.
+    :param error: an errored result, as a refused finish leaves.
+    """
+    text = (f"status=finished sha=8171acf last=16b0580 push=origin/hyperpowers/state "
+            f"receipt=/x/home/.cache/hyperpowers/receipts/{name}\nworkspace gone") if report else ""
+    return [assistant(t - 3, tools=[(tool_id, "Bash", {"command": command})]), result(t, tool_id, text, is_error=error)]
+
+
 WHERE = "Where should the plan's work happen? You're on main in a normal checkout."
 WINDOW = "Which default for `--window` (DEFAULT_WINDOW_SECONDS) governs?"
 RECORDS = "How should the spec's decision records be handled?"
@@ -1256,6 +1273,7 @@ class InTurnStops(unittest.TestCase):
             assistant(10, tools=[ask("q1", WHERE)]), answered(70, "q1", WHERE),
             assistant(80, tools=[("b1", "Bash", {"command": "ls"})]), result(81, "b1", "ok"),
             assistant(120, tools=[ask("q2", WINDOW, RECORDS)]), answered(190, "q2", WINDOW),
+            *finish(1952, f"plan-1-{stamp(1950)}"),
             assistant(2000, "Implementation complete. What would you like to do?\n\n1. Merge back to main locally\n\nWhich option?"),
             human(2100, "merge back to main locally"),
             assistant(2110, "Merged into main."),
@@ -1273,6 +1291,8 @@ class InTurnStops(unittest.TestCase):
         ])
         self.assertEqual(m["unmatched_stops"], [])
         self.assertEqual((m["void"], m["h1"], m["h1_detail"], m["plan_decisions"]), (None, True, "", 0))
+        self.assertEqual((m["receipt_staged"], m["receipt_published"], m["h1_bound"]),
+                         (analyze.iso(parse_ts(at(1950))), analyze.iso(parse_ts(at(1952))), "finish-result"))
 
     def test_a_stop_found_only_in_an_answered_question_is_in_turn_and_owed_no_allow(self) -> None:
         recs = [human(0, "go"), assistant(5, tools=[ask("q1", GOVERN)]), answered(30, "q1", GOVERN),
@@ -1359,23 +1379,30 @@ class InTurnStops(unittest.TestCase):
 class PlanLines(unittest.TestCase):
     """H1 as Correction 9 restates it: the hook ran, and never without the plan while the ledger existed."""
 
-    def measured(self, lines: list[dict[str, Any]], ledger: str | None = None, published: float | None = 1000.0,
-                 ) -> dict[str, Any]:
-        """One run whose ledger started the plan at 100 s and whose receipt, if any, was published at ``published``."""
+    def measured(self, lines: list[dict[str, Any]], ledger: str | None = None, staged: float | None = 990.0,
+                 records: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        """One run whose ledger started the plan at 100 s and whose receipt, if any, Finish staged at ``staged``.
+
+        Unless ``records`` is given, the transcript holds Finish's result at
+        1000 s, naming the receipt.
+        """
         text = started_ledger(at(100)) if ledger is None else ledger
-        if published is None:
-            run = make_run(workspace_ledger=text, mirror=lines)
+        name = f"p-{stamp(staged)}" if staged is not None else None
+        recs = (finish(1000, name) if name else []) if records is None else records
+        if name is None:
+            run = make_run(records=recs, workspace_ledger=text, mirror=lines)
         else:
-            run = make_run(receipt={"ledger": text, "name": f"p-{stamp(published)}"}, mirror=lines)
+            run = make_run(records=recs, receipt={"ledger": text, "name": name}, mirror=lines)
         m = analyze.measure(run, {})
-        return {k: m[k] for k in ("decisions_total", "ledger_started", "receipt_published", "off_plan_lines",
-                                  "h1", "h1_detail")}
+        return {k: m[k] for k in ("decisions_total", "ledger_started", "receipt_published", "receipt_staged",
+                                  "h1_bound", "off_plan_lines", "h1", "h1_detail")}
 
     def test_a_no_ledger_line_before_the_ledger_started_leaves_h1_true(self) -> None:
         m = self.measured([line(at(50), "allow", "no-ledger", plan=None)])
         self.assertEqual(m, {"decisions_total": 1, "ledger_started": analyze.iso(parse_ts(at(100))),
-                             "receipt_published": analyze.iso(parse_ts(at(1000))), "off_plan_lines": 0,
-                             "h1": True, "h1_detail": ""})
+                             "receipt_published": analyze.iso(parse_ts(at(1000))),
+                             "receipt_staged": analyze.iso(parse_ts(at(990))), "h1_bound": "finish-result",
+                             "off_plan_lines": 0, "h1": True, "h1_detail": ""})
 
     def test_a_no_ledger_line_under_the_plan_fails_h1(self) -> None:
         # The window opens at the ledger's start, inclusive; a line naming the
@@ -1386,16 +1413,47 @@ class PlanLines(unittest.TestCase):
         self.assertEqual((m["decisions_total"], m["off_plan_lines"], m["h1"], m["h1_detail"]),
                          (3, 2, False, "2 off-plan lines under the plan"))
         # Without a receipt the window has no upper bound.
-        m = self.measured([line(at(5000), "allow", "no-ledger", plan=None)], published=None)
-        self.assertEqual((m["receipt_published"], m["off_plan_lines"], m["h1"], m["h1_detail"]),
-                         (None, 1, False, "1 off-plan lines under the plan"))
+        m = self.measured([line(at(5000), "allow", "no-ledger", plan=None)], staged=None)
+        self.assertEqual((m["receipt_published"], m["h1_bound"], m["off_plan_lines"], m["h1"], m["h1_detail"]),
+                         (None, "none", 1, False, "1 off-plan lines under the plan"))
 
-    def test_lines_only_after_the_receipt_leave_h1_true(self) -> None:
-        # The window is half-open: a line in the second Finish published the
-        # receipt already reads the ledger gone.
-        lines = [line(at(1000), "allow", "no-ledger", plan=None), line(at(1200), "allow", "no-ledger", plan=None)]
+    def test_an_off_plan_line_after_the_staging_stamp_and_before_the_finish_result_fails_h1(self) -> None:
+        # Finish names the receipt when it stages it, before it removes the
+        # ledger, so the window runs on to the record of Finish's result.
+        m = self.measured([line(at(995), "allow", "no-ledger", plan=None)])
+        self.assertEqual((m["receipt_staged"], m["receipt_published"], m["off_plan_lines"], m["h1"], m["h1_detail"]),
+                         (analyze.iso(parse_ts(at(990))), analyze.iso(parse_ts(at(1000))), 1, False,
+                          "1 off-plan lines under the plan"))
+
+    def test_no_ledger_lines_after_the_finish_result_leave_h1_true(self) -> None:
+        # The window is half-open: a line at the result's own record is
+        # already outside it.
+        lines = [line(at(1000), "allow", "no-ledger", plan=None), line(at(1005), "allow", "no-ledger", plan=None)]
         m = self.measured(lines)
         self.assertEqual((m["decisions_total"], m["off_plan_lines"], m["h1"], m["h1_detail"]), (2, 0, True, ""))
+
+    def test_the_finish_command_bounds_the_window_when_its_output_was_never_printed(self) -> None:
+        # The refused finish at 600 s errored, so it is not Finish; the window
+        # runs to the captured call's result at 1000 s and holds the line at 800 s.
+        records = [*finish(600, "", report=False, tool_id="busy", error=True), *finish(1000, "", report=False)]
+        m = self.measured([line(at(800), "allow", "no-ledger", plan=None)], records=records)
+        self.assertEqual((m["h1_bound"], m["receipt_published"], m["off_plan_lines"], m["h1"]),
+                         ("finish-command", analyze.iso(parse_ts(at(1000))), 1, False))
+
+    def test_a_receipt_without_a_finish_record_fails_h1_closed(self) -> None:
+        m = self.measured([line(at(1200), "allow", "no-ledger", plan=None)], records=[])
+        self.assertEqual((m["receipt_published"], m["receipt_staged"], m["h1_bound"], m["off_plan_lines"], m["h1"],
+                          m["h1_detail"]),
+                         (None, analyze.iso(parse_ts(at(990))), "none", 0, False, "publication time unknown"))
+
+    def test_a_finish_line_naming_another_receipt_is_not_the_bound(self) -> None:
+        # An older finish's report, printed again at 1000 s, names a different
+        # receipt; this run's Finish result comes at 1500 s.
+        other = finish(1000, f"p-{stamp(10)}", tool_id="old", command="cat finish.log")
+        records = [*other, *finish(1500, f"p-{stamp(990)}")]
+        m = self.measured([line(at(1200), "allow", "no-ledger", plan=None)], records=records)
+        self.assertEqual((m["h1_bound"], m["receipt_published"], m["off_plan_lines"], m["h1"]),
+                         ("finish-result", analyze.iso(parse_ts(at(1500))), 1, False))
 
     def test_zero_decisions_fail_h1(self) -> None:
         m = self.measured([])
@@ -1405,18 +1463,22 @@ class PlanLines(unittest.TestCase):
         # Finish names a receipt `<workspace>-<stamp>`, falls to `-2` to `-10`
         # when another finish of the same second holds that name, and reports
         # a FINISHED staging, `.staging-<workspace>-<stamp>[-<pid>]`, when the
-        # rename fails; each is a receipt `receipt_for` returns.
-        for name in (f"plan-1-{stamp(1000)}-2", f".staging-plan-1-{stamp(1000)}-4242"):
-            run = make_run(receipt={"ledger": started_ledger(at(100)), "name": name, "finished": True},
+        # rename fails; each is a receipt `receipt_for` returns, and the
+        # helper's line names it as it is on disk.
+        for name in (f"plan-1-{stamp(990)}-2", f".staging-plan-1-{stamp(990)}-4242"):
+            run = make_run(records=finish(1000, name),
+                           receipt={"ledger": started_ledger(at(100)), "name": name, "finished": True},
                            mirror=[line(at(1200), "allow", "no-ledger", plan=None)])
             receipt = analyze.receipt_for(analyze.workspace_of(run), SID)
             self.assertEqual(receipt.name if receipt else None, name)
             m = analyze.measure(run, {})
-            self.assertEqual((m["receipt_published"], m["h1"]), (analyze.iso(parse_ts(at(1000))), True), name)
-        self.assertEqual(analyze.published_at(Path("plan-76cc6a12-20261028T004232Z-2")),
+            self.assertEqual((m["receipt_staged"], m["receipt_published"], m["h1_bound"], m["h1"]),
+                             (analyze.iso(parse_ts(at(990))), analyze.iso(parse_ts(at(1000))), "finish-result", True),
+                             name)
+        self.assertEqual(analyze.staged_at(Path("plan-76cc6a12-20261028T004232Z-2")),
                          parse_ts("2026-10-28T00:42:32Z"))
-        self.assertIsNone(analyze.published_at(Path("plan-76cc6a12")))
-        self.assertIsNone(analyze.published_at(None))
+        self.assertIsNone(analyze.staged_at(Path("plan-76cc6a12")))
+        self.assertIsNone(analyze.staged_at(None))
 
     def test_an_unreadable_ledger_start_fails_h1(self) -> None:
         ledger = started_ledger("x")

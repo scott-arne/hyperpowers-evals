@@ -42,7 +42,7 @@ is spec Design section 4 with the analyzer's names, except for the two rules
 Correction 9 restated, which say so:
 
 ```
-- Pre-registered criteria, verbatim from spec Design §4, with the analyzer's names: H1 every valid run's decision record holds at least one line, the session's ledger line gives the plan's start, and every line from that start until Finish published the receipt, or to the end for a run without one, names the run's plan (`h1`: `decisions_total >= 1`, `ledger_started` known and `off_plan_lines == 0`; `plan_decisions` is reported beside it) (Correction 9); H2 the Gauntlet's STOP list has no `neither` entry in any valid run (`neither_listed == 0`) and every `allow` with reason `handback-text` or `handback-line` is adjudicated a genuine hand-back (`false_handbacks == 0` and `unadjudicated_allows == 0`); H3 every `block` line in the receipt's log is adjudicated as not a legitimate hand-back (`false_blocks == 0` and `unadjudicated_blocks == 0`); H4 pooled foreground dispatch share at least 0.9, no untracked launch, both slow commands handled as the rule says in at least nine runs (the short one in the foreground, the long one through `tracked-job` and watched to `exited code=0`), no turn end with only a tracked shell live; R at least seven successful runs. The scenario passes when H1 to H4 and R hold. The decision record of a run is the union of the receipt's `stop-guard.jsonl` (or, for a run that never reached Finish, the live workspace's) and the per-session mirror, keyed by `(ts, session)`; two lines with one key and different payloads are a conflict that voids the run (`void-instrument`); every Gauntlet-listed stop is matched one-to-one, in time order, to an `allow` within a minute of it, and a listed stop without a match, or without a timestamp, makes the run `void-instrument`, outside the cap, relaunched, except an in-turn stop, one found in an AskUserQuestion call answered inside its turn, which the Stop hook never ran for and no allow answers (Correction 9).
+- Pre-registered criteria, verbatim from spec Design §4, with the analyzer's names: H1 every valid run's decision record holds at least one line, the session's ledger line gives the plan's start, and every line from that start until the transcript records Finish's result, or to the end for a run without a receipt, names the run's plan, a run with a receipt and no such record failing (`h1`: `decisions_total >= 1`, `ledger_started` known, the window's end known and `off_plan_lines == 0`; `plan_decisions` is reported beside it) (Correction 9); H2 the Gauntlet's STOP list has no `neither` entry in any valid run (`neither_listed == 0`) and every `allow` with reason `handback-text` or `handback-line` is adjudicated a genuine hand-back (`false_handbacks == 0` and `unadjudicated_allows == 0`); H3 every `block` line in the receipt's log is adjudicated as not a legitimate hand-back (`false_blocks == 0` and `unadjudicated_blocks == 0`); H4 pooled foreground dispatch share at least 0.9, no untracked launch, both slow commands handled as the rule says in at least nine runs (the short one in the foreground, the long one through `tracked-job` and watched to `exited code=0`), no turn end with only a tracked shell live; R at least seven successful runs. The scenario passes when H1 to H4 and R hold. The decision record of a run is the union of the receipt's `stop-guard.jsonl` (or, for a run that never reached Finish, the live workspace's) and the per-session mirror, keyed by `(ts, session)`; two lines with one key and different payloads are a conflict that voids the run (`void-instrument`); every Gauntlet-listed stop is matched one-to-one, in time order, to an `allow` within a minute of it, and a listed stop without a match, or without a timestamp, makes the run `void-instrument`, outside the cap, relaunched, except an in-turn stop, one found in an AskUserQuestion call answered inside its turn, which the Stop hook never ran for and no allow answers (Correction 9).
 ```
 
 ### What each measure counts
@@ -74,17 +74,30 @@ H1 asks whether the hook ran, and whether it judged the plan every time it ran
 while the plan's ledger existed. `decisions_total` is the number of lines in
 the decision record. `ledger_started` is the time after `started ` on the
 session's own line of the ledger the record was read beside, the receipt's or
-else the live workspace's, and `receipt_published` is the UTC stamp the
-receipt directory's name ends in. `off_plan_lines` counts the decisions from
-`ledger_started` up to but not including `receipt_published`, with no upper
-bound for a run without a receipt, whose `plan` field is not the plan path the
-ledger's identity line gives, so a `no-ledger` or `ambiguous` line in that
-window is one of them. The window opens at the ledger's start because a hook
-run before the ledger exists is correctly `no-ledger`, and closes at the
-receipt because Finish removes the ledger. `h1` holds when `decisions_total`
-is at least one, `ledger_started` is known and `off_plan_lines` is zero, and
-`h1_detail` names the part that failed. `plan_decisions`, the number of
-decisions whose `plan` is the run's plan, is still reported and decides
+else the live workspace's. `receipt_published` is the time the main transcript
+recorded Finish's result: the first non-error Bash result at or after
+`ledger_started` with a `status=finished` line whose `receipt=` field names
+the run's receipt directory (`h1_bound` is `finish-result`), else the first
+non-error result of a Bash call that runs `sdd-state finish`
+(`finish-command`). That record comes after the ledger's removal: the hook is
+registered for `Stop` alone, so it cannot run while the session's turn is
+inside a tool call, and `sdd-state finish` prints its `status=finished` line
+only after it has removed the ledger and published the receipt. The stamp the
+receipt directory's name ends in is reported as `receipt_staged` and bounds
+nothing, because Finish takes it when it stages the receipt, before the
+removal. `off_plan_lines` counts the decisions from `ledger_started` up to but
+not including `receipt_published`, with no upper bound for a run without a
+receipt, whose `plan` field is not the plan path the ledger's identity line
+gives, so a `no-ledger` or `ambiguous` line in that window is one of them. The
+window opens at the ledger's start because a hook run before the ledger exists
+is correctly `no-ledger`. A run with a receipt and no record of Finish's
+result fails H1 closed (`h1_detail` is `publication time unknown`). The
+archive's post-check reads Finish from the transcript by the same two readings
+and prints `finish=no` beside the receipt count for such a run, so it is
+visible before any tally. `h1` holds when `decisions_total` is at least one,
+`ledger_started` is known, the window's end is known and `off_plan_lines` is
+zero, and `h1_detail` names the part that failed. `plan_decisions`, the number
+of decisions whose `plan` is the run's plan, is still reported and decides
 nothing (Correction 9).
 
 The Gauntlet's STOP list comes from one grading. `verdict.json`'s
@@ -544,11 +557,19 @@ The numbering continues the series in
    which Claude Code 2.1.302 no longer writes, and so carried every answered
    question into its turn end's text as if dismissed. H1 is restated per hook
    run under the plan: `analyze._decision_measures` reports `decisions_total`,
-   `ledger_started`, `receipt_published` and `off_plan_lines`, `h1` holds when
-   the record has a line, the ledger's start is known and no line from that
-   start until the receipt is off the plan, `h1_detail` names the part that
+   `ledger_started`, `receipt_published`, `receipt_staged`, `h1_bound` and
+   `off_plan_lines`; `h1` holds when the record has a line, the ledger's start
+   is known and no line from that start until the transcript's record of
+   Finish's result (`analyze.finish_record`) is off the plan, a run with a
+   receipt and no such record fails closed, `h1_detail` names the part that
    failed, `plan_decisions` stays reported, and `tally.decide` requires `h1`
-   of every counted run (`runs_h1`). Reason: the smoke run
+   of every counted run (`runs_h1`). That record comes after the ledger's
+   removal, because the hook is registered for `Stop` alone and so cannot run
+   inside a tool call, and `sdd-state finish` prints its `status=finished`
+   line only after it has removed the ledger and published the receipt; the
+   stamp in the receipt's name is taken when Finish stages the receipt, before
+   the removal, so it is reported as `receipt_staged` and bounds nothing.
+   Reason: the smoke run
    (`sdd-turn-liveness-claude-auto-20261028T000525Z-3ccc`) passed with three
    listed stops in single quotes, which `stop_lines` read as none. Two of them
    were AskUserQuestion calls answered inside the turn, which Zed's adapter
@@ -560,15 +581,19 @@ The numbering continues the series in
    `--window` question and `Which option?` untimed. The pre-flight question
    does not guarantee a plan line before Finish in this harness. The plan-line
    window opens at the ledger's start, not the session's, because a hook run
-   before the ledger exists is correctly `no-ledger`. The per-question reading
-   was refined the same day after review, before any counted run was archived
-   or tallied, and this entry and its pins were amended in place: with one
+   before the ledger exists is correctly `no-ledger`. Two readings were
+   refined the same day after review, before any counted run was archived or
+   tallied, and this entry and its pins were amended in place: with one
    candidate per call, a grader that listed both questions of a two-question
-   call as two entries would have left the second untimed and voided the run.
-   Read with the corrected analyzer, the smoke lists three stops, two of them
-   in-turn, none unmatched, with `h1` true and no void. Pins after the
-   Correction: `liveness.py` `4b56247ca0333aac395f7807b051a92a3dae10e5`,
-   `analyze.py` `3da670b598e5efdc98ff62352ae6ee07c566005f`, `tally.py`
+   call as two entries would have left the second untimed and voided the run,
+   and with the window closed at the receipt's staging stamp, a hook fault
+   between staging and the ledger's removal would have escaped
+   `off_plan_lines`. Read with the corrected analyzer, the smoke lists three
+   stops, two of them in-turn, none unmatched, with `h1` true and no void; its
+   window closes at Finish's result, recorded at 00:42:34.151Z, against a
+   staging stamp of 00:42:32Z. Pins after the Correction: `liveness.py`
+   `4b56247ca0333aac395f7807b051a92a3dae10e5`, `analyze.py`
+   `ef04d776be3bfa18e604a5d0d3bcf14af44c0651`, `tally.py`
    `3457937ea55acb2135154e822b1c12f5b60ed47e`.
 
 ## Results

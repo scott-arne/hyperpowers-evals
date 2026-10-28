@@ -18,7 +18,17 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 import tally
-from synth import assistant, at, ledger_text, line, make_run, result, treatment_records
+from synth import (
+    RECEIPT_NAME,
+    SESSION_START,
+    assistant,
+    at,
+    ledger_text,
+    line,
+    make_run,
+    result,
+    treatment_records,
+)
 
 ARM = "treatment"
 ROOT = "/roots/treatment"
@@ -49,19 +59,27 @@ CAPPED_VOID = {"final": "indeterminate", "gauntlet": {"status": "investigate", "
 TWO_WORKSPACES = {"workspace_ledger": ledger_text(done=[1]),
                   "extra_workspaces": [{"ledger": ledger_text(done=[2])}]}
 STOP_ALLOW_TS = at(LAST_END + 5)
+# Finish's result, which closes H1's window (Correction 9), lands between the
+# long soak's watch and the closing turn end.
+FINISH_AT = LAST_END - 5
+FINISH_CMD = f"bash {ROOT}/skills/subagent-driven-development/scripts/sdd-state finish plan.md"
+FINISH_REPORT = f"status=finished backend=plain receipt=/x/home/.cache/hyperpowers/receipts/{RECEIPT_NAME}"
 
 
 def clean_records(version: str = "2.1.300") -> list[dict[str, Any]]:
-    """A treatment run that also watches the long soak through ``tracked-job wait``.
+    """A treatment run that also watches the long soak through ``tracked-job wait``, then finishes.
 
     The 2026-10-19 fixture waits on the long job with a polling shell, which
     H4 does not accept: this campaign's rule wants the job tracked and watched
-    to ``exited code=0``, so the run ends with that watch.
+    to ``exited code=0``, so the run ends with that watch and with Finish,
+    whose recorded result H1 reads.
     """
     jobdir = f"jobs/{LONG_JOB['name']}-x-0"
     return treatment_records(version) + [
         assistant(2000, tools=[("w1", "Bash", {"command": f"{TRACKED_JOB} wait {jobdir}", "timeout": 600000})], version=version),
         result(LAST_END - 10, "w1", "status=exited code=0"),
+        assistant(LAST_END - 8, tools=[("f1", "Bash", {"command": FINISH_CMD})], version=version),
+        result(FINISH_AT, "f1", FINISH_REPORT),
         assistant(LAST_END, LAST_TEXT, version=version),
     ]
 
@@ -74,7 +92,9 @@ def clean_run(**over: Any) -> dict[str, Any]:
         long soak's job record and one decision line naming the plan.
     """
     receipt = {
-        "ledger": ledger_text(done=range(1, 7)),
+        # The session starts the plan on the records' own timeline, so H1's
+        # window, from that start to Finish's result, holds the run.
+        "ledger": ledger_text(done=range(1, 7)).replace(f"started {SESSION_START}", f"started {at(5)}"),
         "jobs": [dict(LONG_JOB)],
         "log": [line(ALLOW_TS, "allow", "live-agent")],
     }
@@ -179,11 +199,11 @@ class Evaluate(unittest.TestCase):
         self.assertEqual(d["foreground_share"], 1.0)
 
     def test_h1_fails_when_the_hook_ran_without_the_plan_while_its_ledger_existed(self) -> None:
-        # The clean ledger starts the plan at 09:00 and the receipt is
-        # published at 10:00 (Correction 9): a `no-ledger` line between them
+        # The clean ledger starts the plan at 5 s and Finish's result is
+        # recorded at 2505 s (Correction 9): a `no-ledger` line between them
         # is the hook running under the plan without finding it.
         self.c.runs(9)
-        self.c.run("t10", "p10", **with_log([line("2026-10-23T09:30:00.000Z", "allow", "no-ledger", plan=None)]))
+        self.c.run("t10", "p10", **with_log([line(at(1000), "allow", "no-ledger", plan=None)]))
         _, d = self.c.evaluate()
         self.assertEqual((d["runs_h1"], d["runs_with_plan_decisions"]), (9, 9))
         self.assertFalse(d["H1"])
@@ -193,7 +213,7 @@ class Evaluate(unittest.TestCase):
         # The smoke's shape: the batched question was answered inside the turn
         # and the only hook runs came after Finish removed the ledger.
         self.c.runs(9)
-        self.c.run("t10", "p10", **with_log([line("2026-10-23T10:00:30.000Z", "allow", "no-ledger", plan=None)]))
+        self.c.run("t10", "p10", **with_log([line(at(FINISH_AT + 3), "allow", "no-ledger", plan=None)]))
         _, d = self.c.evaluate()
         self.assertEqual((d["runs_h1"], d["runs_with_plan_decisions"]), (10, 9))
         self.assertTrue(d["H1"])

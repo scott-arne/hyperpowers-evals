@@ -73,6 +73,12 @@ RECEIPT_STAMP = re.compile(r"(\d{8}T\d{6}Z)(?:-(\d+))?$")
 RECEIPT_STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
 # The tail of a session's own ledger line, `session <sid>: mode ... started <UTC>`.
 SESSION_STARTED = re.compile(r" started (\S+)$")
+# The two readings of a Finish that `archive-runs.sh` takes: the helper's own
+# report, whose `receipt=` field names the receipt with spaces as `%20`, and a
+# call running `sdd-state finish`, continuations joined first.
+FINISHED_LINE = re.compile(r"^status=finished\b.*\breceipt=(\S+)")
+FINISH_CALL = re.compile(r"\bsdd-state\b[^;&|\n]*\bfinish\b")
+CONTINUATION = re.compile(r"\\\n")
 # `publish_receipt` falls from the plain name to `-2`, `-3` and so on; any other
 # trailing number is a staging's pid, not a retry.
 RETRY_SUFFIXES = range(2, 11)
@@ -425,8 +431,11 @@ def ledger_start_from(text: str, sid: str) -> datetime | None:
     return when if when.utcoffset() is not None else None
 
 
-def published_at(receipt: Path | None) -> datetime | None:
-    """When Finish published the receipt, from the UTC stamp its name ends in.
+def staged_at(receipt: Path | None) -> datetime | None:
+    """When Finish staged the receipt, from the UTC stamp its name ends in.
+
+    ``sdd-state`` takes the stamp before it removes the ledger, so it is not
+    when the ledger was gone; ``finish_record`` answers that.
 
     :param receipt: the run's receipt directory, when Finish wrote one.
     :returns: the stamp as an aware time, or None without a receipt or a stamp.
@@ -435,6 +444,47 @@ def published_at(receipt: Path | None) -> datetime | None:
     if m is None:
         return None
     return datetime.strptime(m.group(1), RECEIPT_STAMP_FORMAT).replace(tzinfo=UTC)
+
+
+def finish_record(calls: Sequence[Call], receipt: Path | None, since: datetime | None) -> tuple[datetime | None, str]:
+    """When the main transcript recorded Finish's result, which is after the ledger was gone.
+
+    The Stop hook is registered for ``Stop`` alone, so it cannot run while the
+    session's turn is inside a tool call, and ``sdd-state finish`` prints its
+    ``status=finished`` line only after it removed the ledger and published
+    the receipt. No hook line can therefore fall between the ledger's removal
+    and this record, which makes it the upper bound of H1's window.
+
+    The first reading is the earliest non-error Bash result at or after
+    ``since`` holding a ``status=finished`` line whose ``receipt=`` field ends
+    in this receipt's directory name; the helper reports the name the receipt
+    has on disk, retry suffix or ``.staging-`` prefix included. The second,
+    for a call whose output was never printed, is the earliest non-error
+    result of a Bash call that runs ``sdd-state finish``.
+
+    :param calls: the main session's tool calls with their results.
+    :param receipt: the run's receipt directory, when Finish wrote one.
+    :param since: the ledger's start; an earlier result is not this plan's Finish.
+    :returns: the record's time and ``finish-result`` or ``finish-command``,
+        or ``(None, "none")`` without a receipt or such a record.
+    """
+    if receipt is None:
+        return None, "none"
+    done = sorted(
+        ((c.result_at, i, c) for i, c in enumerate(calls)
+         if c.name == "Bash" and c.result_at is not None and not c.error
+         and (since is None or c.result_at >= since)),
+        key=lambda item: (item[0], item[1]),
+    )
+    for at, _, c in done:
+        for line in (c.result or "").splitlines():
+            m = FINISHED_LINE.match(line)
+            if m is not None and m.group(1).replace("%20", " ").rstrip("/").rsplit("/", 1)[-1] == receipt.name:
+                return at, "finish-result"
+    for at, _, c in done:
+        if FINISH_CALL.search(CONTINUATION.sub(" ", str(c.inp.get("command") or ""))):
+            return at, "finish-command"
+    return None, "none"
 
 
 def _decision(value: Any, sid: str) -> dict[str, Any] | None:
@@ -1423,7 +1473,8 @@ def empty_measure(run_id: str) -> dict[str, Any]:
         "receipt": None, "plan_path": None, "plan_complete": False, "live_complete": False,
         "final_review": False, "success": False,
         "decisions": [], "decision_conflicts": 0, "plan_decisions": 0, "blocks": 0, "allows": {},
-        "decisions_total": 0, "ledger_started": None, "receipt_published": None, "off_plan_lines": 0,
+        "decisions_total": 0, "ledger_started": None, "receipt_published": None, "receipt_staged": None,
+        "h1_bound": "none", "off_plan_lines": 0,
         "h1": False, "h1_detail": "no decisions",
         "listed_stops": [], "in_turn_stops": [], "neither_listed": 0, "unmatched_stops": [],
         "false_blocks": 0, "false_handbacks": 0, "unadjudicated_allows": 0, "unadjudicated_blocks": 0,
@@ -1549,17 +1600,21 @@ def _decision_measures(
     live: Path | None,
     sid: str | None,
     adjudicated: Mapping[tuple[str, str], str],
+    calls: Sequence[Call],
 ) -> None:
     """Tally the run's decision record: its union, its reasons, H1, and its adjudications.
 
     H1 asks whether the hook ran, and judged the plan every time it ran while
     the plan's ledger existed (Correction 9). The window opens at the
     session's ledger line, because a hook run before the ledger exists is
-    correctly ``no-ledger``, and closes when Finish published the receipt,
-    after which the ledger is gone; a run without a receipt leaves it open.
-    A line in that window whose ``plan`` is not the run's plan, a
-    ``no-ledger`` or ``ambiguous`` line among them, is an off-plan line.
-    ``plan_decisions``, the lines that name the plan, is reported beside it.
+    correctly ``no-ledger``, and closes at the transcript's record of
+    Finish's result (:func:`finish_record`), which comes after the ledger's
+    removal; a run without a receipt leaves it open, and a run with a
+    receipt and no such record fails H1 closed. A line in that window whose
+    ``plan`` is not the run's plan, a ``no-ledger`` or ``ambiguous`` line
+    among them, is an off-plan line; a window with an unknown end counts
+    none. ``plan_decisions``, the lines that name the plan, is reported
+    beside it.
     H2 and H3 read the labels the human partner gave each adjudicated allow
     and each block, keyed by the run and the decision's timestamp.
 
@@ -1577,14 +1632,18 @@ def _decision_measures(
     plan_path = out["plan_path"]
     out["plan_decisions"] = sum(1 for d in decisions if plan_path is not None and d.get("plan") == plan_path)
     started = ledger_start_from(ledger_text_for(receipt, live), sid)
-    published = published_at(receipt)
+    published, out["h1_bound"] = finish_record(calls, receipt, started)
+    staged = staged_at(receipt)
+    bounded = receipt is None or published is not None
     out["decisions_total"] = len(decisions)
     out["ledger_started"] = iso(started) if started is not None else None
     out["receipt_published"] = iso(published) if published is not None else None
+    out["receipt_staged"] = iso(staged) if staged is not None else None
     out["off_plan_lines"] = sum(
         1
         for d in decisions
         if started is not None
+        and bounded
         and started <= parse_ts(str(d["ts"]))
         and (published is None or parse_ts(str(d["ts"])) < published)
         and (plan_path is None or d.get("plan") != plan_path)
@@ -1593,6 +1652,8 @@ def _decision_measures(
         out["h1_detail"] = "no decisions"
     elif started is None:
         out["h1_detail"] = "ledger start unknown"
+    elif not bounded:
+        out["h1_detail"] = "publication time unknown"
     elif out["off_plan_lines"]:
         out["h1_detail"] = f"{out['off_plan_lines']} off-plan lines under the plan"
     else:
@@ -1664,7 +1725,7 @@ def measure(record: Path, adjudicated: Mapping[tuple[str, str], str]) -> dict[st
     out["plan_complete"] = receipt is not None and PLAN_TASKS <= ledger_tasks_from(ledger_text_for(receipt, None))
     out["live_complete"] = live is not None and PLAN_TASKS <= ledger_tasks_from(ledger_text_for(None, live))
     _transcript_measures(records, calls, out, workspace, out["plan_complete"])
-    _decision_measures(out, record, workspace, receipt, live, sid, adjudicated)
+    _decision_measures(out, record, workspace, receipt, live, sid, adjudicated, calls)
     listed = stop_times(stop_lines(record), records)
     out["listed_stops"] = [(quote, label, iso(when) if when else None) for quote, label, when, _ in listed]
     out["in_turn_stops"] = [
