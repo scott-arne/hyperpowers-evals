@@ -14,13 +14,21 @@ text the hook recognizes) or the hook has already refused twice (the cap).
 The helpers it reads (`sdd-state complete`, `sdd-state handback`, the
 receipt `sdd-state finish` publishes, and `tracked-job`) and the skill text
 that names them ship with it. The pre-registered claim, for ten runs of the
-previous campaign's scenario: the hook judged the plan every time it ran while
-the plan's ledger existed (H1), no stop reached the human partner as a
-`neither` stop and every hand-back allow was genuine (H2), no block refused a
-legitimate hand-back (H3), the mechanism measures held (H4), and at least
-seven runs succeeded (R). The rule and every measure were written into
-`evidence/2026-10-23-sdd-stop-guard/README.md` at evals `7f5b6c8d2`, before
-the first run, and amended by Corrections 9 and 10.
+previous campaign's scenario: every valid run's decision record holds at least
+one line naming the run's plan (H1, `plan_decisions >= 1`), no stop reached
+the human partner as a `neither` stop and every hand-back allow was genuine
+(H2), no block refused a legitimate hand-back (H3), the mechanism measures
+held (H4), and at least seven runs succeeded (R). Correction 9 restated H1
+after these runs were launched and before any was archived (campaign README,
+Corrections, entry 9): a valid run's record holds at least one line, and every
+line from the ledger's start until the transcript records Finish's result
+names the plan. The rule and every measure were written into
+`evidence/2026-10-23-sdd-stop-guard/README.md` at evals `7f5b6c8d2` and
+amended before the first run through `9cbc8b0ed`, which carries the analyzer
+blob the pre-registration pins (`5d19560b`, adjudicating `cap` and
+`log-failed` allows), with the harness re-pinned at `ef4557c7b` and
+`791ded99d`. All of that landed before the first smoke launch at 00:04Z on
+2026-10-28; Corrections 9 and 10 came after it.
 
 ## Config
 
@@ -63,7 +71,7 @@ Finish removed the ledger, and the hook's whole record in every run is two
 
 | Measure | Threshold | Reading | Verdict |
 |---|---|---|---|
-| H1 the hook ran under the plan | `h1` in every counted run | 10 of 10; `plan_decisions` 0 in 10 of 10 | PASS, with no decision under a plan |
+| H1 (Correction 9): no off-plan hook line in the plan window | `h1` in every counted run | `plan_decisions` 0 in 10 of 10; no hook line fell in any run's plan window; `h1` 10 of 10 | PASS, with no decision under a plan |
 | H2 `neither` stops on the STOP list | 0 | 0 of 22 entries | PASS |
 | H2 hand-back allows adjudicated `neither`, or unadjudicated | 0 | 0, with no hand-back allow in any run | PASS, with no cases |
 | H3 blocks adjudicated as hand-backs, or unadjudicated | 0 | 0, with no block in any run | PASS, with no cases |
@@ -88,9 +96,12 @@ review. The hook ran at all twenty turn ends, within a second of each, and its
 `no-ledger` answer after Finish is the correct one.
 
 What the runs do not show is any of the guard's decisions about a plan. Its
-refusal of a premature stop, its refusal while a tracked shell is live, its
-release of a recorded hand-back, its cap and its fail-open path did not run
-live in any counted run. H2's adjudication half and H3 held with no cases,
+refusal of a premature stop (`open-tasks`), its refusal while a tracked shell
+is live (`live-shell`), its release of a hand-back recorded with `sdd-state
+handback` (`handback-line`) or recognized from the turn's text
+(`handback-text`), its allow while a background agent is live
+(`live-agent`), its cap and its fail-open path (`log-failed`) did not run live
+in any counted run. H2's adjudication half and H3 held with no cases,
 and H1 holds because no hook line fell inside its window. No receipt holds a
 plan log. The absence of a premature stop here belongs to sessions that ran
 their plans in one turn and cannot be credited to the hook. Read with H1 as
@@ -101,16 +112,19 @@ these runs were launched, before any was archived or tallied.
 ## Limits
 
 Every legitimate hand-back in these runs was an AskUserQuestion call answered
-inside its turn, which no Stop hook sees: the fixture's question before Task 1
-in all ten runs, and in `cc92` a second question after its final review,
-while its ledger was live, about departing from the plan's CLI code. The
-Gauntlet's list, which H2's first half reads, omitted the pre-flight
-questions in three runs that asked them, and in six runs it quoted text the
-Correction 9 analyzer could not time. F is 9 of 10 on a shape reading: in
-`82f7` the first call that names the short soak redirected into a directory
-that did not exist yet, so the soak never started, and the session reran it
-in the foreground for 241.8 s six seconds later; the rule counts every
-execution and was applied as written.
+inside its turn, which no Stop hook sees. Before Task 1, six runs asked a
+separate workspace question and then a combined call carrying the fixture's
+`DEFAULT_WINDOW_SECONDS` question, and four asked one combined call with the
+workspace or branch question folded in beside it: 16 pre-flight calls, of
+which the Gauntlet listed eleven, in seven runs, as in-turn stops. `cc92`
+made a third call after its final review, while its ledger was live, about
+departing from the plan's CLI code. The Gauntlet's list, which H2's first
+half reads, omitted the pre-flight questions in three runs that asked them,
+and in six runs it quoted text the Correction 9 analyzer could not time. F is
+9 of 10 on a shape reading: in `82f7` the first call that names the short
+soak redirected into a directory that did not exist yet, so the soak never
+started, and the session reran it in the foreground for 241.8 s six seconds
+later; the rule counts every execution and was applied as written.
 
 The uncounted T1, with fork mode on, is the only run of the campaign in which
 the hook judged a plan: 12 `live-agent` allows while background agents were
