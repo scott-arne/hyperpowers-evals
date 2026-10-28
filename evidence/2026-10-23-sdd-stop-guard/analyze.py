@@ -175,6 +175,11 @@ WRITE_TARGET = re.compile(r"(?:>{1,2}|\btee\s+(?:-a\s+)?)\s*(['\"]?)([^\s'\"<>|;
 REDIRECT = re.compile(r"(?<![<>&0-9])>{1,2}\s*(['\"]?)([^\s'\"<>|;&()]+)\1")
 SH_C = re.compile(r"\b(?:bash|sh|zsh)\s+-c\s+(['\"])(.*?)(?<!\\)\1", re.DOTALL)
 UNICODE_QUOTES = {"\u2018": "'", "\u2019": "'", "\u201c": "'", "\u201d": "'", '"': "'"}
+# The markdown markers the terminal renders away: inline code's backticks and
+# bold's double asterisks. The Gauntlet-Agent quotes the screen, so its quotes
+# lack them (Correction 10). Underscores and single asterisks stay, because
+# identifiers and globs carry them literally.
+HIDDEN_MARKUP = ("`", "**")
 
 
 @dataclass(frozen=True)
@@ -609,6 +614,20 @@ def normalize(text: str) -> str:
     return " ".join(text.lower().split()).strip(" .")
 
 
+def _as_shown(text: str) -> str:
+    """A quote or a candidate's text, normalized as the terminal shows it, for matching only.
+
+    The listed and printed forms keep ``normalize`` alone, so a reader can
+    still find an entry's quote as the grader wrote it.
+
+    :param text: a listed quote or the text a stop is looked for in.
+    :returns: ``normalize`` of the text without the markers in :data:`HIDDEN_MARKUP`.
+    """
+    for marker in HIDDEN_MARKUP:
+        text = text.replace(marker, "")
+    return normalize(text)
+
+
 def _is_stops_criterion(name: str) -> bool:
     """Whether a result's criterion is the story's "Mid-plan stops are listed".
 
@@ -720,7 +739,7 @@ def stop_lines(record: Path) -> list[tuple[str, str]]:
 
 
 def ask_user_questions(records: Sequence[Record]) -> list[tuple[datetime, str]]:
-    """Every question of every AskUserQuestion call answered inside its turn, with the text it showed.
+    """The lead-in and every question of each AskUserQuestion call answered inside its turn, with their text.
 
     An answered call is a stop the Stop hook never ran for: the tool call
     keeps the turn open, and Zed's adapter shows the question as a form inside
@@ -732,11 +751,22 @@ def ask_user_questions(records: Sequence[Record]) -> list[tuple[datetime, str]]:
     call as one entry or as two. A quote that runs from one question's text
     into the next is in neither.
 
+    The call's lead-in is a candidate before its questions: what the session
+    showed between the last tool result or message and the question widget.
+    Claude Code 2.1.302 shows a thinking block as narration, beside the text
+    blocks, so a grader that quotes that narration is quoting this stop
+    (Correction 10). Narration before an earlier tool result led into that
+    tool, not into the question, so it is not part of the lead-in.
+
     :param records: the main transcript.
-    :returns: each answered question with its call's time and the normalized
-        join of its ``question``, its ``header`` and its options' ``label`` and
-        ``description``, in transcript order and, within a call, in the order
-        the call asked them.
+    :returns: for each answered call, in transcript order, its lead-in, when
+        it showed any, then each question in the order the call asked them,
+        all with the call's time. A lead-in is the normalized join of every
+        ``text`` block and every non-empty ``thinking`` block in the assistant
+        records after the last user record (a tool result or a message) before
+        the call, up to and including the call's own record; a question is the
+        normalized join of its ``question``, its ``header`` and its options'
+        ``label`` and ``description``.
     """
     answers = {
         b.get("tool_use_id")
@@ -746,10 +776,24 @@ def ask_user_questions(records: Sequence[Record]) -> list[tuple[datetime, str]]:
         if b.get("type") == "tool_result" and ask_answered(b)
     }
     out: list[tuple[datetime, str]] = []
+    shown: list[str] = []
     for rec in records:
+        if rec.get("type") == "user":
+            shown = []
+            continue
+        if rec.get("type") != "assistant":
+            continue
+        for b in blocks(rec):
+            if b.get("type") == "text":
+                shown.append(str(b.get("text") or ""))
+            elif b.get("type") == "thinking" and str(b.get("thinking") or "").strip():
+                shown.append(str(b.get("thinking")))
         for use in tool_uses(rec):
             if use.get("name") != ASK_TOOL or use.get("id") not in answers:
                 continue
+            lead = normalize("\n".join(shown))
+            if lead:
+                out.append((parse_ts(rec["timestamp"]), lead))
             for q in tool_input(use).get("questions") or []:
                 if not isinstance(q, dict):
                     continue
@@ -773,13 +817,15 @@ def stop_times(stops: Sequence[tuple[str, str]], records: Sequence[Record]) -> l
 
     The Gauntlet lists its stops in order, so matching is one-to-one and
     chronological. A stop's candidates are the turn ends from the cursor on
-    and the questions of answered AskUserQuestion calls at or after the
-    previous match's time, and the earliest whose text contains the quote
-    takes it; a turn end and a question of the same time go to the turn end.
-    Each question answers at most one entry, and taking one uses it and every
-    candidate question before it, so a call's later questions and the turn
-    ends at or after the call stay available. A question is an in-turn stop,
-    which no Stop hook ran for and so no allow answers (Correction 9). A quote
+    and the lead-ins and questions of answered AskUserQuestion calls at or
+    after the previous match's time, and the earliest whose text contains the
+    quote takes it; a turn end and a call of the same time go to the turn end.
+    Each call candidate answers at most one entry, and taking one uses it and
+    every call candidate before it, so a call's later questions and the turn
+    ends at or after the call stay available. A call candidate is an in-turn
+    stop, which no Stop hook ran for and so no allow answers (Correction 9).
+    The quote and the text are compared as ``_as_shown`` renders them, without
+    the markdown the terminal hid from the grader (Correction 10). A quote
     found in neither is timed ``None``, which the tally treats as an
     instrument failure.
 
@@ -790,15 +836,17 @@ def stop_times(stops: Sequence[tuple[str, str]], records: Sequence[Record]) -> l
     """
     ends = turn_ends(records)
     asks = ask_user_questions(records)
+    end_texts = [_as_shown(e.text) for e in ends]
+    ask_texts = [_as_shown(text) for _, text in asks]
     out: list[ResolvedStop] = []
     next_end = next_ask = 0
     since: datetime | None = None
     for quote, label in stops:
-        needle = normalize(quote)
-        end = next((i for i in range(next_end, len(ends)) if needle and needle in normalize(ends[i].text)), None)
+        needle = _as_shown(quote)
+        end = next((i for i in range(next_end, len(ends)) if needle and needle in end_texts[i]), None)
         ask = next(
             (j for j in range(next_ask, len(asks))
-             if needle and (since is None or asks[j][0] >= since) and needle in asks[j][1]),
+             if needle and (since is None or asks[j][0] >= since) and needle in ask_texts[j]),
             None,
         )
         if ask is not None and (end is None or asks[ask][0] < ends[end].at):

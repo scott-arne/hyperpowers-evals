@@ -164,4 +164,5 @@ but I need two decisions before starting: ..."). That narration is a
 `thinking` block, not a text block, and the analyzer's in-turn candidates are
 the questions themselves, so the quote matches no candidate. The call was
 answered at 01:12:12Z, inside its turn. In a counted run this entry would void
-the run as `void-instrument`.
+the run as `void-instrument` under the Correction 9 analyzer; under Correction
+10 it is the call's in-turn stop, timed at 01:10:59.514Z.

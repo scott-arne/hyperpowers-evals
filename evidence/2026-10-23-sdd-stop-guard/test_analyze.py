@@ -1230,6 +1230,13 @@ def answered(t: float, tool_id: str, question: str) -> dict[str, Any]:
     return result(t, tool_id, f'The user answered: "{question}"="Option A". Read the answers carefully.')
 
 
+def thought(t: float, text: str) -> dict[str, Any]:
+    """An assistant record holding one thinking block, which Claude Code 2.1.302 shows as narration."""
+    rec = assistant(t)
+    rec["message"]["content"] = [{"type": "thinking", "thinking": text, "signature": "sig"}]
+    return rec
+
+
 def stamp(seconds: float) -> str:
     """The UTC stamp a receipt published ``seconds`` after the synthetic base is named with."""
     return parse_ts(at(seconds)).strftime("%Y%m%dT%H%M%SZ")
@@ -1261,6 +1268,7 @@ WHERE = "Where should the plan's work happen? You're on main in a normal checkou
 WINDOW = "Which default for `--window` (DEFAULT_WINDOW_SECONDS) governs?"
 RECORDS = "How should the spec's decision records be handled?"
 GOVERN = "Which option should govern?"
+LEAD = "Let me know which approach you prefer for each before I proceed."
 
 
 class InTurnStops(unittest.TestCase):
@@ -1374,6 +1382,70 @@ class InTurnStops(unittest.TestCase):
                 assistant(5, f"Settled: {GOVERN} Option A."), human(50, "continue"), assistant(60, "All done.")]
         timed = analyze.stop_times([(GOVERN, "question"), (GOVERN, "question")], recs)
         self.assertEqual([(t, in_turn) for _, _, t, in_turn in timed], [(parse_ts(at(5)), False), (parse_ts(at(5)), True)])
+
+    def test_a_thinking_block_lead_in_is_an_in_turn_stop_at_the_call_s_time(self) -> None:
+        # Claude Code 2.1.302 shows a thinking block as narration, and the
+        # Gauntlet-Agent quoted the one shown just before the question widget;
+        # the empty block beside it is a redacted one, which shows nothing.
+        recs = [human(0, "go"), thought(8, ""), thought(9, f"Two plan conflicts. {LEAD}"),
+                assistant(10, tools=[ask("q1", GOVERN)]), answered(70, "q1", GOVERN),
+                assistant(80, "Task 1 governs. Moving to Task 2."), human(100, "continue"), assistant(110, "All done.")]
+        m = analyze.measure(make_run(records=recs, stops=[(LEAD, "question")]), {})
+        self.assertEqual(m["in_turn_stops"],
+                         [{"quote": analyze.normalize(LEAD), "label": "question", "ts": analyze.iso(parse_ts(at(10)))}])
+        self.assertEqual(m["unmatched_stops"], [])
+
+    def test_a_text_block_lead_in_quoted_without_its_markdown_matches(self) -> None:
+        # The grader reads the screen, where inline code and bold show
+        # without their markers, so it quotes them without.
+        recs = [human(0, "go"),
+                assistant(9, "**Setup is done.** Normal checkout on `main`, no declared preference — asking where to work."),
+                assistant(10, tools=[ask("q1", WHERE)]), answered(70, "q1", WHERE),
+                assistant(80, "Working in a worktree."), human(100, "continue")]
+        quote = "Setup is done. Normal checkout on main, no declared preference — asking where to work."
+        self.assertEqual(analyze.stop_times([(quote, "question")], recs), [(quote, "question", parse_ts(at(10)), True)])
+
+    def test_matching_drops_only_the_markdown_the_terminal_hides(self) -> None:
+        # Identifiers and globs carry underscores and single asterisks literally.
+        self.assertEqual(analyze._as_shown("**Run** `test_*.py` for `DEFAULT_WINDOW_SECONDS`."),
+                         "run test_*.py for default_window_seconds")
+
+    def test_an_unanswered_call_s_lead_in_is_no_candidate(self) -> None:
+        # The dismissed call's question is still open at its turn end, whose
+        # text carries the question and not the narration; only the answered
+        # call later on contributes a lead-in.
+        dismissed = "Before I start, one question about the window."
+        recs = [human(0, "go"), thought(4, dismissed), assistant(5, tools=[ask("q1", WINDOW)]),
+                result(6, "q1", "The user declined to answer the questions.", is_error=True),
+                human(50, "use option A"), thought(59, LEAD), assistant(60, tools=[ask("q2", GOVERN)]),
+                answered(90, "q2", GOVERN), assistant(100, "Task 1 governs."), human(150, "continue")]
+        timed = analyze.stop_times([(dismissed, "question"), (LEAD, "question")], recs)
+        self.assertEqual([(t, in_turn) for _, _, t, in_turn in timed], [(None, False), (parse_ts(at(60)), True)])
+        self.assertEqual({t for t, _ in analyze.ask_user_questions(recs)}, {parse_ts(at(60))})
+
+    def test_the_lead_in_and_the_question_of_one_call_are_two_in_turn_stops(self) -> None:
+        recs = [human(0, "go"), thought(9, LEAD), assistant(10, tools=[ask("q1", GOVERN)]), answered(70, "q1", GOVERN),
+                assistant(2000, "Implementation complete.\n\nWhich option?"), human(2100, "merge"),
+                assistant(2110, "Merged into main.")]
+        run = make_run(records=recs, stops=[(LEAD, "question"), (GOVERN, "question"), ("Which option?", "question")],
+                       receipt={"ledger": started_ledger(at(5)), "name": f"plan-1-{stamp(1950)}"},
+                       mirror=[line(at(2000.2), "allow", "no-ledger", plan=None)])
+        m = analyze.measure(run, {})
+        self.assertEqual([s["ts"] for s in m["in_turn_stops"]], [analyze.iso(parse_ts(at(10)))] * 2)
+        self.assertEqual(m["listed_stops"][2][2], analyze.iso(parse_ts(at(2000))))
+        self.assertEqual(m["unmatched_stops"], [])
+
+    def test_only_the_text_since_the_last_tool_result_is_the_lead_in(self) -> None:
+        # The call's own record counts too; narration before the Bash result
+        # was shown before a tool ran, not before the question.
+        earlier = "First I will list the files."
+        recs = [human(0, "go"), thought(4, earlier), assistant(5, tools=[("b1", "Bash", {"command": "ls"})]),
+                result(6, "b1", "ok"), thought(9, LEAD), assistant(10, "Two decisions first.", tools=[ask("q1", GOVERN)]),
+                answered(70, "q1", GOVERN), assistant(80, "Task 1 governs."), human(100, "continue")]
+        self.assertEqual(analyze.ask_user_questions(recs)[0],
+                         (parse_ts(at(10)), analyze.normalize(f"{LEAD} Two decisions first.")))
+        timed = analyze.stop_times([(earlier, "neither"), (LEAD, "question")], recs)
+        self.assertEqual([(t, in_turn) for _, _, t, in_turn in timed], [(None, False), (parse_ts(at(10)), True)])
 
 
 class PlanLines(unittest.TestCase):

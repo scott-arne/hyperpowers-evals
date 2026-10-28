@@ -49,9 +49,9 @@ Correction 9 restated, which say so:
 
 `analyze.py` computes every per-run number and decides nothing. `tally.py`
 applies the rule above to the archived runs. The definitions below are what
-those two modules implement at the pins recorded under "Analyzer pins", and
+those two modules implement at the pins recorded under "Analyzer pins";
 the rules marked Correction 9 are implemented at the pins entry 9 lists under
-"Corrections".
+"Corrections", and the rule marked Correction 10 at the pins entry 10 lists.
 
 The decision record of a run is the union of two logs. The first is the plan's
 own log, `stop-guard.jsonl` in the receipt that Finish published, or in the
@@ -135,7 +135,14 @@ A dismissed or failed call is never a candidate, because its question was
 still open when the turn ended, and that turn end's text carries it where the
 hook did run. The Gauntlet lists its stops in order, so that matching is
 one-to-one and chronological; a quote found in neither is untimed, and
-`listed_stops` keeps every entry (Correction 9).
+`listed_stops` keeps every entry (Correction 9). An answered call's displayed
+lead-in can answer one listed entry too. It comes before the call's
+questions, is timed by the call, and is every text block and every non-empty
+thinking block the session wrote after the last tool result or message before
+the call, up to and including the call itself, because Claude Code 2.1.302
+shows a thinking block as narration. A quote and the text it is looked for in
+are compared without backticks and `**`, which the terminal does not show,
+keeping underscores and single asterisks (Correction 10).
 
 Each timed stop that is not in-turn is then matched one-to-one, in time
 order, to an `allow` in the window `[stop - 2 s, stop + 1 min]`, the nearest
@@ -326,7 +333,8 @@ or a release, which does not move that pin for the reason below:
 - `tally.py` `c5b371b17029cd6bc886d167b141b4ee19cd26e1`
 
 Correction 9 changed all three, and its entry under "Corrections" records
-the blobs after it.
+the blobs after it. Correction 10 changed `analyze.py` alone, and entry 10
+records its blob after it.
 
 `synth.py` builds the synthetic runs the analyzer's own tests read; no tally
 reads it, so it is not pinned.
@@ -559,10 +567,10 @@ The record is in `smoke.md`, "T1". Every run is archived under
   `live-agent` allows. Each names the tool-use id of a background agent that
   was live at the allow and whose completion is recorded. It also holds two
   `no-ledger` allows after Finish, and no block.
-- One STOP entry is untimed. It quotes the narration (a `thinking` block)
+- One STOP entry was untimed. It quotes the narration (a `thinking` block)
   Claude Code showed before the pre-flight AskUserQuestion call, not the
-  question itself. In a counted run that entry would make the run
-  `void-instrument`.
+  question itself. In a counted run that entry would have made the run
+  `void-instrument`; under Correction 10 it is that call's in-turn stop.
 
 ## Corrections
 
@@ -626,6 +634,41 @@ The numbering continues the series in
    `4b56247ca0333aac395f7807b051a92a3dae10e5`, `analyze.py`
    `ef04d776be3bfa18e604a5d0d3bcf14af44c0651`, `tally.py`
    `3457937ea55acb2135154e822b1c12f5b60ed47e`.
+10. 2026-10-28, after the counted runs were archived and read with the
+    Correction 9 analyzer, before any tally. One change to `analyze.py`, in
+    two parts. Lead-ins: `analyze.ask_user_questions` gives each
+    AskUserQuestion call answered inside its turn (by `liveness.ask_answered`,
+    as before) one candidate before its questions, timed by the call: its
+    displayed lead-in, the normalized join of every text block and every
+    non-empty thinking block in the assistant records after the last tool
+    result or user record before the call, up to and including the call's own
+    record. A call's candidates are therefore its lead-in and then its
+    questions in order, and entry 9's rule for using them is unchanged: an
+    entry that takes one uses it and every earlier candidate, so an entry that
+    takes the lead-in leaves the call's questions and the turn ends at or after
+    the call available. An unanswered call still contributes nothing, and the
+    turn-end path and the tie rule are unchanged. Rendering:
+    `analyze._as_shown` drops backticks and `**`, which the terminal does not
+    show, from a quote and from the text it is looked for in, and keeps
+    underscores and single asterisks, which identifiers and globs carry;
+    `analyze.stop_times` compares the two that way, while `analyze.normalize`,
+    and so every listed and printed quote, is unchanged. Reason: read with the
+    Correction 9 analyzer, six of the ten counted runs and T1 had listed
+    entries that quote the displayed lead-in of an answered AskUserQuestion
+    call, from a thinking block Claude Code 2.1.302 shows as narration or from
+    a text block, or quote it without its markdown backticks. That analyzer
+    left those entries untimed, so each of the six runs would have read
+    `void-instrument` and been relaunched. The affected runs are `82f7`,
+    `88ee`, `f445`, `de8b`, `cd9b` and `cc92` (three entries) among the counted
+    runs, and `93d7` (T1). The change moves only stop timing, and therefore
+    only the void classification: no H criterion's computation reads stop
+    timing. Read with the corrected analyzer, the ten counted runs, T1 and the
+    smoke have no unmatched stop; the nine entries that were untimed are
+    in-turn stops timed by their calls, and no other entry or measure moved.
+    Pins after the Correction: `analyze.py`
+    `430bd496047d2d9bb49fad85a527a7534483c3ed`; `liveness.py`
+    `4b56247ca0333aac395f7807b051a92a3dae10e5` and `tally.py`
+    `3457937ea55acb2135154e822b1c12f5b60ed47e` are unchanged.
 
 ## Results
 
