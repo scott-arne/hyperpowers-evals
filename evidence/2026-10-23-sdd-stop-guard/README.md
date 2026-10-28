@@ -136,7 +136,8 @@ still open when the turn ended, and that turn end's text carries it where the
 hook did run. The Gauntlet lists its stops in order, so that matching is
 one-to-one and chronological; a quote found in neither is untimed, and
 `listed_stops` keeps every entry (Correction 9). An answered call's displayed
-lead-in can answer one listed entry too. It comes before the call's
+lead-in can answer one listed entry too, when no turn end or question quotes
+it. It comes before the call's
 questions, is timed by the call, and is every text block and every non-empty
 thinking block the session wrote after the last tool result or message before
 the call, up to and including the call itself, because Claude Code 2.1.302
@@ -643,11 +644,16 @@ The numbering continues the series in
     non-empty thinking block in the assistant records after the last tool
     result or user record before the call, up to and including the call's own
     record. A call's candidates are therefore its lead-in and then its
-    questions in order, and entry 9's rule for using them is unchanged: an
+    questions in order. The lead-in is a fallback: `analyze.stop_times`
+    consults it only when no turn end and no question from the cursor on
+    quotes the entry. A lead-in precedes every turn end of its own turn and of
+    the turns after it, so a lead-in must never take an entry a turn end or a
+    question also quotes, because that could hide a missing allow. When a
+    lead-in is used, entry 9's rule for using candidates is unchanged: an
     entry that takes one uses it and every earlier candidate, so an entry that
     takes the lead-in leaves the call's questions and the turn ends at or after
-    the call available. An unanswered call still contributes nothing, and the
-    turn-end path and the tie rule are unchanged. Rendering:
+    the call available. An unanswered call still contributes nothing, and
+    turn-end selection and the tie rule are unchanged. Rendering:
     `analyze._as_shown` drops backticks and `**`, which the terminal does not
     show, from a quote and from the text it is looked for in, and keeps
     underscores and single asterisks, which identifiers and globs carry;
@@ -665,8 +671,15 @@ The numbering continues the series in
     timing. Read with the corrected analyzer, the ten counted runs, T1 and the
     smoke have no unmatched stop; the nine entries that were untimed are
     in-turn stops timed by their calls, and no other entry or measure moved.
-    Pins after the Correction: `analyze.py`
-    `430bd496047d2d9bb49fad85a527a7534483c3ed`; `liveness.py`
+    The fallback was added the same day after review, before any tally, and
+    this entry and its pin were amended in place: as first written, the
+    lead-in competed with the turn ends, so a stock sentence in one call's
+    narration (cd9b's lead-in ends "Full details are in the ledger", the entry
+    its grader listed) would have taken a later turn's hand-back that repeated
+    it. The fallback leaves every
+    reading above unchanged, because no turn end or question quotes any of the
+    nine entries. Pins after the Correction: `analyze.py`
+    `6dd98e4b407e003c821360e02e2531c15efd004f`; `liveness.py`
     `4b56247ca0333aac395f7807b051a92a3dae10e5` and `tally.py`
     `3457937ea55acb2135154e822b1c12f5b60ed47e` are unchanged.
 

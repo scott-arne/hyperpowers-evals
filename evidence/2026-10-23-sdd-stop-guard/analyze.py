@@ -738,7 +738,13 @@ def stop_lines(record: Path) -> list[tuple[str, str]]:
     return listed or []
 
 
-def ask_user_questions(records: Sequence[Record]) -> list[tuple[datetime, str]]:
+# One candidate an answered AskUserQuestion call offers ``stop_times``: the
+# call's time, the normalized text, and whether it is the call's lead-in rather
+# than one of its questions.
+AskCandidate = tuple[datetime, str, bool]
+
+
+def ask_user_questions(records: Sequence[Record]) -> list[AskCandidate]:
     """The lead-in and every question of each AskUserQuestion call answered inside its turn, with their text.
 
     An answered call is a stop the Stop hook never ran for: the tool call
@@ -761,7 +767,8 @@ def ask_user_questions(records: Sequence[Record]) -> list[tuple[datetime, str]]:
     :param records: the main transcript.
     :returns: for each answered call, in transcript order, its lead-in, when
         it showed any, then each question in the order the call asked them,
-        all with the call's time. A lead-in is the normalized join of every
+        all with the call's time and flagged ``True`` for the lead-in and
+        ``False`` for a question. A lead-in is the normalized join of every
         ``text`` block and every non-empty ``thinking`` block in the assistant
         records after the last user record (a tool result or a message) before
         the call, up to and including the call's own record; a question is the
@@ -775,7 +782,7 @@ def ask_user_questions(records: Sequence[Record]) -> list[tuple[datetime, str]]:
         for b in blocks(rec)
         if b.get("type") == "tool_result" and ask_answered(b)
     }
-    out: list[tuple[datetime, str]] = []
+    out: list[AskCandidate] = []
     shown: list[str] = []
     for rec in records:
         if rec.get("type") == "user":
@@ -793,7 +800,7 @@ def ask_user_questions(records: Sequence[Record]) -> list[tuple[datetime, str]]:
                 continue
             lead = normalize("\n".join(shown))
             if lead:
-                out.append((parse_ts(rec["timestamp"]), lead))
+                out.append((parse_ts(rec["timestamp"]), lead, True))
             for q in tool_input(use).get("questions") or []:
                 if not isinstance(q, dict):
                     continue
@@ -801,7 +808,7 @@ def ask_user_questions(records: Sequence[Record]) -> list[tuple[datetime, str]]:
                 for option in q.get("options") or []:
                     if isinstance(option, dict):
                         parts += [str(option.get("label") or ""), str(option.get("description") or "")]
-                out.append((parse_ts(rec["timestamp"]), normalize(" ".join(parts))))
+                out.append((parse_ts(rec["timestamp"]), normalize(" ".join(parts)), False))
     return out
 
 
@@ -817,17 +824,21 @@ def stop_times(stops: Sequence[tuple[str, str]], records: Sequence[Record]) -> l
 
     The Gauntlet lists its stops in order, so matching is one-to-one and
     chronological. A stop's candidates are the turn ends from the cursor on
-    and the lead-ins and questions of answered AskUserQuestion calls at or
-    after the previous match's time, and the earliest whose text contains the
-    quote takes it; a turn end and a call of the same time go to the turn end.
-    Each call candidate answers at most one entry, and taking one uses it and
-    every call candidate before it, so a call's later questions and the turn
-    ends at or after the call stay available. A call candidate is an in-turn
-    stop, which no Stop hook ran for and so no allow answers (Correction 9).
-    The quote and the text are compared as ``_as_shown`` renders them, without
-    the markdown the terminal hid from the grader (Correction 10). A quote
-    found in neither is timed ``None``, which the tally treats as an
-    instrument failure.
+    and the questions of answered AskUserQuestion calls at or after the
+    previous match's time, and the earliest whose text contains the quote
+    takes it; a turn end and a question of the same time go to the turn end.
+    Only when neither quotes the stop is a call's lead-in consulted, the first
+    from the cursor on that quotes it. A lead-in precedes every turn end of
+    its own turn and of the turns after it, so letting it compete would let
+    narration take an entry a turn end also quotes, and so hide that stop's
+    missing allow (Correction 10). Each call candidate answers at most one
+    entry, and taking one uses it and every call candidate before it, so a
+    call's later questions and the turn ends at or after the call stay
+    available. A call candidate is an in-turn stop, which no Stop hook ran
+    for and so no allow answers (Correction 9). The quote and the text are
+    compared as ``_as_shown`` renders them, without the markdown the terminal
+    hid from the grader (Correction 10). A quote found in none of them is
+    timed ``None``, which the tally treats as an instrument failure.
 
     :param stops: the Gauntlet's listed stops, as ``stop_lines`` returns them.
     :param records: the main transcript.
@@ -837,18 +848,20 @@ def stop_times(stops: Sequence[tuple[str, str]], records: Sequence[Record]) -> l
     ends = turn_ends(records)
     asks = ask_user_questions(records)
     end_texts = [_as_shown(e.text) for e in ends]
-    ask_texts = [_as_shown(text) for _, text in asks]
+    ask_texts = [_as_shown(text) for _, text, _ in asks]
     out: list[ResolvedStop] = []
     next_end = next_ask = 0
     since: datetime | None = None
     for quote, label in stops:
         needle = _as_shown(quote)
         end = next((i for i in range(next_end, len(ends)) if needle and needle in end_texts[i]), None)
-        ask = next(
-            (j for j in range(next_ask, len(asks))
-             if needle and (since is None or asks[j][0] >= since) and needle in ask_texts[j]),
-            None,
-        )
+        hits = [
+            j for j in range(next_ask, len(asks))
+            if needle and (since is None or asks[j][0] >= since) and needle in ask_texts[j]
+        ]
+        ask = next((j for j in hits if not asks[j][2]), None)
+        if end is None and ask is None:
+            ask = next((j for j in hits if asks[j][2]), None)
         if ask is not None and (end is None or asks[ask][0] < ends[end].at):
             since = asks[ask][0]
             out.append((quote, label, since, True))

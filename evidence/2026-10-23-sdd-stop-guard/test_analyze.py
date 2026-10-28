@@ -1269,6 +1269,7 @@ WINDOW = "Which default for `--window` (DEFAULT_WINDOW_SECONDS) governs?"
 RECORDS = "How should the spec's decision records be handled?"
 GOVERN = "Which option should govern?"
 LEAD = "Let me know which approach you prefer for each before I proceed."
+STOCK = "Full details are in the ledger."
 
 
 class InTurnStops(unittest.TestCase):
@@ -1348,8 +1349,8 @@ class InTurnStops(unittest.TestCase):
         # order the call asked them.
         recs = [human(0, "go"), assistant(5, tools=[ask("q1", WINDOW, RECORDS)]), answered(30, "q1", WINDOW)]
         self.assertEqual(analyze.ask_user_questions(recs), [
-            (parse_ts(at(5)), analyze.normalize(f"{WINDOW} Choice Option A Keep it. Option B Change it.")),
-            (parse_ts(at(5)), analyze.normalize(f"{RECORDS} Choice Option A Keep it. Option B Change it.")),
+            (parse_ts(at(5)), analyze.normalize(f"{WINDOW} Choice Option A Keep it. Option B Change it."), False),
+            (parse_ts(at(5)), analyze.normalize(f"{RECORDS} Choice Option A Keep it. Option B Change it."), False),
         ])
 
     def test_two_questions_of_one_call_listed_as_two_entries_are_two_in_turn_stops(self) -> None:
@@ -1421,7 +1422,7 @@ class InTurnStops(unittest.TestCase):
                 answered(90, "q2", GOVERN), assistant(100, "Task 1 governs."), human(150, "continue")]
         timed = analyze.stop_times([(dismissed, "question"), (LEAD, "question")], recs)
         self.assertEqual([(t, in_turn) for _, _, t, in_turn in timed], [(None, False), (parse_ts(at(60)), True)])
-        self.assertEqual({t for t, _ in analyze.ask_user_questions(recs)}, {parse_ts(at(60))})
+        self.assertEqual({t for t, _, _ in analyze.ask_user_questions(recs)}, {parse_ts(at(60))})
 
     def test_the_lead_in_and_the_question_of_one_call_are_two_in_turn_stops(self) -> None:
         recs = [human(0, "go"), thought(9, LEAD), assistant(10, tools=[ask("q1", GOVERN)]), answered(70, "q1", GOVERN),
@@ -1443,9 +1444,34 @@ class InTurnStops(unittest.TestCase):
                 result(6, "b1", "ok"), thought(9, LEAD), assistant(10, "Two decisions first.", tools=[ask("q1", GOVERN)]),
                 answered(70, "q1", GOVERN), assistant(80, "Task 1 governs."), human(100, "continue")]
         self.assertEqual(analyze.ask_user_questions(recs)[0],
-                         (parse_ts(at(10)), analyze.normalize(f"{LEAD} Two decisions first.")))
+                         (parse_ts(at(10)), analyze.normalize(f"{LEAD} Two decisions first."), True))
         timed = analyze.stop_times([(earlier, "neither"), (LEAD, "question")], recs)
         self.assertEqual([(t, in_turn) for _, _, t, in_turn in timed], [(None, False), (parse_ts(at(10)), True)])
+
+    def test_a_lead_in_never_takes_an_entry_a_later_turn_end_also_quotes(self) -> None:
+        # A stock sentence in turn 1's narration must not take turn 2's
+        # hand-back that says it again: that turn end ran the Stop hook and
+        # owes an allow, which an in-turn timing would excuse.
+        recs = [human(0, "go"), thought(9, f"Two conflicts. {STOCK}"), assistant(10, tools=[ask("q1", GOVERN)]),
+                answered(70, "q1", GOVERN), assistant(80, "Task 1 governs. Moving to Task 2."), human(100, "continue"),
+                assistant(200, f"BLOCKED on Task 3. {STOCK}"), human(300, "continue"), assistant(310, "All done.")]
+        m = analyze.measure(make_run(records=recs, stops=[(STOCK, "blocked")]), {})
+        self.assertEqual(m["in_turn_stops"], [])
+        self.assertEqual(m["unmatched_stops"], [(analyze.normalize(STOCK), "blocked", analyze.iso(parse_ts(at(200))))])
+
+    def test_a_lead_in_never_takes_an_entry_its_own_turn_end_also_quotes(self) -> None:
+        recs = [human(0, "go"), thought(9, STOCK), assistant(10, tools=[ask("q1", GOVERN)]), answered(70, "q1", GOVERN),
+                assistant(80, f"Task 1 governs. {STOCK}"), human(100, "continue"), assistant(110, "All done.")]
+        self.assertEqual(analyze.stop_times([(STOCK, "neither")], recs), [(STOCK, "neither", parse_ts(at(80)), False)])
+
+    def test_a_question_that_quotes_the_entry_comes_before_its_lead_in(self) -> None:
+        # The narration repeats the question, so the question takes the first
+        # entry and uses up the lead-in before it; nothing is left for a
+        # second entry quoting the same words.
+        recs = [human(0, "go"), thought(9, f"I need to ask: {GOVERN}"), assistant(10, tools=[ask("q1", GOVERN)]),
+                answered(70, "q1", GOVERN), assistant(80, "Task 1 governs."), human(100, "continue")]
+        timed = analyze.stop_times([(GOVERN, "question"), (GOVERN, "question")], recs)
+        self.assertEqual([(t, in_turn) for _, _, t, in_turn in timed], [(parse_ts(at(10)), True), (None, False)])
 
 
 class PlanLines(unittest.TestCase):
