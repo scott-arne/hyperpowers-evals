@@ -879,7 +879,7 @@ decision: PASS
 
 | Criterion | Threshold | Reading | Holds |
 |---|---|---|---|
-| H1 | `h1` in every counted run | 10 of 10; `plan_decisions` 0 in 10 of 10 | yes, with no decision under a plan |
+| H1 (Correction 9): no off-plan hook line in the plan window | `h1` in every counted run | `plan_decisions` 0 in 10 of 10; no hook line fell in any run's plan window; `h1` 10 of 10 | yes, with no decision under a plan |
 | H2 | `neither_listed` 0; false hand-backs 0; unadjudicated allows 0 | 0 of 22 listed; 0; 0, with no allow owing a label | yes, its adjudication half with no cases |
 | H3 | false blocks 0; unadjudicated blocks 0 | 0; 0, with no block | yes, with no cases |
 | H4 | foreground share at least 0.9; untracked 0; F at least 9 of 10; live-shell turn ends 0 | 1.0 (132 of 132); 0; 9; 0 | yes |
