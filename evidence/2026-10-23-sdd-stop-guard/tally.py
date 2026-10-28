@@ -208,7 +208,12 @@ def _problems(m: Mapping[str, Any], arm: str, launch: Launch, pins: Mapping[str,
 
 
 def decide(treatment: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """H1 to H4 and R (stop-guard spec, Design §4) over the counted runs."""
+    """H1 to H4 and R (stop-guard spec, Design §4) over the counted runs.
+
+    H1 is each run's ``h1`` (Correction 9); the runs with a line for the plan
+    are reported beside it and decide nothing.
+    """
+    runs_h1 = sum(1 for r in treatment if r["h1"])
     with_plan = sum(1 for r in treatment if r["plan_decisions"] >= 1)
     neither = sum(r["neither_listed"] for r in treatment)
     false_handbacks = sum(r["false_handbacks"] for r in treatment)
@@ -223,7 +228,7 @@ def decide(treatment: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     live_shell = sum(len(r["live_shell_turn_ends"]) for r in treatment)
     successes = sum(1 for r in treatment if r["success"])
     out: dict[str, Any] = {
-        "runs_with_plan_decisions": with_plan, "H1": with_plan == len(treatment),
+        "runs_h1": runs_h1, "runs_with_plan_decisions": with_plan, "H1": runs_h1 == len(treatment),
         "neither_listed_total": neither, "false_handbacks_total": false_handbacks, "unadjudicated_allows_total": pending_allows,
         "H2": neither == 0 and false_handbacks == 0 and pending_allows == 0,
         "false_blocks_total": false_blocks, "unadjudicated_blocks_total": pending_blocks, "H3": false_blocks == 0 and pending_blocks == 0,
@@ -382,7 +387,7 @@ def _row(r: Mapping[str, Any]) -> str:
     """One run's line: its provenance, its decision record and its H4 measures."""
     return (
         f"{r['arm']:9} {r['proc']:4} {r['run_id']} {r['status']:15} final={r['final']} "
-        f"plan_decisions={r['plan_decisions']} blocks={r['blocks']} allows={sum(r['allows'].values())} "
+        f"h1={r['h1']} plan_decisions={r['plan_decisions']} blocks={r['blocks']} allows={sum(r['allows'].values())} "
         f"neither={r['neither_listed']} unmatched={len(r['unmatched_stops'])} "
         f"false_blocks={r['false_blocks']} false_handbacks={r['false_handbacks']} "
         f"fg={r['dispatch_fg']} bg={r['dispatch_bg']} unclassified={r['dispatch_unclassified']} "

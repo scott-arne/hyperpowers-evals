@@ -38,10 +38,11 @@ Plan: hyperpowers `docs/hyperpowers/plans/2026-10-23-sdd-stop-guard.md`.
 ### The criteria
 
 Verbatim from the plan's Global Constraints, "Pre-registered criteria", which
-is spec Design section 4 with the analyzer's names:
+is spec Design section 4 with the analyzer's names, except for the two rules
+Correction 9 restated, which say so:
 
 ```
-- Pre-registered criteria, verbatim from spec Design §4, with the analyzer's names: H1 every valid run's decision record holds at least one line for the plan (`plan_decisions >= 1`: a line whose `plan` is the run's plan, not a `no-ledger` or `ambiguous` line); H2 the Gauntlet's STOP list has no `neither` entry in any valid run (`neither_listed == 0`) and every `allow` with reason `handback-text` or `handback-line` is adjudicated a genuine hand-back (`false_handbacks == 0` and `unadjudicated_allows == 0`); H3 every `block` line in the receipt's log is adjudicated as not a legitimate hand-back (`false_blocks == 0` and `unadjudicated_blocks == 0`); H4 pooled foreground dispatch share at least 0.9, no untracked launch, both slow commands handled as the rule says in at least nine runs (the short one in the foreground, the long one through `tracked-job` and watched to `exited code=0`), no turn end with only a tracked shell live; R at least seven successful runs. The scenario passes when H1 to H4 and R hold. The decision record of a run is the union of the receipt's `stop-guard.jsonl` (or, for a run that never reached Finish, the live workspace's) and the per-session mirror, keyed by `(ts, session)`; two lines with one key and different payloads are a conflict that voids the run (`void-instrument`); every Gauntlet-listed stop is matched one-to-one, in time order, to an `allow` within a minute of it, and a listed stop without a match, or without a timestamp, makes the run `void-instrument`, outside the cap, relaunched.
+- Pre-registered criteria, verbatim from spec Design §4, with the analyzer's names: H1 every valid run's decision record holds at least one line, the session's ledger line gives the plan's start, and every line from that start until Finish published the receipt, or to the end for a run without one, names the run's plan (`h1`: `decisions_total >= 1`, `ledger_started` known and `off_plan_lines == 0`; `plan_decisions` is reported beside it) (Correction 9); H2 the Gauntlet's STOP list has no `neither` entry in any valid run (`neither_listed == 0`) and every `allow` with reason `handback-text` or `handback-line` is adjudicated a genuine hand-back (`false_handbacks == 0` and `unadjudicated_allows == 0`); H3 every `block` line in the receipt's log is adjudicated as not a legitimate hand-back (`false_blocks == 0` and `unadjudicated_blocks == 0`); H4 pooled foreground dispatch share at least 0.9, no untracked launch, both slow commands handled as the rule says in at least nine runs (the short one in the foreground, the long one through `tracked-job` and watched to `exited code=0`), no turn end with only a tracked shell live; R at least seven successful runs. The scenario passes when H1 to H4 and R hold. The decision record of a run is the union of the receipt's `stop-guard.jsonl` (or, for a run that never reached Finish, the live workspace's) and the per-session mirror, keyed by `(ts, session)`; two lines with one key and different payloads are a conflict that voids the run (`void-instrument`); every Gauntlet-listed stop is matched one-to-one, in time order, to an `allow` within a minute of it, and a listed stop without a match, or without a timestamp, makes the run `void-instrument`, outside the cap, relaunched, except an in-turn stop, one found in an AskUserQuestion call answered inside its turn, which the Stop hook never ran for and no allow answers (Correction 9).
 ```
 
 ### What each measure counts
@@ -67,10 +68,22 @@ receipt directory whose ledger carries that session; the live workspace is the
 one plan workspace whose ledger carries it, and two of those leave the run
 unmeasurable (`void-instrument`).
 
-H1 counts only the lines that name the plan. `plan_decisions` is the number of
-decisions whose `plan` field equals the plan path the run's ledger identity
-line gives, so a `no-ledger` or `ambiguous` line, which names no plan, is not
-one of them.
+H1 asks whether the hook ran, and whether it judged the plan every time it ran
+while the plan's ledger existed. `decisions_total` is the number of lines in
+the decision record. `ledger_started` is the time after `started ` on the
+session's own line of the ledger the record was read beside, the receipt's or
+else the live workspace's, and `receipt_published` is the UTC stamp the
+receipt directory's name ends in. `off_plan_lines` counts the decisions from
+`ledger_started` up to but not including `receipt_published`, with no upper
+bound for a run without a receipt, whose `plan` field is not the plan path the
+ledger's identity line gives, so a `no-ledger` or `ambiguous` line in that
+window is one of them. The window opens at the ledger's start because a hook
+run before the ledger exists is correctly `no-ledger`, and closes at the
+receipt because Finish removes the ledger. `h1` holds when `decisions_total`
+is at least one, `ledger_started` is known and `off_plan_lines` is zero, and
+`h1_detail` names the part that failed. `plan_decisions`, the number of
+decisions whose `plan` is the run's plan, is still reported and decides
+nothing (Correction 9).
 
 The Gauntlet's STOP list comes from one grading. `verdict.json`'s
 `gauntlet.run_id` names the results directory quorum composed its verdict
@@ -89,17 +102,28 @@ finish` publishes that receipt, so a stop after the last task's mark, or after
 the merge and before Finish, reaches the human partner exactly as a mid-task
 stop does, and H2 has to see it.
 
-Each listed stop is timed from the main transcript: the first turn end after
-the previous match whose text contains the quote. The Gauntlet lists its stops
-in order, so that matching is one-to-one and chronological; a quote found in
-no turn end is untimed.
+Each listed stop is timed from the main transcript. Its candidates are the
+turn ends after the previous match and the AskUserQuestion calls answered
+inside their turn at or after it, and the earliest whose text contains the
+quote takes it, a turn end winning a tie. A call is answered when its result
+is not an error and opens with `Your questions have been answered` or
+`The user answered:`, the form Claude Code 2.1.302 writes, and its text is
+its questions, headers, and option labels and descriptions. A stop found in an
+answered call is an in-turn stop, timed by the call and listed in
+`in_turn_stops`: the tool call kept the turn open, so no Stop hook ran for it.
+A dismissed or failed call is never a candidate, because its question was
+still open when the turn ended, and that turn end's text carries it where the
+hook did run. The Gauntlet lists its stops in order, so that matching is
+one-to-one and chronological; a quote found in neither is untimed, and
+`listed_stops` keeps every entry (Correction 9).
 
-Each timed stop is then matched one-to-one, in time order, to an `allow` in
-the window `[stop - 2 s, stop + 1 min]`, the nearest unused one, with a tie
-going to the earlier allow. The two seconds cover the clock difference between
-the transcript's timestamps and the hook's own. A listed stop with no allow in
-its window, and a listed stop with no time at all, make the run
-`void-instrument`, outside the cap, relaunched.
+Each timed stop that is not in-turn is then matched one-to-one, in time
+order, to an `allow` in the window `[stop - 2 s, stop + 1 min]`, the nearest
+unused one, with a tie going to the earlier allow. The two seconds cover the
+clock difference between the transcript's timestamps and the hook's own. A
+listed stop with no allow in its window, and a listed stop with no time at
+all, make the run `void-instrument`, outside the cap, relaunched; an in-turn
+stop is owed no allow, so it never does (Correction 9).
 
 `neither_listed` is the number of entries the Gauntlet labelled `neither` in
 that list, which is H2's first half.
@@ -244,8 +268,8 @@ How `tally.evaluate` implements that, in the order it asks:
   says, so a failure to read its records buys it no free retry.
 - `void-instrument` is uncapped and is reached only by a run with the pin's
   provenance: an artifact reader that raised on the run's own records, a
-  listed stop with no matching allow or no time, or two payloads under one
-  decision key.
+  listed stop that is not in-turn with no matching allow, a listed stop with
+  no time, or two payloads under one decision key (Correction 9).
 - At most three capped voids. A fourth makes the tally refuse to decide.
 - Replacement rows are added to `manifest.tsv` as `r<n>` rows and launched
   through `launch-all.sh` like any other row.
@@ -261,7 +285,8 @@ label is `handback` or `neither`, read from the archived transcript's last
 assistant text before that timestamp. Labelling happens before `tally.py` is
 run for the decision, and an unlabelled decision makes the tally refuse to
 decide. A listed stop with no matching allow is not an adjudication question:
-it voids the run as an instrument failure.
+it voids the run as an instrument failure, and an in-turn stop is owed no
+allow at all (Correction 9).
 
 ## Analyzer pins
 
@@ -275,6 +300,9 @@ or a release, which does not move that pin for the reason below:
 - `liveness.py` `1b646d88fca64be5e7c9f66b0c6251731d09bc98`
 - `analyze.py` `5d19560ba7342edbba7832c6054c0379785e324f`
 - `tally.py` `c5b371b17029cd6bc886d167b141b4ee19cd26e1`
+
+Correction 9 changed all three, and its entry under "Corrections" records
+the blobs after it.
 
 `synth.py` builds the synthetic runs the analyzer's own tests read; no tally
 reads it, so it is not pinned.
@@ -477,6 +505,49 @@ Filled in by Task 19.
 ## T1
 
 Filled in by Task 19.
+
+## Corrections
+
+The numbering continues the series in
+`../2026-10-19-sdd-turn-liveness/README.md`, where entries 1 to 8 live.
+
+9. 2026-10-28, after the smoke and the launch of the counted runs, before any
+   counted run was archived or tallied. Three analyzer changes in one commit.
+   `analyze.STOP_LINE` takes either straight quote as an entry's delimiters,
+   its text running to the closing delimiter the label follows, so an
+   apostrophe inside a single-quoted entry does not end it. In-turn stops:
+   `analyze.ask_user_questions` reads the AskUserQuestion calls answered
+   inside their turn, and `analyze.stop_times` times each listed stop by the
+   earliest turn end or answered call after the previous match that quotes it,
+   a turn end winning a tie; a call hit is an in-turn stop, listed in
+   `in_turn_stops` and kept out of `match_allows`, so it is never in
+   `unmatched_stops`, while a dismissed or failed call leaves its question to
+   the turn end. `liveness.ask_answered` reads a result as an answer when it
+   is not an error and opens with `Your questions have been answered` or
+   `The user answered:`, because `liveness.turn_ends` knew only the first,
+   which Claude Code 2.1.302 no longer writes, and so carried every answered
+   question into its turn end's text as if dismissed. H1 is restated per hook
+   run under the plan: `analyze._decision_measures` reports `decisions_total`,
+   `ledger_started`, `receipt_published` and `off_plan_lines`, `h1` holds when
+   the record has a line, the ledger's start is known and no line from that
+   start until the receipt is off the plan, `h1_detail` names the part that
+   failed, `plan_decisions` stays reported, and `tally.decide` requires `h1`
+   of every counted run (`runs_h1`). Reason: the smoke run
+   (`sdd-turn-liveness-claude-auto-20261028T000525Z-3ccc`) passed with three
+   listed stops in single quotes, which `stop_lines` read as none. Two of them
+   were AskUserQuestion calls answered inside the turn, which Zed's adapter
+   also renders inside the turn, so no Stop hook ran for them; the hook ran
+   twice, both times after Finish removed the ledger and so `no-ledger`, and
+   the pinned rules read `plan_decisions = 0` and, once the quotes parsed, two
+   stops with no turn end. The pre-flight question does not guarantee a plan
+   line before Finish in this harness. The plan-line window opens at the
+   ledger's start, not the session's, because a hook run before the ledger
+   exists is correctly `no-ledger`. Read with the corrected analyzer, the
+   smoke lists three stops, two of them in-turn, none unmatched, with `h1`
+   true and no void. Pins after the Correction: `liveness.py`
+   `4b56247ca0333aac395f7807b051a92a3dae10e5`, `analyze.py`
+   `3928ce054795e502b6ba7542e123b6df4e4629f7`, `tally.py`
+   `3457937ea55acb2135154e822b1c12f5b60ed47e`.
 
 ## Results
 

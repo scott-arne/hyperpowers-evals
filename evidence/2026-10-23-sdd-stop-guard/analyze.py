@@ -27,7 +27,7 @@ import sys
 from collections import Counter
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -36,10 +36,12 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 from liveness import (
+    ASK_TOOL,
     LAUNCH_AGENT,
     LAUNCH_BASH,
     LAUNCH_BASH_AUTO,
     Record,
+    ask_answered,
     blocks,
     is_tool_result,
     live_kinds_at,
@@ -68,6 +70,9 @@ COMPLETE_LINE = re.compile(r"(?:^|[^A-Za-z0-9])Task (\d+): complete")
 # A receipt directory is `<workspace name>-<UTC stamp>` with, when a finish of
 # the same second took that name, a numeric suffix the later finish falls to.
 RECEIPT_STAMP = re.compile(r"(\d{8}T\d{6}Z)(?:-(\d+))?$")
+RECEIPT_STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
+# The tail of a session's own ledger line, `session <sid>: mode ... started <UTC>`.
+SESSION_STARTED = re.compile(r" started (\S+)$")
 # `publish_receipt` falls from the plain name to `-2`, `-3` and so on; any other
 # trailing number is a staging's pid, not a retry.
 RETRY_SUFFIXES = range(2, 11)
@@ -147,8 +152,11 @@ GIT_VALUE_OPTIONS = ("-C", "-c", "--git-dir", "--work-tree")
 COMMAND_PREFIXES = frozenset({"env", "nohup", "time", "timeout"})
 SED_IN_PLACE = re.compile(r"-[A-Za-z]*i|--in-place")
 STOPS_WORD = re.compile(r"\bstops?\b")
+# An entry is delimited by either straight quote, and its text runs to the
+# closing delimiter that the label follows, so an apostrophe inside a
+# single-quoted entry does not end it (Correction 9).
 STOP_LINE = re.compile(
-    r"STOP:\s*\"(?P<quote>[^\"\n]+)\"\s*\|\s*(?P<label>question|blocked|neither)", re.IGNORECASE
+    r"STOP:\s*(?P<q>[\"'])(?P<quote>[^\n]+?)(?P=q)\s*\|\s*(?P<label>question|blocked|neither)", re.IGNORECASE
 )
 PLUGIN_DIR = re.compile(r'--plugin-dir\s+"([^"]+)"')
 MODEL = re.compile(r'--model\s+"([^"]+)"')
@@ -395,6 +403,40 @@ def ledger_tasks_from(text: str) -> set[int]:
     return {int(m.group(1)) for m in COMPLETE_LINE.finditer("\n".join(ledger_records(text)))}
 
 
+def ledger_start_from(text: str, sid: str) -> datetime | None:
+    """When the session's own ledger line says it started the plan.
+
+    The first of the session's lines answers, so a session that wrote its
+    line again later still opens the plan's window at its first start.
+
+    :param text: the ledger the run's decision record was read beside.
+    :param sid: the run's session id.
+    :returns: the start as an aware time, or None when the session has no
+        line or its time does not parse as one.
+    """
+    line = next((r for r in ledger_records(text) if r.startswith(f"session {sid}:")), None)
+    m = SESSION_STARTED.search(line) if line is not None else None
+    if m is None:
+        return None
+    try:
+        when = parse_ts(m.group(1))
+    except ValueError:
+        return None
+    return when if when.utcoffset() is not None else None
+
+
+def published_at(receipt: Path | None) -> datetime | None:
+    """When Finish published the receipt, from the UTC stamp its name ends in.
+
+    :param receipt: the run's receipt directory, when Finish wrote one.
+    :returns: the stamp as an aware time, or None without a receipt or a stamp.
+    """
+    m = RECEIPT_STAMP.search(receipt.name) if receipt is not None else None
+    if m is None:
+        return None
+    return datetime.strptime(m.group(1), RECEIPT_STAMP_FORMAT).replace(tzinfo=UTC)
+
+
 def _decision(value: Any, sid: str) -> dict[str, Any] | None:
     """One session's decision line, or None when the line is not one.
 
@@ -627,35 +669,95 @@ def stop_lines(record: Path) -> list[tuple[str, str]]:
     return listed or []
 
 
-def stop_times(
-    stops: Sequence[tuple[str, str]], records: Sequence[Record]
-) -> list[tuple[str, str, datetime | None]]:
-    """Each listed stop's time: the first turn end after the previous match whose text contains the quote.
+def ask_user_questions(records: Sequence[Record]) -> list[tuple[datetime, str]]:
+    """Every AskUserQuestion call answered inside its turn, with the text it showed.
 
-    The Gauntlet lists its stops in order, so matching is one-to-one and
-    chronological; a quote found in no turn end is timed ``None``, which the
-    tally treats as an instrument failure.
+    An answered call is a stop the Stop hook never ran for: the tool call
+    keeps the turn open, and Zed's adapter shows the question as a form inside
+    the turn too. A dismissed or failed call is not one, because its question
+    is still open when the turn ends; ``turn_ends`` carries it into that turn
+    end's text instead.
 
-    :param stops: the Gauntlet's listed stops, as ``stop_lines`` returns them.
     :param records: the main transcript.
-    :returns: each stop with the time of the turn end it was quoted from.
+    :returns: each answered call's time and the normalized join of every
+        question's ``question`` and ``header`` and every option's ``label``
+        and ``description``, in transcript order.
     """
-    ends = turn_ends(records)
-    out: list[tuple[str, str, datetime | None]] = []
-    start = 0
-    for quote, label in stops:
-        needle = normalize(quote)
-        hit = next((i for i in range(start, len(ends)) if needle and needle in normalize(ends[i].text)), None)
-        if hit is None:
-            out.append((quote, label, None))
-        else:
-            out.append((quote, label, ends[hit].at))
-            start = hit + 1
+    answers = {
+        b.get("tool_use_id")
+        for rec in records
+        if is_tool_result(rec)
+        for b in blocks(rec)
+        if b.get("type") == "tool_result" and ask_answered(b)
+    }
+    out: list[tuple[datetime, str]] = []
+    for rec in records:
+        for use in tool_uses(rec):
+            if use.get("name") != ASK_TOOL or use.get("id") not in answers:
+                continue
+            parts: list[str] = []
+            for q in tool_input(use).get("questions") or []:
+                if not isinstance(q, dict):
+                    continue
+                parts += [str(q.get("question") or ""), str(q.get("header") or "")]
+                for option in q.get("options") or []:
+                    if isinstance(option, dict):
+                        parts += [str(option.get("label") or ""), str(option.get("description") or "")]
+            out.append((parse_ts(rec["timestamp"]), normalize(" ".join(parts))))
     return out
 
 
 ListedStop = tuple[str, str, datetime | None]
 TimedStop = tuple[str, str, datetime]
+# A listed stop as ``stop_times`` resolves it: a ``ListedStop`` and whether it
+# was an in-turn stop, found in an answered AskUserQuestion call.
+ResolvedStop = tuple[str, str, datetime | None, bool]
+
+
+def stop_times(stops: Sequence[tuple[str, str]], records: Sequence[Record]) -> list[ResolvedStop]:
+    """Each listed stop's time: the earliest turn end or answered question after the previous match that quotes it.
+
+    The Gauntlet lists its stops in order, so matching is one-to-one and
+    chronological. A stop's candidates are the turn ends from the cursor on
+    and the answered AskUserQuestion calls at or after the previous match's
+    time, and the earliest whose text contains the quote takes it; a turn end
+    and a call of the same time go to the turn end. A call is an in-turn stop,
+    which no Stop hook ran for and so no allow answers (Correction 9). A quote
+    found in neither is timed ``None``, which the tally treats as an
+    instrument failure.
+
+    :param stops: the Gauntlet's listed stops, as ``stop_lines`` returns them.
+    :param records: the main transcript.
+    :returns: each stop with the time of the turn end or call it was quoted
+        from, and ``True`` for an in-turn stop.
+    """
+    ends = turn_ends(records)
+    asks = ask_user_questions(records)
+    out: list[ResolvedStop] = []
+    next_end = next_ask = 0
+    since: datetime | None = None
+    for quote, label in stops:
+        needle = normalize(quote)
+        end = next((i for i in range(next_end, len(ends)) if needle and needle in normalize(ends[i].text)), None)
+        ask = next(
+            (j for j in range(next_ask, len(asks))
+             if needle and (since is None or asks[j][0] >= since) and needle in asks[j][1]),
+            None,
+        )
+        if ask is not None and (end is None or asks[ask][0] < ends[end].at):
+            since = asks[ask][0]
+            out.append((quote, label, since, True))
+            next_ask = ask + 1
+            # The call sits inside a turn, so that turn's own end is still a
+            # stop a later entry can quote.
+            next_end = next((i for i in range(next_end, len(ends)) if ends[i].at >= since), len(ends))
+        elif end is not None:
+            since = ends[end].at
+            out.append((quote, label, since, False))
+            next_end = end + 1
+        else:
+            out.append((quote, label, None, False))
+    return out
 
 
 def match_allows(
@@ -672,7 +774,8 @@ def match_allows(
     goes to the earlier allow, so the answer does not depend on log order.
 
     :param stops: the Gauntlet's listed stops with their times, as
-        ``stop_times`` returns them.
+        ``stop_times`` returns them, less its in-turn stops: the hook never
+        ran for one, so no allow is owed.
     :param decisions: the run's decision record.
     :returns: the matched stops with the allow each took, and the stops left
         without one (an untimed stop among them, which has no window at all).
@@ -1313,7 +1416,9 @@ def empty_measure(run_id: str) -> dict[str, Any]:
         "receipt": None, "plan_path": None, "plan_complete": False, "live_complete": False,
         "final_review": False, "success": False,
         "decisions": [], "decision_conflicts": 0, "plan_decisions": 0, "blocks": 0, "allows": {},
-        "listed_stops": [], "neither_listed": 0, "unmatched_stops": [],
+        "decisions_total": 0, "ledger_started": None, "receipt_published": None, "off_plan_lines": 0,
+        "h1": False, "h1_detail": "no decisions",
+        "listed_stops": [], "in_turn_stops": [], "neither_listed": 0, "unmatched_stops": [],
         "false_blocks": 0, "false_handbacks": 0, "unadjudicated_allows": 0, "unadjudicated_blocks": 0,
         "censored_stops": 0, "dispatch_fg": 0, "dispatch_bg": 0, "dispatch_unclassified": 0,
         "dispatch_other": 0, "short_runs": [], "short_ok": False, "long_job": None, "long_ok": False,
@@ -1438,12 +1543,18 @@ def _decision_measures(
     sid: str | None,
     adjudicated: Mapping[tuple[str, str], str],
 ) -> None:
-    """Tally the run's decision record: its union, its reasons, and its adjudications.
+    """Tally the run's decision record: its union, its reasons, H1, and its adjudications.
 
-    H1 counts only the lines the hook wrote for this plan, so a ``no-ledger``
-    or ``ambiguous`` line, which names no plan, is not one of them. H2 and H3
-    read the labels the human partner gave each adjudicated allow and each
-    block, keyed by the run and the decision's timestamp.
+    H1 asks whether the hook ran, and judged the plan every time it ran while
+    the plan's ledger existed (Correction 9). The window opens at the
+    session's ledger line, because a hook run before the ledger exists is
+    correctly ``no-ledger``, and closes when Finish published the receipt,
+    after which the ledger is gone; a run without a receipt leaves it open.
+    A line in that window whose ``plan`` is not the run's plan, a
+    ``no-ledger`` or ``ambiguous`` line among them, is an off-plan line.
+    ``plan_decisions``, the lines that name the plan, is reported beside it.
+    H2 and H3 read the labels the human partner gave each adjudicated allow
+    and each block, keyed by the run and the decision's timestamp.
 
     An adjudicated allow is one :func:`_is_adjudicated_allow` accepts: a
     hand-back allow, a ``cap`` allow, or a ``log-failed`` allow that displaced
@@ -1458,6 +1569,28 @@ def _decision_measures(
     out["decision_conflicts"] = len(conflicts)
     plan_path = out["plan_path"]
     out["plan_decisions"] = sum(1 for d in decisions if plan_path is not None and d.get("plan") == plan_path)
+    started = ledger_start_from(ledger_text_for(receipt, live), sid)
+    published = published_at(receipt)
+    out["decisions_total"] = len(decisions)
+    out["ledger_started"] = iso(started) if started is not None else None
+    out["receipt_published"] = iso(published) if published is not None else None
+    out["off_plan_lines"] = sum(
+        1
+        for d in decisions
+        if started is not None
+        and started <= parse_ts(str(d["ts"]))
+        and (published is None or parse_ts(str(d["ts"])) < published)
+        and (plan_path is None or d.get("plan") != plan_path)
+    )
+    if not decisions:
+        out["h1_detail"] = "no decisions"
+    elif started is None:
+        out["h1_detail"] = "ledger start unknown"
+    elif out["off_plan_lines"]:
+        out["h1_detail"] = f"{out['off_plan_lines']} off-plan lines under the plan"
+    else:
+        out["h1_detail"] = ""
+    out["h1"] = out["h1_detail"] == ""
     out["blocks"] = sum(1 for d in decisions if d.get("decision") == "block")
     out["allows"] = dict(Counter(str(d.get("reason")) for d in decisions if d.get("decision") == "allow"))
     for d in decisions:
@@ -1526,9 +1659,14 @@ def measure(record: Path, adjudicated: Mapping[tuple[str, str], str]) -> dict[st
     _transcript_measures(records, calls, out, workspace, out["plan_complete"])
     _decision_measures(out, record, workspace, receipt, live, sid, adjudicated)
     listed = stop_times(stop_lines(record), records)
-    out["listed_stops"] = [(quote, label, iso(when) if when else None) for quote, label, when in listed]
-    out["neither_listed"] = sum(1 for _, label, _ in listed if label == "neither")
-    _, unmatched = match_allows(listed, out["decisions"])
+    out["listed_stops"] = [(quote, label, iso(when) if when else None) for quote, label, when, _ in listed]
+    out["in_turn_stops"] = [
+        {"quote": quote, "label": label, "ts": iso(when)}
+        for quote, label, when, in_turn in listed
+        if in_turn and when is not None
+    ]
+    out["neither_listed"] = sum(1 for _, label, _, _ in listed if label == "neither")
+    _, unmatched = match_allows([(q, label, when) for q, label, when, in_turn in listed if not in_turn], out["decisions"])
     out["unmatched_stops"] = [(quote, label, iso(when) if when else None) for quote, label, when in unmatched]
     out["live_shell_turn_ends"] = live_shell_turn_ends(records)
     long_job = long_job_of(jobs_for(receipt, live), calls)

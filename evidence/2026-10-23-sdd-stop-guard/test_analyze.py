@@ -24,6 +24,8 @@ from synth import (
     BASH_BG,
     LEDGER,
     RELOAD_RESULT,
+    SESSION_START,
+    SID,
     assistant,
     at,
     control_records,
@@ -1048,7 +1050,8 @@ class Readers(unittest.TestCase):
         stops = [("Task 1 done. Moving to Task 2.", "neither"), ("Which option do you want?", "question"),
                  ("Task 1 done. Moving to Task 2.", "neither"), ("never said", "neither")]
         timed = analyze.stop_times(stops, recs)
-        self.assertEqual([t for _, _, t in timed], [parse_ts(at(10)), parse_ts(at(110)), parse_ts(at(210)), None])
+        self.assertEqual([t for _, _, t, _ in timed], [parse_ts(at(10)), parse_ts(at(110)), parse_ts(at(210)), None])
+        self.assertFalse(any(in_turn for _, _, _, in_turn in timed))
 
     def test_two_identical_listed_stops_stay_two_stops(self) -> None:
         # The Gauntlet lists one entry per stop, so two stops that quote one
@@ -1063,7 +1066,7 @@ class Readers(unittest.TestCase):
         listed = analyze.stop_lines(run)
         self.assertEqual(listed, [("task 1 done. moving to task 2", "neither")] * 2)
         timed = analyze.stop_times(listed, recs)
-        self.assertEqual([t for _, _, t in timed], [parse_ts(at(10)), parse_ts(at(110))])
+        self.assertEqual([t for _, _, t, _ in timed], [parse_ts(at(10)), parse_ts(at(110))])
         # One allow for two stops: the second stop has no decision to pair with,
         # which is what Task 15's matcher reports as void-instrument.
         ws = analyze.workspace_of(run)
@@ -1075,6 +1078,30 @@ class Readers(unittest.TestCase):
         results = next((run / "gauntlet-agent" / "results").iterdir())
         (results / "result.md").write_text('STOP: "Which option do you want?" | question\n')
         self.assertEqual(analyze.stop_lines(run), [("which option do you want?", "question")])
+
+    def test_a_stop_entry_takes_either_straight_quote_and_keeps_its_apostrophes(self) -> None:
+        # The smoke's grading (2026-10-28) wrote its entries in single quotes
+        # with apostrophes inside them, then prose quoting a question that
+        # is not an entry of its own.
+        run = make_run()
+        results = next((run / "gauntlet-agent" / "results").iterdir())
+        verdict = json.loads((results / "result.json").read_text())
+        verdict["criteria"][0]["evidence"] = (
+            "STOP: 'Where should the plan's work happen? You're on main in a normal checkout.' | question\n"
+            "STOP: 'Which default for `--window` (DEFAULT_WINDOW_SECONDS) governs?' | question\n"
+            "STOP: 'Which option?' | question\n"
+            "The second stop was a two-part AskUserQuestion; it also asked "
+            "'How should the spec's decision records be handled?'."
+        )
+        (results / "result.json").write_text(json.dumps(verdict))
+        self.assertEqual(analyze.stop_lines(run), [
+            ("where should the plan's work happen? you're on main in a normal checkout", "question"),
+            ("which default for `--window` (default_window_seconds) governs?", "question"),
+            ("which option?", "question"),
+        ])
+        self.assertEqual(analyze._stop_occurrences('STOP: "You\'re on main. Which option?" | Question'),
+                         [("you're on main. which option?", "question")])
+        self.assertEqual(analyze._stop_occurrences("STOP: none"), [])
 
     def test_only_the_stops_criterion_lists_stops(self) -> None:
         # The grader's prose quotes the form it was asked for; those sentences
@@ -1188,6 +1215,163 @@ class Readers(unittest.TestCase):
         decisions, conflicts = analyze.decisions_for(ws, log, None, "sess-1")
         self.assertEqual([x["reason"] for x in decisions], ["open-tasks"])
         self.assertEqual(conflicts, [])
+
+
+def ask(tool_id: str, *questions: str) -> tuple[str, str, dict[str, Any]]:
+    """An AskUserQuestion call asking ``questions``, each with a header and two options."""
+    options = [{"label": "Option A", "description": "Keep it."}, {"label": "Option B", "description": "Change it."}]
+    return (tool_id, "AskUserQuestion", {"questions": [
+        {"question": q, "header": "Choice", "multiSelect": False, "options": options} for q in questions
+    ]})
+
+
+def answered(t: float, tool_id: str, question: str) -> dict[str, Any]:
+    """The result Claude Code 2.1.302 records for a question answered inside the turn."""
+    return result(t, tool_id, f'The user answered: "{question}"="Option A". Read the answers carefully.')
+
+
+def stamp(seconds: float) -> str:
+    """The UTC stamp a receipt published ``seconds`` after the synthetic base is named with."""
+    return parse_ts(at(seconds)).strftime("%Y%m%dT%H%M%SZ")
+
+
+def started_ledger(started: str, sid: str = SID) -> str:
+    """A finished ledger whose session line says the session started the plan at ``started``."""
+    return ledger_text(done=range(1, 7), sid=sid).replace(f"started {SESSION_START}", f"started {started}")
+
+
+WHERE = "Where should the plan's work happen? You're on main in a normal checkout."
+WINDOW = "Which default for `--window` (DEFAULT_WINDOW_SECONDS) governs?"
+RECORDS = "How should the spec's decision records be handled?"
+GOVERN = "Which option should govern?"
+
+
+class InTurnStops(unittest.TestCase):
+    def test_the_smoke_shape_reads_two_in_turn_stops_and_one_turn_end_stop(self) -> None:
+        # Two answered AskUserQuestion calls, then the finish step's question
+        # at a turn end: only the turn end ran the Stop hook, and its allow is
+        # the only decision a listed stop is owed.
+        recs = [
+            human(0, "go"),
+            assistant(10, tools=[ask("q1", WHERE)]), answered(70, "q1", WHERE),
+            assistant(80, tools=[("b1", "Bash", {"command": "ls"})]), result(81, "b1", "ok"),
+            assistant(120, tools=[ask("q2", WINDOW, RECORDS)]), answered(190, "q2", WINDOW),
+            assistant(2000, "Implementation complete. What would you like to do?\n\n1. Merge back to main locally\n\nWhich option?"),
+            human(2100, "merge back to main locally"),
+            assistant(2110, "Merged into main."),
+        ]
+        run = make_run(records=recs, stops=[(WHERE, "question"), (WINDOW, "question"), ("Which option?", "question")],
+                       receipt={"ledger": started_ledger(at(100)), "name": f"plan-1-{stamp(1950)}"},
+                       mirror=[line(at(2000.2), "allow", "no-ledger", plan=None),
+                               line(at(2110.3), "allow", "no-ledger", plan=None)])
+        m = analyze.measure(run, {})
+        self.assertEqual([t for _, _, t in m["listed_stops"]],
+                         [analyze.iso(parse_ts(at(t))) for t in (10, 120, 2000)])
+        self.assertEqual(m["in_turn_stops"], [
+            {"quote": analyze.normalize(WHERE), "label": "question", "ts": analyze.iso(parse_ts(at(10)))},
+            {"quote": analyze.normalize(WINDOW), "label": "question", "ts": analyze.iso(parse_ts(at(120)))},
+        ])
+        self.assertEqual(m["unmatched_stops"], [])
+        self.assertEqual((m["void"], m["h1"], m["h1_detail"], m["plan_decisions"]), (None, True, "", 0))
+
+    def test_a_stop_found_only_in_an_answered_question_is_in_turn_and_owed_no_allow(self) -> None:
+        recs = [human(0, "go"), assistant(5, tools=[ask("q1", GOVERN)]), answered(30, "q1", GOVERN),
+                assistant(40, "Task 1 governs. Moving to Task 2."), human(100, "continue"), assistant(110, "All done.")]
+        run = make_run(records=recs, stops=[(GOVERN, "question")])
+        m = analyze.measure(run, {})
+        self.assertEqual(m["decisions"], [])
+        self.assertEqual(m["listed_stops"], [(analyze.normalize(GOVERN), "question", analyze.iso(parse_ts(at(5))))])
+        self.assertEqual(m["in_turn_stops"],
+                         [{"quote": analyze.normalize(GOVERN), "label": "question", "ts": analyze.iso(parse_ts(at(5)))}])
+        self.assertEqual(m["unmatched_stops"], [])
+
+    def test_a_quote_found_in_neither_stays_untimed(self) -> None:
+        recs = [human(0, "go"), assistant(5, tools=[ask("q1", GOVERN)]), answered(30, "q1", GOVERN),
+                assistant(40, "Task 1 governs. Moving to Task 2."), human(100, "continue")]
+        self.assertEqual(analyze.stop_times([("never said", "neither")], recs), [("never said", "neither", None, False)])
+        m = analyze.measure(make_run(records=recs, stops=[("never said", "neither")]), {})
+        self.assertEqual((m["in_turn_stops"], m["unmatched_stops"]), ([], [("never said", "neither", None)]))
+
+    def test_a_turn_end_stop_after_an_in_turn_stop_is_found_after_the_call(self) -> None:
+        # The turn end at 5 quotes the second stop too, but it comes before
+        # the call the first stop was matched to, and the list is in order.
+        recs = [human(0, "go"), assistant(5, "Task 1 done. Moving to Task 2."), human(50, "continue"),
+                assistant(60, tools=[ask("q1", GOVERN)]), answered(70, "q1", GOVERN),
+                assistant(80, "Task 1 done. Moving to Task 2."), human(150, "continue"), assistant(160, "All done.")]
+        timed = analyze.stop_times([(GOVERN, "question"), ("Task 1 done. Moving to Task 2.", "neither")], recs)
+        self.assertEqual([(t, in_turn) for _, _, t, in_turn in timed], [(parse_ts(at(60)), True), (parse_ts(at(80)), False)])
+
+    def test_a_dismissed_question_is_found_at_its_turn_end_not_at_the_call(self) -> None:
+        # The human partner typed instead of answering, so the question was
+        # still open when the turn ended, and the Stop hook ran there.
+        recs = [human(0, "go"), assistant(5, tools=[ask("q1", GOVERN)]),
+                result(6, "q1", "The user declined to answer the questions.", is_error=True),
+                human(50, "use option A"), assistant(60, "Done.")]
+        self.assertEqual(analyze.ask_user_questions(recs), [])
+        self.assertEqual(analyze.stop_times([(GOVERN, "question")], recs), [(GOVERN, "question", parse_ts(at(6)), False)])
+
+    def test_a_later_turn_end_repeating_an_answered_question_does_not_take_its_stop(self) -> None:
+        recs = [human(0, "go"), assistant(5, tools=[ask("q1", GOVERN)]), answered(30, "q1", GOVERN),
+                assistant(40, f"You picked Option A for: {GOVERN}"), human(100, "continue"), assistant(110, "All done.")]
+        self.assertEqual(analyze.stop_times([(GOVERN, "question")], recs), [(GOVERN, "question", parse_ts(at(5)), True)])
+
+    def test_an_answered_question_s_text_is_its_questions_headers_and_options(self) -> None:
+        recs = [human(0, "go"), assistant(5, tools=[ask("q1", WINDOW, RECORDS)]), answered(30, "q1", WINDOW)]
+        self.assertEqual(analyze.ask_user_questions(recs), [(parse_ts(at(5)), analyze.normalize(
+            f"{WINDOW} Choice Option A Keep it. Option B Change it. {RECORDS} Choice Option A Keep it. Option B Change it."
+        ))])
+
+
+class PlanLines(unittest.TestCase):
+    """H1 as Correction 9 restates it: the hook ran, and never without the plan while the ledger existed."""
+
+    def measured(self, lines: list[dict[str, Any]], ledger: str | None = None, published: float | None = 1000.0,
+                 ) -> dict[str, Any]:
+        """One run whose ledger started the plan at 100 s and whose receipt, if any, was published at ``published``."""
+        text = started_ledger(at(100)) if ledger is None else ledger
+        if published is None:
+            run = make_run(workspace_ledger=text, mirror=lines)
+        else:
+            run = make_run(receipt={"ledger": text, "name": f"p-{stamp(published)}"}, mirror=lines)
+        m = analyze.measure(run, {})
+        return {k: m[k] for k in ("decisions_total", "ledger_started", "receipt_published", "off_plan_lines",
+                                  "h1", "h1_detail")}
+
+    def test_a_no_ledger_line_before_the_ledger_started_leaves_h1_true(self) -> None:
+        m = self.measured([line(at(50), "allow", "no-ledger", plan=None)])
+        self.assertEqual(m, {"decisions_total": 1, "ledger_started": analyze.iso(parse_ts(at(100))),
+                             "receipt_published": analyze.iso(parse_ts(at(1000))), "off_plan_lines": 0,
+                             "h1": True, "h1_detail": ""})
+
+    def test_a_no_ledger_line_under_the_plan_fails_h1(self) -> None:
+        # The window opens at the ledger's start, inclusive; a line naming the
+        # plan inside it is the hook judging the plan, not an off-plan line.
+        lines = [line(at(100), "allow", "no-ledger", plan=None), line(at(400), "allow", "live-agent"),
+                 line(at(500), "allow", "ambiguous", plan=None)]
+        m = self.measured(lines)
+        self.assertEqual((m["decisions_total"], m["off_plan_lines"], m["h1"], m["h1_detail"]),
+                         (3, 2, False, "2 off-plan lines under the plan"))
+        # Without a receipt the window has no upper bound.
+        m = self.measured([line(at(5000), "allow", "no-ledger", plan=None)], published=None)
+        self.assertEqual((m["receipt_published"], m["off_plan_lines"], m["h1"], m["h1_detail"]),
+                         (None, 1, False, "1 off-plan lines under the plan"))
+
+    def test_lines_only_after_the_receipt_leave_h1_true(self) -> None:
+        # The window is half-open: a line in the second Finish published the
+        # receipt already reads the ledger gone.
+        lines = [line(at(1000), "allow", "no-ledger", plan=None), line(at(1200), "allow", "no-ledger", plan=None)]
+        m = self.measured(lines)
+        self.assertEqual((m["decisions_total"], m["off_plan_lines"], m["h1"], m["h1_detail"]), (2, 0, True, ""))
+
+    def test_zero_decisions_fail_h1(self) -> None:
+        m = self.measured([])
+        self.assertEqual((m["decisions_total"], m["h1"], m["h1_detail"]), (0, False, "no decisions"))
+
+    def test_an_unreadable_ledger_start_fails_h1(self) -> None:
+        ledger = started_ledger("x")
+        m = self.measured([line(at(1200), "allow", "no-ledger", plan=None)], ledger=ledger)
+        self.assertEqual((m["ledger_started"], m["off_plan_lines"], m["h1"], m["h1_detail"]),
+                         (None, 0, False, "ledger start unknown"))
 
 
 class Untracked(unittest.TestCase):

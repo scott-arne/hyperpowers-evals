@@ -167,6 +167,35 @@ class TurnEnds(unittest.TestCase):
         self.assertEqual(end.text, "Tasks 1 and 2 are done. Moving to Task 3.")
         self.assertFalse(liveness.asks_or_blocks(end.text))
 
+    def test_either_answer_prefix_answers_a_question_and_an_error_or_no_result_does_not(self) -> None:
+        # Claude Code 2.1.302 writes "The user answered:"; the older prefix
+        # still counts. A failed or dismissed call leaves its question to the
+        # turn end, where the human partner is asked it.
+        ask = ("q1", "AskUserQuestion", {"questions": [{"question": "Which option should govern?", "options": []}]})
+        closing = "Tasks 1 and 2 are done. Moving to Task 3."
+
+        def turn(answer: list[dict[str, object]]) -> str:
+            recs = [human(0, "go"), assistant(5, tools=[ask]), *answer, assistant(7, closing), human(50, "continue")]
+            return liveness.turn_ends(recs)[0].text
+
+        new = 'The user answered: "Which option should govern?"="A". Read the answers carefully.'
+        old = 'Your questions have been answered: "Which option should govern?"="A".'
+        self.assertEqual(turn([result(6, "q1", new)]), closing)
+        self.assertEqual(turn([result(6, "q1", old)]), closing)
+        for text in (new, old):
+            self.assertIn("Which option should govern?", turn([result(6, "q1", text, is_error=True)]))
+        no_result = [human(0, "go"), assistant(5, tools=[ask]), human(50, "use option A")]
+        self.assertIn("Which option should govern?", liveness.turn_ends(no_result)[0].text)
+
+    def test_ask_answered_reads_one_result_block(self) -> None:
+        def block(text: str, **extra: object) -> dict[str, object]:
+            return {"type": "tool_result", "tool_use_id": "q1", "content": [{"type": "text", "text": text}], **extra}
+
+        self.assertTrue(liveness.ask_answered(block('  The user answered: "Q"="A".')))
+        self.assertTrue(liveness.ask_answered(block('Your questions have been answered: "Q"="A".', is_error=False)))
+        self.assertFalse(liveness.ask_answered(block('The user answered: "Q"="A".', is_error=True)))
+        self.assertFalse(liveness.ask_answered(block("The user declined to answer the questions.")))
+
     def test_compaction_summary_is_not_a_turn_end(self) -> None:
         recs = [
             human(0, "go"),

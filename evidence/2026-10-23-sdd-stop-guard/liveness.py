@@ -45,7 +45,9 @@ KIND_NAMES: Mapping[Kind, str] = {"agent": "agent", "bash": "shell"}
 SEND_OK = '{"success":true,"message":"'
 RESUMED = ("Resuming agent ", "in the background with your message")
 ASK_TOOL = "AskUserQuestion"
-ASK_ANSWERED = "Your questions have been answered"
+# The openings Claude Code has given an answered AskUserQuestion result: the
+# older one, and the one 2.1.302 writes (`The user answered: "<question>"=...`).
+ASK_ANSWERED = ("Your questions have been answered", "The user answered:")
 RELOAD_REPLY = "No response requested."
 INTERRUPTED = "[Request interrupted"
 ERROR_PREFIXES = ("API Error", "Request timed out")
@@ -237,6 +239,19 @@ def _is_reload_result(block: Mapping[str, Any]) -> bool:
     return block.get("is_error") is True and head.startswith(RELOAD_PREFIX) and RELOAD_TOOL_RESULT in head
 
 
+def ask_answered(block: Mapping[str, Any]) -> bool:
+    """Whether a tool result answers its AskUserQuestion call inside the turn.
+
+    A failed or dismissed call is not answered: its question is still open
+    when the turn ends, and the human partner is asked it there.
+
+    :param block: the call's ``tool_result`` block.
+    :returns: ``True`` when the block is not an error and its text opens with
+        one of :data:`ASK_ANSWERED`.
+    """
+    return not block.get("is_error") and result_text(block).lstrip().startswith(ASK_ANSWERED)
+
+
 def _questions(inp: Mapping[str, Any]) -> list[str]:
     asked = inp.get("questions")
     if not isinstance(asked, list):
@@ -325,7 +340,7 @@ def turn_ends(records: Sequence[Record]) -> list[TurnEnd]:
             last_at = parse_ts(rec["timestamp"])
             results = [b for b in blocks(rec) if b.get("type") == "tool_result"]
             for block in results:
-                if block.get("tool_use_id") in asked and result_text(block).lstrip().startswith(ASK_ANSWERED):
+                if block.get("tool_use_id") in asked and ask_answered(block):
                     asked.pop(str(block["tool_use_id"]))
             texts = [result_text(b) for b in results]
             if any(_is_reload_result(b) for b in results):

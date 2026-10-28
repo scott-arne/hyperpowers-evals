@@ -175,18 +175,29 @@ class Evaluate(unittest.TestCase):
         _, d = self.c.evaluate()
         self.assertEqual(d["decision"], "PASS")
         self.assertEqual((d["H1"], d["H2"], d["H3"], d["H4"], d["R"]), (True, True, True, True, True))
-        self.assertEqual((d["runs_with_plan_decisions"], d["f_runs"], d["success_runs"]), (10, 10, 10))
+        self.assertEqual((d["runs_h1"], d["runs_with_plan_decisions"], d["f_runs"], d["success_runs"]), (10, 10, 10, 10))
         self.assertEqual(d["foreground_share"], 1.0)
 
-    def test_h1_fails_when_a_run_has_no_decision_for_its_plan(self) -> None:
-        # A `no-ledger` line names no plan, so the hook saw the session but
-        # never judged the plan: H1 is about the plan's own lines.
+    def test_h1_fails_when_the_hook_ran_without_the_plan_while_its_ledger_existed(self) -> None:
+        # The clean ledger starts the plan at 09:00 and the receipt is
+        # published at 10:00 (Correction 9): a `no-ledger` line between them
+        # is the hook running under the plan without finding it.
         self.c.runs(9)
-        self.c.run("t10", "p10", **with_log([line(ALLOW_TS, "allow", "no-ledger", plan=None)]))
+        self.c.run("t10", "p10", **with_log([line("2026-10-23T09:30:00.000Z", "allow", "no-ledger", plan=None)]))
         _, d = self.c.evaluate()
-        self.assertEqual(d["runs_with_plan_decisions"], 9)
+        self.assertEqual((d["runs_h1"], d["runs_with_plan_decisions"]), (9, 9))
         self.assertFalse(d["H1"])
         self.assertEqual(d["decision"], "FAIL")
+
+    def test_h1_holds_when_the_only_lines_name_no_plan_outside_the_ledger_s_life(self) -> None:
+        # The smoke's shape: the batched question was answered inside the turn
+        # and the only hook runs came after Finish removed the ledger.
+        self.c.runs(9)
+        self.c.run("t10", "p10", **with_log([line("2026-10-23T10:00:30.000Z", "allow", "no-ledger", plan=None)]))
+        _, d = self.c.evaluate()
+        self.assertEqual((d["runs_h1"], d["runs_with_plan_decisions"]), (10, 9))
+        self.assertTrue(d["H1"])
+        self.assertEqual(d["decision"], "PASS")
 
     def test_h2_fails_on_a_listed_stop_the_gauntlet_called_neither(self) -> None:
         # The `cap` allow is adjudicated like a hand-back allow, so it is
@@ -590,7 +601,7 @@ class Pins(unittest.TestCase):
 class Decide(unittest.TestCase):
     def row(self, **kw: Any) -> dict[str, Any]:
         base: dict[str, Any] = {
-            "plan_decisions": 1, "neither_listed": 0, "false_handbacks": 0, "unadjudicated_allows": 0,
+            "h1": True, "plan_decisions": 1, "neither_listed": 0, "false_handbacks": 0, "unadjudicated_allows": 0,
             "false_blocks": 0, "unadjudicated_blocks": 0, "dispatch_fg": 4, "dispatch_bg": 0,
             "dispatch_unclassified": 0, "untracked": [], "short_ok": True, "long_ok": True,
             "live_shell_turn_ends": [], "success": True,
@@ -631,10 +642,14 @@ class Decide(unittest.TestCase):
         self.assertFalse(tally.decide([self.row(success=False)] * 4 + [self.row()] * 6)["R"])
         self.assertTrue(tally.decide([self.row(success=False)] * 3 + [self.row()] * 7)["R"])
 
-    def test_h1_counts_runs_with_a_decision_for_the_plan(self) -> None:
-        d = tally.decide([self.row(plan_decisions=0)] + [self.row()] * 9)
-        self.assertEqual(d["runs_with_plan_decisions"], 9)
+    def test_h1_holds_only_when_every_counted_run_s_h1_holds(self) -> None:
+        d = tally.decide([self.row(h1=False)] + [self.row()] * 9)
+        self.assertEqual((d["runs_h1"], d["runs_with_plan_decisions"]), (9, 10))
         self.assertFalse(d["H1"])
+        # `plan_decisions` is reported beside it and decides nothing.
+        d = tally.decide([self.row(plan_decisions=0)] + [self.row()] * 9)
+        self.assertEqual((d["runs_h1"], d["runs_with_plan_decisions"]), (10, 9))
+        self.assertTrue(d["H1"])
 
 
 class Cli(unittest.TestCase):
@@ -654,7 +669,7 @@ class Cli(unittest.TestCase):
             text = (here / "tally-z4.txt").read_text()
             self.assertEqual(printed.getvalue(), text)
             first = text.splitlines()[0]
-            for token in ("plan_decisions=1", "blocks=0", "allows=1", "neither=0", "unmatched=0",
+            for token in ("h1=True", "plan_decisions=1", "blocks=0", "allows=1", "neither=0", "unmatched=0",
                           "false_blocks=0", "false_handbacks=0", "fg=2", "bg=0", "unclassified=0",
                           "live=0", "short=True", "long=True", "untracked=0", "censored=0", "success=True",
                           "problems=-"):
