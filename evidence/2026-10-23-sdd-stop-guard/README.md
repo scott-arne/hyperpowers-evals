@@ -49,7 +49,9 @@ Correction 9 restated, which say so:
 
 `analyze.py` computes every per-run number and decides nothing. `tally.py`
 applies the rule above to the archived runs. The definitions below are what
-those two modules implement at the pins recorded under "Analyzer pins".
+those two modules implement at the pins recorded under "Analyzer pins", and
+the rules marked Correction 9 are implemented at the pins entry 9 lists under
+"Corrections".
 
 The decision record of a run is the union of two logs. The first is the plan's
 own log, `stop-guard.jsonl` in the receipt that Finish published, or in the
@@ -90,7 +92,8 @@ The Gauntlet's STOP list comes from one grading. `verdict.json`'s
 from, and the entries are read from the one criterion of that directory's
 `result.json` that holds the list; `result.md` answers only when the
 structured result is not there. Every entry in that list counts, so two stops
-quoting one sentence are two entries, each owed its own decision.
+quoting one sentence are two entries; each turn-end entry is owed its own
+decision, and an in-turn entry is owed none (Correction 9).
 
 The list covers every stop until the plan's finish step has run, not only
 stops taken with a task still open: the scenario's driver rule and its
@@ -107,10 +110,14 @@ turn ends after the previous match and the AskUserQuestion calls answered
 inside their turn at or after it, and the earliest whose text contains the
 quote takes it, a turn end winning a tie. A call is answered when its result
 is not an error and opens with `Your questions have been answered` or
-`The user answered:`, the form Claude Code 2.1.302 writes, and its text is
-its questions, headers, and option labels and descriptions. A stop found in an
-answered call is an in-turn stop, timed by the call and listed in
-`in_turn_stops`: the tool call kept the turn open, so no Stop hook ran for it.
+`The user answered:`, the form Claude Code 2.1.302 writes. Each question of an
+answered call can answer one listed entry: it is timed by the call, its text
+is the question, its header, and its options' labels and descriptions, the
+questions of one call come in the order the call asked them, and an entry that
+takes one leaves the call's later questions available. A quote that runs from
+one question's text into the next matches neither. A stop found in an answered
+call is an in-turn stop, timed by the call and listed in `in_turn_stops`: the
+tool call kept the turn open, so no Stop hook ran for it.
 A dismissed or failed call is never a candidate, because its question was
 still open when the turn ended, and that turn end's text carries it where the
 hook did run. The Gauntlet lists its stops in order, so that matching is
@@ -231,8 +238,12 @@ Interfaces line says `--window` defaults to that constant, "which is 1.5
 seconds". The pre-flight scan of the plan has to surface that as the batched
 question, and `scenarios/sdd-turn-liveness/story.md` gains the scripted
 answer: "Task 1 governs: the constant is 1.0 and the CLI default follows it".
-Every run therefore holds one legitimate mid-plan hand-back, which exercises
-the allow path live and gives H2 and H3 a real case per run.
+Every run therefore holds one legitimate mid-plan hand-back. Asked with
+AskUserQuestion and answered inside the turn, it reaches no Stop hook and
+writes no decision, so H2's adjudication half and H3 get live cases only from
+the turn ends a run actually takes mid-plan, and the Results report how many
+allows and blocks were adjudicated, which may be none. That is a limit of the
+campaign, accepted with the Correction (Correction 9).
 
 The plan carries the code that constant implies with it (the CLI default, one
 unit test for it, and the two task steps' expected test counts), so the
@@ -493,6 +504,9 @@ Each line answers a different claim.
   created or modified. Detachment through a spelling outside its list, or
   through a script that already existed in the repository (the fixture has
   none), would not be seen by it.
+- A batched question answered with AskUserQuestion inside its turn writes no
+  decision, so H2's adjudication half and H3 get live cases only from turn
+  ends a run takes mid-plan (Correction 9).
 - Messages typed during a foreground subagent are delayed until it returns, so
   the Gauntlet's own driving is slower in this scenario than in a backgrounded
   one. The spec's own "Known limits" list the guard's limits, as against the
@@ -516,11 +530,13 @@ The numbering continues the series in
    `analyze.STOP_LINE` takes either straight quote as an entry's delimiters,
    its text running to the closing delimiter the label follows, so an
    apostrophe inside a single-quoted entry does not end it. In-turn stops:
-   `analyze.ask_user_questions` reads the AskUserQuestion calls answered
-   inside their turn, and `analyze.stop_times` times each listed stop by the
-   earliest turn end or answered call after the previous match that quotes it,
-   a turn end winning a tie; a call hit is an in-turn stop, listed in
-   `in_turn_stops` and kept out of `match_allows`, so it is never in
+   `analyze.ask_user_questions` reads each question of the AskUserQuestion
+   calls answered inside their turn, and `analyze.stop_times` times each
+   listed stop by the earliest turn end or answered question after the
+   previous match that quotes it, a turn end winning a tie; each question of
+   an answered call can answer one listed entry, a quote that runs from one
+   question into the next matches neither, and a hit is an in-turn stop,
+   listed in `in_turn_stops` and kept out of `match_allows`, so it is never in
    `unmatched_stops`, while a dismissed or failed call leaves its question to
    the turn end. `liveness.ask_answered` reads a result as an answer when it
    is not an error and opens with `Your questions have been answered` or
@@ -538,15 +554,21 @@ The numbering continues the series in
    were AskUserQuestion calls answered inside the turn, which Zed's adapter
    also renders inside the turn, so no Stop hook ran for them; the hook ran
    twice, both times after Finish removed the ledger and so `no-ledger`, and
-   the pinned rules read `plan_decisions = 0` and, once the quotes parsed, two
-   stops with no turn end. The pre-flight question does not guarantee a plan
-   line before Finish in this harness. The plan-line window opens at the
-   ledger's start, not the session's, because a hook run before the ledger
-   exists is correctly `no-ledger`. Read with the corrected analyzer, the
-   smoke lists three stops, two of them in-turn, none unmatched, with `h1`
-   true and no void. Pins after the Correction: `liveness.py`
-   `4b56247ca0333aac395f7807b051a92a3dae10e5`, `analyze.py`
-   `3928ce054795e502b6ba7542e123b6df4e4629f7`, `tally.py`
+   the pinned rules read `plan_decisions = 0`. Once the quotes parsed, the
+   stale answer prefix carried the first question into the first turn end's
+   text, so the pinned rules timed the first stop there and left the
+   `--window` question and `Which option?` untimed. The pre-flight question
+   does not guarantee a plan line before Finish in this harness. The plan-line
+   window opens at the ledger's start, not the session's, because a hook run
+   before the ledger exists is correctly `no-ledger`. The per-question reading
+   was refined the same day after review, before any counted run was archived
+   or tallied, and this entry and its pins were amended in place: with one
+   candidate per call, a grader that listed both questions of a two-question
+   call as two entries would have left the second untimed and voided the run.
+   Read with the corrected analyzer, the smoke lists three stops, two of them
+   in-turn, none unmatched, with `h1` true and no void. Pins after the
+   Correction: `liveness.py` `4b56247ca0333aac395f7807b051a92a3dae10e5`,
+   `analyze.py` `3da670b598e5efdc98ff62352ae6ee07c566005f`, `tally.py`
    `3457937ea55acb2135154e822b1c12f5b60ed47e`.
 
 ## Results

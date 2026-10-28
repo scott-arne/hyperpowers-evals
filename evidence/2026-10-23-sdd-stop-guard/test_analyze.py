@@ -1315,11 +1315,45 @@ class InTurnStops(unittest.TestCase):
                 assistant(40, f"You picked Option A for: {GOVERN}"), human(100, "continue"), assistant(110, "All done.")]
         self.assertEqual(analyze.stop_times([(GOVERN, "question")], recs), [(GOVERN, "question", parse_ts(at(5)), True)])
 
-    def test_an_answered_question_s_text_is_its_questions_headers_and_options(self) -> None:
+    def test_each_question_of_an_answered_call_is_its_own_candidate(self) -> None:
+        # Each carries its own header and options, at the call's time, in the
+        # order the call asked them.
         recs = [human(0, "go"), assistant(5, tools=[ask("q1", WINDOW, RECORDS)]), answered(30, "q1", WINDOW)]
-        self.assertEqual(analyze.ask_user_questions(recs), [(parse_ts(at(5)), analyze.normalize(
-            f"{WINDOW} Choice Option A Keep it. Option B Change it. {RECORDS} Choice Option A Keep it. Option B Change it."
-        ))])
+        self.assertEqual(analyze.ask_user_questions(recs), [
+            (parse_ts(at(5)), analyze.normalize(f"{WINDOW} Choice Option A Keep it. Option B Change it.")),
+            (parse_ts(at(5)), analyze.normalize(f"{RECORDS} Choice Option A Keep it. Option B Change it.")),
+        ])
+
+    def test_two_questions_of_one_call_listed_as_two_entries_are_two_in_turn_stops(self) -> None:
+        # A grader that lists each question of a two-question call as its own
+        # entry must not leave the second untimed, which would void the run.
+        recs = [human(0, "go"), assistant(10, tools=[ask("q1", WHERE, RECORDS)]), answered(70, "q1", WHERE),
+                assistant(2000, "Implementation complete.\n\nWhich option?"), human(2100, "merge"),
+                assistant(2110, "Merged into main.")]
+        run = make_run(records=recs, stops=[(WHERE, "question"), (RECORDS, "question"), ("Which option?", "question")],
+                       receipt={"ledger": started_ledger(at(5)), "name": f"plan-1-{stamp(1950)}"},
+                       mirror=[line(at(2000.2), "allow", "no-ledger", plan=None)])
+        m = analyze.measure(run, {})
+        self.assertEqual([s["ts"] for s in m["in_turn_stops"]], [analyze.iso(parse_ts(at(10)))] * 2)
+        self.assertEqual(m["listed_stops"][2][2], analyze.iso(parse_ts(at(2000))))
+        self.assertEqual(m["unmatched_stops"], [])
+
+    def test_a_quote_spanning_two_questions_matches_neither(self) -> None:
+        # A candidate is one question's text, so a quote that runs from one
+        # question's options into the next question is in no candidate.
+        recs = [human(0, "go"), assistant(5, tools=[ask("q1", WINDOW, RECORDS)]), answered(30, "q1", WINDOW),
+                assistant(40, "Moving on."), human(100, "continue")]
+        spanning = f"Change it. {RECORDS}"
+        self.assertEqual(analyze.stop_times([(spanning, "question")], recs), [(spanning, "question", None, False)])
+
+    def test_a_turn_end_and_an_answered_call_of_one_time_go_to_the_turn_end(self) -> None:
+        # The call's turn ends on the same timestamp and quotes the question;
+        # the turn end takes the entry, and the call is still there for a
+        # second entry that quotes it.
+        recs = [human(0, "go"), assistant(5, tools=[ask("q1", GOVERN)]), answered(5, "q1", GOVERN),
+                assistant(5, f"Settled: {GOVERN} Option A."), human(50, "continue"), assistant(60, "All done.")]
+        timed = analyze.stop_times([(GOVERN, "question"), (GOVERN, "question")], recs)
+        self.assertEqual([(t, in_turn) for _, _, t, in_turn in timed], [(parse_ts(at(5)), False), (parse_ts(at(5)), True)])
 
 
 class PlanLines(unittest.TestCase):
@@ -1366,6 +1400,23 @@ class PlanLines(unittest.TestCase):
     def test_zero_decisions_fail_h1(self) -> None:
         m = self.measured([])
         self.assertEqual((m["decisions_total"], m["h1"], m["h1_detail"]), (0, False, "no decisions"))
+
+    def test_a_receipt_name_with_a_retry_suffix_still_gives_its_stamp(self) -> None:
+        # Finish names a receipt `<workspace>-<stamp>`, falls to `-2` to `-10`
+        # when another finish of the same second holds that name, and reports
+        # a FINISHED staging, `.staging-<workspace>-<stamp>[-<pid>]`, when the
+        # rename fails; each is a receipt `receipt_for` returns.
+        for name in (f"plan-1-{stamp(1000)}-2", f".staging-plan-1-{stamp(1000)}-4242"):
+            run = make_run(receipt={"ledger": started_ledger(at(100)), "name": name, "finished": True},
+                           mirror=[line(at(1200), "allow", "no-ledger", plan=None)])
+            receipt = analyze.receipt_for(analyze.workspace_of(run), SID)
+            self.assertEqual(receipt.name if receipt else None, name)
+            m = analyze.measure(run, {})
+            self.assertEqual((m["receipt_published"], m["h1"]), (analyze.iso(parse_ts(at(1000))), True), name)
+        self.assertEqual(analyze.published_at(Path("plan-76cc6a12-20261028T004232Z-2")),
+                         parse_ts("2026-10-28T00:42:32Z"))
+        self.assertIsNone(analyze.published_at(Path("plan-76cc6a12")))
+        self.assertIsNone(analyze.published_at(None))
 
     def test_an_unreadable_ledger_start_fails_h1(self) -> None:
         ledger = started_ledger("x")

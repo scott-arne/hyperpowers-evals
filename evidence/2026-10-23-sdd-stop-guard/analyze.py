@@ -670,7 +670,7 @@ def stop_lines(record: Path) -> list[tuple[str, str]]:
 
 
 def ask_user_questions(records: Sequence[Record]) -> list[tuple[datetime, str]]:
-    """Every AskUserQuestion call answered inside its turn, with the text it showed.
+    """Every question of every AskUserQuestion call answered inside its turn, with the text it showed.
 
     An answered call is a stop the Stop hook never ran for: the tool call
     keeps the turn open, and Zed's adapter shows the question as a form inside
@@ -678,10 +678,15 @@ def ask_user_questions(records: Sequence[Record]) -> list[tuple[datetime, str]]:
     is still open when the turn ends; ``turn_ends`` carries it into that turn
     end's text instead.
 
+    Each question is its own candidate, so a grader may list a two-question
+    call as one entry or as two. A quote that runs from one question's text
+    into the next is in neither.
+
     :param records: the main transcript.
-    :returns: each answered call's time and the normalized join of every
-        question's ``question`` and ``header`` and every option's ``label``
-        and ``description``, in transcript order.
+    :returns: each answered question with its call's time and the normalized
+        join of its ``question``, its ``header`` and its options' ``label`` and
+        ``description``, in transcript order and, within a call, in the order
+        the call asked them.
     """
     answers = {
         b.get("tool_use_id")
@@ -695,15 +700,14 @@ def ask_user_questions(records: Sequence[Record]) -> list[tuple[datetime, str]]:
         for use in tool_uses(rec):
             if use.get("name") != ASK_TOOL or use.get("id") not in answers:
                 continue
-            parts: list[str] = []
             for q in tool_input(use).get("questions") or []:
                 if not isinstance(q, dict):
                     continue
-                parts += [str(q.get("question") or ""), str(q.get("header") or "")]
+                parts = [str(q.get("question") or ""), str(q.get("header") or "")]
                 for option in q.get("options") or []:
                     if isinstance(option, dict):
                         parts += [str(option.get("label") or ""), str(option.get("description") or "")]
-            out.append((parse_ts(rec["timestamp"]), normalize(" ".join(parts))))
+                out.append((parse_ts(rec["timestamp"]), normalize(" ".join(parts))))
     return out
 
 
@@ -719,9 +723,12 @@ def stop_times(stops: Sequence[tuple[str, str]], records: Sequence[Record]) -> l
 
     The Gauntlet lists its stops in order, so matching is one-to-one and
     chronological. A stop's candidates are the turn ends from the cursor on
-    and the answered AskUserQuestion calls at or after the previous match's
-    time, and the earliest whose text contains the quote takes it; a turn end
-    and a call of the same time go to the turn end. A call is an in-turn stop,
+    and the questions of answered AskUserQuestion calls at or after the
+    previous match's time, and the earliest whose text contains the quote
+    takes it; a turn end and a question of the same time go to the turn end.
+    Each question answers at most one entry, and taking one uses it and every
+    candidate question before it, so a call's later questions and the turn
+    ends at or after the call stay available. A question is an in-turn stop,
     which no Stop hook ran for and so no allow answers (Correction 9). A quote
     found in neither is timed ``None``, which the tally treats as an
     instrument failure.
