@@ -527,11 +527,42 @@ Each line answers a different claim.
 
 ## Smoke
 
-Filled in by Task 19.
+The record is `smoke.md`. Every run is archived under
+`task-19-runs/smoke/`, the voided attempt included.
+
+- `p1` (`sdd-turn-liveness-claude-auto-20261028T000444Z-7ffc`) was launched
+  inside the command sandbox. It is a `void-setup` attempt: quorum's
+  `git init -b main` stopped on "Operation not permitted".
+- `r1` (`sdd-turn-liveness-claude-auto-20261028T000525Z-3ccc`) ran outside
+  the sandbox and is the smoke of record. The Gauntlet passed it, and so did
+  all nine post-checks.
+- Read with the analyzer after Correction 9, it has `h1` true. Its record
+  holds two decisions, both `no-ledger` allows after Finish's result, so
+  `plan_decisions` is 0. It lists three stops, two of them in-turn, with none
+  unmatched and no `neither`. It has no block and no adjudicated allow. It
+  dispatched 15 of 15 in the foreground, with `short_ok` and `long_ok` true,
+  no untracked launch, no live-shell turn end and `success` true.
+- On its own (one run, R not applicable), it passes H1 to H4.
+- The pinned analyzer misread this run, which led to Correction 9.
 
 ## T1
 
-Filled in by Task 19.
+The record is in `smoke.md`, "T1". Every run is archived under
+`task-19-runs/t1/`. No H criterion is applied to T1.
+
+- `p1` (`sdd-turn-liveness-fork-claude-auto-20261028T010556Z-f352`) was
+  launched inside the sandbox and is `void-setup` with the same signature.
+- `r1` (`sdd-turn-liveness-fork-claude-auto-20261028T010948Z-93d7`) ran
+  outside it with fork mode on, and the Gauntlet passed it.
+- All 13 SDD dispatches ran in the background, and the transcript records a
+  completion for every one, matched by tool-use id. The hook log holds 12
+  `live-agent` allows. Each names the tool-use id of a background agent that
+  was live at the allow and whose completion is recorded. It also holds two
+  `no-ledger` allows after Finish, and no block.
+- One STOP entry is untimed. It quotes the narration (a `thinking` block)
+  Claude Code showed before the pre-flight AskUserQuestion call, not the
+  question itself. In a counted run that entry would make the run
+  `void-instrument`.
 
 ## Corrections
 
