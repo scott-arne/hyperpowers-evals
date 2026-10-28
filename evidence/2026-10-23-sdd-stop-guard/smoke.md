@@ -14,7 +14,10 @@ so launching from the whole manifest would re-enter rows another arm had
 already run. The views are `manifest-smoke.tsv` (the smoke's `r1` row),
 `manifest-t1.tsv` (T1's `p1` and `r1` rows), and `manifest-treatment.tsv`
 and `manifest-treatment-p1.tsv` (the treatment arm's rows, recorded by Task
-20). `manifest.tsv`, the campaign manifest of record, keeps every row,
+20). The controller launched the smoke's `p1` from `manifest-smoke.tsv` when
+that view held the pins and the `smoke ... p1` row, and after the void
+rewrote the view to the pins and the `r1` row and launched again, whereas the
+T1 view was appended to and so keeps both rows. `manifest.tsv`, the campaign manifest of record, keeps every row,
 including the appended `smoke ... r1`, `t1 ... r1` and `treatment ... r1`.
 When the controller launched T1's `r1` from `manifest-t1.tsv`, the launcher
 first refused the `p1` row because its log existed
@@ -97,8 +100,9 @@ The analyzer prints them as `listed_stops`:
 ["which option?", "question", "2026-10-28T00:42:55.727000+00:00"]
 ```
 
-The first two are `in_turn_stops`: AskUserQuestion calls answered inside their
-turn, at 00:06:14Z and 00:08:12Z. The third is the Finish menu's turn end,
+The first two are `in_turn_stops`, timed by their AskUserQuestion calls:
+called at 00:06:14Z and 00:08:12Z, each answered inside its turn (answers at
+00:07:24Z and 00:09:28Z). The third is the Finish menu's turn end,
 matched to the first `no-ledger` allow at 00:42:55.911Z.
 
 The hook log holds two decisions, both `allow` with reason `no-ledger`, at
@@ -157,7 +161,7 @@ result at 01:44:02.143Z.
 Beside the counts: `h1` true with `plan_decisions` 12, `short_ok` and
 `long_ok` true (the soak job exited 0 after 721.4 s), `success` true, no
 untracked launch, and no live-shell turn end. The STOP list has three entries,
-and one of them is untimed. That entry (`unmatched_stops` 1) quotes the
+and under the Correction 9 analyzer one of them is untimed. That entry (`unmatched_stops` 1) quotes the
 narration Claude Code showed before the pre-flight AskUserQuestion call at
 01:10:59Z ("I've reviewed the plan and design — everything else checks out,
 but I need two decisions before starting: ..."). That narration is a
