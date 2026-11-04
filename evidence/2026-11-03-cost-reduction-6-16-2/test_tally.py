@@ -243,13 +243,13 @@ class Gaps(unittest.TestCase):
         errored[at:at] = read(SDD_SKILL, is_error=True)
         self.assertFalse(reading_of(errored)["mechanism"])
 
-    def test_b4_pending_rereview_is_not_done(self) -> None:
+    def test_b4_unreturned_rereview_is_not_done(self) -> None:
         entries = [
             agent("Implement Task 1: a", "i1"), notif("i1"),
             agent("Review Task 1 (spec + quality)", "v1"), notif("v1"),
             agent("Fix findings for Task 1", "x1"), notif("x1"),
             agent("Re-review Task 1", "w1"),
-            compact(), notif("w1"), *read(SDD_SKILL),
+            compact(), *read(SDD_SKILL),
             agent("Implement Task 2: b", "i2"), notif("i2"),
             agent("Review Task 2", "v2"), notif("v2"),
             agent("Implement Task 3: c", "i3"), notif("i3"),
@@ -263,6 +263,38 @@ class Gaps(unittest.TestCase):
         at = entries.index(next(e for e in entries if "Review Task 2" in json.dumps(e)))
         entries[at:at] = [agent("Re-review Task 1", "w1b"), notif("w1b")]
         self.assertTrue(reading_of(entries)["outcome"])
+
+    def test_d1_review_in_flight_across_the_compaction_counts(self) -> None:
+        entries = [
+            agent("Implement Task 1: a", "i1"), notif("i1"),
+            agent("Review Task 1 (spec + quality)", "v1"), notif("v1"),
+            agent("Implement Task 2: b", "i2"), notif("i2"),
+            agent("Review Task 2 (spec + quality)", "v2"),
+            compact(), notif("v2"), *read(SDD_SKILL),
+            agent("Implement Task 3: c", "i3"), notif("i3"),
+            agent("Review Task 3 (spec + quality)", "v3"), notif("v3"),
+            agent("Implement Task 4: d", "i4"), notif("i4"),
+            agent("Review Task 4 (spec + quality)", "v4"), notif("v4"),
+            agent("Final whole-branch code review", "f"), notif("f"),
+            skill("hyperpowers:finishing-a-development-branch"),
+        ]
+        self.assertTrue(reading_of(entries)["outcome"])
+
+    def test_d2_review_in_flight_that_never_completes_fails(self) -> None:
+        entries = [
+            agent("Implement Task 1: a", "i1"), notif("i1"),
+            agent("Review Task 1 (spec + quality)", "v1"), notif("v1"),
+            agent("Implement Task 2: b", "i2"), notif("i2"),
+            agent("Review Task 2 (spec + quality)", "v2"),
+            compact(), *read(SDD_SKILL),
+            agent("Implement Task 3: c", "i3"), notif("i3"),
+            agent("Review Task 3 (spec + quality)", "v3"), notif("v3"),
+            agent("Implement Task 4: d", "i4"), notif("i4"),
+            agent("Review Task 4 (spec + quality)", "v4"), notif("v4"),
+            agent("Final whole-branch code review", "f"), notif("f"),
+            skill("hyperpowers:finishing-a-development-branch"),
+        ]
+        self.assertFalse(reading_of(entries)["outcome"])
 
     def test_c1_post_compaction_review_must_complete(self) -> None:
         base = full_trial()

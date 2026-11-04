@@ -30,15 +30,16 @@ Rules, from the spec's Testing section:
 * SDD window: an automatic compaction falls after review 1's completion
   event and before the first final review is dispatched (any compaction after
   review 1's completion when no final review is dispatched). Outcome passes
-  when every task whose review had not completed before the compaction is
-  reviewed after it, the final review completes before the finishing skill is
+  when every task whose review had not completed before the compaction has a
+  review completing after it, the final review completes before the finishing skill is
   invoked, no implementer finished before the compaction is dispatched again,
   and quorum's post checks all passed. Mechanism passes when the
   subagent-driven-development SKILL.md is read after the compaction and before
   the next dispatch.
-* A post-compaction review counts only if it completed (its completion
-  event precedes the satisfying final review's dispatch); an errored or
-  unreturned review leaves its task unreviewed. Any implementer dispatch after
+* A review counts as after the compaction when its completion event falls
+  after the compaction and before the satisfying final review's dispatch,
+  wherever it was dispatched (a review in flight across the compaction
+  counts); an errored or unreturned review leaves its task unreviewed. Any implementer dispatch after
   the compaction for a task whose implementer already completed before it is
   a re-dispatch and fails the outcome, unless its description says "takeover"
   or its prompt carries the takeover framing ("A prior implementer attempted
@@ -274,11 +275,12 @@ def sdd_reading(found: list[dict[str, Any]]) -> dict[str, Any]:
     )
     finished = bool(satisfying)
     limit = satisfying[0] if satisfying else len(found)
-    # A review that errored or never returned did not review anything.
+    # A review that errored or never returned did not review anything. One
+    # dispatched before the compaction counts when its completion lands after it.
     reviewed_after = {
         d["task"] for k, d in dispatches.items()
-        if d["class"] in ("review", "rereview") and base <= index_of[k] < limit
-        and k in done_at and done_at[k] < limit
+        if d["class"] in ("review", "rereview") and index_of[k] < limit
+        and k in done_at and base <= done_at[k] < limit
     }
     implemented_before = {
         d["task"] for k, d in dispatches.items()
