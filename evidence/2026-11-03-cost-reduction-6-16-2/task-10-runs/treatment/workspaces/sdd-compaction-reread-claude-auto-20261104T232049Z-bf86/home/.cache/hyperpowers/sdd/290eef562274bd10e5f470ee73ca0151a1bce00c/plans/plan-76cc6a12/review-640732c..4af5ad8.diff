@@ -1,0 +1,75 @@
+# Review package: 640732c..4af5ad8
+
+## Commits
+4af5ad8 fix: add support for curly quotes in sentence boundary detection
+
+## Files changed
+ src/textstats.js           | 8 ++++----
+ test/sentenceCount.test.js | 9 +++++++++
+ 2 files changed, 13 insertions(+), 4 deletions(-)
+
+## Diff
+diff --git a/src/textstats.js b/src/textstats.js
+index 4e77457..5df63d8 100644
+--- a/src/textstats.js
++++ b/src/textstats.js
+@@ -26,31 +26,31 @@ function wordCount(text) {
+   assertText('wordCount', text);
+   return tokenize(text).length;
+ }
+ 
+ // Words whose trailing period does not end a sentence. Compared lower-case and
+ // without any opening bracket or quote. "U.S.A." style initialisms are not
+ // listed: they usually do end a sentence when they come last, and guessing
+ // otherwise would trade one error for another.
+ const ABBREVIATIONS = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'st', 'sr', 'jr', 'vs', 'e.g', 'i.e']);
+ 
+-// A terminator run ("." "?!" "...") plus any closing quotes or brackets, and
++// A terminator run (“.” “?!” “...”) plus any closing quotes or brackets, and
+ // only where whitespace or the end of the text follows. Requiring that keeps
+-// decimals ("3.14"), domains ("example.com") and "a.b.c" in one piece.
+-const TERMINATOR_PATTERN = /([.!?]+)(["'"')\]]*)(?=\s|$)/g;
++// decimals (“3.14”), domains (“example.com”) and “a.b.c” in one piece.
++const TERMINATOR_PATTERN = /([.!?]+)(["\u201d'\u2019)\]]*)(?=\s|$)/g;
+ 
+ function endsWithAbbreviation(before) {
+   const last = before.match(/(\S+)$/);
+   if (last === null) {
+     return false;
+   }
+-  const word = last[1].replace(/^["'"'(\[]+/, '').toLowerCase();
++  const word = last[1].replace(/^["\u201c'\u2018([\[]+/, '').toLowerCase();
+   return ABBREVIATIONS.has(word);
+ }
+ 
+ /**
+  * Count the sentences in a piece of text.
+  *
+  * A sentence is a stretch of text containing at least one word and ending at a
+  * terminator run, or at the end of the text. A lone period after a known
+  * abbreviation does not end a sentence.
+  *
+diff --git a/test/sentenceCount.test.js b/test/sentenceCount.test.js
+index e6940ff..2f2b23f 100644
+--- a/test/sentenceCount.test.js
++++ b/test/sentenceCount.test.js
+@@ -59,10 +59,19 @@ test('throws a TypeError naming the function for a non-string', () => {
+ 
+ test('matches every row of the reference table', () => {
+   for (const [text, expected] of CASES) {
+     assert.equal(sentenceCount(text), expected, JSON.stringify(text));
+   }
+ });
+ 
+ test('counts sentences in the multi-line PASSAGE as 8', () => {
+   assert.equal(sentenceCount(PASSAGE), 8);
+ });
++
++test('recognizes sentences with curly quotes', () => {
++  // Curly double quotes: U+201C (left) and U+201D (right)
++  const doubleQuoted = 'He said ' + String.fromCodePoint(0x201C) + 'Go.' + String.fromCodePoint(0x201D) + ' Then left.';
++  assert.equal(sentenceCount(doubleQuoted), 2);
++  // Curly single quotes: U+2018 (left) and U+2019 (right)
++  const singleQuoted = String.fromCodePoint(0x2018) + 'Hi.' + String.fromCodePoint(0x2019) + ' Ok.';
++  assert.equal(sentenceCount(singleQuoted), 2);
++});

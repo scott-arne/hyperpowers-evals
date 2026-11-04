@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T232053Z_czdu",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The agent ran plan.md with subagent-driven development and finished. The log shows 18 auto-compactions, and the task loop held through all of them. Each task got its own implementer, then a reviewer, in order: implement 1, review 1, implement 2, review 2, and so on through task 4. A final whole-branch review followed, and then the finishing skill offered the merge/PR/keep menu. I answered \"Keep the branch as-is\". npm test passes 67 of 67, and there are four feat commits.",
+  "reasoning": "All four criteria are met, based on git, npm test, the session log and the subagent log timestamps. The task loop and its review order held through repeated compactions. The one content problem is that the final summary misstates which test-scope option the user picked, which I've filed as an observation. It doesn't affect any of the criteria.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The final summary says 'You decided to keep the plan's tests verbatim, so I left the comment as it is.' My answer to the test-scope question was 'Proceed as you recommend.', and the recommended option was 'Add missing tests'. The suite has 67 tests, not the plan's 32, so tests were added. The agent misreports the user's decision, perhaps because detail was lost across the many compactions."
+    },
+    {
+      "kind": "ux",
+      "description": "The HOWTO says the dialogs are pre-bypassed, but at launch I still had to get through the theme picker, security notes, folder-trust prompt, an 'update to Opus 5.5' prompt and the bypass-permissions warning. The trust and bypass prompts default to 'No, exit'. The model prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I dismissed it with Esc, and the session header then showed Opus 5.5."
+    },
+    {
+      "kind": "performance",
+      "description": "There were 18 compact_boundary events in about 18 minutes, roughly one a minute. After each one the controller re-read SKILL.md, task-reviewer-prompt.md and progress.md, so the screen kept repeating 'Skills restored...' and 'Read ... (256 lines)'. It recovered correctly each time, but this produced a lot of noise and repeated reading."
+    },
+    {
+      "kind": "ux",
+      "description": "The Codex review gate was skipped every time because 'codex-plugin-cc isn't installed'. The agent recorded each skip in an ungated ledger and said so in the final summary."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In its final message the agent flagged things already in the fixture: package.json lost its 'main' field, so 'node .' is broken; .claude/settings.json (autoCompactWindow) is committed; and a copied plan comment in test/topWords.test.js is wrong. It also said the reviewer's output about settings.json 'matched a pattern the harness flags as instruction-like'. That flag looks harmless here, but it is worth knowing about."
+    },
+    {
+      "kind": "ux",
+      "description": "Each per-task reviewer subagent ran for only about 14–16 seconds, which seems short for a 'spec + quality' review."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, the work is committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder has wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. git log shows f517a51 'feat: add wordCount', 46a4b47 sentenceCount, 1698913 topWords, 3a6b54c readingTimeMinutes. npm test: 'ℹ tests 67 ℹ pass 67 ℹ fail 0'. git status is clean."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatches in the main session log, in order: 'Implement Task 1: wordCount', 'Review Task 1 (spec + quality)', 'Implement Task 2', 'Review Task 2', 'Implement Task 3', 'Review Task 3', 'Implement Task 4', 'Review Task 4'. Subagent log timestamps don't overlap. For example, Review 1 ran 23:25:24 to 23:25:38 and Implement 2 started 23:29:50. Review 3 ended 23:34:12 and Implement 4 started 23:35:54."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "An Agent dispatch 'Final whole-branch review' came after 'Review Task 4'. Its subagent log ('You are a Senior Code Reviewer...') ran 23:40:09 to 23:41:13. On screen: 'The final review of the whole branch found no Critical or Important issues.'"
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Skill(hyperpowers:finishing-a-development-branch) loaded. The screen showed '1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. After I answered, it said 'I've left branch feature/textstats as it is, with all four commits and a clean working tree.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi"
+    ]
+  },
+  "duration_ms": 1406796,
+  "usage": {
+    "inputTokens": 92,
+    "outputTokens": 7246,
+    "cacheCreationInputTokens": 47739,
+    "cacheReadInputTokens": 967214,
+    "turns": 41
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

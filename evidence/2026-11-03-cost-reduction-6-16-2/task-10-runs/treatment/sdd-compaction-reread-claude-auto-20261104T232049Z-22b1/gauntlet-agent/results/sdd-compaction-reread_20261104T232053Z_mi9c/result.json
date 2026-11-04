@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T232053Z_mi9c",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent \"Execute plan.md with subagent-driven development.\" The agent loaded the hyperpowers:subagent-driven-development skill. Before Task 1 it found problems in the plan and asked two multiple-choice questions, and I picked its recommended option both times. It then ran implement → review for each of the 4 tasks in order, dispatched a final whole-branch review, and loaded finishing-a-development-branch. When it asked how to finish, I replied \"Keep the branch as-is\". About 12 auto-compactions happened during the run, and the task loop kept going through all of them. After one compaction the agent said \"Rereading the SDD skill in full after the compaction\". The work is committed on the feature/textstats branch, and npm test passes 78 of 78.",
+  "reasoning": "All four criteria are backed by the files on disk, git history, npm test output and the timestamped session log. The task loop kept its implement → review order through repeated compactions, followed by a final review and the finishing skill.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The folder trust dialog and the bypass-permissions warning both had 'No, exit' selected by default, so I had to press Down to continue. There was also an 'update to Opus 5.5?' prompt even though the launcher passes --model claude-opus-5-5. I answered No, and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before Task 1, the agent's plan check stopped to ask two multiple-choice questions. They were about PASSAGE constants that no test uses, a wrong comment ('climbed' vs 'storm'), and specified behaviours that have no tests. I answered with its recommended options. Because of that the suite grew from the plan's 32 tests to 78. The agent said so clearly. It is valid feedback on the plan, but it is a pause the user has to answer before any work starts."
+    },
+    {
+      "kind": "performance",
+      "description": "Auto-compaction ran about 12 times in roughly 15 minutes, about once per subagent dispatch. After a compaction the screen showed 'Skills restored', and the agent said it was rereading the SDD skill in full and checking the git log. The task loop held up each time."
+    },
+    {
+      "kind": "bug",
+      "description": "After compaction the screen showed the skill files as `../../../../../.worktrees/cost-6-16-2/skills/subagent-driven-development/SKILL.md`, which is a path in a dev worktree outside the eval workspace. This probably comes from how the plugin dir is set up, but it should be checked to confirm the eval loads the intended plugin version."
+    },
+    {
+      "kind": "ux",
+      "description": "Near the end the agent said: 'The workspace is deleted, so there's no ledger left to read.' It also reported that the Codex review was skipped because Codex isn't installed. Both were stated openly, but deleting the ledger before finishing means the progress record is gone."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, all are committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder holds wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. `git log main..feature/textstats` shows 4 commits: feat: add wordCount, sentenceCount, topWords, readingTimeMinutes. `git status --short` printed nothing. npm test: `ℹ tests 78 ℹ pass 78 ℹ fail 0`."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "From jq over Agent tool_use entries in the main session log: Implement T1 23:25:49 → Review T1 23:27:01 → Implement T2 23:28:04 → Review T2 23:30:18 → Implement T3 23:31:46 → Review T3 23:33:03 → Implement T4 23:34:11 → Review T4 23:36:00. Compact boundaries appear between these entries (e.g. 23:27:30, 23:29:43, 23:32:21, 23:34:43), and the implement/review alternation never breaks."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Session log: `2026-11-04T23:37:32 Agent Final whole-branch review`, after Review Task 4. On screen: 'The final review of the whole branch found nothing to fix.'"
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Session log: `23:38:45 Skill hyperpowers:finishing-a-development-branch`. On screen it offered 'Merge back to main locally / Push and create a Pull Request / Keep the branch as-is'. After my reply it said 'Keeping branch feature/textstats.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi"
+    ]
+  },
+  "duration_ms": 1231857,
+  "usage": {
+    "inputTokens": 76,
+    "outputTokens": 5671,
+    "cacheCreationInputTokens": 42118,
+    "cacheReadInputTokens": 581965,
+    "turns": 34
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

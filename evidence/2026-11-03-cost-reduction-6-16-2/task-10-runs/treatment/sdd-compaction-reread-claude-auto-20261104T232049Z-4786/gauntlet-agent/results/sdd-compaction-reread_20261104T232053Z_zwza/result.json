@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T232053Z_zwza",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The agent ran all four plan tasks with subagent-driven development and kept its task loop through 14 auto-compactions: implement, verify, review, then the next task. It ran a final whole-branch review on Opus and ended at the finishing step. I picked \"Keep the branch as-is\" and it left the branch untouched. `npm test` gives 84/84 passing.",
+  "reasoning": "I checked every acceptance criterion against the repo state (git log, git status, the exports, npm test) and against the main session log (the order of Agent dispatches and the compaction markers). The controller kept its implement → review → next-task loop through repeated compactions, ran the final review and reached the finishing step. All four criteria pass.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "On first launch the setup dialogs default to the destructive choice. 'No, exit' is preselected on both the trust-folder dialog and the bypass-permissions warning, so a tester who just presses Enter quits the program."
+    },
+    {
+      "kind": "bug",
+      "description": "Claude Code was launched with --model claude-opus-5-5, yet the startup dialog said 'Currently pinned: Opus 5 / Latest available: Opus 5.5' and offered to update and restart. After I chose 'No', the header showed Opus 5.5 anyway, so the dialog contradicts the flag."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Auto-compaction ran 14 times in the main session (I counted 14 compact_boundary entries in the log). After each one the agent re-read the SKILL.md, task-reviewer-prompt.md and implementer-prompt.md files and restored its skills. The loop stayed correct, but repeating this many times costs tokens and adds a lot of noise on screen."
+    },
+    {
+      "kind": "ux",
+      "description": "Before Task 1 the agent stopped with a multiple-choice question about gaps in the plan's tests (unused PASSAGE constants, a wrong Task 3 expectation). The question was reasonable, but it is long and dense. I answered 'Proceed as you recommend.' and it added extra tests, so there are 84 tests instead of the 32 the plan implies."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In its final summary the agent pointed out three unrelated issues. src/index.js and src/utils.js are left orphaned after fixture commit c1891bf removed 'main' from package.json. A test comment refers to the internal task brief. The plan's text has two mistakes. Reporting these instead of changing them was the right call."
+    },
+    {
+      "kind": "ux",
+      "description": "It never asked about a worktree or branch. It worked directly on feature/textstats, which already existed according to the git reflog ('checkout: moving from main to feature/textstats' came before the agent's commits)."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, all are committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder has wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. git log shows acd2573 wordCount, b9ffaba sentenceCount, f8ebc34 topWords and 7c3c958 readingTimeMinutes. `git status --short` is empty. npm test: `ℹ tests 84 ℹ pass 84 ℹ fail 0`."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "I listed the Agent tool calls in the main session log (40fa17be...jsonl) with jq. They run in strict order: Implement Task 1, Review Task 1, Implement Task 2, Review Task 2, Implement Task 3, Review Task 3, Implement Task 4, Review Task 4. On screen the reviews finished before the next step started, e.g. \"Agent 'Review Task 4 (spec + quality)' finished\" and \"The reviewer approved Task 4\"."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "The last Agent call in the log is \"Final whole-branch code review\", made after Review Task 4. The screen showed \"Now the final reviewer, on opus\" and later \"The final review of the whole branch found nothing that needs fixing before merge.\""
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "The screen showed \"Implementation complete. What would you like to do? 1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is\". The banner said \"Skills restored (hyperpowers:finishing-a-development-branch, ...)\". After I replied \"Keep the branch as-is\", it said \"I've left the feature/textstats branch as it is... The working tree is clean.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi"
+    ]
+  },
+  "duration_ms": 1213067,
+  "usage": {
+    "inputTokens": 86,
+    "outputTokens": 5611,
+    "cacheCreationInputTokens": 43322,
+    "cacheReadInputTokens": 866428,
+    "turns": 39
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

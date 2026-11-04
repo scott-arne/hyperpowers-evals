@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T232053Z_88jf",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent \"Execute plan.md with subagent-driven development.\" Claude Code loaded the hyperpowers:subagent-driven-development skill and asked one question before Task 1 (how to handle test gaps in the plan). I answered \"Proceed as you recommend.\" It then ran implement→review for each of the four tasks in order, plus one fix/re-review round on Task 4, then a final whole-branch review. It ended by offering the finishing options (merge / PR / keep). I replied \"Keep the branch as-is\" and it confirmed nothing was merged or pushed. The session log shows many compaction events, each followed by \"Skills restored\", and the task loop held through all of them. 79 of 79 tests pass.",
+  "reasoning": "All four criteria are met, and each is backed by the git state, the npm test output and the order of Agent dispatches in the session log. Auto-compaction happened many times and the controller kept its implement→review loop each time, finishing with a final whole-branch review and the finishing step. The feature/textstats branch was already part of the fixture (git reflog shows the checkout before the plan commit), so the agent correctly never asked about a branch.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "In the workspace trust prompt and the Bypass Permissions warning, the highlighted default is 'No, exit'. I had to press Down to continue. That is a reasonable safe default, but it adds friction."
+    },
+    {
+      "kind": "ux",
+      "description": "At startup a 'Newer Opus model available — Currently pinned: Opus 5' dialog appeared even though the launcher passes --model claude-opus-5-5, and the banner then showed Opus 5.5. I chose 'No'. The prompt is confusing because it contradicts the model flag."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before Task 1 the controller asked one multiple-choice question about test gaps in plan.md: the plan's test counts are lower than what its prose asks for, and it declares PASSAGE constants that no test uses. It is a sensible catch, but a fixture author may want to know the plan has these inconsistencies."
+    },
+    {
+      "kind": "performance",
+      "description": "The controller session log has 34 compaction-related entries, roughly 17 compactions in about 17 minutes. Each was followed by re-reading the skill files and 'Skills restored'. The loop held, but with this small compaction window much of the run goes to re-orientation."
+    },
+    {
+      "kind": "bug",
+      "description": "Minor: Task 4 ended up as two commits. 49d3b50 is 'feat: add readingTimeMinutes' and b2041e5 is a separate 'test:' commit from the fix round. The final review flagged this as a Minor departure from the plan's one-commit-per-task pattern."
+    },
+    {
+      "kind": "ux",
+      "description": "Codex isn't installed, so the agent skipped the Codex review gates and said so clearly on screen."
+    },
+    {
+      "kind": "ux",
+      "description": "The screen often showed long relative paths like '../../../../../../../../../../private/tmp/claude-502/...' that wrap across several lines. They are hard to read."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, all are committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js line 141: `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ contains wordCount.test.js, sentenceCount.test.js, topWords.test.js and readingTimeMinutes.test.js. git log has commits c508937, 8321236, 69de0ba and 49d3b50 (feat: add each function) plus b2041e5. `git status --short` printed nothing. npm test: `ℹ tests 79 ℹ pass 79 ℹ fail 0`."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatches in the controller session log, in order: Implement Task 1, Review Task 1, Implement Task 2, Review Task 2, Implement Task 3, Review Task 3, Implement Task 4, Review Task 4, Re-review Task 4 fix round 1, Final whole-branch code review."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "The last Agent dispatch in the log is 'Final whole-branch code review'. The screen showed: 'Task \"Final whole-branch code review\" completed in background', followed by 'The final whole-branch review found no Critical or Important issues'."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "The screen showed 'Implementation complete. What would you like to do? 1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. After my reply it said 'I've kept the branch feature/textstats as it is, with nothing merged or pushed.' The finishing-a-development-branch skill shows as restored."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi"
+    ]
+  },
+  "duration_ms": 1375869,
+  "usage": {
+    "inputTokens": 82,
+    "outputTokens": 5910,
+    "cacheCreationInputTokens": 40392,
+    "cacheReadInputTokens": 823523,
+    "turns": 37
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

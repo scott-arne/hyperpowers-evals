@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T232053Z_bn8e",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The SDD controller ran all four tasks. Each task got a review before the next one started, then a final whole-branch review ran, then the finishing step. Auto-compaction happened 16 times. The loop stayed intact the whole way: after each compaction the controller re-read SKILL.md, and it said so on screen.",
+  "reasoning": "All four acceptance criteria are confirmed by the session log, git history and a fresh `npm test` run. Compaction fired repeatedly, starting just before Task 1 was dispatched, and the loop did not break. Order of agent dispatches: implement, review, implement, review and so on, then the final review, a fix wave, a re-review, and the finishing skill.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Before any work started, the controller stopped to ask about the plan's test files (an unused PASSAGE constant and tests the plan's prose describes but its code doesn't include). It made this one of the choices: 'Add the missing tests (Recommended)'. I answered 'Proceed as you recommend.' through the free-text option. That raised the test count from the plan's 32 to 79, which goes beyond the literal plan."
+    },
+    {
+      "kind": "performance",
+      "description": "Auto-compaction ran 16 times in about 20 minutes (from 23:24:32 to 23:41:36), roughly once a minute. SKILL.md was read 15 times. The re-reading worked, but it adds a lot of overhead. The cause is the eval's small compaction window."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup setup issues (in the harness, not the product): the trust and bypass-permission dialogs default to 'No, exit'. On my first launch a Down keypress was dropped and Claude exited, so I had to relaunch. There was also a 'Newer Opus model available… Currently pinned: Opus 5' prompt, even though the launcher passes --model claude-opus-5-5. I answered No, and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "ux",
+      "description": "In the AskUserQuestion widget, the Enter sent right after typing free text was dropped once. I had to press Enter a second time to submit."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After compaction the screen shows long lists of 'Referenced file …/private/tmp/claude-502/…/tasks/a7be5b4db0627beb9.output' lines, and the same path keeps reappearing in every compaction. That output file belongs to the Task 4 review (agent a7be5b4db0627beb9) and was still being re-referenced in the later compactions after that review finished. It is noisy and confusing."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent never asked about a worktree or branch. The repo was already on feature/textstats from the fixture setup (reflog: 'checkout: moving from main to feature/textstats' before the plan commit), and the agent stayed on that branch."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions exported from src/textstats.js, each with its own test file, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js line 141: `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder has wordCount.test.js, sentenceCount.test.js, topWords.test.js and readingTimeMinutes.test.js. `npm test`: `tests 79 … pass 79 fail 0`. Commits are on feature/textstats: 4e68a1c wordCount, 54ed31c sentenceCount, eaf4e1b topWords, c8a66d9 readingTimeMinutes, 6dbf31f tests."
+    },
+    {
+      "criterion": "Each task reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatches from the session log: Implement T1 23:25:07, Review T1 23:26:21 (finished 23:26:41), Implement T2 23:27:31, Review T2 23:29:21 (finished 23:29:35), Implement T3 23:31:07, Review T3 23:32:18 (finished 23:32:28), Implement T4 23:33:56, Review T4 23:35:50."
+    },
+    {
+      "criterion": "Final whole-branch review after the last task",
+      "verdict": "pass",
+      "evidence": "Log entry at 23:37:19: Agent 'Final whole-branch review' (Opus 5.5), dispatched after Review Task 4. It was followed by 'Fix final-review findings wave' at 23:39:45 and 'Re-review final fix wave' at 23:41:02."
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Log entry at 23:41:19: Skill hyperpowers:finishing-a-development-branch. The screen offered '1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. I replied 'Keep the branch as-is' and the agent answered: 'I've kept the branch feature/textstats as it is… I didn't merge, push or delete anything.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi"
+    ]
+  },
+  "duration_ms": 1384756,
+  "usage": {
+    "inputTokens": 116,
+    "outputTokens": 7565,
+    "cacheCreationInputTokens": 55506,
+    "cacheReadInputTokens": 1353896,
+    "turns": 51
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

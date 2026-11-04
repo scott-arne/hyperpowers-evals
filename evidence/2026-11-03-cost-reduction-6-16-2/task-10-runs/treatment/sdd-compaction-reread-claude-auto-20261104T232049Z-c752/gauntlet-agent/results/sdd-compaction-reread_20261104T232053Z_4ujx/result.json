@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T232053Z_4ujx",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent \"Execute plan.md with subagent-driven development.\" The controller loaded the subagent-driven-development skill. It asked one question about test scope, and I answered \"Proceed as you recommend.\" It then ran implement → review for each of the four tasks in order, then a final whole-branch review, then the finishing-a-development-branch skill. Auto-compaction ran many times during the run: the log has 36 compact-boundary/summary entries, about 18 compactions. After each one the screen showed \"Skills restored (...)\" and the controller re-read the task brief and progress files, then kept going with the loop. At the finishing step I replied \"Keep the branch as-is\". The branch was kept, `npm test` passes 78/78, and the working tree is clean.",
+  "reasoning": "All four criteria are backed by what's on disk and in the session log. The functions are exported and committed, and tests pass 78/78. Each review was dispatched after its implementer and before the next task's implementer. A final whole-branch review ran, and the session ended in the finishing skill with the branch kept. The task loop kept going through roughly 18 auto-compactions without losing its place.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Startup showed several dialogs in a row: theme, security notes, folder trust, a 'Newer Opus model available' prompt and the bypass-permissions warning. The trust and bypass dialogs both have 'No, exit' selected by default. The model prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose No and the banner then showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before starting, the controller asked about test scope: 'every task's test files have an unused PASSAGE constant and miss testing most of the rules'. It's a reasonable question, but it happened before any work began. The recommended option ('Add coverage') changed the plan's stated test totals (8/16/24/32), and the final total was 78 tests."
+    },
+    {
+      "kind": "performance",
+      "description": "Compaction happened very often: the log has 36 compact_boundary/isCompactSummary entries, about 18 compactions in 19 minutes. After each one the controller re-read task-N-brief.md, progress.md and the skill prompt files, then continued. It held its place in the loop, but this is a lot of repeated reading."
+    },
+    {
+      "kind": "bug",
+      "description": "The final summary flags a possible defect copied from the plan: the RangeError messages call String(n) / String(wpm) at src/textstats.js:104 and :136, and that call can throw a TypeError when given Object.create(null). The agent left it alone because the plan's code was meant to be copied verbatim. It also noted that commit 7d38231 adds plan.md and .claude/settings.json to the branch."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent reported that 'the harness flagged the final reviewer's output as looking like an instruction about settings.json' and said it ignored the flag. This is noisy, but it handled it correctly. It also said Codex review steps were skipped because Codex isn't installed, which produces an 'ungated review item(s) pending sweep' notice."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, everything is committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder has wordCount.test.js, sentenceCount.test.js, topWords.test.js and readingTimeMinutes.test.js. git log shows commits 8bc7862 'feat: add wordCount', b25ce0d 'feat: add sentenceCount', 7003ba1 'feat: add topWords' and 75d2b52 'feat: add readingTimeMinutes'. `git status --short` printed nothing. `npm test` output: 'ℹ tests 78 ℹ pass 78 ℹ fail 0'."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatch timestamps from the session JSONL, in order: 23:24:06 Implement Task 1, 23:25:31 Review Task 1, 23:28:19 Implement Task 2, 23:30:19 Review Task 2, 23:32:35 Implement Task 3, 23:33:51 Review Task 3, 23:35:39 Implement Task 4, 23:37:32 Review Task 4. Every review was dispatched before the next implementer. Many of the 'finished' notifications were folded into compaction summaries, so my query only found two of them. Because of that I confirmed ordering from dispatch times, not from review completion times."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Log: '23:39:12 DISPATCH Final whole-branch review' and '23:40:23 NOTIFY Agent \"Final whole-branch review\" finished'. On screen: 'the final whole-branch review found no Critical or Important issues'."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Log shows 'Skill: hyperpowers:finishing-a-development-branch'. The screen offered '1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. After I replied, the agent said 'I've kept feature/textstats as it is... HEAD is still 75d2b52 and the working tree is clean.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi"
+    ]
+  },
+  "duration_ms": 1373928,
+  "usage": {
+    "inputTokens": 92,
+    "outputTokens": 6452,
+    "cacheCreationInputTokens": 43448,
+    "cacheReadInputTokens": 859540,
+    "turns": 41
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

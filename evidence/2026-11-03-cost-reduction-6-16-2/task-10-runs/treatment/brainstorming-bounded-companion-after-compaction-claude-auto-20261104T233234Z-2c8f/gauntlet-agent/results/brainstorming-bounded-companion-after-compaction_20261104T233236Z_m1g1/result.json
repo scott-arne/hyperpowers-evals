@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-after-compaction_20261104T233236Z_m1g1",
+  "scenario": "brainstorming-bounded-companion-after-compaction",
+  "summary": "I sent the exact brief. The agent loaded hyperpowers:brainstorming, then read NOTES.md, the page files and all four UI guideline docs. Claude Code auto-compacted twice during that reading, and \"Skills restored (hyperpowers:brainstorming)\" showed on screen. The agent then called the task bounded and kept the design in chat. On its own it ran the companion's start-server.sh, gave me a localhost URL, and wrote filter-placement.html with three layouts (A: filter bar above the table, B: popover with tags, C: side panel). I picked A in the terminal. It asked two scope questions, then posted a design summary in chat and asked \"Shall I go ahead with this?\". After I said yes, it started editing public/activity.html and public/activity.js. No spec file, no plan document, and no writing-plans skill.",
+  "reasoning": "All 8 criteria have evidence from the session log, files on disk and the screen. The companion opened on its own, without any visual cue from me, and only after reading and auto-compaction. The task stayed bounded with the design in chat, no spec or plan was created, approval came before any code, and implementation started after my go-ahead.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent's design summary says the live region would announce \"Showing 12 of 50 events\", but public/activity-data.js has 48 entries (grep -c \"type:\" returned 48). It may just be an example number, but it doesn't match the data."
+    },
+    {
+      "kind": "ux",
+      "description": "The test plan says it will open activity.html in Safari and Firefox, test with VoiceOver, and reload with JS disabled. The agent can't really do these in this environment, so this may overpromise to the user."
+    },
+    {
+      "kind": "ux",
+      "description": "Between my pick and the actual edits the agent asked two more AskUserQuestion questions (where the design tokens come from, the no-JS gap) and then posted a long design summary that needed a second approval. That's reasonable for project rules, but it's a fairly long run of questions for a bounded task."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent pointed out that the companion writes into .hyperpowers/ in the repo root and that there's no .gitignore, so it shows up as an untracked directory. Good that it said so; the skill could suggest adding the ignore rule or put its files outside the repo."
+    },
+    {
+      "kind": "ux",
+      "description": "Harness/environment: onboarding went through a theme picker, security notes, a trust prompt with 'No, exit' preselected, an 'Opus 5.5 available' prompt even though the launcher passed --model claude-opus-5-5 (I chose No; the banner later showed Opus 5.5), and a bypass-permissions warning with 'No, exit' preselected."
+    },
+    {
+      "kind": "performance",
+      "description": "Auto-compaction happened twice during the initial reading (log compact_boundary entries at 23:33:55 and 23:34:56, the second dropping from 90,739 to 17,232 tokens) and again during implementation. The skill was restored and the companion still opened, which is the behaviour this scenario is about."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked superpowers/hyperpowers brainstorming before implementation",
+      "verdict": "pass",
+      "evidence": "Screen showed \"⏺ Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\" right after my message. In the session log it is the first tool_use: {\"name\":\"Skill\",\"i\":\"{\\\"skill\\\":\\\"hyperpowers:brainstorming\\\"}\"}"
+    },
+    {
+      "criterion": "Visual companion opened (start-server.sh run, localhost URL given, HTML screen with the candidate layouts)",
+      "verdict": "pass",
+      "evidence": "Log Bash command: \".../skills/brainstorming/scripts/start-server.sh --project-dir \\\"$PWD\\\" --open\". Screen: \"I'm opening it now at http://localhost:59649/?key=21eb0c17...\". The file .hyperpowers/brainstorm/2512-1793835302/content/filter-placement.html has the h3 headings \"Filter bar above the table\", \"\\\"Filter\\\" button with a popover, active filters as tags\" and \"Side panel on desktop, stacked above on mobile\"."
+    },
+    {
+      "criterion": "Opened just-in-time, not upfront; no non-visual questions routed through the browser",
+      "verdict": "pass",
+      "evidence": "Tool order in the log: Skill, reading NOTES.md, the page files, the 4 guideline docs and the skill docs, then start-server.sh. Screen: \"The first question is where the filters go on the page, and that's easier to judge by looking.\" The later non-visual questions (where the tokens come from, the no-JS gap) were asked with AskUserQuestion in the terminal, and the browser was switched to waiting.html (\"Continuing in terminal...\")."
+    },
+    {
+      "criterion": "Bounded classification held",
+      "verdict": "pass",
+      "evidence": "Screen: \"This looks bounded: it's a change to one page that already exists. So I'll put a short design here in chat rather than write a spec\". The design summary (files, about 180 lines, testing) was posted in chat."
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "`find coding-agent-workdir/docs` lists only the 4 ui-guidelines/*.md files. `find ... -path '*/specs/*' -o -path '*/plans/*'` returned nothing. git status shows only M public/activity.html, M public/activity.js, ?? .hyperpowers/"
+    },
+    {
+      "criterion": "No plan document / writing-plans not invoked",
+      "verdict": "pass",
+      "evidence": "The jq list of tool_use entries in the session log has exactly one Skill call (hyperpowers:brainstorming), so writing-plans was never invoked. No plans directory or plan file exists (find returned nothing)."
+    },
+    {
+      "criterion": "Asked for approval of the chosen layout before writing implementation code",
+      "verdict": "pass",
+      "evidence": "Screen: \"Click one in the browser if you like, then reply here.\" After my pick and its scope questions: \"Shall I go ahead with this?\". git status showed no changes to public/ until after I replied \"Yes, go ahead.\""
+    },
+    {
+      "criterion": "Began implementation after receiving the pick",
+      "verdict": "pass",
+      "evidence": "After approval, git status shows \" M public/activity.html\" and \" M public/activity.js\". The screen shows a diff adding form.addEventListener('input', applyFilters), handlers for #filter-failed and #filter-reset, and form.hidden = false."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi"
+    ]
+  },
+  "duration_ms": 647226,
+  "usage": {
+    "inputTokens": 78,
+    "outputTokens": 6997,
+    "cacheCreationInputTokens": 33916,
+    "cacheReadInputTokens": 801711,
+    "turns": 35
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

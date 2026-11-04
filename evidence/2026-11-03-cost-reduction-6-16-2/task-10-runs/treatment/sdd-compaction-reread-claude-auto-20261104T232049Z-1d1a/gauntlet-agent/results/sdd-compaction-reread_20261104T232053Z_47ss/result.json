@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T232053Z_47ss",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent \"Execute plan.md with subagent-driven development.\" and the controller ran SDD through all four tasks, with an implementer and then a reviewer for each one. The session log shows 20 compactions, the first one before Task 1. The controller kept its task loop through every compaction. A final whole-branch review ran, followed by a fix and a re-review. The session ended in finishing-a-development-branch, where I answered \"Keep the branch as-is\". `npm test` passes 77/77.",
+  "reasoning": "All four criteria are backed by evidence from disk and from the session log. The controller kept the implement → review loop for every task through repeated compactions, ran the final whole-branch review with a fix and a re-review, and ended in the finishing skill. The run took about 20 minutes and none of my replies went beyond the scripted answers.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Before Task 1, the controller stopped to ask a multiple-choice 'Test scope' question: should the plan's tests be used verbatim or extended, since PASSAGE is unused and some behaviour rules have no tests? I chose 'Type something' and entered 'Proceed as you recommend.' The question is reasonable, but it adds a blocking prompt to an unattended run."
+    },
+    {
+      "kind": "performance",
+      "description": "Compaction ran very often: 20 compact_boundary events in about 18 minutes, sometimes only 30–40s apart. 'Skills restored' and re-reads of the SKILL.md/prompt files appeared after each one. This was caused on purpose by the fixture's small compaction window, but it means a lot of repeated reading."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Codex reviews were skipped because Codex isn't installed here. The controller wrote 'degraded Codex gate' records to the ledger and said so in its summary. That is clearly disclosed, but every review was done by Claude only."
+    },
+    {
+      "kind": "ux",
+      "description": "Launch setup: the folder-trust and bypass-permissions dialogs both default to 'No, exit'. A 'Newer Opus model available' prompt also appeared even though the launcher had passed --model claude-opus-5-5. I chose 'No' there, and the header still showed Opus 5.5."
+    },
+    {
+      "kind": "ux",
+      "description": "The plan's expected test counts (8/16/24/32) didn't match the real totals: 77 tests in the end, because tests were added. The agent pointed this out and checked the real totals instead."
+    },
+    {
+      "kind": "ux",
+      "description": "Two Minor review findings were deliberately left unfixed: there is no test for an abbreviation like '(Dr. Jones)' in sentenceCount, and the PASSAGE comment in Task 3 is incomplete."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has its test file, everything is committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder has wordCount.test.js, sentenceCount.test.js, topWords.test.js and readingTimeMinutes.test.js. git log shows a2539aa wordCount, f106719 sentenceCount, 03df114 topWords, 795cf6c readingTimeMinutes and 2274dc8 test fix. `git status --short` printed nothing. npm test: `ℹ tests 77 ℹ pass 77 ℹ fail 0`."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent/Skill tool_use calls pulled from the main session jsonl with jq, in order: Implement Task 1 → Review Task 1 → (COMPACT) → Implement Task 2 → (COMPACT) → Review Task 2 → (COMPACT x2) → Implement Task 3 → Review Task 3 → (COMPACT x2) → Implement Task 4 → Review Task 4."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Same jq output: after 'Review Task 4' the log has 'Agent: Final whole-branch review', then 'Fix findings for the final whole-branch review wave' and 'Re-review final fix wave'. On screen: 'The final review found no Critical or Important issues. The one Minor it raised was fixed, and the re-review confirmed the fix.'"
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "The log has 'Skill: hyperpowers:finishing-a-development-branch'. The screen showed the options '1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. I replied 'Keep the branch as-is' and the agent answered: 'I'm keeping branch feature/textstats as it is... has not been merged or pushed.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi"
+    ]
+  },
+  "duration_ms": 1402601,
+  "usage": {
+    "inputTokens": 82,
+    "outputTokens": 5916,
+    "cacheCreationInputTokens": 48786,
+    "cacheReadInputTokens": 799006,
+    "turns": 37
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

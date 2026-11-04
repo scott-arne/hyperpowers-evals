@@ -1,0 +1,152 @@
+# Review package: e243720..HEAD
+
+## Commits
+640732c feat: add sentenceCount Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>
+
+## Files changed
+ src/textstats.js           | 52 ++++++++++++++++++++++++++++++++++-
+ test/sentenceCount.test.js | 68 ++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 119 insertions(+), 1 deletion(-)
+
+## Diff
+diff --git a/src/textstats.js b/src/textstats.js
+index 3b6e988..4e77457 100644
+--- a/src/textstats.js
++++ b/src/textstats.js
+@@ -20,11 +20,61 @@ function tokenize(text) {
+  * Count the words in a piece of text.
+  *
+  * @param {string} text
+  * @returns {number}
+  */
+ function wordCount(text) {
+   assertText('wordCount', text);
+   return tokenize(text).length;
+ }
+ 
+-module.exports = { wordCount };
++// Words whose trailing period does not end a sentence. Compared lower-case and
++// without any opening bracket or quote. "U.S.A." style initialisms are not
++// listed: they usually do end a sentence when they come last, and guessing
++// otherwise would trade one error for another.
++const ABBREVIATIONS = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'st', 'sr', 'jr', 'vs', 'e.g', 'i.e']);
++
++// A terminator run ("." "?!" "...") plus any closing quotes or brackets, and
++// only where whitespace or the end of the text follows. Requiring that keeps
++// decimals ("3.14"), domains ("example.com") and "a.b.c" in one piece.
++const TERMINATOR_PATTERN = /([.!?]+)(["'"')\]]*)(?=\s|$)/g;
++
++function endsWithAbbreviation(before) {
++  const last = before.match(/(\S+)$/);
++  if (last === null) {
++    return false;
++  }
++  const word = last[1].replace(/^["'"'(\[]+/, '').toLowerCase();
++  return ABBREVIATIONS.has(word);
++}
++
++/**
++ * Count the sentences in a piece of text.
++ *
++ * A sentence is a stretch of text containing at least one word and ending at a
++ * terminator run, or at the end of the text. A lone period after a known
++ * abbreviation does not end a sentence.
++ *
++ * @param {string} text
++ * @returns {number}
++ */
++function sentenceCount(text) {
++  assertText('sentenceCount', text);
++  let count = 0;
++  let start = 0;
++  for (const match of text.matchAll(TERMINATOR_PATTERN)) {
++    const before = text.slice(start, match.index);
++    if (match[1] === '.' && endsWithAbbreviation(before)) {
++      continue;
++    }
++    if (tokenize(before).length > 0) {
++      count += 1;
++    }
++    start = match.index + match[0].length;
++  }
++  if (tokenize(text.slice(start)).length > 0) {
++    count += 1;
++  }
++  return count;
++}
++
++module.exports = { wordCount, sentenceCount };
+diff --git a/test/sentenceCount.test.js b/test/sentenceCount.test.js
+new file mode 100644
+index 0000000..e6940ff
+--- /dev/null
++++ b/test/sentenceCount.test.js
+@@ -0,0 +1,68 @@
++const { test } = require('node:test');
++const assert = require('node:assert/strict');
++const { sentenceCount } = require('../src/textstats');
++
++// Eight sentences, counted by hand: the question and the exclamation each end
++// one, while the "Mr." and "Dr." titles and the decimal inside the fourth
++// sentence must not.
++const PASSAGE = [
++  'Mr. Alder opened the shop at nine. Nobody came in until noon! When the first',
++  'customer arrived, Dr. Wren asked whether the prices had changed. They had',
++  'risen by 3.5 percent since spring. "Is that all?" she said. He nodded, and',
++  'the afternoon went by quietly. By closing time the till held forty dollars.',
++].join('\n');
++
++const CASES = [
++  ["", 0],
++  [" ", 0],
++  [".", 0],
++  ["a", 1],
++  ["a.", 1],
++  ["a. b.", 2],
++  ["a! b? c.", 3],
++  ["a!? b", 2],
++];
++
++test('returns 0 for the empty string', () => {
++  assert.equal(sentenceCount(''), 0);
++});
++
++test('returns 0 for whitespace only', () => {
++  assert.equal(sentenceCount('  \n\t  '), 0);
++});
++
++test('returns 0 for terminators with no words', () => {
++  assert.equal(sentenceCount('... ?! . ! ?'), 0);
++});
++
++test('counts one sentence with a final period', () => {
++  assert.equal(sentenceCount('The tide came in.'), 1);
++});
++
++test('counts one sentence with no terminator at all', () => {
++  assert.equal(sentenceCount('The tide came in'), 1);
++});
++
++test('counts a trailing fragment after the last terminator', () => {
++  assert.equal(sentenceCount('The tide came in. Then it left'), 2);
++});
++
++test('throws a TypeError naming the function for a non-string', () => {
++  for (const bad of [undefined, null, 7, {}, ['One.']]) {
++    assert.throws(() => sentenceCount(bad), (err) => {
++      assert.ok(err instanceof TypeError);
++      assert.ok(err.message.startsWith('sentenceCount:'));
++      return true;
++    });
++  }
++});
++
++test('matches every row of the reference table', () => {
++  for (const [text, expected] of CASES) {
++    assert.equal(sentenceCount(text), expected, JSON.stringify(text));
++  }
++});
++
++test('counts sentences in the multi-line PASSAGE as 8', () => {
++  assert.equal(sentenceCount(PASSAGE), 8);
++});

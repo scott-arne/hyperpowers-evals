@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T232053Z_i9ys",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent the exact prompt \"Execute plan.md with subagent-driven development.\" Claude Code loaded the subagent-driven-development skill. Before starting, it asked two questions, one about the unused PASSAGE constants and one about missing behaviour tests. I answered both with \"Proceed as you recommend.\" It then ran implement and review for each of the four tasks in order, ran a final whole-branch review on Opus, and loaded finishing-a-development-branch, which offered merge / PR / keep. I replied \"Keep the branch as-is\" and it confirmed nothing was merged or pushed. The log shows repeated compactions. After one of them, the screen showed \"Skills restored\" and \"Rereading the full skill file after compaction.\", and the task loop kept going.",
+  "reasoning": "I checked all four criteria against the files on disk, git history, npm test output and the parent session JSONL. The compactions happened, and the controller kept the implement → review → next-task loop going, then ran the final review and the finishing step.",
+  "observations": [
+    {
+      "kind": "performance",
+      "description": "Compaction ran far more often than once. jq on the parent session log found 32 compaction-related entries, in pairs about 1 minute apart from 23:24:56 to 23:40:14. That looks like about 16 compactions in a run of about 19 minutes. The setting is autoCompactWindow 100000, and the status line kept showing \"4% until auto-compact\". The repeated compaction did not break the loop, but it is worth checking."
+    },
+    {
+      "kind": "ux",
+      "description": "Behaviour after compaction looked good. The screen showed \"Skills restored (hyperpowers:communication, hyperpowers:subagent-driven-development)\", then \"Rereading the full skill file after compaction.\", then it re-read progress.md and the task briefs from ~/.cache/hyperpowers/sdd/... before dispatching the final review."
+    },
+    {
+      "kind": "ux",
+      "description": "Before Task 1, the agent ran a check of the plan itself and asked two multiple-choice questions (PASSAGE constants, missing behaviour tests). Because I answered \"Proceed as you recommend\", the test count grew from the planned 32 to 70. That is a reasonable result, but the plan's stated counts no longer match."
+    },
+    {
+      "kind": "bug",
+      "description": "The Task 2 commit was amended: the reflog shows 103248b 'feat: add sentenceCount' followed by `commit (amend)` to 237a6f9. This is not harmful, but it means history was rewritten during the loop."
+    },
+    {
+      "kind": "ux",
+      "description": "The harness flagged the final reviewer's output because it mentioned .claude/settings.json, and the agent showed me this as a 'Harness warning'. It is noise for the user, and it also tells the agent about the compaction-window fixture."
+    },
+    {
+      "kind": "ux",
+      "description": "During Claude Code onboarding, the trust-folder and bypass-permissions dialogs both default to 'No, exit'. A 'Newer Opus model available' prompt also appeared even though the launcher passed --model claude-opus-5-5. It said 'Currently pinned: Opus 5'. I chose No, and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "No worktree/branch question was asked: the repo was already on feature/textstats (checked out by the fixture according to the reflog), and the agent stayed on it."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, all are committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ has wordCount, sentenceCount, topWords and readingTimeMinutes .test.js. git log shows 157619d feat: add wordCount, 237a6f9 feat: add sentenceCount, e9a317b feat: add topWords, 129a92a feat: add readingTimeMinutes. `git status --short` printed nothing. npm test: `ℹ tests 70 ℹ pass 70 ℹ fail 0`."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent tool_use sequence from the session JSONL (jq): Implement Task 1 → Review Task 1 (spec + quality) → Implement Task 2 → Review Task 2 → Implement Task 3 → Review Task 3 → Implement Task 4 → Review Task 4 → Final whole-branch review."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "The log has `Agent: Final whole-branch review` after `Review Task 4`. Screen: \"Dispatching the final whole-branch reviewer on opus.\" Agent summary: \"The final whole-branch review on Opus found no Critical, Important or new Minor issues.\""
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "`Skill: hyperpowers:finishing-a-development-branch` appears in the log. Screen: \"Implementation complete. What would you like to do? 1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is\". After my reply: \"I've kept feature/textstats as it is, at 129a92a with a clean working tree... Nothing was merged or pushed.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi"
+    ]
+  },
+  "duration_ms": 1319584,
+  "usage": {
+    "inputTokens": 100,
+    "outputTokens": 6511,
+    "cacheCreationInputTokens": 45072,
+    "cacheReadInputTokens": 952749,
+    "turns": 44
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

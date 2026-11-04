@@ -1,0 +1,61 @@
+# Review package: 01cea33..HEAD
+
+## Commits
+e243720 fix: add support for typographic apostrophe (U+2019) in WORD_PATTERN
+
+## Files changed
+ src/textstats.js       | 2 +-
+ test/wordCount.test.js | 4 ++++
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+
+## Diff
+diff --git a/src/textstats.js b/src/textstats.js
+index 3512261..3b6e988 100644
+--- a/src/textstats.js
++++ b/src/textstats.js
+@@ -1,16 +1,16 @@
+ // A word is a run of letters or digits (any script), optionally joined to the
+ // next run by a single apostrophe (straight or typographic) or hyphen. The
+ // joiners are only part of a word when letters or digits sit on both sides, so
+ // a trailing "well-" or "dogs'" loses its joiner. Everything else, including
+ // em dashes, periods and underscores, separates words.
+-const WORD_PATTERN = /[\p{L}\p{N}]+(?:[''-][\p{L}\p{N}]+)*/gu;
++const WORD_PATTERN = /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu;
+ 
+ function assertText(fn, value) {
+   if (typeof value !== 'string') {
+     throw new TypeError(`${fn}: text must be a string, received ${value === null ? 'null' : typeof value}`);
+   }
+ }
+ 
+ // Private: the single definition of "word" shared by every statistic below.
+ function tokenize(text) {
+   return text.match(WORD_PATTERN) ?? [];
+diff --git a/test/wordCount.test.js b/test/wordCount.test.js
+index b73b70c..96a2ec7 100644
+--- a/test/wordCount.test.js
++++ b/test/wordCount.test.js
+@@ -51,19 +51,23 @@ test('treats newlines and tabs as separators', () => {
+ test('throws a TypeError naming the function for a non-string', () => {
+   for (const bad of [undefined, null, 42, {}, [], ['a b']]) {
+     assert.throws(() => wordCount(bad), (err) => {
+       assert.ok(err instanceof TypeError);
+       assert.ok(err.message.startsWith('wordCount:'));
+       return true;
+     });
+   }
+ });
+ 
++test('treats typographic apostrophe as a word joiner', () => {
++  assert.equal(wordCount('keeper' + String.fromCharCode(0x2019) + 's'), 1);
++});
++
+ test('counts the words in a multi-line prose passage', () => {
+   assert.equal(wordCount(PASSAGE), 64);
+ });
+ 
+ test('matches every row of the reference table', () => {
+   for (const [text, expected] of CASES) {
+     assert.equal(wordCount(text), expected, JSON.stringify(text));
+   }
+ });
