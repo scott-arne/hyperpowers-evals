@@ -37,3 +37,21 @@ Attempt 3 also shows `hyperpowers:communication` at 7381 characters (untruncated
 ## Compaction window (spec assumption 1): not met
 
 Not met in any of the three attempts. The first compaction lands before the first implementer dispatch every time.
+
+## Re-tally under the spec's validity rule
+
+The spec's rule is that a trial is valid when a compaction lands after task 1's review returns and before the
+final review is dispatched. The tally now measures the first automatic compaction inside that window; earlier
+compactions (here, the one before the first dispatch) no longer void a run. The table above records the
+first-compaction reading the tally had at the time; the lines below are the tally's output after the change.
+The attempt 1 "fix" dispatch mentioned in the task report was a re-review; the tally finds no fix dispatches.
+
+| Attempt | Tally line (after the change) |
+| --- | --- |
+| 1 | `void=- outcome=True mechanism=False dispatches=implement:4,review:4,rereview:1,fix:0,final:1,other:0` |
+| 2 | `void=- outcome=True mechanism=False dispatches=implement:4,review:4,rereview:3,fix:0,final:1,other:0` |
+| 3 (27 KB plan, harness 829fe83b0) | `void=- outcome=True mechanism=False dispatches=implement:4,review:4,rereview:0,fix:0,final:1,other:0` |
+
+Attempt 3 reads valid, so spec assumption 1 is satisfied for the latest fixture: the window is reached by a later
+compaction, not the first. Mechanism is False on the control arm in all three, which is the expected control reading
+(SDD is not re-read after the compaction).
