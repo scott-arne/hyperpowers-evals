@@ -44,8 +44,14 @@ def compact() -> dict[str, Any]:
     return {"type": "system", "subtype": "compact_boundary", "compactMetadata": {"trigger": "auto"}}
 
 
-def read(path: str) -> dict[str, Any]:
-    return tool_use("Read", {"file_path": path}, "r-" + path)
+def result(ident: str, is_error: bool = False) -> dict[str, Any]:
+    block = {"type": "tool_result", "tool_use_id": ident, "content": "text", "is_error": is_error}
+    return {"type": "user", "message": {"content": [block]}}
+
+
+def read(path: str, is_error: bool = False) -> list[dict[str, Any]]:
+    """A Read call and its result, as two entries."""
+    return [tool_use("Read", {"file_path": path}, "r-" + path), result("r-" + path, is_error)]
 
 
 SDD_SKILL = "/x/skills/subagent-driven-development/SKILL.md"
@@ -88,7 +94,7 @@ def full_trial(skip: set[str] | None = None) -> list[dict[str, Any]]:
         agent("Implement Task 1: a", "i1"), notif("i1"),
         agent("Review Task 1 (spec + quality)", "v1"), notif("v1"),
         compact(),
-        read(SDD_SKILL),
+        *read(SDD_SKILL),
         agent("Implement Task 2: b", "i2"), notif("i2"),
         agent("Review Task 2 (spec + quality)", "v2"), notif("v2"),
         agent("Implement Task 3: c", "i3"), notif("i3"),
@@ -123,7 +129,7 @@ class SddReading(unittest.TestCase):
             agent("Implement Task 1: a", "i1"), notif("i1"),
             agent("Review Task 1 (spec + quality)", "v1"),
             compact(), notif("v1"),
-            read(SDD_SKILL),
+            *read(SDD_SKILL),
         ]
         self.assertFalse(reading_of(entries)["valid"])
 
@@ -137,7 +143,7 @@ class SddReading(unittest.TestCase):
             agent("Review Task 1 (spec + quality)", "v1"), notif("v1"),
             agent("Implement Task 2: b", "i2"), notif("i2"),
             compact(),
-            read(SDD_SKILL),
+            *read(SDD_SKILL),
             agent("Implement Task 3: c", "i3"), notif("i3"),
             agent("Review Task 3 (spec + quality)", "v3"), notif("v3"),
             agent("Implement Task 4: d", "i4"), notif("i4"),
@@ -159,8 +165,8 @@ class SddReading(unittest.TestCase):
 
     def test_6_read_after_first_dispatch_fails_mechanism(self) -> None:
         entries = full_trial()
-        entries = [e for e in entries if not (e.get("type") == "assistant" and e["message"]["content"][0]["name"] == "Read")]
-        entries.insert(next(i for i, e in enumerate(entries) if e.get("type") == "system") + 3, read(SDD_SKILL))
+        entries = [e for e in entries if "r-" not in json.dumps(e)]
+        entries[next(i for i, e in enumerate(entries) if e.get("type") == "system") + 3:0] = read(SDD_SKILL)
         reading = reading_of(entries)
         self.assertTrue(reading["valid"])
         self.assertFalse(reading["mechanism"])
@@ -195,6 +201,78 @@ class SddReading(unittest.TestCase):
 def error_result(ident: str) -> dict[str, Any]:
     block = {"type": "tool_result", "tool_use_id": ident, "is_error": True, "content": "rejected"}
     return {"type": "user", "message": {"content": [block]}}
+
+
+class Gaps(unittest.TestCase):
+    """Binding of outcome and mechanism to completed events (gate findings B1-B5, M1-M2)."""
+
+    def test_b2_reviews_after_finish_do_not_count(self) -> None:
+        entries = [
+            agent("Implement Task 1: a", "i1"), notif("i1"),
+            agent("Review Task 1 (spec + quality)", "v1"), notif("v1"),
+            compact(), *read(SDD_SKILL),
+            agent("Final whole-branch code review", "f"), notif("f"),
+            skill("hyperpowers:finishing-a-development-branch"),
+            agent("Review Task 2", "v2"), agent("Review Task 3", "v3"), agent("Review Task 4", "v4"),
+        ]
+        self.assertFalse(reading_of(entries)["outcome"])
+
+    def test_b3_read_composed_with_dispatch_does_not_count(self) -> None:
+        entries = full_trial()
+        use, res = read(SDD_SKILL)
+        entries = [e for e in entries if "r-" not in json.dumps(e)]
+        at = next(i for i, e in enumerate(entries) if e.get("type") == "system") + 1
+        entries[at:at] = [use, agent("Implement Task 2: b", "i2x"), res]
+        self.assertFalse(reading_of(entries)["mechanism"])
+        errored = [e for e in full_trial() if "r-" not in json.dumps(e)]
+        errored[at:at] = read(SDD_SKILL, is_error=True)
+        self.assertFalse(reading_of(errored)["mechanism"])
+
+    def test_b4_pending_rereview_is_not_done(self) -> None:
+        entries = [
+            agent("Implement Task 1: a", "i1"), notif("i1"),
+            agent("Review Task 1 (spec + quality)", "v1"), notif("v1"),
+            agent("Fix findings for Task 1", "x1"), notif("x1"),
+            agent("Re-review Task 1", "w1"),
+            compact(), notif("w1"), *read(SDD_SKILL),
+            agent("Implement Task 2: b", "i2"), notif("i2"),
+            agent("Review Task 2", "v2"), notif("v2"),
+            agent("Implement Task 3: c", "i3"), notif("i3"),
+            agent("Review Task 3", "v3"), notif("v3"),
+            agent("Implement Task 4: d", "i4"), notif("i4"),
+            agent("Review Task 4", "v4"), notif("v4"),
+            agent("Final whole-branch code review", "f"), notif("f"),
+            skill("hyperpowers:finishing-a-development-branch"),
+        ]
+        self.assertFalse(reading_of(entries)["outcome"])
+        entries.insert(entries.index(next(e for e in entries if e is not None and "Review Task 2" in json.dumps(e))),
+                       agent("Re-review Task 1", "w1b"))
+        self.assertTrue(reading_of(entries)["outcome"])
+
+    def test_m2_retry_after_errored_final_review_passes(self) -> None:
+        entries = full_trial()
+        at = next(i for i, e in enumerate(entries) if "Final whole" in json.dumps(e))
+        entries[at:at] = [agent("Final whole-branch code review", "f0"), error_result("f0")]
+        self.assertTrue(reading_of(entries)["outcome"])
+
+    def test_m1_structured_launch_marker_is_not_a_completion(self) -> None:
+        entry = result("i1")
+        entry["toolUseResult"] = {"status": "async_launched"}
+        with tempfile.TemporaryDirectory() as tmp:
+            record = make_run(Path(tmp), "r", [agent("Implement Task 1: a", "i1"), entry])
+            found = tally.events(transcripts(record))
+        self.assertEqual([e["kind"] for e in found], ["dispatch"])
+
+    def test_b1_b5_voids(self) -> None:
+        checks_error = {"stage": "checks", "message": "post-checks crashed (exit 127)"}
+        self.assertEqual(tally.void_kind({"final": "indeterminate", "error": checks_error}), "instrument")
+        self.assertEqual(tally.void_kind({"final": "pass", "error": checks_error}), "instrument")
+        for status in ("errored", "investigate", "weird"):
+            verdict = {"final": "indeterminate", "error": None, "gauntlet": {"status": status}}
+            self.assertEqual(tally.void_kind(verdict), "grader")
+        setup = {"stage": "setup", "message": "x"}
+        self.assertEqual(tally.void_kind({"final": "indeterminate", "error": setup}), "setup")
+        self.assertIsNone(tally.void_kind({"final": "fail", "error": None, "gauntlet": {"status": "pass"}}))
 
 
 class ErrorsAndBatches(unittest.TestCase):
@@ -260,7 +338,7 @@ def brain_trial(read_before_question: bool, ask_after_compact: bool = False) -> 
         out.append(compact())
     guide = read("/x/skills/brainstorming/SKILL.md")
     server = tool_use("Bash", {"command": "scripts/start-server.sh"}, "b")
-    return out + ([guide, server] if read_before_question else [server, guide])
+    return out + ([*guide, server] if read_before_question else [server, *guide])
 
 
 class Brainstorming(unittest.TestCase):

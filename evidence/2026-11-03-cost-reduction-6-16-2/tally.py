@@ -122,6 +122,9 @@ def notified_ids(text: str) -> list[str]:
 def events(transcripts: list[Path]) -> list[dict[str, Any]]:
     """Main-thread events in file order: compact, dispatch, done, read, skill, ask, server."""
     found: list[dict[str, Any]] = []
+    # A Read counts where its result arrives: calls composed in the same
+    # message as the Read were chosen before the model saw the file.
+    pending_reads: dict[str, str] = {}
     for path in transcripts:
         for line in path.read_text(encoding="utf-8").splitlines():
             try:
@@ -148,7 +151,7 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                         kind, task = classify(str(args.get("description") or ""), str(args.get("prompt") or ""))
                         found.append({"kind": "dispatch", "class": kind, "task": task, "id": block.get("id")})
                     elif name == "Read":
-                        found.append({"kind": "read", "path": str(args.get("file_path") or "")})
+                        pending_reads[str(block.get("id"))] = str(args.get("file_path") or "")
                     elif name == "Skill":
                         found.append({"kind": "skill", "skill": str(args.get("skill") or "")})
                     elif name == "AskUserQuestion":
@@ -163,17 +166,25 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                 if isinstance(prompt, str):
                     found.extend({"kind": "done", "id": i} for i in notified_ids(prompt))
             elif entry.get("type") == "user":
+                result = entry.get("toolUseResult")
+                structured_launch = isinstance(result, dict) and result.get("status") == "async_launched"
                 if isinstance(content, list):
                     for block in content:
-                        # An errored or rejected call never ran; only a clean,
-                        # non-launch result is a synchronous completion.
                         if (
-                            isinstance(block, dict)
-                            and block.get("type") == "tool_result"
-                            and not block.get("is_error")
-                            and "Async agent launched" not in json.dumps(block.get("content"))
+                            not isinstance(block, dict)
+                            or block.get("type") != "tool_result"
+                            or block.get("is_error")
                         ):
-                            found.append({"kind": "done", "id": block.get("tool_use_id")})
+                            continue
+                        ident = str(block.get("tool_use_id"))
+                        if ident in pending_reads:
+                            found.append({"kind": "read", "path": pending_reads.pop(ident)})
+                        # A launch is never a completion; the structured marker
+                        # is primary and the text is the fallback.
+                        elif not structured_launch and "Async agent launched" not in json.dumps(
+                            block.get("content")
+                        ):
+                            found.append({"kind": "done", "id": ident})
                 text = content if isinstance(content, str) else json.dumps(content)
                 found.extend({"kind": "done", "id": i} for i in notified_ids(text))
     return found
@@ -183,6 +194,7 @@ def sdd_reading(found: list[dict[str, Any]]) -> dict[str, Any]:
     """Validity, outcome and mechanism for one SDD trial (rules in the module docstring)."""
     compact = next((i for i, e in enumerate(found) if e["kind"] == "compact"), None)
     dispatches = {e["id"]: e for e in found if e["kind"] == "dispatch"}
+    index_of = {e["id"]: i for i, e in enumerate(found) if e["kind"] == "dispatch"}
     done_at: dict[str, int] = {}
     for i, e in enumerate(found):
         if e["kind"] == "done" and e["id"] in dispatches and e["id"] not in done_at:
@@ -202,29 +214,46 @@ def sdd_reading(found: list[dict[str, Any]]) -> dict[str, Any]:
     reading: dict[str, Any] = {"valid": valid, "outcome": None, "mechanism": None}
     if not valid:
         return reading
-    done_before = {
-        d["task"] for k, d in dispatches.items()
-        if d["class"] in ("review", "rereview") and k in done_at and done_at[k] < compact
-    }
+    done_before: set[int] = set()
+    for task in (1, 2, 3, 4):
+        reviews = [
+            k for k, d in dispatches.items()
+            if d["class"] in ("review", "rereview") and d["task"] == task and index_of[k] < compact
+        ]
+        if not reviews:
+            continue
+        last = max(reviews, key=lambda k: index_of[k])
+        if last not in done_at or done_at[last] > compact:
+            continue
+        refixed = any(
+            d["class"] == "fix" and d["task"] == task and done_at[last] < index_of[k] < compact
+            for k, d in dispatches.items()
+        )
+        if not refixed:
+            done_before.add(task)
     after = found[compact + 1:]
-    reviewed_after = {e["task"] for e in after if e["kind"] == "dispatch" and e["class"] in ("review", "rereview")}
-    final_pos = next((j for j, e in enumerate(after) if e["kind"] == "dispatch" and e["class"] == "final"), None)
-    finish_pos = next(
-        (
-            j for j, e in enumerate(after)
-            if final_pos is not None and j > final_pos
-            and e["kind"] == "skill" and e["skill"].endswith("finishing-a-development-branch")
-        ),
-        None,
+    base = compact + 1
+    # Any final review after the compaction may satisfy the finish condition
+    # (a retry after an errored attempt counts); the earliest satisfying one
+    # bounds which review dispatches count as "after".
+    finish_idx = [
+        i for i, e in enumerate(found)
+        if i > compact and e["kind"] == "skill" and e["skill"].endswith("finishing-a-development-branch")
+    ]
+    final_ids = [
+        k for k, d in dispatches.items() if d["class"] == "final" and index_of[k] > compact
+    ]
+    satisfying = sorted(
+        index_of[k]
+        for k in final_ids
+        if k in done_at and any(done_at[k] < f for f in finish_idx)
     )
-    # The final review has to come back before Finish: a dispatched review
-    # that never returned did not run in the sense the spec requires.
-    final_id = after[final_pos]["id"] if final_pos is not None else None
-    finished = (
-        finish_pos is not None
-        and final_id in done_at
-        and done_at[final_id] < compact + 1 + finish_pos
-    )
+    finished = bool(satisfying)
+    limit = satisfying[0] if satisfying else len(found)
+    reviewed_after = {
+        e["task"] for e in found[base:limit]
+        if e["kind"] == "dispatch" and e["class"] in ("review", "rereview")
+    }
     redispatch = any(
         e["kind"] == "dispatch" and e["class"] == "implement" and e["task"] in done_before for e in after
     )
@@ -304,22 +333,28 @@ EXPECTED_VALID = 10
 
 
 def void_kind(verdict: dict[str, Any]) -> str | None:
-    """Name a setup or grader void read from the verdict (adapted from the companion tally).
+    """Name a void read from the verdict (adapted from the companion tally).
 
     :param verdict: A parsed ``verdict.json``.
-    :returns: ``setup``, ``grader``, or None for a real attempt.
+    :returns: ``setup``, ``grader`` (the Gauntlet-Agent gave no pass/fail
+        judgement: ``investigate``, ``errored`` or anything else), ``instrument``
+        (a quorum stage after setup errored, e.g. the post-checks were cut
+        short), or None for a real attempt.
     """
+    error = verdict.get("error") or {}
+    stage = error.get("stage") if isinstance(error, dict) else None
+    if stage == "setup":
+        return "setup"
+    if error:
+        return "instrument"
     if verdict.get("final") in ("pass", "fail"):
         return None
-    reason = str(verdict.get("final_reason") or "")
     gauntlet = verdict.get("gauntlet") or {}
-    if not gauntlet and "quorum error (setup)" in reason:
-        return "setup"
-    if gauntlet.get("status") == "investigate" and "without writing a result" in str(
-        gauntlet.get("summary") or ""
-    ):
+    if gauntlet and gauntlet.get("status") not in ("pass", "fail"):
         return "grader"
-    return None
+    if not gauntlet and "quorum error (setup)" in str(verdict.get("final_reason") or ""):
+        return "setup"
+    return "instrument"
 
 
 def post_check(verdict: dict[str, Any], name: str) -> bool | None:
