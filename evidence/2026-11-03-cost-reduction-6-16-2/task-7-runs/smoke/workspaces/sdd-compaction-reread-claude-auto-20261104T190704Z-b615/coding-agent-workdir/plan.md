@@ -1,0 +1,1113 @@
+# Textstats Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use hyperpowers:subagent-driven-development (recommended) or hyperpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Spec:** none (fixture)
+
+**Goal:** Build `textstats`, a small dependency-free Node.js module that reports four statistics about a piece of English prose: the number of words, the number of sentences, the most frequent words, and an estimated reading time.
+
+**Architecture:** One CommonJS module, `src/textstats.js`, exports four pure functions. A private `tokenize` helper (added in Task 1) is the single definition of what a "word" is; `wordCount`, `topWords` and `readingTimeMinutes` all build on it so the three numbers can never disagree about the text. `sentenceCount` (Task 2) uses its own terminator scan and borrows `tokenize` only to decide whether a segment holds any words at all. Every function validates its arguments and throws a `TypeError` or `RangeError` with a message naming the function, rather than returning a silent wrong answer. Each function has its own test file under `test/`, so a failing statistic points at one file.
+
+**Tech Stack:** Node.js 20 (`node:test`, `node:assert/strict`), CommonJS modules, no runtime or dev dependencies. The suite runs with `npm test`, which is `node --test`.
+
+## Conventions
+
+These apply to every task below. They are written down once so each task can stay short on process and long on content.
+
+- **Module format.** CommonJS (`require` / `module.exports`). `package.json` has no `type` field, and this plan never adds one.
+- **Test files.** One file per function, named `test/<functionName>.test.js`, using `const { test } = require('node:test');` and `const assert = require('node:assert/strict');`. Test names are full sentences in the present tense that say what the function does ("counts hyphenated compounds as one word"), never "test 1".
+- **Red before green.** Every task writes its test file first, runs `npm test`, and sees it fail for the stated reason before any implementation is written. A test that has never failed has not shown that it can.
+- **Argument validation.** Text arguments must be strings. A non-string throws `TypeError` whose message starts with the function name and a colon. Numeric arguments that are out of range throw `RangeError` with the same prefix. Tests assert on the error class and on the message prefix, never on the full message text.
+- **No state.** None of the functions mutates its arguments, caches results, or reads anything from the environment. Calling a function twice with the same arguments returns equal values.
+- **Commits.** One commit per task, conventional prefix `feat:`, message in the imperative, and the test file and implementation in the same commit. Do not commit while `npm test` is red.
+- **Scope.** English prose only. Right-to-left scripts, languages without spaces between words, and markup stripping are out of scope; the notes in each task name the specific cases that are deliberately left alone.
+
+## File Structure
+
+| Path | Responsibility | Created in |
+| --- | --- | --- |
+| `src/textstats.js` | The module: `tokenize` (private), `wordCount`, `sentenceCount`, `topWords`, `readingTimeMinutes` | Task 1, extended by Tasks 2-4 |
+| `test/wordCount.test.js` | Tests for `wordCount` and, through it, the tokenizer rules | Task 1 |
+| `test/sentenceCount.test.js` | Tests for `sentenceCount` | Task 2 |
+| `test/topWords.test.js` | Tests for `topWords` | Task 3 |
+| `test/readingTimeMinutes.test.js` | Tests for `readingTimeMinutes` | Task 4 |
+| `package.json` | Name, version, `npm test` script (already committed) | before Task 1 |
+
+The repository already contains `package.json`, an empty module (`module.exports = {};` in `src/textstats.js`) and an empty `test/` directory. Work happens on the current branch.
+
+## Task Dependency Order
+
+Tasks run in order. Task 1 introduces `tokenize`, which Task 2 (the "does this segment hold a word" test), Task 3 (the word list) and Task 4 (via `wordCount`) all rely on. Task 4 depends on `wordCount` directly. No task edits the tests of an earlier task, and no task rewrites the code of an earlier task: each one only appends a function and widens the export line.
+
+### Task 1: `wordCount(text)`
+
+**Files:**
+- Create: `test/wordCount.test.js`
+- Modify: `src/textstats.js`
+
+`wordCount` is the foundation of the module. It also introduces the private `tokenize` helper and the `assertText` argument check that the later tasks reuse, so the rules decided here (what a "word" is, what counts as a joiner) bind every later statistic.
+
+**Behaviour.**
+
+- A word is a maximal run of Unicode letters or digits (`\p{L}`, `\p{N}`), in any script.
+- A single straight (`'`) or typographic (`’`) apostrophe, or a single hyphen, joins two runs into one word, but only when a letter or digit sits on both sides. `don't`, `keeper’s` and `well-known` are one word each. `well-` and `dogs'` are the words `well` and `dogs`, with the stray joiner dropped.
+- Everything else separates words: whitespace, sentence punctuation, em and en dashes, slashes, underscores, and the point in a decimal number or domain name. `3.14` is two words (`3` and `14`) and `example.com` is two (`example` and `com`).
+- A string with no letters or digits has zero words, however long it is.
+- A non-string argument throws `TypeError` with a message starting `wordCount:`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/wordCount.test.js`:
+
+```javascript
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { wordCount } = require('../src/textstats');
+
+// A passage whose word count was established independently with `wc -w`:
+// it has no standalone punctuation and no hyphenated or apostrophe words, so
+// whitespace-separated tokens and words coincide.
+const PASSAGE = [
+  'The lighthouse keeper climbed the spiral stairs every evening, counting',
+  'each step as his father had taught him. There were one hundred and twelve,',
+  'and on stormy nights the number never seemed to change, though his legs',
+  'insisted otherwise. At the top he trimmed the wick, polished the great lens,',
+  'and watched the beam sweep across the water toward ships he would never meet.',
+].join('\n');
+
+const CASES = [
+  ["", 0],
+  [" ", 0],
+  ["a", 1],
+  ["A", 1],
+  ["I", 1],
+  ["a b", 2],
+  ["a  b", 2],
+  ["a\tb", 2],
+  ["a\nb", 2],
+  ["a\r\nb", 2],
+  ["a, b", 2],
+  ["a. b", 2],
+  ["a; b", 2],
+  ["(a)", 1],
+  ["[a] {b}", 2],
+  ["\"quoted\"", 1],
+  ["'single'", 1],
+  ["it's", 1],
+  ["its'", 1],
+  ["'tis", 1],
+  ["rock 'n' roll", 3],
+  ["state-of-the-art", 1],
+  ["state of the art", 4],
+  ["mother-in-law's", 1],
+  ["-leading", 1],
+  ["trailing-", 1],
+  ["a--b", 2],
+  ["a - b", 2],
+  ["a – b", 2],
+  ["a — b", 2],
+  ["a…b", 2],
+  ["a_b", 2],
+  ["snake_case_name", 3],
+  ["camelCaseName", 1],
+  ["x1", 1],
+  ["1x", 1],
+  ["007", 1],
+  ["1,000", 2],
+  ["1 000", 2],
+  ["$5", 1],
+  ["5%", 1],
+  ["50/50", 2],
+  ["and/or", 2],
+  ["a/b/c", 3],
+  ["user@example.com", 3],
+  ["https://example.com/a", 4],
+  ["#hashtag", 1],
+  ["@mention", 1],
+  ["C++", 1],
+  ["C#", 1],
+  ["e-mail", 1],
+  ["co-operate", 1],
+  ["re-enter", 1],
+  ["don’t", 1],
+  ["O'Brien", 1],
+  ["O’Brien", 1],
+  ["D'Artagnan's", 1],
+  ["Ünïcödé", 1],
+  ["日本語", 1],
+  ["日本語 テキスト", 2],
+  ["Привет мир", 2],
+  ["שלום עולם", 2],
+  ["مرحبا بالعالم", 2],
+  ["ÀÉÎÕÜ", 1],
+  ["ß", 1],
+  ["one two three four five six seven eight nine ten", 10],
+  ["ONE TWO THREE", 3],
+  ["one.two.three", 3],
+  ["one,two,three", 3],
+  ["one;two;three", 3],
+  ["one:two", 2],
+  ["one!two", 2],
+  ["one?two", 2],
+  ["   padded   ", 1],
+  ["\n\nlines\n\n", 1],
+  ["\t", 0],
+  ["...", 0],
+  ["---", 0],
+  ["***", 0],
+  ["???", 0],
+  ["'", 0],
+  ["'a'", 1],
+  ["a''b", 2],
+  ["a--b--c", 3],
+];
+
+test('returns 0 for the empty string', () => {
+  assert.equal(wordCount(''), 0);
+});
+
+test('returns 0 for a string of only whitespace', () => {
+  assert.equal(wordCount('   \t\n  \r\n '), 0);
+});
+
+test('returns 1 for a single word', () => {
+  assert.equal(wordCount('hello'), 1);
+});
+
+test('counts words separated by single spaces', () => {
+  assert.equal(wordCount('the quick brown fox'), 4);
+});
+
+test('ignores leading, trailing and repeated whitespace', () => {
+  assert.equal(wordCount('   the   quick \t brown\n\nfox   '), 4);
+});
+
+test('treats newlines and tabs as separators', () => {
+  assert.equal(wordCount('one\ntwo\tthree\r\nfour'), 4);
+});
+
+test('does not count punctuation attached to a word as a separate word', () => {
+  assert.equal(wordCount('Well, well; well: well! well? well.'), 6);
+});
+
+test('does not count standalone punctuation as words', () => {
+  assert.equal(wordCount('- - - ... ?! ,'), 0);
+});
+
+test('counts a contraction as one word', () => {
+  assert.equal(wordCount("I don't think they'll mind"), 5);
+});
+
+test('counts a word with a typographic apostrophe as one word', () => {
+  assert.equal(wordCount('It’s the keeper’s lamp'), 4);
+});
+
+test('counts a hyphenated compound as one word', () => {
+  assert.equal(wordCount('a well-known, long-standing rule'), 4);
+});
+
+test('splits on an em dash with no surrounding spaces', () => {
+  assert.equal(wordCount('one—two—three'), 3);
+});
+
+test('counts digit sequences as words', () => {
+  assert.equal(wordCount('Room 101 holds 3 chairs and 12 tables'), 8);
+});
+
+test('splits a decimal number at the point', () => {
+  assert.equal(wordCount('pi is about 3.14 today'), 6);
+});
+
+test('splits a domain name at the dot', () => {
+  assert.equal(wordCount('visit example.com now'), 4);
+});
+
+test('counts letters with diacritics and non-Latin letters', () => {
+  assert.equal(wordCount('naïve café über буква 東京'), 5);
+});
+
+test('counts a multi-line passage', () => {
+  assert.equal(wordCount(PASSAGE), 64);
+});
+
+test('is not fooled by a trailing hyphen or apostrophe', () => {
+  assert.equal(wordCount("well- and dogs' bones"), 4);
+});
+
+test('gives the same answer when called twice', () => {
+  assert.equal(wordCount(PASSAGE), wordCount(PASSAGE));
+});
+
+test('throws a TypeError naming the function for a non-string', () => {
+  for (const bad of [undefined, null, 42, {}, [], ['a b']]) {
+    assert.throws(() => wordCount(bad), (err) => {
+      assert.ok(err instanceof TypeError);
+      assert.ok(err.message.startsWith('wordCount:'));
+      return true;
+    });
+  }
+});
+
+test('matches every row of the reference table', () => {
+  for (const [text, expected] of CASES) {
+    assert.equal(wordCount(text), expected, JSON.stringify(text));
+  }
+});
+```
+
+The file ends with a table-driven test over the reference rows. The expected numbers were worked out by hand from the rules above, not copied from the implementation's output.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `npm test`
+
+Expected: the run fails. Every test in `test/wordCount.test.js` reports `TypeError: wordCount is not a function`, because `src/textstats.js` still exports an empty object. If the failure is anything else (a syntax error in the test file, a missing module), fix the test file and run again before moving on.
+
+- [ ] **Step 3: Write the implementation**
+
+Replace the line `module.exports = {};` in `src/textstats.js` with the following. The file is otherwise empty at this point, so this is the whole file.
+
+```javascript
+// A word is a run of letters or digits (any script), optionally joined to the
+// next run by a single apostrophe (straight or typographic) or hyphen. The
+// joiners are only part of a word when letters or digits sit on both sides, so
+// a trailing "well-" or "dogs'" loses its joiner. Everything else, including
+// em dashes, periods and underscores, separates words.
+const WORD_PATTERN = /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu;
+
+function assertText(fn, value) {
+  if (typeof value !== 'string') {
+    throw new TypeError(`${fn}: text must be a string, received ${value === null ? 'null' : typeof value}`);
+  }
+}
+
+// Private: the single definition of "word" shared by every statistic below.
+function tokenize(text) {
+  return text.match(WORD_PATTERN) ?? [];
+}
+
+/**
+ * Count the words in a piece of text.
+ *
+ * @param {string} text
+ * @returns {number}
+ */
+function wordCount(text) {
+  assertText('wordCount', text);
+  return tokenize(text).length;
+}
+
+module.exports = { wordCount };
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `npm test`
+
+Expected: all 21 tests pass and the summary shows `fail 0`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/textstats.js test/wordCount.test.js
+git commit -m "feat: add wordCount"
+```
+
+### Task 2: `sentenceCount(text)`
+
+**Files:**
+- Create: `test/sentenceCount.test.js`
+- Modify: `src/textstats.js`
+
+`sentenceCount` splits prose at sentence terminators while avoiding the three most common false breaks: decimal numbers, dotted names such as `example.com`, and abbreviations like `Mr.` and `e.g.`. It reuses `tokenize` and `assertText` from Task 1 and appends to `src/textstats.js` without changing anything already there.
+
+**Behaviour.**
+
+- A terminator is a run of `.`, `!` or `?` (so `?!` and `...` are one terminator), optionally followed by closing quotes or brackets, and only when whitespace or the end of the text follows it. A period inside `3.14`, `example.com` or `a.b.c` has no whitespace after it and is not a terminator.
+- A lone `.` that follows one of the listed abbreviations (`Mr`, `Mrs`, `Ms`, `Dr`, `Prof`, `St`, `Sr`, `Jr`, `vs`, `e.g`, `i.e`, compared without regard to case) does not end a sentence. Runs such as `...` or `?!` always do.
+- A sentence is counted only if it contains at least one word, so a text made only of terminators has zero sentences.
+- Text after the last terminator counts as a final sentence when it contains a word.
+- A non-string argument throws `TypeError` with a message starting `sentenceCount:`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/sentenceCount.test.js`:
+
+```javascript
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { sentenceCount } = require('../src/textstats');
+
+// Eight sentences, counted by hand: the question and the exclamation each end
+// one, while the "Mr." and "Dr." titles and the decimal inside the fourth
+// sentence must not.
+const PASSAGE = [
+  'Mr. Alder opened the shop at nine. Nobody came in until noon! When the first',
+  'customer arrived, Dr. Wren asked whether the prices had changed. They had',
+  'risen by 3.5 percent since spring. "Is that all?" she said. He nodded, and',
+  'the afternoon went by quietly. By closing time the till held forty dollars.',
+].join('\n');
+
+const CASES = [
+  ["", 0],
+  [" ", 0],
+  [".", 0],
+  ["a", 1],
+  ["a.", 1],
+  ["a. b.", 2],
+  ["a! b? c.", 3],
+  ["a!? b", 2],
+  ["a?! b", 2],
+  ["a... b", 2],
+  ["a.. b", 2],
+  ["a . b", 2],
+  ["hello world", 1],
+  ["Hello world.", 1],
+  ["Hello world. ", 1],
+  [" Hello world.", 1],
+  ["Hello.World", 1],
+  ["Hello. World", 2],
+  ["Hello.\nWorld", 2],
+  ["Hello.\n\nWorld.", 2],
+  ["One. Two. Three. Four.", 4],
+  ["Yes! Yes! Yes!", 3],
+  ["Why? Because.", 2],
+  ["What?!", 1],
+  ["What?! Really?!", 2],
+  ["3.14", 1],
+  ["3.14.", 1],
+  ["It is 3.14. Next.", 2],
+  ["v1.2.3 is out.", 1],
+  ["See example.com. Then leave.", 2],
+  ["Mr. Smith", 1],
+  ["Mr. Smith went. He left.", 2],
+  ["Mrs. Smith", 1],
+  ["Ms. Smith", 1],
+  ["Dr. Smith", 1],
+  ["Prof. Smith", 1],
+  ["St. Paul", 1],
+  ["Sr. Smith", 1],
+  ["Smith Jr. arrived.", 1],
+  ["Cats vs. dogs.", 1],
+  ["e.g. this", 1],
+  ["i.e. that", 1],
+  ["E.g. this", 1],
+  ["Dr. A. Smith", 2],
+  ["(Mr. Smith)", 1],
+  ["\"Mr. Smith\"", 1],
+  ["He said \"hi.\" Then left.", 2],
+  ["He said \"hi.\". Then left.", 2],
+  ["He said 'hi.' Then left.", 2],
+  ["(Done.) Next.", 2],
+  ["[Done.] Next.", 2],
+  ["Done.) Next.", 2],
+  ["Wait... what? Oh!", 3],
+  ["Wait…", 1],
+  ["Really…? Yes.", 2],
+  ["a,b,c", 1],
+  ["a, b. c, d.", 2],
+  ["No terminator here", 1],
+  ["Trailing words after. Here", 2],
+  ["A. B. C.", 3],
+  ["U.S.A. is big.", 2],
+  ["Hello!!!", 1],
+  ["Hello!!! World???", 2],
+  ["...Start", 1],
+  ["... Start", 1],
+  ["End ...", 1],
+  ["End... ", 1],
+  ["one\ntwo\nthree", 1],
+  ["one.\ntwo.\nthree.", 3],
+  ["Line one.\r\nLine two.", 2],
+  ["Tab\tseparated. Yes.", 2],
+  ["Ends with quote.\"", 1],
+  ["Ends with quote.\" And more.", 2],
+  ["''", 0],
+  ["'.'", 0],
+  ["?", 0],
+  ["A ? B", 2],
+  ["Is it? It is.", 2],
+  ["1) First", 1],
+  ["Fig. 3 shows it.", 2],
+];
+
+test('returns 0 for the empty string', () => {
+  assert.equal(sentenceCount(''), 0);
+});
+
+test('returns 0 for whitespace only', () => {
+  assert.equal(sentenceCount('  \n\t  '), 0);
+});
+
+test('returns 0 for terminators with no words', () => {
+  assert.equal(sentenceCount('... ?! . ! ?'), 0);
+});
+
+test('counts one sentence with a final period', () => {
+  assert.equal(sentenceCount('The tide came in.'), 1);
+});
+
+test('counts one sentence with no terminator at all', () => {
+  assert.equal(sentenceCount('The tide came in'), 1);
+});
+
+test('counts a trailing fragment after the last terminator', () => {
+  assert.equal(sentenceCount('The tide came in. Then it left'), 2);
+});
+
+test('counts sentences ended by periods, question marks and exclamation marks', () => {
+  assert.equal(sentenceCount('It rose. Did it fall? It did not!'), 3);
+});
+
+test('treats a run of terminators as one boundary', () => {
+  assert.equal(sentenceCount('Really?! Yes... truly!!!'), 3);
+});
+
+test('treats an ellipsis in mid-sentence flow as a boundary when followed by a space', () => {
+  assert.equal(sentenceCount('Wait... what happened here?'), 2);
+});
+
+test('does not break at a decimal point', () => {
+  assert.equal(sentenceCount('The ratio was 3.14 exactly.'), 1);
+});
+
+test('does not break at a dot inside a domain name', () => {
+  assert.equal(sentenceCount('Go to example.com for details.'), 1);
+});
+
+test('does not break after common titles', () => {
+  assert.equal(sentenceCount('Mrs. Hale and Prof. Quill met Dr. Moss.'), 1);
+});
+
+test('does not break after e.g. or i.e.', () => {
+  assert.equal(sentenceCount('Bring snacks, e.g. fruit, or something else, i.e. anything light.'), 1);
+});
+
+test('is case-insensitive about abbreviations', () => {
+  assert.equal(sentenceCount('MR. Hale and DR. Moss agreed.'), 1);
+});
+
+test('still breaks at a real sentence end that comes before a title', () => {
+  assert.equal(sentenceCount('He thanked her. Mr. Hale left.'), 2);
+});
+
+test('keeps a closing quote with the sentence it ends', () => {
+  assert.equal(sentenceCount('"Stop!" she said. "Please." He stopped.'), 4);
+});
+
+test('keeps a closing bracket with the sentence it ends', () => {
+  assert.equal(sentenceCount('The lamp (the old one.) was lit. It burned.'), 3);
+});
+
+test('does not count a terminator inside a word', () => {
+  assert.equal(sentenceCount('a.b.c is not a sentence break'), 1);
+});
+
+test('counts sentences across newlines', () => {
+  assert.equal(sentenceCount('First line.\nSecond line.\n\nThird line.'), 3);
+});
+
+test('counts a multi-line passage', () => {
+  assert.equal(sentenceCount(PASSAGE), 8);
+});
+
+test('gives the same answer when called twice', () => {
+  assert.equal(sentenceCount(PASSAGE), sentenceCount(PASSAGE));
+});
+
+test('throws a TypeError naming the function for a non-string', () => {
+  for (const bad of [undefined, null, 7, {}, ['One.']]) {
+    assert.throws(() => sentenceCount(bad), (err) => {
+      assert.ok(err instanceof TypeError);
+      assert.ok(err.message.startsWith('sentenceCount:'));
+      return true;
+    });
+  }
+});
+
+test('matches every row of the reference table', () => {
+  for (const [text, expected] of CASES) {
+    assert.equal(sentenceCount(text), expected, JSON.stringify(text));
+  }
+});
+```
+
+As in Task 1, the final test runs the reference rows. The hand counts for the multi-line passage were made sentence by sentence: the exclamation mark ends the second sentence, the question mark inside the quotation ends the fifth, and `she said.` is the sixth.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `npm test`
+
+Expected: the new file fails with `TypeError: sentenceCount is not a function` in every test, while the 21 tests from Task 1 still pass. If the Task 1 tests fail, stop: something in the working tree changed them.
+
+- [ ] **Step 3: Write the implementation**
+
+In `src/textstats.js`, replace the line `module.exports = { wordCount };` with the following block. Everything above that line stays as it is.
+
+```javascript
+// Words whose trailing period does not end a sentence. Compared lower-case and
+// without any opening bracket or quote. "U.S.A." style initialisms are not
+// listed: they usually do end a sentence when they come last, and guessing
+// otherwise would trade one error for another.
+const ABBREVIATIONS = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'st', 'sr', 'jr', 'vs', 'e.g', 'i.e']);
+
+// A terminator run ("." "?!" "...") plus any closing quotes or brackets, and
+// only where whitespace or the end of the text follows. Requiring that keeps
+// decimals ("3.14"), domains ("example.com") and "a.b.c" in one piece.
+const TERMINATOR_PATTERN = /([.!?]+)(["'”’)\]]*)(?=\s|$)/g;
+
+function endsWithAbbreviation(before) {
+  const last = before.match(/(\S+)$/);
+  if (last === null) {
+    return false;
+  }
+  const word = last[1].replace(/^["'“‘(\[]+/, '').toLowerCase();
+  return ABBREVIATIONS.has(word);
+}
+
+/**
+ * Count the sentences in a piece of text.
+ *
+ * A sentence is a stretch of text containing at least one word and ending at a
+ * terminator run, or at the end of the text. A lone period after a known
+ * abbreviation does not end a sentence.
+ *
+ * @param {string} text
+ * @returns {number}
+ */
+function sentenceCount(text) {
+  assertText('sentenceCount', text);
+  let count = 0;
+  let start = 0;
+  for (const match of text.matchAll(TERMINATOR_PATTERN)) {
+    const before = text.slice(start, match.index);
+    if (match[1] === '.' && endsWithAbbreviation(before)) {
+      continue;
+    }
+    if (tokenize(before).length > 0) {
+      count += 1;
+    }
+    start = match.index + match[0].length;
+  }
+  if (tokenize(text.slice(start)).length > 0) {
+    count += 1;
+  }
+  return count;
+}
+
+module.exports = { wordCount, sentenceCount };
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `npm test`
+
+Expected: 44 tests pass (21 from Task 1 and 23 new) and the summary shows `fail 0`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/textstats.js test/sentenceCount.test.js
+git commit -m "feat: add sentenceCount"
+```
+
+### Task 3: `topWords(text, n)`
+
+**Files:**
+- Create: `test/topWords.test.js`
+- Modify: `src/textstats.js`
+
+`topWords` ranks the words of a text by frequency. It builds on `tokenize` from Task 1 and appends a stop-word list, so the output is about content words rather than `the` and `of`.
+
+**Behaviour.**
+
+- Words come from `tokenize`, so the rules from Task 1 apply: hyphenated compounds and contractions stay whole and numbers are words.
+- Each word is lower-cased with `toLowerCase`, so `Éclair` and `éclair` are one entry, and the typographic apostrophe is folded to the straight one, so `keeper’s` and `keeper's` are one entry.
+- A fixed list of 36 common function words (listed in the implementation) is skipped after folding.
+- The result is an array of `{ word, count }` objects ordered by `count` descending, then by `word` ascending in code-unit order, so ties are deterministic. The sort compares with `<` and `>` instead of `localeCompare` to stay independent of the host's locale.
+- At most `n` entries are returned; `n = 0` returns an empty array, and an `n` larger than the number of distinct words returns them all.
+- `n` must be a non-negative integer. Anything else, including `undefined`, `NaN`, a string, a fraction or a negative number, throws `RangeError` with a message starting `topWords:`.
+- A non-string `text` throws `TypeError` with a message starting `topWords:`. The text is checked first.
+- Every call returns fresh objects, so a caller may mutate the result without affecting later calls.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/topWords.test.js`:
+
+```javascript
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { topWords } = require('../src/textstats');
+
+// "keeper" x3, "lamp" x3, "night" x2, "tower" x2, "storm" x1. Stop words
+// (the, a, of, and, on, in, was) are present on purpose and must not appear.
+const PASSAGE = [
+  'The keeper lit the lamp. The lamp was old, and the keeper was older.',
+  'On a night of storm the tower shook; in the night the keeper climbed',
+  'the tower, lamp in hand.',
+].join(' ');
+
+const CASES = [
+  ["apple", 1, [{"word": "apple", "count": 1}]],
+  ["apple apple", 1, [{"word": "apple", "count": 2}]],
+  ["apple banana", 5, [{"word": "apple", "count": 1}, {"word": "banana", "count": 1}]],
+  ["banana apple", 5, [{"word": "apple", "count": 1}, {"word": "banana", "count": 1}]],
+  ["fig fig pear", 1, [{"word": "fig", "count": 2}]],
+  ["fig fig pear", 2, [{"word": "fig", "count": 2}, {"word": "pear", "count": 1}]],
+  ["kiwi kiwi lime lime", 2, [{"word": "kiwi", "count": 2}, {"word": "lime", "count": 2}]],
+  ["x y z", 2, [{"word": "x", "count": 1}, {"word": "y", "count": 1}]],
+  ["Z y X", 3, [{"word": "x", "count": 1}, {"word": "y", "count": 1}, {"word": "z", "count": 1}]],
+  ["the the the", 3, []],
+  ["The cat", 3, [{"word": "cat", "count": 1}]],
+  ["cat THE cat", 3, [{"word": "cat", "count": 2}]],
+  ["cat, cat. cat!", 1, [{"word": "cat", "count": 3}]],
+  ["cat-dog cat dog", 5, [{"word": "cat", "count": 1}, {"word": "cat-dog", "count": 1}, {"word": "dog", "count": 1}]],
+  ["it's its", 5, [{"word": "it's", "count": 1}]],
+  ["they're they", 5, [{"word": "they're", "count": 1}]],
+  ["12 12 12 7", 2, [{"word": "12", "count": 3}, {"word": "7", "count": 1}]],
+  ["2 10", 2, [{"word": "10", "count": 1}, {"word": "2", "count": 1}]],
+  ["a1 A1 a1", 1, [{"word": "a1", "count": 3}]],
+  ["Straße STRASSE", 5, [{"word": "strasse", "count": 1}, {"word": "straße", "count": 1}]],
+  ["ÀB àb", 1, [{"word": "àb", "count": 2}]],
+  ["日本 日本 語", 2, [{"word": "日本", "count": 2}, {"word": "語", "count": 1}]],
+  ["ok ok ok no no yes", 3, [{"word": "ok", "count": 3}, {"word": "no", "count": 2}, {"word": "yes", "count": 1}]],
+  ["ok ok ok no no yes", 2, [{"word": "ok", "count": 3}, {"word": "no", "count": 2}]],
+  ["ok ok ok no no yes", 1, [{"word": "ok", "count": 3}]],
+  ["one two two three three three", 3, [{"word": "three", "count": 3}, {"word": "two", "count": 2}, {"word": "one", "count": 1}]],
+  ["is are was were be", 5, []],
+  ["i he she they it", 5, []],
+  ["with from by for at as", 5, []],
+  ["will have has had are", 5, []],
+  ["this that there their its", 5, []],
+  ["fox, fox; fox: fox", 2, [{"word": "fox", "count": 4}]],
+  ["(fox) [fox] {fox}", 2, [{"word": "fox", "count": 3}]],
+  ["\"fox\" 'fox'", 2, [{"word": "fox", "count": 2}]],
+  ["fox\nfox\tfox  fox", 1, [{"word": "fox", "count": 4}]],
+  ["fox—fox", 1, [{"word": "fox", "count": 2}]],
+  ["fox/fox", 1, [{"word": "fox", "count": 2}]],
+  ["fox_fox", 1, [{"word": "fox", "count": 2}]],
+  ["fox fox", 0, []],
+  ["", 0, []],
+  ["   ", 3, []],
+  ["pear", 100, [{"word": "pear", "count": 1}]],
+];
+
+test('returns an empty array for the empty string', () => {
+  assert.deepEqual(topWords('', 5), []);
+});
+
+test('returns an empty array for punctuation and whitespace only', () => {
+  assert.deepEqual(topWords(' ... -- ?! \n', 5), []);
+});
+
+test('returns an empty array when every word is a stop word', () => {
+  assert.deepEqual(topWords('the and of the to a in it', 5), []);
+});
+
+test('returns an empty array when n is 0', () => {
+  assert.deepEqual(topWords('apple banana apple', 0), []);
+});
+
+test('returns word and count pairs', () => {
+  assert.deepEqual(topWords('apple', 1), [{ word: 'apple', count: 1 }]);
+});
+
+test('orders words by count, highest first', () => {
+  assert.deepEqual(topWords('pear apple apple fig fig fig', 3), [
+    { word: 'fig', count: 3 },
+    { word: 'apple', count: 2 },
+    { word: 'pear', count: 1 },
+  ]);
+});
+
+test('breaks ties alphabetically', () => {
+  assert.deepEqual(topWords('mango kiwi apple kiwi mango apple', 3), [
+    { word: 'apple', count: 2 },
+    { word: 'kiwi', count: 2 },
+    { word: 'mango', count: 2 },
+  ]);
+});
+
+test('returns at most n entries', () => {
+  assert.equal(topWords('a1 b2 c3 d4 e5 f6 g7', 3).length, 3);
+});
+
+test('returns every distinct word when n exceeds their number', () => {
+  assert.deepEqual(topWords('cedar birch cedar', 10), [
+    { word: 'cedar', count: 2 },
+    { word: 'birch', count: 1 },
+  ]);
+});
+
+test('folds case before counting', () => {
+  assert.deepEqual(topWords('Apple APPLE apple', 1), [{ word: 'apple', count: 3 }]);
+});
+
+test('folds non-ASCII case before counting', () => {
+  assert.deepEqual(topWords('Éclair éclair ÉCLAIR', 1), [{ word: 'éclair', count: 3 }]);
+});
+
+test('skips stop words regardless of case', () => {
+  assert.deepEqual(topWords('The THE the Heron', 5), [{ word: 'heron', count: 1 }]);
+});
+
+test('treats typographic and straight apostrophes as the same word', () => {
+  assert.deepEqual(topWords("keeper’s keeper's", 1), [{ word: "keeper's", count: 2 }]);
+});
+
+test('keeps hyphenated compounds whole', () => {
+  assert.deepEqual(topWords('well-known well-known known', 2), [
+    { word: 'well-known', count: 2 },
+    { word: 'known', count: 1 },
+  ]);
+});
+
+test('counts numbers as words', () => {
+  assert.deepEqual(topWords('42 42 7', 2), [
+    { word: '42', count: 2 },
+    { word: '7', count: 1 },
+  ]);
+});
+
+test('ranks the words of a passage', () => {
+  assert.deepEqual(topWords(PASSAGE, 4), [
+    { word: 'keeper', count: 3 },
+    { word: 'lamp', count: 3 },
+    { word: 'night', count: 2 },
+    { word: 'tower', count: 2 },
+  ]);
+});
+
+test('includes the single-count words once the larger ones are used up', () => {
+  const words = topWords(PASSAGE, 100).map((entry) => entry.word);
+  assert.ok(words.includes('storm'));
+  assert.ok(!words.includes('the'));
+  assert.ok(!words.includes('was'));
+});
+
+test('returns fresh objects on every call', () => {
+  const first = topWords('reed reed', 1);
+  first[0].count = 99;
+  assert.deepEqual(topWords('reed reed', 1), [{ word: 'reed', count: 2 }]);
+});
+
+test('rejects an n that is not a non-negative integer', () => {
+  for (const bad of [-1, 1.5, NaN, Infinity, '3', null, undefined]) {
+    assert.throws(() => topWords('apple', bad), (err) => {
+      assert.ok(err instanceof RangeError);
+      assert.ok(err.message.startsWith('topWords:'));
+      return true;
+    });
+  }
+});
+
+test('throws a TypeError naming the function for a non-string', () => {
+  for (const bad of [undefined, null, 3, {}, ['apple']]) {
+    assert.throws(() => topWords(bad, 3), (err) => {
+      assert.ok(err instanceof TypeError);
+      assert.ok(err.message.startsWith('topWords:'));
+      return true;
+    });
+  }
+});
+
+test('matches every row of the reference table', () => {
+  for (const [text, n, expected] of CASES) {
+    assert.deepEqual(topWords(text, n), expected, JSON.stringify([text, n]));
+  }
+});
+```
+
+The passage test pins the ranking of a short text by hand: `keeper` and `lamp` appear three times each, `night` and `tower` twice, and `storm` once. The tie order inside each count follows the alphabet. The words `the`, `a`, `of`, `and`, `on`, `in` and `was` all occur in the passage and must not appear in the result.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `npm test`
+
+Expected: the new file fails with `TypeError: topWords is not a function` in every test, and the 44 earlier tests still pass. A failure that names `Cannot find module` means the test file was saved in the wrong directory.
+
+- [ ] **Step 3: Write the implementation**
+
+In `src/textstats.js`, replace the line `module.exports = { wordCount, sentenceCount };` with the following block.
+
+```javascript
+// Function words that would otherwise crowd every ranking. The list is
+// deliberately short and fixed: callers who need a different list can filter
+// the full ranking (pass a large n) themselves.
+const STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'had', 'has',
+  'have', 'he', 'her', 'his', 'i', 'in', 'is', 'it', 'its', 'of', 'on', 'or',
+  'she', 'that', 'the', 'their', 'there', 'they', 'this', 'to', 'was', 'were',
+  'will', 'with',
+]);
+
+/**
+ * List the most frequent words in a piece of text.
+ *
+ * Words are lower-cased, typographic apostrophes are folded to straight ones,
+ * and stop words are skipped. Entries are ordered by count (highest first),
+ * then alphabetically, so the result is deterministic.
+ *
+ * @param {string} text
+ * @param {number} n How many entries to return; a non-negative integer.
+ * @returns {Array<{word: string, count: number}>}
+ */
+function topWords(text, n) {
+  assertText('topWords', text);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new RangeError(`topWords: n must be a non-negative integer, received ${String(n)}`);
+  }
+  const counts = new Map();
+  for (const token of tokenize(text)) {
+    const word = token.toLowerCase().replace(/’/g, "'");
+    if (STOP_WORDS.has(word)) {
+      continue;
+    }
+    counts.set(word, (counts.get(word) ?? 0) + 1);
+  }
+  return [...counts]
+    .map(([word, count]) => ({ word, count }))
+    .sort((a, b) => b.count - a.count || (a.word < b.word ? -1 : a.word > b.word ? 1 : 0))
+    .slice(0, n);
+}
+
+module.exports = { wordCount, sentenceCount, topWords };
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `npm test`
+
+Expected: 65 tests pass (44 from Tasks 1 and 2 and 21 new) and the summary shows `fail 0`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/textstats.js test/topWords.test.js
+git commit -m "feat: add topWords"
+```
+
+### Task 4: `readingTimeMinutes(text, wpm = 200)`
+
+**Files:**
+- Create: `test/readingTimeMinutes.test.js`
+- Modify: `src/textstats.js`
+
+`readingTimeMinutes` turns a word count into a whole number of minutes. It is the smallest function in the module and depends only on `wordCount`, so it also serves as the check that the three earlier tasks compose.
+
+**Behaviour.**
+
+- The result is `Math.ceil(wordCount(text) / wpm)`: any text with at least one word takes at least one minute, 200 words take exactly one, 201 words take two, and the empty text takes zero.
+- `wpm` defaults to 200 when omitted or passed as `undefined`.
+- `wpm` must be a positive, finite number; fractions such as `150.5` are allowed. Zero, negatives, `NaN`, the infinities and any non-number (including numeric strings and `null`) throw `RangeError` with a message starting `readingTimeMinutes:`.
+- A non-string `text` throws `TypeError` with a message starting `readingTimeMinutes:`. The text is checked before the rate.
+- The word count is the same one `wordCount` reports, so hyphenated compounds, contractions and decimals count the way Task 1 defines.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/readingTimeMinutes.test.js`:
+
+```javascript
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { readingTimeMinutes } = require('../src/textstats');
+
+// n copies of a one-word token, so the word count is exactly n.
+const words = (n) => Array.from({ length: n }, () => 'word').join(' ');
+
+const CASES = [
+  ["", null, 0],
+  ["x", null, 1],
+  ["x x", null, 1],
+  ["", 50, 0],
+  ["x", 1, 1],
+  ["x x", 1, 2],
+  ["x x x", 1, 3],
+  ["x x x", 2, 2],
+  ["x x x x", 2, 2],
+  ["x x x x x", 2, 3],
+  ["x x x x", 4, 1],
+  ["x x x x x", 4, 2],
+  ["x x x x x x x x", 4, 2],
+  ["x x x x x x x x x", 4, 3],
+  ["x", 0.5, 2],
+  ["x x", 0.5, 4],
+  ["x", 0.25, 4],
+  ["x", 1000, 1],
+  ["x x x x x x x x x x", 3, 4],
+  ["x x x x x x x x x x", 5, 2],
+  ["x x x x x x x x x x", 10, 1],
+  ["x x x x x x x x x x", 11, 1],
+  ["x x x x x x x x x x x", 10, 2],
+  ["a-b c'd", 1, 2],
+  ["a-b c'd", 2, 1],
+  ["a b. c d! e f?", 2, 3],
+  ["1 2 3 4 5 6", 6, 1],
+  ["1 2 3 4 5 6 7", 6, 2],
+  ["...", 1, 0],
+  ["--", 10, 0],
+  ["\n", 10, 0],
+  ["日本語 テキスト", 1, 2],
+  ["日本語 テキスト", 2, 1],
+  ["é", 1, 1],
+  ["é è", 1, 2],
+];
+
+test('returns 0 for the empty string', () => {
+  assert.equal(readingTimeMinutes(''), 0);
+});
+
+test('returns 0 for whitespace and punctuation only', () => {
+  assert.equal(readingTimeMinutes(' \n -- ... '), 0);
+});
+
+test('rounds a single word up to one minute', () => {
+  assert.equal(readingTimeMinutes('hello'), 1);
+});
+
+test('returns 1 for exactly 200 words at the default rate', () => {
+  assert.equal(readingTimeMinutes(words(200)), 1);
+});
+
+test('returns 2 for 201 words at the default rate', () => {
+  assert.equal(readingTimeMinutes(words(201)), 2);
+});
+
+test('returns 2 for exactly 400 words at the default rate', () => {
+  assert.equal(readingTimeMinutes(words(400)), 2);
+});
+
+test('returns 5 for 1000 words at the default rate', () => {
+  assert.equal(readingTimeMinutes(words(1000)), 5);
+});
+
+test('uses a custom rate', () => {
+  assert.equal(readingTimeMinutes(words(250), 100), 3);
+});
+
+test('a faster rate shortens the time', () => {
+  assert.equal(readingTimeMinutes(words(600), 300), 2);
+});
+
+test('accepts a fractional rate', () => {
+  assert.equal(readingTimeMinutes(words(301), 150.5), 2);
+  assert.equal(readingTimeMinutes(words(302), 150.5), 3);
+});
+
+test('treats an explicit undefined rate as the default', () => {
+  assert.equal(readingTimeMinutes(words(201), undefined), 2);
+});
+
+test('counts words the same way wordCount does', () => {
+  assert.equal(readingTimeMinutes("well-known, don't stop — 3.14 times"), 1);
+  assert.equal(readingTimeMinutes("well-known, don't stop — 3.14 times", 3), 2);
+});
+
+test('counts a multi-paragraph text', () => {
+  const paragraph = 'The keeper lit the lamp and watched the water. '.repeat(10);
+  const text = `${paragraph}\n\n${paragraph}\n\n${paragraph}`;
+  // 9 words per sentence, 30 sentences, 270 words.
+  assert.equal(readingTimeMinutes(text), 2);
+});
+
+test('rejects a rate of zero', () => {
+  assert.throws(() => readingTimeMinutes('a b c', 0), RangeError);
+});
+
+test('rejects a negative rate', () => {
+  assert.throws(() => readingTimeMinutes('a b c', -200), RangeError);
+});
+
+test('rejects NaN and infinite rates', () => {
+  for (const bad of [NaN, Infinity, -Infinity]) {
+    assert.throws(() => readingTimeMinutes('a b c', bad), RangeError);
+  }
+});
+
+test('rejects a rate that is not a number', () => {
+  for (const bad of ['200', null, {}, [200]]) {
+    assert.throws(() => readingTimeMinutes('a b c', bad), (err) => {
+      assert.ok(err instanceof RangeError);
+      assert.ok(err.message.startsWith('readingTimeMinutes:'));
+      return true;
+    });
+  }
+});
+
+test('throws a TypeError naming the function for a non-string', () => {
+  for (const bad of [undefined, null, 12, {}, ['a b']]) {
+    assert.throws(() => readingTimeMinutes(bad), (err) => {
+      assert.ok(err instanceof TypeError);
+      assert.ok(err.message.startsWith('readingTimeMinutes:'));
+      return true;
+    });
+  }
+});
+
+test('gives the same answer when called twice', () => {
+  const text = words(333);
+  assert.equal(readingTimeMinutes(text), readingTimeMinutes(text));
+});
+
+test('matches every row of the reference table', () => {
+  for (const [text, wpm, expected] of CASES) {
+    const actual = wpm === null ? readingTimeMinutes(text) : readingTimeMinutes(text, wpm);
+    assert.equal(actual, expected, JSON.stringify([text, wpm]));
+  }
+});
+```
+
+The `words(n)` helper in the test builds a text of exactly `n` words, so the boundary tests (200, 201 and 400 words) do not depend on any particular prose. The multi-paragraph test uses ten copies of a nine-word sentence per paragraph, three paragraphs, which is 270 words and so two minutes.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `npm test`
+
+Expected: the new file fails with `TypeError: readingTimeMinutes is not a function` in every test, and the 65 earlier tests still pass.
+
+- [ ] **Step 3: Write the implementation**
+
+In `src/textstats.js`, replace the line `module.exports = { wordCount, sentenceCount, topWords };` with the following block.
+
+```javascript
+const DEFAULT_WORDS_PER_MINUTE = 200;
+
+/**
+ * Estimate how many whole minutes a text takes to read.
+ *
+ * The estimate is the word count divided by the reading rate, rounded up, so
+ * any text with at least one word takes at least a minute and the empty text
+ * takes none.
+ *
+ * @param {string} text
+ * @param {number} [wpm=200] Reading rate in words per minute; a positive, finite number.
+ * @returns {number} Whole minutes.
+ */
+function readingTimeMinutes(text, wpm = DEFAULT_WORDS_PER_MINUTE) {
+  assertText('readingTimeMinutes', text);
+  if (typeof wpm !== 'number' || !Number.isFinite(wpm) || wpm <= 0) {
+    throw new RangeError(`readingTimeMinutes: wpm must be a positive finite number, received ${String(wpm)}`);
+  }
+  return Math.ceil(wordCount(text) / wpm);
+}
+
+module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `npm test`
+
+Expected: all 85 tests pass (65 from Tasks 1 to 3 and 20 new) and the summary shows `fail 0`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/textstats.js test/readingTimeMinutes.test.js
+git commit -m "feat: add readingTimeMinutes"
+```
+
+## Completion
+
+After Task 4 the working tree holds `src/textstats.js` with four exported functions and four test files. Run `npm test` once more from a clean checkout of the branch to confirm the suite is green: expect 85 tests, 0 failures. Then run a final whole-branch review against this plan before finishing the branch.
+
