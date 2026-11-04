@@ -40,6 +40,9 @@ case "$arm" in
 esac
 case "$proc" in p[0-9]|p[0-9][0-9]|r[0-9]|r[0-9][0-9]) ;; *) echo "proc must be p<n> or r<n>" >&2; exit 2 ;; esac
 case "$budget" in default) ;; *) echo "budget must be default" >&2; exit 2 ;; esac
+# A row's log is evidence: a relaunch must be a recorded replacement (r<n>),
+# never a silent overwrite of the preregistered trial's log.
+[ ! -e "$LOGS/$arm-$scen-$proc.log" ] || { echo "$LOGS/$arm-$scen-$proc.log already exists; a relaunch must be a recorded replacement, not an overwrite" >&2; exit 1; }
 for v in HTTP_PROXY HTTPS_PROXY NO_PROXY; do [ -n "${!v:-}" ] || { echo "$v is not set in the launch environment; the live session needs the proxy configuration" >&2; exit 1; }; done
 pin() { awk -F '\t' -v key="$1" 'NF == 2 && $1 == key { print $2 }' "$MANIFEST"; }
 root_pin=$(pin "$arm"); harness_pin=$(pin harness); model_pin=$(pin model)
@@ -62,6 +65,9 @@ harness_status=$(git status --short -- $HARNESS_PATHS) || { echo "git status fai
 export SUPERPOWERS_ROOT="$root"
 mkdir -p "$LOGS" || exit 1
 log="$LOGS/$arm-$scen-$proc.log"
+# Exclusive create, so two concurrent launches of one row cannot both proceed;
+# the early check above only gives the common case a cheap refusal.
+( set -o noclobber; : > "$log" ) 2>/dev/null || { echo "$log was created by another launch; refusing to overwrite it" >&2; exit 1; }
 {
   echo "arm=$arm scenario=$scen repeat=$rep proc=$proc budget=$budget"
   echo "root=$root_pin root_clean=0"
@@ -77,4 +83,4 @@ log="$LOGS/$arm-$scen-$proc.log"
   echo "EXIT=$code"; date -u +%Y-%m-%dT%H:%M:%SZ
   echo "claude_version_after=$(claude --version 2>/dev/null)"
   case "$code" in 0|1|2) echo "DONE $arm $scen $proc" ;; *) echo "FAILED $code $arm $scen $proc" ;; esac
-} > "$log" 2>&1
+} >> "$log" 2>&1

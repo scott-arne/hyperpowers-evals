@@ -16,7 +16,7 @@ Pass bar:
   trials and at least as often as the control, and shows the mechanism in at
   least 8 of 10.
 - Brainstorming: the treatment's existing outcome checks pass at least as
-  often as the control's, with the mechanism shown as the spec states.
+  often as the control's, and the mechanism is shown in at least 8 of 10.
 
 ## Pins
 
@@ -41,14 +41,14 @@ Run from the evals clone, with the proxy variables, `ANTHROPIC_MODEL` and
 `GAUNTLET_AGENT_MODEL` set as above:
 
 ```bash
-bash evidence/2026-11-03-cost-reduction-6-16-2/launch-all.sh \
-  evidence/2026-11-03-cost-reduction-6-16-2/manifest-red.tsv 14 \
-  > evidence/2026-11-03-cost-reduction-6-16-2/logs/launch-red.out 2>&1
+bash evidence/2026-11-03-cost-reduction-6-16-2/launch-all.sh evidence/2026-11-03-cost-reduction-6-16-2/manifest-red.tsv 14 > evidence/2026-11-03-cost-reduction-6-16-2/logs/launch-red.out 2>&1; echo "exit=$?" > evidence/2026-11-03-cost-reduction-6-16-2/logs/launch-red.exit
 ```
 
-`manifest-red.tsv` is the control arm and `manifest-green.tsv` the treatment
-arm. One trial per row; the ten SDD rows are listed first so the longer
-trials start first.
+The treatment wave is the same command with `manifest-green.tsv` and
+`launch-green.out` / `launch-green.exit`. `manifest-red.tsv` is the control
+arm and `manifest-green.tsv` the treatment arm. One trial per row; the ten SDD
+rows are listed first so the longer trials start first. The launcher refuses
+to start a row whose `logs/<arm>-<scenario>-<proc>.log` already exists.
 
 ## Tallying
 
@@ -62,6 +62,11 @@ smoke).
 ## Replacements
 
 A void trial (launch, setup, grader or instrument) may be replaced by a
-relaunch recorded in `sentinel-reruns.tsv` (original proc, replacement proc;
-tab separated), with replacement procs `r1` to `r3`. At most three
-replacements per arm and scenario; `tally.py` exits 1 when a rule is broken.
+relaunch with proc `r1` to `r3`. `launch-all.sh` accepts only `p` procs, so
+launch a replacement by calling `logs/measure-launch.sh` directly with
+`MANIFEST` set to the wave's manifest, for example
+`MANIFEST=$PWD/evidence/2026-11-03-cost-reduction-6-16-2/manifest-red.tsv bash evidence/2026-11-03-cost-reduction-6-16-2/logs/measure-launch.sh control sdd-compaction-reread 1 r1 default`.
+At most three replacements per arm and scenario, and each needs its row in
+`sentinel-reruns.tsv`: `<original run id><TAB><replacement run id>`, the
+quorum run ids as `tally.py` reads them. `tally.py` exits 1 when a rule is
+broken.
