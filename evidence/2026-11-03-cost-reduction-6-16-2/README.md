@@ -70,3 +70,12 @@ At most three replacements per arm and scenario, and each needs its row in
 `sentinel-reruns.tsv`: `<original run id><TAB><replacement run id>`, the
 quorum run ids as `tally.py` reads them. `tally.py` exits 1 when a rule is
 broken.
+
+## First treatment wave
+
+The first treatment wave (pin `1478a4a`) is archived under `logs/green-1/`
+(its row logs and launcher output), with its tally, including the report-only
+per-compaction lines, in `tally-green-1.txt`. The re-measure uses the
+strengthened skill wording and writes fresh `logs/treatment-*.log` rows; the
+copied wave-1 runs under `task-10-runs/treatment/` stay as committed history.
+`tally.py` reads only `logs/*.log`, so it counts none of the archived runs.
