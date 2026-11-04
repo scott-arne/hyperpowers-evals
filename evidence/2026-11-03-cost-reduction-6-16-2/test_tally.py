@@ -328,6 +328,22 @@ class Gaps(unittest.TestCase):
         ]
         self.assertFalse(reading_of(entries)["outcome"])
 
+    def test_d5_next_implementer_dispatched_before_compaction_fails(self) -> None:
+        entries = [
+            agent("Implement Task 1: a", "i1"), notif("i1"),
+            agent("Review Task 1 (spec + quality)", "v1"), notif("v1"),
+            agent("Implement Task 2: b", "i2"), notif("i2"),
+            agent("Review Task 2 (spec + quality)", "v2"),
+            agent("Implement Task 3: c", "i3"), notif("i3"),
+            compact(), notif("v2"), *read(SDD_SKILL),
+            agent("Review Task 3 (spec + quality)", "v3"), notif("v3"),
+            agent("Implement Task 4: d", "i4"), notif("i4"),
+            agent("Review Task 4 (spec + quality)", "v4"), notif("v4"),
+            agent("Final whole-branch code review", "f"), notif("f"),
+            skill("hyperpowers:finishing-a-development-branch"),
+        ]
+        self.assertFalse(reading_of(entries)["outcome"])
+
     def test_c1_post_compaction_review_must_complete(self) -> None:
         base = full_trial()
         errored = [error_result("v3") if e == notif("v3") else e for e in base]
