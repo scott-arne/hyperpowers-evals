@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T212116Z_f572",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The controller finished all four tasks of plan.md using subagent-driven development. Each task got an implementer, then a review, and the next task started only after that. Auto-compaction ran 12 times. After each one the controller re-read the skill and its ledger and carried on at the right task. An opus final review of the whole branch ran after Task 4, and the session ended in finishing-a-development-branch. I replied \"Keep the branch as-is\" there.",
+  "reasoning": "I checked every acceptance criterion against the files on disk, git history, the npm test output and the order of tool calls in the session log. The task loop survived repeated compactions without skipping reviews or redoing tasks, and the session ended in the finishing step.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "Auto-compaction ran 12 times (12 compact_boundary entries in the main log), not just once after Task 1. After each one, the screen showed text like \"Re-reading the full skill file and the ledger before going on, as the post-compaction rule requires\", and then the controller dispatched the correct next step. This is the behaviour the scenario is trying to measure, and it held up every time."
+    },
+    {
+      "kind": "ux",
+      "description": "Before Task 1, the controller stopped with a multiple-choice question about the tests. The plan's test files declare an unused PASSAGE constant, and some specified rules have no tests. It also said the plan's own claim about 'storm' is wrong. The question is reasonable, but a user who asked for the plan to be executed may not expect this interruption. I answered \"Proceed as you recommend.\", and it went with option 1, adding tests (70 in total)."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent created and switched to a feature/textstats branch without asking about a worktree or branch, so I never sent the \"Stay on the current branch\" reply. The work is on feature/textstats, not on the branch the session started on."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final summary said Codex isn't installed, so the per-task and final Codex review gates were skipped and logged as '4 ungated review items pending sweep'. That's fine for this run, but the message is noisy for users who don't use Codex."
+    },
+    {
+      "kind": "bug",
+      "description": "Harness/setup: the HOWTO says the seeded config bypasses startup dialogs, but I still had to click through the theme picker, security notes, the folder trust prompt (default selection was 'No, exit'), a 'Newer Opus model available: Currently pinned Opus 5' prompt (I picked No), and the bypass-permissions warning. The pinned-model prompt is odd because the launcher passes --model claude-opus-5-5, and the header then showed 'Opus 5.5'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final review range included the fixture commit f5b3967 (plan.md, .claude/settings.json, package.json) because the base was 1d38033. The agent said a harness flagged the reviewer's output for mentioning settings.json. That's harmless, but it means reviewers can see the compaction settings."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, all are committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js line 141: `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder has wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. `git log` shows 75432d3 feat: add wordCount, d856102 feat: add sentenceCount, e10fb66 feat: add topWords, 57880e2 feat: add readingTimeMinutes. `git status --short` is empty. `npm test` gives `ℹ tests 70 ℹ pass 70 ℹ fail 0`."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatches from the main session log (jq over ee297f49-….jsonl) run in strict order: 21:24:25 Implement Task 1 → 21:25:37 Review Task 1 → 21:29:18 Implement Task 2 → 21:30:43 Review Task 2 → 21:32:30 Implement Task 3 → 21:33:51 Review Task 3 → 21:36:48 Implement Task 4 → 21:38:12 Review Task 4. Commit times (13:24:53, 13:29:52, 13:33:00, 13:37:19 local) each fall between a task's implementer and its review."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Log: `2026-11-04T21:40:02Z Agent Final whole-branch review model=opus`, after the Task 4 review at 21:38:12. On screen: \"The final opus review of the whole branch found no Critical or Important issues and said it was ready to merge.\""
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Log: `21:41:09 Skill hyperpowers:finishing-a-development-branch`. The screen offered \"1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is\". After I replied \"Keep the branch as-is\", the agent said: \"I've left feature/textstats as it is… at commit 57880e2 with a clean tree.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi"
+    ]
+  },
+  "duration_ms": 1332743,
+  "usage": {
+    "inputTokens": 94,
+    "outputTokens": 6429,
+    "cacheCreationInputTokens": 46181,
+    "cacheReadInputTokens": 904477,
+    "turns": 42
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,21 @@
+# Test Result: sdd-compaction-reread
+
+**Status:** pass
+**Duration:** 1217.3s
+
+## Summary
+
+I sent "Execute plan.md with subagent-driven development." and the controller loaded the SDD skill. It asked one clarifying question about gaps in the plan's tests, and I answered "Proceed as you recommend." It then implemented and reviewed each of the four tasks in turn, with one commit per task, ran a final whole-branch review, and moved into finishing-a-development-branch. I answered "Keep the branch as-is." The session log shows 10 compaction boundaries, and the task loop kept going after each one. npm test passes 76/76.
+
+## Reasoning
+
+All four criteria are backed by evidence from the session log and the repo. The controller kept the implement → review order for every task through 10 auto-compactions, ran the final review, and finished in the finishing step. The repo on disk matches what the agent reported.
+
+## Observations (6)
+
+- **[suggestion]** Compaction happened often: the log has 10 compact_boundary events between 21:24 and 21:38 (autoCompactWindow: 100000). After each one the screen showed 'Skills restored (...)' plus re-reads of SKILL.md, task-reviewer-prompt.md, implementer-prompt.md and progress.md. Once the agent said aloud: "I'll re-read the full skill as the compaction rule requires". The task loop held up every time.
+- **[ux]** Before Task 2's implementer had finished, the controller wrote a long status message that read like the end of a turn ("I've finished Task 1 and started Task 2 ... there's nothing to review yet because the Task 2 implementer is still working"). It then carried on by itself once the background agent finished. A user could reasonably think the agent had stopped.
+- **[ux]** Before starting, the controller stopped to ask about test gaps in plan.md (unused PASSAGE constants, missing tests for described behaviours). It offered a recommended option, so this was reasonable, but it is an interruption. Because missing tests were added, the totals went above the plan's 8 tests per file (76 tests overall).
+- **[ux]** The agent reported that the Codex plugin is not installed, so the Codex review was skipped for every task and for the final review. At the end it mentioned '5 unchecked review items from the Codex reviews that were skipped' and suggested 'run the review sweep'. It's unclear why skipped reviews would leave unchecked items behind.
+- **[ux]** Launcher prompts: the trust-folder and bypass-permissions dialogs both default to 'No, exit'. There was also a 'Newer Opus model available' prompt even though the launcher pins claude-opus-5-5. The status bar showed 'Opus 5.5', so it looks like the --model flag took effect anyway.
+- **[ux]** The screen shows file paths that point into a different worktree ('../../../../../.worktrees/cost-6-16-2/skills/...'), so the plugin dir appears to be a separate worktree. This is only for information.

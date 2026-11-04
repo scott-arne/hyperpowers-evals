@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-after-compaction_20261104T213706Z_8pqw",
+  "scenario": "brainstorming-bounded-companion-after-compaction",
+  "summary": "I sent the bounded brief. Claude loaded hyperpowers:brainstorming, did the required reading, and two auto-compactions happened along the way (the skill was restored after each one). It called the task bounded and asked a non-visual question in chat (what people need to filter by). Only after I answered did it start the visual companion with start-server.sh. It wrote an HTML screen with three wireframe layouts (A: filter bar above the table, B: quick filters plus a popover, C: side column) and gave me a localhost URL. I picked A. It then asked two more questions in the terminal, laid out the full design in chat, and asked for approval. Once I approved, it started editing files (tokens.css, activity.css). It wrote no spec and no plan.",
+  "reasoning": "Every acceptance criterion was observed and checked against the session log and the files on disk. Claude opened the companion on its own, at the point the layout question came up, without any visual cue from me. This held even with auto-compaction during the session. It stayed on the bounded path with no spec and no plan, asked for approval before writing code, and then started implementing.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "Two auto-compactions happened (two compact_boundary entries in the log). One was during the reading phase, before the first question, and the screen showed 'Skills restored (hyperpowers:brainstorming)' twice. The agent re-read brainstorming SKILL.md and visual-companion.md afterwards, and companion behavior survived."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent read visual-companion.md during the initial reading phase, before any visual question came up. It did not announce or start the companion then, so this is fine. It's only worth noting as preloading."
+    },
+    {
+      "kind": "ux",
+      "description": "start-server.sh was run with --open, so it presumably tried to launch a browser on the host without asking. That could be surprising in some environments."
+    },
+    {
+      "kind": "ux",
+      "description": "The companion writes to .hyperpowers/, which isn't in .gitignore, so it shows up as untracked in git status. The agent flagged this itself (\"You may want to add it\") but did not fix it."
+    },
+    {
+      "kind": "ux",
+      "description": "After my pick, the agent asked two more fairly heavy questions before approval: whether to also fix the no-JS rows, and where the shared token sheet lives. It also proposed a two-commit plan that includes converting existing CSS to tokens. That's scope creep for a 'bounded' filter task, though the reason given was the repo's guidelines."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup showed a 'Newer Opus model available: pinned Opus 5 → Opus 5.5' prompt even though --model claude-opus-5-5 was passed. The trust and bypass dialogs default to 'No, exit'."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked brainstorming skill before implementation",
+      "verdict": "pass",
+      "evidence": "Screen: \"⏺ Skill(hyperpowers:brainstorming) ⎿ Successfully loaded skill\". In the session log, the first tool_use is 'Skill hyperpowers:brainstorming', which comes before any Write to public/."
+    },
+    {
+      "criterion": "Visual companion opened with localhost URL and HTML screen of layouts",
+      "verdict": "pass",
+      "evidence": "Log Bash call: '.../skills/brainstorming/scripts/start-server.sh --project-dir \"$PWD\" --open', then a Write to .hyperpowers/brainstorm/31761-1793828438/content/filter-placement.html (82 lines, options A/B/C). Screen showed \"I've opened a browser companion with three wireframes: http://localhost:50141/?key=d6026fbc...\""
+    },
+    {
+      "criterion": "Opened just-in-time, not upfront; non-visual questions stayed in the terminal",
+      "verdict": "pass",
+      "evidence": "The first question (\"what do people most need to narrow the list by? 1. Event type 2. Failed sign-ins 3. Date range 4. Text search\") was asked in the terminal with no mention of the companion. start-server.sh only ran after I answered, and the agent said \"Next is where the filters go on the page, which is easier to judge by seeing it.\" The later no-JS scope question (AskUserQuestion) and the token-sheet question were also asked in the terminal, not in the browser."
+    },
+    {
+      "criterion": "Bounded classification held",
+      "verdict": "pass",
+      "evidence": "Screen: \"This looks bounded: it changes one existing page and filters data the page already loads. I'll present a short design here in chat rather than write a spec\". The final design (files, commits, verification) was presented in chat."
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "`ls -R docs` lists only ui-guidelines/ (01–04 .md). `git status --short` shows only 'M public/activity.css', '?? .hyperpowers/', '?? public/tokens.css'. Nothing under docs/*/specs."
+    },
+    {
+      "criterion": "No plan document / writing-plans not invoked",
+      "verdict": "pass",
+      "evidence": "The jq list of all tool_use calls in the session log contains exactly one Skill call (hyperpowers:brainstorming). There is no writing-plans call and no plan file in git status."
+    },
+    {
+      "criterion": "Asked approval of the layout before writing implementation code",
+      "verdict": "pass",
+      "evidence": "\"Take a look and tell me here which works.\" came before any implementation writes. After my pick it also asked \"Shall I go ahead?\" on the full design. The first Write to public/tokens.css comes after my \"Yes... Go ahead\" in the log order."
+    },
+    {
+      "criterion": "Began implementation after receiving pick",
+      "verdict": "pass",
+      "evidence": "Log shows 'Write .../public/tokens.css' and 'Write .../public/activity.css' after approval. git status shows 'M public/activity.css' and '?? public/tokens.css'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 564784,
+  "usage": {
+    "inputTokens": 58,
+    "outputTokens": 5411,
+    "cacheCreationInputTokens": 32240,
+    "cacheReadInputTokens": 533438,
+    "turns": 26
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

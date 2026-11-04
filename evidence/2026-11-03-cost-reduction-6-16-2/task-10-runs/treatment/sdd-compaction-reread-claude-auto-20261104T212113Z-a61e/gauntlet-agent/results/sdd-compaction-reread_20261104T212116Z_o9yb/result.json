@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T212116Z_o9yb",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent \"Execute plan.md with subagent-driven development.\" and the agent loaded the hyperpowers:subagent-driven-development skill. It asked two questions about test coverage, and I answered both \"Proceed as you recommend.\" It then ran all four tasks in order: implement, then review, for each task. After that it ran a final whole-branch review, did one fix round with a re-review, and loaded finishing-a-development-branch. I replied \"Keep the branch as-is\" and the agent confirmed nothing was merged or pushed. Context was auto-compacted 14 times during the run, starting during Task 1, and the task loop stayed intact through all of them.",
+  "reasoning": "All four acceptance criteria are confirmed from git, npm test output and the session and subagent logs. The task loop (implement → review → next task) held through 14 auto-compactions, and the run finished with a final review and the finishing step.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Startup showed a theme picker, a security note, a workspace-trust prompt, an 'update to Opus 5.5?' prompt and a bypass-permissions warning. The HOWTO says the trust prompt is suppressed, but it appeared anyway. Its default option is 'No, exit', and so is the bypass warning's, so an absent-minded Enter would quit."
+    },
+    {
+      "kind": "bug",
+      "description": "The model-update prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose 'No', and the header still showed 'Opus 5.5 · Google Vertex AI'. The prompt's text doesn't match what is actually running."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before starting, the controller pushed back on the plan: unused PASSAGE constants and untested rules. It added tests beyond the plan's stated counts, ending at 72 tests instead of 32. That's reasonable, but it is scope beyond the plan as written."
+    },
+    {
+      "kind": "performance",
+      "description": "With the small compaction window, the controller compacted 14 times in about 18 minutes, as often as roughly once a minute. It re-read SDD SKILL.md about 13 times and progress.md once to recover. This worked, but it costs a lot."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent never asked about a worktree or branch. The repo was already on feature/textstats from the fixture: the reflog shows the checkout before the plan commit."
+    },
+    {
+      "kind": "ux",
+      "description": "The finishing summary says 'Codex review skipped: Codex isn't installed' and mentions an 'ungated ledger' with '4 items waiting for a review sweep'. That's internal jargon a user is unlikely to understand."
+    },
+    {
+      "kind": "ux",
+      "description": "The reflog shows topWords was first committed as 984e928 and is now 4f34dfb, so it was rewritten, apparently amended, during the run. The summary doesn't mention this."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, everything is committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 has `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. `ls test` shows wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. git log shows c338733 feat: add wordCount, 9ddf05a sentenceCount, 4f34dfb topWords, 5bbf10b readingTimeMinutes and c981dd6 test follow-up. `git status --short` printed nothing. `npm test` reported 'tests 72 … pass 72 fail 0'."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Start and end timestamps from the subagent logs, in order: Task1 impl 21:24:12–21:24:45, review 21:25:21–21:25:38; Task2 impl 21:28:06–21:28:49, review 21:29:30–21:29:46; Task3 impl 21:31:33–21:32:36, review 21:33:14–21:33:30; Task4 impl 21:34:28–21:35:19, review 21:35:56–21:36:11. Each review prompt starts 'You are reviewing one task's implementation…'. These hold up across compaction boundaries, which the main log shows at 21:24:38, 21:25:51, 21:26:38, 21:27:36, 21:30:06 and later."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "A subagent starting 'You are a Senior Code Reviewer…' ran 21:37:44–21:38:47, after Task 4's review. Then came a fix subagent ('fixing review findings for the final whole-branch review wave', 21:40:31) and a re-review (21:41:52). The screen said: 'Final review: Opus said it was ready to merge with two minor findings… One fix round handled both, and a scoped re-review confirmed them'."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "The main log has a tool call `Skill hyperpowers:finishing-a-development-branch`. The screen showed '1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. After my reply the agent said: 'I'm keeping feature/textstats as it is, at c981dd6. Nothing was merged or pushed.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi"
+    ]
+  },
+  "duration_ms": 1437059,
+  "usage": {
+    "inputTokens": 94,
+    "outputTokens": 6360,
+    "cacheCreationInputTokens": 45804,
+    "cacheReadInputTokens": 924219,
+    "turns": 42
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

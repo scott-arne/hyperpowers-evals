@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T212116Z_goka",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The agent ran all four tasks of plan.md with subagent-driven development, from the first task through to the finishing step. The task loop kept going even though the conversation was auto-compacted 17 times. Every task got its own reviewer, and each review finished before the next task was handed to an implementer. A final review of the whole branch then ran, followed by a fix pass and a re-review, and the session ended at the finishing step. There, I chose \"Keep the branch as-is\".",
+  "reasoning": "I checked every criterion against git, npm test and the session or subagent logs. The task loop held up through repeated compactions: tasks ran strictly in sequence, each review finished before the next task, the final review ran, and the session ended at the finishing step. The only problems are minor: the unrequested rewrite of a commit on the branch and the extra tests beyond the plan.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "Compaction ran 17 times in the main session log (compact_boundary entries from 21:24:33 to 21:42:49). The screen showed \"Skills restored (hyperpowers:communication, hyperpowers:subagent-driven-development)\". The agent also visibly re-read SKILL.md, task-reviewer-prompt.md, implementer-prompt.md and a progress.md ledger file after compacting, and kept the loop going without problems."
+    },
+    {
+      "kind": "ux",
+      "description": "Before Task 1, the agent stopped to ask a multiple-choice question about gaps in the plan's tests (an unused PASSAGE constant, rules with no tests, and a tie-break mistake in Task 3's comment). I answered \"Proceed as you recommend.\" It then added tests beyond the plan: 85 tests instead of the plan's 32. This may be reasonable, but the result does not match the plan."
+    },
+    {
+      "kind": "bug",
+      "description": "After the final review, the agent rewrote a commit that was already on the branch to change a co-author trailer from Sonnet 5.5 to Opus 5.5 (the readingTimeMinutes commit is now 91f4c69). Nobody asked it to rewrite history. That is risky on a shared branch."
+    },
+    {
+      "kind": "ux",
+      "description": "Each per-task review took only about 12–20 seconds. That seems short for a review of both the spec and code quality, though the final review did find two minor issues."
+    },
+    {
+      "kind": "ux",
+      "description": "During startup, Claude Code showed a 'Newer Opus model available — Currently pinned: Opus 5' prompt, even though the launcher passed --model claude-opus-5-5. I chose No, and the header still showed Opus 5.5. The prompt contradicts the model that was actually in use."
+    },
+    {
+      "kind": "ux",
+      "description": "Several onboarding dialogs (folder trust, bypass-permissions warning) have 'No, exit' selected by default, so it takes extra keystrokes to get past them. This is expected safety behaviour, so I'm noting it only."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In its summary, the agent said the Codex reviewer was not installed and that check was skipped for every task, and that a safety check falsely flagged one reviewer's output as matching a settings.json pattern. Both are worth checking on the harness side."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions exported from src/textstats.js, each with a test file, npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ contains wordCount.test.js, sentenceCount.test.js, topWords.test.js and readingTimeMinutes.test.js. `npm test` shows `ℹ tests 85 ℹ pass 85 ℹ fail 0`. git log has commits 5cf0f74 feat: add wordCount, b221de5 feat: add sentenceCount, 82555b8 feat: add topWords, 91f4c69 feat: add readingTimeMinutes."
+    },
+    {
+      "criterion": "Each task reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatches in the main session log, in order: Implement Task 1, Review Task 1, Implement Task 2, Review Task 2, ... Implement Task 4, Review Task 4. Start and end times of the subagent logs show no overlap. Review Task 1 ended 21:27:26 and Implement Task 2 started 21:27:53. Review 2 ended 21:29:35 and Impl 3 started 21:31:05. Review 3 ended 21:33:05 and Impl 4 started 21:34:40."
+    },
+    {
+      "criterion": "Final whole-branch review after last task",
+      "verdict": "pass",
+      "evidence": "Log shows `Agent: Final whole-branch review` (subagent ran 21:39:04 to 21:40:09, after Review Task 4 ended at 21:36:54), then `Fix final review findings` and `Re-review final fix wave`. Screen: \"The final whole-branch review found no critical or important issues\"."
+    },
+    {
+      "criterion": "Session ends in finishing step",
+      "verdict": "pass",
+      "evidence": "Log shows `Skill: hyperpowers:finishing-a-development-branch`. The screen offered \"1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is\". After my answer \"Keep the branch as-is\", the agent said \"I've kept the branch feature/textstats as it is... nothing has been pushed or merged.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi"
+    ]
+  },
+  "duration_ms": 1490358,
+  "usage": {
+    "inputTokens": 86,
+    "outputTokens": 6363,
+    "cacheCreationInputTokens": 36232,
+    "cacheReadInputTokens": 741648,
+    "turns": 39
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T212116Z_2mai",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The agent ran plan.md with subagent-driven-development and finished it. It implemented all four tasks, each followed by its own review subagent, then ran a final whole-branch review and reached the finishing-a-development-branch step. The context was compacted 13 times along the way, and the implement → review loop held every time. All 64 tests pass. Following my reply, the branch was kept as-is.",
+  "reasoning": "I checked every acceptance criterion against the files on disk, git, npm test output and the session JSONL. The context was compacted repeatedly mid-plan, yet the controller kept its implement → review cycle for each task, ran the final review and finished in the finishing skill.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "On startup Claude Code showed a 'Newer Opus model available' dialog: 'Currently pinned: Opus 5, Latest available: Opus 5.5'. But the launcher passes --model claude-opus-5-5, and the header then showed Opus 5.5. The 'pinned' text contradicts the model actually in use. I chose No."
+    },
+    {
+      "kind": "ux",
+      "description": "The folder-trust and Bypass Permissions dialogs both have 'No, exit' selected by default. Pressing Enter by reflex would quit."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before dispatching any work, the controller asked two plan-quality questions in a multi-choice widget (unused PASSAGE constants; untested behaviour). I answered both through the free-text option with 'Proceed as you recommend.' It went with its recommended options, which doubled the test count from the plan's 32 to 64. That deviates reasonably from the plan as written, but the agent made the call itself."
+    },
+    {
+      "kind": "bug",
+      "description": "Compaction ran very often: 13 compact_boundary events, sometimes two in a row with no Agent dispatch in between. That is expected from this fixture's small window, but the footer read '5% until auto-compact' even at the very end."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The Codex second-opinion gate was skipped because Codex isn't installed. The agent recorded this in an 'ungated ledger' and told the user, so it degraded cleanly."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent never asked about a worktree or branch. It stayed on the existing feature/textstats branch, which was already checked out before the plan commit (per git reflog). That matches what I would have told it."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, all are committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ contains wordCount, sentenceCount, topWords and readingTimeMinutes .test.js. git log shows four commits, ff3a759 through 07318c2 (feat: add wordCount / sentenceCount / topWords / readingTimeMinutes). `npm test`: 'tests 64, pass 64, fail 0'. git status shows a clean tree."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Ordered Agent/Skill calls and compact boundaries, pulled from the session JSONL with jq: Implement Task 1 → COMPACT → Review Task 1 → COMPACT → Implement Task 2 → Review Task 2 → COMPACT x2 → Implement Task 3 → COMPACT → Review Task 3 → COMPACT x2 → Implement Task 4 → COMPACT → Review Task 4. Every review comes before the next implementation, even across the compactions."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "The session log shows 'Agent: Final whole-branch review' after 'Review Task 4'. Screen: 'Final review: the whole-branch review found no Critical or Important issues and said it's ready to merge'."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Log shows 'Skill: hyperpowers:finishing-a-development-branch'. Screen offered '1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. I replied 'Keep the branch as-is' and the agent answered 'I've left the feature/textstats branch as it is... Nothing was merged or pushed, and the tree is clean.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi"
+    ]
+  },
+  "duration_ms": 1139020,
+  "usage": {
+    "inputTokens": 92,
+    "outputTokens": 6011,
+    "cacheCreationInputTokens": 41358,
+    "cacheReadInputTokens": 727671,
+    "turns": 41
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

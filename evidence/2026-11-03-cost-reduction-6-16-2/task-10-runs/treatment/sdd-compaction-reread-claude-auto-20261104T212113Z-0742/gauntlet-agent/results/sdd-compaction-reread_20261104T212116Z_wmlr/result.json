@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T212116Z_wmlr",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The agent loaded subagent-driven-development and ran a pre-flight scan. It asked one question about the plan's tests, and I answered \"Proceed as you recommend.\" It then built all four tasks, each as implement → review, then ran a final whole-branch review and loaded finishing-a-development-branch. When it offered the merge/PR/keep options I replied \"Keep the branch as-is.\" The controller's conversation was compacted 13 times, starting during Task 1. After each compaction it re-read SKILL.md and the ledger and carried on with the task loop. The finished code has 66 tests and all pass.",
+  "reasoning": "All four acceptance criteria are confirmed from files on disk, git history, npm test output and the timestamps in the session logs. The task loop (implement → review → next task) held through 13 compactions. The final whole-branch review ran, and the session ended in the finishing skill with the branch kept as-is.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Startup showed several dialogs before the prompt was usable: theme, security notes, folder trust, a 'Newer Opus model available' upgrade prompt and the bypass-permissions warning. The upgrade prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose No, and the header then showed 'Opus 5.5'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before dispatching anything, the controller asked a multiple-choice question about whether the plan's test code or its prose should govern (unused PASSAGE constants, untested behaviours). The question is reasonable, but it pauses an unattended run. I answered through the free-text option."
+    },
+    {
+      "kind": "bug",
+      "description": "The Task 2 implementer said its 36 tests were '8 from Task 1'. Task 1 had actually committed 22. The controller caught this by re-running npm test and called it a 'breakdown slip', so subagent self-reports can be inaccurate."
+    },
+    {
+      "kind": "performance",
+      "description": "The controller's conversation was compacted 13 times in about 18 minutes, often twice per task. After each one it re-read SKILL.md and the ledger. It stayed on track, but this costs a lot of time and tokens."
+    },
+    {
+      "kind": "ux",
+      "description": "The final summary lists 'Codex checks skipped… 5 unreviewed items are queued; say \"run the review sweep\"'. It also mentions a 'Safety alert, harmless' about .claude/settings.json being mentioned in reviewer output. Both may confuse users who don't know what they refer to."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Only 6 of the 9 subagents produced a task-notification in the main log. Reviews 2–4 seem to have completed while a compaction was running. The controller recovered by checking git state and reading the output file, but the engineers should confirm that notifications aren't being lost during compaction."
+    },
+    {
+      "kind": "ux",
+      "description": "Near the end the status bar showed '✔ Update installed · Restart to update', which is unrelated to the task."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, everything is committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js line 141: `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ contains readingTimeMinutes.test.js, sentenceCount.test.js, topWords.test.js and wordCount.test.js. git log has 9701651 wordCount, 0f472d7 sentenceCount, 1862591 topWords and b374408 readingTimeMinutes. `git status --short` printed nothing. npm test: `ℹ tests 66 … ℹ pass 66 ℹ fail 0`"
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Start/end timestamps from the subagent logs: Impl T1 21:24:12–21:24:51 → Review T1 21:26:11–21:26:27 → Impl T2 21:27:49–21:28:25 → Review T2 21:29:02–21:29:18 → Impl T3 21:30:12–21:31:55 → Review T3 21:32:33–21:32:49 → Impl T4 21:34:19–21:35:05 → Review T4 21:36:24–21:36:36. Every reviewer's final message says `**Task quality:** Approved`. Compactions happened between these steps (for example 21:25:28, 21:27:17 and 21:29:30), and the loop held."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Main log: `2026-11-04T21:38:06.030Z Agent Final whole-branch review`, dispatched after Review T4. That subagent finished at 21:39:10, and its last message says `**Ready to merge?** Yes`. On screen: `Final review: the whole-branch review found nothing to fix.`"
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Main log: `21:39:26.696Z Skill hyperpowers:finishing-a-development-branch`. The screen showed `Implementation complete. What would you like to do? 1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is`. After I replied, the agent said: `The branch feature/textstats stays as it is, at commit b374408, with nothing uncommitted.`"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi"
+    ]
+  },
+  "duration_ms": 1307060,
+  "usage": {
+    "inputTokens": 92,
+    "outputTokens": 7498,
+    "cacheCreationInputTokens": 43059,
+    "cacheReadInputTokens": 803577,
+    "turns": 41
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T212116Z_d3xv",
+  "scenario": "sdd-compaction-reread",
+  "summary": "SDD ran all four tasks on the existing feature/textstats branch. Each task had an implementer, then a reviewer that finished before the next task was dispatched. A final Opus whole-branch review followed, and the session ended in finishing-a-development-branch. The context was auto-compacted many times. After compacting, the controller said it was re-reading SKILL.md and the ledger, then carried on with the loop. On disk: 4 feature commits, all 4 functions exported, and npm test passes 70/70.",
+  "reasoning": "All four criteria are backed by the git state, a live npm test run, and dispatch timestamps from the session log. Repeated compactions did not break the task loop: implement → review was strictly sequential, a final review happened, and the session ended in the finishing skill. The branch was not created by the agent: it already existed in the fixture (reflog shows the checkout to feature/textstats before the plan commit), so no worktree or branch question came up.",
+  "observations": [
+    {
+      "kind": "performance",
+      "description": "The log has 13 compaction-boundary pairs between 21:24 and 21:38, roughly one per minute. After every compaction the controller re-reads SKILL.md, the prompt templates and the ledger (progress.md). The loop stayed correct, but this cost a lot of time and tokens. The small autoCompactWindow (100000) in the fixture likely causes this, but the re-reads after each compaction add to it."
+    },
+    {
+      "kind": "bug",
+      "description": "Wrong co-author trailer on one commit: the agent itself said 301ec27 (wordCount) reads 'Claude Sonnet 5.5' while the others say Opus. It had also amended Task 2 for the same problem (reflog: cd065cd → 507a3cf via 'commit (amend)'). It caught the Task 1 case only at the end and did not fix it."
+    },
+    {
+      "kind": "ux",
+      "description": "Before Task 1, the agent stopped to ask a multiple-choice question about test gaps in the plan (unused PASSAGE constants, missing tests). I answered 'Proceed as you recommend.' using the 'Type something' option. It then added tests beyond the plan's counts: 70 total instead of the plan's 32."
+    },
+    {
+      "kind": "ux",
+      "description": "The screen showed '(another command ran in this repository at the same time; a change made by either may show under either result)' while the Task 3 implementer ran in the background and the controller ran shell commands. This could confuse users, and it hints at the controller and implementer touching the repo at the same time."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup dialogs: the trust-folder and bypass-permissions prompts both default to 'No, exit'. A 'Newer Opus model available: Currently pinned Opus 5' prompt appeared even though the session was launched with --model claude-opus-5-5. I chose No."
+    },
+    {
+      "kind": "ux",
+      "description": "Codex is not installed, so the optional Codex reviews were skipped. The agent said each skip was logged for a later sweep."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js with test files, committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ contains wordCount, sentenceCount, topWords and readingTimeMinutes .test.js. git log shows 301ec27 wordCount, 507a3cf sentenceCount, c3e50cd topWords, 875661b readingTimeMinutes. npm test: `tests 70 … pass 70 fail 0`. git status is clean."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Dispatch order from the session log: Implement T1 21:24:12 → Review T1 21:25:30, which ended 21:25:42 → Implement T2 21:27:19 → Review T2 21:29:20, ended 21:29:34 → Implement T3 21:30:23 → Review T3 21:32:59, ended 21:33:13 → Implement T4 21:34:38 → Review T4 21:36:33, ended 21:36:48. Every review returned '✅ Spec compliant' before the next implementer was dispatched."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Agent 'Final whole-branch code review' (Opus 5.5) was dispatched at 21:38:13, after the Task 4 review. Its final message: 'I found no Critical or Important issues. The branch is ready to merge.'"
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Log shows Skill: hyperpowers:finishing-a-development-branch. The screen showed the options '1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. I replied 'Keep the branch as-is' and the agent answered 'I've left feature/textstats as it is… Nothing was merged or pushed'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi"
+    ]
+  },
+  "duration_ms": 1229870,
+  "usage": {
+    "inputTokens": 92,
+    "outputTokens": 6602,
+    "cacheCreationInputTokens": 43891,
+    "cacheReadInputTokens": 833293,
+    "turns": 41
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

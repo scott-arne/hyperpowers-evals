@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T212116Z_ygog",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The SDD controller finished all four tasks in plan.md. It reviewed each task before starting the next, ran a final whole-branch review, and ended in the finishing step. When I answered \"Keep the branch as-is\", it kept the branch. The session log shows 13 auto-compactions during the run. After each one the controller re-read its progress ledger and skill files and carried on in order.",
+  "reasoning": "All four acceptance criteria are confirmed by files on disk, the passing npm test run, git history and the order of Agent/Skill calls in the main session log. The controller kept its implement → review loop in order through 13 compactions, ran the final whole-branch review and ended in finishing-a-development-branch. I only answered the agent's two questions with the scripted replies and did nothing else to steer it.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "At startup a 'Newer Opus model available' prompt said 'Currently pinned: Opus 5', even though the launcher passes --model claude-opus-5-5. I dismissed it with Esc, and the banner then showed 'Opus 5.5'. The prompt looks wrong given the model flag."
+    },
+    {
+      "kind": "ux",
+      "description": "On the workspace-trust and bypass-permissions dialogs, the cursor starts on 'No, exit'. A careless Enter would quit. This is probably deliberate as a safety default."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before starting, the controller asked whether to add the tests the plan leaves out. I answered 'Proceed as you recommend.', so the suite grew to 81 tests instead of the plan's expected 32. The agent pointed out that plan.md still says 32."
+    },
+    {
+      "kind": "ux",
+      "description": "The controller read and showed skill files from an absolute path outside the repo ('../../../../../.worktrees/cost-6-16-2/skills/...'), so the plugin's location shows up in the transcript."
+    },
+    {
+      "kind": "performance",
+      "description": "Auto-compaction ran 13 times in about 17 minutes, roughly once per subagent round-trip. Each time the controller re-read progress.md, global-constraints.md and the SDD skill/prompt files. 'Skills restored' showed up repeatedly. This is expected with the small compaction window."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent said Codex isn't installed, so it skipped the extra Codex review step for every task and for the final review, and logged each skip."
+    },
+    {
+      "kind": "ux",
+      "description": "At the end Claude Code showed an '✔ Update installed · Restart to update' notice in the status area."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has its own test file, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js line 141: `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder holds wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. `npm test` printed `tests 81 / pass 81 / fail 0`. Each task has its own commit in git log: 1240933 wordCount, a327783 sentenceCount, 27e39d3 topWords, 5a2dedd readingTimeMinutes."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatches in the session log, in time order: Implement Task 1 21:24:12 → Review Task 1 21:26:07 → Implement Task 2 21:27:50 → Review Task 2 21:29:48 → Implement Task 3 21:30:40 → Review Task 3 21:32:21 → Implement Task 4 21:34:14 → Review Task 4 21:36:22. The order holds even though compactions happened in between, e.g. compact_boundary events at 21:24:47 and 21:26:38."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Session log shows `21:38:31 Agent Final whole-branch code review`, after Review Task 4. The agent's summary on screen said: \"The final review of the whole branch found nothing to fix and called it ready to merge.\""
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Session log shows `21:39:36 Skill hyperpowers:finishing-a-development-branch`. The screen then offered \"1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is\". I replied \"Keep the branch as-is\" and the agent answered \"I've kept the feature/textstats branch as it is... Nothing was merged, pushed or deleted.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi"
+    ]
+  },
+  "duration_ms": 1248650,
+  "usage": {
+    "inputTokens": 86,
+    "outputTokens": 5398,
+    "cacheCreationInputTokens": 41950,
+    "cacheReadInputTokens": 739002,
+    "turns": 39
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
