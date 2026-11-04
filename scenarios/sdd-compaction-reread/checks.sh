@@ -9,6 +9,7 @@ pre() {
   file-exists plan.md
   file-exists .claude/settings.json
   requires-tool node
+  requires-tool npm
 }
 
 post() {

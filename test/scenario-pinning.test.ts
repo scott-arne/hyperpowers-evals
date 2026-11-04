@@ -33,6 +33,9 @@ import { repoRoot } from '../src/paths.ts';
 // nothing and score it as a failure. `sdd-turn-liveness` measures Claude Code's
 // turn ends and background-task handling during SDD, and asserts on its `Agent`
 // dispatch tool, so it is pinned to the Claude family for the same reason.
+// `sdd-compaction-reread` measures what Claude Code's SDD controller does after a
+// mid-run context compaction and asserts on its `Agent` dispatch tool, so it is
+// pinned to claude-auto for the same reason.
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'brainstorming-asks-tooling-question',
   'brainstorming-bounded-companion-after-compaction',
@@ -62,6 +65,7 @@ const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'codex-subagent-wait-mapping',
   'codex-tool-mapping-comprehension',
   'executing-plans-keeps-inline-request',
+  'sdd-compaction-reread',
   'sdd-de-minimis-carveout',
   'sdd-fix-loop-refutes-wrong-finding',
   'sdd-plan-scoped-scratch',
