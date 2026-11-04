@@ -22,7 +22,7 @@ Pass bar:
 
 | Pin | Value | Source |
 | --- | --- | --- |
-| harness | `630d03335915ae8f02ad70fc49f6d54d68c986f6` | Task 4's scenario plus its fix commit; harness paths (`src scenarios coding-agents package.json bun.lock`) must stay identical to it |
+| harness | `e0605602b4f7a5e0d259848d75b01a877967daad` | Task 7's trimmed-plan scenario commit (supersedes 630d03335); harness paths (`src scenarios coding-agents package.json bun.lock`) must stay identical to it |
 | control | `f1fd935cbf79898430e4aac740b547c40d9c1103` | `v6.16.1`, detached worktree `/Users/johnss51/.cache/hyperpowers/cost-6162/hp-6161` |
 | treatment | filled in Task 10 | release branch worktree `.worktrees/cost-6-16-2`; treatment rows are refused until it is filled |
 | model | `claude-opus-5-5` | `ANTHROPIC_MODEL` must equal it in the launch shell |
