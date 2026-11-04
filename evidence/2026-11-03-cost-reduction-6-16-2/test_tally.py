@@ -260,7 +260,7 @@ class Gaps(unittest.TestCase):
             skill("hyperpowers:finishing-a-development-branch"),
         ]
         self.assertFalse(reading_of(entries)["outcome"])
-        at = entries.index(next(e for e in entries if "Review Task 2" in json.dumps(e)))
+        at = entries.index(next(e for e in entries if "Implement Task 2" in json.dumps(e)))
         entries[at:at] = [agent("Re-review Task 1", "w1b"), notif("w1b")]
         self.assertTrue(reading_of(entries)["outcome"])
 
@@ -292,6 +292,38 @@ class Gaps(unittest.TestCase):
             agent("Implement Task 4: d", "i4"), notif("i4"),
             agent("Review Task 4 (spec + quality)", "v4"), notif("v4"),
             agent("Final whole-branch code review", "f"), notif("f"),
+            skill("hyperpowers:finishing-a-development-branch"),
+        ]
+        self.assertFalse(reading_of(entries)["outcome"])
+
+    def test_d3_in_flight_review_returning_after_next_implementer_fails(self) -> None:
+        entries = [
+            agent("Implement Task 1: a", "i1"), notif("i1"),
+            agent("Review Task 1 (spec + quality)", "v1"), notif("v1"),
+            agent("Implement Task 2: b", "i2"), notif("i2"),
+            agent("Review Task 2 (spec + quality)", "v2"),
+            compact(), *read(SDD_SKILL),
+            agent("Implement Task 3: c", "i3"), notif("v2"), notif("i3"),
+            agent("Review Task 3 (spec + quality)", "v3"), notif("v3"),
+            agent("Implement Task 4: d", "i4"), notif("i4"),
+            agent("Review Task 4 (spec + quality)", "v4"), notif("v4"),
+            agent("Final whole-branch code review", "f"), notif("f"),
+            skill("hyperpowers:finishing-a-development-branch"),
+        ]
+        self.assertFalse(reading_of(entries)["outcome"])
+
+    def test_d4_last_task_in_flight_review_returning_after_final_dispatch_fails(self) -> None:
+        entries = [
+            agent("Implement Task 1: a", "i1"), notif("i1"),
+            agent("Review Task 1 (spec + quality)", "v1"), notif("v1"),
+            agent("Implement Task 2: b", "i2"), notif("i2"),
+            agent("Review Task 2 (spec + quality)", "v2"), notif("v2"),
+            agent("Implement Task 3: c", "i3"), notif("i3"),
+            agent("Review Task 3 (spec + quality)", "v3"), notif("v3"),
+            agent("Implement Task 4: d", "i4"), notif("i4"),
+            agent("Review Task 4 (spec + quality)", "v4"),
+            compact(), *read(SDD_SKILL),
+            agent("Final whole-branch code review", "f"), notif("v4"), notif("f"),
             skill("hyperpowers:finishing-a-development-branch"),
         ]
         self.assertFalse(reading_of(entries)["outcome"])

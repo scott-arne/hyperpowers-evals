@@ -37,9 +37,11 @@ Rules, from the spec's Testing section:
   subagent-driven-development SKILL.md is read after the compaction and before
   the next dispatch.
 * A review counts as after the compaction when its completion event falls
-  after the compaction and before the satisfying final review's dispatch,
-  wherever it was dispatched (a review in flight across the compaction
-  counts); an errored or unreturned review leaves its task unreviewed. Any implementer dispatch after
+  after the compaction, before the first post-compaction implementer dispatch
+  for the next task (for the last task, before the satisfying final review's
+  dispatch), and before the satisfying final review's dispatch, wherever it was
+  dispatched (a review in flight across the compaction counts); an errored or
+  unreturned review leaves its task unreviewed. Any implementer dispatch after
   the compaction for a task whose implementer already completed before it is
   a re-dispatch and fails the outcome, unless its description says "takeover"
   or its prompt carries the takeover framing ("A prior implementer attempted
@@ -276,11 +278,20 @@ def sdd_reading(found: list[dict[str, Any]]) -> dict[str, Any]:
     finished = bool(satisfying)
     limit = satisfying[0] if satisfying else len(found)
     # A review that errored or never returned did not review anything. One
-    # dispatched before the compaction counts when its completion lands after it.
+    # dispatched before the compaction counts when its completion lands after
+    # it, but a task's review must return before the next task's implementer
+    # is dispatched (the last task's before the satisfying final review).
+    def next_task_start(task: int) -> int:
+        return min(
+            (i for i, e in enumerate(found)
+             if i > compact and e["kind"] == "dispatch" and e["class"] == "implement" and e["task"] == task + 1),
+            default=limit,
+        )
+
     reviewed_after = {
         d["task"] for k, d in dispatches.items()
         if d["class"] in ("review", "rereview") and index_of[k] < limit
-        and k in done_at and base <= done_at[k] < limit
+        and k in done_at and base <= done_at[k] < min(limit, next_task_start(d["task"]))
     }
     implemented_before = {
         d["task"] for k, d in dispatches.items()
