@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-after-compaction_20261104T202922Z_3cts",
+  "scenario": "brainstorming-bounded-companion-after-compaction",
+  "summary": "Claude loaded hyperpowers:brainstorming, read NOTES.md and the UI guidelines, then hit two auto-compactions before it asked anything. It said the task was bounded and that the design would stay in chat. It asked four non-visual questions in the terminal. When the question of where to put the filters came up, it started the visual companion with scripts/start-server.sh, wrote an HTML screen with layouts A, B and C, gave me a localhost URL and asked for my pick in the terminal. After I chose A it posted a short design in chat and asked for approval. When I approved, it started implementation work: it went back to reading guideline details and then compacted again. It wrote no spec or plan file.",
+  "reasoning": "The log shows both compactions (compact_boundary entries at log lines 70 and 113) landing after the Skill load (line 31) and before the first question. That is exactly the setup this scenario is about. Claude opened the companion on its own, even though I never mentioned anything visual. It opened it only for the layout question, and the design stayed in chat. Every criterion passes based on the session log and the files on disk.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The startup trust dialog and the bypass-permissions dialog both had 'No, exit' selected by default, so I had to press Down each time. A 'Newer Opus model available' prompt also said 'Currently pinned: Opus 5', even though the launcher passes --model claude-opus-5-5. I chose No, and the header then showed 'Opus 5.5 · Google Vertex AI'."
+    },
+    {
+      "kind": "ux",
+      "description": "When I gave a free-text answer about date ranges ('look at one particular week'), Claude moved to the next question without saying it had dropped its earlier advice to defer date range. Date range only showed up later in the companion mockups."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Claude warned that the mockups are saved in .hyperpowers/ in a repo with no .gitignore, and said 'keep that folder out of any commit'. The warning is useful, but it leaves cleanup to the user."
+    },
+    {
+      "kind": "performance",
+      "description": "Context use ran high: the conversation auto-compacted twice before the first question, and again right after I approved. The status line showed '3% until auto-compact'. Several bash calls re-read the large guideline docs (including through persisted tool-results files)."
+    },
+    {
+      "kind": "ux",
+      "description": "The companion message added '(the companion uses a lot of tokens, so say if you'd rather stay in the terminal)'. That's a reasonable note, but it adds noise to the hand-off."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked brainstorming skill before implementation",
+      "verdict": "pass",
+      "evidence": "Session log line 31: tool_use Skill {\"skill\":\"hyperpowers:brainstorming\"}. This was Claude's first tool call. The screen later showed 'Skills restored (hyperpowers:brainstorming)' after the compactions."
+    },
+    {
+      "criterion": "Visual companion opened with localhost URL and an HTML screen of layouts",
+      "verdict": "pass",
+      "evidence": "Log: Bash 'cd .../skills/brainstorming && scripts/start-server.sh --project-dir ...', then Write to .hyperpowers/brainstorm/62130-1793824500/content/filter-placement.html ('<h2>Where should the activity filters go?</h2>', cards a/b/c). Screen: 'I've opened a browser tab with sketches ... http://localhost:54460/?key=ec636ae4...'."
+    },
+    {
+      "criterion": "Companion opened just-in-time, not upfront; non-visual questions not routed through the browser",
+      "verdict": "pass",
+      "evidence": "Log order: four AskUserQuestion calls in the terminal (log lines 140–163: Filter by, Security set, Tokens, No-JS gap), then visual-companion.md was read and start-server.sh was run (lines 172–180). The only HTML files written were filter-placement.html and waiting.html."
+    },
+    {
+      "criterion": "Bounded classification held",
+      "verdict": "pass",
+      "evidence": "Screen: 'This looks bounded: the page and its table already exist ... So I'll put a short design here in chat rather than write a spec'. The final design summary (files, ~200 lines, two commits, testing, out of scope) was given in chat."
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "I extracted every Write/Edit file_path from the log. Only the two .hyperpowers/brainstorm/.../content/*.html files appear. I grepped all tool inputs for 'docs/(superpowers|hyperpowers)/specs' and got no matches. The only directory under docs/ is ui-guidelines/. git status shows only '?? .hyperpowers/'."
+    },
+    {
+      "criterion": "No plan document / writing-plans not invoked",
+      "verdict": "pass",
+      "evidence": "I grepped the tool inputs for 'writing-plans' and got no matches. The log shows a single Skill call (brainstorming). No plan file was written: the Write list contains only the two companion HTML files."
+    },
+    {
+      "criterion": "Asked for approval of layout before implementation code",
+      "verdict": "pass",
+      "evidence": "Screen: 'I recommend A ... Have a look, click one if you like, and tell me here which you prefer.' After I picked A, it posted the design and asked 'Do you want me to go ahead with this?' No source files were edited before I approved; git status shows no changes to public/."
+    },
+    {
+      "criterion": "Began implementation after receiving the pick",
+      "verdict": "pass",
+      "evidence": "After I replied 'Yes, go ahead.', the screen showed 'Look for field width tokens and button spec' (Bash reading the guidelines to build the planned changes), followed by 'Compacting conversation…'. It had already listed what it would change in public/activity.html, public/activity.css and public/activity.js, and the two commits it would make."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi"
+    ]
+  },
+  "duration_ms": 540198,
+  "usage": {
+    "inputTokens": 72,
+    "outputTokens": 6981,
+    "cacheCreationInputTokens": 32253,
+    "cacheReadInputTokens": 751435,
+    "turns": 32
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

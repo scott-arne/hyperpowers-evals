@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T201507Z_v40f",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The controller ran all four tasks of plan.md, each followed by its own review, and kept that loop going through several automatic compactions (5 compact_boundary events in the session log, including mid-plan). It then ran a final whole-branch review and reached the finishing step. When I chose \"Keep the branch as-is\", it left feature/textstats unchanged. `npm test` passes 64/64.",
+  "reasoning": "Every criterion is met and backed by the session log, the subagent metadata files, git log and an `npm test` run. Compaction did happen mid-plan: compact_boundary events at 20:19:46, after Task 1's implementer, and at 20:23:26, during Task 3. After each one the controller carried on with the next review or implementation instead of losing its loop.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Startup showed several interactive dialogs even though the HOWTO says dialog-bypass state was seeded: theme picker, security notes, folder trust (defaulting to \"No, exit\"), a \"Newer Opus model available\" prompt and the bypass-permissions warning (also defaulting to \"No, exit\"). Two of these dialogs default to exiting, which is easy to trip over."
+    },
+    {
+      "kind": "bug",
+      "description": "The model-upgrade prompt said \"Currently pinned: Opus 5\" even though the launcher passes --model claude-opus-5-5. I answered No, and the header then showed \"Opus 5.5\". The prompt seems to ignore the CLI flag."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before starting, the agent asked a two-part multiple-choice question about gaps in plan.md: unused PASSAGE constants and specified behaviour with no tests. I answered both with \"Proceed as you recommend.\" through the free-text option. As a result the suite has 64 tests instead of the plan's 32. The agent disclosed this clearly, but it does go beyond the plan as written."
+    },
+    {
+      "kind": "ux",
+      "description": "Auto-compaction ran 5 times in about 12 minutes (compact_boundary at 20:18:25, 20:19:46, 20:23:26, 20:26:16 and one more later). The status line showed \"0% until auto-compact\" when the plan finished. Even so, the controller kept the task loop and its ordering. After compaction it re-read implementer-prompt.md, task-reviewer-prompt.md and code-reviewer.md, and the screen showed \"Skills restored\"."
+    },
+    {
+      "kind": "ux",
+      "description": "Codex was not installed, so the agent skipped the Codex review gates and said so. It also noted that \"5 code ranges logged as shipped without the extra Codex review\". It was transparent about this but added noise to the final message."
+    },
+    {
+      "kind": "bug",
+      "description": "The final review raised two minor issues that the agent chose not to fix: (1) the RangeError message in src/textstats.js:104 and :136 calls String() on the bad argument, so an object with no prototype throws a TypeError instead of the RangeError; (2) a misleading comment in test/topWords.test.js:5-6."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each with its own test file and commit, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder has wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. git log shows b94f3dd feat: add wordCount, 015bf3f sentenceCount, 0bab25f topWords, b044a97 readingTimeMinutes. npm test: `ℹ tests 64 ℹ pass 64 ℹ fail 0`. git status is clean."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Start/end timestamps from the subagent .jsonl/.meta.json files: Implement T1 20:19:14–20:19:43, Review T1 20:20:19–20:20:33, Implement T2 20:21:01, Review T2 20:22:11, Implement T3 20:22:49, Review T3 20:24:04, Implement T4 20:24:42, Review T4 20:25:48–20:26:02. The runs alternate strictly and none overlap."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Subagent meta file: description \"Final whole-branch code review\", model opus, ran 20:26:53–20:27:34, which is after Review T4 finished at 20:26:02. On screen: \"The final review of the whole branch said it is ready to merge, with no critical or important findings.\""
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Screen: \"Skill(hyperpowers:finishing-a-development-branch) Successfully loaded skill\", then the options \"1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is\". After my reply, the agent said: \"I've left the branch as it is: feature/textstats stays checked out with its four commits on top of main. Nothing was merged or pushed.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi"
+    ]
+  },
+  "duration_ms": 911201,
+  "usage": {
+    "inputTokens": 96,
+    "outputTokens": 6543,
+    "cacheCreationInputTokens": 46137,
+    "cacheReadInputTokens": 858468,
+    "turns": 43
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

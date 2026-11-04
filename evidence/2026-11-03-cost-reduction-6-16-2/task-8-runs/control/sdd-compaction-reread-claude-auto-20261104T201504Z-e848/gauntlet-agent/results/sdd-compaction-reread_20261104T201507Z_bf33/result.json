@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T201507Z_bf33",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent the prompt to Claude Code (hyperpowers plugin) and it ran plan.md with subagent-driven development. Auto-compaction happened four times during the run. For every task it implemented, then reviewed, then moved to the next. It then ran a final whole-branch review, loaded the finishing skill, and offered the merge/PR/keep options. I answered \"Keep the branch as-is\" and it left feature/textstats untouched. All four functions are exported and committed, and `npm test` passes 90/90.",
+  "reasoning": "Every criterion is supported by evidence on disk and in the session log. Four compactions happened during the plan, and after each one the controller continued the per-task implement, review, next sequence without losing its place. It then ran the final review and the finishing step.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "On first launch there were several setup prompts. On two of them the default highlighted choice is \"No, exit\": the workspace trust prompt and the bypass-permissions warning. There was also a \"Newer Opus model available\" prompt saying \"Currently pinned: Opus 5\", even though the launcher passes --model claude-opus-5-5. The banner afterwards showed Opus 5.5, so the upgrade prompt looks incorrect. I answered No."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before Task 1, the agent asked two scope questions: unused PASSAGE constants and rules in the plan that have no tests. It answered them itself by adding tests, so the test count grew to 90, well beyond what the plan specifies. That was reasonable, but it means the result differs from the plan as written."
+    },
+    {
+      "kind": "ux",
+      "description": "The last message mentions \"A note from when this session started says this repo has 5 review items that haven't been checked yet. Say 'run the review sweep'...\". Nothing earlier in the visible session explained this note, and it was confusing to see it at the end."
+    },
+    {
+      "kind": "bug",
+      "description": "Possible issue: the agent says the plan's abbreviation rule makes sentenceCount('We visited Main St. Then we left.') return 1 instead of 2. This behaviour comes from the plan, but it is wrong for users."
+    },
+    {
+      "kind": "ux",
+      "description": "The Codex review step was skipped because Codex isn't installed. The agent logged and reported each skip."
+    },
+    {
+      "kind": "ux",
+      "description": "Subagents were dispatched with model \"sonnet\" according to the meta.json files. The final review ran on opus."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four tasks implemented and committed; the four functions are exported from src/textstats.js, each has a test file, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js line 141: \"module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };\". test/ contains wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. git log shows the commits 770f4e8 wordCount, 05a2d2a sentenceCount, bf55397 topWords, d31e279 readingTimeMinutes. npm test: \"ℹ tests 90 ... ℹ pass 90 ℹ fail 0\". git status shows a clean tree."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent tool_use timestamps from the session log: Implement T1 20:18:23, Review T1 20:19:24, Implement T2 20:19:59, Review T2 20:21:06, Implement T3 20:21:42, Review T3 20:22:50, Implement T4 20:23:30, Review T4 20:25:20. Compaction boundaries were at 20:18:55, 20:22:09, 20:24:37 and 20:28:24, and the implement/review loop continued after each one."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Session log: \"2026-11-04T20:25:59 Agent: Final whole-branch review\", after Review Task 4. Agent's summary: \"The final review of the whole branch, on opus, found nothing it rated Critical or Important and said it is ready to merge.\""
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Session log: \"20:26:54 Skill: hyperpowers:finishing-a-development-branch\". The screen showed \"1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is\". After my reply, the agent said: \"I've left `feature/textstats` as it is... nothing was merged, pushed or deleted.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi"
+    ]
+  },
+  "duration_ms": 859797,
+  "usage": {
+    "inputTokens": 88,
+    "outputTokens": 6149,
+    "cacheCreationInputTokens": 41674,
+    "cacheReadInputTokens": 747398,
+    "turns": 40
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

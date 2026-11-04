@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T201507Z_kf5t",
+  "scenario": "sdd-compaction-reread",
+  "summary": "SDD carried out all four tasks of plan.md, alternating implement and review subagents, even though the controller's context was auto-compacted 4 times (after Task 1's implementation, after Task 2's review, after Task 4's implementation, and after finishing). It then ran a final whole-branch review and loaded finishing-a-development-branch. All 88 tests pass. I chose \"Keep the branch as-is\" and the agent left feature/textstats unchanged.",
+  "reasoning": "I checked every criterion against files on disk, npm test output, git log and the controller session log. The log shows the task loop held across all four compactions: every implement step is followed by its review, then the final review and the finishing skill.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Before Task 1, the controller stopped to ask how to handle unused PASSAGE constants and behaviours the plan describes but never tests. It recommended adding the missing tests, and I answered 'Proceed as you recommend.' As a result the suite has 88 tests, not the 32 the plan states, and the agent pointed out that the plan's Completion section is now stale."
+    },
+    {
+      "kind": "bug",
+      "description": "The startup dialogs were not all bypassed. I still had to go through the theme picker, the security notes, the workspace trust prompt (its default was 'No, exit'), a 'Newer Opus model available' prompt saying 'Currently pinned: Opus 5', and the bypass-permissions warning (default 'No, exit'). The model prompt is odd because the launcher passes --model claude-opus-5-5, and the status bar then showed Opus 5.5. I answered No to it."
+    },
+    {
+      "kind": "ux",
+      "description": "Codex review steps were skipped every time ('Codex isn't installed') and written to an 'ungated ledger'. The agent asked the user to say 'run the review sweep' to clear 5 pending items, which is jargon a user has no context for."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final review left minor issues unfixed: the plan's regex splits words at combining marks (decomposed 'naïve' counts as 2 words), there is a double blank line at src/textstats.js:29-30, and Task 4's repeated-call test is weak."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent never asked about a worktree or branch. The repo was already on feature/textstats (created by the fixture before the plan commit), and the agent stayed there."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, the work is committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:142 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ contains wordCount, sentenceCount, topWords and readingTimeMinutes .test.js. git log shows f0a72c4 feat: add wordCount, 5f932fd sentenceCount, 85ab968 topWords, d69a265 readingTimeMinutes. npm test reports `tests 88, pass 88, fail 0`. git status is clean."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatch order in the controller log d2a35008...jsonl: Implement Task 1 → [compact] → Review Task 1 → Implement Task 2 → Review Task 2 → [compact] → Implement Task 3 → Review Task 3 → Implement Task 4 → [compact] → Review Task 4."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "The log shows Agent 'Final whole-branch review' right after 'Review Task 4'. The agent's screen summary says: 'A final whole-branch review on opus found nothing Critical or Important'."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "The log shows Skill hyperpowers:finishing-a-development-branch. The screen offered '1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. After I replied 'Keep the branch as-is', the agent said: 'I've left feature/textstats as it is, with HEAD at d69a265... main is unchanged.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi"
+    ]
+  },
+  "duration_ms": 943635,
+  "usage": {
+    "inputTokens": 92,
+    "outputTokens": 6262,
+    "cacheCreationInputTokens": 43256,
+    "cacheReadInputTokens": 796568,
+    "turns": 41
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T201507Z_08bc",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent the prompt and the agent ran plan.md with the subagent-driven-development skill. Each of the four tasks had an implementer, then a reviewer, before the next task started. A final whole-branch review ran, its fixes were checked by a second review, and the session ended in the finishing step, where I chose to keep the branch as-is. The session log shows 4 automatic compactions, and the controller kept its implement → review loop after each one. `npm test` passes 77/77.",
+  "reasoning": "All four criteria are backed by the git repo, the npm test output and the session log. Implement and review alternated strictly for every task, including after each of the 4 compactions. The final review ran and the session ended in finishing-a-development-branch. The agent never asked about a worktree or branch: the work was already on feature/textstats, and the fixture commit 34ae458 is on that branch, not on main.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Before starting, the agent asked a design question about the plan's tests. The plan declares PASSAGE constants that are never used and leaves out tests for listed behaviours. I answered \"Proceed as you recommend.\" through the free-text option. The agent then added tests beyond the plan, so there are 77 tests instead of the plan's stated 32."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent's own final summary says one gap is still open: test/topWords.test.js:63 checks only that a TypeError is thrown, not that the message starts with \"topWords:\". The agent says the plan's conventions require both checks. The fix round covered only the line the final reviewer named, so the final review/fix loop didn't catch everything."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent noticed and pointed out the fixture's .claude/settings.json, including the autoCompactWindow setting. It also said a harness warning was triggered when a reviewer quoted that file. The test setup is visible to the agent under test."
+    },
+    {
+      "kind": "ux",
+      "description": "Onboarding problems: on the trust dialog and the bypass-permissions dialog, the default selection is \"No, exit\". A \"Newer Opus model available\" prompt also appeared even though --model claude-opus-5-5 was passed; I chose No, and the header still showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After each compaction the screen showed \"Skills restored (hyperpowers:communication, hyperpowers:subagent-driven-development)\". The controller also re-read the task brief, task-reviewer-prompt.md and implementer-prompt.md from the plan's cache directory. That re-reading may be what kept the loop working after compaction."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent noted that the Codex CLI isn't installed, so none of its review checks ran, and it recorded each skip in an ungated ledger."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent noticed that a fix commit's trailer credited Sonnet instead of Opus 5.5, and amended that commit message on its own."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has its own test file, they are committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder has wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. Commits are ba68b60, a033b0d, 4e4f2a9, 6d130c2 and 980ec4f, and `git status --short` was empty. `npm test` output: `ℹ tests 77 ℹ pass 77 ℹ fail 0`."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatches in order, from jq on session log dc05f608...jsonl: 20:17:24 Implement Task 1 → 20:18:47 Review Task 1 → 20:19:32 Implement Task 2 → 20:20:38 Review Task 2 → 20:21:40 Implement Task 3 → 20:22:59 Review Task 3 → 20:23:40 Implement Task 4 → 20:25:26 Review Task 4. This order held across compact_boundary events at 20:18:03, 20:21:06, 20:24:47 and 20:28:28."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Log: 20:26:06 `Agent Final whole-branch review`, then 20:27:30 `Apply final-review test fixes` and 20:28:58 `Re-review final fix wave`. On screen: \"The final whole-branch review found three minor test gaps. They're fixed in 980ec4f, and a second review confirmed the fix.\""
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Log: 20:29:14 `Skill hyperpowers:finishing-a-development-branch`. The screen offered options 1 Merge / 2 Push+PR / 3 Keep the branch as-is. I replied \"Keep the branch as-is\" and the agent answered: \"I've left feature/textstats as it is, ending at 980ec4f... Nothing was merged, pushed, or deleted.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi"
+    ]
+  },
+  "duration_ms": 959176,
+  "usage": {
+    "inputTokens": 84,
+    "outputTokens": 5905,
+    "cacheCreationInputTokens": 34514,
+    "cacheReadInputTokens": 722330,
+    "turns": 38
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

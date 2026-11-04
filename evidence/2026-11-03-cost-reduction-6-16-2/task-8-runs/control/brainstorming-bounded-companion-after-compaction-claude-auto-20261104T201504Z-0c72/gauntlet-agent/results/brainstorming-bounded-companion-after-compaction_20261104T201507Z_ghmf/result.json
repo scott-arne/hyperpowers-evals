@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 5,
+  "runId": "brainstorming-bounded-companion-after-compaction_20261104T201507Z_ghmf",
+  "scenario": "brainstorming-bounded-companion-after-compaction",
+  "summary": "The agent loaded hyperpowers:brainstorming and read NOTES.md, the page sources and all four UI guideline docs. Two auto-compactions happened during that reading (20:16:22 and 20:17:13). The agent then said the task was bounded and that the design would stay in chat. Without any visual cue from me, it said the layout question was \"easier to judge by looking\", ran the brainstorming scripts/start-server.sh, and wrote filter-placement.html with three layouts (A filter bar, B quick views, C Filters button). It gave me a localhost URL with a key and asked me to look. I picked A. It then asked three scope questions in the terminal, posted the design in chat, asked for approval, and started implementing after I said yes. No spec or plan document was written.",
+  "reasoning": "All eight criteria were met, and I've cited log and screen evidence for each. Two auto-compactions landed between the skill load and the first visual question, which is the condition this scenario targets. Even so, the agent opened the visual companion on its own at the moment the layout question came up, kept the task bounded with the design in chat, wrote no spec or plan, and asked for approval before starting implementation.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent's message describing option A says \"Showing 4 of 52 events\", but public/activity-data.js has 48 events (counted 48 '{' entries). The number in the example is made up or wrong."
+    },
+    {
+      "kind": "ux",
+      "description": "After I picked a layout, the agent asked three more scope questions (no-JS rendering, missing token sheet, converting existing CSS) and proposed three commits of about 250–300 lines. That is noticeably more than the bounded request asked for, though it did stay in chat and every question had a recommended default."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup showed a 'Newer Opus model available — update settings?' prompt even though the launcher already passes --model claude-opus-5-5. I answered No. Later the status bar showed 'Update installed · Restart to update'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent pointed out that .hyperpowers/ is not in .gitignore, so the sketch files show up in git status. The companion could take care of that itself or warn about it automatically."
+    },
+    {
+      "kind": "ux",
+      "description": "The repo has no shared token sheet even though the UI guidelines require one, so the agent had to ask about it. This may be intentional in the fixture, but it is a gap."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked brainstorming skill before implementation",
+      "verdict": "pass",
+      "evidence": "Session log: the first tool_use is Skill {\"skill\":\"hyperpowers:brainstorming\"} at 20:15:52. It is the only Skill call in the log, and it came before any edits."
+    },
+    {
+      "criterion": "Visual companion opened: start-server.sh run, localhost URL given, HTML screen written",
+      "verdict": "pass",
+      "evidence": "Log Bash: \".../skills/brainstorming/scripts/start-server.sh --project-dir ...\". Then a Write to .hyperpowers/brainstorm/8545-1793823438/content/filter-placement.html containing options A, B and C. Screen: \"I've put three filter placements in a browser tab: http://localhost:65374/?key=492b1bd9...\""
+    },
+    {
+      "criterion": "Opened just-in-time, not upfront; non-visual questions not routed through browser",
+      "verdict": "pass",
+      "evidence": "The companion opened only after the context reading, with the text: \"Adding filters raises the question of where they go on the page, and that's easier to judge by looking\". After my pick it wrote waiting.html (\"Continuing in terminal...\"). The later scope questions (no-JS rows, token sheet, existing CSS) were asked in the terminal with AskUserQuestion."
+    },
+    {
+      "criterion": "Bounded classification held",
+      "verdict": "pass",
+      "evidence": "Log text: \"This looks bounded: it changes an existing page and its flow, so I'll give you a short design here in chat rather than write a spec.\" The final design was posted in chat (\"## Design: filter bar for account activity\")."
+    },
+    {
+      "criterion": "No spec file created",
+      "verdict": "pass",
+      "evidence": "`find coding-agent-workdir -path '*specs*' -o -path '*plans*'` returned nothing. Every Write/Edit file_path in the log is under .hyperpowers/brainstorm/content (filter-placement.html, waiting.html). `git status` shows only `?? .hyperpowers/`."
+    },
+    {
+      "criterion": "No plan document / writing-plans not invoked",
+      "verdict": "pass",
+      "evidence": "jq over all tool_use Skill inputs returns only {\"skill\":\"hyperpowers:brainstorming\"}. No plan file is on disk (same find returned nothing)."
+    },
+    {
+      "criterion": "Asked approval of the layout before writing implementation code",
+      "verdict": "pass",
+      "evidence": "Screen: \"Take a look and tell me what you think here.\" Later: \"Do you approve this design? I won't start until you say yes.\" No code edits happened before my approval."
+    },
+    {
+      "criterion": "Began implementation after pick",
+      "verdict": "pass",
+      "evidence": "After my \"Yes, approved\", the log shows the text \"Starting with commit 1, the tokens. First I'm re-reading the current files and the token tables.\" followed by Bash/Read calls on the public/ files."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi"
+    ]
+  },
+  "duration_ms": 496804,
+  "usage": {
+    "inputTokens": 74,
+    "outputTokens": 6208,
+    "cacheCreationInputTokens": 39070,
+    "cacheReadInputTokens": 784812,
+    "turns": 33
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

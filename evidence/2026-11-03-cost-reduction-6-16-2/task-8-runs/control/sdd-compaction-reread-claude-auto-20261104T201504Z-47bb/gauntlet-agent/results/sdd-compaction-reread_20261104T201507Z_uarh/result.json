@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T201507Z_uarh",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The agent finished all four plan tasks with subagent-driven development, and the task loop held through compaction. The controller's context was compacted 3 times, the first just after the Task 1 commit. Each task got an implementer subagent, then a review subagent, then a commit, before the next task started. A final whole-branch review ran after Task 4. The agent then loaded finishing-a-development-branch and offered merge, PR or keep. I answered \"Keep the branch as-is\" and it confirmed nothing was merged or pushed. All 77 tests pass.",
+  "reasoning": "All four acceptance criteria are confirmed from what's on disk: git log, the exports line, the test files and npm test output. The review order and the timing of the compactions come from the session log, specifically the subagent meta.json files and the compact_boundary events. The controller kept the implement → review → next-task loop after compaction and finished in the finishing step. The issues I noted are minor and don't break any criterion.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The agent never asked about a worktree or branch. It created and worked on a new `feature/textstats` branch on its own, branching from main at 972e2f4. The scenario expected the agent might ask, and the planned answer was 'Stay on the current branch'. No commits landed on main."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before starting, the agent asked one question about the plan: every test file defines an unused PASSAGE constant, and some described behaviours have no tests. Its recommended option was to add passage and coverage tests, which overrides the plan's fixed 8/16/24/32 test counts. I answered 'Proceed as you recommend.', and the final suite has 77 tests instead of the 32 the plan implies. This is reasonable, but it is a deliberate departure from the plan."
+    },
+    {
+      "kind": "ux",
+      "description": "Odd text in the summary: the final message said 'Codex isn't installed, so that final check was skipped' and 'I've deleted the plan's scratch workspace.' A user would find both confusing."
+    },
+    {
+      "kind": "typo",
+      "description": "The final reviewer reported that plan.md line 446 wrongly says 'storm' ranks 5th in the topWords sample passage. This is an error in the fixture plan, not the product."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup friction: on the workspace-trust and bypass-permissions dialogs, the default choice is 'No, exit'. A 'Newer Opus model available' prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5; I chose No. The status bar later showed 'Opus 5.5'."
+    },
+    {
+      "kind": "performance",
+      "description": "The whole plan took about 12 minutes ('Crunched for 12m 16s'). Compaction happened 3 times in the controller session. Each time Claude Code logged 'Skills restored (...subagent-driven-development)', and the loop carried on correctly."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions exported from src/textstats.js, each with its own test file, committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js line 141: `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder has wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. git log shows `feat: add wordCount`, `feat: add sentenceCount`, `feat: add topWords` and `feat: add readingTimeMinutes`. git status was clean. npm test: `ℹ tests 77 ... ℹ pass 77 ℹ fail 0`."
+    },
+    {
+      "criterion": "Each task reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Subagent meta.json files sorted by creation time give: Implement Task 1 → Review Task 1 (spec + quality) → Implement Task 2 → Review Task 2 → Implement Task 3 → Review Task 3 → Implement Task 4 → Review Task 4 → Final whole-branch code review. The order held across the 3 compact_boundary events (20:19:18, 20:24:19 and 20:28:04 UTC). The first came just after the Task 1 commit at 20:18:43."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "The last subagent meta is `\"description\":\"Final whole-branch code review\"` (model opus), created after the Review Task 4 agent. The screen showed `Agent \"Final whole-branch code review\" finished · 1m 1s` and `The final whole-branch review found no blocking issues`."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "The screen showed `Skill(hyperpowers:finishing-a-development-branch) Successfully loaded skill` and then the options `1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is`. After I replied 'Keep the branch as-is', it said: `I've kept the feature/textstats branch as it is, with nothing merged or pushed.`"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 941501,
+  "usage": {
+    "inputTokens": 74,
+    "outputTokens": 6037,
+    "cacheCreationInputTokens": 39907,
+    "cacheReadInputTokens": 684252,
+    "turns": 33
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
