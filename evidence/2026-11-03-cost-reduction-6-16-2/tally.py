@@ -18,16 +18,18 @@ Rules, from the spec's Testing section:
 
 * A log whose last line is not ``DONE ...`` (a ``FAILED <code>`` line or no
   terminal line) never yields a valid trial: the run is void, kind ``launch``.
-* Only the first automatic compaction is considered: a run whose first
-  compaction precedes review 1's completion is void even if a later one is in
-  window.
+* The measured compaction is the first automatic one inside the window; an
+  earlier compaction (for example before the first dispatch) does not void the
+  run, and everything is read against the measured one. No compaction in the
+  window is a void.
 * A log with more than one run id is one void ``multi-run`` row; none of its
   runs counts. A log name outside p1-p10 / r1-r3 (p90 is the smoke) is
   reported and not counted. An errored Agent tool_result is not a completion.
 * A setup or grader void in the verdict is void; so is a run whose window
   reading is invalid (kind ``instrument``). Voids occupy no trial slot.
-* SDD window: the first automatic compaction falls after review 1's
-  completion event and before the final review is dispatched. Outcome passes
+* SDD window: an automatic compaction falls after review 1's completion
+  event and before the first final review is dispatched (any compaction after
+  review 1's completion when no final review is dispatched). Outcome passes
   when every task whose review had not completed before the compaction is
   reviewed after it, the final review completes before the finishing skill is
   invoked, no implementer finished before the compaction is dispatched again,
@@ -41,8 +43,8 @@ Rules, from the spec's Testing section:
   a re-dispatch and fails the outcome, unless its description says "takeover"
   or its prompt carries the takeover framing ("A prior implementer attempted
   this task ... you own it now").
-* Brainstorming window: an automatic compaction after the brainstorming skill
-  call and before the first AskUserQuestion or start-server.sh call. Mechanism
+* Brainstorming window: the first automatic compaction after the brainstorming
+  skill call and before the first AskUserQuestion or start-server.sh call. Mechanism
   passes when brainstorming/SKILL.md is read between the compaction and that
   call. Outcome is quorum's post checks all passing.
 * A replacement (``sentinel-reruns.tsv``) may replace only a void, in the same
@@ -209,7 +211,6 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
 
 def sdd_reading(found: list[dict[str, Any]]) -> dict[str, Any]:
     """Validity, outcome and mechanism for one SDD trial (rules in the module docstring)."""
-    compact = next((i for i, e in enumerate(found) if e["kind"] == "compact"), None)
     dispatches = {e["id"]: e for e in found if e["kind"] == "dispatch"}
     index_of = {e["id"]: i for i, e in enumerate(found) if e["kind"] == "dispatch"}
     done_at: dict[str, int] = {}
@@ -221,13 +222,19 @@ def sdd_reading(found: list[dict[str, Any]]) -> dict[str, Any]:
         default=None,
     )
     final_at = next((i for i, e in enumerate(found) if e["kind"] == "dispatch" and e["class"] == "final"), None)
+    compact = next(
+        (
+            i for i, e in enumerate(found)
+            if e["kind"] == "compact"
+            and review1_done is not None
+            and review1_done < i
+            and (final_at is None or i < final_at)
+        ),
+        None,
+    )
     if compact is None:
         return {"valid": False, "outcome": None, "mechanism": None}
-    valid = (
-        review1_done is not None
-        and review1_done < compact
-        and (final_at is None or compact < final_at)
-    )
+    valid = True
     reading: dict[str, Any] = {"valid": valid, "outcome": None, "mechanism": None}
     if not valid:
         return reading
@@ -298,9 +305,13 @@ def brainstorming_reading(found: list[dict[str, Any]]) -> dict[str, Any]:
     )
     question = next((i for i, e in enumerate(found) if e["kind"] in ("ask", "server")), None)
     compact = next(
-        (i for i, e in enumerate(found) if e["kind"] == "compact" and load is not None and i > load), None
+        (
+            i for i, e in enumerate(found)
+            if e["kind"] == "compact" and load is not None and i > load and (question is None or i < question)
+        ),
+        None,
     )
-    valid = load is not None and compact is not None and (question is None or compact < question)
+    valid = load is not None and compact is not None
     reading: dict[str, Any] = {"valid": valid, "mechanism": None}
     if compact is not None and valid:
         stop = question if question is not None else len(found)
@@ -447,16 +458,29 @@ def read_run(arm: str, scenario: str, proc: str, run_id: str, launch_ok: bool = 
         "run": run_id, "arm": arm, "scenario": scenario, "proc": proc, "void": kind is not None,
         "void_kind": kind, "valid": valid, "outcome": outcome, "mechanism": mechanism,
         "final": final_reading(verdict),
+        "classes": dispatch_counts(found),
     }
     print_run(run)
     return run
 
 
+def dispatch_counts(found: list[dict[str, Any]]) -> dict[str, int]:
+    """Count the main-thread Agent dispatches by class."""
+    counts = {kind: 0 for kind in ("implement", "review", "rereview", "fix", "final", "other")}
+    for event in found:
+        if event["kind"] == "dispatch":
+            counts[event["class"]] += 1
+    return counts
+
+
 def print_run(run: dict[str, Any]) -> None:
-    print(
+    line = (
         f"{run['arm']}\t{run['scenario']}\t{run['proc']}\t{run['run']}"
         f"\tvoid={run['void_kind'] or '-'}\toutcome={run['outcome']}\tmechanism={run['mechanism']}"
     )
+    if "classes" in run:
+        line += "\tdispatches=" + ",".join(f"{k}:{v}" for k, v in run["classes"].items())
+    print(line)
 
 
 def collect(logs: Path) -> dict[str, dict[str, Any]]:

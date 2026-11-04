@@ -133,6 +133,21 @@ class SddReading(unittest.TestCase):
         ]
         self.assertFalse(reading_of(entries)["valid"])
 
+    def test_2a_pre_dispatch_compaction_then_in_window_compaction_is_valid(self) -> None:
+        reading = reading_of([compact(), *full_trial()])
+        self.assertTrue(reading["valid"])
+        self.assertTrue(reading["outcome"])
+        self.assertTrue(reading["mechanism"])
+
+    def test_2b_compactions_only_before_review1_completes_are_void(self) -> None:
+        entries = [
+            compact(), agent("Implement Task 1: a", "i1"), notif("i1"),
+            agent("Review Task 1 (spec + quality)", "v1"),
+            compact(), notif("v1"),
+            *read(SDD_SKILL),
+        ]
+        self.assertFalse(reading_of(entries)["valid"])
+
     def test_3_compaction_before_review1_dispatch_is_void(self) -> None:
         entries = [agent("Implement Task 1: a", "i1"), notif("i1"), compact(), agent("Review Task 1", "v1"), notif("v1")]
         self.assertFalse(reading_of(entries)["valid"])
@@ -380,6 +395,12 @@ class Brainstorming(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             record = make_run(Path(tmp), "r", entries)
             return tally.brainstorming_reading(tally.events(transcripts(record)))
+
+    def test_10a_compaction_before_the_skill_load_does_not_count(self) -> None:
+        good = self.reading([compact(), *brain_trial(True)])
+        self.assertTrue(good["valid"])
+        self.assertTrue(good["mechanism"])
+        self.assertFalse(self.reading([compact(), skill("hyperpowers:brainstorming")])["valid"])
 
     def test_10_window_and_mechanism(self) -> None:
         good = self.reading(brain_trial(True))
