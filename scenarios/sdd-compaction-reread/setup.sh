@@ -10,7 +10,8 @@ set -euo pipefail
 # SDD skill is longer than that. The scenario measures whether the controller
 # reads SDD in full again once that happens.
 #
-# The plan: plan.md is long on purpose (60,000 to 80,000 characters). The
+# The plan: plan.md is long on purpose (about 40,000 characters; a 64,000 character version
+# compacted before the first dispatch). The
 # controller reads it in full at the start, and its size, together with the
 # SDD skill and the first task's dispatch and review traffic, carries the
 # controller's context past the compaction threshold (about 33K tokens below
@@ -120,7 +121,6 @@ const PASSAGE = [
   'and watched the beam sweep across the water toward ships he would never meet.',
 ].join('\n');
 
-// Reference table: every row below also appears in the plan's reference section.
 const CASES = [
   ["", 0],
   [" ", 0],
@@ -301,7 +301,7 @@ test('matches every row of the reference table', () => {
 });
 ```
 
-The file ends with a table-driven test over the reference rows. The same rows are listed in the reference section at the end of this task, so a reviewer can read the intended behaviour without parsing JavaScript. The expected numbers were worked out by hand from the rules above, not copied from the implementation's output.
+The file ends with a table-driven test over the reference rows. The expected numbers were worked out by hand from the rules above, not copied from the implementation's output.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -359,126 +359,6 @@ git add src/textstats.js test/wordCount.test.js
 git commit -m "feat: add wordCount"
 ```
 
-**Design notes for Task 1.**
-
-*Why Unicode property escapes rather than `\w`.* `\w` is ASCII-only in JavaScript, so `café` would be split into `caf` and nothing, and `東京` would not be a word at all. `\p{L}` and `\p{N}` with the `u` flag cover every script Node 20 knows about, at no cost in readability. The module still makes no promise about languages that do not separate words with spaces: a Japanese sentence without spaces is one long run of letters and counts as one word. That is a known limit, stated in Conventions.
-
-*Why the joiners need letters on both sides.* A pattern that allowed a trailing apostrophe would count `dogs'` as `dogs'` and then group it separately from `dogs` in Task 3's ranking. Requiring a letter or digit after the joiner keeps `tokenize` output clean for every caller. The cost is that a possessive plural, as in `the dogs' bones`, yields the word `dogs`, which is what a reader would want anyway.
-
-*Why a hyphen is a joiner and an en or em dash is not.* A hyphen inside a compound is part of the word. An em dash in `one—two` is punctuation between two words, and the same holds for the spaced forms `one — two`. The joiner class lists only the ASCII hyphen-minus for this reason; the typographic dashes are deliberately absent from it.
-
-*Why `tokenize` returns an array.* Task 2 needs to know whether a stretch of text contains any word at all, and Task 3 needs the words themselves. An array serves both. Task 1 only needs its length, and building the array for a long text costs a few allocations, which does not matter at the sizes this module is used for. Do not add a generator or a streaming variant here.
-
-*Why `assertText` takes the function name.* The error message is the only place a caller learns which function rejected the argument, since the stack points inside the module. Passing the name keeps the helper shared and the message specific. The tests check the prefix, so the wording after the colon can change without touching them.
-
-*Why `null` is reported as `null`.* `typeof null` is `'object'`, which reads as nonsense in an error message about a missing string. The helper special-cases it so the message says `received null`.
-
-**Known limitations of Task 1.**
-
-- Scripts written without spaces between words are not segmented.
-- Numbers with thousands separators, such as `1,000`, are two words. The reference table records this on purpose, so a future change to treat them as one has to update a visible row.
-- Underscores separate words, so `snake_case_name` is three words. Source code is not the target text.
-- Contractions that begin with an apostrophe, such as `'tis`, lose the leading apostrophe and count as one word, which is the right count.
-
-**Reference table for `wordCount`.** These rows are also the `CASES` array in the test file.
-
-| Input (JSON) | Words |
-| --- | --- |
-| `""` | 0 |
-| `" "` | 0 |
-| `"a"` | 1 |
-| `"A"` | 1 |
-| `"I"` | 1 |
-| `"a b"` | 2 |
-| `"a  b"` | 2 |
-| `"a\tb"` | 2 |
-| `"a\nb"` | 2 |
-| `"a\r\nb"` | 2 |
-| `"a, b"` | 2 |
-| `"a. b"` | 2 |
-| `"a; b"` | 2 |
-| `"(a)"` | 1 |
-| `"[a] {b}"` | 2 |
-| `"\"quoted\""` | 1 |
-| `"'single'"` | 1 |
-| `"it's"` | 1 |
-| `"its'"` | 1 |
-| `"'tis"` | 1 |
-| `"rock 'n' roll"` | 3 |
-| `"state-of-the-art"` | 1 |
-| `"state of the art"` | 4 |
-| `"mother-in-law's"` | 1 |
-| `"-leading"` | 1 |
-| `"trailing-"` | 1 |
-| `"a--b"` | 2 |
-| `"a - b"` | 2 |
-| `"a – b"` | 2 |
-| `"a — b"` | 2 |
-| `"a…b"` | 2 |
-| `"a_b"` | 2 |
-| `"snake_case_name"` | 3 |
-| `"camelCaseName"` | 1 |
-| `"x1"` | 1 |
-| `"1x"` | 1 |
-| `"007"` | 1 |
-| `"1,000"` | 2 |
-| `"1 000"` | 2 |
-| `"$5"` | 1 |
-| `"5%"` | 1 |
-| `"50/50"` | 2 |
-| `"and/or"` | 2 |
-| `"a/b/c"` | 3 |
-| `"user@example.com"` | 3 |
-| `"https://example.com/a"` | 4 |
-| `"#hashtag"` | 1 |
-| `"@mention"` | 1 |
-| `"C++"` | 1 |
-| `"C#"` | 1 |
-| `"e-mail"` | 1 |
-| `"co-operate"` | 1 |
-| `"re-enter"` | 1 |
-| `"don’t"` | 1 |
-| `"O'Brien"` | 1 |
-| `"O’Brien"` | 1 |
-| `"D'Artagnan's"` | 1 |
-| `"Ünïcödé"` | 1 |
-| `"日本語"` | 1 |
-| `"日本語 テキスト"` | 2 |
-| `"Привет мир"` | 2 |
-| `"שלום עולם"` | 2 |
-| `"مرحبا بالعالم"` | 2 |
-| `"ÀÉÎÕÜ"` | 1 |
-| `"ß"` | 1 |
-| `"one two three four five six seven eight nine ten"` | 10 |
-| `"ONE TWO THREE"` | 3 |
-| `"one.two.three"` | 3 |
-| `"one,two,three"` | 3 |
-| `"one;two;three"` | 3 |
-| `"one:two"` | 2 |
-| `"one!two"` | 2 |
-| `"one?two"` | 2 |
-| `"   padded   "` | 1 |
-| `"\n\nlines\n\n"` | 1 |
-| `"\t"` | 0 |
-| `"..."` | 0 |
-| `"---"` | 0 |
-| `"***"` | 0 |
-| `"???"` | 0 |
-| `"'"` | 0 |
-| `"'a'"` | 1 |
-| `"a''b"` | 2 |
-| `"a--b--c"` | 3 |
-
-**Review checklist for Task 1.**
-
-- The test file has at least twelve `test()` cases and each name is a full sentence.
-- The failing run in Step 2 was observed before the implementation was written.
-- `src/textstats.js` exports exactly `wordCount`; `tokenize` and `assertText` are not exported.
-- The only files in the commit are `src/textstats.js` and `test/wordCount.test.js`.
-- `npm test` is green at the commit.
-
----
-
 ### Task 2: `sentenceCount(text)`
 
 **Files:**
@@ -514,7 +394,6 @@ const PASSAGE = [
   'the afternoon went by quietly. By closing time the till held forty dollars.',
 ].join('\n');
 
-// Reference table: every row below also appears in the plan's reference section.
 const CASES = [
   ["", 0],
   [" ", 0],
@@ -778,124 +657,6 @@ git add src/textstats.js test/sentenceCount.test.js
 git commit -m "feat: add sentenceCount"
 ```
 
-**Design notes for Task 2.**
-
-*Why scan for terminators instead of splitting on a regular expression.* A split such as `text.split(/[.!?]+/)` cannot ask "was the word before this period an abbreviation?" The scan walks the matches, keeps the start of the current segment, and decides at each terminator whether the segment ends there. Skipping a terminator simply leaves the segment start where it was, so `Mr. Smith went.` is one segment.
-
-*Why require whitespace or the end of the text after a terminator.* It is the cheapest rule that keeps decimals, versions (`v1.2.3`), domains and `a.b.c` in one piece without a list of exceptions. Its cost is text with no space after a period, such as `Hello.World`, which counts as one sentence. Prose in the wild nearly always has the space, and the reference table records the choice.
-
-*Why closing quotes and brackets belong to the terminator.* In `"Stop!" she said.` the exclamation mark ends the quoted sentence, and the closing quote that follows must not turn the next character into the start of a new run. Including the closers in the match means the terminator is found where the whitespace begins. It also makes `(Done.) Next.` two sentences, which matches how a reader splits it.
-
-*Why abbreviations are checked only for a lone period.* `Mr..` or `Dr?` are not abbreviations, and a question mark after `Dr` is a real sentence end. Checking `match[1] === '.'` keeps the abbreviation rule from swallowing a legitimate break.
-
-*Why the abbreviation list is short.* Each entry is a bet that the word is more often an abbreviation than a sentence-final word. `St.`, `Sr.` and `Jr.` are borderline and stay because the false break is more disruptive than the missed one in ordinary prose. Initialisms such as `U.S.A.` stay off the list because they are as likely to end a sentence as not, and the reference table pins the resulting count.
-
-*Why `tokenize` decides whether a segment counts.* A segment of `...` or of a lone quotation mark has no words, and counting it would make `sentenceCount('...')` return one. Reusing `tokenize` keeps the definition of "contains a word" identical to Task 1's.
-
-*Why the `for ... of` over `matchAll`.* `String.prototype.matchAll` clones the regular expression, so the module-level pattern's `lastIndex` is never shared between calls. That is what lets the pattern live at module scope without any state leaking from one call to the next, which the Conventions section forbids.
-
-**Known limitations of Task 2.**
-
-- A sentence that genuinely ends with one of the listed abbreviations (`He moved to St. Louis` is fine, but `We stayed at the inn on Main St. Then we left.`) is merged with the next sentence.
-- Numbered lists written as `1. First 2. Second` count each number as a sentence end. The behaviour is not pinned by a test because no sensible fixed rule exists.
-- Text without any whitespace after a period (`Hello.World`) is one sentence.
-- Right-to-left and CJK terminators (`。`, `؟`) are not recognised.
-
-**Reference table for `sentenceCount`.** These rows are also the `CASES` array in the test file.
-
-| Input (JSON) | Sentences |
-| --- | --- |
-| `""` | 0 |
-| `" "` | 0 |
-| `"."` | 0 |
-| `"a"` | 1 |
-| `"a."` | 1 |
-| `"a. b."` | 2 |
-| `"a! b? c."` | 3 |
-| `"a!? b"` | 2 |
-| `"a?! b"` | 2 |
-| `"a... b"` | 2 |
-| `"a.. b"` | 2 |
-| `"a . b"` | 2 |
-| `"hello world"` | 1 |
-| `"Hello world."` | 1 |
-| `"Hello world. "` | 1 |
-| `" Hello world."` | 1 |
-| `"Hello.World"` | 1 |
-| `"Hello. World"` | 2 |
-| `"Hello.\nWorld"` | 2 |
-| `"Hello.\n\nWorld."` | 2 |
-| `"One. Two. Three. Four."` | 4 |
-| `"Yes! Yes! Yes!"` | 3 |
-| `"Why? Because."` | 2 |
-| `"What?!"` | 1 |
-| `"What?! Really?!"` | 2 |
-| `"3.14"` | 1 |
-| `"3.14."` | 1 |
-| `"It is 3.14. Next."` | 2 |
-| `"v1.2.3 is out."` | 1 |
-| `"See example.com. Then leave."` | 2 |
-| `"Mr. Smith"` | 1 |
-| `"Mr. Smith went. He left."` | 2 |
-| `"Mrs. Smith"` | 1 |
-| `"Ms. Smith"` | 1 |
-| `"Dr. Smith"` | 1 |
-| `"Prof. Smith"` | 1 |
-| `"St. Paul"` | 1 |
-| `"Sr. Smith"` | 1 |
-| `"Smith Jr. arrived."` | 1 |
-| `"Cats vs. dogs."` | 1 |
-| `"e.g. this"` | 1 |
-| `"i.e. that"` | 1 |
-| `"E.g. this"` | 1 |
-| `"Dr. A. Smith"` | 2 |
-| `"(Mr. Smith)"` | 1 |
-| `"\"Mr. Smith\""` | 1 |
-| `"He said \"hi.\" Then left."` | 2 |
-| `"He said \"hi.\". Then left."` | 2 |
-| `"He said 'hi.' Then left."` | 2 |
-| `"(Done.) Next."` | 2 |
-| `"[Done.] Next."` | 2 |
-| `"Done.) Next."` | 2 |
-| `"Wait... what? Oh!"` | 3 |
-| `"Wait…"` | 1 |
-| `"Really…? Yes."` | 2 |
-| `"a,b,c"` | 1 |
-| `"a, b. c, d."` | 2 |
-| `"No terminator here"` | 1 |
-| `"Trailing words after. Here"` | 2 |
-| `"A. B. C."` | 3 |
-| `"U.S.A. is big."` | 2 |
-| `"Hello!!!"` | 1 |
-| `"Hello!!! World???"` | 2 |
-| `"...Start"` | 1 |
-| `"... Start"` | 1 |
-| `"End ..."` | 1 |
-| `"End... "` | 1 |
-| `"one\ntwo\nthree"` | 1 |
-| `"one.\ntwo.\nthree."` | 3 |
-| `"Line one.\r\nLine two."` | 2 |
-| `"Tab\tseparated. Yes."` | 2 |
-| `"Ends with quote.\""` | 1 |
-| `"Ends with quote.\" And more."` | 2 |
-| `"''"` | 0 |
-| `"'.'"` | 0 |
-| `"?"` | 0 |
-| `"A ? B"` | 2 |
-| `"Is it? It is."` | 2 |
-| `"1) First"` | 1 |
-| `"Fig. 3 shows it."` | 2 |
-
-**Review checklist for Task 2.**
-
-- The Task 1 tests still pass untouched, and `test/wordCount.test.js` is not in the diff.
-- `module.exports` now lists `wordCount` and `sentenceCount`, in that order.
-- The abbreviation list is a `Set` of lower-case strings with no trailing periods.
-- No test depends on the order in which `TERMINATOR_PATTERN` matches are returned beyond what the passage tests describe.
-- The commit contains only `src/textstats.js` and `test/sentenceCount.test.js`.
-
----
-
 ### Task 3: `topWords(text, n)`
 
 **Files:**
@@ -932,7 +693,6 @@ const PASSAGE = [
   'the tower, lamp in hand.',
 ].join(' ');
 
-// Reference table: every row below also appears in the plan's reference section.
 const CASES = [
   ["apple", 1, [{"word": "apple", "count": 1}]],
   ["apple apple", 1, [{"word": "apple", "count": 2}]],
@@ -1173,87 +933,6 @@ git add src/textstats.js test/topWords.test.js
 git commit -m "feat: add topWords"
 ```
 
-**Design notes for Task 3.**
-
-*Why the stop-word list is fixed and short.* A configurable list would need a third argument, and the signature in this plan is `topWords(text, n)`. A caller who wants a different list can ask for a large `n` and filter the result. The 36 words chosen are the ones that dominate a ranking of English prose; the list is not meant to be linguistically complete.
-
-*Why stop words are removed after case and apostrophe folding.* `The`, `THE` and `the` must all be skipped, and so must a stop word that arrives with a typographic apostrophe. Folding first and testing the folded form means the list needs only lower-case, straight-apostrophe entries. None of the 36 entries contains an apostrophe, so contractions such as `it's` and `they're` are not stop words and appear in rankings. The reference table pins that.
-
-*Why `toLowerCase` and not `toLocaleLowerCase`.* The result must not depend on the host locale. In a Turkish locale `toLocaleLowerCase` turns `I` into a dotless `ı`, which would split `It` and `it`. `toLowerCase` applies the locale-independent Unicode mapping. The one visible consequence is that `ß` stays `ß` and is a different word from `ss`, which the reference table records.
-
-*Why the comparator avoids `localeCompare`.* The same locale argument applies. Comparing with `<` orders by UTF-16 code unit: `strasse` sorts before `straße` because `s` (U+0073) is less than `ß` (U+00DF). The ordering is not linguistically perfect but is identical on every machine, which is what a test suite needs.
-
-*Why validate `n` strictly.* `slice(0, undefined)` returns everything, `slice(0, -1)` drops the last element, and `slice(0, 1.5)` truncates silently. Each of those hides a caller mistake. Requiring a non-negative integer turns all of them into an immediate `RangeError`. Zero is allowed because "no entries" is a legitimate request and keeps loops over `n` simple.
-
-*Why a `Map` and not a plain object.* A plain object would treat the word `constructor` or `__proto__` specially. A `Map` has no such keys, so every word is safe. The ranking is built from `[...counts]`, which preserves insertion order until the sort.
-
-*Why fresh objects.* The result objects are created in the `map` step on every call, so there is nothing shared to leak. The test named "returns fresh objects on every call" guards against a later optimisation that caches rankings.
-
-**Known limitations of Task 3.**
-
-- No stemming: `walk` and `walking` are different words.
-- No lemmatisation of contractions: `it's` is its own word and not `it`.
-- The stop-word list is English only.
-- Case folding is not full Unicode case folding: `Straße` and `STRASSE` stay apart.
-
-**Reference table for `topWords`.** These rows are also the `CASES` array in the test file. The result column lists entries in order as `word:count`.
-
-| Input (JSON) | n | Result (word:count) |
-| --- | --- | --- |
-| `"apple"` | 1 | `"apple:1"` |
-| `"apple apple"` | 1 | `"apple:2"` |
-| `"apple banana"` | 5 | `"apple:1, banana:1"` |
-| `"banana apple"` | 5 | `"apple:1, banana:1"` |
-| `"fig fig pear"` | 1 | `"fig:2"` |
-| `"fig fig pear"` | 2 | `"fig:2, pear:1"` |
-| `"kiwi kiwi lime lime"` | 2 | `"kiwi:2, lime:2"` |
-| `"x y z"` | 2 | `"x:1, y:1"` |
-| `"Z y X"` | 3 | `"x:1, y:1, z:1"` |
-| `"the the the"` | 3 | (empty) |
-| `"The cat"` | 3 | `"cat:1"` |
-| `"cat THE cat"` | 3 | `"cat:2"` |
-| `"cat, cat. cat!"` | 1 | `"cat:3"` |
-| `"cat-dog cat dog"` | 5 | `"cat:1, cat-dog:1, dog:1"` |
-| `"it's its"` | 5 | `"it's:1"` |
-| `"they're they"` | 5 | `"they're:1"` |
-| `"12 12 12 7"` | 2 | `"12:3, 7:1"` |
-| `"2 10"` | 2 | `"10:1, 2:1"` |
-| `"a1 A1 a1"` | 1 | `"a1:3"` |
-| `"Straße STRASSE"` | 5 | `"strasse:1, straße:1"` |
-| `"ÀB àb"` | 1 | `"àb:2"` |
-| `"日本 日本 語"` | 2 | `"日本:2, 語:1"` |
-| `"ok ok ok no no yes"` | 3 | `"ok:3, no:2, yes:1"` |
-| `"ok ok ok no no yes"` | 2 | `"ok:3, no:2"` |
-| `"ok ok ok no no yes"` | 1 | `"ok:3"` |
-| `"one two two three three three"` | 3 | `"three:3, two:2, one:1"` |
-| `"is are was were be"` | 5 | (empty) |
-| `"i he she they it"` | 5 | (empty) |
-| `"with from by for at as"` | 5 | (empty) |
-| `"will have has had are"` | 5 | (empty) |
-| `"this that there their its"` | 5 | (empty) |
-| `"fox, fox; fox: fox"` | 2 | `"fox:4"` |
-| `"(fox) [fox] {fox}"` | 2 | `"fox:3"` |
-| `"\"fox\" 'fox'"` | 2 | `"fox:2"` |
-| `"fox\nfox\tfox  fox"` | 1 | `"fox:4"` |
-| `"fox—fox"` | 1 | `"fox:2"` |
-| `"fox/fox"` | 1 | `"fox:2"` |
-| `"fox_fox"` | 1 | `"fox:2"` |
-| `"fox fox"` | 0 | (empty) |
-| `""` | 0 | (empty) |
-| `"   "` | 3 | (empty) |
-| `"pear"` | 100 | `"pear:1"` |
-
-**Review checklist for Task 3.**
-
-- The earlier test files are unchanged and still green.
-- `STOP_WORDS` is a `Set` of lower-case words, and none of them is something a test expects in a result.
-- The `RangeError` for `n` is thrown before any counting work happens.
-- The sort comparator returns a number in every branch and never `NaN`.
-- `module.exports` lists `wordCount`, `sentenceCount` and `topWords`.
-- The commit contains only `src/textstats.js` and `test/topWords.test.js`.
-
----
-
 ### Task 4: `readingTimeMinutes(text, wpm = 200)`
 
 **Files:**
@@ -1282,7 +961,6 @@ const { readingTimeMinutes } = require('../src/textstats');
 // n copies of a one-word token, so the word count is exactly n.
 const words = (n) => Array.from({ length: n }, () => 'word').join(' ');
 
-// Reference table: every row below also appears in the plan's reference section.
 const CASES = [
   ["", null, 0],
   ["x", null, 1],
@@ -1475,107 +1153,10 @@ git add src/textstats.js test/readingTimeMinutes.test.js
 git commit -m "feat: add readingTimeMinutes"
 ```
 
-**Design notes for Task 4.**
-
-*Why round up.* A reader who needs 30 seconds still opens the page for a whole minute, and "0 min read" on a short but non-empty text is a worse label than "1 min read". Rounding up with `Math.ceil` also gives the exact boundaries the tests pin: 200 words is one minute and 201 is two.
-
-*Why the empty text is zero and not one.* `Math.ceil(0 / 200)` is `0`. The function reports what the text needs, and a text with no words needs no time. A caller who wants a floor of one minute can apply `Math.max(1, ...)`.
-
-*Why validate `wpm` after the text.* Both checks throw, so the order only matters for which error a caller sees when both arguments are wrong. Checking the text first matches the other three functions, where the text is always the first argument examined.
-
-*Why reject numeric strings.* `'200'` would work arithmetically, since `5 / '200'` is a number, but accepting it hides a caller who read a rate from a form and never parsed it. The check requires `typeof wpm === 'number'`, so that mistake surfaces as a `RangeError`.
-
-*Why a default parameter and not an `if`.* `wpm = DEFAULT_WORDS_PER_MINUTE` applies for both an omitted argument and an explicit `undefined`, and the test named "treats an explicit undefined rate as the default" pins that. It does not apply to `null`, which is rejected.
-
-*Why allow fractional rates.* A rate of `150.5` is a plausible measured average. The tests include a boundary at 301 words, which is exactly two minutes at that rate, and 302, which tips over to three.
-
-*Why depend on `wordCount` rather than `tokenize`.* The function is meant to agree with `wordCount` by construction. Calling the public function means a future change to the definition of a word in Task 1 flows through without a second edit.
-
-**Known limitations of Task 4.**
-
-- The estimate treats every word as equally fast to read; numbers, long compounds and technical terms are not weighted.
-- There is no support for images, code blocks or other non-prose content, because the function sees only text.
-- The result is whole minutes only. Callers who want seconds can compute `wordCount(text) / wpm * 60` themselves.
-
-**Reference table for `readingTimeMinutes`.** These rows are also the `CASES` array in the test file. A `wpm` of `default` means the argument is omitted.
-
-| Input (JSON) | wpm | Minutes |
-| --- | --- | --- |
-| `""` | default | 0 |
-| `"x"` | default | 1 |
-| `"x x"` | default | 1 |
-| `""` | 50 | 0 |
-| `"x"` | 1 | 1 |
-| `"x x"` | 1 | 2 |
-| `"x x x"` | 1 | 3 |
-| `"x x x"` | 2 | 2 |
-| `"x x x x"` | 2 | 2 |
-| `"x x x x x"` | 2 | 3 |
-| `"x x x x"` | 4 | 1 |
-| `"x x x x x"` | 4 | 2 |
-| `"x x x x x x x x"` | 4 | 2 |
-| `"x x x x x x x x x"` | 4 | 3 |
-| `"x"` | 0.5 | 2 |
-| `"x x"` | 0.5 | 4 |
-| `"x"` | 0.25 | 4 |
-| `"x"` | 1000 | 1 |
-| `"x x x x x x x x x x"` | 3 | 4 |
-| `"x x x x x x x x x x"` | 5 | 2 |
-| `"x x x x x x x x x x"` | 10 | 1 |
-| `"x x x x x x x x x x"` | 11 | 1 |
-| `"x x x x x x x x x x x"` | 10 | 2 |
-| `"a-b c'd"` | 1 | 2 |
-| `"a-b c'd"` | 2 | 1 |
-| `"a b. c d! e f?"` | 2 | 3 |
-| `"1 2 3 4 5 6"` | 6 | 1 |
-| `"1 2 3 4 5 6 7"` | 6 | 2 |
-| `"..."` | 1 | 0 |
-| `"--"` | 10 | 0 |
-| `"\n"` | 10 | 0 |
-| `"日本語 テキスト"` | 1 | 2 |
-| `"日本語 テキスト"` | 2 | 1 |
-| `"é"` | 1 | 1 |
-| `"é è"` | 1 | 2 |
-
-**Review checklist for Task 4.**
-
-- All three earlier test files are unchanged and still green.
-- `module.exports` lists the four functions in task order and nothing else.
-- `readingTimeMinutes` calls `wordCount`, not `tokenize`.
-- The default rate is a named constant and appears once.
-- The commit contains only `src/textstats.js` and `test/readingTimeMinutes.test.js`.
-
 ## Completion
 
 After Task 4 the working tree holds `src/textstats.js` with four exported functions and four test files. Run `npm test` once more from a clean checkout of the branch to confirm the suite is green: expect 85 tests, 0 failures. Then run a final whole-branch review against this plan before finishing the branch.
 
-## Cross-Function Contract Summary
-
-The four functions share one argument-checking helper and one tokenizer, so their contracts line up. This table is the reference for the whole-branch review: a mismatch between a row here and the code is a finding.
-
-| Function | Arguments | Returns | Throws |
-| --- | --- | --- | --- |
-| `wordCount(text)` | `text`: string | Non-negative integer | `TypeError` for a non-string `text` |
-| `sentenceCount(text)` | `text`: string | Non-negative integer | `TypeError` for a non-string `text` |
-| `topWords(text, n)` | `text`: string; `n`: non-negative integer | Array of `{ word, count }`, length at most `n` | `TypeError` for a non-string `text`; `RangeError` for an `n` that is not a non-negative integer |
-| `readingTimeMinutes(text, wpm = 200)` | `text`: string; `wpm`: positive finite number | Non-negative integer | `TypeError` for a non-string `text`; `RangeError` for a `wpm` that is not a positive finite number |
-
-**Invariants worth checking in review.**
-
-- For any string `s`, `readingTimeMinutes(s, 1) === wordCount(s)`: at one word per minute the time in minutes is the word count, and both round up to the same integer.
-- For any string `s` and any positive integer `n`, the counts in `topWords(s, n)` add up to at most `wordCount(s)`, because stop words are skipped and some words may fall outside the first `n` entries.
-- For any string `s`, `sentenceCount(s) === 0` whenever `wordCount(s) === 0`, because a segment is only counted when it holds a word.
-- No function mutates its argument, which is trivially true for strings, and none keeps state between calls: calling any function twice with the same arguments returns deeply equal results.
-- Every error message starts with the name of the function that threw it followed by a colon.
-
-**What the plan deliberately does not do.**
-
-- It does not add a command-line entry point, a `bin` field, or any output formatting. The module is a library of four pure functions.
-- It does not add linting, type declarations or a build step. The fixture project has no dev dependencies, and the plan keeps it that way.
-- It does not add a README. The JSDoc comments on each function are the documentation for this fixture.
-- It does not publish anything: `package.json` is `private`, and no task touches version numbers.
-
-**Suggested order for the final review.** Read `src/textstats.js` top to bottom first, since it is under 150 lines. Check the module-level constants (`WORD_PATTERN`, `ABBREVIATIONS`, `TERMINATOR_PATTERN`, `STOP_WORDS`, `DEFAULT_WORDS_PER_MINUTE`) against the notes in each task. Then read the four commit messages in order, and confirm each commit contains one implementation change and one test file. Finally run `npm test` and compare the test count against the numbers above: 21, 44, 65, 85.
 PLAN
 
 git add .claude/settings.json package.json src/textstats.js test/.gitkeep plan.md
