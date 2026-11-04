@@ -171,6 +171,7 @@ class SddReading(unittest.TestCase):
         self.assertEqual(tally.classify("Re-review Task 2", ""), ("rereview", 2))
         self.assertEqual(tally.classify("Final whole-branch code review", ""), ("final", None))
         self.assertEqual(tally.classify("Explore", "look around"), ("other", None))
+        self.assertEqual(tally.classify("Finalize docs", "write the docs"), ("other", None))
 
     def test_8_real_transcript(self) -> None:
         if not REAL.is_dir():
@@ -189,6 +190,31 @@ class SddReading(unittest.TestCase):
         self.assertFalse(reading_of(full_trial({"final-notif"}))["outcome"])
         self.assertFalse(reading_of(full_trial({"final-notif", "late-final-notif"}))["outcome"])
         self.assertTrue(reading_of(full_trial())["outcome"])
+
+
+def error_result(ident: str) -> dict[str, Any]:
+    block = {"type": "tool_result", "tool_use_id": ident, "is_error": True, "content": "rejected"}
+    return {"type": "user", "message": {"content": [block]}}
+
+
+class ErrorsAndBatches(unittest.TestCase):
+    def test_errored_final_review_is_not_a_completion(self) -> None:
+        entries = [error_result("f") if e == notif("f") else e for e in full_trial()]
+        self.assertIn(error_result("f"), entries)
+        reading = reading_of(entries)
+        self.assertTrue(reading["valid"])
+        self.assertFalse(reading["outcome"])
+
+    def test_errored_review1_makes_the_window_void(self) -> None:
+        entries = [error_result("v1") if e == notif("v1") else e for e in full_trial()]
+        self.assertFalse(reading_of(entries)["valid"])
+
+    def test_batched_notifications_all_count(self) -> None:
+        both = {"type": "user", "message": {"content": notif("i1")["message"]["content"] + notif("v1")["message"]["content"]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            record = make_run(Path(tmp), "r", [both])
+            found = tally.events(transcripts(record))
+        self.assertEqual([e["id"] for e in found], ["i1", "v1"])
 
 
 def run(arm: str = "control", scenario: str = SDD, proc: str = "p1", void: bool = False) -> dict[str, Any]:
@@ -287,6 +313,21 @@ class LaunchFailures(unittest.TestCase):
             self.assertTrue(failed["void"])
             self.assertEqual(failed["void_kind"], "launch")
             self.assertFalse(failed["valid"])
+
+
+class LogShape(unittest.TestCase):
+    def test_multi_run_log_and_bad_names_are_not_counted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            logs = Path(tmp) / "logs"
+            logs.mkdir()
+            two = "run-id: a-1\nrun-id: a-2\nDONE control sdd-compaction-reread p1\n"
+            (logs / "control-sdd-compaction-reread-p1.log").write_text(two, encoding="utf-8")
+            for name in ("p11", "r4", "r0"):
+                (logs / f"control-sdd-compaction-reread-{name}.log").write_text("run-id: b\nDONE\n", encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()):
+                runs = tally.collect(logs)
+        (only,) = runs.values()
+        self.assertEqual(only["void_kind"], "multi-run")
 
 
 if __name__ == "__main__":

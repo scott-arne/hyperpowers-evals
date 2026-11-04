@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Tally the 6.16.2 re-read campaign: control (v6.16.1) against the 6.16.2 branch.
 
 Usage::
@@ -19,6 +18,12 @@ Rules, from the spec's Testing section:
 
 * A log whose last line is not ``DONE ...`` (a ``FAILED <code>`` line or no
   terminal line) never yields a valid trial: the run is void, kind ``launch``.
+* Only the first automatic compaction is considered: a run whose first
+  compaction precedes review 1's completion is void even if a later one is in
+  window.
+* A log with more than one run id is one void ``multi-run`` row; none of its
+  runs counts. A log name outside p1-p10 / r1-r3 (p90 is the smoke) is
+  reported and not counted. An errored Agent tool_result is not a completion.
 * A setup or grader void in the verdict is void; so is a run whose window
   reading is invalid (kind ``instrument``). Voids occupy no trial slot.
 * SDD window: the first automatic compaction falls after review 1's
@@ -58,7 +63,7 @@ HERE = Path(__file__).resolve().parent
 EVALS = HERE.parents[1]
 SDD = "sdd-compaction-reread"
 BRAIN = "brainstorming-bounded-companion-after-compaction"
-RUN_ROOTS = ("task-10-runs", "task-8-runs", "task-7-runs")
+RUN_ROOTS: tuple[str, ...] = ("task-10-runs", "task-8-runs", "task-7-runs")
 NOTIF_ID = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>")
 NOTIF_STATUS = re.compile(r"<status>([^<]+)</status>")
 
@@ -96,12 +101,22 @@ def classify(description: str, prompt: str) -> tuple[str, int | None]:
     if match:
         return "implement", int(match.group(1))
     if (
-        re.search(r"final", description or "", re.IGNORECASE)
+        (re.search(r"final", description or "", re.IGNORECASE) and re.search(r"review", description, re.IGNORECASE))
         or description == "Review code changes"
         or (prompt or "").lstrip().startswith("You are a Senior Code Reviewer")
     ):
         return "final", None
     return "other", None
+
+
+def notified_ids(text: str) -> list[str]:
+    """Tool-use ids of every completed notification in ``text`` (batched ones included)."""
+    ids: list[str] = []
+    for chunk in text.split("<task-notification>")[1:]:
+        ident, status = NOTIF_ID.search(chunk), NOTIF_STATUS.search(chunk)
+        if ident and (status is None or status.group(1) == "completed"):
+            ids.append(ident.group(1))
+    return ids
 
 
 def events(transcripts: list[Path]) -> list[dict[str, Any]]:
@@ -145,21 +160,22 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                 # delivered as a queued_command attachment, not a user message.
                 attachment = entry.get("attachment") or {}
                 prompt = attachment.get("prompt") if attachment.get("type") == "queued_command" else None
-                if isinstance(prompt, str) and "<task-notification>" in prompt:
-                    ident, status = NOTIF_ID.search(prompt), NOTIF_STATUS.search(prompt)
-                    if ident and (status is None or status.group(1) == "completed"):
-                        found.append({"kind": "done", "id": ident.group(1)})
+                if isinstance(prompt, str):
+                    found.extend({"kind": "done", "id": i} for i in notified_ids(prompt))
             elif entry.get("type") == "user":
                 if isinstance(content, list):
                     for block in content:
-                        if isinstance(block, dict) and block.get("type") == "tool_result":
-                            if "Async agent launched" not in json.dumps(block.get("content")):
-                                found.append({"kind": "done", "id": block.get("tool_use_id")})
+                        # An errored or rejected call never ran; only a clean,
+                        # non-launch result is a synchronous completion.
+                        if (
+                            isinstance(block, dict)
+                            and block.get("type") == "tool_result"
+                            and not block.get("is_error")
+                            and "Async agent launched" not in json.dumps(block.get("content"))
+                        ):
+                            found.append({"kind": "done", "id": block.get("tool_use_id")})
                 text = content if isinstance(content, str) else json.dumps(content)
-                if "<task-notification>" in text:
-                    ident, status = NOTIF_ID.search(text), NOTIF_STATUS.search(text)
-                    if ident and (status is None or status.group(1) == "completed"):
-                        found.append({"kind": "done", "id": ident.group(1)})
+                found.extend({"kind": "done", "id": i} for i in notified_ids(text))
     return found
 
 
@@ -176,9 +192,10 @@ def sdd_reading(found: list[dict[str, Any]]) -> dict[str, Any]:
         default=None,
     )
     final_at = next((i for i, e in enumerate(found) if e["kind"] == "dispatch" and e["class"] == "final"), None)
+    if compact is None:
+        return {"valid": False, "outcome": None, "mechanism": None}
     valid = (
-        compact is not None
-        and review1_done is not None
+        review1_done is not None
         and review1_done < compact
         and (final_at is None or compact < final_at)
     )
@@ -231,7 +248,7 @@ def brainstorming_reading(found: list[dict[str, Any]]) -> dict[str, Any]:
     )
     valid = load is not None and compact is not None and (question is None or compact < question)
     reading: dict[str, Any] = {"valid": valid, "mechanism": None}
-    if valid:
+    if compact is not None and valid:
         stop = question if question is not None else len(found)
         reading["mechanism"] = any(
             e["kind"] == "read" and e["path"].endswith("brainstorming/SKILL.md") for e in found[compact + 1:stop]
@@ -282,7 +299,7 @@ def load_reruns(path: Path, runs: dict[str, dict[str, Any]]) -> dict[str, str]:
 
 RUN_ID = re.compile(r"^run-id: (\S+)$", re.MULTILINE)
 SCENARIOS = (SDD, BRAIN)
-LOG_NAME = re.compile(r"^(control|treatment)-(" + "|".join(SCENARIOS) + r")-([pr]\d+)$")
+LOG_NAME = re.compile(r"^(control|treatment)-(" + "|".join(SCENARIOS) + r")-(p(?:[1-9]|10)|r[1-3]|p90)$")
 EXPECTED_VALID = 10
 
 
@@ -394,18 +411,26 @@ def collect(logs: Path) -> dict[str, dict[str, Any]]:
     runs: dict[str, dict[str, Any]] = {}
     for log in sorted(logs.glob("*.log")):
         match = LOG_NAME.match(log.stem)
-        if not match or match.group(3) == "p90":
+        if not match:
+            if log.stem.startswith(("control-", "treatment-")):
+                print(f"skipped log with an unrecognized name (not counted): {log.name}")
+            continue
+        if match.group(3) == "p90":
             continue
         arm, scenario, proc = match.groups()
         text = log.read_text(encoding="utf-8")
         lines = [line for line in text.splitlines() if line.strip()]
         done = bool(lines) and lines[-1].startswith("DONE ")
         ids = RUN_ID.findall(text)
-        if not ids:
-            run = placeholder(arm, scenario, proc, "launch")
-            run["run"] = f"launch:{log.stem}"
+        if len(ids) != 1:
+            # Zero ids is a launch failure; several would inflate the cell, so
+            # the row is reported as one void and none of its runs counts.
+            kind = "launch" if not ids else "multi-run"
+            run = placeholder(arm, scenario, proc, kind)
+            run["run"] = f"{kind}:{log.stem}"
             print_run(run)
             runs[run["run"]] = run
+            continue
         for run_id in ids:
             runs[run_id] = read_run(arm, scenario, proc, run_id, launch_ok=done)
     return runs
