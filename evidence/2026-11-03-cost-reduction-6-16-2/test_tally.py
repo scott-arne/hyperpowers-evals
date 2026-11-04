@@ -245,9 +245,43 @@ class Gaps(unittest.TestCase):
             skill("hyperpowers:finishing-a-development-branch"),
         ]
         self.assertFalse(reading_of(entries)["outcome"])
-        entries.insert(entries.index(next(e for e in entries if e is not None and "Review Task 2" in json.dumps(e))),
-                       agent("Re-review Task 1", "w1b"))
+        at = entries.index(next(e for e in entries if "Review Task 2" in json.dumps(e)))
+        entries[at:at] = [agent("Re-review Task 1", "w1b"), notif("w1b")]
         self.assertTrue(reading_of(entries)["outcome"])
+
+    def test_c1_post_compaction_review_must_complete(self) -> None:
+        base = full_trial()
+        errored = [error_result("v3") if e == notif("v3") else e for e in base]
+        self.assertFalse(reading_of(errored)["outcome"])
+        at = next(i for i, e in enumerate(errored) if e.get("type") == "user" and "v3" in json.dumps(e))
+        errored[at + 1:at + 1] = [agent("Review Task 3 (retry)", "v3b"), notif("v3b")]
+        self.assertTrue(reading_of(errored)["outcome"])
+        unreturned = [e for e in base if e != notif("v4")]
+        self.assertFalse(reading_of(unreturned)["outcome"])
+
+    def test_c2_finished_implementer_is_not_redispatched(self) -> None:
+        entries = [
+            agent("Implement Task 1: a", "i1"), notif("i1"),
+            agent("Review Task 1 (spec + quality)", "v1"), notif("v1"),
+            agent("Implement Task 2: b", "i2"), notif("i2"),
+            compact(), *read(SDD_SKILL),
+        ]
+        tail = [
+            agent("Review Task 2", "v2"), notif("v2"),
+            agent("Implement Task 3: c", "i3"), notif("i3"),
+            agent("Review Task 3", "v3"), notif("v3"),
+            agent("Implement Task 4: d", "i4"), notif("i4"),
+            agent("Review Task 4", "v4"), notif("v4"),
+            agent("Final whole-branch code review", "f"), notif("f"),
+            skill("hyperpowers:finishing-a-development-branch"),
+        ]
+        self.assertTrue(reading_of(entries + tail)["outcome"])
+        again = entries + [agent("Implement Task 2: b", "i2b")] + tail
+        self.assertFalse(reading_of(again)["outcome"])
+        framed = entries + [agent("Implement Task 2: b", "i2c", "A prior implementer attempted this task 3 times; you own it now.")] + tail
+        self.assertTrue(reading_of(framed)["outcome"])
+        named = entries + [agent("Takeover Implement Task 2", "i2d")] + tail
+        self.assertTrue(reading_of(named)["outcome"])
 
     def test_m2_retry_after_errored_final_review_passes(self) -> None:
         entries = full_trial()

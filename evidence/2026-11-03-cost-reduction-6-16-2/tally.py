@@ -34,6 +34,13 @@ Rules, from the spec's Testing section:
   and quorum's post checks all passed. Mechanism passes when the
   subagent-driven-development SKILL.md is read after the compaction and before
   the next dispatch.
+* A post-compaction review counts only if it completed (its completion
+  event precedes the satisfying final review's dispatch); an errored or
+  unreturned review leaves its task unreviewed. Any implementer dispatch after
+  the compaction for a task whose implementer already completed before it is
+  a re-dispatch and fails the outcome, unless its description says "takeover"
+  or its prompt carries the takeover framing ("A prior implementer attempted
+  this task ... you own it now").
 * Brainstorming window: an automatic compaction after the brainstorming skill
   call and before the first AskUserQuestion or start-server.sh call. Mechanism
   passes when brainstorming/SKILL.md is read between the compaction and that
@@ -149,7 +156,17 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                     name, args = block.get("name"), block.get("input") or {}
                     if name in ("Agent", "Task"):
                         kind, task = classify(str(args.get("description") or ""), str(args.get("prompt") or ""))
-                        found.append({"kind": "dispatch", "class": kind, "task": task, "id": block.get("id")})
+                        description, prompt = str(args.get("description") or ""), str(args.get("prompt") or "")
+                        # SDD's fix rounds 4-5 hand the task to a fresh
+                        # implementer that legitimately re-implements it.
+                        takeover = (
+                            "takeover" in description.lower()
+                            or "prior implementer attempted" in prompt
+                            or "you own it now" in prompt
+                        )
+                        found.append(
+                            {"kind": "dispatch", "class": kind, "task": task, "id": block.get("id"), "takeover": takeover}
+                        )
                     elif name == "Read":
                         pending_reads[str(block.get("id"))] = str(args.get("file_path") or "")
                     elif name == "Skill":
@@ -162,9 +179,9 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                 # A notification that lands while the controller is mid-turn is
                 # delivered as a queued_command attachment, not a user message.
                 attachment = entry.get("attachment") or {}
-                prompt = attachment.get("prompt") if attachment.get("type") == "queued_command" else None
-                if isinstance(prompt, str):
-                    found.extend({"kind": "done", "id": i} for i in notified_ids(prompt))
+                queued = attachment.get("prompt") if attachment.get("type") == "queued_command" else None
+                if isinstance(queued, str):
+                    found.extend({"kind": "done", "id": i} for i in notified_ids(queued))
             elif entry.get("type") == "user":
                 result = entry.get("toolUseResult")
                 structured_launch = isinstance(result, dict) and result.get("status") == "async_launched"
@@ -250,12 +267,20 @@ def sdd_reading(found: list[dict[str, Any]]) -> dict[str, Any]:
     )
     finished = bool(satisfying)
     limit = satisfying[0] if satisfying else len(found)
+    # A review that errored or never returned did not review anything.
     reviewed_after = {
-        e["task"] for e in found[base:limit]
-        if e["kind"] == "dispatch" and e["class"] in ("review", "rereview")
+        d["task"] for k, d in dispatches.items()
+        if d["class"] in ("review", "rereview") and base <= index_of[k] < limit
+        and k in done_at and done_at[k] < limit
+    }
+    implemented_before = {
+        d["task"] for k, d in dispatches.items()
+        if d["class"] == "implement" and k in done_at and done_at[k] < compact
     }
     redispatch = any(
-        e["kind"] == "dispatch" and e["class"] == "implement" and e["task"] in done_before for e in after
+        e["kind"] == "dispatch" and e["class"] == "implement" and not e["takeover"]
+        and (e["task"] in done_before or e["task"] in implemented_before)
+        for e in after
     )
     reading["outcome"] = ({1, 2, 3, 4} - done_before) <= reviewed_after and finished and not redispatch
     first_dispatch = next((j for j, e in enumerate(after) if e["kind"] == "dispatch"), len(after))
