@@ -10,8 +10,8 @@ set -euo pipefail
 # SDD skill is longer than that. The scenario measures whether the controller
 # reads SDD in full again once that happens.
 #
-# The plan: plan.md is long on purpose (about 40,000 characters; a 64,000 character version
-# compacted before the first dispatch). The
+# The plan: plan.md is long on purpose (about 27,000 characters; 64,000 and 41,000 character
+# versions compacted before the first dispatch). The
 # controller reads it in full at the start, and its size, together with the
 # SDD skill and the first task's dispatch and review traffic, carries the
 # controller's context past the compaction threshold (about 33K tokens below
@@ -130,82 +130,6 @@ const CASES = [
   ["a b", 2],
   ["a  b", 2],
   ["a\tb", 2],
-  ["a\nb", 2],
-  ["a\r\nb", 2],
-  ["a, b", 2],
-  ["a. b", 2],
-  ["a; b", 2],
-  ["(a)", 1],
-  ["[a] {b}", 2],
-  ["\"quoted\"", 1],
-  ["'single'", 1],
-  ["it's", 1],
-  ["its'", 1],
-  ["'tis", 1],
-  ["rock 'n' roll", 3],
-  ["state-of-the-art", 1],
-  ["state of the art", 4],
-  ["mother-in-law's", 1],
-  ["-leading", 1],
-  ["trailing-", 1],
-  ["a--b", 2],
-  ["a - b", 2],
-  ["a – b", 2],
-  ["a — b", 2],
-  ["a…b", 2],
-  ["a_b", 2],
-  ["snake_case_name", 3],
-  ["camelCaseName", 1],
-  ["x1", 1],
-  ["1x", 1],
-  ["007", 1],
-  ["1,000", 2],
-  ["1 000", 2],
-  ["$5", 1],
-  ["5%", 1],
-  ["50/50", 2],
-  ["and/or", 2],
-  ["a/b/c", 3],
-  ["user@example.com", 3],
-  ["https://example.com/a", 4],
-  ["#hashtag", 1],
-  ["@mention", 1],
-  ["C++", 1],
-  ["C#", 1],
-  ["e-mail", 1],
-  ["co-operate", 1],
-  ["re-enter", 1],
-  ["don’t", 1],
-  ["O'Brien", 1],
-  ["O’Brien", 1],
-  ["D'Artagnan's", 1],
-  ["Ünïcödé", 1],
-  ["日本語", 1],
-  ["日本語 テキスト", 2],
-  ["Привет мир", 2],
-  ["שלום עולם", 2],
-  ["مرحبا بالعالم", 2],
-  ["ÀÉÎÕÜ", 1],
-  ["ß", 1],
-  ["one two three four five six seven eight nine ten", 10],
-  ["ONE TWO THREE", 3],
-  ["one.two.three", 3],
-  ["one,two,three", 3],
-  ["one;two;three", 3],
-  ["one:two", 2],
-  ["one!two", 2],
-  ["one?two", 2],
-  ["   padded   ", 1],
-  ["\n\nlines\n\n", 1],
-  ["\t", 0],
-  ["...", 0],
-  ["---", 0],
-  ["***", 0],
-  ["???", 0],
-  ["'", 0],
-  ["'a'", 1],
-  ["a''b", 2],
-  ["a--b--c", 3],
 ];
 
 test('returns 0 for the empty string', () => {
@@ -230,58 +154,6 @@ test('ignores leading, trailing and repeated whitespace', () => {
 
 test('treats newlines and tabs as separators', () => {
   assert.equal(wordCount('one\ntwo\tthree\r\nfour'), 4);
-});
-
-test('does not count punctuation attached to a word as a separate word', () => {
-  assert.equal(wordCount('Well, well; well: well! well? well.'), 6);
-});
-
-test('does not count standalone punctuation as words', () => {
-  assert.equal(wordCount('- - - ... ?! ,'), 0);
-});
-
-test('counts a contraction as one word', () => {
-  assert.equal(wordCount("I don't think they'll mind"), 5);
-});
-
-test('counts a word with a typographic apostrophe as one word', () => {
-  assert.equal(wordCount('It’s the keeper’s lamp'), 4);
-});
-
-test('counts a hyphenated compound as one word', () => {
-  assert.equal(wordCount('a well-known, long-standing rule'), 4);
-});
-
-test('splits on an em dash with no surrounding spaces', () => {
-  assert.equal(wordCount('one—two—three'), 3);
-});
-
-test('counts digit sequences as words', () => {
-  assert.equal(wordCount('Room 101 holds 3 chairs and 12 tables'), 8);
-});
-
-test('splits a decimal number at the point', () => {
-  assert.equal(wordCount('pi is about 3.14 today'), 6);
-});
-
-test('splits a domain name at the dot', () => {
-  assert.equal(wordCount('visit example.com now'), 4);
-});
-
-test('counts letters with diacritics and non-Latin letters', () => {
-  assert.equal(wordCount('naïve café über буква 東京'), 5);
-});
-
-test('counts a multi-line passage', () => {
-  assert.equal(wordCount(PASSAGE), 64);
-});
-
-test('is not fooled by a trailing hyphen or apostrophe', () => {
-  assert.equal(wordCount("well- and dogs' bones"), 4);
-});
-
-test('gives the same answer when called twice', () => {
-  assert.equal(wordCount(PASSAGE), wordCount(PASSAGE));
 });
 
 test('throws a TypeError naming the function for a non-string', () => {
@@ -350,7 +222,7 @@ module.exports = { wordCount };
 
 Run: `npm test`
 
-Expected: all 21 tests pass and the summary shows `fail 0`.
+Expected: all 8 tests pass and the summary shows `fail 0`.
 
 - [ ] **Step 5: Commit**
 
@@ -403,78 +275,6 @@ const CASES = [
   ["a. b.", 2],
   ["a! b? c.", 3],
   ["a!? b", 2],
-  ["a?! b", 2],
-  ["a... b", 2],
-  ["a.. b", 2],
-  ["a . b", 2],
-  ["hello world", 1],
-  ["Hello world.", 1],
-  ["Hello world. ", 1],
-  [" Hello world.", 1],
-  ["Hello.World", 1],
-  ["Hello. World", 2],
-  ["Hello.\nWorld", 2],
-  ["Hello.\n\nWorld.", 2],
-  ["One. Two. Three. Four.", 4],
-  ["Yes! Yes! Yes!", 3],
-  ["Why? Because.", 2],
-  ["What?!", 1],
-  ["What?! Really?!", 2],
-  ["3.14", 1],
-  ["3.14.", 1],
-  ["It is 3.14. Next.", 2],
-  ["v1.2.3 is out.", 1],
-  ["See example.com. Then leave.", 2],
-  ["Mr. Smith", 1],
-  ["Mr. Smith went. He left.", 2],
-  ["Mrs. Smith", 1],
-  ["Ms. Smith", 1],
-  ["Dr. Smith", 1],
-  ["Prof. Smith", 1],
-  ["St. Paul", 1],
-  ["Sr. Smith", 1],
-  ["Smith Jr. arrived.", 1],
-  ["Cats vs. dogs.", 1],
-  ["e.g. this", 1],
-  ["i.e. that", 1],
-  ["E.g. this", 1],
-  ["Dr. A. Smith", 2],
-  ["(Mr. Smith)", 1],
-  ["\"Mr. Smith\"", 1],
-  ["He said \"hi.\" Then left.", 2],
-  ["He said \"hi.\". Then left.", 2],
-  ["He said 'hi.' Then left.", 2],
-  ["(Done.) Next.", 2],
-  ["[Done.] Next.", 2],
-  ["Done.) Next.", 2],
-  ["Wait... what? Oh!", 3],
-  ["Wait…", 1],
-  ["Really…? Yes.", 2],
-  ["a,b,c", 1],
-  ["a, b. c, d.", 2],
-  ["No terminator here", 1],
-  ["Trailing words after. Here", 2],
-  ["A. B. C.", 3],
-  ["U.S.A. is big.", 2],
-  ["Hello!!!", 1],
-  ["Hello!!! World???", 2],
-  ["...Start", 1],
-  ["... Start", 1],
-  ["End ...", 1],
-  ["End... ", 1],
-  ["one\ntwo\nthree", 1],
-  ["one.\ntwo.\nthree.", 3],
-  ["Line one.\r\nLine two.", 2],
-  ["Tab\tseparated. Yes.", 2],
-  ["Ends with quote.\"", 1],
-  ["Ends with quote.\" And more.", 2],
-  ["''", 0],
-  ["'.'", 0],
-  ["?", 0],
-  ["A ? B", 2],
-  ["Is it? It is.", 2],
-  ["1) First", 1],
-  ["Fig. 3 shows it.", 2],
 ];
 
 test('returns 0 for the empty string', () => {
@@ -501,66 +301,6 @@ test('counts a trailing fragment after the last terminator', () => {
   assert.equal(sentenceCount('The tide came in. Then it left'), 2);
 });
 
-test('counts sentences ended by periods, question marks and exclamation marks', () => {
-  assert.equal(sentenceCount('It rose. Did it fall? It did not!'), 3);
-});
-
-test('treats a run of terminators as one boundary', () => {
-  assert.equal(sentenceCount('Really?! Yes... truly!!!'), 3);
-});
-
-test('treats an ellipsis in mid-sentence flow as a boundary when followed by a space', () => {
-  assert.equal(sentenceCount('Wait... what happened here?'), 2);
-});
-
-test('does not break at a decimal point', () => {
-  assert.equal(sentenceCount('The ratio was 3.14 exactly.'), 1);
-});
-
-test('does not break at a dot inside a domain name', () => {
-  assert.equal(sentenceCount('Go to example.com for details.'), 1);
-});
-
-test('does not break after common titles', () => {
-  assert.equal(sentenceCount('Mrs. Hale and Prof. Quill met Dr. Moss.'), 1);
-});
-
-test('does not break after e.g. or i.e.', () => {
-  assert.equal(sentenceCount('Bring snacks, e.g. fruit, or something else, i.e. anything light.'), 1);
-});
-
-test('is case-insensitive about abbreviations', () => {
-  assert.equal(sentenceCount('MR. Hale and DR. Moss agreed.'), 1);
-});
-
-test('still breaks at a real sentence end that comes before a title', () => {
-  assert.equal(sentenceCount('He thanked her. Mr. Hale left.'), 2);
-});
-
-test('keeps a closing quote with the sentence it ends', () => {
-  assert.equal(sentenceCount('"Stop!" she said. "Please." He stopped.'), 4);
-});
-
-test('keeps a closing bracket with the sentence it ends', () => {
-  assert.equal(sentenceCount('The lamp (the old one.) was lit. It burned.'), 3);
-});
-
-test('does not count a terminator inside a word', () => {
-  assert.equal(sentenceCount('a.b.c is not a sentence break'), 1);
-});
-
-test('counts sentences across newlines', () => {
-  assert.equal(sentenceCount('First line.\nSecond line.\n\nThird line.'), 3);
-});
-
-test('counts a multi-line passage', () => {
-  assert.equal(sentenceCount(PASSAGE), 8);
-});
-
-test('gives the same answer when called twice', () => {
-  assert.equal(sentenceCount(PASSAGE), sentenceCount(PASSAGE));
-});
-
 test('throws a TypeError naming the function for a non-string', () => {
   for (const bad of [undefined, null, 7, {}, ['One.']]) {
     assert.throws(() => sentenceCount(bad), (err) => {
@@ -584,7 +324,7 @@ As in Task 1, the final test runs the reference rows. The hand counts for the mu
 
 Run: `npm test`
 
-Expected: the new file fails with `TypeError: sentenceCount is not a function` in every test, while the 21 tests from Task 1 still pass. If the Task 1 tests fail, stop: something in the working tree changed them.
+Expected: the new file fails with `TypeError: sentenceCount is not a function` in every test, while the 8 tests from Task 1 still pass. If the Task 1 tests fail, stop: something in the working tree changed them.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -648,7 +388,7 @@ module.exports = { wordCount, sentenceCount };
 
 Run: `npm test`
 
-Expected: 44 tests pass (21 from Task 1 and 23 new) and the summary shows `fail 0`.
+Expected: 16 tests pass (8 from Task 1 and 8 new) and the summary shows `fail 0`.
 
 - [ ] **Step 5: Commit**
 
@@ -702,40 +442,6 @@ const CASES = [
   ["fig fig pear", 2, [{"word": "fig", "count": 2}, {"word": "pear", "count": 1}]],
   ["kiwi kiwi lime lime", 2, [{"word": "kiwi", "count": 2}, {"word": "lime", "count": 2}]],
   ["x y z", 2, [{"word": "x", "count": 1}, {"word": "y", "count": 1}]],
-  ["Z y X", 3, [{"word": "x", "count": 1}, {"word": "y", "count": 1}, {"word": "z", "count": 1}]],
-  ["the the the", 3, []],
-  ["The cat", 3, [{"word": "cat", "count": 1}]],
-  ["cat THE cat", 3, [{"word": "cat", "count": 2}]],
-  ["cat, cat. cat!", 1, [{"word": "cat", "count": 3}]],
-  ["cat-dog cat dog", 5, [{"word": "cat", "count": 1}, {"word": "cat-dog", "count": 1}, {"word": "dog", "count": 1}]],
-  ["it's its", 5, [{"word": "it's", "count": 1}]],
-  ["they're they", 5, [{"word": "they're", "count": 1}]],
-  ["12 12 12 7", 2, [{"word": "12", "count": 3}, {"word": "7", "count": 1}]],
-  ["2 10", 2, [{"word": "10", "count": 1}, {"word": "2", "count": 1}]],
-  ["a1 A1 a1", 1, [{"word": "a1", "count": 3}]],
-  ["Straße STRASSE", 5, [{"word": "strasse", "count": 1}, {"word": "straße", "count": 1}]],
-  ["ÀB àb", 1, [{"word": "àb", "count": 2}]],
-  ["日本 日本 語", 2, [{"word": "日本", "count": 2}, {"word": "語", "count": 1}]],
-  ["ok ok ok no no yes", 3, [{"word": "ok", "count": 3}, {"word": "no", "count": 2}, {"word": "yes", "count": 1}]],
-  ["ok ok ok no no yes", 2, [{"word": "ok", "count": 3}, {"word": "no", "count": 2}]],
-  ["ok ok ok no no yes", 1, [{"word": "ok", "count": 3}]],
-  ["one two two three three three", 3, [{"word": "three", "count": 3}, {"word": "two", "count": 2}, {"word": "one", "count": 1}]],
-  ["is are was were be", 5, []],
-  ["i he she they it", 5, []],
-  ["with from by for at as", 5, []],
-  ["will have has had are", 5, []],
-  ["this that there their its", 5, []],
-  ["fox, fox; fox: fox", 2, [{"word": "fox", "count": 4}]],
-  ["(fox) [fox] {fox}", 2, [{"word": "fox", "count": 3}]],
-  ["\"fox\" 'fox'", 2, [{"word": "fox", "count": 2}]],
-  ["fox\nfox\tfox  fox", 1, [{"word": "fox", "count": 4}]],
-  ["fox—fox", 1, [{"word": "fox", "count": 2}]],
-  ["fox/fox", 1, [{"word": "fox", "count": 2}]],
-  ["fox_fox", 1, [{"word": "fox", "count": 2}]],
-  ["fox fox", 0, []],
-  ["", 0, []],
-  ["   ", 3, []],
-  ["pear", 100, [{"word": "pear", "count": 1}]],
 ];
 
 test('returns an empty array for the empty string', () => {
@@ -766,87 +472,6 @@ test('orders words by count, highest first', () => {
   ]);
 });
 
-test('breaks ties alphabetically', () => {
-  assert.deepEqual(topWords('mango kiwi apple kiwi mango apple', 3), [
-    { word: 'apple', count: 2 },
-    { word: 'kiwi', count: 2 },
-    { word: 'mango', count: 2 },
-  ]);
-});
-
-test('returns at most n entries', () => {
-  assert.equal(topWords('a1 b2 c3 d4 e5 f6 g7', 3).length, 3);
-});
-
-test('returns every distinct word when n exceeds their number', () => {
-  assert.deepEqual(topWords('cedar birch cedar', 10), [
-    { word: 'cedar', count: 2 },
-    { word: 'birch', count: 1 },
-  ]);
-});
-
-test('folds case before counting', () => {
-  assert.deepEqual(topWords('Apple APPLE apple', 1), [{ word: 'apple', count: 3 }]);
-});
-
-test('folds non-ASCII case before counting', () => {
-  assert.deepEqual(topWords('Éclair éclair ÉCLAIR', 1), [{ word: 'éclair', count: 3 }]);
-});
-
-test('skips stop words regardless of case', () => {
-  assert.deepEqual(topWords('The THE the Heron', 5), [{ word: 'heron', count: 1 }]);
-});
-
-test('treats typographic and straight apostrophes as the same word', () => {
-  assert.deepEqual(topWords("keeper’s keeper's", 1), [{ word: "keeper's", count: 2 }]);
-});
-
-test('keeps hyphenated compounds whole', () => {
-  assert.deepEqual(topWords('well-known well-known known', 2), [
-    { word: 'well-known', count: 2 },
-    { word: 'known', count: 1 },
-  ]);
-});
-
-test('counts numbers as words', () => {
-  assert.deepEqual(topWords('42 42 7', 2), [
-    { word: '42', count: 2 },
-    { word: '7', count: 1 },
-  ]);
-});
-
-test('ranks the words of a passage', () => {
-  assert.deepEqual(topWords(PASSAGE, 4), [
-    { word: 'keeper', count: 3 },
-    { word: 'lamp', count: 3 },
-    { word: 'night', count: 2 },
-    { word: 'tower', count: 2 },
-  ]);
-});
-
-test('includes the single-count words once the larger ones are used up', () => {
-  const words = topWords(PASSAGE, 100).map((entry) => entry.word);
-  assert.ok(words.includes('storm'));
-  assert.ok(!words.includes('the'));
-  assert.ok(!words.includes('was'));
-});
-
-test('returns fresh objects on every call', () => {
-  const first = topWords('reed reed', 1);
-  first[0].count = 99;
-  assert.deepEqual(topWords('reed reed', 1), [{ word: 'reed', count: 2 }]);
-});
-
-test('rejects an n that is not a non-negative integer', () => {
-  for (const bad of [-1, 1.5, NaN, Infinity, '3', null, undefined]) {
-    assert.throws(() => topWords('apple', bad), (err) => {
-      assert.ok(err instanceof RangeError);
-      assert.ok(err.message.startsWith('topWords:'));
-      return true;
-    });
-  }
-});
-
 test('throws a TypeError naming the function for a non-string', () => {
   for (const bad of [undefined, null, 3, {}, ['apple']]) {
     assert.throws(() => topWords(bad, 3), (err) => {
@@ -870,7 +495,7 @@ The passage test pins the ranking of a short text by hand: `keeper` and `lamp` a
 
 Run: `npm test`
 
-Expected: the new file fails with `TypeError: topWords is not a function` in every test, and the 44 earlier tests still pass. A failure that names `Cannot find module` means the test file was saved in the wrong directory.
+Expected: the new file fails with `TypeError: topWords is not a function` in every test, and the 16 earlier tests still pass. A failure that names `Cannot find module` means the test file was saved in the wrong directory.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -924,7 +549,7 @@ module.exports = { wordCount, sentenceCount, topWords };
 
 Run: `npm test`
 
-Expected: 65 tests pass (44 from Tasks 1 and 2 and 21 new) and the summary shows `fail 0`.
+Expected: 24 tests pass (16 from Tasks 1 and 2 and 8 new) and the summary shows `fail 0`.
 
 - [ ] **Step 5: Commit**
 
@@ -970,33 +595,6 @@ const CASES = [
   ["x x", 1, 2],
   ["x x x", 1, 3],
   ["x x x", 2, 2],
-  ["x x x x", 2, 2],
-  ["x x x x x", 2, 3],
-  ["x x x x", 4, 1],
-  ["x x x x x", 4, 2],
-  ["x x x x x x x x", 4, 2],
-  ["x x x x x x x x x", 4, 3],
-  ["x", 0.5, 2],
-  ["x x", 0.5, 4],
-  ["x", 0.25, 4],
-  ["x", 1000, 1],
-  ["x x x x x x x x x x", 3, 4],
-  ["x x x x x x x x x x", 5, 2],
-  ["x x x x x x x x x x", 10, 1],
-  ["x x x x x x x x x x", 11, 1],
-  ["x x x x x x x x x x x", 10, 2],
-  ["a-b c'd", 1, 2],
-  ["a-b c'd", 2, 1],
-  ["a b. c d! e f?", 2, 3],
-  ["1 2 3 4 5 6", 6, 1],
-  ["1 2 3 4 5 6 7", 6, 2],
-  ["...", 1, 0],
-  ["--", 10, 0],
-  ["\n", 10, 0],
-  ["日本語 テキスト", 1, 2],
-  ["日本語 テキスト", 2, 1],
-  ["é", 1, 1],
-  ["é è", 1, 2],
 ];
 
 test('returns 0 for the empty string', () => {
@@ -1023,63 +621,6 @@ test('returns 2 for exactly 400 words at the default rate', () => {
   assert.equal(readingTimeMinutes(words(400)), 2);
 });
 
-test('returns 5 for 1000 words at the default rate', () => {
-  assert.equal(readingTimeMinutes(words(1000)), 5);
-});
-
-test('uses a custom rate', () => {
-  assert.equal(readingTimeMinutes(words(250), 100), 3);
-});
-
-test('a faster rate shortens the time', () => {
-  assert.equal(readingTimeMinutes(words(600), 300), 2);
-});
-
-test('accepts a fractional rate', () => {
-  assert.equal(readingTimeMinutes(words(301), 150.5), 2);
-  assert.equal(readingTimeMinutes(words(302), 150.5), 3);
-});
-
-test('treats an explicit undefined rate as the default', () => {
-  assert.equal(readingTimeMinutes(words(201), undefined), 2);
-});
-
-test('counts words the same way wordCount does', () => {
-  assert.equal(readingTimeMinutes("well-known, don't stop — 3.14 times"), 1);
-  assert.equal(readingTimeMinutes("well-known, don't stop — 3.14 times", 3), 2);
-});
-
-test('counts a multi-paragraph text', () => {
-  const paragraph = 'The keeper lit the lamp and watched the water. '.repeat(10);
-  const text = `${paragraph}\n\n${paragraph}\n\n${paragraph}`;
-  // 9 words per sentence, 30 sentences, 270 words.
-  assert.equal(readingTimeMinutes(text), 2);
-});
-
-test('rejects a rate of zero', () => {
-  assert.throws(() => readingTimeMinutes('a b c', 0), RangeError);
-});
-
-test('rejects a negative rate', () => {
-  assert.throws(() => readingTimeMinutes('a b c', -200), RangeError);
-});
-
-test('rejects NaN and infinite rates', () => {
-  for (const bad of [NaN, Infinity, -Infinity]) {
-    assert.throws(() => readingTimeMinutes('a b c', bad), RangeError);
-  }
-});
-
-test('rejects a rate that is not a number', () => {
-  for (const bad of ['200', null, {}, [200]]) {
-    assert.throws(() => readingTimeMinutes('a b c', bad), (err) => {
-      assert.ok(err instanceof RangeError);
-      assert.ok(err.message.startsWith('readingTimeMinutes:'));
-      return true;
-    });
-  }
-});
-
 test('throws a TypeError naming the function for a non-string', () => {
   for (const bad of [undefined, null, 12, {}, ['a b']]) {
     assert.throws(() => readingTimeMinutes(bad), (err) => {
@@ -1088,11 +629,6 @@ test('throws a TypeError naming the function for a non-string', () => {
       return true;
     });
   }
-});
-
-test('gives the same answer when called twice', () => {
-  const text = words(333);
-  assert.equal(readingTimeMinutes(text), readingTimeMinutes(text));
 });
 
 test('matches every row of the reference table', () => {
@@ -1109,7 +645,7 @@ The `words(n)` helper in the test builds a text of exactly `n` words, so the bou
 
 Run: `npm test`
 
-Expected: the new file fails with `TypeError: readingTimeMinutes is not a function` in every test, and the 65 earlier tests still pass.
+Expected: the new file fails with `TypeError: readingTimeMinutes is not a function` in every test, and the 24 earlier tests still pass.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -1144,7 +680,7 @@ module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };
 
 Run: `npm test`
 
-Expected: all 85 tests pass (65 from Tasks 1 to 3 and 20 new) and the summary shows `fail 0`.
+Expected: all 32 tests pass (24 from Tasks 1 to 3 and 8 new) and the summary shows `fail 0`.
 
 - [ ] **Step 5: Commit**
 
@@ -1155,7 +691,7 @@ git commit -m "feat: add readingTimeMinutes"
 
 ## Completion
 
-After Task 4 the working tree holds `src/textstats.js` with four exported functions and four test files. Run `npm test` once more from a clean checkout of the branch to confirm the suite is green: expect 85 tests, 0 failures. Then run a final whole-branch review against this plan before finishing the branch.
+After Task 4 the working tree holds `src/textstats.js` with four exported functions and four test files. Run `npm test` once more from a clean checkout of the branch to confirm the suite is green: expect 32 tests, 0 failures. Then run a final whole-branch review against this plan before finishing the branch.
 
 PLAN
 
