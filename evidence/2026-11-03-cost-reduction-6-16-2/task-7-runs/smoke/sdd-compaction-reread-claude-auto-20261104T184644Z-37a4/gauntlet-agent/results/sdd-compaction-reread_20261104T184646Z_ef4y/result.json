@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T184646Z_ef4y",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The run passed. Claude Code loaded the subagent-driven-development skill and carried out all four tasks in plan.md. Each task had an implementer subagent (Haiku) and then a reviewer (Sonnet), and Task 1 also got a fix round and a re-review. A final whole-branch review ran, then the finishing-a-development-branch skill. The controller's context was compacted 3 times mid-plan. After each compaction it restored the skill and kept the implement → review loop going. I answered \"Keep the branch as-is\" at the finishing step. The working tree is clean and 85 of 85 tests pass.",
+  "reasoning": "I checked every criterion against the files on disk, git history, npm test output and session-log timestamps. The task loop survived three compactions with a review between every pair of tasks, followed by the final review and the finishing step.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Several startup dialogs (trust folder, bypass permissions) have \"No, exit\" selected by default. During setup my extra Enter landed on the bypass dialog and closed Claude, so I had to relaunch. That was my mistake, but it's easy to make."
+    },
+    {
+      "kind": "ux",
+      "description": "On startup Claude Code showed \"Newer Opus model available — Currently pinned: Opus 5\", even though the launcher passes --model claude-opus-5-5. I chose No. The header then still showed \"Opus 5.5\", so the prompt looks wrong for how the session was launched."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The first compaction came before Task 1 was even dispatched (18:48:28, while the controller was still checking the plan), not after Task 1 as the story expects. There were 3 compactions in total. The controller recovered from each one (\"Skills restored\", \"Referenced file plan.md\")."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Each per-task review finished in about 13–20 seconds. That is quick for a combined spec-and-quality review. It may be worth checking how thorough the reviews actually are."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent amended commits to rewrite co-author lines that said Haiku into Opus 5.5 attribution (two amends of wordCount are visible in the reflog). It said so in its summary, but some users might not expect history rewrites like this."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent spotted a test gap: no test covers the curly quotes in sentenceCount. It did not add one, because the plan specifies its tests word for word. It reported this clearly."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent never asked about a worktree or branch. It worked on feature/textstats, the branch that was already checked out (the reflog shows the checkout before the fixture commit)."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each with its own test file, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ holds wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. `npm test` → `ℹ tests 85 ℹ pass 85 ℹ fail 0`. git log shows four commits: 0743275 feat: add wordCount, 0c25550 sentenceCount, 5e9e1b5 topWords, 01fd107 readingTimeMinutes. `git status --short` is empty."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Timestamps of Agent calls and completion notifications from the session log (jq over 5812492f…jsonl): Review Task 1 finished 18:50:53, Re-review fix round 1 finished 18:54:00, then Implement Task 2 called 18:55:11. Review Task 2 finished 18:58:20, then Implement Task 3 called 18:58:48. Review Task 3 finished 19:00:09, then Implement Task 4 called 19:00:30. Review Task 4 finished 19:01:59. Compactions were logged at 18:48:28, 18:54:38 and 19:01:01."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Session log: `19:02:07 CALL Final whole-branch code review` after Review Task 4 finished at 19:01:59, and `NOTIF ... finished` at 19:02:43. The screen summary said: \"one review covered the whole branch ... no blocking issues\"."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "The log shows `CALL Skill hyperpowers:finishing-a-development-branch`. The screen showed the options \"1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is\". I replied \"Keep the branch as-is\" and the agent answered: \"I'm leaving the branch as it is: feature/textstats, with 01fd107 as the latest commit.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi"
+    ]
+  },
+  "duration_ms": 1070894,
+  "usage": {
+    "inputTokens": 78,
+    "outputTokens": 6926,
+    "cacheCreationInputTokens": 48848,
+    "cacheReadInputTokens": 661540,
+    "turns": 35
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

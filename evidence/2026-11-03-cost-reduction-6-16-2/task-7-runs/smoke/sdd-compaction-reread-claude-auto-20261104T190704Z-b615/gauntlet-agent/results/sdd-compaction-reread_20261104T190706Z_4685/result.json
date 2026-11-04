@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261104T190706Z_4685",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent \"Execute plan.md with subagent-driven development.\" and the controller ran all four tasks. Each task got an implementer subagent, then a review, and a re-review when fixes were needed. After the last task it ran a final whole-branch review, then loaded the finishing skill and showed the merge/PR/keep menu. I replied \"Keep the branch as-is\" and it kept the branch. The session log shows 5 compactions (5 compact_boundary entries, 19:09 to 19:31). After the compactions the screen showed \"Skills restored (hyperpowers:subagent-driven-development)\", and the controller checked its ledger against git and carried on. On disk, all four functions are exported and `npm test` passes 86/86.",
+  "reasoning": "Every acceptance criterion is backed by the session log, the git state, or test output. The task loop kept its order through repeated compactions: implement, then review, then re-review where needed, then the next task, and a final review at the end.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Startup showed a 'Newer Opus model available: Currently pinned Opus 5, update to Opus 5.5?' prompt, even though the launcher passes --model claude-opus-5-5. I chose No, and the header still said Opus 5.5. The prompt is confusing when a model is pinned by flag."
+    },
+    {
+      "kind": "ux",
+      "description": "Both the workspace-trust dialog and the bypass-permissions dialog have 'No, exit' selected by default, so it takes an extra key press to get started (probably intentional for safety)."
+    },
+    {
+      "kind": "bug",
+      "description": "The facts carried across compaction contradicted each other: the controller said \"Preflight says Codex is not-installed, which overrides the summary's note that Codex was present.\" Just before that it had said \"Codex is installed, so I need the gate doc.\" The summary carried a wrong fact, though the controller corrected it. In the end every Codex gate degraded and was recorded as ungated."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Compaction happened very early: the first compact_boundary was at 19:09:04, before Task 1 was dispatched. There were 5 compactions in total. The scenario expected it after the first task. The loop held up either way."
+    },
+    {
+      "kind": "bug",
+      "description": "Haiku implementers twice got commit details wrong, and the controller had to fix them. The topWords commit trailer was signed 'Claude Haiku 4.5' and had to be amended. Several fix commits were needed to restore typographic (non-ASCII) quotes and apostrophes the implementers had swapped out, e.g. 7afa9fb, 30e487b and 6d271f9, two of which have the same message 'fix: restore typographic quotes in sentenceCount'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final review left two minor issues unfixed: String() on a non-coercible rate argument throws a plain TypeError instead of the promised RangeError (src/textstats.js:104 and :136), and there is no test for a curly quote before an abbreviation. The agent says the first flaw also exists in plan.md."
+    },
+    {
+      "kind": "performance",
+      "description": "The full run took about 26 minutes ('Crunched for 26m 15s') for four small functions."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four tasks implemented and committed, exported from src/textstats.js with test files, npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder holds wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. `npm test` printed: tests 86, pass 86, fail 0. git log includes commits a7f4f20 (wordCount), 188984d (sentenceCount), 9b21299 (topWords) and 70885bd (readingTimeMinutes), plus fix commits."
+    },
+    {
+      "criterion": "Each task reviewed before next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatches in session log 37fb435a...jsonl, in order: Implement Task 1 → Review Task 1 → Re-review Task 1 fix round 2 → Implement Task 2 → Review Task 2 → Re-review Task 2 fix round 2 → Implement Task 3 → Review Task 3 → Implement Task 4 → Review Task 4 → Re-review Task 4 fix round 1. Screen also showed \"I'm holding the Task 2 dispatch until Task 1's re-review comes back.\""
+    },
+    {
+      "criterion": "Final whole-branch review after the last task",
+      "verdict": "pass",
+      "evidence": "The log shows 'Agent: Final whole-branch review' dispatched after 'Re-review Task 4 fix round 1'. Screen: \"Starting the final whole-branch review on opus.\" Later: \"The final whole-branch review found nothing Critical or Important and approved it for merge.\""
+    },
+    {
+      "criterion": "Session ends in finishing step",
+      "verdict": "pass",
+      "evidence": "The log shows 'Skill: hyperpowers:finishing-a-development-branch'. Screen showed 'Implementation complete. What would you like to do? 1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. After my reply \"Keep the branch as-is\", the agent said \"I'm keeping the branch feature/textstats as it is.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi"
+    ]
+  },
+  "duration_ms": 1744170,
+  "usage": {
+    "inputTokens": 86,
+    "outputTokens": 6126,
+    "cacheCreationInputTokens": 41191,
+    "cacheReadInputTokens": 747808,
+    "turns": 39
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
