@@ -493,6 +493,53 @@ class Brainstorming(unittest.TestCase):
         self.assertFalse(self.reading(entries)["valid"])
 
 
+def follow_of(scenario: str, entries: list[dict[str, Any]]) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory() as tmp:
+        record = make_run(Path(tmp), "r", entries)
+        return tally.compaction_follow(tally.events(transcripts(record)), scenario)
+
+
+def partial_read(path: str, ident: str) -> list[dict[str, Any]]:
+    return [tool_use("Read", {"file_path": path, "offset": 5, "limit": 50}, ident), result(ident)]
+
+
+class PerCompaction(unittest.TestCase):
+    load = skill("hyperpowers:subagent-driven-development")
+
+    def test_three_compactions_the_second_unfollowed(self) -> None:
+        entries = [
+            self.load,
+            compact(), *read(SDD_SKILL),
+            compact(), agent("Implement Task 1: a", "i1"), notif("i1"),
+            compact(), *partial_read(SDD_SKILL, "p"),
+        ]
+        got = follow_of(SDD, entries)
+        self.assertEqual(got, {"compactions": 3, "followed": 2, "whole": 1})
+
+    def test_offset_read_follows_but_is_not_whole(self) -> None:
+        got = follow_of(SDD, [self.load, compact(), *partial_read(SDD_SKILL, "p")])
+        self.assertEqual(got, {"compactions": 1, "followed": 1, "whole": 0})
+
+    def test_read_after_the_next_dispatch_does_not_follow(self) -> None:
+        entries = [self.load, compact(), agent("Implement Task 1: a", "i1"), *read(SDD_SKILL)]
+        self.assertEqual(follow_of(SDD, entries)["followed"], 0)
+
+    def test_compaction_before_the_load_and_errored_read_do_not_count(self) -> None:
+        entries = [compact(), self.load, compact(), *read(SDD_SKILL, is_error=True)]
+        self.assertEqual(follow_of(SDD, entries), {"compactions": 1, "followed": 0, "whole": 0})
+
+    def test_brainstorming_compaction_after_the_first_question_is_not_counted(self) -> None:
+        guide = read("/x/skills/brainstorming/SKILL.md")
+        entries = [
+            skill("hyperpowers:brainstorming"), compact(), *guide,
+            tool_use("AskUserQuestion", {}, "q"), compact(),
+        ]
+        self.assertEqual(follow_of(BRAIN, entries), {"compactions": 1, "followed": 1, "whole": 1})
+        # A second compaction before the question bounds the first one's window.
+        entries = [skill("hyperpowers:brainstorming"), compact(), compact(), *guide]
+        self.assertEqual(follow_of(BRAIN, entries), {"compactions": 2, "followed": 1, "whole": 1})
+
+
 class LaunchFailures(unittest.TestCase):
     def collect(self, terminal: str | None) -> dict[str, dict[str, Any]]:
         with tempfile.TemporaryDirectory() as tmp:

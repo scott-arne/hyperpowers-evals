@@ -51,6 +51,14 @@ Rules, from the spec's Testing section:
   skill call and before the first AskUserQuestion or start-server.sh call. Mechanism
   passes when brainstorming/SKILL.md is read between the compaction and that
   call. Outcome is quorum's post checks all passing.
+* Report-only, per compaction (no pass bar, no effect on any outcome or
+  mechanism): every automatic compaction after the skill load (brainstorming:
+  only before the first ask or start-server call) is "followed" when a
+  successful Read of that skill's SKILL.md lands after it and before the next
+  stop event (SDD: the next Agent dispatch or compaction; brainstorming: the
+  next ask, server or compaction), and "followed whole-file" when such a Read
+  had no offset and no limit. Per-run lines end ``compactions=N followed=F
+  whole=W``; each cell gets a summary line after the bar lines.
 * A replacement (``sentinel-reruns.tsv``) may replace only a void, in the same
   arm and scenario, at most three per cell; the replacement counts.
 * Pass bars at ten valid trials per cell: SDD treatment outcome >= 8 and >=
@@ -137,7 +145,7 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
     found: list[dict[str, Any]] = []
     # A Read counts where its result arrives: calls composed in the same
     # message as the Read were chosen before the model saw the file.
-    pending_reads: dict[str, str] = {}
+    pending_reads: dict[str, tuple[str, bool]] = {}
     for path in transcripts:
         for line in path.read_text(encoding="utf-8").splitlines():
             try:
@@ -174,7 +182,8 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                             {"kind": "dispatch", "class": kind, "task": task, "id": block.get("id"), "takeover": takeover}
                         )
                     elif name == "Read":
-                        pending_reads[str(block.get("id"))] = str(args.get("file_path") or "")
+                        whole = args.get("offset") is None and args.get("limit") is None
+                        pending_reads[str(block.get("id"))] = (str(args.get("file_path") or ""), whole)
                     elif name == "Skill":
                         found.append({"kind": "skill", "skill": str(args.get("skill") or "")})
                     elif name == "AskUserQuestion":
@@ -201,7 +210,8 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                             continue
                         ident = str(block.get("tool_use_id"))
                         if ident in pending_reads:
-                            found.append({"kind": "read", "path": pending_reads.pop(ident)})
+                            path_read, whole_read = pending_reads.pop(ident)
+                            found.append({"kind": "read", "path": path_read, "whole": whole_read})
                         # A launch is never a completion; the structured marker
                         # is primary and the text is the fallback.
                         elif not structured_launch and "Async agent launched" not in json.dumps(
@@ -334,6 +344,40 @@ def brainstorming_reading(found: list[dict[str, Any]]) -> dict[str, Any]:
             e["kind"] == "read" and e["path"].endswith("brainstorming/SKILL.md") for e in found[compact + 1:stop]
         )
     return reading
+
+
+def compaction_follow(found: list[dict[str, Any]], scenario: str) -> dict[str, Any]:
+    """Report-only: how many automatic compactions were followed by a re-read of the skill.
+
+    Every compaction after the scenario's skill load counts (brainstorming:
+    only those before the first ask or start-server event). A compaction is
+    followed when a successful Read of the skill's ``SKILL.md`` lands after it
+    and before the next stop event (SDD: the next Agent dispatch or compaction;
+    brainstorming: the next ask, server or compaction). It is followed
+    whole-file when such a Read had no offset and no limit.
+
+    :param found: The run's events.
+    :param scenario: ``SDD`` or ``BRAIN``.
+    :returns: ``compactions``, ``followed`` and ``whole`` counts.
+    """
+    skill = "subagent-driven-development" if scenario == SDD else "brainstorming"
+    stops = ("dispatch", "compact") if scenario == SDD else ("ask", "server", "compact")
+    load = next((i for i, e in enumerate(found) if e["kind"] == "skill" and e["skill"].endswith(skill)), None)
+    result = {"compactions": 0, "followed": 0, "whole": 0}
+    if load is None:
+        return result
+    question = next((i for i, e in enumerate(found) if e["kind"] in ("ask", "server")), None)
+    for i, event in enumerate(found):
+        if event["kind"] != "compact" or i <= load:
+            continue
+        if scenario == BRAIN and question is not None and i > question:
+            continue
+        result["compactions"] += 1
+        stop = next((j for j in range(i + 1, len(found)) if found[j]["kind"] in stops), len(found))
+        reads = [e for e in found[i + 1:stop] if e["kind"] == "read" and e["path"].endswith(f"{skill}/SKILL.md")]
+        result["followed"] += bool(reads)
+        result["whole"] += any(e["whole"] for e in reads)
+    return result
 
 
 def load_reruns(path: Path, runs: dict[str, dict[str, Any]]) -> dict[str, str]:
@@ -474,6 +518,7 @@ def read_run(arm: str, scenario: str, proc: str, run_id: str, launch_ok: bool = 
         "void_kind": kind, "valid": valid, "outcome": outcome, "mechanism": mechanism,
         "final": final_reading(verdict),
         "classes": dispatch_counts(found),
+        **compaction_follow(found, scenario),
     }
     print_run(run)
     return run
@@ -495,6 +540,8 @@ def print_run(run: dict[str, Any]) -> None:
     )
     if "classes" in run:
         line += "\tdispatches=" + ",".join(f"{k}:{v}" for k, v in run["classes"].items())
+    if "compactions" in run:
+        line += f"\tcompactions={run['compactions']} followed={run['followed']} whole={run['whole']}"
     print(line)
 
 
@@ -582,6 +629,25 @@ def summarize(runs: dict[str, dict[str, Any]], replaced: set[str]) -> None:
           bar(None if not complete(("control", BRAIN), ("treatment", BRAIN)) else t_rate >= c_rate))
     print("brainstorming mechanism (treatment >= 8):",
           bar(None if not complete(("treatment", BRAIN)) else brain_t["mechanism"] >= 8))
+    print_compaction_summary(runs, replaced)
+
+
+def print_compaction_summary(runs: dict[str, dict[str, Any]], replaced: set[str]) -> None:
+    """Print each cell's report-only per-compaction totals (no pass bar)."""
+    for scenario in SCENARIOS:
+        for arm in ("control", "treatment"):
+            valid = [
+                r for r in runs.values()
+                if (r["arm"], r["scenario"]) == (arm, scenario) and r["valid"] and r["run"] not in replaced
+            ]
+            total = sum(r["compactions"] for r in valid)
+            followed = sum(r["followed"] for r in valid)
+            every = sum(1 for r in valid if r["compactions"] and r["followed"] == r["compactions"])
+            percent = 100 * followed / total if total else 0.0
+            print(
+                f"{arm} {scenario} per-compaction: compactions={total} followed={followed} ({percent:.0f}%) "
+                f"whole={sum(r['whole'] for r in valid)} runs-every-followed={every}"
+            )
 
 
 def main() -> int:
