@@ -41,7 +41,13 @@ from synth import (
 
 CONTROL_STOPS = (("Moving to Task 3.", "neither"),)
 TRACKED_JOB = "bash /roots/treatment/skills/subagent-driven-development/scripts/tracked-job"
+SCRIPTS = "/roots/treatment/skills/subagent-driven-development/scripts"
 WAIT_OK = "status=exited code=0\n"
+# A closing watch followed by `date -u` prints its verdict and then the date.
+WAIT_THEN_DATE = "status=exited code=0\nThu Nov  5 19:26:28 UTC 2026\n"
+# A result both watch readings accept, as its last line and as the line before
+# it, so only the command's shape can refuse a call that printed it.
+OK_TWICE = "status=exited code=0\nstatus=exited code=0\n"
 # The long soak and its watch share the synthetic timeline, because the watch
 # has to be causal: it starts after the launch and answers after the exit.
 LONG_JOB = {
@@ -284,6 +290,22 @@ class Measure(unittest.TestCase):
         m = self.run_of("s1", fast)
         self.assertEqual(m["short_runs"][0]["elapsed"], 30.0)
         self.assertFalse(m["short_ok"])
+
+    def test_a_short_soak_under_the_time_keyword_is_a_foreground_run(self) -> None:
+        # Observed in 13eb and 0c06 (Correction 12): the soak ran last in a
+        # foreground call, under bash's `time` and piped to `tail`.
+        records = treatment_records()
+        for rec in records:
+            for use in liveness.tool_uses(rec):
+                if use.get("id") == "b1":
+                    use["input"]["command"] = (
+                        'git log --oneline -2; python3 -m unittest discover -s tests -p "test_unit_*.py" 2>&1 | tail -3; '
+                        "time python3 -m unittest tests.test_soak_short -v 2>&1 | tail -5"
+                    )
+        m = self.run_of("s3", records)
+        self.assertEqual(len(m["short_runs"]), 1)
+        self.assertEqual(m["short_runs"][0]["elapsed"], 250.0)
+        self.assertTrue(m["short_ok"])
 
     def test_soak_file_writes_fail_success(self) -> None:
         edit = treatment_records() + [
@@ -739,6 +761,52 @@ class Measures(unittest.TestCase):
         self.assertIsNone(analyze._waited_job(f"cd $(pwd) && {TRACKED_JOB} wait {jobdir} --max-ms 600000"))
         self.assertEqual(analyze._waited_job(f"{TRACKED_JOB} wait {jobdir} --max-ms 600000"), jobdir)
 
+    def test_a_substitution_assigned_before_the_watch_leaves_it_readable(self) -> None:
+        # Observed in 6dcc (Correction 12): the job directory came from a
+        # substitution that is a whole assignment's value, in a segment of
+        # assignments before the wait. Its body holds no operator, so no
+        # fragment of it can be read as the command the call closed with.
+        job = dict(LONG_JOB)
+        wait = f"$S/tracked-job wait $W/jobs/{job['name']}-x-0 --max-ms 300000"
+        for label, command in (
+            ("observed", f"S={SCRIPTS}; W=$($S/sdd-dir plan.md 2>/dev/null); {wait}"),
+            ("one assignment per line", f"S={SCRIPTS}\nW=$($S/sdd-dir plan.md 2>/dev/null)\n{wait}"),
+            ("beside another assignment", f"S={SCRIPTS}; P=plan.md W=$($S/sdd-dir $P); {wait}"),
+            ("the wait after &&", f"S={SCRIPTS}; W=$($S/sdd-dir plan.md) && {wait}"),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command))
+                self.assertTrue(analyze.measure(run, {})["long_ok"], label)
+
+    def test_every_other_substitution_still_hides_the_watch(self) -> None:
+        # Each of these closes with a wait the job's own directory names and
+        # prints the success line, and each carries a substitution that is not
+        # a whole assignment's value before the final segment, or whose body
+        # could be split into a command of its own.
+        job = dict(LONG_JOB)
+        jobdir = f"jobs/{job['name']}-x-0"
+        wait = f"{SCRIPTS}/tracked-job wait {jobdir} --max-ms 300000"
+        for label, command in (
+            ("the wait inside echo's substitution", f"echo $(true; {wait})"),
+            ("a body of two commands", f"W=$(cd /x; pwd); {wait}"),
+            ("a substitution followed by a command", f"X=$(pwd) make; {wait}"),
+            ("a substitution in the wait's own words", f"{SCRIPTS}/tracked-job wait $(pwd)/{jobdir} --max-ms 300000"),
+            ("a backtick substitution assigned before it", f"W=`pwd`; {wait}"),
+            ("a substitution in a command before it", f"cd $(pwd) && {wait}"),
+            ("a nested substitution", f"W=$(dirname $(pwd)); {wait}"),
+            ("a body with a pipe", f"W=$(ls | head -1); {wait}"),
+            ("a body with &&", f"W=$(cd /x && pwd); {wait}"),
+            ("a substitution in a comment after the wait", f"{wait} # $(pwd)"),
+            # An accepted false negative: the quoted value runs the same body,
+            # but the admitted shape is the bare `NAME=$(...)` word only.
+            ("a quoted substitution value", f'W="$(pwd)"; {wait}'),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command))
+                self.assertFalse(analyze.measure(run, {})["long_ok"], label)
+
     def test_the_wait_must_be_the_last_thing_the_call_runs(self) -> None:
         # The call's output is the proof, so it has to be the helper's own
         # answer: anything running after the wait can print over it.
@@ -788,6 +856,72 @@ class Measures(unittest.TestCase):
                 run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
                                records=watch_records(wait_command(job), text=text))
                 self.assertTrue(analyze.measure(run, {})["long_ok"], label)
+
+    def test_a_closing_date_leaves_the_verdict_one_line_up(self) -> None:
+        # Observed in 13eb and 560c (Correction 12): the closing watch ran the
+        # helper by its path and then `date -u`, so its verdict is the line
+        # before the date's. The other forms are the rest of what the rule
+        # admits after the wait.
+        job = dict(LONG_JOB)
+        wait = f"{SCRIPTS}/tracked-job wait jobs/{job['name']}-x-0 --max-ms 420000"
+        for label, command in (
+            ("observed", f"{wait}; date -u"),
+            ("bare", f"{wait}; date"),
+            ("RFC 2822", f"{wait}; date -R"),
+            ("a format", f"{wait}; date +%H:%M:%S"),
+            ("a quoted format with a space", f"{wait}; date '+%Y-%m-%d %H:%M:%S'"),
+            ("UTC and a format", f"{wait}; date -u +%FT%TZ"),
+            ("by its path", f"{wait}; /bin/date -u"),
+            ("on the next line", f"{wait}\ndate -u"),
+            ("after &&", f"{wait} && date -u"),
+            ("after && behind setup", f"cd /x/coding-agent-workdir && {wait} && date -u"),
+            ("behind setup under ;", f"cd /x/coding-agent-workdir; {wait}; date -u"),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command, text=WAIT_THEN_DATE))
+                self.assertTrue(analyze.measure(run, {})["long_ok"], label)
+
+    def test_only_a_closing_date_may_follow_the_wait(self) -> None:
+        # Every result here carries the success line both as its last line and
+        # as the one before it, so only the command's shape can refuse a call.
+        job = dict(LONG_JOB)
+        wait = f"{SCRIPTS}/tracked-job wait jobs/{job['name']}-x-0 --max-ms 420000"
+        for label, command in (
+            ("an echoed success line", f"{wait}; echo status=exited code=0"),
+            ("an echo after the date", f"{wait}; date; echo status=exited code=0"),
+            ("piped into date", f"{wait} | date"),
+            ("date after ||", f"{wait} || date"),
+            ("date reading a file", f"{wait}; date -f stamps.txt"),
+            ("date after a backgrounded wait", f"{wait} & date"),
+            ("date with a redirect", f"{wait}; date -u > stamp.txt"),
+            # A format can print more lines than one, which would move the
+            # verdict, and an expansion can make it do so unseen.
+            ("a format with a newline conversion", f"{wait}; date '+status=exited code=0%nX'"),
+            ("a format that expands a variable", f'{wait}; date "+$STAMP"'),
+            # Under `;` the call's exit is the date's, so it no longer says the
+            # wait ran or that its answer is the line printed before the date.
+            ("a wait the shell may have skipped", f"echo status=exited code=0; false && {wait}; date -u"),
+            ("a wait whose answer went to a file", f"echo status=exited code=0; {wait} > wait.log; date -u"),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command, text=OK_TWICE))
+                self.assertFalse(analyze.measure(run, {})["long_ok"], label)
+
+    def test_the_line_before_a_date_must_be_the_success_line(self) -> None:
+        job = dict(LONG_JOB)
+        wait = f"{SCRIPTS}/tracked-job wait jobs/{job['name']}-x-0 --max-ms 420000"
+        for label, command, text in (
+            ("a running verdict before the date", f"{wait}; date -u",
+             "status=running\nThu Nov  5 19:26:28 UTC 2026\n"),
+            # Without a closing date the verdict is still the last line only.
+            ("a final wait whose success line is one line up", wait, WAIT_THEN_DATE),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command, text=text))
+                self.assertFalse(analyze.measure(run, {})["long_ok"], label)
 
     def test_the_watched_attempt_answers_for_a_retried_soak(self) -> None:
         # A lost first attempt and a watched retry are two records of one
@@ -1668,6 +1802,29 @@ class Untracked(unittest.TestCase):
         self.assertFalse(analyze.runs_soak('git commit -m "run python3 -m unittest tests.test_soak_short"', "test_soak_short"))
         self.assertTrue(analyze.runs_soak("cd /x && PYTHONPATH=. python3 -m unittest tests.test_soak_long -v", "test_soak_long"))
         self.assertTrue(analyze.runs_soak("nohup python3 -m unittest tests.test_soak_long -v > o 2>&1 &", "test_soak_long"))
+
+    def test_the_time_keyword_prefixes_a_soak_execution(self) -> None:
+        # The first command is 13eb's and 0c06's shape (Correction 12).
+        for command in (
+            (
+                'git log --oneline -2; python3 -m unittest discover -s tests -p "test_unit_*.py" 2>&1 | tail -3; '
+                "time python3 -m unittest tests.test_soak_short -v 2>&1 | tail -5"
+            ),
+            "time -p python3 -m unittest tests.test_soak_short -v",
+            "cd /x && time python3 -m unittest tests.test_soak_short",
+        ):
+            with self.subTest(command):
+                self.assertTrue(analyze.runs_soak(command, "test_soak_short"))
+
+    def test_a_time_that_does_not_prefix_the_soak_is_no_execution(self) -> None:
+        for command in (
+            "echo time python3 -m unittest tests.test_soak_short",
+            "printf '%s ' time python3 -m unittest tests.test_soak_short",
+            'git commit -m "time python3 -m unittest tests.test_soak_short"',
+            "time echo python3 -m unittest tests.test_soak_short",
+        ):
+            with self.subTest(command):
+                self.assertFalse(analyze.runs_soak(command, "test_soak_short"))
 
 
 class Summary(unittest.TestCase):

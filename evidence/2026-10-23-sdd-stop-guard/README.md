@@ -336,7 +336,8 @@ or a release, which does not move that pin for the reason below:
 Correction 9 changed all three, and its entry under "Corrections" records
 the blobs after it. Correction 10 changed `analyze.py` alone, and entry 10
 records its blob after it. Correction 11 changed `tally.py` alone, and entry 11
-records its blob after it.
+records its blob after it. Correction 12 changed `analyze.py` alone, and entry
+12 records its blob after it.
 
 `synth.py` builds the synthetic runs the analyzer's own tests read; no tally
 reads it, so it is not pinned.
@@ -702,6 +703,91 @@ The numbering continues the series in
     `23e39ffb4bf75b4d9e0ac5cb9d715ee9e0d65598`; `liveness.py`
     `4b56247ca0333aac395f7807b051a92a3dae10e5` and `analyze.py`
     `6dd98e4b407e003c821360e02e2531c15efd004f` are unchanged.
+12. 2026-11-05, after the Z4 contingency campaign was tallied (`tally-z4.txt`,
+    FAIL) and before any run of the second re-measure was launched. One change
+    to `analyze.py`, in three parts, each a call shape the F reader missed.
+    Reason: H4 failed on F, 6 of 10 against a threshold of 9, and each of the
+    five misses behind that is a foreground call the analyzer could not read.
+    `13eb` and `0c06` ran the short soak as `time python3 -m unittest
+    tests.test_soak_short -v 2>&1 | tail -5`, and `UNITTEST_CMD` admitted only
+    environment assignments, `nohup` and `timeout` before the interpreter, so
+    `runs_soak` found no execution. `13eb` and `560c` closed their last watch
+    of the long soak with `tracked-job wait <jobdir> --max-ms <n>; date -u`,
+    whose result is `status=exited code=0` followed by one date line, and
+    `_waited_job` required the wait to be the final segment while
+    `_wait_verdict` read only the last line. `6dcc` watched with
+    `S=<scripts>; W=$($S/sdd-dir plan.md 2>/dev/null); $S/tracked-job wait
+    $W/jobs/<job> --max-ms 300000`, whose last line is `status=exited code=0`,
+    and `_proven_final` returned None for any text carrying `$(`. The human
+    partner decided on 2026-11-05 to keep H2 as written, to correct the F
+    reader before any new run, and to measure ten fresh runs at the same
+    treatment ("Pre-registration addendum (Z4 contingency, second
+    re-measure)").
+
+    `UNITTEST_CMD` now also admits the shell keyword `time`, with or without
+    `-p`, in the prefix group beside `nohup` and `timeout`. A `time` that is
+    an argument of another command (`echo time python3 -m unittest ...`), or
+    that runs another program (`time echo ...`), still counts as no soak.
+
+    `_waited_job` takes a count of trailing lines, 0 by default. At 1 the call
+    must close with exactly one `date` segment: the call's final non-empty
+    segment, joined to the wait by `;` or `&&`, whose words are `date` by
+    basename followed by nothing, `-u`, `-R`, a single `+<format>` word, or
+    `-u` and a single `+<format>` word. The format may expand nothing (no `$`
+    and no backtick) and may carry no newline and no `%n`, because any of
+    those can print a second line. The wait before the date must meet
+    everything a final wait already had to: every operator joining it is in
+    `PROVEN_OPS`, the shell waits for it, and it runs `tracked-job wait`.
+    `_wait_verdict` takes the same count and reads the verdict from the last
+    non-blank line before the result's final non-blank line, and `_watched`
+    tries both counts, of which at most one fits a call's shape. Two further
+    conditions keep the reasoning the wait reader already relied on. Under
+    `&&` the date runs only when the wait exited 0, which the wait does only
+    for `status=exited code=0`, so the call's exit 0 still vouches for the
+    wait. Under `;` the call's exit is the date's, so the printed verdict is
+    the whole proof, and the wait must then run whatever came before it (no
+    `&&` among its own operators) and print into the result (no `>` in its
+    segment). Without those two conditions `echo status=exited code=0; false
+    && <wait>; date -u` would read as a watch of a wait that never ran. Every
+    other trailing segment is read as before, and these stay rejected:
+    `<wait>; echo status=exited code=0`, `<wait>; date; echo status=exited
+    code=0`, `<wait> | date`, `<wait> || date`, `<wait>; date -f <file>`,
+    `<wait> & date`, and a `<wait>; date -u` whose line before the date is
+    `status=running`.
+
+    `_proven_final` admits a command substitution when every `$(` in the text
+    is the whole value of an assignment word `NAME=$(...)`, each such word sits
+    in a segment before the final one made of assignment words only, each body
+    holds no `;`, `&`, `|`, newline, parenthesis, backtick, quote, backslash
+    or `#`, and the final segment carries no substitution. Such a body cannot
+    pose as the final command, because `_split_ops` splits it nowhere and so
+    it stays inside its assignment's segment. Any backtick, and every other
+    substitution, still leaves the text unproven. These stay rejected:
+    `echo $(true; <wait>)`, `W=$(a; b); <wait>`, `X=$(cmd) other-cmd; <wait>`,
+    a wait with `$(...)` in its own words, a `$(` in a comment, a quoted value
+    `W="$(...)"`, and any backtick. The function's other callers read a job's
+    argv, which `shlex.join` quotes into one segment, so a `$(` there is
+    always in the final segment and is still refused.
+
+    H1 to H4, R and every other measure are unchanged, and the re-read proves
+    it. Read with the corrected analyzer, every run in
+    `task-20-runs/treatment/` (eleven attempts, the `p1` void among them) and
+    in `task-21-runs/treatment/` (ten) prints the same JSON as at `6dd98e4b`
+    except in four contingency runs. In `13eb`, `short_runs` gains its one
+    foreground run of the short soak (240.6 s under a 420000 ms timeout), and
+    `short_ok` and `long_ok` turn true. In `0c06`, `short_runs` gains its one
+    run (243.2 s under 420000 ms) and `short_ok` turns true. In `560c` and
+    `6dcc`, `long_ok` turns true. `long_job` moves in no run.
+    The first campaign's tally, rerun with the corrected analyzer, is
+    `tally.txt` byte for byte: `H1: True`, `H2: True`, `H3: True`, `H4: True`
+    with `f_runs: 9`, `R: True`, `decision: PASS`. The contingency's reads
+    `H1: True`, `H2: False` with `neither_listed_total: 1`, `H3: True`,
+    `H4: True` with `f_runs: 10`, `R: True`, `decision: FAIL`. Those readings
+    do not replace `tally.txt` or `tally-z4.txt`, which stay the records of
+    their campaigns as read at their pins. Pins after the Correction:
+    `analyze.py` `144554cf63c15f9a3b2e012f1cbf21ca95ca0d5b`; `liveness.py`
+    `4b56247ca0333aac395f7807b051a92a3dae10e5` and `tally.py`
+    `23e39ffb4bf75b4d9e0ac5cb9d715ee9e0d65598` are unchanged.
 
 ## Pre-registration addendum (Z4 contingency)
 
@@ -762,6 +848,55 @@ to 11. The runs are archived with
 `python3 tally.py --manifest manifest-z4.tsv --logs logs/z4 --archive task-21-runs/treatment --out tally-z4.txt`.
 `tally-z4.txt` is the decision of record for the release; `tally.txt` stays
 the first campaign's record.
+
+## Pre-registration addendum (Z4 contingency, second re-measure)
+
+2026-11-05, written before any run of this campaign was launched.
+
+The Z4 contingency campaign failed its rule: `tally-z4.txt` reads
+`decision: FAIL`, with H2 and H4 false ("Results (Z4 contingency)"). H2
+failed on one entry: in `95e8` the Gauntlet labelled `neither` the session's
+report after the merge, a turn end after Finish had removed the ledger, which
+the hook answered `no-ledger`. H4 failed on F, 6 of 10 against a threshold of
+9, and each of the five misses behind that is a foreground call whose shape
+the analyzer could not read. The human partner decided on 2026-11-05 to keep
+H2 as written, to correct the F reader before any new run, and to measure ten
+fresh runs at the same treatment.
+
+Correction 12 is that correction. It changes `analyze.py` alone: the soak
+reader takes a `time` prefix, and the watch reader takes a closing `date`
+after the wait and a substitution assigned before it. No other measure moves.
+Read with it, the contingency's F is 10 of 10 and its decision is still FAIL,
+on H2; that reading does not replace `tally-z4.txt`.
+
+The treatment is the first addendum's, unchanged: hyperpowers
+`36a62559c2ba7ab6deb5a9b502a4938cfd7d4e39` at the root
+`/Users/johnss51/.cache/hyperpowers/sdd-stop-guard/hp-treatment-z4`, a
+detached worktree at that commit that is never edited, on Claude Code
+2.1.317. The hook files are the ones the first addendum records.
+
+`manifest-z4b.tsv` holds the pin rows of `manifest-z4.tsv`, byte for byte,
+and the ten launch rows `treatment sdd-turn-liveness 1 p1 default` to `p10`,
+so its bytes are `manifest-z4.tsv`'s. The rows launch from two views,
+`manifest-z4b-a.tsv` (`p1` to `p5`) and `manifest-z4b-b.tsv` (`p6` to
+`p10`), each through `launch-all.sh <view> 5` as a tracked background job
+outside the command sandbox, the second after the first has finished, with
+`LOGS` pointing at `logs/z4b/`. The rows reuse the names of the earlier
+campaigns' rows, and `logs/measure-launch.sh` claims a row's log
+exclusively, so this campaign's logs go to a directory of their own. A
+replacement row is `r<n>`, appended to `manifest-z4b.tsv` and launched from
+a view of its own.
+
+The runs are archived with
+`LOGS=logs/z4b bash archive-runs.sh treatment task-21-runs/z4b` and tallied
+with
+`python3 tally.py --manifest manifest-z4b.tsv --logs logs/z4b --archive task-21-runs/z4b/treatment --out tally-z4b.txt`.
+
+H1 to H4 and R apply unchanged to the ten runs under `manifest-z4b.tsv`, with
+the void rules and the adjudication of "Pre-registration" and Corrections 9
+to 12. `tally-z4b.txt` is the decision of record for the release;
+`tally.txt` and `tally-z4.txt` stay the records of the first campaign and the
+Z4 contingency campaign.
 
 ## Results
 

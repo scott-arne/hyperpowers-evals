@@ -132,9 +132,26 @@ SHELL_NESTING = 4
 WAIT_EXITED = re.compile(r"^status=exited code=0\r?$")
 TRANSPORT_ERRORS = ("ECONNRESET", "ENOTFOUND", "ETIMEDOUT", "ECONNREFUSED")
 SOAK_FILES = ("test_soak_short.py", "test_soak_long.py")
+# Bash's `time` keyword, with its `-p`, runs the command after it in the
+# foreground like `nohup` and `timeout` do (Correction 12).
 UNITTEST_CMD = re.compile(
-    r"(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*(?:nohup\s+|timeout\s+\S+\s+)*(?:\S*/)?python3?\s+-m\s+unittest\b([^\n;|&]*)"
+    r"(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*(?:nohup\s+|timeout\s+\S+\s+|time\s+(?:-p\s+)?)*"
+    r"(?:\S*/)?python3?\s+-m\s+unittest\b([^\n;|&]*)"
 )
+# A segment of assignment words only, where a word may take a whole command
+# substitution as its value. The body carries none of the characters
+# `_split_ops` splits at, no nested substitution or subshell, no backtick, and
+# no quote, backslash or `#` that could move where the shell ends the body;
+# a plain value carries no `(` and so no substitution (Correction 12).
+ASSIGNMENT_WORD = r"""[A-Za-z_][A-Za-z0-9_]*=(?:\$\([^;&|\n`()'"\\#]*\)|[^\s;&|`()'"\\#]*)"""
+ASSIGNMENTS = re.compile(rf"\s*{ASSIGNMENT_WORD}(?:\s+{ASSIGNMENT_WORD})*\s*")
+# The trailing `date` a closing watch may carry (Correction 12): its operators,
+# its option words, and a `+<format>` word that expands nothing. A `%n` in the
+# format is a newline, which would move the verdict up a second line.
+DATE_JOINS = frozenset({";", "&&"})
+DATE_OPTIONS: tuple[list[str], ...] = ([], ["-u"], ["-R"])
+DATE_FORMAT = re.compile(r"\+[^\n\r$`\\]*")
+CLOSING_DATE_LINES = 1
 BASH_DEFAULT_TIMEOUT_MS = 120_000
 UNIT_TESTS = "test_unit_"
 SOAK_SHORT_CHECK = "tests.test_soak_short"
@@ -1037,28 +1054,60 @@ def _proven_final(command: str, pipes: bool = True) -> str | None:
     :param pipes: whether ``|`` separates segments as the other operators do.
     :returns: the final segment, or None when it is empty, the shell may
         have skipped it, the shell never waited for it, or the text carries
-        a command substitution.
+        a command substitution other than a whole assignment's value before
+        the final segment (``_substitutions_assigned``), or any backtick.
     """
     # A command substitution runs its body inside the word that carries it,
     # and `_split_ops` reads the body's `;` as a top-level operator, so a
     # fragment of the body would pose as the final command while the exit
     # belongs to the command the substitution feeds (`echo $(true; <soak>)`
     # exits 0 whatever the soak did). Nothing proves such a fragment ran, so
-    # the whole text is unproven; a watch reached through `$(...)` is the
-    # false negative this accepts.
-    if "$(" in command or "`" in command:
+    # a text carrying a backtick, or a substitution of any shape but one, is
+    # unproven. The one shape (Correction 12) is `NAME=$(<body>)` in a segment
+    # of assignments before the final one, its body free of every character
+    # `_split_ops` splits at: the whole body then stays inside that segment,
+    # so no fragment of it is a segment at all, the final segment carries no
+    # substitution, and the exit still belongs to the command the call closed
+    # with. A watch reached through any other substitution is the false
+    # negative this accepts.
+    if "`" in command:
         return None
+    ops = _split_ops(command, pipes)
     final: str | None = None
+    final_at = -1
     proven = False
     joins: list[str] = []
-    for op, segment in _split_ops(command, pipes):
+    for index, (op, segment) in enumerate(ops):
         joins.append(op)
         if segment.strip():
-            final, proven = segment, all(join in PROVEN_OPS for join in joins)
+            final, final_at, proven = segment, index, all(join in PROVEN_OPS for join in joins)
             joins = []
     if final is None or not proven or shell_detaches(final):
         return None
+    if "$(" in command and not _substitutions_assigned(command, ops, final_at):
+        return None
     return final
+
+
+def _substitutions_assigned(command: str, ops: Sequence[tuple[str, str]], final_at: int) -> bool:
+    """Whether every command substitution in the text is a whole assignment's value before the final segment.
+
+    :param command: the text ``ops`` was split from.
+    :param ops: ``_split_ops(command)``.
+    :param final_at: the index of the final non-empty segment in ``ops``.
+    :returns: True when each segment carrying ``$(`` comes before the final
+        one and is assignment words only (``ASSIGNMENTS``), and those segments
+        hold every ``$(`` of the text, so none hides in a comment
+        ``_split_ops`` dropped.
+    """
+    held = 0
+    for index, (_, segment) in enumerate(ops):
+        if "$(" not in segment:
+            continue
+        if index >= final_at or ASSIGNMENTS.fullmatch(segment) is None:
+            return False
+        held += segment.count("$(")
+    return held == command.count("$(")
 
 
 def _heredoc_command(command: str, match: re.Match[str]) -> str:
@@ -1327,7 +1376,7 @@ def _runs_long_soak(job: Mapping[str, Any]) -> bool:
     return final is not None and _is_soak_command(final, LONG_SOAK)
 
 
-def _waited_job(command: str) -> str | None:
+def _waited_job(command: str, trailing_lines: int = 0) -> str | None:
     """The job directory a Bash call's closing ``tracked-job wait`` names, or None.
 
     The helper is recognized by the word a segment actually runs, not by the
@@ -1337,7 +1386,8 @@ def _waited_job(command: str) -> str | None:
 
     The wait also has to be the last thing the call runs, and the call has to
     have reached it (``_proven_final``). Setup may precede it under ``;`` or
-    ``&&`` — a ``cd``, an assignment — but anything after it, a pipe included,
+    ``&&`` — a ``cd``, an assignment, or one carrying a substitution as its
+    whole value (Correction 12) — but anything after it, a pipe included,
     can print over the helper's answer, and that answer is the whole proof: a
     call ending in ``; echo status=exited code=0`` reports a success the
     helper never gave. A wait after ``||`` ran only if its left side failed,
@@ -1348,8 +1398,25 @@ def _waited_job(command: str) -> str | None:
     real watch in any of those shapes is read as none, a false negative the
     rule accepts to keep the forgery out, and so is a watch nested in
     another shell (``bash -c "<wait>"``), which is not recognized at all.
+
+    The one thing the wait may have after it is a closing ``date``, which
+    prints one line and nothing else (``_before_closing_date``), and only
+    when the caller asks for that line: with ``trailing_lines`` 1 the date
+    must be there, and with 0 the wait must be final, so at most one reading
+    fits a call (Correction 12).
+
+    :param command: one Bash call's text.
+    :param trailing_lines: 0 for a call that closes with the wait, 1 for one
+        that closes with a ``date`` after it.
+    :returns: the job directory the wait names, or None.
     """
-    final = _proven_final(_strip_heredocs(command))
+    text = _strip_heredocs(command)
+    if trailing_lines:
+        cut = _before_closing_date(text) if trailing_lines == CLOSING_DATE_LINES else None
+        if cut is None:
+            return None
+        text = cut
+    final = _proven_final(text)
     if final is None:
         return None
     words = _command_words(final)
@@ -1368,15 +1435,87 @@ def _waited_job(command: str) -> str | None:
     return next((w for w in words[2:] if not w.startswith("-")), None)
 
 
-def _wait_verdict(result: str) -> bool:
+def _is_closing_date(segment: str) -> bool:
+    """Whether one segment is a ``date`` that prints exactly one line and reads nothing.
+
+    Its words are ``date`` (by basename) and then nothing, ``-u``, ``-R``, a
+    single ``+<format>`` word, or ``-u`` and a single ``+<format>`` word, so
+    no prefix, redirect or file operand. The format may not expand anything
+    (a ``$`` or a backtick) or carry a newline, a ``%n`` among them, because
+    any of those can make the one line two.
+    """
+    try:
+        words = shlex.split(segment.replace("\\\n", " "))
+    except ValueError:
+        return False
+    if not words or Path(words[0]).name != "date":
+        return False
+    args = words[1:]
+    if args in DATE_OPTIONS:
+        return True
+    if args[:1] == ["-u"]:
+        args = args[1:]
+    return len(args) == 1 and DATE_FORMAT.fullmatch(args[0]) is not None and "%n" not in args[0]
+
+
+def _before_closing_date(command: str) -> str | None:
+    """The call up to the wait, when a single ``date`` closes it after the wait (Correction 12).
+
+    The date has to be the call's final non-empty segment, joined to the
+    segment before it by ``;`` or ``&&`` alone (``DATE_JOINS``), and
+    ``_is_closing_date``. The caller then judges the returned text as it
+    judges any call, so the wait must be that text's proven final segment.
+
+    Under ``&&`` the date runs only when the wait exited 0, which the wait
+    does only for ``status=exited code=0``, so the call's exit 0 still
+    vouches for the wait. Under ``;`` the call's exit is the date's and
+    vouches for nothing before it, so the printed verdict is the whole
+    proof. The wait must then run whatever preceded it (its own operators
+    ``;`` or none: after ``&&`` the shell may have skipped it while an
+    earlier ``echo`` printed the line) and print its answer into the result
+    (no ``>`` in its segment).
+
+    :param command: one Bash call's text, heredoc bodies stripped.
+    :returns: the text up to and including the wait's segment, or None when
+        the call does not close with an admitted date.
+    """
+    if "`" in command:
+        return None
+    ops = _split_ops(command)
+    filled = [index for index, (_, segment) in enumerate(ops) if segment.strip()]
+    if len(filled) < 2 or not _is_closing_date(ops[filled[-1]][1]):
+        return None
+    wait_at = filled[-2]
+    date_joins = {op for op, _ in ops[wait_at + 1 : filled[-1] + 1]}
+    if not date_joins <= DATE_JOINS:
+        return None
+    if "&&" not in date_joins:
+        wait_from = filled[-3] + 1 if len(filled) > 2 else 0
+        if not {op for op, _ in ops[wait_from : wait_at + 1]} <= {"", ";"} or ">" in ops[wait_at][1]:
+            return None
+    head = "".join(op + segment for op, segment in ops[: wait_at + 1])
+    # The re-joined text has lost the comments `_split_ops` dropped, and
+    # `_proven_final` counts substitutions over the text it is given, so one
+    # hidden in a comment must not drop out of that count here.
+    if head.count("$(") != command.count("$("):
+        return None
+    return head
+
+
+def _wait_verdict(result: str, trailing_lines: int = 0) -> bool:
     """Whether a call's result ends in the helper's success line.
 
     ``tracked-job wait`` prints ``status=<state> code=<n>`` last, after any
     note it makes, so its verdict is the last non-blank line; a success line
-    anywhere above that is some other command's output.
+    anywhere above that is some other command's output. A call that closed
+    with a ``date`` after the wait printed one line more, so its verdict is
+    the last non-blank line before that one (Correction 12).
+
+    :param result: the call's result text.
+    :param trailing_lines: how many non-blank lines after the verdict to skip.
     """
     lines = [line for line in result.split("\n") if line.strip()]
-    return bool(lines) and WAIT_EXITED.match(lines[-1]) is not None
+    return len(lines) > trailing_lines and WAIT_EXITED.match(lines[-1 - trailing_lines]) is not None
 
 
 def _watched(job: Mapping[str, Any], calls: Sequence[Call]) -> bool:
@@ -1384,7 +1523,9 @@ def _watched(job: Mapping[str, Any], calls: Sequence[Call]) -> bool:
 
     The watch has to be a call that closed by running the helper on this job's
     own directory, in the foreground, returning without an error and ending in
-    the helper's ``status=exited code=0`` verdict. It also has to be causal —
+    the helper's ``status=exited code=0`` verdict, or closed with a ``date``
+    after it and carrying that verdict on the line before the date's
+    (Correction 12). It also has to be causal —
     started no earlier than the launch and answered no earlier than the job's
     end — so a watch of an earlier attempt is not read as this attempt's.
     """
@@ -1399,13 +1540,20 @@ def _watched(job: Mapping[str, Any], calls: Sequence[Call]) -> bool:
     for call in calls:
         if call.name != "Bash" or call.inp.get("run_in_background") or call.error:
             continue
-        if call.result is None or not _wait_verdict(call.result):
+        if call.result is None:
             continue
         if call.at < launched or call.result_at is None or call.result_at < ended:
             continue
-        waited = _waited_job(str(call.inp.get("command") or ""))
-        if waited is not None and Path(waited).name == name:
-            return True
+        command = str(call.inp.get("command") or "")
+        # `_waited_job` reads a call as closing with the wait or as closing
+        # with a date after it, never both, so the verdict is looked for on
+        # the one line that call's shape puts it on.
+        for trailing in (0, CLOSING_DATE_LINES):
+            if not _wait_verdict(call.result, trailing):
+                continue
+            waited = _waited_job(command, trailing)
+            if waited is not None and Path(waited).name == name:
+                return True
     return False
 
 
