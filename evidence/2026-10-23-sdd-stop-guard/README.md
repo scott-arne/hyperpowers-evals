@@ -703,6 +703,66 @@ The numbering continues the series in
     `4b56247ca0333aac395f7807b051a92a3dae10e5` and `analyze.py`
     `6dd98e4b407e003c821360e02e2531c15efd004f` are unchanged.
 
+## Pre-registration addendum (Z4 contingency)
+
+2026-11-05, before any contingency run was launched.
+
+Release check Z4 failed in Zed. In both Zed runs (sessions `9558e8d7` and
+`d15435c6`) the controller resumed its implementer with `SendMessage` for a
+fix round. On Claude Code the resumed agent ran in the background, the stop
+guard allowed the turn end as `live-agent`, and the turn the human partner's
+prompt opened closed while the agent worked: for 4 min 12 s in the first run
+and 19 s in the second, read from the transcripts' turn ends. The spec's
+contingency therefore ships. On Claude Code, where the Agent tool offers
+`run_in_background`, fix rounds 1 to 3 dispatch a fresh foreground
+implementer on the original implementer's model. That change is hyperpowers
+`fea1999..36a6255`, approved by its task review and by two Codex gate
+rounds. The same range carries Task 21a's stop-guard fix, under which a
+plain file in the cache reads as no ledger; it changes
+`hooks/lib/stop-guard.mjs`.
+
+The ten contingency runs differ from `manifest.tsv` in three pin rows and
+nothing else:
+
+- `treatment` `36a62559c2ba7ab6deb5a9b502a4938cfd7d4e39`.
+- `treatment_root` `/Users/johnss51/.cache/hyperpowers/sdd-stop-guard/hp-treatment-z4`,
+  a detached worktree at that commit that is never edited.
+- `cc` `2.1.317`. Claude Code updated itself from 2.1.302 on 2026-11-03, and
+  the human partner chose to measure the contingency on 2.1.317 rather than
+  hold 2.1.302 through a campaign-local link. These runs therefore differ
+  from the first campaign in the Claude Code version as well as the
+  treatment, and a difference between the two tallies cannot be attributed
+  to the treatment alone. `cc_path` is unchanged; it now resolves to 2.1.317.
+
+The hook files at the new treatment, from `git rev-parse 36a6255:<f>` in
+hyperpowers: `hooks/sdd-stop-guard` `a2467cbe83a448dfa52a901830258d0b7693fa4f`
+(unchanged) and `hooks/lib/stop-guard.mjs`
+`48f4d06b4d20b18df7226746b5ec711ffff4ede6`.
+
+`manifest-z4.tsv` holds those pin rows and the ten launch rows
+`treatment sdd-turn-liveness 1 p1 default` to `p10`. The rows reuse Task 20's
+names, and `logs/measure-launch.sh` claims a row's log exclusively, so the
+contingency logs to `logs/z4/` through `LOGS`, which `launch-all.sh`,
+`logs/measure-launch.sh` and `archive-runs.sh` honor; the tally reads that
+directory through `--logs` (Correction 11). The rows launch from two views,
+`manifest-z4-a.tsv` (`p1` to `p5`) and `manifest-z4-b.tsv` (`p6` to `p10`),
+each through `launch-all.sh <view> 5` as a tracked background job outside the
+command sandbox, the second after the first has finished: Task 20's ten ran
+in one wave at concurrency 5 for 2 h 02 min, longer than the 7200000 ms a
+tracked background command may run. A replacement row is `r<n>`, appended to
+`manifest-z4.tsv` and launched from a view of its own. A dry pin check at
+evals `a876b6b1d` (`QUORUM_RUN_CMD=true`, `LOGS` in a scratch directory)
+read the new root at `36a6255`, clean before and after, the harness paths
+identical to the pin, Claude Code 2.1.317 and provider `vertex`.
+
+H1 to H4 and R apply unchanged to the ten runs under `manifest-z4.tsv`, with
+the void rules and the adjudication of "Pre-registration" and Corrections 9
+to 11. The runs are archived with
+`LOGS=logs/z4 bash archive-runs.sh treatment task-21-runs` and tallied with
+`python3 tally.py --manifest manifest-z4.tsv --logs logs/z4 --archive task-21-runs/treatment --out tally-z4.txt`.
+`tally-z4.txt` is the decision of record for the release; `tally.txt` stays
+the first campaign's record.
+
 ## Results
 
 Recorded by Task 20 on 2026-10-28, from the archive under
