@@ -691,14 +691,17 @@ The numbering continues the series in
     `treatment sdd-turn-liveness 1 p1` to `p10`, and
     `logs/measure-launch.sh` refuses a launch whose log already exists, so the
     contingency launches with `LOGS` set to `logs/z4` and its logs go there.
-    `tally.py` read `logs/` unconditionally, so pointed at `manifest-z4.tsv`
-    it would have read Task 19's and Task 20's fourteen logs as logs without a
-    manifest row and returned no decision. No decision logic, void rule or
+    `tally.py` read `logs/` unconditionally, and its log pattern matches only
+    the treatment arm's logs, so pointed at `manifest-z4.tsv` it would have
+    taken Task 20's launch logs `p1` to `p10` as the contingency's own, named
+    Task 20's `r1` log as a log without a manifest row, and returned no
+    decision. No decision logic, void rule or
     count changed. Under the default, `python3 tally.py --out <file>` writes a
     file that `cmp` finds identical to `tally.txt`, byte for byte, verified by
     that command. Pins after the Correction: `tally.py`
-    `23e39ffb4bf75b4d9e0ac5cb9d715ee9e0d65598`; `liveness.py` `4b56247ca0333aac395f7807b051a92a3dae10e5` and
-    `analyze.py` `6dd98e4b407e003c821360e02e2531c15efd004f` are unchanged.
+    `23e39ffb4bf75b4d9e0ac5cb9d715ee9e0d65598`; `liveness.py`
+    `4b56247ca0333aac395f7807b051a92a3dae10e5` and `analyze.py`
+    `6dd98e4b407e003c821360e02e2531c15efd004f` are unchanged.
 
 ## Results
 
