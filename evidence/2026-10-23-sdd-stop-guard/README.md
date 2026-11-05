@@ -335,6 +335,7 @@ or a release, which does not move that pin for the reason below:
 
 Correction 9 changed all three, and its entry under "Corrections" records
 the blobs after it. Correction 10 changed `analyze.py` alone, and entry 10
+records its blob after it. Correction 11 changed `tally.py` alone, and entry 11
 records its blob after it.
 
 `synth.py` builds the synthetic runs the analyzer's own tests read; no tally
@@ -682,6 +683,22 @@ The numbering continues the series in
     `6dd98e4b407e003c821360e02e2531c15efd004f`; `liveness.py`
     `4b56247ca0333aac395f7807b051a92a3dae10e5` and `tally.py`
     `3457937ea55acb2135154e822b1c12f5b60ed47e` are unchanged.
+11. 2026-11-05, after the Z4 contingency's skill change, before any
+    contingency run was launched. One change to `tally.py`: a `--logs` option
+    names the directory the launch logs are read from, default `logs/`,
+    resolved under this directory as `--archive` is. The contingency passes
+    `--logs logs/z4`. Reason: the contingency's launch rows reuse the names
+    `treatment sdd-turn-liveness 1 p1` to `p10`, and
+    `logs/measure-launch.sh` refuses a launch whose log already exists, so the
+    contingency launches with `LOGS` set to `logs/z4` and its logs go there.
+    `tally.py` read `logs/` unconditionally, so pointed at `manifest-z4.tsv`
+    it would have read Task 19's and Task 20's fourteen logs as logs without a
+    manifest row and returned no decision. No decision logic, void rule or
+    count changed. Under the default, `python3 tally.py --out <file>` writes a
+    file that `cmp` finds identical to `tally.txt`, byte for byte, verified by
+    that command. Pins after the Correction: `tally.py`
+    `23e39ffb4bf75b4d9e0ac5cb9d715ee9e0d65598`; `liveness.py` `4b56247ca0333aac395f7807b051a92a3dae10e5` and
+    `analyze.py` `6dd98e4b407e003c821360e02e2531c15efd004f` are unchanged.
 
 ## Results
 

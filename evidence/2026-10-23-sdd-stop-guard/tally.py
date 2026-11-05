@@ -3,9 +3,11 @@
 The rule is spec Design §4's criteria H1 to H4 and R, pre-registered in
 ``README.md`` before the first counted run. Inputs: ``manifest.tsv`` (the
 campaign pin as two-field rows and every launch row, ``p<n>`` and replacement
-``r<n>``), the launch logs in ``logs/`` (one per launch row, written by
-``logs/measure-launch.sh``), ``adjudications.tsv`` (the human partner's label
-for each hand-back allow and each block), and the runs, archived under
+``r<n>``), the launch logs (one per launch row, written by
+``logs/measure-launch.sh``) read from ``logs/`` by default, or from the
+directory ``--logs`` names (the Z4 contingency's are in ``logs/z4/``),
+``adjudications.tsv`` (the human partner's label for each hand-back allow and
+each block), and the runs, archived under
 ``task-20-runs/treatment/``. Only the archive is read: a run the campaign has
 not filed yet is unfinished business, not evidence. ``analyze.measure``
 supplies every per-run number; this module checks provenance, applies the void
@@ -53,6 +55,7 @@ ARMS = (ARM,)
 SCENARIO = "sdd-turn-liveness"
 DEFAULT_MANIFEST = Path("manifest.tsv")
 DEFAULT_ARCHIVE = Path("task-20-runs") / ARM
+DEFAULT_LOGS = Path("logs")
 DEFAULT_OUT = Path("tally.txt")
 PIN_KEYS = (
     "harness", "treatment", "treatment_root", "model",
@@ -402,11 +405,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Tally the sdd-stop-guard campaign.")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--archive", type=Path, default=DEFAULT_ARCHIVE)
+    parser.add_argument("--logs", type=Path, default=DEFAULT_LOGS)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args(argv)
     rows, decision = evaluate(
         _under_here(args.manifest),
-        HERE / "logs",
+        _under_here(args.logs),
         HERE / "adjudications.tsv",
         _under_here(args.archive),
     )

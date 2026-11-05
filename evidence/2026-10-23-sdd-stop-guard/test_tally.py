@@ -114,13 +114,13 @@ def without_task_tools() -> list[dict[str, Any]]:
 
 
 class Campaign:
-    def __init__(self, base: Path, archive: Path | None = None) -> None:
+    def __init__(self, base: Path, archive: Path | None = None, logs: Path | None = None) -> None:
         self.base = base
         # The tally reads archived runs only, so the fixture writes them where
         # `archive-runs.sh` puts them: the record at `<archive>/<run>/` beside
         # `<archive>/workspaces/<run>/`.
         self.archive = base / "task-20-runs" / "treatment" if archive is None else archive
-        self.logs = base / "logs"
+        self.logs = base / "logs" if logs is None else logs
         self.logs.mkdir(parents=True)
         self.manifest = base / "manifest.tsv"
         self.rows: list[str] = []
@@ -696,6 +696,27 @@ class Cli(unittest.TestCase):
                 self.assertIn(token, first)
             self.assertIn("decision: PASS", text)
             self.assertEqual(len([ln for ln in text.splitlines() if ln.startswith(ARM)]), 10)
+
+    def test_logs_names_the_launch_log_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            here = Path(tmp)
+            # The Z4 contingency reuses Task 20's launch names, so its logs
+            # live in `logs/z4/` beside the earlier campaign's in `logs/`.
+            c = Campaign(here, logs=here / "logs" / "z4")
+            c.runs(10)
+            (here / "logs" / f"{ARM}-sdd-turn-liveness-p11.log").write_text("an earlier campaign's launch\n")
+
+            def tally_output(*extra: str) -> tuple[int, str]:
+                with mock.patch.object(tally, "HERE", here), contextlib.redirect_stdout(io.StringIO()) as printed:
+                    code = tally.main(["--out", "tally-out.txt", *extra])
+                return code, printed.getvalue()
+
+            code, text = tally_output("--logs", "logs/z4")
+            self.assertEqual(code, 0)
+            self.assertIn("decision: PASS", text)
+            code, text = tally_output()
+            self.assertNotIn("decision: PASS", text)
+            self.assertIn("logs without a manifest row", text)
 
 
 if __name__ == "__main__":
