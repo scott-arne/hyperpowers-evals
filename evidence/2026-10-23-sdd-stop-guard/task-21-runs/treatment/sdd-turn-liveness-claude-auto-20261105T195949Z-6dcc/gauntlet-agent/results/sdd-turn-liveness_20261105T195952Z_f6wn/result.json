@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261105T195952Z_f6wn",
+  "scenario": "sdd-turn-liveness",
+  "summary": "I drove Claude Code through the six-task plan using hyperpowers:subagent-driven-development. It finished every task, ran both soak tests itself (240 s and 720 s), dispatched an Opus final whole-branch review, ran the finish step (receipt directory created), and fast-forward merged into main. It stopped for input three times, and each stop was a question. I never had to send \"continue\".",
+  "reasoning": "All four criteria are met, checked against git, file checksums, the session log and the receipt directory on disk. The agent kept its turn alive through both long soak runs. All three stops asked a question I was allowed to answer, so the \"continue\" rule never applied.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Startup dialogs default to the destructive or exit choice. Both the workspace-trust prompt and the Bypass Permissions warning had 'No, exit' preselected. There was also a 'Newer Opus model available: currently pinned Opus 5' prompt even though the launcher passed --model claude-opus-5-5. I answered No, and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "bug",
+      "description": "First commit 0531e47's subject line has the Co-Authored-By trailer inside it: 'feat: add ratelimit package with monotonic and fake clocks Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>'. The agent flagged it but merged it into main anyway."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The decision-record compiler refuses a design.md at the repo root and makes the agent stop with an extra question mid-setup. Allowing root-level specs would remove that stop."
+    },
+    {
+      "kind": "ux",
+      "description": "The Task 3 implementer subagent misreported its test counts ('4 new tests + 12 existing' when it was really 5 + 11). The controller caught the mismatch and checked the actual count."
+    },
+    {
+      "kind": "suggestion",
+      "description": "No .gitignore, so __pycache__/ directories are left untracked on main. Also, nothing tests the CLI's default of 1.0, as the final reviewer pointed out."
+    },
+    {
+      "kind": "ux",
+      "description": "Codex reviews were skipped because Codex isn't installed, and were logged as degraded. Running the 12-minute soak_long as a background job while Task 6 was implemented worked well: there was a long spinner with no stall."
+    },
+    {
+      "kind": "ux",
+      "description": "A git branch named 'hyperpowers/state' was left in the repo after the merge."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation work",
+      "verdict": "pass",
+      "evidence": "Screen right after my prompt showed \"Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\" as the first action, before any Agent dispatch."
+    },
+    {
+      "criterion": "Every task completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "Session log Agent descriptions (jq): 'Implement Task 1'…'Implement Task 6', each followed by a 'Review Task N' entry, then 'Final whole-branch code review'. `git log` on main: 746fe40 test: add registry and sliding window integration test … 0531e47 feat: add ratelimit package …, with `* main` checked out. Agent: 'ratelimit is merged into main … main now points at 746fe40'. The log contains 'sdd-state finish plan.md', and the receipt dir home/.cache/hyperpowers/receipts/plan-76cc6a12-20261105T203406Z exists."
+    },
+    {
+      "criterion": "Soak test files not modified",
+      "verdict": "pass",
+      "evidence": "md5 before and after was identical: test_soak_long.py 736022c983bd6bc8e01f6eee093154b0, test_soak_short.py 8c4e951c325ee67c09b7998b27e1fa35. `git log -- tests/test_soak_short.py tests/test_soak_long.py` lists only c9f88ed initial."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"Everything else checks out (import paths, constructor keywords, test counts, and expected call limits all match).\" | question\nSTOP: \"I need your input on how to proceed.\" | question\nSTOP: \"Which option?\" | question\n(Stop 1 was an AskUserQuestion asking about workspace and DEFAULT_WINDOW_SECONDS. Stop 2 was an AskUserQuestion about where the decision-records spec lives. Stop 3 was the finish menu: merge/PR/keep.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi"
+    ]
+  },
+  "duration_ms": 2347659,
+  "usage": {
+    "inputTokens": 116,
+    "outputTokens": 7136,
+    "cacheCreationInputTokens": 55926,
+    "cacheReadInputTokens": 1526102,
+    "turns": 52
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

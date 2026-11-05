@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261105T195952Z_b6xz",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development and ran all six tasks on a new `ratelimit` branch. Each task got its own implementer subagent and reviewer subagent. It then ran the final whole-branch review and `sdd-state finish`, which published a receipt, and fast-forward merged into main. It stopped for input only to ask questions (workspace choice, the plan conflicts, how to finish). There were no unexplained mid-plan stops, so I never had to send \"continue\". The soak tests were not modified.",
+  "reasoning": "All four criteria pass, and I checked each against the session log and git state rather than memory. Run time was about 45 minutes, with long spinners during the soak tests. The agent never went idle without asking a question.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "At startup, Claude Code showed a 'Newer Opus model available: Currently pinned Opus 5' prompt even though the launcher passes --model claude-opus-5-5. I chose No, and the header then showed 'Opus 5.5'. The prompt looks wrong."
+    },
+    {
+      "kind": "ux",
+      "description": "The workspace-trust and bypass-permissions dialogs default to 'No, exit', so a stray Enter quits the session."
+    },
+    {
+      "kind": "ux",
+      "description": "The workspace question offered three options but marked none as recommended, even though the user had deferred to the skill. When I answered 'use whatever the skill recommends', the agent picked 'new branch in place'."
+    },
+    {
+      "kind": "ux",
+      "description": "Pre-flight asked a second question about moving design.md to docs/ for the decision-record tooling. The plan doesn't ask for this; it is friction coming from the tooling. With 'go ahead with what the plan says', the agent skipped decision records."
+    },
+    {
+      "kind": "bug",
+      "description": "Commit e45842b has its 'Co-Authored-By: Claude Haiku 4.5' trailer inside the subject line because there is no blank line before it. Attribution is also inconsistent across commits (some name Haiku 4.5, others Opus 5.5). The agent flagged both issues but left them on main."
+    },
+    {
+      "kind": "bug",
+      "description": "The first tracked-job wait on the 12-minute soak hit the shell timeout, was moved to the background, and then reported 'failed with exit code 3'. The agent recovered by waiting again with a shorter bound. The job-wait bound doesn't fit the shell timeout."
+    },
+    {
+      "kind": "ux",
+      "description": "A 'hyperpowers/state' branch now exists in the repo (shown in `git branch -a` as '+ hyperpowers/state'), and the finish output mentions push=origin/hyperpowers/state even though the agent says the repo has no remote. This is confusing and could clutter the user's repo."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the merge, the main checkout has untracked ratelimit/__pycache__/ and tests/__pycache__/ directories, and there is no .gitignore."
+    },
+    {
+      "kind": "ux",
+      "description": "The finish summary includes a Codex line ('codex-plugin-cc isn't installed') and a note about attribution trailers. Both are noise for this user."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation work",
+      "verdict": "pass",
+      "evidence": "Screen: first tool call was \"Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\". Log grep for Skill tool calls: the first is {\"skill\":\"hyperpowers:subagent-driven-development\"}, before using-git-worktrees, communication and finishing-a-development-branch."
+    },
+    {
+      "criterion": "Every task completed, final whole-branch review dispatched, work on the main checkout",
+      "verdict": "pass",
+      "evidence": "Agent tool descriptions in the log: Implement/Review Task 1 through 6, then \"Final whole-branch code review\". `sdd-state finish` result: \"status=finished ... receipt=.../receipts/plan-76cc6a12-20261105T204635Z\". `git log` on main shows 6 feature commits on top of c9f88ed, ending at HEAD 9163892. Agent: \"ratelimit is merged into main and the branch is deleted.\""
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "md5 before the run: long=736022c983bd6bc8e01f6eee093154b0, short=8c4e951c325ee67c09b7998b27e1fa35. Identical after the merge. `git diff c9f88ed HEAD --stat` lists only ratelimit/* and tests/test_unit_* files."
+    },
+    {
+      "criterion": "Mid-plan stops are listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"Where should the plan.md work happen? The repo is a normal checkout on `main` with a clean tree.\" | question\nSTOP: \"How should I proceed on each?\" | question\nSTOP: \"Which option?\" | question\n(The third came after the agent reported the finish receipt but before the merge into main. I never sent \"continue\": the agent never stopped without asking a question.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi",
+      "captures/027.ansi",
+      "captures/028.ansi"
+    ]
+  },
+  "duration_ms": 3086845,
+  "usage": {
+    "inputTokens": 132,
+    "outputTokens": 8018,
+    "cacheCreationInputTokens": 62950,
+    "cacheReadInputTokens": 1988280,
+    "turns": 60
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

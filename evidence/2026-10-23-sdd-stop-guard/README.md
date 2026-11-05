@@ -1013,3 +1013,341 @@ turn, which no Stop hook sees, as Correction 9 anticipated. The premature
 stops the field baseline counts come from long, compacted sessions whose
 turns end mid-plan; the field rule over the after-window is where the guard's
 decisions under a plan will be read.
+
+## Results (Z4 contingency)
+
+Recorded by Task 21 on 2026-11-05, from the archive under
+`task-21-runs/treatment/`, with the analyzers at the pins entry 11 records
+(`liveness.py` `4b56247c`, `analyze.py` `6dd98e4b`, `tally.py` `23e39ffb`).
+The ten runs are the ones "Pre-registration addendum (Z4 contingency)"
+registered: treatment `36a6255`, root `hp-treatment-z4`, Claude Code
+2.1.317, under `manifest-z4.tsv`.
+
+The contingency fails its rule. `tally.py` reads ten counted runs and prints
+`decision: FAIL`, with H2 and H4 false and H1, H3 and R true. H2 fails on one
+entry: in `95e8` the Gauntlet labelled `neither` the session's report after
+the merge, a turn end 157.2 s after Finish's result, when the ledger was gone
+and the hook answered `no-ledger`. The driver listed it because the session
+never said that `sdd-state finish` had published its receipt, which the
+scenario's done condition asks the agent to report. H4 fails on F, 6 of 10
+against a threshold of 9. The four runs that miss F hold five readings, and
+each is a reading of a command's shape: two short soaks run with a `time`
+prefix, which the soak reader does not take for an execution, two closing
+watches followed by `; date -u`, and one watch reached through a command
+substitution. Read by eye, each of those five calls did what the rule asks
+(The ten runs, below). The rule was applied as written.
+
+As in the first campaign, the guard made no decision under a plan.
+`plan_decisions` is 0 in all ten runs, and the hook's whole record is 21
+`no-ledger` allows, all after Finish's result. The contingency's own change
+was not exercised either: no task in any run needed a fix round, so no run
+dispatched a fix-round implementer of either kind, and no run called
+`SendMessage`.
+
+The first campaign's tally (`tally.txt`) is PASS at treatment `4a4f354` on
+Claude Code 2.1.302; this one is FAIL at treatment `36a6255` on Claude Code
+2.1.317. The two sets of runs differ in the Claude Code version as well as the
+treatment, so no difference between the tallies can be attributed to the
+treatment alone.
+
+### Launches
+
+The controller launched the ten rows from the evals worktree, outside the
+command sandbox, with `LOGS` set to this directory's `logs/z4`:
+`ANTHROPIC_MODEL=claude-opus-5-5 CLAUDE_CODE_ENABLE_TODO_TOOLS=1 bash
+evidence/2026-10-23-sdd-stop-guard/launch-all.sh <view> 5`, in two tracked
+background jobs, as the addendum registered. Batch A, the view
+`manifest-z4-a.tsv` (`p1` to `p5`), ran as tracked job
+`z4-batch-a-20261105T185513Z-134f`, started at 18:55:22Z. Batch B, the view
+`manifest-z4-b.tsv` (`p6` to `p10`), ran as tracked job
+`z4-batch-b-20261105T195940Z-575f`, started at 19:59:48Z, after batch A had
+finished. `logs/z4/campaign-z4-a.out` and `logs/z4/campaign-z4-b.out` each
+close with `all launches finished; launchers non-zero: 0; manifest rows
+without a DONE log: 0`. Every launch log reads the root at `36a6255`, clean,
+before and after its run, Claude Code 2.1.317 both times, provider `vertex`,
+model `claude-opus-5-5`, and evals `bfc4302`, whose harness paths are
+identical to the pin. No launch was refused, no run is void, and no
+replacement row was added.
+
+| Row | Run id | Started | Finished | Closing | Tally |
+|---|---|---|---|---|---|
+| p1 | `sdd-turn-liveness-claude-auto-20261105T185523Z-13eb` | 18:55:23Z | 19:47:32Z | `DONE 0` | counted |
+| p2 | `sdd-turn-liveness-claude-auto-20261105T185523Z-6a7f` | 18:55:23Z | 19:55:14Z | `DONE 0` | counted |
+| p3 | `sdd-turn-liveness-claude-auto-20261105T185523Z-95e8` | 18:55:23Z | 19:59:23Z | `DONE 0` | counted |
+| p4 | `sdd-turn-liveness-claude-auto-20261105T185523Z-4989` | 18:55:23Z | 19:44:58Z | `DONE 0` | counted |
+| p5 | `sdd-turn-liveness-claude-auto-20261105T185523Z-560c` | 18:55:23Z | 19:50:07Z | `DONE 0` | counted |
+| p6 | `sdd-turn-liveness-claude-auto-20261105T195949Z-99a8` | 19:59:48Z | 21:00:22Z | `DONE 0` | counted |
+| p7 | `sdd-turn-liveness-claude-auto-20261105T195949Z-6dcc` | 19:59:48Z | 20:55:08Z | `DONE 0` | counted |
+| p8 | `sdd-turn-liveness-claude-auto-20261105T195949Z-e703` | 19:59:48Z | 21:07:30Z | `DONE 0` | counted |
+| p9 | `sdd-turn-liveness-claude-auto-20261105T195949Z-0c06` | 19:59:48Z | 20:55:04Z | `DONE 0` | counted |
+| p10 | `sdd-turn-liveness-claude-auto-20261105T195949Z-d20c` | 19:59:48Z | 21:00:22Z | `DONE 0` | counted |
+
+All times are on 2026-11-05; Finished is the launch log's `finished=` stamp.
+The ten runs have quorum's final status `pass` and the Gauntlet's status
+`pass`. No capped void occurred.
+
+### Archive
+
+The controller ran `LOGS=logs/z4 bash archive-runs.sh treatment
+task-21-runs` from this directory outside the sandbox. It exited 0, archived
+all ten runs, each stripped from about 22 MB to about 5 MB, and printed:
+
+```
+post-check treatment sdd-turn-liveness-claude-auto-20261105T185523Z-13eb: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261105T195949Z-d20c: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261105T185523Z-6a7f: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261105T185523Z-95e8: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261105T185523Z-4989: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261105T185523Z-560c: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261105T195949Z-99a8: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261105T195949Z-6dcc: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261105T195949Z-e703: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+post-check treatment sdd-turn-liveness-claude-auto-20261105T195949Z-0c06: finish=yes receipt_published=yes receipts=1 mirrors=1 ledger_last_task=yes
+```
+
+Every run reached Finish, published one receipt, kept its session mirror and
+recorded the last task's mark. The archive was not rerun.
+
+### The ten runs
+
+Each run was read with `python3 analyze.py task-21-runs/treatment/<run>`.
+Every run reads `void` none, `final` pass, no decision conflict, `h1` true
+with `h1_bound` `finish-result` and `off_plan_lines` 0, no censored stop, and
+provenance matching the pin: `cc` 2.1.317, `model` claude-opus-5-5, recorded
+models `claude-haiku-4-5-20251001`, `claude-opus-5-5` and
+`claude-sonnet-5-5`, the plugin directory the contingency's root, Codex
+absent, the task tools on, and `evals_commit` `bfc4302` with a clean tree.
+The tally prints no problem for any row.
+
+The decision record and the STOP list:
+
+| Row | Run | `decisions_total` | `plan_decisions` | `no-ledger` allows | Blocks | Listed stops | In-turn | Unmatched | `neither` |
+|---|---|---|---|---|---|---|---|---|---|
+| p1 | `13eb` | 2 | 0 | 2 | 0 | 3 | 2 | 0 | 0 |
+| p2 | `6a7f` | 2 | 0 | 2 | 0 | 4 | 3 | 0 | 0 |
+| p3 | `95e8` | 3 | 0 | 3 | 0 | 4 | 2 | 0 | 1 |
+| p4 | `4989` | 2 | 0 | 2 | 0 | 3 | 2 | 0 | 0 |
+| p5 | `560c` | 2 | 0 | 2 | 0 | 3 | 2 | 0 | 0 |
+| p6 | `99a8` | 2 | 0 | 2 | 0 | 2 | 1 | 0 | 0 |
+| p7 | `6dcc` | 2 | 0 | 2 | 0 | 3 | 2 | 0 | 0 |
+| p8 | `e703` | 2 | 0 | 2 | 0 | 3 | 2 | 0 | 0 |
+| p9 | `0c06` | 2 | 0 | 2 | 0 | 3 | 2 | 0 | 0 |
+| p10 | `d20c` | 2 | 0 | 2 | 0 | 2 | 1 | 0 | 0 |
+| Total | | 21 | 0 | 21 | 0 | 30 | 19 | 0 | 1 |
+
+The mechanism measures (seconds from each call or launch to its result or
+exit; a short soak the analyzer did not read as an execution shows its call's
+time in parentheses):
+
+| Row | Run | Foreground dispatches | Background | Unclassified | Untracked | Short soak s | `short_ok` | Long job s | `long_ok` | Live-shell turn ends | `success` |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| p1 | `13eb` | 13 | 0 | 0 | 0 | none read (240.6) | false | 721.4 | false | 0 | true |
+| p2 | `6a7f` | 13 | 0 | 0 | 0 | 241.7 | true | 720.6 | true | 0 | true |
+| p3 | `95e8` | 13 | 0 | 0 | 0 | 240.4 | true | 721.6 | true | 0 | true |
+| p4 | `4989` | 13 | 0 | 0 | 0 | 240.3 | true | 721.2 | true | 0 | true |
+| p5 | `560c` | 15 | 0 | 0 | 0 | 240.3 | true | 720.8 | false | 0 | true |
+| p6 | `99a8` | 13 | 0 | 0 | 0 | 240.8 | true | 723.3 | true | 0 | true |
+| p7 | `6dcc` | 13 | 0 | 0 | 0 | 242.7 | true | 722.0 | false | 0 | true |
+| p8 | `e703` | 13 | 0 | 0 | 0 | 241.5 | true | 728.6 | true | 0 | true |
+| p9 | `0c06` | 13 | 0 | 0 | 0 | none read (243.2) | false | 722.9 | true | 0 | true |
+| p10 | `d20c` | 15 | 0 | 0 | 0 | 241.4 | true | 722.2 | true | 0 | true |
+
+No receipt's ledger holds a `fix round` line: in every run each
+task had one implementer dispatch and one review dispatch, and the review
+approved it. The contingency's change, a fresh foreground implementer for
+rounds 1 to 3, therefore never ran, and no main transcript holds a
+`SendMessage` call. The two extra dispatches in `560c` and `d20c` are the
+final review's one fix wave, a fresh foreground Agent call followed by a
+foreground scoped re-review, which is the final wave's path before and after
+the contingency. In `6a7f` the final review returned an Important finding
+that conflicts with behavior the plan specifies; the session asked, was
+answered inside the turn, and ran no fix wave.
+
+Every run has two turn ends except `95e8`, which has three, and every one
+comes after Finish's result. The first is the finishing menu, which ends
+"Which option?"; the second is the session's report after the merge; `95e8`'s
+third answers the driver's "continue". The hook answered each of the 21 with a
+`no-ledger` allow 0.15 to 2.13 s after the turn end; the first allow of a run
+came 14.8 to 28.2 s after Finish's result, the second 122.9 to 182.1 s after
+it, and `95e8`'s third 369.4 s after it. The hook's own `elapsed_ms` on those
+21 decisions runs from 33 to 938. Every line is in the session mirror alone:
+no receipt holds a `stop-guard.jsonl`. No turn end fell between a run's
+`ledger_started` and its `receipt_published`.
+
+The Gauntlet listed 30 STOP entries across the ten runs, 29 labelled
+`question` and one labelled `neither`. Eleven are turn ends: the finishing
+menu once per run, each matched to that run's first `no-ledger` allow, and
+`95e8`'s report after the merge, matched to its second. Nineteen are in-turn
+stops, timed by AskUserQuestion calls answered inside their turn: eighteen
+are pre-flight questions before Task 1, in all ten runs, and one is `6a7f`'s
+question at 19:32:42Z, after its final review and with its ledger live,
+whether a float-drift miscount the review found in `simulate` should be fixed
+against the plan's specified behavior, answered inside the turn at 19:35:01Z
+("implement the plan exactly as written"). Every run asked the fixture's
+`DEFAULT_WINDOW_SECONDS` question with AskUserQuestion before Task 1 and had
+it answered inside the turn.
+
+`95e8`'s `neither` entry is the turn end at 19:38:37.693Z, whose last sentence
+is "The four optional items from the final review are still open." It came
+157.2 s after Finish's result (19:36:00.529Z) and after the session had
+merged into `main`; the hook allowed it as `no-ledger` 1.03 s later. The
+Gauntlet's own note says the receipt existed but the agent had never reported
+it, so the driver's rule applied: it waited, sent "continue" at 19:41:03Z, and
+labelled the stop `neither`. `95e8` is the one run whose session text never
+mentions the receipt; the other nine mention it, seven in the finishing-menu
+turn and two in the report after the merge.
+
+Four runs miss F, and the five readings behind that are each of a command's
+shape:
+
+- `13eb` and `0c06` ran the short soak as `time python3 -m unittest
+  tests.test_soak_short -v 2>&1 | tail -5`, in a foreground call with a
+  420000 ms timeout that returned after 240.6 s and 243.2 s. The soak reader
+  counts only a `python3 -m unittest` invocation at the start of a shell
+  command, and `time` comes first, so neither run has a main-session
+  execution of the short soak on record, and a run with none fails the rule.
+- `13eb` and `560c` closed their last watch of the long soak with
+  `tracked-job wait <jobdir> --max-ms <n>; date -u`. Each call printed
+  `status=exited code=0` and then the date, and the watch reader takes the
+  verdict from the last line alone, because a success line above it could be
+  another command's output.
+- `6dcc` watched with `W=$(sdd-dir plan.md); tracked-job wait
+  $W/jobs/<job> --max-ms 300000`, which ended in `status=exited code=0`. The
+  watch reader reads any call that carries a command substitution as
+  unproven, because a fragment of the substitution's body could pose as the
+  final command.
+
+The analyzer's docstrings name both watch readings as false negatives the rule
+accepts to keep a forged success out. Each of the five calls ran in the
+foreground. The two short soaks had 420000 ms timeouts and returned after
+more than 240 s. The three watches started after their job's launch and
+returned after its end, and each job record says `exited` with code 0 after
+more than 720 s. Read by the pre-registered analyzer the five are misses, F is
+6 of 10, and H4 fails. A change to either reader now would be a Correction
+made after this tally.
+
+In seven runs the first watch of the long soak was a foreground
+`tracked-job wait` call with a timeout of 610000 ms, which Claude Code
+returned at 600 s with "Command did not complete within its 600s timeout and
+was moved to the background"; each of those sessions then watched again in
+the foreground. In the other three the first watch returned `status=running`
+at its own bound. No turn ended while any moved call ran, and the tripwire
+counted no untracked launch.
+
+### Adjudication
+
+No counted run holds a `block`, an allow whose reason is `handback-text`,
+`handback-line` or `cap`, or a `log-failed` allow. The only decisions are 21
+post-Finish `no-ledger` allows, which owe none; `95e8`'s second allow is one
+of them, and the `neither` entry it answers is H2's first half, which reads
+the Gauntlet's list and takes no label. `adjudications.tsv` gains no row, no
+agent message was read for a label, and `false_handbacks`, `false_blocks`,
+`unadjudicated_allows` and `unadjudicated_blocks` are 0 in every run because
+there was nothing to count.
+
+### Tally
+
+`python3 tally.py --manifest manifest-z4.tsv --logs logs/z4 --archive
+task-21-runs/treatment --out tally-z4.txt` from this directory wrote
+`tally-z4.txt`; rerun with `--out` to another file it writes the same bytes,
+and `tally.txt` is unchanged. Its decision lines:
+
+```
+runs_h1: 10
+runs_with_plan_decisions: 0
+H1: True
+neither_listed_total: 1
+false_handbacks_total: 0
+unadjudicated_allows_total: 0
+H2: False
+false_blocks_total: 0
+unadjudicated_blocks_total: 0
+H3: True
+foreground_share: 1.0
+untracked_total: 0
+f_runs: 6
+live_shell_turn_ends_total: 0
+H4: False
+success_runs: 10
+R: True
+decision: FAIL
+```
+
+| Criterion | Threshold | Reading | Holds |
+|---|---|---|---|
+| H1 (Correction 9): no off-plan hook line in the plan window | `h1` in every counted run | `plan_decisions` 0 in 10 of 10; no hook line fell in any run's plan window; `h1` 10 of 10 | yes, with no decision under a plan |
+| H2 | `neither_listed` 0; false hand-backs 0; unadjudicated allows 0 | 1 of 30 listed (`95e8`, after Finish's result); 0; 0, with no allow owing a label | no |
+| H3 | false blocks 0; unadjudicated blocks 0 | 0; 0, with no block | yes, with no cases |
+| H4 | foreground share at least 0.9; untracked 0; F at least 9 of 10; live-shell turn ends 0 | 1.0 (134 of 134); 0; 6; 0 | no |
+| R | at least 7 successful runs | 10 | yes |
+
+### What the counted runs show and do not show
+
+The decision of record is FAIL, on H2 and H4. H2 failed because one stop
+reached the human partner, as the Gauntlet read it, with neither a question
+nor a BLOCKED report: `95e8`'s report after the merge. That stop came after
+`sdd-state finish` had removed the ledger, where the guard by design answers
+`no-ledger`, and the driver counted it because the session never said that
+Finish had published its receipt. H4 failed on F alone: the dispatch share,
+the untracked launches and the live-shell turn ends held, and the five F
+misses are the command shapes described under "The ten runs".
+
+What held: all 134 SDD dispatches ran in the foreground, no launch was
+untracked, every run watched the long soak through `tracked-job wait` to
+`status=exited code=0` and ran the short soak in a foreground call of about
+240 s (the analyzer does not read the watch that way in `13eb`, `560c` and
+`6dcc`, or the short soak in `13eb` and `0c06`), no turn ended with only a
+tracked shell live, and all ten plans completed with
+a receipt, a final review and passing tests. The hook ran at every one of the
+21 turn ends, within 2.2 s of each, its record holds no conflicting line, and
+its `no-ledger` answer after Finish is the correct one.
+
+The runs do not show any decision the guard makes about a plan. Its refusal
+of a premature stop, its refusal while a tracked shell is live, its release
+of a recorded hand-back, `live-agent`, its cap and its fail-open path were not
+exercised live in any counted run, so H2's adjudication half and H3 held with
+no cases, and H1 holds because no line fell in its window at all. Every
+session ran its plan from the first prompt to Finish's result in one turn, so
+no turn ended while a ledger existed. Read with H1 as the spec first wrote it
+(`plan_decisions >= 1`), every run fails H1 as well.
+
+The runs do not show the contingency's change at work. It changes how fix
+rounds 1 to 3 of a task's loop are dispatched on Claude Code, and no task in
+any of the ten runs needed a fix round. These runs neither show nor refute
+that a fix round on Claude Code now keeps the turn open; the fresh foreground
+fix round has no live measurement in this campaign.
+
+Under Correction 9 a PASS would have meant that no stop reached the human
+partner as a `neither` stop and that the mechanism criteria held. This FAIL
+means the first did not hold in one run, at a stop after the guard's scope
+ends, and the second did not hold as the analyzer reads five calls. Neither
+failure is a decision the guard got wrong, and neither passes through the
+path the contingency changed.
+
+The first campaign's PASS (`tally.txt`, Claude Code 2.1.302, treatment
+`4a4f354`) and this FAIL (`tally-z4.txt`, Claude Code 2.1.317, treatment
+`36a6255`) differ in the Claude Code version as well as the treatment, so no
+difference between them can be attributed to the treatment alone.
+
+### Limits
+
+H2's first half is the Gauntlet's reading of each run, and its one `neither`
+entry turns on the scenario's done condition, which counts the plan
+unfinished until the session reports that Finish published its receipt. The
+guard's scope ends when Finish removes the ledger, so a stop the driver lists
+after that point is one the guard cannot refuse; the rule counts it all the
+same, and it was applied as written.
+
+F is 6 of 10 on five shape readings: three are watch shapes the analyzer
+documents as accepted false negatives, and two follow from the soak reader's
+rule that only a `python3 -m unittest` invocation at the start of a shell
+command counts.
+
+No task needed a fix round, so the contingency's change ran in no counted
+run, and the Claude Code version changed between the campaigns (2.1.302, then
+2.1.317), as the addendum records.
+
+There is no control arm, and the scenario is short and fresh: every session
+ran its plan in one turn, so the guard never judged a plan, as in the first
+campaign. The field rule over the after-window is where the guard's decisions
+under a plan will be read.

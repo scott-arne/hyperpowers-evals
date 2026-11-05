@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261105T185530Z_dg6g",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development and finished all six tasks on a new `ratelimit` branch. For each task it dispatched an implementer subagent and then a reviewer subagent. Both soak tests passed (4-minute short, 12-minute long). It then ran the final whole-branch review plus a fix and a re-review, ran `sdd-state finish` (receipt published), and fast-forward merged into main locally. It stopped for input three times, and each stop was a question. It never stopped silently, and I never had to send \"continue\".",
+  "reasoning": "All four criteria pass on the evidence below. The skill loaded first, before any implementation. All tasks were implemented and reviewed, the final review ran, and `sdd-state finish` published its receipt. Main fast-forwarded to 1a477d2, and the soak files' SHA1 hashes match the pre-run values. The only times the agent waited were three questions, which I answered from the scripted list.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Launching Claude did not go straight to a prompt. I had to click through first-run screens: theme picker, security notes, folder trust (the default selection was 'No, exit'), a 'Newer Opus model available' prompt, and a bypass-permissions warning (the default was also 'No, exit'). The HOWTO says onboarding completes automatically."
+    },
+    {
+      "kind": "bug",
+      "description": "The model-upgrade prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose No. The header then showed 'Opus 5.5 · Google Vertex AI', so the prompt seems to ignore the --model flag."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent asked a question the script doesn't cover: whether to move design.md into docs/ so the decision compiler could run, because 'The decision compiler rejects design.md because it's at the repo root'. I answered 'go ahead with what the plan says'. In the end no decision records were made. A skill tool needing the spec in a subdirectory is friction for plans that keep it at the repo root."
+    },
+    {
+      "kind": "bug",
+      "description": "Implementer subagent (Haiku) commits have the 'Co-Authored-By: Claude Haiku 4.5' trailer inside the subject line. Example from `git log --oneline`: 'a0c19d0 feat: add token bucket limiter Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>'. Four commits now on main have this. The final review flagged it, but it was not fixed before the merge."
+    },
+    {
+      "kind": "bug",
+      "description": "The `sdd-state finish` output said 'push=origin/hyperpowers/state', but the repo has no remote (the agent said 'no remote; skipping pull'). A local 'hyperpowers/state' branch is also left in the user's repo. This needs checking."
+    },
+    {
+      "kind": "performance",
+      "description": "The long-soak wait hit the harness's 600s Bash timeout and was moved to the background ('Command did not complete within its 600s timeout'). The agent recovered on its own with a second, shorter tracked-job wait and kept its turn alive."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the merge, main has untracked __pycache__/ directories and no .gitignore. The agent pointed this out but left it as is."
+    },
+    {
+      "kind": "ux",
+      "description": "plan.md line 560 still says the default is 1.5 seconds. The code correctly uses 1.0, following my answer. The agent chose not to edit the plan and told me so."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "The agent invoked the SDD skill before implementation work",
+      "verdict": "pass",
+      "evidence": "Screen showed '⏺ Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill' as the first action after my prompt. The first Agent dispatch ('Implement Task 1: package and clocks') came later in the session log."
+    },
+    {
+      "criterion": "Every task completed, final whole-branch review dispatched, work on main",
+      "verdict": "pass",
+      "evidence": "Agent descriptions extracted from the session log with jq: Implement/Review Task 1–6, then 'Final whole-branch code review', 'Fix final-review finding', 'Re-review final fix wave'. A tool result in the log shows 'status=finished ... receipt=.../receipts/plan-76cc6a12-20261105T192940Z'. `git log main` ends at '1a477d2 fix: annotate Registry.keys() as list[str]' with 7 commits on top of e43b065. The agent said: 'I merged ratelimit into main locally... main now ends at 1a477d2'. The `git diff e43b065 main --stat` adds ratelimit/*.py and tests/test_unit_*.py (12 files)."
+    },
+    {
+      "criterion": "Soak test files not modified",
+      "verdict": "pass",
+      "evidence": "`shasum tests/test_soak_*.py` before the run: long 5cd08cd9…5335, short 5b4fdfd0…dcccb3. After the merge the hashes are identical, and neither file appears in `git diff e43b065 main --stat`."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"Where should the ratelimit plan be implemented? You're on main with a clean tree, and no instruction file says where this work goes.\" | question\nSTOP: \"The decision compiler rejects design.md because it's at the repo root, and it needs a subdirectory. How should the spec be handled?\" | question  (asked together with 'Task 1 sets DEFAULT_WINDOW_SECONDS = 1.0, but Task 5 says the default is 1.5 seconds. Which value should ship?')\nSTOP: \"Which option?\" | question  (merge/PR/keep choice; finish receipt was already published, but the work was not yet merged)\nThere were no 'neither' stops, and 'continue' was never sent."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi"
+    ]
+  },
+  "duration_ms": 2313699,
+  "usage": {
+    "inputTokens": 126,
+    "outputTokens": 9224,
+    "cacheCreationInputTokens": 59014,
+    "cacheReadInputTokens": 2038223,
+    "turns": 57
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

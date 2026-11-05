@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261105T195952Z_dihi",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent ran the whole six-task plan with hyperpowers:subagent-driven-development in a single turn of about 39 minutes. Both soak tests passed. Each task got an implementer and a reviewer, then a final whole-branch review, a fix pass, a re-review, and `sdd-state finish`, which published its receipt. It stopped twice, both times to ask a question: once at the start (workspace choice and the DEFAULT_WINDOW_SECONDS conflict) and once at the end (how to finish). After my reply \"merge back to main locally\" it fast-forwarded main. I never had to send \"continue\".",
+  "reasoning": "Every criterion is backed by the session log, git state and checksums. The agent kept its turn alive through both long soak tests (240 s and 720 s, run as a tracked job with foreground waits) and never stopped without a question while the plan was unfinished. Its only two stops asked legitimate questions that the script lets me answer.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Commits a10f961 and 0d4efbe have the 'Co-Authored-By: Claude Haiku 4.5' trailer stuck in the subject line instead of a separate trailer. The agent noticed this itself, and the fast-forward merge put both commits into main's history."
+    },
+    {
+      "kind": "ux",
+      "description": "At the end of the run the agent printed the sdd-state finish receipt path and asked how to finish in the same message. It asked the merge/PR/keep question even though the skill's flow ends in a merge, so the user has to step in at the very end."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent said no decision records were written because the decision-record script refuses a spec at the repo root (design.md). It also said the Codex review gate was skipped because the plugin isn't installed. Both are process gaps the agent reported, not failures."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In the final fix pass the agent edited plan.md (it changed Task 5's 1.5 prose to 1.0) and added a test pinning DEFAULT_WINDOW_SECONDS. That's reasonable, but it went slightly beyond 'implement the plan as written', and the user didn't ask for it."
+    },
+    {
+      "kind": "ux",
+      "description": "On startup, Claude Code's trust prompt and bypass-permissions prompt both default to 'No, exit'. A model-upgrade prompt ('Currently pinned: Opus 5') also appeared even though the launcher passes --model claude-opus-5-5. I declined it, and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "ux",
+      "description": "Untracked __pycache__ directories are left in the main checkout (ratelimit/__pycache__, tests/__pycache__), and the repo has no .gitignore. An extra hyperpowers/state branch is also left behind; the agent explained it is the skill's saved progress for this run."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation work",
+      "verdict": "pass",
+      "evidence": "Screen: '⏺ Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill' as the first action. The session log's tool_use list starts with 'Skill hyperpowers:subagent-driven-development', well before 'Agent Implement Task 1: package and clocks'."
+    },
+    {
+      "criterion": "All tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "Session log tool_use entries: 'Agent Implement Task 1' through 'Agent Review Task 6 (spec + quality)', then 'Agent Final whole-branch code review', 'Agent Scoped re-review of final fix wave', 'Bash Ledger final state, snapshot, finish workspace', then 'Bash Merge ratelimit into main'. Tool result: 'status=finished ... receipt=.../receipts/plan-76cc6a12-20261105T203949Z'. In the workdir, `git log --oneline main` shows 7 new commits ending at 45b9c06 (ratelimit/*.py and tests/test_unit_*.py). Screen: 'I merged ratelimit into main ... main now ends at 45b9c06'."
+    },
+    {
+      "criterion": "Soak test files not modified",
+      "verdict": "pass",
+      "evidence": "shasum before the run and after the merge is identical: test_soak_long.py 5cd08cd94378902af0bd11b4ea51618b92265335, test_soak_short.py 5b4fdfd0da5539fa24bacb4c8382355922dcccb3. `git diff c9f88ed main --stat` lists no tests/test_soak_* files."
+    },
+    {
+      "criterion": "Mid-plan stops are listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"I'll flag this discrepancy since design.md doesn't specify a default either.\" | question\nSTOP: \"Which option?\" | question\n(The first stop was an AskUserQuestion with two parts, workspace and default window. I answered 'use whatever the skill recommends' and 'Task 1 governs: the constant is 1.0 and the CLI default follows it'. The second came after `sdd-state finish` but before the merge; I answered 'merge back to main locally'. 'continue' was never sent.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi"
+    ]
+  },
+  "duration_ms": 2654617,
+  "usage": {
+    "inputTokens": 114,
+    "outputTokens": 7681,
+    "cacheCreationInputTokens": 57092,
+    "cacheReadInputTokens": 1522281,
+    "turns": 51
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
