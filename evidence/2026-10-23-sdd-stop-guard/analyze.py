@@ -128,30 +128,48 @@ PROVEN_OPS = frozenset({"", ";", "&&"})
 # bound is not worth trusting.
 SHELL_NESTING = 4
 # `tracked-job wait` prints its verdict last on stdout, after any note it
-# makes, so the verdict is the result's last non-blank line and nowhere else.
+# makes, so the verdict is the result's last non-blank line, or, when the
+# call closes with a `date` after the wait, the non-blank line before the
+# date's one line (Correction 12), and nowhere else.
 WAIT_EXITED = re.compile(r"^status=exited code=0\r?$")
 TRANSPORT_ERRORS = ("ECONNRESET", "ENOTFOUND", "ETIMEDOUT", "ECONNREFUSED")
 SOAK_FILES = ("test_soak_short.py", "test_soak_long.py")
 # Bash's `time` keyword, with its `-p`, runs the command after it in the
-# foreground like `nohup` and `timeout` do (Correction 12).
+# foreground like `nohup` and `timeout` do (Correction 12). The leading
+# delimiter is a command boundary only outside quotes, which `runs_soak`
+# checks (`_quoted_offsets`).
 UNITTEST_CMD = re.compile(
     r"(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*(?:nohup\s+|timeout\s+\S+\s+|time\s+(?:-p\s+)?)*"
     r"(?:\S*/)?python3?\s+-m\s+unittest\b([^\n;|&]*)"
 )
 # A segment of assignment words only, where a word may take a whole command
-# substitution as its value. The body carries none of the characters
-# `_split_ops` splits at, no nested substitution or subshell, no backtick, and
-# no quote, backslash or `#` that could move where the shell ends the body;
-# a plain value carries no `(` and so no substitution (Correction 12).
-ASSIGNMENT_WORD = r"""[A-Za-z_][A-Za-z0-9_]*=(?:\$\([^;&|\n`()'"\\#]*\)|[^\s;&|`()'"\\#]*)"""
+# substitution as its value, bare or inside double quotes. The body carries
+# none of the characters `_split_ops` splits at, no backtick, and no `)`
+# before its end, quoted or not, so bash and this pattern end the body at the
+# same `)`. Outside quotes it also carries no `(` (so no nested substitution
+# or subshell), backslash or `#`; a single-quoted string in it holds no `'`,
+# and a double-quoted one no `"`, backslash or `$(`. A plain value carries no
+# `(` and so no substitution (Correction 12).
+SUBSTITUTION_BODY = r"""(?:[^;&|\n`()'"\\#]|'[^';&|\n`)]*'|"(?:[^";&|\n`)\\$]|\$(?!\())*")*"""
+SUBSTITUTION = rf"\$\({SUBSTITUTION_BODY}\)"
+ASSIGNMENT_WORD = rf"""[A-Za-z_][A-Za-z0-9_]*=(?:{SUBSTITUTION}|"{SUBSTITUTION}"|[^\s;&|`()'"\\#]*)"""
 ASSIGNMENTS = re.compile(rf"\s*{ASSIGNMENT_WORD}(?:\s+{ASSIGNMENT_WORD})*\s*")
 # The trailing `date` a closing watch may carry (Correction 12): its operators,
-# its option words, and a `+<format>` word that expands nothing. A `%n` in the
-# format is a newline, which would move the verdict up a second line.
+# its option words, and a `+<format>` word that prints one non-blank line into
+# the result. So the format expands nothing, redirects nothing, holds a
+# character that is not whitespace, and each `%` in it is `%%` or a
+# conversion by one letter other than `n` (a newline), `t` (a tab) and the
+# modifiers `E` and `O`: a flag, width or modifier between the `%` and an
+# `n` still makes a newline (`%-n`, `%En` on this host's `date`).
 DATE_JOINS = frozenset({";", "&&"})
 DATE_OPTIONS: tuple[list[str], ...] = ([], ["-u"], ["-R"])
-DATE_FORMAT = re.compile(r"\+[^\n\r$`\\]*")
+DATE_FORMAT = re.compile(r"\+(?=.*\S)(?:[^%\n\r$`\\<>]|%%|%[A-DF-NP-Za-mo-su-z])*")
 CLOSING_DATE_LINES = 1
+# The words of the two setup shapes a wait reached through `&&` may follow
+# under a `;` date (Correction 12): an assignment word, and a redirection of
+# `cd`'s stderr, its target attached or in the next word.
+SETUP_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+CD_STDERR = re.compile(r"2>>?")
 BASH_DEFAULT_TIMEOUT_MS = 120_000
 UNIT_TESTS = "test_unit_"
 SOAK_SHORT_CHECK = "tests.test_soak_short"
@@ -1063,13 +1081,14 @@ def _proven_final(command: str, pipes: bool = True) -> str | None:
     # belongs to the command the substitution feeds (`echo $(true; <soak>)`
     # exits 0 whatever the soak did). Nothing proves such a fragment ran, so
     # a text carrying a backtick, or a substitution of any shape but one, is
-    # unproven. The one shape (Correction 12) is `NAME=$(<body>)` in a segment
-    # of assignments before the final one, its body free of every character
-    # `_split_ops` splits at: the whole body then stays inside that segment,
-    # so no fragment of it is a segment at all, the final segment carries no
-    # substitution, and the exit still belongs to the command the call closed
-    # with. A watch reached through any other substitution is the false
-    # negative this accepts.
+    # unproven. The one shape (Correction 12) is `NAME=$(<body>)`, or the
+    # same inside double quotes, in a segment of assignments before the final
+    # one, its body free of every character `_split_ops` splits at, quoted or
+    # not, and of any `)` before its end (`ASSIGNMENT_WORD`): the whole body
+    # then stays inside that segment, so no fragment of it is a segment at
+    # all, the final segment carries no substitution, and the exit still
+    # belongs to the command the call closed with. A watch reached through
+    # any other substitution is the false negative this accepts.
     if "`" in command:
         return None
     ops = _split_ops(command, pipes)
@@ -1129,14 +1148,91 @@ def shell_detaches(text: str) -> bool:
     return "&" in SAFE_AMP.sub("", body)
 
 
+def _quoted_offsets(command: str) -> list[bool]:
+    """Which characters of a command bash reads as quoted.
+
+    Quotes are found as ``_split_ops`` finds them: a backslash outside single
+    quotes quotes the next character, and a comment opens no quote, so an
+    apostrophe in ``# don't`` or ``don\\'t`` cannot pair with a later quote
+    and hide the text between them. Heredoc bodies are read as blanks first,
+    as ``shell_detaches`` strips them, so an apostrophe in a body opens no
+    quote either. One reading goes beyond ``_split_ops``: a ``$(`` inside
+    double quotes runs a command, so its ``(`` and its body up to the ``)``
+    that closes it are read unquoted, with quotes of their own. A quote never
+    closed quotes the rest of the text, which bash refuses to run.
+
+    :param command: one shell command's text.
+    :returns: one flag per character, True where the character is quoted.
+    """
+    text = HEREDOC.sub(
+        lambda m: m.group(0)[: m.start(3) - m.start()]
+        + re.sub(r"[^\n]", " ", m.group(3))
+        + m.group(0)[m.end(3) - m.start() :],
+        command,
+    )
+    quoted = [False] * len(text)
+    quote = ""
+    # One entry per `$(` opened inside double quotes, counting the
+    # parentheses its body has open, so the `)` that closes it is known.
+    nested: list[int] = []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            quoted[i] = True
+            if quote == '"' and text.startswith("$(", i):
+                nested.append(0)
+                quote = ""
+                i += 2
+                continue
+            if quote == '"' and ch == "\\":
+                quoted[i + 1 : i + 2] = [True] * len(text[i + 1 : i + 2])
+                i += 2
+                continue
+            if ch == quote:
+                quote = ""
+        elif ch == "\\":
+            quoted[i : i + 2] = [True] * len(text[i : i + 2])
+            i += 2
+            continue
+        elif ch in "'\"":
+            quote = ch
+            quoted[i] = True
+        elif ch == "#" and (i == 0 or text[i - 1] in " \t\n;&|("):
+            end = text.find("\n", i)
+            i = len(text) if end < 0 else end
+            continue
+        elif nested and ch == "(":
+            nested[-1] += 1
+        elif nested and ch == ")":
+            if nested[-1]:
+                nested[-1] -= 1
+            else:
+                nested.pop()
+                quote = '"'
+                quoted[i] = True
+        i += 1
+    return quoted
+
+
 def runs_soak(command: str, name: str) -> bool:
     """Whether a command runs the named soak test, directly or through ``unittest discover``.
 
     Only a ``python3 -m unittest`` invocation at the start of a shell command
     counts, so a grep, echo or commit message that mentions the covering
-    command does not.
+    command does not. The start of a command is the start of the text or an
+    operator outside quotes (Correction 12): ``echo "x; python3 -m unittest
+    <soak>"`` prints the soak's words and runs nothing. A match skipped for a
+    quoted operator is searched past from its operator, not from its end, so
+    the text it overlapped is still read.
     """
-    for match in UNITTEST_CMD.finditer(command):
+    quoted = _quoted_offsets(command)
+    at = 0
+    while (match := UNITTEST_CMD.search(command, at)) is not None:
+        if match.start() and quoted[match.start()]:
+            at = match.start() + 1
+            continue
+        at = match.end()
         args = match.group(1)
         if re.search(rf"\b{name}\b", args):
             return True
@@ -1436,13 +1532,15 @@ def _waited_job(command: str, trailing_lines: int = 0) -> str | None:
 
 
 def _is_closing_date(segment: str) -> bool:
-    """Whether one segment is a ``date`` that prints exactly one line and reads nothing.
+    """Whether one segment is a ``date`` that prints exactly one non-blank line and reads nothing.
 
     Its words are ``date`` (by basename) and then nothing, ``-u``, ``-R``, a
     single ``+<format>`` word, or ``-u`` and a single ``+<format>`` word, so
-    no prefix, redirect or file operand. The format may not expand anything
-    (a ``$`` or a backtick) or carry a newline, a ``%n`` among them, because
-    any of those can make the one line two.
+    no prefix, redirect or file operand. The format (``DATE_FORMAT``) may not
+    expand anything (a ``$`` or a backtick), redirect (a ``<`` or ``>`` the
+    lexer kept inside the word, as in ``+%s>/dev/null``), print a line break
+    or a tab (a newline, or a ``%n`` or ``%t`` conversion in any spelling),
+    or be blank, because any of those can make the one line none or two.
     """
     try:
         words = shlex.split(segment.replace("\\\n", " "))
@@ -1455,7 +1553,43 @@ def _is_closing_date(segment: str) -> bool:
         return True
     if args[:1] == ["-u"]:
         args = args[1:]
-    return len(args) == 1 and DATE_FORMAT.fullmatch(args[0]) is not None and "%n" not in args[0]
+    return len(args) == 1 and DATE_FORMAT.fullmatch(args[0]) is not None
+
+
+def _is_setup(segment: str) -> bool:
+    """Whether one segment is ``cd`` into one directory, or assignment words only (Correction 12).
+
+    The ``cd`` takes exactly one directory word that does not start with
+    ``-``, and may redirect its stderr; the assignments' values may hold no
+    substitution. Neither shape holds a parenthesis or a backtick, so neither
+    runs a command of its own, and neither prints anything but an error of
+    its own, which bash prefixes and so never reads as a verdict.
+
+    :param segment: one segment of ``_split_ops``.
+    :returns: whether the segment is one of the two setup shapes.
+    """
+    if "(" in segment or "`" in segment:
+        return False
+    try:
+        words = shlex.split(segment.replace("\\\n", " "))
+    except ValueError:
+        return False
+    if words and all(SETUP_ASSIGNMENT.match(word) for word in words):
+        return True
+    if words[:1] != ["cd"]:
+        return False
+    rest, operands = words[1:], []
+    while rest:
+        word, rest = rest[0], rest[1:]
+        redirect = CD_STDERR.match(word)
+        if redirect is None:
+            operands.append(word)
+        elif redirect.end() == len(word):
+            # The target is the next word: `cd /x 2> /dev/null`.
+            if not rest:
+                return False
+            rest = rest[1:]
+    return len(operands) == 1 and not operands[0].startswith("-")
 
 
 def _before_closing_date(command: str) -> str | None:
@@ -1470,10 +1604,17 @@ def _before_closing_date(command: str) -> str | None:
     does only for ``status=exited code=0``, so the call's exit 0 still
     vouches for the wait. Under ``;`` the call's exit is the date's and
     vouches for nothing before it, so the printed verdict is the whole
-    proof. The wait must then run whatever preceded it (its own operators
-    ``;`` or none: after ``&&`` the shell may have skipped it while an
-    earlier ``echo`` printed the line) and print its answer into the result
-    (no ``>`` in its segment).
+    proof. The wait must then print its answer into the result: its segment
+    carries no ``<`` or ``>``, so no redirection of any descriptor sends the
+    answer elsewhere or closes stdout under it. And the wait must have run.
+    Reached through ``;`` alone it runs whatever preceded it. Reached
+    through ``&&`` the shell may have skipped it, so every segment before it
+    must be setup (``_is_setup``): a skipped wait then leaves before the
+    date only ``cd``'s error or nothing, never a line an earlier ``echo``
+    printed. A substitution assignment is no setup here, though
+    ``_substitutions_assigned`` admits it before a wait reached through
+    ``;``: its body can fail and print anything, and under ``&&`` that
+    failure skips the wait with no trace in the date's exit status.
 
     :param command: one Bash call's text, heredoc bodies stripped.
     :returns: the text up to and including the wait's segment, or None when
@@ -1491,7 +1632,13 @@ def _before_closing_date(command: str) -> str | None:
         return None
     if "&&" not in date_joins:
         wait_from = filled[-3] + 1 if len(filled) > 2 else 0
-        if not {op for op, _ in ops[wait_from : wait_at + 1]} <= {"", ";"} or ">" in ops[wait_at][1]:
+        wait_joins = {op for op, _ in ops[wait_from : wait_at + 1]}
+        if re.search(r"[<>]", ops[wait_at][1]):
+            return None
+        reached = wait_joins <= {"", ";"} or (
+            wait_joins <= PROVEN_OPS and all(_is_setup(segment) for _, segment in ops[:wait_at] if segment.strip())
+        )
+        if not reached:
             return None
     head = "".join(op + segment for op, segment in ops[: wait_at + 1])
     # The re-joined text has lost the comments `_split_ops` dropped, and

@@ -725,49 +725,91 @@ The numbering continues the series in
     re-measure)").
 
     `UNITTEST_CMD` now also admits the shell keyword `time`, with or without
-    `-p`, in the prefix group beside `nohup` and `timeout`. A `time` that is
-    an argument of another command (`echo time python3 -m unittest ...`), or
-    that runs another program (`time echo ...`), still counts as no soak.
+    `-p`, in the prefix group beside `nohup` and `timeout`. For every prefix,
+    `time` or none, `runs_soak` counts a match only when it starts the text
+    or the operator it starts after (`;`, `&`, `|`, `(` or a newline) lies
+    outside quotes. Quotes are read as `_split_ops` reads them, so a
+    backslash quotes the next character and an apostrophe in a comment opens
+    no quote, and a heredoc body is read as blank, so an apostrophe there
+    opens none either. The `(` of a `$(` inside double quotes, and the body
+    up to its closing `)`, are read unquoted, because bash runs that command.
+    A quoted module name (`python3 -m unittest "tests.test_soak_short"`)
+    still counts, since the operator before it is outside the quotes. These
+    count as no soak: a `time` that is an argument of another command (`echo
+    time python3 -m unittest ...`) or that runs another program (`time echo
+    ...`), and an interpreter after a quoted `;` or `(`, with `time` or
+    without (`echo "x; time python3 -m unittest ..."`, `echo 'x (python3 -m
+    unittest ...'`). The job reader quotes a job's argv back into shell form
+    before this reader sees it, so an argument that carries an operator and
+    the soak's words is no soak job either.
 
     `_waited_job` takes a count of trailing lines, 0 by default. At 1 the call
     must close with exactly one `date` segment: the call's final non-empty
     segment, joined to the wait by `;` or `&&`, whose words are `date` by
     basename followed by nothing, `-u`, `-R`, a single `+<format>` word, or
-    `-u` and a single `+<format>` word. The format may expand nothing (no `$`
-    and no backtick) and may carry no newline and no `%n`, because any of
-    those can print a second line. The wait before the date must meet
-    everything a final wait already had to: every operator joining it is in
-    `PROVEN_OPS`, the shell waits for it, and it runs `tracked-job wait`.
-    `_wait_verdict` takes the same count and reads the verdict from the last
-    non-blank line before the result's final non-blank line, and `_watched`
-    tries both counts, of which at most one fits a call's shape. Two further
-    conditions keep the reasoning the wait reader already relied on. Under
-    `&&` the date runs only when the wait exited 0, which the wait does only
-    for `status=exited code=0`, so the call's exit 0 still vouches for the
-    wait. Under `;` the call's exit is the date's, so the printed verdict is
-    the whole proof, and the wait must then run whatever came before it (no
-    `&&` among its own operators) and print into the result (no `>` in its
-    segment). Without those two conditions `echo status=exited code=0; false
-    && <wait>; date -u` would read as a watch of a wait that never ran. Every
-    other trailing segment is read as before, and these stay rejected:
-    `<wait>; echo status=exited code=0`, `<wait>; date; echo status=exited
-    code=0`, `<wait> | date`, `<wait> || date`, `<wait>; date -f <file>`,
-    `<wait> & date`, and a `<wait>; date -u` whose line before the date is
-    `status=running`.
+    `-u` and a single `+<format>` word. The date must print one non-blank
+    line into the result. So the format holds a character that is not
+    whitespace, expands nothing (no `$` and no backtick), redirects nothing
+    (no `<` or `>`, which the lexer keeps inside a word such as
+    `+%s>/dev/null`), and carries no newline, and each `%` in it is `%%` or
+    a conversion by one letter other than `n`, `t`, `E` and `O`. That keeps
+    out `%n` and `%t` in every spelling: on this host's `date` a flag or a
+    modifier between the `%` and the `n` (`%-n`, `%En`) still prints a
+    newline, and `%t` prints a tab, which is a blank line. The wait before
+    the date must meet everything a final wait already had to: every
+    operator joining it is in `PROVEN_OPS`, the shell waits for it, and it
+    runs `tracked-job wait`. `_wait_verdict` takes the same count and reads
+    the verdict from the last non-blank line before the result's final
+    non-blank line, and `_watched` tries both counts, of which at most one
+    fits a call's shape. Under `&&` the date runs only when the wait exited
+    0, which the wait does only for `status=exited code=0`, so the call's
+    exit 0 still vouches for the wait. Under `;` the call's exit is the
+    date's, so the printed verdict is the whole proof, and two more
+    conditions hold. The wait's segment carries no `<` or `>`, so no
+    redirection of any descriptor sends its answer elsewhere or closes its
+    stdout. And the wait must have run. Reached through `;` alone, it runs
+    whatever came before it. Reached through `&&`, it is admitted only when
+    every segment before it, whatever joins them, is setup: `cd` followed by
+    exactly one directory word that does not start with `-`, its stderr
+    redirected or not, or assignment words whose values hold no
+    substitution, and neither shape may hold a parenthesis or a backtick.
+    Neither shape can print a line that reads as a verdict, so when a failed
+    `cd` skips the wait, the line before the date is `cd`'s own error or
+    nothing at all. A substitution assignment is not setup there, though it
+    may precede a wait reached through `;`: its body can fail and print
+    anything, and under a `;` date that failure leaves no trace in the call's
+    exit status. Every other trailing segment is read as before. These stay
+    rejected: `<wait>; echo status=exited code=0`, `<wait>; date; echo
+    status=exited code=0`, `<wait> | date`, `<wait> || date`, `<wait>; date
+    -f <file>`, `<wait> & date`, a `<wait>; date -u` whose line before the
+    date is `status=running`, `echo status=exited code=0; false && <wait>;
+    date -u`, `echo status=exited code=0; cd /nowhere 2>/dev/null && <wait>;
+    date -u`, `W=$(cmd) && <wait>; date -u`, `cd -- /x && <wait>; date -u`,
+    `echo status=exited code=0; <wait> 1<&-; date -u`, and a closing `date
+    +`, `date '+ '`, `date '+%t'` or `date +%s>/dev/null`.
 
     `_proven_final` admits a command substitution when every `$(` in the text
-    is the whole value of an assignment word `NAME=$(...)`, each such word sits
-    in a segment before the final one made of assignment words only, each body
-    holds no `;`, `&`, `|`, newline, parenthesis, backtick, quote, backslash
-    or `#`, and the final segment carries no substitution. Such a body cannot
-    pose as the final command, because `_split_ops` splits it nowhere and so
-    it stays inside its assignment's segment. Any backtick, and every other
-    substitution, still leaves the text unproven. These stay rejected:
-    `echo $(true; <wait>)`, `W=$(a; b); <wait>`, `X=$(cmd) other-cmd; <wait>`,
-    a wait with `$(...)` in its own words, a `$(` in a comment, a quoted value
-    `W="$(...)"`, and any backtick. The function's other callers read a job's
-    argv, which `shlex.join` quotes into one segment, so a `$(` there is
-    always in the final segment and is still refused.
+    is the whole value of an assignment word, `NAME=$(...)` or
+    `NAME="$(...)"`, each such word sits in a segment before the final one
+    made of assignment words only, and the final segment carries no
+    substitution. Each body holds no `;`, `&`, `|`, newline, backtick or `)`
+    before its end, quoted or not. Outside quotes it also holds no `(`,
+    backslash or `#`. A single-quoted string in it holds no `'`, and a
+    double-quoted one holds no `"`, backslash or `$(`. With no `)` inside a
+    quoted string, bash and the reader end the body at the same `)`, and
+    with nothing in it that `_split_ops` splits at, the body stays inside its
+    assignment's segment, so no fragment of it can pose as the final command.
+    So `W=$(dirname "$PWD")`, `W=$("$S/sdd-dir" plan.md 2>/dev/null)` and
+    `W="$($S/sdd-dir plan.md)"` before a wait leave it readable. Any
+    backtick, and every other substitution, still leaves the text unproven.
+    These stay rejected: `echo $(true; <wait>)`, `W=$(a; b); <wait>`,
+    `X=$(cmd) other-cmd; <wait>`, a wait with `$(...)` in its own words, a
+    `$(` in a comment, `W=$(echo "a)b"); <wait>`, `W=$(echo "x; y"); <wait>`,
+    a body with a backslash or a `#` outside quotes, and any backtick. The
+    function's other callers read a job's argv, which `shlex.join` quotes
+    into one segment, so a `$(` there is always in the final segment and is
+    still refused: a job running `bash -c 'W=$(pwd); python3 -m unittest
+    tests.test_soak_long -v'` is no long soak, a false negative this accepts.
 
     H1 to H4, R and every other measure are unchanged, and the re-read proves
     it. Read with the corrected analyzer, every run in
@@ -785,7 +827,7 @@ The numbering continues the series in
     `H4: True` with `f_runs: 10`, `R: True`, `decision: FAIL`. Those readings
     do not replace `tally.txt` or `tally-z4.txt`, which stay the records of
     their campaigns as read at their pins. Pins after the Correction:
-    `analyze.py` `144554cf63c15f9a3b2e012f1cbf21ca95ca0d5b`; `liveness.py`
+    `analyze.py` `926ebbd86511426ac9e9bc81bbe9ceafea935131`; `liveness.py`
     `4b56247ca0333aac395f7807b051a92a3dae10e5` and `tally.py`
     `23e39ffb4bf75b4d9e0ac5cb9d715ee9e0d65598` are unchanged.
 

@@ -307,6 +307,26 @@ class Measure(unittest.TestCase):
         self.assertEqual(m["short_runs"][0]["elapsed"], 250.0)
         self.assertTrue(m["short_ok"])
 
+    def test_a_soak_quoted_after_an_operator_is_no_foreground_run(self) -> None:
+        # Each call takes 250 s under a 300000 ms timeout, so the duration rule
+        # holds and only the reading of the command can refuse it: the `;` or
+        # `(` before the interpreter is quoted text, not a command boundary.
+        for index, (label, command) in enumerate((
+            ("time after a quoted ;", 'echo "x; time python3 -m unittest tests.test_soak_short -v"'),
+            ("time after a quoted (", 'echo "x (time python3 -m unittest tests.test_soak_short -v"'),
+            ("bare after a quoted ;", "echo 'x; python3 -m unittest tests.test_soak_short -v'"),
+            ("bare after a quoted (", "echo 'x (python3 -m unittest tests.test_soak_short -v)'"),
+        )):
+            with self.subTest(label):
+                records = treatment_records()
+                for rec in records:
+                    for use in liveness.tool_uses(rec):
+                        if use.get("id") == "b1":
+                            use["input"]["command"] = command
+                m = self.run_of(f"s4-{index}", records)
+                self.assertEqual(m["short_runs"], [], label)
+                self.assertFalse(m["short_ok"], label)
+
     def test_soak_file_writes_fail_success(self) -> None:
         edit = treatment_records() + [
             assistant(2000, tools=[("e1", "Edit", {"file_path": "/x/coding-agent-workdir/tests/test_soak_short.py", "old_string": "240", "new_string": "5"})]),
@@ -747,6 +767,10 @@ class Measures(unittest.TestCase):
              ["bash", "-c", f"sleep 601; echo $(true; {soak}.NoSuch)"]),
             ("the soak as a substitution's whole body", ["bash", "-c", f"echo $({soak})"]),
             ("a backtick substitution", ["bash", "-c", f"sleep 601; echo `true; {soak}`"]),
+            # An accepted false negative the reviewer observed: the argv joins
+            # into one quoted operand, so the outer reading sees the `$(` in
+            # its only segment and refuses before the operand is read.
+            ("a substitution assigned before the soak", ["bash", "-c", f"W=$(pwd); {soak} -v"]),
         ):
             with self.subTest(label):
                 job = {**LONG_JOB, "command": command}
@@ -760,6 +784,17 @@ class Measures(unittest.TestCase):
         jobdir = f"jobs/{LONG_JOB['name']}-x-0"
         self.assertIsNone(analyze._waited_job(f"cd $(pwd) && {TRACKED_JOB} wait {jobdir} --max-ms 600000"))
         self.assertEqual(analyze._waited_job(f"{TRACKED_JOB} wait {jobdir} --max-ms 600000"), jobdir)
+
+    def test_a_soak_quoted_in_a_job_s_argument_is_no_soak_job(self) -> None:
+        # The argv is quoted back into shell form before the soak reader sees
+        # it, so an argument carrying an operator and the soak's words is one
+        # quoted word, and the soak after its `;` is text the job never ran.
+        job = {**LONG_JOB, "command": ["python3", "-m", "unittest", "a; python3 -m unittest tests.test_soak_long"]}
+        run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                       records=watch_records(wait_command(job)))
+        m = analyze.measure(run, {})
+        self.assertIsNone(m["long_job"])
+        self.assertFalse(m["long_ok"])
 
     def test_a_substitution_assigned_before_the_watch_leaves_it_readable(self) -> None:
         # Observed in 6dcc (Correction 12): the job directory came from a
@@ -798,9 +833,45 @@ class Measures(unittest.TestCase):
             ("a body with a pipe", f"W=$(ls | head -1); {wait}"),
             ("a body with &&", f"W=$(cd /x && pwd); {wait}"),
             ("a substitution in a comment after the wait", f"{wait} # $(pwd)"),
-            # An accepted false negative: the quoted value runs the same body,
-            # but the admitted shape is the bare `NAME=$(...)` word only.
-            ("a quoted substitution value", f'W="$(pwd)"; {wait}'),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command))
+                self.assertFalse(analyze.measure(run, {})["long_ok"], label)
+
+    def test_a_substitution_body_may_quote_its_words(self) -> None:
+        # A quoted string inside the body holds no `)`, so bash and the
+        # reader end the body at the same `)`, and no operator, so the body
+        # still stays inside its assignment's segment. The whole value may be
+        # double-quoted around the substitution too.
+        job = dict(LONG_JOB)
+        wait = f"$S/tracked-job wait $W/jobs/{job['name']}-x-0 --max-ms 300000"
+        for label, command in (
+            ("a double-quoted argument", f'S={SCRIPTS}; W=$(dirname "$PWD"); {wait}'),
+            ("a double-quoted program", f'S={SCRIPTS}; W=$("$S/sdd-dir" plan.md 2>/dev/null); {wait}'),
+            ("a single-quoted argument", f"S={SCRIPTS}; W=$($S/sdd-dir 'plan.md'); {wait}"),
+            ("a double-quoted value", f'S={SCRIPTS}; W="$($S/sdd-dir plan.md)"; {wait}'),
+            ("a double-quoted value with a quoted argument", f'S={SCRIPTS}; W="$($S/sdd-dir "plan.md")"; {wait}'),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command))
+                self.assertTrue(analyze.measure(run, {})["long_ok"], label)
+
+    def test_a_quoted_string_in_a_body_holds_no_operator_or_parenthesis(self) -> None:
+        job = dict(LONG_JOB)
+        wait = f"{SCRIPTS}/tracked-job wait jobs/{job['name']}-x-0 --max-ms 300000"
+        for label, command in (
+            ("a ) in a double-quoted string", f'W=$(echo "a)b"); {wait}'),
+            ("a ; in a double-quoted string", f'W=$(echo "x; y"); {wait}'),
+            ("a ; in a single-quoted string", f"W=$(echo 'x; y'); {wait}"),
+            ("a | in a double-quoted string", f'W=$(echo "x | y"); {wait}'),
+            ("a nested substitution in a double-quoted string", f'W=$(echo "$(pwd)"); {wait}'),
+            ("a backslash in a double-quoted string", f'W=$(echo "a\\"b"); {wait}'),
+            ("a backslash outside quotes", f"W=$(echo a\\ b); {wait}"),
+            ("a # outside quotes", f"W=$(echo a#b); {wait}"),
+            ("a ) in a double-quoted value's body", f'W="$(echo "a)b")"; {wait}'),
+            ("text after a double-quoted value", f'W="$(pwd)"x; {wait}'),
         ):
             with self.subTest(label):
                 run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
@@ -922,6 +993,67 @@ class Measures(unittest.TestCase):
                 run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
                                records=watch_records(command, text=text))
                 self.assertFalse(analyze.measure(run, {})["long_ok"], label)
+
+    def test_a_cd_or_a_plain_assignment_may_precede_a_dated_wait_under_and(self) -> None:
+        # Under a `;` date a failed `cd` skips the wait unseen by the exit
+        # status, but neither setup shape can print a line that reads as a
+        # verdict, so the line before the date is still the wait's or nobody's.
+        job = dict(LONG_JOB)
+        wait = f"{SCRIPTS}/tracked-job wait jobs/{job['name']}-x-0 --max-ms 420000"
+        for label, command in (
+            ("cd", f"cd /x && {wait}; date -u"),
+            ("an assignment and cd", f"S=/x; cd $S && {wait}; date -u"),
+            ("cd with its stderr redirected", f"cd /x 2>/dev/null && {wait}; date -u"),
+            ("a quoted assignment and a quoted directory", f'S="/x y" && cd "$S" && {wait}; date -u'),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command, text=WAIT_THEN_DATE))
+                self.assertTrue(analyze.measure(run, {})["long_ok"], label)
+
+    def test_only_setup_may_precede_and_before_a_dated_wait(self) -> None:
+        job = dict(LONG_JOB)
+        wait = f"{SCRIPTS}/tracked-job wait jobs/{job['name']}-x-0 --max-ms 420000"
+        for label, command in (
+            ("a failing command", f"echo status=exited code=0; false && {wait}; date -u"),
+            # The cd is a setup shape, but the echo before it is not.
+            ("a cd after an echo", f"echo status=exited code=0; cd /nowhere 2>/dev/null && {wait}; date -u"),
+            # Rule 1c admits this before a `;`-reached wait, where a failing body
+            # still leaves the wait to run; under `&&` it would skip the wait.
+            ("a substitution assignment", f"W=$(cmd) && {wait}; date -u"),
+            ("cd with an option word", f"cd -- /x && {wait}; date -u"),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command, text=OK_TWICE))
+                self.assertFalse(analyze.measure(run, {})["long_ok"], label)
+
+    def test_a_closing_date_must_print_one_line_and_the_wait_its_answer(self) -> None:
+        # A date that prints nothing, or only blanks, leaves the verdict where
+        # the reader does not look, and a redirect on the wait under a `;`
+        # date can keep its answer out of the result; either way the line
+        # before the last non-blank one is some earlier command's.
+        job = dict(LONG_JOB)
+        jobdir = f"jobs/{job['name']}-x-0"
+        wait = f"{SCRIPTS}/tracked-job wait {jobdir} --max-ms 420000"
+        for label, command, expected in (
+            ("a format sent to /dev/null", f"{SCRIPTS}/tracked-job wait {jobdir} --max-ms 1; date +%s>/dev/null", False),
+            ("an empty format", f"{wait}; date +", False),
+            ("a blank format", f"{wait}; date '+ '", False),
+            ("a format of a tab conversion", f"{wait}; date '+%t'", False),
+            ("a newline conversion with a flag", f"{wait}; date '+status=exited code=0%-nX'", False),
+            ("a newline conversion with a modifier", f"{wait}; date '+status=exited code=0%EnX'", False),
+            ("the wait's stdout closed", f"echo status=exited code=0; {wait} 1<&-; date -u", False),
+            ("the wait reading a file", f"echo status=exited code=0; {wait} < /dev/null; date -u", False),
+            ("a wait elsewhere and an empty format",
+             f"echo status=exited code=0; tracked-job wait /elsewhere/{job['name']}-x-0 --max-ms 1; date +", False),
+            ("seconds since the epoch", f"{wait}; date +%s", True),
+            ("a literal percent", f"{wait}; date '+%H:%M %%'", True),
+        ):
+            with self.subTest(label):
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(command, text=OK_TWICE))
+                self.assertEqual(analyze.measure(run, {})["long_ok"], expected, label)
 
     def test_the_watched_attempt_answers_for_a_retried_soak(self) -> None:
         # A lost first attempt and a watched retry are two records of one
@@ -1825,6 +1957,46 @@ class Untracked(unittest.TestCase):
         ):
             with self.subTest(command):
                 self.assertFalse(analyze.runs_soak(command, "test_soak_short"))
+
+    def test_an_operator_inside_quotes_starts_no_soak_execution(self) -> None:
+        for command in (
+            'echo "x; time python3 -m unittest tests.test_soak_short"',
+            'echo "x (time python3 -m unittest tests.test_soak_short"',
+            "echo 'x; python3 -m unittest tests.test_soak_short'",
+            "echo 'x (python3 -m unittest tests.test_soak_short)'",
+            'git commit -m "fix; python3 -m unittest tests.test_soak_short"',
+            # Single quotes keep a substitution literal.
+            "echo '$(python3 -m unittest tests.test_soak_short)'",
+            # Backslash-escaped, the semicolon is an argument of echo.
+            "echo x\\; python3 -m unittest tests.test_soak_short",
+            # A substitution inside double quotes runs a command whose own
+            # quotes still quote: the inner echo prints the soak's words.
+            'echo "$(echo "x; python3 -m unittest tests.test_soak_short")"',
+        ):
+            with self.subTest(command):
+                self.assertFalse(analyze.runs_soak(command, "test_soak_short"))
+
+    def test_quoted_text_elsewhere_in_the_call_leaves_the_soak_readable(self) -> None:
+        soak = "time python3 -m unittest tests.test_soak_short -v"
+        for label, command in (
+            ("a quoted module name", 'python3 -m unittest "tests.test_soak_short"'),
+            ("after a quoted operator", f'echo "a; b"; {soak}'),
+            # An apostrophe that is no quote must not pair with a later quote
+            # and hide the boundary between them.
+            ("after an apostrophe in a comment", f"# don't stop here\n{soak} 2>&1 | grep -v 'skipped'"),
+            ("after an escaped apostrophe", f"echo don\\'t; {soak} 2>&1 | grep -v 'skipped'"),
+            ("after an apostrophe in a heredoc body",
+             f"cat > notes.txt <<'EOF'\ndon't forget\nEOF\n{soak} 2>&1 | grep -v 'skipped'"),
+            # A substitution inside double quotes runs its command.
+            ("inside a double-quoted substitution", 'OUT="$(python3 -m unittest tests.test_soak_short 2>&1)"'),
+            ("after an operator in a double-quoted substitution",
+             'OUT="$(cd /x; python3 -m unittest tests.test_soak_short 2>&1)"'),
+            # The quoted match is skipped without hiding the real one it overlaps.
+            ("overlapped by a quoted match",
+             'echo "a; python3 -m unittest x" $(python3 -m unittest tests.test_soak_short)'),
+        ):
+            with self.subTest(label):
+                self.assertTrue(analyze.runs_soak(command, "test_soak_short"), label)
 
 
 class Summary(unittest.TestCase):
