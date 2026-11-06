@@ -136,8 +136,8 @@ TRANSPORT_ERRORS = ("ECONNRESET", "ENOTFOUND", "ETIMEDOUT", "ECONNREFUSED")
 SOAK_FILES = ("test_soak_short.py", "test_soak_long.py")
 # Bash's `time` keyword, with its `-p`, runs the command after it in the
 # foreground like `nohup` and `timeout` do (Correction 12). The leading
-# delimiter is a command boundary only outside quotes, which `runs_soak`
-# checks (`_shell_reading`).
+# delimiter is a command boundary only outside quotes and comments, which
+# `runs_soak` checks (`_shell_reading`).
 UNITTEST_CMD = re.compile(
     r"(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*(?:nohup\s+|timeout\s+\S+\s+|time\s+(?:-p\s+)?)*"
     r"(?:\S*/)?python3?\s+-m\s+unittest\b([^\n;|&]*)"
@@ -1155,12 +1155,60 @@ def _heredoc_command(command: str, match: re.Match[str]) -> str:
     return before + after
 
 
+def _blank_comments(text: str) -> str:
+    """The text with each shell comment read as blanks (Correction 12).
+
+    A comment is what ``_split_ops`` drops: a ``#`` outside quotes at the
+    start of the text or after whitespace, ``;``, ``&``, ``|`` or ``(``,
+    running to the end of its line. Quotes are found as ``_split_ops`` finds
+    them, so a backslash outside single quotes quotes the next character, a
+    ``#`` inside quotes or inside a word (``a#b``, ``${#x}``) is no comment,
+    and a comment opens no quote. Each comment's characters become spaces,
+    so its newline and every offset stay.
+
+    :param text: one shell command's text, or one script body.
+    :returns: the text with its comments blank.
+    """
+    out = list(text)
+    quote = ""
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            if ch == "\\" and quote == '"':
+                i += 2
+                continue
+            if ch == quote:
+                quote = ""
+        elif ch == "\\":
+            i += 2
+            continue
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "#" and (i == 0 or text[i - 1] in " \t\n;&|("):
+            end = text.find("\n", i)
+            end = len(text) if end < 0 else end
+            out[i:end] = " " * (end - i)
+            i = end
+            continue
+        i += 1
+    return "".join(out)
+
+
 def shell_detaches(text: str) -> bool:
-    """The untracked-launch tripwire over one command or one script body (Design §2 U)."""
+    """The untracked-launch tripwire over one command or one script body (Design §2 U).
+
+    Comments are read as blanks (``_blank_comments``) before the quoted
+    spans are set aside and the ``&`` looked for, so ``ls  # build & test``
+    detaches nothing and an apostrophe in a comment pairs with no later
+    quote (Correction 12). The heredoc bodies are stripped and the Python
+    detach forms are read first, as before. A script body is read the same
+    way: a ``#`` inside quotes is no comment there either.
+    """
     unheredoc = _strip_heredocs(text)
     if PY_DETACH.search(unheredoc):
         return True
-    body = QUOTED.sub("''", unheredoc)
+    body = QUOTED.sub("''", _blank_comments(unheredoc))
     if CMD_DETACH.search(body):
         return True
     return "&" in SAFE_AMP.sub("", body)
@@ -1179,14 +1227,22 @@ def _shell_reading(command: str) -> tuple[str, list[bool]]:
     that closes it are read unquoted, with quotes of their own. A quote never
     closed quotes the rest of the text, which bash refuses to run.
 
+    A comment, what ``_split_ops`` drops (a ``#`` outside quotes at the
+    start of the text or after whitespace, ``;``, ``&``, ``|`` or ``(``,
+    running to the end of its line), is returned as spaces, its newline
+    kept, so an operator inside it starts no command: ``sleep 250; #
+    suggested; time python3 -m unittest <soak>`` runs only the sleep
+    (Correction 12). A ``#`` inside a word (``a#b``) is no comment.
+
     A backslash-newline outside single quotes is a line continuation, which
     bash removes, so it is read as two spaces: the words on either side stay
     one command, and every offset still matches the flags (Correction 12).
     Inside single quotes bash keeps both characters, and so does this.
 
     :param command: one shell command's text.
-    :returns: the command with each line continuation read as two spaces,
-        and one flag per character, True where the character is quoted.
+    :returns: the command with each comment read as blanks and each line
+        continuation as two spaces, and one flag per character, True where
+        the character is quoted.
     """
     text = HEREDOC.sub(
         lambda m: m.group(0)[: m.start("body") - m.start()]
@@ -1229,7 +1285,9 @@ def _shell_reading(command: str) -> tuple[str, list[bool]]:
             quoted[i] = True
         elif ch == "#" and (i == 0 or text[i - 1] in " \t\n;&|("):
             end = text.find("\n", i)
-            i = len(text) if end < 0 else end
+            end = len(text) if end < 0 else end
+            continued[i:end] = " " * (end - i)
+            i = end
             continue
         elif nested and ch == "(":
             nested[-1] += 1
@@ -1250,11 +1308,13 @@ def runs_soak(command: str, name: str, *, depth: int = 0) -> bool:
     Only a ``python3 -m unittest`` invocation at the start of a shell command
     counts, so a grep, echo or commit message that mentions the covering
     command does not. The start of a command is the start of the text or an
-    operator outside quotes (Correction 12): ``echo "x; python3 -m unittest
-    <soak>"`` prints the soak's words and runs nothing. A match skipped for a
-    quoted operator is searched past from its operator, not from its end, so
-    the text it overlapped is still read. A line continuation outside single
-    quotes joins the soak's words across lines (``_shell_reading``).
+    operator outside quotes and comments (Correction 12): ``echo "x; python3
+    -m unittest <soak>"`` prints the soak's words and runs nothing, and
+    ``sleep 250; # suggested; time python3 -m unittest <soak>`` runs only
+    the sleep, since a comment is blank to this reader. A match skipped for
+    a quoted operator is searched past from its operator, not from its end,
+    so the text it overlapped is still read. A line continuation outside
+    single quotes joins the soak's words across lines (``_shell_reading``).
 
     The operand of a shell a segment runs with a bare ``-c``
     (``_bare_shell_operand``) is a command of its own, so it is read by the

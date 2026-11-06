@@ -731,7 +731,16 @@ The numbering continues the series in
     outside quotes. Quotes are read as `_split_ops` reads them, so a
     backslash quotes the next character and an apostrophe in a comment opens
     no quote, and a heredoc body is read as blank, so an apostrophe there
-    opens none either. A heredoc's delimiter may be a word quoted with `'`
+    opens none either. A comment, a `#` outside quotes at the start of the
+    text or after whitespace, `;`, `&`, `|` or `(`, running to the end of
+    its line, is read as blank too, at every nesting level, so `sleep 250; #
+    suggested; time python3 -m unittest tests.test_soak_short -v`, which
+    runs only the sleep, counts as no soak, while a comment on the soak's
+    line or on the line before it leaves the soak readable and `a#b` is a
+    word. The untracked-launch tripwire reads a comment as blank the same
+    way before it looks for a `&`, so `ls  # build & test` is no untracked
+    launch and `sleep 1 & # note` still is.
+    A heredoc's delimiter may be a word quoted with `'`
     or `"` (`<<'END-NOTE'`), a word after a backslash (`<<\EOF`), or a bare
     word (`<<END.NOTE`), each of which may hold characters beyond letters
     and digits, and its body ends at the first line that is the unquoted
@@ -896,7 +905,7 @@ The numbering continues the series in
     `H4: True` with `f_runs: 10`, `R: True`, `decision: FAIL`. Those readings
     do not replace `tally.txt` or `tally-z4.txt`, which stay the records of
     their campaigns as read at their pins. Pins after the Correction:
-    `analyze.py` `f2a5179abfe42ad3a862ec85b87ef69bb920a3a1`; `liveness.py`
+    `analyze.py` `ae23acdc25b809c16ca1f0c3a91b6feb6b1fd428`; `liveness.py`
     `4b56247ca0333aac395f7807b051a92a3dae10e5` and `tally.py`
     `23e39ffb4bf75b4d9e0ac5cb9d715ee9e0d65598` are unchanged.
 
