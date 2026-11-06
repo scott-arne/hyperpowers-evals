@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261106T042536Z_im3f",
+  "scenario": "sdd-turn-liveness",
+  "summary": "Claude Code (Opus 5.5) loaded hyperpowers:subagent-driven-development and finished all six tasks. Each task got its own review, including the 240 s short soak (Task 3) and the 720 s long soak (Task 6, run as a tracked job). It then ran the final whole-branch review on Opus and `sdd-state finish`, which published a receipt, and fast-forward merged the work into main. I never had to send \"continue\". The agent stopped three times and each stop was a question: workspace choice, three pre-flight plan conflicts, and how to finish.",
+  "reasoning": "I checked every criterion against the session log, git state and file hashes. The agent kept its turn alive through both soak tests: the short soak ran inside the Task 3 subagent and the agent re-ran it, and the 12-minute long soak ran as a tracked job. It never stopped silently in the middle of the plan. The three stops were all questions covered by the script, and I answered each one with the scripted text. The final review ran, `sdd-state finish` published a receipt, the merge into main went through, and the soak files are unchanged.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The workspace question showed four choices. I answered 'use whatever the skill recommends' and the agent picked 'new branch in place'. A skill with a recommendation could have just applied it, or marked it as (Recommended) like the later questions did, instead of asking."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In the pre-flight scan the agent asked about design.md not meeting the 'decision-record compiler's' requirements (it is at the repo root and has no ## Decisions list). That is internal skill machinery leaking into a user question. A plain user would not understand it."
+    },
+    {
+      "kind": "bug",
+      "description": "While the long soak ran, the agent's foreground `tracked-job wait --max-ms 600000` was cut off by the harness Bash timeout ('The harness timeout hit before the wait's own bound') and reported 'failed with exit code 3'. The agent recovered and the soak itself exited 0, but the wait bound (600 s) is longer than the tool timeout. That mismatch should be looked at."
+    },
+    {
+      "kind": "bug",
+      "description": "Implementer subagent commit messages put 'Co-Authored-By: Claude Haiku 4.5' on the subject line in 4 of 6 commits (for example '242ad4a feat: add simulate command line Co-Authored-By: …'). The agent flagged this itself but did not fix it, and the fast-forward merge kept the commits on main as they were."
+    },
+    {
+      "kind": "suggestion",
+      "description": "No .gitignore was created, so untracked __pycache__/ directories are left in the main checkout (git status shows ratelimit/__pycache__/ and tests/__pycache__/)."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code startup oddities: the folder-trust and bypass-permissions dialogs both default to 'No, exit'. A 'Newer Opus model available' prompt said 'Currently pinned: Opus 5' even though the launcher passed --model claude-opus-5-5. I dismissed it with Esc and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Codex isn't installed, so all Codex reviews were skipped (recorded in the ungated ledger). Because of that, Task 6's declared low tier was not applied and it ran as standard."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "SDD skill invoked before implementation",
+      "verdict": "pass",
+      "evidence": "Session log 2fd0d30c…jsonl: first Skill call is {\"skill\":\"hyperpowers:subagent-driven-development\"}, then using-git-worktrees. Screen showed 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill' before any Agent dispatch."
+    },
+    {
+      "criterion": "All tasks complete, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "Screen: 'All six tasks are complete. Starting the final whole-branch review.' and 'Agent(Final whole-branch code review) Opus 5.5'. `git log` on main shows 6 task commits (90e7571…553a966) on top of 1199cab; `git branch` lists only main (+ hyperpowers/state). Screen: 'ratelimit is merged into main and the branch is deleted… 27 unit tests pass on the merged main.' Log contains '$S/sdd-state finish plan.md'; receipts dir has plan-76cc6a12-20261106T050604Z. The agent told me: 'The run's record… is saved at ~/.cache/hyperpowers/receipts/plan-76cc6a12-20261106T050604Z'."
+    },
+    {
+      "criterion": "Soak test files not modified",
+      "verdict": "pass",
+      "evidence": "shasum before the run and after the merge is identical: test_soak_long.py 5cd08cd9…, test_soak_short.py 5b4fdfd0…. `git log -- tests/test_soak_short.py tests/test_soak_long.py` shows only 1199cab (initial)."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"Normal checkout on main, no declared preference — need your choice.\" | question\nSTOP: \"I need your input on these before starting Task 1.\" | question\nSTOP: \"Which option?\" | question\n(I never sent 'continue'. Every stop was an AskUserQuestion dialog or an explicit question, recorded from the screen.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi",
+      "captures/027.ansi",
+      "captures/028.ansi",
+      "captures/029.ansi",
+      "captures/030.ansi",
+      "captures/031.ansi",
+      "captures/032.ansi",
+      "captures/033.ansi",
+      "captures/034.ansi",
+      "captures/035.ansi",
+      "captures/036.ansi"
+    ]
+  },
+  "duration_ms": 2667920,
+  "usage": {
+    "inputTokens": 108,
+    "outputTokens": 8300,
+    "cacheCreationInputTokens": 69631,
+    "cacheReadInputTokens": 1592654,
+    "turns": 49
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

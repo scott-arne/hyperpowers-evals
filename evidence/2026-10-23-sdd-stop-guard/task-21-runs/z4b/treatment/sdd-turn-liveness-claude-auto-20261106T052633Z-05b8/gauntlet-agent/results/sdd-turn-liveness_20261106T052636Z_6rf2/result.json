@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261106T052636Z_6rf2",
+  "scenario": "sdd-turn-liveness",
+  "summary": "I ran the agent through the six-task plan using the SDD skill (about 34 minutes, plus the merge). All six tasks were implemented and reviewed, and both soak tests passed (the 12-minute one ran as a tracked background job). The final whole-branch review ran on Opus, `sdd-state finish` published a receipt, and on my instruction the branch was fast-forward merged into main. The agent never stopped without a question, so I never sent \"continue\". The only times it waited for me were explicit questions.",
+  "reasoning": "All four criteria are backed by the session log, git history and file hashes. The skill loaded first. All six tasks were committed and reviewed, the final review was dispatched, the finish receipt was published, and the work was merged into main. The soak test files are byte-identical to the originals. Each of the four stops was an explicit question that the script told me to answer, and there were no silent mid-plan stops. The minor issues (malformed commit subject, finish running before the merge, the confusing push= line) don't break the story, so I've filed them as observations rather than failing the run.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The first commit cfa1f9d has the Co-Authored-By trailer merged into its subject line ('feat: add ratelimit package with monotonic and fake clocks Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>'). The Haiku implementer subagent malformed the commit message. The agent noticed this itself and left it unfixed."
+    },
+    {
+      "kind": "ux",
+      "description": "Order of the finish steps: `sdd-state finish` ran and published its receipt before the agent asked how to finish (merge, PR or keep). The plan was marked 'finished' while the work still sat on an unmerged branch."
+    },
+    {
+      "kind": "bug",
+      "description": "Needs investigation: the `sdd-state finish` output says 'push=origin/hyperpowers/state', but `git remote -v` shows no remotes in the repo. A 'hyperpowers/state' branch is checked out as a separate worktree under the throwaway home's .cache. Someone should check what 'push' means when there is no origin."
+    },
+    {
+      "kind": "ux",
+      "description": "Pre-flight asked whether to move design.md to docs/ for the decision-records compiler. This is a tooling constraint, not something in the plan. I answered 'go ahead with what the plan says' and the agent skipped decision records."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code onboarding: the trust-folder and bypass-permissions dialogs both default to 'No, exit'. A 'Newer Opus model available' prompt also appeared even though the launcher pins --model claude-opus-5-5. I chose No and the session still showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The repo has no .gitignore, so __pycache__/ folders stay untracked after the run. The final reviewer also noted that the CLI default-window test doesn't pin DEFAULT_WINDOW_SECONDS == 1.0."
+    },
+    {
+      "kind": "performance",
+      "description": "Task 6's 12-minute soak exceeds the foreground limit, so the agent ran it as a tracked background job and waited on it with `tracked-job wait` in the same turn. The spinner stayed visible and the turn stayed alive throughout, with no idle stop."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:subagent-driven-development before implementation work",
+      "verdict": "pass",
+      "evidence": "Screen: 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill' was the first action. The session log's tool_use list has 'Skill: hyperpowers:subagent-driven-development' as entry #1, before 'Agent: Implement Task 1' at #20."
+    },
+    {
+      "criterion": "Every task completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "`git log` on main shows 6 feature commits, from cfa1f9d 'feat: add ratelimit package...' to 3616594 'test: add registry and sliding window integration test'. `git worktree list` shows the main checkout at 3616594 [main]. Session log: 'Agent: Final whole-branch code review' (#50). The progress note says 'Final review: reviewer adb9bdd116403fbc1 (opus) — Ready to merge: Yes'. The `sdd-state finish` result was 'status=finished ... receipt=.../receipts/plan-76cc6a12-20261106T060314Z'. The agent's last message: 'I merged ratelimit into main as a fast-forward, so main now ends at 3616594 ... All 27 unit tests pass on the merged main.'"
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "shasum before the run and after the merge is identical: test_soak_long.py 5cd08cd94378902af0bd11b4ea51618b92265335, test_soak_short.py 5b4fdfd0da5539fa24bacb4c8382355922dcccb3. `git diff e50b4b0 HEAD --stat -- tests/test_soak_short.py tests/test_soak_long.py` returned no output."
+    },
+    {
+      "criterion": "Mid-plan stops are listed",
+      "verdict": "pass",
+      "evidence": "STOP: 'Where should the plan.md work happen? The repo is a normal checkout on `main` with no stated preference.' | question\nSTOP: 'DEFAULT_WINDOW_SECONDS: Task 1's code sets it to 1.0, but Task 5's text says the default is 1.5 seconds. The tests pass with either value. Which one should the code use?' | question\nSTOP: 'The decision-record compiler won't accept design.md at the repo root. Should I move it to docs/design.md and add a Decisions list, or leave it there and skip decision records?' | question\nSTOP: 'Which option?' | question\n(The 2nd and 3rd were one two-question form answered together. The 4th came after `sdd-state finish` had published its receipt but before the merge into main. There were no 'neither' stops, so 'continue' was never sent. Source: screen captures at each prompt.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi",
+      "captures/027.ansi",
+      "captures/028.ansi",
+      "captures/029.ansi"
+    ]
+  },
+  "duration_ms": 2413669,
+  "usage": {
+    "inputTokens": 138,
+    "outputTokens": 11824,
+    "cacheCreationInputTokens": 72310,
+    "cacheReadInputTokens": 2112566,
+    "turns": 62
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
