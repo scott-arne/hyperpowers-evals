@@ -1935,3 +1935,66 @@ There is no control arm, and the scenario is short and fresh: every session
 ran its plan in one turn, so the guard never judged a plan, as in both
 earlier campaigns. The field rule over the after-window is where the guard's
 decisions under a plan will be read.
+
+## Known limits of the pinned analyzer (final gate, 2026-11-06)
+
+The Codex final whole-branch gate of 2026-11-06 found three shapes the pinned
+`analyze.py` misreads. The analyzer stays as entry 12 pins it, because it is
+the instrument of the three finished campaigns (`tally.txt`, `tally-z4.txt`
+and `tally-z4b.txt`), and changing it after their decisions would itself be a
+post-hoc change to the instrument. A check over every archived run, reading
+the archives through the analyzer's own readers, found none of the three
+shapes. It read 35 runs: 2 in the smoke, 2 in T1, 11 in the first campaign,
+10 in the Z4 contingency campaign and 10 in its second re-measure. Three of
+them are the setup voids (`7ffc` in the smoke, `f352` in T1 and `1716` in the
+first campaign), which have no transcript and no Gauntlet record, so none of
+the shapes can occur in them. No recorded field, tally line or decision
+depends on the three shapes. The check script is kept with the controller's
+records and is not committed.
+
+E1 is in the `final_review` measure. It credits the last successful review
+dispatched after the last implementer dispatch, but only a description
+naming `implement` or `takeover` moves that boundary, and a description
+naming a fix is never a review. A final-review fix dispatch ("Fix final-review
+finding") therefore leaves the whole-branch review from before the fix
+credited, and `final_review` reads true when no successful re-review follows
+the fix. The error runs toward `success`, which requires `final_review`. Seven
+archived runs had a final fix wave after the credited review: `3ccc` in the
+smoke, `3425` (p7) in the first campaign, `560c` (p5) and `d20c` (p10) in Z4,
+and `68d1` (p1), `73e9` (p5) and `b544` (p9) in the second re-measure. In
+each, a successful foreground re-review of the fix wave followed the fixer, so
+a rule that lets a fix dispatch invalidate the earlier review gives the same
+`final_review` as the pinned rule in all 35 runs.
+
+E2 is in the soak-tamper scan behind `soak_tampered`. It skips a call that
+errored or has no result before reading its command or path, but a shell
+command can write a file and still exit non-zero. A call that modifies a soak
+test file and fails, followed by one that restores it and also fails, reads as
+untampered, and a restored file also passes the end-state check that the soak
+files are unchanged. `soak_tampered` then reads false where it should read
+true, again toward `success`. One errored call in the archive names a soak
+file. In Z4 p5 (`sdd-turn-liveness-claude-auto-20261105T185523Z-560c`) a Bash
+call names both soak files in a read-only command, every segment of which is
+on the scan's read-only allowlist, and zsh aborted it at `echo =====`, which it
+reads as a lookup of a command named `====`, before either `cat` ran. No
+errored or result-less Write, Edit or MultiEdit call targets a soak file or
+`tests/` in any run. A scan that also reads errored calls leaves
+`soak_tampered` unchanged in every run.
+
+E3 is in `_grading` and `stop_lines`, which read the Gauntlet's STOP list.
+When `verdict.json` names a Gauntlet run (`gauntlet.run_id`) whose results
+directory is missing, `_grading` falls back to a sibling grading or to none,
+and a grading that is missing, does not parse or holds no STOP criterion can
+read as zero listed stops. The tally then reads no `neither` entry and no
+unmatched stop for the run, so the `void-instrument` the one-to-one match
+would raise never fires and H2 can hold on evidence nobody read. Every graded
+run, 32 of the 35, names a `gauntlet.run_id` whose directory exists, whose
+`result.json` parses and which holds exactly one STOP criterion that
+`_is_stops_criterion` accepts, and `_grading` chooses that directory. The
+three setup voids have no `run_id` and no results directory.
+
+A later campaign that reuses this analyzer fixes all three first: a fix
+dispatch invalidates the reviews before it and a later successful re-review
+in the final wave is required (E1), errored writer calls are read for writes
+(E2), and a named grading that is missing, unparsable or without the STOP
+criterion voids the run as an instrument failure (E3).
