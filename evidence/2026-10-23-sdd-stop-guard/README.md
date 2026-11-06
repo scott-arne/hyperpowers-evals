@@ -731,17 +731,48 @@ The numbering continues the series in
     outside quotes. Quotes are read as `_split_ops` reads them, so a
     backslash quotes the next character and an apostrophe in a comment opens
     no quote, and a heredoc body is read as blank, so an apostrophe there
-    opens none either. The `(` of a `$(` inside double quotes, and the body
+    opens none either. A heredoc's delimiter may be a word quoted with `'`
+    or `"`, a word after a backslash (`<<\EOF`), or a bare word, which may
+    hold characters beyond letters and digits (`<<'END-NOTE'`), and its body
+    ends at the first line that is the unquoted delimiter alone, after
+    leading tabs under `<<-` only. The analyzer's other heredoc readers, the
+    untracked-launch tripwire, the soak-tamper check and the watch reader,
+    share that pattern. The `(` of a `$(` inside double quotes, and the body
     up to its closing `)`, are read unquoted, because bash runs that command.
-    A quoted module name (`python3 -m unittest "tests.test_soak_short"`)
-    still counts, since the operator before it is outside the quotes. These
-    count as no soak: a `time` that is an argument of another command (`echo
-    time python3 -m unittest ...`) or that runs another program (`time echo
-    ...`), and an interpreter after a quoted `;` or `(`, with `time` or
-    without (`echo "x; time python3 -m unittest ..."`, `echo 'x (python3 -m
-    unittest ...'`). The job reader quotes a job's argv back into shell form
-    before this reader sees it, so an argument that carries an operator and
-    the soak's words is no soak job either.
+    A backslash and a newline outside single quotes are a line continuation,
+    read as two spaces, so `python3 -m unittest \` with
+    `tests.test_soak_short -v` on the next line counts; inside single quotes
+    bash keeps both characters, and so does the reader. A quoted module name
+    (`python3 -m unittest "tests.test_soak_short"`) still counts, since the
+    operator before it is outside the quotes. These count as no soak: a
+    `time` that is an argument of another command (`echo time python3 -m
+    unittest ...`) or that runs another program (`time echo ...`), and an
+    interpreter after a quoted `;` or `(`, with `time` or without (`echo "x;
+    time python3 -m unittest ..."`, `echo 'x (python3 -m unittest ...'`).
+
+    `runs_soak` also reads the operand of a shell that a segment runs with
+    `-c` (`bash`, `sh` or `zsh`, after assignments and the `env`, `nohup`,
+    `time` and `timeout` prefixes, as `_shell_operand` finds it) as a
+    command of its own, by the same rules, through up to four nested
+    wrappers. The segments are the ones `_split_ops` finds outside quotes,
+    comments and heredoc bodies. So `bash -c "cd /x && python3 -m unittest
+    tests.test_soak_short -v"`, `bash -c 'cd /x; python3 -m unittest
+    tests.test_soak_short -v'` and `bash -c "python3 -m unittest
+    tests.test_soak_short -v"` count, which the quote rule alone would have
+    refused for the first two and never counted for the third. A wrapper
+    quoted in another command's argument (`echo "bash -c 'python3 -m
+    unittest ...'"`) is no run, and neither is a wrapper whose operand cannot
+    be read (the soak parked as `$0` after the operand, or an argument of a
+    script). The rest of the measure applies to the call as before, so a
+    wrapped soak in a call launched in the background, or detached by the
+    shell in a call that returned at once (`nohup bash -c "<soak>" &`, which
+    the untracked-launch tripwire flags as it always did), is a run that
+    fails the rule that every run is a foreground one. The job reader quotes
+    a job's argv back into shell form before this reader sees it, so an
+    argument that carries an operator and the soak's words is no soak job,
+    and the re-joined argv is one segment headed by the interpreter, in
+    which this reader finds no wrapper: a job's own shell wrapper is read as
+    before, and `nohup bash -c <soak>` is still no soak job.
 
     `_waited_job` takes a count of trailing lines, 0 by default. At 1 the call
     must close with exactly one `date` segment: the call's final non-empty
@@ -765,10 +796,18 @@ The numbering continues the series in
     0, which the wait does only for `status=exited code=0`, so the call's
     exit 0 still vouches for the wait. Under `;` the call's exit is the
     date's, so the printed verdict is the whole proof, and two more
-    conditions hold. The wait's segment carries no `<` or `>`, so no
-    redirection of any descriptor sends its answer elsewhere or closes its
-    stdout. And the wait must have run. Reached through `;` alone, it runs
-    whatever came before it. Reached through `&&`, it is admitted only when
+    conditions hold. The wait's segment carries no redirection but one whose
+    target descriptor is explicitly 2: `2>&1`, `2>&-`, or `2>` or `2>>` to
+    one plain file word, each a whole word outside quotes and after
+    unquoted whitespace. The helper prints its verdict on stdout, so none of
+    those can keep it out of the result, while any other `<` or `>` may send
+    the answer elsewhere or close stdout under it, and stays refused: `>`,
+    `1>`, `>&2`, `1>&2`, `&>`, `>&-`, `1<&-`, `<`, `0<`, a here-string, and
+    `2>&1-`, which moves fd 1 onto fd 2 and closes fd 1. An escaped space
+    before the `2` (`x\ 2>/dev/null`) makes `x 2` one word and `>/dev/null`
+    a redirection of stdout, so that is refused too. And the wait must have
+    run. Reached through `;` alone, it runs whatever came before it.
+    Reached through `&&`, it is admitted only when
     every segment before it, whatever joins them, is setup: `cd` followed by
     exactly one directory word that does not start with `-`, its stderr
     redirected or not, or assignment words whose values hold no
@@ -785,8 +824,10 @@ The numbering continues the series in
     date is `status=running`, `echo status=exited code=0; false && <wait>;
     date -u`, `echo status=exited code=0; cd /nowhere 2>/dev/null && <wait>;
     date -u`, `W=$(cmd) && <wait>; date -u`, `cd -- /x && <wait>; date -u`,
-    `echo status=exited code=0; <wait> 1<&-; date -u`, and a closing `date
-    +`, `date '+ '`, `date '+%t'` or `date +%s>/dev/null`.
+    `echo status=exited code=0; <wait> 1<&-; date -u`, the same with `1>&2`,
+    `&>/dev/null`, `>&-` or `2>&1-` on the wait, and a closing `date +`,
+    `date '+ '`, `date '+%t'` or `date +%s>/dev/null`. These are read:
+    `<wait> 2>&1; date -u` and `<wait> 2>/dev/null; date -u`.
 
     `_proven_final` admits a command substitution when every `$(` in the text
     is the whole value of an assignment word, `NAME=$(...)` or
@@ -794,22 +835,28 @@ The numbering continues the series in
     made of assignment words only, and the final segment carries no
     substitution. Each body holds no `;`, `&`, `|`, newline, backtick or `)`
     before its end, quoted or not. Outside quotes it also holds no `(`,
-    backslash or `#`. A single-quoted string in it holds no `'`, and a
-    double-quoted one holds no `"`, backslash or `$(`. With no `)` inside a
-    quoted string, bash and the reader end the body at the same `)`, and
-    with nothing in it that `_split_ops` splits at, the body stays inside its
-    assignment's segment, so no fragment of it can pose as the final command.
-    So `W=$(dirname "$PWD")`, `W=$("$S/sdd-dir" plan.md 2>/dev/null)` and
-    `W="$($S/sdd-dir plan.md)"` before a wait leave it readable. Any
-    backtick, and every other substitution, still leaves the text unproven.
+    backslash or `#`, and no `$` directly before a `'`, which would open
+    bash's ANSI-C quote `$'...'`, inside which `\'` does not close the
+    string. A single-quoted string in it holds no `'`, and a double-quoted
+    one holds no `"`, backslash or `$(`. With no `)` inside a quoted string
+    and no ANSI-C quote, bash and the reader end the body at the same `)`,
+    and with nothing in it that `_split_ops` splits at, the body stays inside
+    its assignment's segment, so no fragment of it can pose as the final
+    command. So `W=$(dirname "$PWD")`, `W=$("$S/sdd-dir" plan.md
+    2>/dev/null)` and `W="$($S/sdd-dir plan.md)"` before a wait leave it
+    readable. Any backtick, and every other substitution, still leaves the
+    text unproven.
     These stay rejected: `echo $(true; <wait>)`, `W=$(a; b); <wait>`,
     `X=$(cmd) other-cmd; <wait>`, a wait with `$(...)` in its own words, a
     `$(` in a comment, `W=$(echo "a)b"); <wait>`, `W=$(echo "x; y"); <wait>`,
-    a body with a backslash or a `#` outside quotes, and any backtick. The
-    function's other callers read a job's argv, which `shlex.join` quotes
-    into one segment, so a `$(` there is always in the final segment and is
-    still refused: a job running `bash -c 'W=$(pwd); python3 -m unittest
-    tests.test_soak_long -v'` is no long soak, a false negative this accepts.
+    a body with a backslash or a `#` outside quotes, a body with an ANSI-C
+    quote (among them `W=$(true $'\'); <wait> X'Y) && echo status=exited
+    code=0 #'`, where bash runs no wait and only the echo), and any
+    backtick. The function's other callers read a job's argv, which
+    `shlex.join` quotes into one segment, so a `$(` there is always in the
+    final segment and is still refused: a job running `bash -c 'W=$(pwd);
+    python3 -m unittest tests.test_soak_long -v'` is no long soak, a false
+    negative this accepts.
 
     H1 to H4, R and every other measure are unchanged, and the re-read proves
     it. Read with the corrected analyzer, every run in
@@ -827,7 +874,7 @@ The numbering continues the series in
     `H4: True` with `f_runs: 10`, `R: True`, `decision: FAIL`. Those readings
     do not replace `tally.txt` or `tally-z4.txt`, which stay the records of
     their campaigns as read at their pins. Pins after the Correction:
-    `analyze.py` `926ebbd86511426ac9e9bc81bbe9ceafea935131`; `liveness.py`
+    `analyze.py` `4633e8166c5c05d904556ed9dddb62b51a30dceb`; `liveness.py`
     `4b56247ca0333aac395f7807b051a92a3dae10e5` and `tally.py`
     `23e39ffb4bf75b4d9e0ac5cb9d715ee9e0d65598` are unchanged.
 

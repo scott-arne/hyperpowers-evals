@@ -137,7 +137,7 @@ SOAK_FILES = ("test_soak_short.py", "test_soak_long.py")
 # Bash's `time` keyword, with its `-p`, runs the command after it in the
 # foreground like `nohup` and `timeout` do (Correction 12). The leading
 # delimiter is a command boundary only outside quotes, which `runs_soak`
-# checks (`_quoted_offsets`).
+# checks (`_shell_reading`).
 UNITTEST_CMD = re.compile(
     r"(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*(?:nohup\s+|timeout\s+\S+\s+|time\s+(?:-p\s+)?)*"
     r"(?:\S*/)?python3?\s+-m\s+unittest\b([^\n;|&]*)"
@@ -145,12 +145,13 @@ UNITTEST_CMD = re.compile(
 # A segment of assignment words only, where a word may take a whole command
 # substitution as its value, bare or inside double quotes. The body carries
 # none of the characters `_split_ops` splits at, no backtick, and no `)`
-# before its end, quoted or not, so bash and this pattern end the body at the
-# same `)`. Outside quotes it also carries no `(` (so no nested substitution
-# or subshell), backslash or `#`; a single-quoted string in it holds no `'`,
-# and a double-quoted one no `"`, backslash or `$(`. A plain value carries no
-# `(` and so no substitution (Correction 12).
-SUBSTITUTION_BODY = r"""(?:[^;&|\n`()'"\\#]|'[^';&|\n`)]*'|"(?:[^";&|\n`)\\$]|\$(?!\())*")*"""
+# before its end, quoted or not. Outside quotes it also carries no `(` (so no
+# nested substitution or subshell), backslash or `#`, and no `$` directly
+# before a `'`, which would open bash's `$'...'`, where `\'` does not close
+# the string. A single-quoted string in it holds no `'`, and a double-quoted
+# one no `"`, backslash or `$(`. So bash and this pattern end the body at the
+# same `)`. A plain value carries no `(` and so no substitution (Correction 12).
+SUBSTITUTION_BODY = r"""(?:[^;&|\n`()'"\\#$]|\$(?!')|'[^';&|\n`)]*'|"(?:[^";&|\n`)\\$]|\$(?!\())*")*"""
 SUBSTITUTION = rf"\$\({SUBSTITUTION_BODY}\)"
 ASSIGNMENT_WORD = rf"""[A-Za-z_][A-Za-z0-9_]*=(?:{SUBSTITUTION}|"{SUBSTITUTION}"|[^\s;&|`()'"\\#]*)"""
 ASSIGNMENTS = re.compile(rf"\s*{ASSIGNMENT_WORD}(?:\s+{ASSIGNMENT_WORD})*\s*")
@@ -170,6 +171,12 @@ CLOSING_DATE_LINES = 1
 # `cd`'s stderr, its target attached or in the next word.
 SETUP_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 CD_STDERR = re.compile(r"2>>?")
+# The redirections a wait's segment may carry under a `;` date (Correction
+# 12): each names fd 2 and moves nothing else, so none can keep the verdict
+# the helper prints on stdout out of the result. They are `2>&1`, `2>&-`,
+# and `2>` or `2>>` to one plain file word, each a whole word of its own;
+# the word ends where it does so that `2>&1-`, which closes fd 1, is not one.
+WAIT_STDERR = re.compile(r"(?<!\S)2>(?:&[1-]|>?[ \t]*[^\s;&|<>()'\"`\\]+)(?!\S)")
 BASH_DEFAULT_TIMEOUT_MS = 120_000
 UNIT_TESTS = "test_unit_"
 SOAK_SHORT_CHECK = "tests.test_soak_short"
@@ -201,7 +208,17 @@ STOP_LINE = re.compile(
 )
 PLUGIN_DIR = re.compile(r'--plugin-dir\s+"([^"]+)"')
 MODEL = re.compile(r'--model\s+"([^"]+)"')
-HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(.*?)\n[ \t]*\2[ \t]*(?=\n|$)", re.DOTALL)
+# A heredoc and its body, for each delimiter form bash takes in practice: a
+# word quoted with `'` or `"`, a word after a backslash, or a bare word. The
+# body ends at the first line that is the unquoted delimiter alone, after
+# leading tabs under `<<-` only (Correction 12).
+HEREDOC = re.compile(
+    r"<<(?P<dash>-)?[ \t]*"
+    r"(?:'(?P<single>[^'\n]+)'|\"(?P<double>[^\"\n]+)\"|\\(?P<escaped>[^\s;&|<>()'\"]+)"
+    r"|(?P<bare>[^\s;&|<>()'\"]+))"
+    r"[^\n]*\n(?P<body>.*?)\n(?(dash)\t*)(?:(?P=single)|(?P=double)|(?P=escaped)|(?P=bare))(?=\n|$)",
+    re.DOTALL,
+)
 QUOTED = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
 SAFE_AMP = re.compile(r"&&|[0-9]*>&[0-9-]*|&>>?|<&|\|&")
 CMD_DETACH = re.compile(r"(?:^|[;|(]|&&)\s*(?:nohup|setsid|disown)\b", re.MULTILINE)
@@ -1084,7 +1101,8 @@ def _proven_final(command: str, pipes: bool = True) -> str | None:
     # unproven. The one shape (Correction 12) is `NAME=$(<body>)`, or the
     # same inside double quotes, in a segment of assignments before the final
     # one, its body free of every character `_split_ops` splits at, quoted or
-    # not, and of any `)` before its end (`ASSIGNMENT_WORD`): the whole body
+    # not, of any `)` before its end, and of any ANSI-C quote `$'...'`
+    # (`ASSIGNMENT_WORD`): the whole body
     # then stays inside that segment, so no fragment of it is a segment at
     # all, the final segment carries no substitution, and the exit still
     # belongs to the command the call closed with. A watch reached through
@@ -1148,8 +1166,8 @@ def shell_detaches(text: str) -> bool:
     return "&" in SAFE_AMP.sub("", body)
 
 
-def _quoted_offsets(command: str) -> list[bool]:
-    """Which characters of a command bash reads as quoted.
+def _shell_reading(command: str) -> tuple[str, list[bool]]:
+    """How bash reads a command's quotes and line continuations.
 
     Quotes are found as ``_split_ops`` finds them: a backslash outside single
     quotes quotes the next character, and a comment opens no quote, so an
@@ -1161,15 +1179,22 @@ def _quoted_offsets(command: str) -> list[bool]:
     that closes it are read unquoted, with quotes of their own. A quote never
     closed quotes the rest of the text, which bash refuses to run.
 
+    A backslash-newline outside single quotes is a line continuation, which
+    bash removes, so it is read as two spaces: the words on either side stay
+    one command, and every offset still matches the flags (Correction 12).
+    Inside single quotes bash keeps both characters, and so does this.
+
     :param command: one shell command's text.
-    :returns: one flag per character, True where the character is quoted.
+    :returns: the command with each line continuation read as two spaces,
+        and one flag per character, True where the character is quoted.
     """
     text = HEREDOC.sub(
-        lambda m: m.group(0)[: m.start(3) - m.start()]
-        + re.sub(r"[^\n]", " ", m.group(3))
-        + m.group(0)[m.end(3) - m.start() :],
+        lambda m: m.group(0)[: m.start("body") - m.start()]
+        + re.sub(r"[^\n]", " ", m.group("body"))
+        + m.group(0)[m.end("body") - m.start() :],
         command,
     )
+    continued = list(command)
     quoted = [False] * len(text)
     quote = ""
     # One entry per `$(` opened inside double quotes, counting the
@@ -1187,12 +1212,16 @@ def _quoted_offsets(command: str) -> list[bool]:
                 continue
             if quote == '"' and ch == "\\":
                 quoted[i + 1 : i + 2] = [True] * len(text[i + 1 : i + 2])
+                if text.startswith("\\\n", i):
+                    continued[i : i + 2] = "  "
                 i += 2
                 continue
             if ch == quote:
                 quote = ""
         elif ch == "\\":
             quoted[i : i + 2] = [True] * len(text[i : i + 2])
+            if text.startswith("\\\n", i):
+                continued[i : i + 2] = "  "
             i += 2
             continue
         elif ch in "'\"":
@@ -1212,10 +1241,10 @@ def _quoted_offsets(command: str) -> list[bool]:
                 quote = '"'
                 quoted[i] = True
         i += 1
-    return quoted
+    return "".join(continued), quoted
 
 
-def runs_soak(command: str, name: str) -> bool:
+def runs_soak(command: str, name: str, *, depth: int = 0) -> bool:
     """Whether a command runs the named soak test, directly or through ``unittest discover``.
 
     Only a ``python3 -m unittest`` invocation at the start of a shell command
@@ -1224,11 +1253,24 @@ def runs_soak(command: str, name: str) -> bool:
     operator outside quotes (Correction 12): ``echo "x; python3 -m unittest
     <soak>"`` prints the soak's words and runs nothing. A match skipped for a
     quoted operator is searched past from its operator, not from its end, so
-    the text it overlapped is still read.
+    the text it overlapped is still read. A line continuation outside single
+    quotes joins the soak's words across lines (``_shell_reading``).
+
+    The operand of a shell a segment runs with ``-c`` (``_shell_operand``)
+    is a command of its own, so it is read by the same rule, through up to
+    ``SHELL_NESTING`` wrappers (Correction 12). The segments are the ones
+    ``_split_ops`` finds outside quotes, comments and heredoc bodies, so a
+    wrapper quoted in another command's argument is not one, and neither is
+    a wrapper whose operand cannot be read.
+
+    :param command: one shell command's text.
+    :param name: the soak test's module name.
+    :param depth: how many wrappers ``command`` was read through.
+    :returns: whether the command runs that soak.
     """
-    quoted = _quoted_offsets(command)
+    text, quoted = _shell_reading(command)
     at = 0
-    while (match := UNITTEST_CMD.search(command, at)) is not None:
+    while (match := UNITTEST_CMD.search(text, at)) is not None:
         if match.start() and quoted[match.start()]:
             at = match.start() + 1
             continue
@@ -1240,6 +1282,12 @@ def runs_soak(command: str, name: str) -> bool:
         if discover:
             pattern = re.search(r"-p\s+['\"]?([^\s'\"]+)", discover.group(1))
             if pattern is None or fnmatch.fnmatch(f"{name}.py", pattern.group(1)):
+                return True
+    if depth < SHELL_NESTING:
+        for segment in _segments(_strip_heredocs(command)):
+            words = _command_words(segment)
+            operand = _shell_operand(words) if words else None
+            if operand is not None and runs_soak(operand, name, depth=depth + 1):
                 return True
     return False
 
@@ -1414,7 +1462,9 @@ def _is_soak_command(segment: str, name: str) -> bool:
     The words are re-joined before ``runs_soak`` reads them, so the pattern
     sees the invocation with its environment prefix already dropped
     (``env VAR=1 python3 -m unittest ...``) and sees an operator quoted
-    inside an argument as the quoted text it is.
+    inside an argument as the quoted text it is. The re-joined text is one
+    segment headed by the interpreter, so ``runs_soak`` finds no shell
+    wrapper in it to read through.
 
     :param segment: one shell command's text.
     :param name: the soak test's module name.
@@ -1592,6 +1642,29 @@ def _is_setup(segment: str) -> bool:
     return len(operands) == 1 and not operands[0].startswith("-")
 
 
+def _redirects_stdout(segment: str) -> bool:
+    """Whether a wait's segment carries a redirection other than one of fd 2 (Correction 12).
+
+    The fd-2 redirections (``WAIT_STDERR``) are set aside only where bash
+    reads them as redirections: unquoted, and after unquoted whitespace or
+    at the segment's start, so ``x\\ 2>file``, whose escaped space makes
+    ``x 2`` one word and ``>file`` a redirection of stdout, is not one.
+    Whatever ``<`` or ``>`` is left over may be any other redirection, among
+    them ``>``, ``1>&2``, ``&>``, ``>&-``, ``<`` and a here-string.
+
+    :param segment: the wait's segment of ``_split_ops``.
+    :returns: True when anything but an fd-2 redirection may redirect.
+    """
+    _, quoted = _shell_reading(segment)
+    kept = list(segment)
+    for match in WAIT_STDERR.finditer(segment):
+        start, end = match.span()
+        if any(quoted[start:end]) or (start and quoted[start - 1]) or (end < len(segment) and quoted[end]):
+            continue
+        kept[start:end] = " " * (end - start)
+    return re.search(r"[<>]", "".join(kept)) is not None
+
+
 def _before_closing_date(command: str) -> str | None:
     """The call up to the wait, when a single ``date`` closes it after the wait (Correction 12).
 
@@ -1605,8 +1678,9 @@ def _before_closing_date(command: str) -> str | None:
     vouches for the wait. Under ``;`` the call's exit is the date's and
     vouches for nothing before it, so the printed verdict is the whole
     proof. The wait must then print its answer into the result: its segment
-    carries no ``<`` or ``>``, so no redirection of any descriptor sends the
-    answer elsewhere or closes stdout under it. And the wait must have run.
+    carries no redirection but those of fd 2 (``_redirects_stdout``), so
+    none sends the answer elsewhere or closes stdout under it. And the wait
+    must have run.
     Reached through ``;`` alone it runs whatever preceded it. Reached
     through ``&&`` the shell may have skipped it, so every segment before it
     must be setup (``_is_setup``): a skipped wait then leaves before the
@@ -1633,7 +1707,7 @@ def _before_closing_date(command: str) -> str | None:
     if "&&" not in date_joins:
         wait_from = filled[-3] + 1 if len(filled) > 2 else 0
         wait_joins = {op for op, _ in ops[wait_from : wait_at + 1]}
-        if re.search(r"[<>]", ops[wait_at][1]):
+        if _redirects_stdout(ops[wait_at][1]):
             return None
         reached = wait_joins <= {"", ";"} or (
             wait_joins <= PROVEN_OPS and all(_is_setup(segment) for _, segment in ops[:wait_at] if segment.strip())
@@ -1757,7 +1831,7 @@ def _soak_tampered(calls: Sequence[Call]) -> bool:
             if any(m.group(2).endswith(SOAK_FILES) for m in WRITE_TARGET.finditer(command)):
                 return True
             for match in HEREDOC.finditer(command):
-                if any(name in match.group(3) for name in SOAK_FILES) and not all(
+                if any(name in match.group("body") for name in SOAK_FILES) and not all(
                     _read_only(part) for part in _segments(_heredoc_command(command, match))
                 ):
                     return True
@@ -1780,7 +1854,7 @@ def _untracked(calls: Sequence[Call], workspace: Path) -> list[dict[str, str]]:
                 start = command.rfind("\n", 0, match.start()) + 1
                 target = WRITE_TARGET.search(command[start : match.start()])
                 if target:
-                    written.append((index, call.at, target.group(2), match.group(3), command[match.end() :]))
+                    written.append((index, call.at, target.group(2), match.group("body"), command[match.end() :]))
             stripped = _strip_heredocs(command)
             for match in REDIRECT.finditer(stripped):
                 path = match.group(2)
