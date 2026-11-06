@@ -25,7 +25,7 @@ The first `sdd-dir` call in each condensed log runs under the candidate, not und
 
 ## Method and departures from the brief
 
-`scripts/parallel-live-step1.sh` builds the throwaway repository and the two configuration directories (the brief's Step 1 commands with the candidate path fixed). `scripts/parallel-live-run.sh` runs Step 2. `scripts/condense.py` turns each session's stream-json capture into the condensed logs (`>>>` is a tool call, `<<<` its result cut at 1500 characters, `###` the session's own text). In the copy of `parallel-live-run.sh` kept here, the number after `--max-budget-usd` is replaced with `<cap>`; the original carries a per-session budget cap.
+`scripts/parallel-live-step1.sh` builds the throwaway repository and the two configuration directories (the brief's Step 1 commands with the candidate path fixed). `scripts/parallel-live-run.sh` runs Step 2. `scripts/condense.py` turns each session's stream-json capture into the condensed logs (`>>>` is a tool call, `<<<` its result cut at 1500 characters, `###` the session's own text). In the copy of `parallel-live-run.sh` kept here, the number after `--max-budget-usd` is replaced with `<cap>`; the original carries a per-session budget cap. The condensed logs cut each assistant text turn at 800 characters, so the two sessions' final messages are kept whole in `task-13-runs/s1-final-message.txt` and `task-13-runs/s2-final-message.txt`.
 
 Departures from the brief:
 
@@ -55,7 +55,7 @@ Session 1 (`s1-tools.txt`):
 830:<<< status=board sync=no-remote sessions=2 waiting=1 frontier=none
 ```
 
-Session 1 registered the integration branch, saw both tasks offered, claimed Task 1, and merged it as a fast-forward. It then detached at `a7a307f`, dropped the task branch, wrote the completion line and snapshotted. Its next `next` found Task 2 held by session 2 and Task 3 waiting, so it posted a waiting record, printed the board and handed back, as the candidate's SKILL.md instructs for `reason=held`. Its final message (line 837) asked to be told to continue once Task 2 had merged. That is the departure from the expected outcome: session 1 handed back at `held`, not in response to the final claim. In two interactive terminals a human would have resumed it later; in print mode it ended. The brief's last clause, that the other session hands back with the board, holds at an earlier point.
+Session 1 registered the integration branch, saw both tasks offered, claimed Task 1, and merged it as a fast-forward. It then detached at `a7a307f`, dropped the task branch, wrote the completion line and snapshotted. Its next `next` found Task 2 held by session 2 and Task 3 waiting, so it posted a waiting record, printed the board and handed back, as the candidate's SKILL.md instructs for `reason=held`. Its final message (`s1-tools.txt` line 837, whole in `s1-final-message.txt`) asked to be told to continue once Task 2 had merged. That is the departure from the expected outcome: session 1 handed back at `held`, not in response to the final claim. In two interactive terminals a human would have resumed it later; in print mode it ended. The brief's last clause, that the other session hands back with the board, holds at an earlier point.
 
 Session 2 (`s2-tools.txt`):
 
@@ -72,7 +72,7 @@ Session 2 (`s2-tools.txt`):
 2072:<<< status=finished sha=9127c3d last=e7e0f122d21c4942b0541a0f7054f698f4e9f302 push=origin/hyperpowers/state
 ```
 
-Session 2 detached at `worktree-live` before `register`, was offered only Task 2, claimed it, and its merge-back produced the merge commit `f913fe5` (`Merge task 2: b.sh`) because session 1 had already advanced the integration branch. It then detached at `f913fe5`, was offered Task 3 with `from=f913fe5`, and merged it as `29ddd08`. With all three tasks complete, `next` printed `reason=complete` and session 2 claimed `task=final`. It then switched its worktree to `worktree-live`, ran the three tests (each printed `PASS`), ran a final review (opus, 0 Critical, 0 Important), dispatched the decision extractor, got round 1 of the final Codex gate approved by three lenses, and ran `sdd-state finish`. The finishing skill compiled one decision record, ran the suite and stopped at the three-option merge menu.
+Session 2 detached at `worktree-live` before `register`, was offered only Task 2, claimed it, and its merge-back produced the merge commit `f913fe5` (`Merge task 2: b.sh`) because session 1 had already advanced the integration branch. It then detached at `f913fe5`, was offered Task 3 with `from=f913fe5`, and merged it as `29ddd08`. With all three tasks complete, `next` printed `reason=complete` and session 2 claimed `task=final`. It then switched its worktree to `worktree-live`, ran the three tests (each printed `PASS`), ran a final review (opus, 0 Critical, 0 Important), dispatched the decision extractor, got round 1 of the final Codex gate approved by three lenses, and ran `sdd-state finish`. The finishing skill compiled one decision record, ran the suite and stopped at the three-option merge menu with the staged records awaiting approval (the menu is in `s2-final-message.txt`; the condensed `s2-tools.txt` cuts that message before it).
 
 ## Board outputs
 
@@ -86,7 +86,7 @@ held task=1 owner=964f53cc-6623-475d-a7d2-3af4e92f3563 since=2026-11-06T13:50:41
 held task=2 owner=8082acd7-244b-4398-884d-0a590e7878ed since=2026-11-06T13:52:09Z
 ```
 
-Board 2, captured at 13:55:41Z when the orchestrator saw the first `merged` line in the ledger (`board-2.txt`). Both claims still show as held and session 1 is still on its task branch, so the capture preceded the merge-back's release of Task 1:
+Board 2, captured at 13:55:41Z when the orchestrator saw the first `merged` line in the ledger (`board-2.txt`). Both claims still show as held and session 1 is still on its task branch, so the capture appears to have preceded the merge-back's release of Task 1 (a reading of the `held task=1` line and session 1's task branch, not something the board states):
 
 ```
 status=board sync=no-remote sessions=2 waiting=0 frontier=none
@@ -200,7 +200,7 @@ Final codex gate: round 1/3 approved (lenses correctness, integration-and-requir
 
 ## Final suite
 
-The finishing skill ran the three tests on the integration branch (`s2-tools.txt` lines 2096 to 2099). Each printed `PASS`:
+The finishing skill ran the three tests on the integration branch (`s2-tools.txt` lines 2096 to 2101). Each printed `PASS`:
 
 ```
 >>> Bash: bash tests/test-a.sh
@@ -213,7 +213,7 @@ The finishing skill ran the three tests on the integration branch (`s2-tools.txt
 
 ## Assumption 1: a worktree detached at the integration head between tasks
 
-Holds. Every detach and switch succeeded on the first try: session 1 ran `git switch --detach a7a307f`; session 2 ran `git switch --detach worktree-live` at Setup, `git switch --detach f913fe5`, `git switch worktree-live.cc79c6c2.task-3`, `git switch --detach 29ddd08` and `git switch worktree-live` for the final train. Neither controller re-attached a branch on its own, asked about the detached HEAD or treated it as an error. Both wrote `mode worktree on detached` session lines and went on. The board shows `branch=detached` for an idle session (board 1 for session 2 before its claim, board 3 for session 1 waiting and session 2 holding final).
+Holds. Every detach and switch succeeded on the first try: session 1 ran `git switch --detach a7a307f`; session 2 ran `git switch --detach worktree-live` at Setup, `git switch --detach f913fe5`, `git switch worktree-live.cc79c6c2.task-3`, `git switch --detach 29ddd08` and `git switch worktree-live` for the final train. Neither controller re-attached a branch on its own, asked about the detached HEAD or treated it as an error. Both wrote `mode worktree on detached` session lines and went on. The board shows `branch=detached` for an idle session (board 1 for session 2 after its claim and before it switched to the task branch, board 3 for session 1 waiting and session 2 holding final).
 
 ## Assumption 2: no subcommand holds one repository's lock when it needs the pair helper
 
