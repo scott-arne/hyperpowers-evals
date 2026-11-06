@@ -235,8 +235,8 @@ Both held-task scenarios separate the two arms completely. On this branch (treat
 
 Both measure the subagent-driven-development skill text for a second session that joins a plan another session is already running.
 
-- `evals/scenarios/sdd-held-task-takes-frontier/` (`story.md`, `setup.sh`, `checks.sh`): Task 1 is claimed by a fixture session and Task 2 is claimable. The second session should register, ask `next`, take Task 2, and neither stop at the held Task 1 nor take it over.
-- `evals/scenarios/sdd-empty-frontier-posts-and-hands-back/` (`story.md`, `setup.sh`, `checks.sh`): the fixture session holds every task. The second session should see `next` answer `none reason=held`, post a `tasks` waiting record, print the board and hand back without taking anything over.
+- `scenarios/sdd-held-task-takes-frontier/` (`story.md`, `setup.sh`, `checks.sh`): Task 1 is claimed by a fixture session and Task 2 is claimable. The second session should register, ask `next`, take Task 2, and neither stop at the held Task 1 nor take it over.
+- `scenarios/sdd-empty-frontier-posts-and-hands-back/` (`story.md`, `setup.sh`, `checks.sh`): the fixture session holds every task. The second session should see `next` answer `none reason=held`, post a `tasks` waiting record, print the board and hand back without taking anything over.
 
 ## Pins and launch
 
@@ -292,6 +292,28 @@ Per-check passes, from the `pre` and `post` lines of the row logs (a `NOT` check
 | ran `sdd-state board` | 0/10 | 10/10 |
 | did not run a takeover claim | 10/10 | 10/10 |
 | `tasks` waiting record on disk | 0/10 | 10/10 |
+
+## What the checks prove
+
+The deterministic `post()` checks are narrower than the behaviours the scenarios name. In case one they show that `register`, `next` and `claim ... 2 --session` were invoked and that the ledger has a `Task 2: branch` line. They do not show that `next` returned Task 2, that Task 2 was worked or completed, or that no question or hand-back came before the claim. The takeover check is a negated regex, `claim [^\n]* 1 --session [^\n]*--takeover`, which depends on order and misses a `--takeover` written before `--session`. In case two they show that `next`, `wait --kind tasks` and `board` were invoked and that some `kind=tasks` waiting record exists. They do not show that `next` returned `none reason=held`, that the record is the agent's own and not the fixture session's, that the fixture's claims are untouched, or that the session handed back. The case two takeover regex, `claim [^\n]*--takeover`, does not depend on order. Each run's final verdict therefore also requires the Gauntlet-Agent's verdict on the story's acceptance criteria, which name those behaviours.
+
+The committed treatment copies confirm the missing pieces for all 20 treatment runs. The control runs are not covered. From `evidence/2026-10-27-parallel-development/scenario-runs/`:
+
+- Case one: every run's `trajectory.json` contains `status=next tasks=2` and `status=claimed task=2`; every run's ledger has a line starting `Task 2: complete` and none starting `Task 1: complete`; every run home holds one waiting record.
+- Case two: every run's `trajectory.json` contains `status=none reason=held`; every run home holds exactly one waiting record, named for a session id other than `fixture-session`, whose first `kind=` line is `kind=tasks`; both `claims/task-1` and `claims/task-2` remain.
+- The hand-back in case two is not confirmed by these commands; it rests on the grader's verdict.
+
+The commands, which print one line per run (a trajectory may hold its JSON on few lines, so `grep -c` output is read as present or absent, not as a count of occurrences):
+
+```bash
+for d in treatment/sdd-held-task-takes-frontier-claude-auto-*; do printf '%s next2=%s claimed2=%s\n' "${d##*-}" "$(grep -c 'status=next tasks=2' "$d/trajectory.json")" "$(grep -c 'status=claimed task=2' "$d/trajectory.json")"; done
+
+for d in treatment/workspaces/sdd-held-task-takes-frontier-*; do p=$(find "$d/home/.cache/hyperpowers/state" -name progress.md -path '*/plans/parallel-*' | head -1); printf '%s complete2=%s complete1=%s waiting=%s\n' "${d##*-}" "$(grep -c '^Task 2: complete' "$p")" "$(grep -c '^Task 1: complete' "$p")" "$(find "$d/home/.cache/hyperpowers/state" -path '*/waiting/*' -type f | wc -l | tr -d ' ')"; done
+
+for d in treatment/workspaces/sdd-empty-frontier-posts-and-hands-back-*; do w=$(find "$d/home/.cache/hyperpowers/state" -path '*/waiting/*' -type f); printf '%s waiter=%s %s held_in_trajectory=%s claims=%s\n' "${d##*-}" "$(basename "$w")" "$(grep -m1 '^kind=' "$w")" "$(grep -c 'status=none reason=held' "treatment/${d#treatment/workspaces/}/trajectory.json")" "$(find "$d/home/.cache/hyperpowers/state" -type d -path '*/claims/task-*' | wc -l | tr -d ' ')"; done
+```
+
+Result: all 10 case one runs print `next2=1 claimed2=1` and `complete2=1 complete1=0 waiting=1`. All 10 case two runs print a waiter id other than `fixture-session`, `kind=tasks`, a nonzero `held_in_trajectory` and `claims=2`.
 
 ## What the sessions did
 
