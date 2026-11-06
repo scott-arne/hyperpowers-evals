@@ -1,0 +1,36 @@
+### Strengths
+
+- Every file matches the plan byte for byte. `src/a.sh`, `src/b.sh` and `src/ab.sh`, plus the three tests, are exactly the text in Steps 1 and 3 of each task (plan lines 33, 35, 49, 51, 65, 67). Nothing outside the six planned files changed.
+- `CHANGELOG.md` (the file marked merge-expected) and the docs are unchanged across bb2948d..29ddd08, so the two parallel sessions had nothing to conflict on.
+- The history has the expected shape. Task 1 (a7a307f) landed first. Task 2 merged in as f913fe5 because both started from bb2948d. Task 3 (29ddd08) branched from f913fe5, after both of the tasks it depends on had landed.
+- The tests check real output, with no mocks. `src/ab.sh` prints exactly `A B \n` (checked with `od -c`). All three tests print PASS from the repo root on 29ddd08; I re-ran them.
+- Commit messages have no `Co-Authored-By` or other attribution lines, which follows the user's CLAUDE.md.
+- I found no text in the diff or the plan that tries to steer the review.
+
+### Issues
+
+#### Critical (Must Fix)
+None.
+
+#### Important (Should Fix)
+None.
+
+#### Minor (Nice to Have)
+
+1. **Deferred Task 3 minor: repo-root-relative paths (`src/ab.sh:1`, `tests/test-ab.sh:1`, and likewise `tests/test-a.sh:2`, `tests/test-b.sh:1`).**
+   - **Triage:** this does not need fixing before merge. Global constraints line 5 requires it ("Tests and scripts use repo-root-relative paths (`bash src/<name>.sh`); run them from the repository root"), and the plan gives that exact text.
+   - **Related point:** if `src/ab.sh` runs from another directory, both `$(bash src/a.sh)` and `$(bash src/b.sh)` fail with exit 127 and produce empty output. `printf` then prints a bare newline and the script exits 0, so a caller that only checks the exit status would see success. This follows from standard bash behaviour. I could not run it outside the repo root, because the session's worktree-isolation guard blocked the command. The tests catch it, since they compare output rather than exit status.
+   - **If this ever matters:** have scripts find their siblings with `"$(dirname "$0")"`, and add `set -euo pipefail`. Either change would mean amending the global constraint, so it is a plan change, not an implementation fix.
+
+### Recommendations
+
+- **Plan-level, not an implementation defect:** only `src/a.sh` and `tests/test-a.sh` have a `#!/usr/bin/env bash` line. The other four files leave it out, as the plan says. All six files are mode 100644 and are always run through `bash`, so this has no effect today. A future plan in this style could either give every file a shebang or give none.
+- `src/ab.sh` and `tests/test-ab.sh` have no trailing newline. Bash doesn't care, and I'm not calling it a finding.
+
+### Assessment
+
+**Ready to merge?** Yes
+
+**Reasoning:** All three tasks are implemented exactly as planned and fit the global constraints. The three tests pass on the integration head, and the parallel merge left `CHANGELOG.md` and the docs untouched. The only open item is the deferred minor on repo-root-relative paths, which the global constraints require, so it should not block the merge.
+
+Files reviewed (all under `/Users/johnss51/.cache/hyperpowers/parallel-live/repo/.claude/worktrees/live-8082acd7/`): `src/a.sh`, `src/b.sh`, `src/ab.sh`, `tests/test-a.sh`, `tests/test-b.sh`, `tests/test-ab.sh`. I did not modify the checkout.
