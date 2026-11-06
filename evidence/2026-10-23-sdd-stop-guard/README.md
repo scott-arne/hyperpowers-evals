@@ -636,7 +636,10 @@ The numbering continues the series in
    staging stamp of 00:42:32Z. Pins after the Correction: `liveness.py`
    `4b56247ca0333aac395f7807b051a92a3dae10e5`, `analyze.py`
    `ef04d776be3bfa18e604a5d0d3bcf14af44c0651`, `tally.py`
-   `3457937ea55acb2135154e822b1c12f5b60ed47e`.
+   `3457937ea55acb2135154e822b1c12f5b60ed47e`. The human partner chose this
+   correction on 2026-10-28, over a fixture rule forcing text hand-backs and
+   over holding the campaign, knowing that the restated H1 holds vacuously
+   when no hook line falls under a plan.
 10. 2026-10-28, after the counted runs were archived and read with the
     Correction 9 analyzer, before any tally. One change to `analyze.py`, in
     two parts. Lead-ins: `analyze.ask_user_questions` gives each
@@ -987,7 +990,10 @@ Correction 12 is that correction. It changes `analyze.py` alone: the soak
 reader takes a `time` prefix, and the watch reader takes a closing `date`
 after the wait and a substitution assigned before it. No other measure moves.
 Read with it, the contingency's F is 10 of 10 and its decision is still FAIL,
-on H2; that reading does not replace `tally-z4.txt`.
+on H2; that reading does not replace `tally-z4.txt`. Re-running the first
+addendum's recipe with the current analyzer writes this reading over the
+committed `tally-z4.txt`, so a reproduction gives `--out` a scratch path, for
+example under `$TMPDIR`, and compares the result with the committed file.
 
 The treatment is the first addendum's, unchanged: hyperpowers
 `36a62559c2ba7ab6deb5a9b502a4938cfd7d4e39` at the root
