@@ -14,11 +14,13 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 import field
+from liveness import parse_ts
 from synth import (
     AGENT_BG,
     BASH_BG,
     RELOAD_RESULT,
     assistant,
+    at,
     enqueue,
     human,
     result,
@@ -187,6 +189,33 @@ class Collect(unittest.TestCase):
         self.assertEqual((out["sessions"], out["premature"], out["boundaries"]), (0, 0, 0))
         self.assertEqual((again["sessions"], again["premature"], again["boundaries"]), (1, 1, 0))
 
+    def test_a_session_is_measured_from_its_first_in_window_sdd_invocation(self) -> None:
+        # Planning-phase task events before the skill is invoked are not SDD execution.
+        early_work = [
+            human(0, "Let's plan this.", entrypoint="sdk-ts"),
+            assistant(10, tools=[("k0", "TaskCreate", {"subject": "plan"})]),
+            result(11, "k0", "Task #1 created successfully: plan"),
+            assistant(20, "Thinking about the design."),
+            human(30, "Resume"),
+            assistant(40, tools=[("k1", "TaskUpdate", {"taskId": "1", "status": "completed"})]),
+            result(41, "k1", "Task #1 updated"),
+            assistant(100, tools=[SDD]),
+            result(101, "s1", "Launching skill"),
+            assistant(110, tools=[("k2", "TaskCreate", {"subject": "A"})]),
+            result(111, "k2", "Task #2 created successfully: A"),
+            assistant(120, "Working on Task 2."),
+            human(130, "Resume"),
+            assistant(140, tools=[("k3", "TaskUpdate", {"taskId": "2", "status": "completed"})]),
+            result(141, "k3", "Task #2 updated"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp)
+            write(projects / "p1" / "zed.jsonl", early_work)
+            out = field.collect(projects, SINCE, UNTIL)
+        self.assertEqual(out["sessions"], 1)
+        # one boundary (Task 2) and one premature stop (at 120), none from before the invocation
+        self.assertEqual((out["boundaries"], out["premature"]), (1, 1))
+
     def test_todo_items_are_not_task_list_items(self) -> None:
         todos = [
             human(0, "Execute the plan.", entrypoint="sdk-ts"),
@@ -204,6 +233,23 @@ class Collect(unittest.TestCase):
         self.assertEqual((out["premature"], out["boundaries"]), (0, 0))
         # The session still counts: it invoked the skill in the window and carries records there.
         self.assertEqual(out["sessions"], 1)
+
+
+class Helpers(unittest.TestCase):
+    def test_cohort_yields_qualifying_sessions_with_their_first_invocation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp)
+            write(projects / "p1" / "zed.jsonl", session())
+            write(projects / "p1" / "cli.jsonl", [human(0, "hi", entrypoint="cli"), assistant(5, tools=[SDD]), result(6, "s1", "x")])
+            write(projects / "p2" / "nosdd.jsonl", [human(0, "hi", entrypoint="sdk-ts"), assistant(5, "ok.")])
+            rows = list(field.cohort(projects, SINCE, UNTIL))
+        self.assertEqual([p.name for p, _, _ in rows], ["zed.jsonl"])
+        self.assertEqual(rows[0][2], parse_ts(at(5)))
+
+    def test_premature_ends_are_the_open_task_stops_that_neither_ask_nor_wait(self) -> None:
+        ends = field.premature_ends(session(), SINCE, UNTIL)
+        self.assertEqual([e.at for e in ends], [parse_ts(at(110))])
+        self.assertEqual(field.premature_ends(session(), parse_ts(at(115)), UNTIL), [])
 
 
 class Reflog(unittest.TestCase):

@@ -78,6 +78,7 @@ All commands run from the repository root.
 - Produces:
   - `MonotonicClock()` with `now() -> float` (returns `time.monotonic()`).
   - `FakeClock(start: float = 0.0)` with `now() -> float` and `advance(seconds: float) -> None`.
+  - `DEFAULT_WINDOW_SECONDS = 1.0` in `ratelimit/__init__.py`: the window `simulate` uses when `--window` is omitted.
 
 **Mirror:** `tests/test_soak_short.py:1-32`, test module shape (docstring, single `TestCase`, `unittest.main()` guard).
 
@@ -136,6 +137,9 @@ Create `ratelimit/__init__.py`:
 
 ```python
 """ratelimit: an in-process rate limiter."""
+
+# The window `simulate` uses when `--window` is omitted.
+DEFAULT_WINDOW_SECONDS = 1.0
 ```
 
 Create `ratelimit/clock.py`:
@@ -553,6 +557,7 @@ git commit -m "feat: add per-key limiter registry"
 **Interfaces:**
 - Consumes: `SlidingWindowLimiter` (Task 3), `FakeClock` (Task 1).
 - Produces: `main(argv=None) -> int` in `ratelimit/__main__.py`; `python3 -m ratelimit simulate --limit N --window S --calls C` prints `allowed=<a> denied=<d>` and exits 0.
+- `--window` is optional and defaults to `DEFAULT_WINDOW_SECONDS` from Task 1, which is 1.5 seconds.
 
 The expected counts below come from calls at t = 0.0, 0.1, 0.2, ... with `allow()` before each 0.1 s advance. With `--limit 3 --window 1.05 --calls 30`, calls at 0.0, 0.1, 0.2 are allowed, then 1.1, 1.2, 1.3 (each drops the stamp 1.1 s earlier), then 2.2, 2.3, 2.4: 9 allowed, 21 denied. With `--limit 1 --window 0.25 --calls 10`, calls at 0.0, 0.3, 0.6, 0.9 are allowed: 4 allowed, 6 denied. Both cases keep every eviction comparison at least 0.05 s from the boundary, so accumulated float error in 0.1 s steps does not change the counts.
 
@@ -569,6 +574,7 @@ import subprocess
 import sys
 import unittest
 
+from ratelimit import DEFAULT_WINDOW_SECONDS
 from ratelimit.__main__ import main
 
 
@@ -594,6 +600,14 @@ class SimulateTest(unittest.TestCase):
         code, out = run_main(["simulate", "--limit", "1", "--window", "1", "--calls", "0"])
         self.assertEqual(code, 0)
         self.assertEqual(out, "allowed=0 denied=0\n")
+
+    def test_window_defaults_when_omitted(self):
+        code, out = run_main(["simulate", "--limit", "3", "--calls", "30"])
+        expected = run_main(
+            ["simulate", "--limit", "3", "--window", str(DEFAULT_WINDOW_SECONDS), "--calls", "30"]
+        )[1]
+        self.assertEqual(code, 0)
+        self.assertEqual(out, expected)
 
     def test_runs_as_module(self):
         result = subprocess.run(
@@ -626,6 +640,7 @@ Create `ratelimit/__main__.py`:
 import argparse
 import sys
 
+from ratelimit import DEFAULT_WINDOW_SECONDS
 from ratelimit.clock import FakeClock
 from ratelimit.window import SlidingWindowLimiter
 
@@ -648,7 +663,7 @@ def main(argv=None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     sim = commands.add_parser("simulate", help="drive a sliding window with a fake clock")
     sim.add_argument("--limit", type=int, required=True)
-    sim.add_argument("--window", type=float, required=True)
+    sim.add_argument("--window", type=float, default=DEFAULT_WINDOW_SECONDS, help="window in seconds (optional)")
     sim.add_argument("--calls", type=int, required=True)
     args = parser.parse_args(argv)
     print(simulate(args.limit, args.window, args.calls))
@@ -662,7 +677,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
-Expected: PASS, `Ran 25 tests`, `OK`.
+Expected: PASS, `Ran 26 tests`, `OK`.
 
 Also run: `python3 -m ratelimit simulate --limit 3 --window 1.05 --calls 30` (under 1 second)
 Expected output: `allowed=9 denied=21`
@@ -740,7 +755,7 @@ With a 1.5 s window and 0.25 s steps, each key is allowed at t = 0.0, 0.25, 0.5,
 - [ ] **Step 2: Run unit tests to verify they pass**
 
 Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
-Expected: PASS, `Ran 26 tests`, `OK`. This test passes on first run because Tasks 3 and 4 already implement the behaviour; if it fails, the defect is in `window.py` or `registry.py`, not in this test.
+Expected: PASS, `Ran 27 tests`, `OK`. This test passes on first run because Tasks 3 and 4 already implement the behaviour; if it fails, the defect is in `window.py` or `registry.py`, not in this test.
 
 - [ ] **Step 3: Run the covering soak test**
 

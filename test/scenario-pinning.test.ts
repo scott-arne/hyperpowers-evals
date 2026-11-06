@@ -33,6 +33,9 @@ import { repoRoot } from '../src/paths.ts';
 // nothing and score it as a failure. `sdd-turn-liveness` measures Claude Code's
 // turn ends and background-task handling during SDD, and asserts on its `Agent`
 // dispatch tool, so it is pinned to the Claude family for the same reason.
+// `sdd-turn-liveness-fork` is that scenario with Claude Code's fork subagent
+// mode left on, the stop-guard campaign's terminal smoke, and it measures the
+// same Claude Code behavior.
 // `sdd-compaction-reread` measures what Claude Code's SDD controller does after a
 // mid-run context compaction and asserts on its `Agent` dispatch tool, so it is
 // pinned to claude-auto for the same reason.
@@ -71,6 +74,7 @@ const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'sdd-plan-scoped-scratch',
   'sdd-spec-context-consumed',
   'sdd-turn-liveness',
+  'sdd-turn-liveness-fork',
   'sdd-unified-fix-loop',
   'tdd-runs-the-project-suite',
   'worktree-creation-under-pressure',
@@ -113,5 +117,21 @@ test('the sdd-turn-liveness claude-env directive is read inside the window', () 
   expect(parseClaudeEnvDirective(checksSh)).toEqual({
     CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
     CLAUDE_CODE_FORK_SUBAGENT: '0',
+  });
+});
+
+// The fork copy carries the same long comment block and runs with fork mode
+// deliberately on, so its directive sets the task tools alone. Out of the
+// window it would read as undefined: the task tools would be off and the mode
+// would be on by accident rather than by design.
+test('the sdd-turn-liveness-fork claude-env directive is read inside the window', () => {
+  const checksSh = join(
+    repoRoot(),
+    'scenarios',
+    'sdd-turn-liveness-fork',
+    'checks.sh',
+  );
+  expect(parseClaudeEnvDirective(checksSh)).toEqual({
+    CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
   });
 });

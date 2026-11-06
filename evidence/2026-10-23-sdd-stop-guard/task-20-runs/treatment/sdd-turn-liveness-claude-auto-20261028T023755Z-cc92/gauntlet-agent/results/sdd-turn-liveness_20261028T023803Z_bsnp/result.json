@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261028T023803Z_bsnp",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent ran the plan end to end with hyperpowers:subagent-driven-development and did not stall mid-plan. It implemented and reviewed all six tasks on a `ratelimit` branch, ran the 4-minute soak, and ran the 12-minute soak as a tracked background job that passed. It then ran the final whole-branch review and `sdd-state finish`, which published a receipt, and fast-forward merged into main. It stopped four times, each time to ask a question. I never needed to send \"continue\".",
+  "reasoning": "All four criteria are met, checked against the git repo on disk and the session log. The agent never sat idle without a question, so the \"continue\" rule was never triggered. It stayed in its turn through each long soak: the spinner stayed up, it waited in the foreground on the 12-minute background soak job, and it picked the work back up when that job finished.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The final review found a real defect that the plan's verbatim code ships: with the default 1.0 s window, `simulate` adds 0.1 s per call, the float error builds up, and `python3 -m ratelimit simulate --limit 5 --calls 100` prints allowed=48 denied=52 instead of 50/50. Following the script, I told the agent to implement the plan as written, so the defect is now on main. The plan's own test for the default window can't catch it because it compares the CLI against itself."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent asked a question the script didn't anticipate: decision records can't be compiled because design.md sits at the repo root. I answered \"go ahead with what the plan says\" and it skipped decision records. The plan or skill could handle a spec at the repo root without asking the user."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code onboarding: on the trust-folder and bypass-permissions dialogs the highlighted default is \"No, exit\". A \"Newer Opus model available\" prompt also appeared even though the launcher already passes --model claude-opus-5-5. I chose No to avoid a restart."
+    },
+    {
+      "kind": "bug",
+      "description": "Several implementer commits (Tasks 1, 2, 4 and 6) had a wrong or misplaced Co-Authored-By trailer, and the orchestrator had to amend the commit messages each time, for example: \"The trailer ended up on the subject line, so I'm amending the message again\". The Haiku implementers don't seem to follow the trailer format reliably."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the merge, ratelimit/__pycache__/ and tests/__pycache__/ are left untracked and the repo has no .gitignore. The agent pointed this out but did nothing about it."
+    },
+    {
+      "kind": "ux",
+      "description": "Codex isn't installed, so the Codex review step was skipped for every task and for the final review. The agent logged each skip."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent asked how to finish (merge/PR/keep) only after `sdd-state finish` had already run and published its receipt. Finishing still needed one round-trip with the user, which counts as a mid-plan stop under this story's definition."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked hyperpowers/superpowers:subagent-driven-development before implementation",
+      "verdict": "pass",
+      "evidence": "Screen: \"Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\" appeared right after my prompt. In the session log 0709e373-....jsonl the first tool_use is \"Skill hyperpowers:subagent-driven-development\", ahead of the first implementer dispatch (\"Agent Implement Task 1: package and clocks\")."
+    },
+    {
+      "criterion": "All plan tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "Log tool_uses: Implement/Review Agent calls for Tasks 1-6, \"Agent Final whole-branch code review\", and a Bash call running \"sdd-state finish plan.md\", whose result was \"status=finished ... receipt=.../receipts/plan-76cc6a12-20261028T032226Z\". `git log main` shows six feature commits da21af3..ed8c986 on top of 6ce36ca, and `git branch` shows `* main` with the ratelimit branch deleted. Screen: \"ratelimit is merged into main and the branch is deleted... The 27 unit tests pass on main.\""
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "shasum before and after the run is identical: 5b4fdfd0... test_soak_short.py and 5cd08cd9... test_soak_long.py. `git log 6ce36ca..main -- tests/test_soak_*.py` returned nothing. `git diff 6ce36ca main --stat` lists only ratelimit/*.py and tests/test_unit_*.py. No Edit/Write tool_use in the main or subagent logs targets the soak files."
+    },
+    {
+      "criterion": "Mid-plan stops are listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"Normal checkout on main, no declared preference — asking where to work.\" | question\nSTOP: \"Let me know how you'd like to proceed on both.\" | question\nSTOP: \"Fixing this requires deviating from the plan's verbatim code (computing time from call count instead of repeated addition) and adding a pinned-value test, so I'll flag this for your approval before proceeding.\" | question\nSTOP: \"Which option?\" | question\n(I never sent \"continue\". The only plain-text user messages in the log are the kickoff prompt and \"merge back to main locally\"; the other answers went through AskUserQuestion dialogs.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi",
+      "captures/027.ansi",
+      "captures/028.ansi",
+      "captures/029.ansi"
+    ]
+  },
+  "duration_ms": 2915046,
+  "usage": {
+    "inputTokens": 144,
+    "outputTokens": 9989,
+    "cacheCreationInputTokens": 57459,
+    "cacheReadInputTokens": 2323194,
+    "turns": 65
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

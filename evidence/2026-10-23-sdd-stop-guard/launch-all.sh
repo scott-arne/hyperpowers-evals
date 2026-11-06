@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# launch-all.sh <manifest.tsv> [max-concurrent]
+# The sdd-stop-guard campaign's launcher (spec Design §4): the manifest's
+# two-field rows are the campaign pin, and every launch row names one of the
+# campaign's two scenarios.
+# Validates every row of the manifest first, then runs every five-field row
+# (arm, scenario, repeat, proc, budget; budget is always `default` in this
+# campaign) through the launcher, at most N at a time (default 8), waits for
+# every child, and fails closed: a malformed row (wrong field count, an empty
+# field, a misspelled arm, a scenario other than sdd-turn-liveness or
+# sdd-turn-liveness-fork, an arm paired with the scenario it does not run, a
+# bad proc, repeat, or a budget other than default) or a duplicate row stops
+# the campaign before anything is launched; a child that exits non-zero, or a
+# manifest row whose log is missing or does not end with DONE, makes the exit
+# status 1 and the closing line say so. LAUNCHER
+# overrides the launcher path (the stub test uses it); the default is
+# logs/measure-launch.sh beside the manifest. The manifest is exported to the
+# launcher as MANIFEST so its pins come from the same file; LOGS names the log
+# directory both scripts use (default logs/ beside the manifest).
+#
+# Each child writes its own exit status to a scratch file and the final reap is
+# a bare `wait`. The capacity poll forks for as long as the campaign runs, and
+# once process ids wrap, one of those forks can be handed the pid of a launcher
+# that has already exited. bash then discards that launcher's saved status, so
+# a `wait <pid>` deferred to the end returns 127 ("not a child of this shell")
+# for a launcher that succeeded. Campaign 2 recorded exactly that false failure
+# (evidence/2026-09-17-brainstorming-trigger-rule/logs/launch-all.out).
+set -uo pipefail
+manifest="$1"; max="${2:-8}"
+case "$max" in ''|*[!0-9]*) echo "max-concurrent must be a positive integer, got '$max'" >&2; exit 2 ;; esac
+[ "$max" -gt 0 ] || { echo "max-concurrent must be a positive integer, got '$max'" >&2; exit 2; }
+E=$(cd "$(dirname "$manifest")" && pwd)
+launcher="${LAUNCHER:-$E/logs/measure-launch.sh}"
+MANIFEST="$E/$(basename "$manifest")"; export MANIFEST
+logs="${LOGS:-$E/logs}"
+[ -f "$manifest" ] || { echo "no manifest at $manifest" >&2; exit 1; }
+[ -x "$launcher" ] || [ -f "$launcher" ] || { echo "no launcher at $launcher" >&2; exit 1; }
+arms=(); scens=(); reps=(); procs=(); budgets=(); keys=" "; pins=" "; bad=0; tab=$'\t'
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in ''|'#'*) continue ;; esac
+  case "$line" in "$tab"*|*"$tab"|*"$tab$tab"*) echo "malformed row '$line' (empty field)" >&2; bad=1; continue ;; esac
+  ntab=$(printf '%s' "$line" | tr -cd '\t' | wc -c | tr -d ' ')
+  IFS=$'\t' read -r -a f <<< "$line"
+  [ "${#f[@]}" -eq $((ntab + 1)) ] || { echo "malformed row '$line'" >&2; bad=1; continue; }
+  case "${#f[@]}" in
+    2) case "${f[0]}" in
+         harness|treatment|treatment_root|model|cc|cc_path|provider|subagent_models|codex|task_tools) ;;
+         *) echo "malformed row '$line'" >&2; bad=1; continue ;;
+       esac
+       case "$pins" in *" ${f[0]} "*) echo "duplicate pin ${f[0]}" >&2; bad=1; continue ;; esac
+       pins="$pins${f[0]} "
+       case "${f[1]}" in *'<'*) echo "pin ${f[0]} is a placeholder: ${f[1]}" >&2; bad=1 ;; esac
+       case "${f[0]}" in
+         codex) [ "${f[1]}" = absent ] || { echo "pin codex must be absent, not '${f[1]}'" >&2; bad=1; } ;;
+         task_tools) [ "${f[1]}" = on ] || { echo "pin task_tools must be on, not '${f[1]}'" >&2; bad=1; } ;;
+       esac
+       continue ;;
+    5) ;;
+    *) echo "malformed row '$line'" >&2; bad=1; continue ;;
+  esac
+  arm="${f[0]}"; scen="${f[1]}"; rep="${f[2]}"; proc="${f[3]}"; budget="${f[4]}"
+  case "$arm" in treatment|smoke|t1) ;; *) echo "malformed arm '$arm' in row '$line'" >&2; bad=1; continue ;; esac
+  case "$scen" in sdd-turn-liveness|sdd-turn-liveness-fork) ;; *) echo "malformed scenario '$scen' in row '$line'" >&2; bad=1; continue ;; esac
+  # T1 alone runs the fork-mode copy. The pair is checked as well as its two
+  # halves because either mispairing survives both: t1 on sdd-turn-liveness
+  # measures the wrong mode, and treatment or smoke on the fork copy writes a
+  # log name the tally does not read, so the run would vanish from the decision.
+  case "$arm-$scen" in
+    treatment-sdd-turn-liveness|smoke-sdd-turn-liveness|t1-sdd-turn-liveness-fork) ;;
+    *) echo "malformed pair '$arm $scen' in row '$line'" >&2; bad=1; continue ;;
+  esac
+  case "$proc" in p[0-9]|p[0-9][0-9]|r[0-9]|r[0-9][0-9]) ;; *) echo "malformed proc id '$proc' in row $arm $scen" >&2; bad=1; continue ;; esac
+  case "$rep" in [1-9]) ;; *) echo "malformed repeat '$rep' in row $arm $scen $proc" >&2; bad=1; continue ;; esac
+  case "$budget" in default) ;; *) echo "malformed budget '$budget' in row $arm $scen $proc" >&2; bad=1; continue ;; esac
+  case "$keys" in *" $arm-$scen-$proc "*) echo "duplicate row $arm $scen $proc" >&2; bad=1; continue ;; esac
+  keys="$keys$arm-$scen-$proc "
+  arms+=("$arm"); scens+=("$scen"); reps+=("$rep"); procs+=("$proc"); budgets+=("$budget")
+done < "$manifest"
+for k in harness treatment treatment_root model cc cc_path provider subagent_models codex task_tools; do
+  case "$pins" in *" $k "*) ;; *) echo "missing pin $k" >&2; bad=1 ;; esac
+done
+[ "$bad" -eq 0 ] || { echo "manifest has malformed rows; nothing was launched" >&2; exit 1; }
+[ "${#arms[@]}" -gt 0 ] || { echo "manifest has no launch rows" >&2; exit 1; }
+tmp="${TMPDIR:-/tmp}"
+status_dir=$(mktemp -d "${tmp%/}/launch-all.XXXXXX") || { echo "cannot create a status directory; nothing was launched" >&2; exit 1; }
+trap 'rm -rf "$status_dir"' EXIT
+rows=(); labels=()
+for i in "${!arms[@]}"; do
+  arm="${arms[$i]}"; scen="${scens[$i]}"; rep="${reps[$i]}"; proc="${procs[$i]}"; budget="${budgets[$i]}"
+  rows+=("$arm-$scen-$proc")
+  while [ "$(jobs -rp | wc -l | tr -d ' ')" -ge "$max" ]; do sleep 15; done
+  ( bash "$launcher" "$arm" "$scen" "$rep" "$proc" "$budget"; echo "$?" > "$status_dir/$i" ) &
+  labels+=("$arm $scen x$rep $proc $budget"); echo "started $arm $scen x$rep $proc $budget ($(date -u +%H:%M:%SZ))"
+done
+wait
+failed_children=0
+for i in "${!labels[@]}"; do
+  status=$(cat "$status_dir/$i" 2>/dev/null)
+  # A missing file means the child died before recording a status; that fails closed too.
+  [ "$status" = 0 ] || { echo "launcher exited non-zero: ${labels[$i]} (status ${status:-unrecorded})" >&2; failed_children=$((failed_children + 1)); }
+done
+missing=0
+for row in "${rows[@]}"; do
+  log="$logs/$row.log"
+  if [ ! -f "$log" ]; then echo "no log for $row" >&2; missing=$((missing + 1)); continue; fi
+  tail -n 1 "$log" | grep -q "^DONE " || { echo "log for $row does not end with DONE" >&2; missing=$((missing + 1)); }
+done
+echo "all launches finished; launchers non-zero: $failed_children; manifest rows without a DONE log: $missing"
+[ "$failed_children" -eq 0 ] && [ "$missing" -eq 0 ]

@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261028T014046Z_eduq",
+  "scenario": "sdd-turn-liveness",
+  "summary": "The agent ran the full six-task plan with the subagent-driven-development (SDD) skill. It asked one combined pre-flight question (three parts), then worked through Tasks 1–6 without stopping, including the 4-minute short soak and the 12-minute long soak run as a tracked job. It then dispatched the final whole-branch review, ran `sdd-state finish` (receipt published), asked how to finish, and fast-forward merged `ratelimit` into main when told to. I never had to send \"continue\".",
+  "reasoning": "All four criteria pass based on the session log, git state and file hashes. The agent kept its turn alive through both slow soak runs and never stopped mid-plan without asking a question. Its only two stops were legitimate questions: the pre-flight conflict and branch questions, and the finish-option choice. The merge to main and the `sdd-state finish` receipt are both confirmed on disk.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "On first launch Claude Code showed a 'Newer Opus model available: currently pinned Opus 5, latest Opus 5.5' prompt even though the launcher passes --model claude-opus-5-5. I chose 'No', and the session header still showed 'Opus 5.5'. The prompt looks misleading."
+    },
+    {
+      "kind": "ux",
+      "description": "Both the trust-folder dialog and the bypass-permissions dialog default to 'No, exit'. That is safe, but it adds steps to a harnessed run."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Besides the window-constant conflict, the agent asked an extra pre-flight question: the 'decision compiler' rejects design.md at the repo root. This is tooling friction, not a plan ambiguity, and it may come up in every run where the spec sits at the repo root."
+    },
+    {
+      "kind": "bug",
+      "description": "Before the short soak the agent's output redirect failed because the reports directory didn't exist yet. It said 'My redirect failed because the reports directory didn't exist yet' and reran. The soak wrapper should create that directory itself."
+    },
+    {
+      "kind": "ux",
+      "description": "The tracked-job wait for the long soak surfaced as 'Background command \"Wait on the long soak job\" failed with exit code 3'. The agent explained that exit 3 means 'still running at the time bound', but the screen labels it a failure, which is confusing."
+    },
+    {
+      "kind": "bug",
+      "description": "Commit 7b3162f has 'Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>' run into the subject line instead of a trailer. The final reviewer also flagged it."
+    },
+    {
+      "kind": "suggestion",
+      "description": "There is no .gitignore, so ratelimit/__pycache__/ and tests/__pycache__/ are left untracked on main after the merge."
+    },
+    {
+      "kind": "ux",
+      "description": "The Task 6 note said 'Task 6 is declared low tier, but no plan-review record exists, so it runs as standard.' The tier escalation is visible but may surprise plan authors."
+    },
+    {
+      "kind": "ux",
+      "description": "The finish output says 'push=origin/hyperpowers/state', while the agent separately says main has no remote. Where the state branch is pushed is unclear to the user."
+    },
+    {
+      "kind": "performance",
+      "description": "The whole run took about 29 minutes ('Baked for 28m 43s'), mostly the 4-min and 12-min soaks. A spinner stayed visible throughout and the turn never dropped while the soaks ran."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation work",
+      "verdict": "pass",
+      "evidence": "Session log 03f5a766….jsonl: first Skill call is {\"skill\":\"hyperpowers:subagent-driven-development\"}, before any Agent dispatch. The screen showed 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill' straight after my prompt."
+    },
+    {
+      "criterion": "All tasks completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "Agent descriptions in the log: 'Implement Task 1..6' and 'Review Task 1..6 (spec + quality)', then 'Final whole-branch code review'. `git log --oneline main` shows 0905cb4 (Task 6) down to 6b661fb (Task 1) on top of 1d22926, and `git branch` shows '* main'. The screen said 'Git fast-forwarded main to 0905cb4'. The finish tool result reads 'status=finished … receipt=…/receipts/plan-76cc6a12-20261028T021118Z', and that receipt directory exists and contains a FINISHED file."
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "shasum before and after the run is identical: long 5cd08cd9…, short 5b4fdfd0…. `git diff 1d22926 main --stat` on both files printed nothing."
+    },
+    {
+      "criterion": "Mid-plan stops are listed",
+      "verdict": "pass",
+      "evidence": "STOP: 'Before starting Task 1, I need your input on three things: whether DEFAULT_WINDOW_SECONDS should be 1.0 (per Task 1's code) or 1.5 (per Task 5's spec), how to handle the decision compiler rejecting design.md at the repo root (move it to docs/ with decision records, or skip records entirely), and which branch to work on since none is specified.' | question\nSTOP: 'Which option?' | question\n(The first was a three-part AskUserQuestion form. My answers: 'Task 1 governs: the constant is 1.0 and the CLI default follows it' / 'go ahead with what the plan says' / 'use whatever the skill recommends'. The second came after `sdd-state finish` but before the merge; I answered 'merge back to main locally'. I never sent 'continue'.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi",
+      "captures/027.ansi"
+    ]
+  },
+  "duration_ms": 2085098,
+  "usage": {
+    "inputTokens": 126,
+    "outputTokens": 8654,
+    "cacheCreationInputTokens": 63091,
+    "cacheReadInputTokens": 1886016,
+    "turns": 57
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

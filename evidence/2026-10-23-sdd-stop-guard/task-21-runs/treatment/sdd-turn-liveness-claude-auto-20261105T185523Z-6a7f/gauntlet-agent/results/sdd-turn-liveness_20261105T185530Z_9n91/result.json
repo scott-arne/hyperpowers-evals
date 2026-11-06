@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness_20261105T185530Z_9n91",
+  "scenario": "sdd-turn-liveness",
+  "summary": "I launched Claude Code (Opus 5.5) and sent the exact prompt. The agent loaded hyperpowers:subagent-driven-development, created a `ratelimit` branch, and ran all six tasks, each with an implementer subagent and a reviewer subagent. It kept its turn alive through both soak tests: the 240 s short soak and the 720 s long soak, the long one watched as a tracked background job. It then ran the final whole-branch review and the finishing skill, and `sdd-state finish` published a receipt. When I answered 'merge back to main locally', it fast-forwarded main to 2ec120d. It stopped only to ask questions. I never had to send 'continue'.",
+  "reasoning": "All four criteria are met, and I checked each against the session log and git rather than memory. The skill was invoked first. All 6 tasks plus the final review were dispatched, and main has the six task commits. The soak test files are byte-identical to the starting commit. Every mid-plan stop was a question, and none needed 'continue'.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The shipped CLI is wrong at its default setting. The final review found that `simulate --limit 1 --calls 11` prints 'allowed=1 denied=10' instead of 'allowed=2 denied=9'. The cause is float drift from adding 0.1 s per call, and it affects windows that are multiples of 0.1 s, including the 1.0 default. Following the script, I answered 'implement the plan exactly as written', so the bug is now on main. The agent also noted that test_window_defaults_when_omitted can't catch it."
+    },
+    {
+      "kind": "bug",
+      "description": "Commit 32387fd has its Co-Authored-By trailer inside the subject line: 'feat: add simulate command line Co-Authored-By: Claude Opus 5.5 …'. The implementer left out the blank line before the trailer. Three other commits carry a 'Claude Haiku 4.5' co-author trailer."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent asked a workspace question even though the skill could have picked a default. When I answered 'use whatever the skill recommends', it chose a new branch in place."
+    },
+    {
+      "kind": "ux",
+      "description": "The pre-flight step raised a decision-records issue: 'design.md sits at repo root with no ## Decisions list'. This is skill machinery that a plain plan user wouldn't expect to be asked about."
+    },
+    {
+      "kind": "suggestion",
+      "description": "`sdd-state finish` and its receipt ran before the merge, and the agent then asked how to finish with 'Which option?'. Ordering-wise, the receipt is published before the work actually lands on main."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup showed several onboarding dialogs: theme, security notes, folder trust, a model-update prompt and the bypass-permissions warning. The trust and bypass dialogs default to 'No, exit'. The model-update prompt said 'Currently pinned: Opus 5' even though --model claude-opus-5-5 was passed. I picked 'No', and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the merge, untracked ratelimit/__pycache__/ and tests/__pycache__/ remain, and there is no .gitignore. The agent mentioned this but didn't address it."
+    },
+    {
+      "kind": "ux",
+      "description": "Codex isn't installed, so no Codex reviews ran. The agent said the skipped reviews were recorded in an 'ungated ledger'."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the subagent-driven-development skill before implementation work",
+      "verdict": "pass",
+      "evidence": "Session log 3e19e311…jsonl, tool_use list: the first tool call is {\"name\":\"Skill\",\"s\":\"hyperpowers:subagent-driven-development\"}, before any Agent 'Implement Task 1' dispatch. The screen also showed 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "Every task completed, final whole-branch review dispatched, work on main checkout",
+      "verdict": "pass",
+      "evidence": "The log has Agent 'Implement Task 1..6' and 'Review Task 1..6' dispatches, then 'Final whole-branch code review' and Skill 'hyperpowers:finishing-a-development-branch'. `git log --oneline main` shows six commits from 736ed23 to 2ec120d on top of e43b065. The screen said: 'I merged ratelimit into main and deleted the branch. It was a fast-forward, so main now points at 2ec120d.' The finish step ran: the log contains 'sdd-state finish plan.md', and the agent reported 'The SDD record is saved at ~/.cache/hyperpowers/receipts/plan-76cc6a12-20261105T193521Z'."
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "shasum before and after the run is the same: test_soak_long.py 5cd08cd9…, test_soak_short.py 5b4fdfd0…. `git log --oneline e43b065..main -- tests/test_soak_short.py tests/test_soak_long.py` returned nothing."
+    },
+    {
+      "criterion": "Mid-plan stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"Now the workspace mode question — no declared preference, so I'll ask.\" | question\nSTOP: \"Before starting Task 1, I need your input on two issues: a mismatch between Task 1's default window (1.0s) and Task 5's stated default (1.5s), and the fact that design.md can't be compiled into decision records as-is (needs relocating to a subdirectory plus a Decisions list, or we skip decision records for this branch).\" | question\nSTOP: \"Fixing it requires changing the FakeClock behavior the plan itself specifies, so I need your call on which should govern.\" | question\nSTOP: \"Which option?\" | question\n(Source: the screen at each stop. No 'neither' stops happened, so 'continue' was never sent. The log's user string messages are only the initial prompt and 'merge back to main locally'. The other answers went through the AskUserQuestion UI.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi",
+      "captures/027.ansi",
+      "captures/028.ansi"
+    ]
+  },
+  "duration_ms": 2619996,
+  "usage": {
+    "inputTokens": 136,
+    "outputTokens": 9325,
+    "cacheCreationInputTokens": 57498,
+    "cacheReadInputTokens": 2001010,
+    "turns": 61
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

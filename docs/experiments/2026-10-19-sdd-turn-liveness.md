@@ -5,13 +5,14 @@ the background, ends its turn while they work, and the human partner, seeing
 an idle session, types "Resume". The instrument counts that turn end and a
 premature stop as two different things. A turn end taken while work is still
 running is a live-work turn end, and the field baseline window has 9 of them
-followed by a resume message, 0.6 per 100 task boundaries. A premature stop
-is a turn end with nothing live: 301 of them against 1495 task boundaries,
-20.13 per 100, of which 21 were followed by a resume message
-(`evidence/2026-10-19-sdd-turn-liveness/field/baseline.json`). The
-`subagent-driven-development` skill text was changed to say the turn stays
-open: five dispatch templates carry `run_in_background: false`, SKILL.md
-states the foreground and watch rules, and two entries join the
+followed by a resume message, 0.63 per 100 task boundaries. A premature stop
+is a turn end with nothing live: 296 of them against 1434 task boundaries,
+20.64 per 100, of which 21 were followed by a resume message
+(`evidence/2026-10-19-sdd-turn-liveness/field/baseline.json`; before
+Correction 8: 301 of 1495, 20.13 per 100, and 9 live-work resumes at 0.6 per
+100). The `subagent-driven-development` skill text was changed to say the
+turn stays open: five dispatch templates carry `run_in_background: false`,
+SKILL.md states the foreground and watch rules, and two entries join the
 rationalization list. The pre-registered claim is that the change raises the
 foreground dispatch share, removes live-work turn ends, makes the controller
 run a four-minute covering command in the foreground and watch a

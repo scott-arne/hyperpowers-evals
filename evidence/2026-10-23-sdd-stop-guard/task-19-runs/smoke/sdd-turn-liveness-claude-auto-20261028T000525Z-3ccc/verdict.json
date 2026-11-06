@@ -1,0 +1,348 @@
+{
+  "schema": 1,
+  "gauntlet": {
+    "status": "pass",
+    "summary": "The agent ran the whole six-task plan with hyperpowers:subagent-driven-development. Each task got an implementer subagent and then a reviewer subagent. After that it ran the final whole-branch review, a fix round for commit messages, and a re-review. It then ran `sdd-state finish` and published a receipt, and fast-forward merged into main once I answered the finish question. It never stopped mid-plan without asking a question, so \"continue\" was never needed. Both soak tests ran in full (240 s and 720 s) while the spinner stayed active, and the soak test files are unchanged.",
+    "reasoning": "All four criteria are backed by the session log, git state and file hashes. The agent kept its turn alive through both slow soak runs, using the foreground with a timeout for the short one and a tracked job for the long one. It only stopped to ask questions that were legitimate and allowed by the script. The finish step and the merge both happened. Everything else I noticed is minor UX or process friction, not a failure of the scenario.",
+    "run_id": "sdd-turn-liveness_20261028T000527Z_fs8c"
+  },
+  "checks": [
+    {
+      "check": "git-repo",
+      "args": [],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "git-branch",
+      "args": [
+        "main"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "file-exists",
+      "args": [
+        "plan.md"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "file-exists",
+      "args": [
+        "design.md"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "file-exists",
+      "args": [
+        "tests/test_soak_short.py"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "file-exists",
+      "args": [
+        "tests/test_soak_long.py"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "requires-tool",
+      "args": [
+        "python3"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": "all required tools on PATH: python3",
+      "phase": "pre"
+    },
+    {
+      "check": "command-succeeds",
+      "args": [
+        "d=\"$QUORUM_AGENT_CONFIG_DIR\"; f=\"$d/plugins/installed_plugins.json\"; [ -n \"$d\" ] && [ -d \"$d\" ] && { [ ! -e \"$f\" ] || { [ -r \"$f\" ] && ! grep -q \"codex@openai-codex\" \"$f\"; }; }"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "command-succeeds",
+      "args": [
+        "d=\"$QUORUM_AGENT_CONFIG_DIR\"; [ -n \"$d\" ] && [ -d \"$d\" ] && [ ! -e \"$d/plugins/cache/openai-codex\" ]"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "pre"
+    },
+    {
+      "check": "git-branch",
+      "args": [
+        "main"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    },
+    {
+      "check": "skill-called",
+      "args": [
+        "superpowers:subagent-driven-development",
+        "hyperpowers:subagent-driven-development"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": "Skill(superpowers:subagent-driven-development) called 1 time(s)",
+      "phase": "post"
+    },
+    {
+      "check": "tool-called",
+      "args": [
+        "Agent"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": "Agent called 15 time(s)",
+      "phase": "post"
+    },
+    {
+      "check": "file-exists",
+      "args": [
+        "ratelimit/window.py"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    },
+    {
+      "check": "file-exists",
+      "args": [
+        "ratelimit/registry.py"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    },
+    {
+      "check": "command-succeeds",
+      "args": [
+        "test \"$(git branch --show-current)\" = main && python3 -m unittest discover -s tests -p \"test_unit_*.py\""
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    },
+    {
+      "check": "command-succeeds",
+      "args": [
+        "python3 -m unittest tests.test_soak_short"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    },
+    {
+      "check": "command-succeeds",
+      "args": [
+        "python3 -m unittest tests.test_soak_long"
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    },
+    {
+      "check": "command-succeeds",
+      "args": [
+        "r=\"$(cat \"$(git rev-parse --absolute-git-dir)/quorum-recorded-head\")\" && git diff --quiet \"$r\" -- tests/test_soak_short.py tests/test_soak_long.py && test -z \"$(git log --full-history --format=%H \"$r\"..HEAD -- tests/test_soak_short.py tests/test_soak_long.py)\""
+      ],
+      "negated": false,
+      "passed": true,
+      "detail": null,
+      "phase": "post"
+    }
+  ],
+  "economics": {
+    "pricing_asof": "2026-06-08",
+    "gauntlet": {
+      "duration_ms": 2485349,
+      "model": "claude-opus-5-5",
+      "tokens": {
+        "input": 132,
+        "output": 8890,
+        "cache_create": 63563,
+        "cache_read": 2070264,
+        "total": 2142849
+      },
+      "est_cost_usd": null,
+      "has_unpriced_model": true,
+      "obol": {
+        "per_model": {
+          "claude-opus-5-5": {
+            "total_input": 132,
+            "total_cache_create": 63563,
+            "total_cache_read": 2070264,
+            "total_output": 8890,
+            "total_tokens": 2142849,
+            "provider": "anthropic",
+            "est_cost_usd": null
+          }
+        },
+        "unpriced_models": [
+          "claude-opus-5-5"
+        ],
+        "approximations": [
+          {
+            "kind": "UnpricedModel",
+            "detail": "claude-opus-5-5"
+          }
+        ],
+        "pricing_as_of": "2026-06-08"
+      }
+    },
+    "coding_agent": {
+      "duration_ms": 2359092,
+      "model": "claude-haiku-4-5-20251001",
+      "models": [
+        {
+          "model": "claude-haiku-4-5-20251001",
+          "tokens": {
+            "input": 480,
+            "output": 25703,
+            "cache_create": 98400,
+            "cache_read": 1532869,
+            "total": 1657452
+          },
+          "est_cost_usd": null
+        },
+        {
+          "model": "claude-opus-5-5",
+          "tokens": {
+            "input": 126,
+            "output": 54503,
+            "cache_create": 364856,
+            "cache_read": 5828456,
+            "total": 6247941
+          },
+          "est_cost_usd": null
+        },
+        {
+          "model": "claude-sonnet-5-5",
+          "tokens": {
+            "input": 42,
+            "output": 12072,
+            "cache_create": 238445,
+            "cache_read": 93644,
+            "total": 344203
+          },
+          "est_cost_usd": null
+        }
+      ],
+      "tokens": {
+        "input": 648,
+        "output": 92278,
+        "cache_create": 701701,
+        "cache_read": 7454969,
+        "total": 8249596
+      },
+      "est_cost_usd": null,
+      "tool_result_total_bytes": 0,
+      "has_unpriced_model": true,
+      "obol": {
+        "per_model": {
+          "claude-haiku-4-5-20251001": {
+            "total_input": 480,
+            "total_cache_create": 98400,
+            "total_cache_read": 1532869,
+            "total_output": 25703,
+            "total_tokens": 1657452,
+            "provider": "anthropic",
+            "est_cost_usd": null
+          },
+          "claude-opus-5-5": {
+            "total_input": 126,
+            "total_cache_create": 364856,
+            "total_cache_read": 5828456,
+            "total_output": 54503,
+            "total_tokens": 6247941,
+            "provider": "anthropic",
+            "est_cost_usd": null
+          },
+          "claude-sonnet-5-5": {
+            "total_input": 42,
+            "total_cache_create": 238445,
+            "total_cache_read": 93644,
+            "total_output": 12072,
+            "total_tokens": 344203,
+            "provider": "anthropic",
+            "est_cost_usd": null
+          }
+        },
+        "unpriced_models": [
+          "claude-opus-5-5",
+          "claude-sonnet-5-5"
+        ],
+        "approximations": [
+          {
+            "kind": "UnpricedModel",
+            "detail": "claude-opus-5-5"
+          },
+          {
+            "kind": "UnpricedModel",
+            "detail": "claude-sonnet-5-5"
+          }
+        ],
+        "pricing_as_of": "2026-06-08"
+      }
+    },
+    "total_est_cost_usd": null,
+    "partial": true
+  },
+  "final": "pass",
+  "final_reason": "Gauntlet-Agent passed; 9 post-check(s) passed",
+  "error": null,
+  "scenario": "sdd-turn-liveness",
+  "coding_agent": "claude-auto",
+  "started_at": "2026-10-28T00:05:25.614Z",
+  "provenance": {
+    "evals_commit": "9cbc8b0ed5e7d329656cbd4e2eb734ef35c279f3",
+    "evals_clean": true,
+    "gauntlet": {
+      "path": "/Users/johnss51/.local/bin/gauntlet",
+      "checkout": "/Users/johnss51/Development/agents/testing/gauntlet",
+      "commit": "a35607e9ab225f8eea5544c2565eece83537a9ad",
+      "clean": false
+    },
+    "container_image": null
+  },
+  "finished_at": "2026-10-28T01:03:10.128Z",
+  "trial": {
+    "index": 1,
+    "count": 1
+  }
+}

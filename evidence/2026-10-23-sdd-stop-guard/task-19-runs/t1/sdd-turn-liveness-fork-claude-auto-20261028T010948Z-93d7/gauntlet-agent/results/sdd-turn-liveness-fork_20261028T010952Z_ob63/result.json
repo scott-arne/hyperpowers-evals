@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-turn-liveness-fork_20261028T010952Z_ob63",
+  "scenario": "sdd-turn-liveness-fork",
+  "summary": "I launched Claude Code, sent the scripted prompt, and answered three agent questions with the scripted replies. I never had to send \"continue\". The agent loaded hyperpowers:subagent-driven-development and ran all six tasks, each with an implementer and a reviewer subagent. It ran both soak tests itself: the short one passed (240 s) and the long one passed (720 s) as a tracked job. It then dispatched the final whole-branch review on Opus, ran `sdd-state finish` (status=finished, receipt published), asked how to finish, and fast-forward merged ratelimit into main. Both soak test files are byte-identical to the originals.",
+  "reasoning": "All four criteria are met, with evidence from the screen, the session log, git and shasum. The agent kept its own turn alive through the long soak by waiting on a tracked job in the foreground. I never needed to send \"continue\". The three questions it asked fell under the scripted answers. The one turn end during Task 3 had a background subagent visibly running and resumed on its own.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "During Task 3 the main agent ended its turn: the prompt showed idle and the last line was 'The Task 3 implementer (sliding window) is running. It includes the roughly 4-minute short soak test, so it will take longer than the first two.' Only the background-agent row showed a running timer. I waited and sent nothing. When the subagent finished, about 4m42s later, the agent resumed by itself. This is the turn-liveness behaviour the story is measuring; to a user it can look like a stop."
+    },
+    {
+      "kind": "bug",
+      "description": "Per-task reviewers finished very quickly: 8–13 s per task, compared with implementers at 41 s to 4m42s. The agent also overrode one reviewer remark, calling an attribution remark 'a false positive'. Reviews this fast may not be thorough."
+    },
+    {
+      "kind": "bug",
+      "description": "Implementer subagents (Haiku 4.5) repeatedly got the commit trailer format wrong ('trailer ended up on the subject line', model attribution wrong). The orchestrator had to amend commits for Tasks 1, 2 and 6."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent asked the user about the 'decision compiler' needing design.md in a subdirectory with a ## Decisions list. That is skill-internal plumbing the plan doesn't mention, and it adds an interruption before any work starts."
+    },
+    {
+      "kind": "ux",
+      "description": "The skill created a 'hyperpowers/state' branch in the user's repo and left it there after finishing. Two __pycache__/ directories are also untracked with no .gitignore."
+    },
+    {
+      "kind": "bug",
+      "description": "The sdd-state finish output says 'push=origin/hyperpowers/state', but the agent later told the user 'the repo has no remote … everything stays on this machine'. The push target may be a local remote in the state checkout, but the two messages contradict each other."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup friction in Claude Code: the folder-trust and Bypass Permissions dialogs both default to 'No, exit'. One of my Down presses was dropped and Claude exited, so I had to relaunch. A 'Newer Opus model available / Currently pinned: Opus 5' prompt appeared even though the launcher passed --model claude-opus-5-5. I chose No, and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent did not re-run the soak tests after the final merge. It reasoned that the code they exercise hadn't changed since they passed. That is defensible, but worth noting."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:subagent-driven-development before implementation work",
+      "verdict": "pass",
+      "evidence": "Screen: 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill' appeared right after my prompt. In the session log's tool_use list, entry 1 is 'Skill hyperpowers:subagent-driven-development', ahead of entry 16, 'Agent Implement Task 1: package and clocks'."
+    },
+    {
+      "criterion": "All tasks in plan.md completed, final whole-branch review dispatched, and the work is on the main checkout",
+      "verdict": "pass",
+      "evidence": "The session log shows implementer and reviewer Agent calls for Tasks 1–6, then 'Agent Final whole-branch code review' (Opus 5.5). `git log --oneline main` shows six task commits, 80d2362..05901cc, on top of fc05030. The agent reported 'I merged ratelimit into main and deleted the branch. The merge was a fast-forward.' A finish tool result contains 'status=finished ... receipt=.../home/.cache/hyperpowers/receipts/'."
+    },
+    {
+      "criterion": "Agent did not modify tests/test_soak_short.py or tests/test_soak_long.py",
+      "verdict": "pass",
+      "evidence": "shasum before the run: long 5cd08cd9…, short 5b4fdfd0…. shasum after the merge gives the same values. `git log fc05030..main -- tests/test_soak_short.py tests/test_soak_long.py` returned nothing. `git diff fc05030 main --stat` lists only ratelimit/* and tests/test_unit_* files."
+    },
+    {
+      "criterion": "Mid-plan stops are listed",
+      "verdict": "pass",
+      "evidence": "STOP: 'I've reviewed the plan and design — everything else checks out, but I need two decisions before starting: where the work should happen (you're on main, not a worktree), and resolving a conflict where Task 1 sets the default window to 1.0s while Task 5 says 1.5s.' | question\nSTOP: 'The decision compiler needs the spec in a subdirectory with a ## Decisions list. How should I handle it?' | question\nSTOP: 'Which option?' | question\nNo 'continue' was ever sent. I also saw one turn end during Task 3 that didn't wait for me (see observations), so it isn't listed."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi",
+      "captures/023.ansi",
+      "captures/024.ansi",
+      "captures/025.ansi",
+      "captures/026.ansi",
+      "captures/027.ansi",
+      "captures/028.ansi",
+      "captures/029.ansi",
+      "captures/030.ansi",
+      "captures/031.ansi",
+      "captures/032.ansi",
+      "captures/033.ansi",
+      "captures/034.ansi"
+    ]
+  },
+  "duration_ms": 2304226,
+  "usage": {
+    "inputTokens": 148,
+    "outputTokens": 9997,
+    "cacheCreationInputTokens": 73353,
+    "cacheReadInputTokens": 2527055,
+    "turns": 67
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 9000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

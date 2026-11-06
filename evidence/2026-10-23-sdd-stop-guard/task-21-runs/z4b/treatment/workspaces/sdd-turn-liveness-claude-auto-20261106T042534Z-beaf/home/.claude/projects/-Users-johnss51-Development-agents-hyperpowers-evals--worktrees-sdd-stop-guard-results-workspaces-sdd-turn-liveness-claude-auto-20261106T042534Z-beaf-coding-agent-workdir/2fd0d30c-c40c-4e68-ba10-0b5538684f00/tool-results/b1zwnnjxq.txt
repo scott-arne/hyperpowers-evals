@@ -1,0 +1,892 @@
+# ratelimit Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use hyperpowers:subagent-driven-development (recommended) or hyperpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Spec:** `design.md`
+
+**Goal:** Build `ratelimit`, a standard-library-only Python package with a token bucket, a sliding-window limiter, a per-key registry, and a `simulate` CLI.
+
+**Architecture:** Every limiter takes an optional clock object with a `now() -> float` method. `clock=None` means `MonotonicClock()`, and unit tests pass a `FakeClock` so no unit test sleeps. The sliding window keeps a deque of allowed timestamps and drops stamps at or before `now - window_seconds`. `Registry` maps each key to a limiter built by a zero-argument factory.
+
+**Tech Stack:** Python 3.9+, standard library only (`time`, `collections`, `argparse`, `unittest`).
+
+## Global Constraints
+
+- Standard library only. No third-party dependencies and no `requirements.txt` or packaging metadata.
+- Python 3.9 or later. Do not use syntax newer than 3.9: no `match`, no `X | Y` type unions, no `except*`. Built-in generics such as `list[str]` are fine in 3.9.
+- `clock=None` means `MonotonicClock()`.
+- Unit tests live in `tests/test_unit_<component>.py`, use `FakeClock`, and run with `python3 -m unittest discover -s tests -p "test_unit_*.py"`.
+- `tests/test_soak_short.py` and `tests/test_soak_long.py` already exist and must not be modified.
+- CLI output format is exactly `allowed=<a> denied=<d>`.
+
+## Grounding
+
+- Test shape: `tests/test_soak_short.py:1-32` shows the repository's only test style: a one-line module docstring, `import unittest`, one `unittest.TestCase` subclass, plain `self.assert*` calls, and `if __name__ == "__main__": unittest.main()` at the bottom. Unit tests follow it.
+- Import paths the soak tests depend on: `tests/test_soak_short.py:6` imports `from ratelimit.window import SlidingWindowLimiter`; `tests/test_soak_long.py:6-7` also imports `from ratelimit.registry import Registry`. Constructor keywords used there are `SlidingWindowLimiter(limit=..., window_seconds=...)` (`tests/test_soak_short.py:16`) and `Registry(factory)` with a lambda (`tests/test_soak_long.py:19`).
+- Window semantics the soak tests check: `tests/test_soak_short.py:24-28` counts allowed stamps in the half-open interval `(stamp - (WINDOW - SLACK), stamp]` and requires at most `LIMIT`. `tests/test_soak_short.py:23` requires at least 80% of the theoretical maximum throughput, so the limiter must not deny when the window has room.
+- Naming: none: no existing production code. Use the names in `design.md` exactly (`MonotonicClock`, `FakeClock`, `TokenBucket`, `SlidingWindowLimiter`, `Registry`).
+- Error handling: none: no existing pattern. The design specifies no validation, so the plan adds none.
+- CLI: none: no existing CLI. Use `argparse` with a subcommand.
+
+## Plan decisions the design leaves open
+
+- `TokenBucket` starts full (`capacity` tokens) and refills continuously at `rate_per_second`, capped at `capacity`. The design does not say whether it starts full or empty; starting full is the usual behaviour.
+- `SlidingWindowLimiter` treats the window as `(now - window_seconds, now]`: a stamp exactly `window_seconds` old no longer counts. Denied calls are not recorded.
+- `Registry.keys()` returns keys in first-use order.
+- The `simulate` loop starts its `FakeClock` at `0.0` and, for each call, calls `allow()` first and then advances the clock by 0.1 s.
+
+## File Structure
+
+| File | Responsibility |
+|------|----------------|
+| `ratelimit/__init__.py` | Package marker with a docstring. No re-exports. |
+| `ratelimit/clock.py` | `MonotonicClock`, `FakeClock` |
+| `ratelimit/bucket.py` | `TokenBucket` |
+| `ratelimit/window.py` | `SlidingWindowLimiter` |
+| `ratelimit/registry.py` | `Registry` |
+| `ratelimit/__main__.py` | `main(argv=None) -> int` and the `simulate` subcommand |
+| `tests/test_unit_clock.py` | Clock unit tests |
+| `tests/test_unit_bucket.py` | Token bucket unit tests |
+| `tests/test_unit_window.py` | Sliding window unit tests |
+| `tests/test_unit_registry.py` | Registry unit tests |
+| `tests/test_unit_main.py` | CLI unit tests |
+| `tests/test_unit_integration.py` | Registry + sliding window across many keys, with `FakeClock` |
+
+## Commands and runtimes
+
+| Command | Covers | Expected runtime |
+|---------|--------|------------------|
+| `python3 -m unittest discover -s tests -p "test_unit_*.py"` | all unit tests | under 5 seconds |
+| `python3 -m unittest tests.test_soak_short -v` | Task 3 (sliding window, real clock) | about 4 minutes (240 s soak plus overhead) |
+| `python3 -m unittest tests.test_soak_long -v` | Task 6 (integration, real clock) | about 12 minutes (720 s soak plus overhead) |
+
+All commands run from the repository root.
+
+---
+
+### Task 1: Package and clocks
+
+**Risk tier:** standard — creates the package and the clock interface every later task imports; three new files.
+
+**Files:**
+- Create: `ratelimit/__init__.py`
+- Create: `ratelimit/clock.py`
+- Test: `tests/test_unit_clock.py`
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces:
+  - `MonotonicClock()` with `now() -> float` (returns `time.monotonic()`).
+  - `FakeClock(start: float = 0.0)` with `now() -> float` and `advance(seconds: float) -> None`.
+  - `DEFAULT_WINDOW_SECONDS = 1.0` in `ratelimit/__init__.py`: the window `simulate` uses when `--window` is omitted.
+
+**Mirror:** `tests/test_soak_short.py:1-32`, test module shape (docstring, single `TestCase`, `unittest.main()` guard).
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/test_unit_clock.py`:
+
+```python
+"""Unit tests for ratelimit.clock."""
+
+import time
+import unittest
+
+from ratelimit.clock import FakeClock, MonotonicClock
+
+
+class FakeClockTest(unittest.TestCase):
+    def test_starts_at_zero_by_default(self):
+        self.assertEqual(FakeClock().now(), 0.0)
+
+    def test_starts_at_given_time(self):
+        self.assertEqual(FakeClock(start=10.0).now(), 10.0)
+
+    def test_advance_moves_time_forward(self):
+        clock = FakeClock()
+        clock.advance(1.5)
+        clock.advance(0.25)
+        self.assertEqual(clock.now(), 1.75)
+
+    def test_now_does_not_move_by_itself(self):
+        clock = FakeClock(start=3.0)
+        self.assertEqual(clock.now(), clock.now())
+
+
+class MonotonicClockTest(unittest.TestCase):
+    def test_now_tracks_time_monotonic(self):
+        before = time.monotonic()
+        value = MonotonicClock().now()
+        after = time.monotonic()
+        self.assertLessEqual(before, value)
+        self.assertLessEqual(value, after)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
+Expected: FAIL with `ModuleNotFoundError: No module named 'ratelimit'`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `ratelimit/__init__.py`:
+
+```python
+"""ratelimit: an in-process rate limiter."""
+
+# The window `simulate` uses when `--window` is omitted.
+DEFAULT_WINDOW_SECONDS = 1.0
+```
+
+Create `ratelimit/clock.py`:
+
+```python
+"""Clocks: the real monotonic clock and a manually advanced clock for tests."""
+
+import time
+
+
+class MonotonicClock:
+    def now(self) -> float:
+        return time.monotonic()
+
+
+class FakeClock:
+    def __init__(self, start: float = 0.0):
+        self._now = start
+
+    def now(self) -> float:
+        return self._now
+
+    def advance(self, seconds: float) -> None:
+        self._now += seconds
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
+Expected: PASS, `Ran 5 tests`, `OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add ratelimit/__init__.py ratelimit/clock.py tests/test_unit_clock.py
+git commit -m "feat: add ratelimit package with monotonic and fake clocks"
+```
+
+---
+
+### Task 2: Token bucket
+
+**Risk tier:** standard — new module with refill arithmetic; behaviour depends on a plan decision (bucket starts full).
+
+**Files:**
+- Create: `ratelimit/bucket.py`
+- Test: `tests/test_unit_bucket.py`
+
+**Interfaces:**
+- Consumes: `MonotonicClock`, `FakeClock` from `ratelimit/clock.py` (Task 1).
+- Produces: `TokenBucket(rate_per_second: float, capacity: int, clock=None)` with `allow() -> bool` and `tokens() -> float`.
+
+**Mirror:** `tests/test_soak_short.py:1-32`, test module shape.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/test_unit_bucket.py`. Time steps are powers of two so the float arithmetic is exact.
+
+```python
+"""Unit tests for ratelimit.bucket."""
+
+import unittest
+
+from ratelimit.bucket import TokenBucket
+from ratelimit.clock import FakeClock, MonotonicClock
+
+
+class TokenBucketTest(unittest.TestCase):
+    def test_starts_full(self):
+        bucket = TokenBucket(rate_per_second=1.0, capacity=3, clock=FakeClock())
+        self.assertEqual(bucket.tokens(), 3.0)
+
+    def test_allow_spends_one_token_until_empty(self):
+        bucket = TokenBucket(rate_per_second=1.0, capacity=3, clock=FakeClock())
+        self.assertEqual([bucket.allow() for _ in range(4)], [True, True, True, False])
+        self.assertEqual(bucket.tokens(), 0.0)
+
+    def test_denied_call_spends_nothing(self):
+        clock = FakeClock()
+        bucket = TokenBucket(rate_per_second=2.0, capacity=1, clock=clock)
+        self.assertTrue(bucket.allow())
+        clock.advance(0.25)
+        self.assertFalse(bucket.allow())
+        self.assertEqual(bucket.tokens(), 0.5)
+
+    def test_refills_at_rate(self):
+        clock = FakeClock()
+        bucket = TokenBucket(rate_per_second=2.0, capacity=4, clock=clock)
+        for _ in range(4):
+            bucket.allow()
+        clock.advance(0.5)
+        self.assertEqual(bucket.tokens(), 1.0)
+        self.assertTrue(bucket.allow())
+        self.assertFalse(bucket.allow())
+
+    def test_refill_is_capped_at_capacity(self):
+        clock = FakeClock()
+        bucket = TokenBucket(rate_per_second=10.0, capacity=2, clock=clock)
+        bucket.allow()
+        clock.advance(8.0)
+        self.assertEqual(bucket.tokens(), 2.0)
+
+    def test_default_clock_is_monotonic(self):
+        bucket = TokenBucket(rate_per_second=1.0, capacity=1)
+        self.assertIsInstance(bucket._clock, MonotonicClock)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
+Expected: FAIL with `ModuleNotFoundError: No module named 'ratelimit.bucket'`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `ratelimit/bucket.py`:
+
+```python
+"""Token bucket: refills continuously, spends one token per allowed call."""
+
+from ratelimit.clock import MonotonicClock
+
+
+class TokenBucket:
+    def __init__(self, rate_per_second: float, capacity: int, clock=None):
+        self._rate = rate_per_second
+        self._capacity = capacity
+        self._clock = clock if clock is not None else MonotonicClock()
+        self._tokens = float(capacity)
+        self._last = self._clock.now()
+
+    def _refill(self) -> None:
+        now = self._clock.now()
+        self._tokens = min(self._capacity, self._tokens + (now - self._last) * self._rate)
+        self._last = now
+
+    def allow(self) -> bool:
+        self._refill()
+        if self._tokens >= 1.0:
+            self._tokens -= 1.0
+            return True
+        return False
+
+    def tokens(self) -> float:
+        self._refill()
+        return self._tokens
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
+Expected: PASS, `Ran 11 tests`, `OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add ratelimit/bucket.py tests/test_unit_bucket.py
+git commit -m "feat: add token bucket limiter"
+```
+
+---
+
+### Task 3: Sliding window limiter
+
+**Risk tier:** standard — new module whose boundary semantics the existing soak test checks under the real clock.
+
+**Files:**
+- Create: `ratelimit/window.py`
+- Test: `tests/test_unit_window.py`
+
+**Interfaces:**
+- Consumes: `MonotonicClock`, `FakeClock` from `ratelimit/clock.py` (Task 1).
+- Produces: `SlidingWindowLimiter(limit: int, window_seconds: float, clock=None)` with `allow() -> bool`. Imported by `tests/test_soak_short.py`, `tests/test_soak_long.py`, Task 5, and Task 6.
+
+**Mirror:** `tests/test_soak_short.py:1-32`, test module shape.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/test_unit_window.py`. Time steps are powers of two so boundary comparisons are exact.
+
+```python
+"""Unit tests for ratelimit.window."""
+
+import unittest
+
+from ratelimit.clock import FakeClock, MonotonicClock
+from ratelimit.window import SlidingWindowLimiter
+
+
+class SlidingWindowLimiterTest(unittest.TestCase):
+    def test_allows_up_to_limit_then_denies(self):
+        limiter = SlidingWindowLimiter(limit=3, window_seconds=1.0, clock=FakeClock())
+        self.assertEqual([limiter.allow() for _ in range(4)], [True, True, True, False])
+
+    def test_stamp_exactly_one_window_old_no_longer_counts(self):
+        clock = FakeClock()
+        limiter = SlidingWindowLimiter(limit=1, window_seconds=1.0, clock=clock)
+        self.assertTrue(limiter.allow())
+        clock.advance(0.5)
+        self.assertFalse(limiter.allow())
+        clock.advance(0.5)
+        self.assertTrue(limiter.allow())
+
+    def test_window_slides_one_stamp_at_a_time(self):
+        clock = FakeClock()
+        limiter = SlidingWindowLimiter(limit=2, window_seconds=1.0, clock=clock)
+        self.assertTrue(limiter.allow())  # t=0.0
+        clock.advance(0.5)
+        self.assertTrue(limiter.allow())  # t=0.5
+        clock.advance(0.25)
+        self.assertFalse(limiter.allow())  # t=0.75, two stamps in window
+        clock.advance(0.25)
+        self.assertTrue(limiter.allow())  # t=1.0, stamp at 0.0 dropped
+        self.assertFalse(limiter.allow())  # t=1.0, stamps at 0.5 and 1.0
+
+    def test_denied_calls_are_not_recorded(self):
+        clock = FakeClock()
+        limiter = SlidingWindowLimiter(limit=1, window_seconds=1.0, clock=clock)
+        self.assertTrue(limiter.allow())  # t=0.0
+        clock.advance(0.5)
+        self.assertFalse(limiter.allow())  # t=0.5, denied
+        clock.advance(0.5)
+        self.assertTrue(limiter.allow())  # t=1.0, the denied call at 0.5 does not block
+
+    def test_default_clock_is_monotonic(self):
+        limiter = SlidingWindowLimiter(limit=1, window_seconds=1.0)
+        self.assertIsInstance(limiter._clock, MonotonicClock)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
+Expected: FAIL with `ModuleNotFoundError: No module named 'ratelimit.window'`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `ratelimit/window.py`:
+
+```python
+"""Sliding window: at most `limit` allowed calls in any trailing window."""
+
+from collections import deque
+
+from ratelimit.clock import MonotonicClock
+
+
+class SlidingWindowLimiter:
+    def __init__(self, limit: int, window_seconds: float, clock=None):
+        self._limit = limit
+        self._window = window_seconds
+        self._clock = clock if clock is not None else MonotonicClock()
+        self._stamps = deque()
+
+    def allow(self) -> bool:
+        now = self._clock.now()
+        cutoff = now - self._window
+        while self._stamps and self._stamps[0] <= cutoff:
+            self._stamps.popleft()
+        if len(self._stamps) < self._limit:
+            self._stamps.append(now)
+            return True
+        return False
+```
+
+- [ ] **Step 4: Run unit tests to verify they pass**
+
+Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
+Expected: PASS, `Ran 16 tests`, `OK`.
+
+- [ ] **Step 5: Run the covering soak test**
+
+Run: `python3 -m unittest tests.test_soak_short -v` (about 4 minutes)
+Expected: `test_limit_holds_in_every_trailing_window ... ok`, `Ran 1 test`, `OK`. If it fails on the 80% throughput assertion, the limiter is denying calls that have room; if it fails on the per-window count, the eviction comparison is wrong. Do not edit the soak test.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add ratelimit/window.py tests/test_unit_window.py
+git commit -m "feat: add sliding window limiter"
+```
+
+---
+
+### Task 4: Registry
+
+**Risk tier:** standard — new module that the integration soak test drives directly.
+
+**Files:**
+- Create: `ratelimit/registry.py`
+- Test: `tests/test_unit_registry.py`
+
+**Interfaces:**
+- Consumes: `SlidingWindowLimiter` (Task 3) and `FakeClock` (Task 1), in tests only. `Registry` itself works with any object that has `allow() -> bool`.
+- Produces: `Registry(factory)` where `factory` takes no arguments and returns a limiter; `get(key)` returns that key's limiter, creating it on first use; `allow(key) -> bool`; `keys() -> list[str]` in first-use order.
+
+**Mirror:** `tests/test_soak_long.py:19`, the `Registry(lambda: SlidingWindowLimiter(...))` construction the unit tests copy.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/test_unit_registry.py`:
+
+```python
+"""Unit tests for ratelimit.registry."""
+
+import unittest
+
+from ratelimit.clock import FakeClock
+from ratelimit.registry import Registry
+from ratelimit.window import SlidingWindowLimiter
+
+
+class RegistryTest(unittest.TestCase):
+    def setUp(self):
+        self.clock = FakeClock()
+        self.calls = 0
+
+        def factory():
+            self.calls += 1
+            return SlidingWindowLimiter(limit=1, window_seconds=1.0, clock=self.clock)
+
+        self.registry = Registry(factory)
+
+    def test_get_creates_limiter_once_per_key(self):
+        first = self.registry.get("a")
+        self.assertIs(self.registry.get("a"), first)
+        self.assertEqual(self.calls, 1)
+
+    def test_keys_start_empty(self):
+        self.assertEqual(self.registry.keys(), [])
+
+    def test_keys_lists_keys_in_first_use_order(self):
+        self.registry.allow("b")
+        self.registry.get("a")
+        self.registry.allow("b")
+        self.assertEqual(self.registry.keys(), ["b", "a"])
+
+    def test_allow_delegates_to_the_keys_limiter(self):
+        self.assertTrue(self.registry.allow("a"))
+        self.assertFalse(self.registry.allow("a"))
+        self.assertFalse(self.registry.get("a").allow())
+
+    def test_keys_are_limited_independently(self):
+        self.assertTrue(self.registry.allow("a"))
+        self.assertTrue(self.registry.allow("b"))
+        self.assertFalse(self.registry.allow("a"))
+        self.clock.advance(1.0)
+        self.assertTrue(self.registry.allow("a"))
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
+Expected: FAIL with `ModuleNotFoundError: No module named 'ratelimit.registry'`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `ratelimit/registry.py`. A plain `dict` keeps insertion order in Python 3.7+, which gives `keys()` its first-use order.
+
+```python
+"""Registry: one limiter per key, created on first use."""
+
+
+class Registry:
+    def __init__(self, factory):
+        self._factory = factory
+        self._limiters = {}
+
+    def get(self, key):
+        limiter = self._limiters.get(key)
+        if limiter is None:
+            limiter = self._factory()
+            self._limiters[key] = limiter
+        return limiter
+
+    def allow(self, key) -> bool:
+        return self.get(key).allow()
+
+    def keys(self) -> list[str]:
+        return list(self._limiters)
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
+Expected: PASS, `Ran 21 tests`, `OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add ratelimit/registry.py tests/test_unit_registry.py
+git commit -m "feat: add per-key limiter registry"
+```
+
+---
+
+### Task 5: `simulate` CLI
+
+**Risk tier:** standard — new entry point with argument parsing and an exact output format.
+
+**Files:**
+- Create: `ratelimit/__main__.py`
+- Test: `tests/test_unit_main.py`
+
+**Interfaces:**
+- Consumes: `SlidingWindowLimiter` (Task 3), `FakeClock` (Task 1).
+- Produces: `main(argv=None) -> int` in `ratelimit/__main__.py`; `python3 -m ratelimit simulate --limit N --window S --calls C` prints `allowed=<a> denied=<d>` and exits 0.
+- `--window` is optional and defaults to `DEFAULT_WINDOW_SECONDS` from Task 1, which is 1.5 seconds.
+
+The expected counts below come from calls at t = 0.0, 0.1, 0.2, ... with `allow()` before each 0.1 s advance. With `--limit 3 --window 1.05 --calls 30`, calls at 0.0, 0.1, 0.2 are allowed, then 1.1, 1.2, 1.3 (each drops the stamp 1.1 s earlier), then 2.2, 2.3, 2.4: 9 allowed, 21 denied. With `--limit 1 --window 0.25 --calls 10`, calls at 0.0, 0.3, 0.6, 0.9 are allowed: 4 allowed, 6 denied. Both cases keep every eviction comparison at least 0.05 s from the boundary, so accumulated float error in 0.1 s steps does not change the counts.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/test_unit_main.py`:
+
+```python
+"""Unit tests for the ratelimit command line."""
+
+import contextlib
+import io
+import subprocess
+import sys
+import unittest
+
+from ratelimit import DEFAULT_WINDOW_SECONDS
+from ratelimit.__main__ import main
+
+
+def run_main(argv):
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = main(argv)
+    return code, out.getvalue()
+
+
+class SimulateTest(unittest.TestCase):
+    def test_counts_for_three_per_window(self):
+        code, out = run_main(["simulate", "--limit", "3", "--window", "1.05", "--calls", "30"])
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "allowed=9 denied=21\n")
+
+    def test_counts_for_one_per_window(self):
+        code, out = run_main(["simulate", "--limit", "1", "--window", "0.25", "--calls", "10"])
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "allowed=4 denied=6\n")
+
+    def test_zero_calls(self):
+        code, out = run_main(["simulate", "--limit", "1", "--window", "1", "--calls", "0"])
+        self.assertEqual(code, 0)
+        self.assertEqual(out, "allowed=0 denied=0\n")
+
+    def test_window_defaults_when_omitted(self):
+        code, out = run_main(["simulate", "--limit", "3", "--calls", "30"])
+        expected = run_main(
+            ["simulate", "--limit", "3", "--window", str(DEFAULT_WINDOW_SECONDS), "--calls", "30"]
+        )[1]
+        self.assertEqual(code, 0)
+        self.assertEqual(out, expected)
+
+    def test_runs_as_module(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "ratelimit", "simulate", "--limit", "3", "--window", "1.05", "--calls", "30"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(result.stdout, "allowed=9 denied=21\n")
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+`test_runs_as_module` relies on the test runner's working directory being the repository root, which the discover command in this plan assumes.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
+Expected: FAIL with `ModuleNotFoundError: No module named 'ratelimit.__main__'`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `ratelimit/__main__.py`:
+
+```python
+"""Command line: python3 -m ratelimit simulate --limit N --window S --calls C."""
+
+import argparse
+import sys
+
+from ratelimit import DEFAULT_WINDOW_SECONDS
+from ratelimit.clock import FakeClock
+from ratelimit.window import SlidingWindowLimiter
+
+STEP_SECONDS = 0.1
+
+
+def simulate(limit: int, window: float, calls: int) -> str:
+    clock = FakeClock()
+    limiter = SlidingWindowLimiter(limit=limit, window_seconds=window, clock=clock)
+    allowed = 0
+    for _ in range(calls):
+        if limiter.allow():
+            allowed += 1
+        clock.advance(STEP_SECONDS)
+    return f"allowed={allowed} denied={calls - allowed}"
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(prog="python3 -m ratelimit")
+    commands = parser.add_subparsers(dest="command", required=True)
+    sim = commands.add_parser("simulate", help="drive a sliding window with a fake clock")
+    sim.add_argument("--limit", type=int, required=True)
+    sim.add_argument("--window", type=float, default=DEFAULT_WINDOW_SECONDS, help="window in seconds (optional)")
+    sim.add_argument("--calls", type=int, required=True)
+    args = parser.parse_args(argv)
+    print(simulate(args.limit, args.window, args.calls))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
+Expected: PASS, `Ran 26 tests`, `OK`.
+
+Also run: `python3 -m ratelimit simulate --limit 3 --window 1.05 --calls 30` (under 1 second)
+Expected output: `allowed=9 denied=21`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add ratelimit/__main__.py tests/test_unit_main.py
+git commit -m "feat: add simulate command line"
+```
+
+---
+
+### Task 6: Integration across many keys
+
+**Risk tier:** low — one new test file whose complete content is in this plan; no production code changes.
+
+**Files:**
+- Test: `tests/test_unit_integration.py`
+
+**Interfaces:**
+- Consumes: `Registry` (Task 4), `SlidingWindowLimiter` (Task 3), `FakeClock` (Task 1).
+- Produces: nothing new.
+
+**Mirror:** `tests/test_soak_long.py:18-35`, the same loop over keys and per-key window check, here driven by `FakeClock` instead of sleeping.
+
+- [ ] **Step 1: Write the integration unit test**
+
+Create `tests/test_unit_integration.py`. Steps of 0.25 s are exact in binary floating point.
+
+```python
+"""Integration: Registry with sliding-window limiters across many keys, on a fake clock."""
+
+import unittest
+
+from ratelimit.clock import FakeClock
+from ratelimit.registry import Registry
+from ratelimit.window import SlidingWindowLimiter
+
+KEYS = [f"tenant-{n}" for n in range(50)]
+LIMIT = 3
+WINDOW = 1.5
+STEP = 0.25
+STEPS = 120
+
+
+class RegistryWindowIntegrationTest(unittest.TestCase):
+    def test_each_key_holds_its_limit_independently(self):
+        clock = FakeClock()
+        registry = Registry(lambda: SlidingWindowLimiter(limit=LIMIT, window_seconds=WINDOW, clock=clock))
+        allowed = {key: [] for key in KEYS}
+        for _ in range(STEPS):
+            for key in KEYS:
+                if registry.allow(key):
+                    allowed[key].append(clock.now())
+            clock.advance(STEP)
+        self.assertEqual(registry.keys(), KEYS)
+        expected = allowed[KEYS[0]]
+        self.assertEqual(len(expected), STEPS * STEP / WINDOW * LIMIT)
+        for key, stamps in allowed.items():
+            self.assertEqual(stamps, expected, key)
+            first = 0
+            for i, stamp in enumerate(stamps):
+                while stamps[first] <= stamp - WINDOW:
+                    first += 1
+                self.assertLessEqual(i - first + 1, LIMIT, key)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+With a 1.5 s window and 0.25 s steps, each key is allowed at t = 0.0, 0.25, 0.5, then 1.5, 1.75, 2.0, and so on: 3 per 1.5 s, so 30 s of steps give 60 allowed calls per key. Every key shares the clock and sees the same sequence, so every key's stamps equal the first key's.
+
+- [ ] **Step 2: Run unit tests to verify they pass**
+
+Run: `python3 -m unittest discover -s tests -p "test_unit_*.py"` (under 5 seconds)
+Expected: PASS, `Ran 27 tests`, `OK`. This test passes on first run because Tasks 3 and 4 already implement the behaviour; if it fails, the defect is in `window.py` or `registry.py`, not in this test.
+
+- [ ] **Step 3: Run the covering soak test**
+
+Run: `python3 -m unittest tests.test_soak_long -v` (about 12 minutes)
+Expected: `test_each_key_holds_its_limit ... ok`, `Ran 1 test`, `OK`. Do not edit the soak test.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add tests/test_unit_integration.py
+git commit -m "test: add registry and sliding window integration test"
+```
+# ratelimit: an in-process rate limiter
+
+A small, dependency-free Python package (standard library only, Python 3.9
+or later) that decides whether a caller may proceed under a configured rate.
+
+## Components
+
+1. `ratelimit/clock.py`: a `MonotonicClock` with `now() -> float` (wraps
+   `time.monotonic`) and a `FakeClock` for tests with `now()` and
+   `advance(seconds: float)`.
+2. `ratelimit/bucket.py`: `TokenBucket(rate_per_second: float, capacity: int,
+   clock=None)` with `allow() -> bool` (spends one token when one is
+   available) and `tokens() -> float`.
+3. `ratelimit/window.py`: `SlidingWindowLimiter(limit: int, window_seconds:
+   float, clock=None)` with `allow() -> bool`: at most `limit` calls are
+   allowed in any trailing window of `window_seconds`.
+4. `ratelimit/registry.py`: `Registry(factory)` keeps one limiter per key;
+   `factory` is called with no arguments. `get(key)` creates a limiter on
+   first use, `allow(key) -> bool` delegates to it, `keys() -> list[str]`
+   lists the keys seen.
+5. `ratelimit/__main__.py`: `python3 -m ratelimit simulate --limit N
+   --window S --calls C` prints `allowed=<a> denied=<d>`, driving a
+   `SlidingWindowLimiter` with a `FakeClock` that advances 0.1 s per call.
+6. Integration: the registry with sliding-window limiters under the real
+   clock, across many keys.
+
+`clock=None` means `MonotonicClock()`.
+
+## Tests
+
+Unit tests live in `tests/test_unit_<component>.py`, use `FakeClock`, and
+run with `python3 -m unittest discover -s tests -p "test_unit_*.py"`.
+
+Two soak tests are already in the repository and must not be modified:
+
+- `tests/test_soak_short.py` exercises `SlidingWindowLimiter` under the real
+  clock and takes about four minutes:
+  `python3 -m unittest tests.test_soak_short -v`. It is the covering
+  command for the sliding-window work.
+- `tests/test_soak_long.py` exercises `Registry` with
+  `SlidingWindowLimiter` across eight keys under the real clock and takes
+  about twelve minutes: `python3 -m unittest tests.test_soak_long -v`. It is
+  the covering command for the integration work.
+__init__.py
+__pycache__
+test_soak_long.py
+test_soak_short.py
+test_unit_bucket.py
+test_unit_clock.py
+test_unit_integration.py
+test_unit_main.py
+test_unit_registry.py
+test_unit_window.py
+"""Soak: the registry keeps every key's limit under the real clock (about twelve minutes)."""
+
+import time
+import unittest
+
+from ratelimit.registry import Registry
+from ratelimit.window import SlidingWindowLimiter
+
+SOAK_SECONDS = 720
+KEYS = [f"tenant-{n}" for n in range(8)]
+LIMIT = 3
+WINDOW = 1.5
+SLACK = 0.01
+
+
+class RegistrySoak(unittest.TestCase):
+    def test_each_key_holds_its_limit(self):
+        registry = Registry(lambda: SlidingWindowLimiter(limit=LIMIT, window_seconds=WINDOW))
+        allowed = {key: [] for key in KEYS}
+        start = time.monotonic()
+        while time.monotonic() - start < SOAK_SECONDS:
+            for key in KEYS:
+                if registry.allow(key):
+                    allowed[key].append(time.monotonic())
+            time.sleep(0.05)
+        self.assertEqual(sorted(registry.keys()), sorted(KEYS))
+        for key, stamps in allowed.items():
+            self.assertGreaterEqual(len(stamps), int(SOAK_SECONDS / WINDOW * LIMIT * 0.8), key)
+            first = 0
+            for i, stamp in enumerate(stamps):
+                while stamps[first] <= stamp - (WINDOW - SLACK):
+                    first += 1
+                self.assertLessEqual(i - first + 1, LIMIT, key)
+
+
+if __name__ == "__main__":
+    unittest.main()
+"""Soak: the sliding window holds its limit under the real clock (about four minutes)."""
+
+import time
+import unittest
+
+from ratelimit.window import SlidingWindowLimiter
+
+SOAK_SECONDS = 240
+LIMIT = 5
+WINDOW = 2.0
+SLACK = 0.01
+
+
+class SlidingWindowSoak(unittest.TestCase):
+    def test_limit_holds_in_every_trailing_window(self):
+        limiter = SlidingWindowLimiter(limit=LIMIT, window_seconds=WINDOW)
+        allowed = []
+        start = time.monotonic()
+        while time.monotonic() - start < SOAK_SECONDS:
+            if limiter.allow():
+                allowed.append(time.monotonic())
+            time.sleep(0.05)
+        self.assertGreaterEqual(len(allowed), int(SOAK_SECONDS / WINDOW * LIMIT * 0.8))
+        first = 0
+        for i, stamp in enumerate(allowed):
+            while allowed[first] <= stamp - (WINDOW - SLACK):
+                first += 1
+            self.assertLessEqual(i - first + 1, LIMIT)
+
+
+if __name__ == "__main__":
+    unittest.main()
