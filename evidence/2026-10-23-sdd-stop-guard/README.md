@@ -732,10 +732,10 @@ The numbering continues the series in
     backslash quotes the next character and an apostrophe in a comment opens
     no quote, and a heredoc body is read as blank, so an apostrophe there
     opens none either. A heredoc's delimiter may be a word quoted with `'`
-    or `"`, a word after a backslash (`<<\EOF`), or a bare word, which may
-    hold characters beyond letters and digits (`<<'END-NOTE'`), and its body
-    ends at the first line that is the unquoted delimiter alone, after
-    leading tabs under `<<-` only. The analyzer's other heredoc readers, the
+    or `"` (`<<'END-NOTE'`), a word after a backslash (`<<\EOF`), or a bare
+    word (`<<END.NOTE`), each of which may hold characters beyond letters
+    and digits, and its body ends at the first line that is the unquoted
+    delimiter alone, after leading tabs under `<<-` only. The analyzer's other heredoc readers, the
     untracked-launch tripwire, the soak-tamper check and the watch reader,
     share that pattern. The `(` of a `$(` inside double quotes, and the body
     up to its closing `)`, are read unquoted, because bash runs that command.
@@ -751,28 +751,50 @@ The numbering continues the series in
     time python3 -m unittest ..."`, `echo 'x (python3 -m unittest ...'`).
 
     `runs_soak` also reads the operand of a shell that a segment runs with
-    `-c` (`bash`, `sh` or `zsh`, after assignments and the `env`, `nohup`,
-    `time` and `timeout` prefixes, as `_shell_operand` finds it) as a
-    command of its own, by the same rules, through up to four nested
-    wrappers. The segments are the ones `_split_ops` finds outside quotes,
-    comments and heredoc bodies. So `bash -c "cd /x && python3 -m unittest
-    tests.test_soak_short -v"`, `bash -c 'cd /x; python3 -m unittest
-    tests.test_soak_short -v'` and `bash -c "python3 -m unittest
-    tests.test_soak_short -v"` count, which the quote rule alone would have
-    refused for the first two and never counted for the third. A wrapper
-    quoted in another command's argument (`echo "bash -c 'python3 -m
-    unittest ...'"`) is no run, and neither is a wrapper whose operand cannot
-    be read (the soak parked as `$0` after the operand, or an argument of a
-    script). The rest of the measure applies to the call as before, so a
-    wrapped soak in a call launched in the background, or detached by the
-    shell in a call that returned at once (`nohup bash -c "<soak>" &`, which
-    the untracked-launch tripwire flags as it always did), is a run that
-    fails the rule that every run is a foreground one. The job reader quotes
-    a job's argv back into shell form before this reader sees it, so an
-    argument that carries an operator and the soak's words is no soak job,
-    and the re-joined argv is one segment headed by the interpreter, in
-    which this reader finds no wrapper: a job's own shell wrapper is read as
-    before, and `nohup bash -c <soak>` is still no soak job.
+    `-c` as a command of its own, by the same rules, through up to four
+    nested wrappers, under two conditions that hold at every nesting level.
+    First, the segment's words, after assignments and the `env`, `nohup`,
+    `time` and `timeout` prefixes, are `bash`, `sh` or `zsh` by basename
+    followed directly by a bare `-c` and its operand; the words after the
+    operand are `$0` and its arguments and do not matter. Any other option
+    before or clustered with the `-c` (`-n`, which reads the operand and
+    runs nothing, `-lc`, `-ec`, `-o pipefail`, `+o posix`, `--norc`, `--`)
+    leaves the operand unread. That is the form the untracked-launch
+    tripwire's `SH_C` recognizes, so a wrapper this reader credits is always
+    one the tripwire can see into when something inside it is detached;
+    `_shell_operand`, which reads the other option forms for the job reader
+    and the proven final segment, is unchanged. Second, the shell reaches
+    the segment and waits for it: every operator joining the segments
+    before it is `;` or `&&` (the operator introducing the first segment is
+    empty), with no `||` and no `|` among them, no `&` outside quotes
+    detaches it, and when any `&&` stands before it, every segment before it
+    passes the setup test the dated wait uses below (`cd` with one directory
+    word not starting with `-`, or assignment words with no substitution),
+    since a predecessor that can fail and print nothing would otherwise
+    skip the wrapper unseen. The segments are the ones `_split_ops` finds
+    outside quotes, comments and heredoc bodies. So `bash -c "cd /x &&
+    python3 -m unittest tests.test_soak_short -v"`, `bash -c 'cd /x;
+    python3 -m unittest tests.test_soak_short -v'`, `bash -c "python3 -m
+    unittest tests.test_soak_short -v"` and `cd /x && bash -c "python3 -m
+    unittest tests.test_soak_short -v"` count, which the quote rule alone
+    would have refused for the first two and never counted for the others.
+    These count as no run: a wrapper quoted in another command's argument
+    (`echo "bash -c 'python3 -m unittest ...'"`), a wrapper whose operand
+    cannot be read (the soak parked as `$0` after the operand, or an
+    argument of a script), `sleep 250; true || bash -c "<soak>"`, `sleep
+    250; false && bash -c "<soak>"`, `sleep 250; bash -n -c "<soak>"`, `bash
+    -lc "<soak>"`, `bash -o pipefail -c "<soak>"`, a wrapper after a pipe,
+    and a wrapper detached by `&` (`nohup bash -c "<soak>" &`, which the
+    untracked-launch tripwire flags as it always did). The rest of the
+    measure applies to the call as before, so a wrapped soak in a call
+    launched in the background is a run that fails the rule that every run
+    is a foreground one. The job reader quotes a job's argv back into shell
+    form before this reader sees it, so an argument that carries an
+    operator and the soak's words is no soak job, and the re-joined argv is
+    one segment headed by the interpreter, in which this reader finds no
+    wrapper: a job's own shell wrapper is read as before, through
+    `_shell_operand`, so `bash -lc <soak>` is still a soak job and `nohup
+    bash -c <soak>` is still none.
 
     `_waited_job` takes a count of trailing lines, 0 by default. At 1 the call
     must close with exactly one `date` segment: the call's final non-empty
@@ -874,7 +896,7 @@ The numbering continues the series in
     `H4: True` with `f_runs: 10`, `R: True`, `decision: FAIL`. Those readings
     do not replace `tally.txt` or `tally-z4.txt`, which stay the records of
     their campaigns as read at their pins. Pins after the Correction:
-    `analyze.py` `4633e8166c5c05d904556ed9dddb62b51a30dceb`; `liveness.py`
+    `analyze.py` `f2a5179abfe42ad3a862ec85b87ef69bb920a3a1`; `liveness.py`
     `4b56247ca0333aac395f7807b051a92a3dae10e5` and `tally.py`
     `23e39ffb4bf75b4d9e0ac5cb9d715ee9e0d65598` are unchanged.
 

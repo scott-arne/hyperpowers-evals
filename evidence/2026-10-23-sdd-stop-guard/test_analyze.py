@@ -338,6 +338,7 @@ class Measure(unittest.TestCase):
             ("bash -c with ; in the operand", f"bash -c 'cd /x; {soak}'"),
             ("bash -c with no operator", f'bash -c "{soak}"'),
             ("sh -c", f"sh -c '{soak}'"),
+            ("cd and && before the wrapper", f'cd /x && bash -c "{soak}"'),
             ("a line continuation", "python3 -m unittest \\\ntests.test_soak_short -v"),
         )):
             with self.subTest(label):
@@ -351,27 +352,58 @@ class Measure(unittest.TestCase):
                 self.assertEqual(m["short_runs"][0]["elapsed"], 250.0, label)
                 self.assertTrue(m["short_ok"], label)
 
-    def test_a_wrapped_soak_the_call_did_not_hold_is_no_foreground_run(self) -> None:
-        # A wrapped soak is a run like any other, so one the call did not hold
-        # in the foreground fails the rule that every run is a foreground one,
-        # even beside b1's good run: launched in the background, or detached
-        # by the shell in a call that returned at once (which the untracked
-        # launch tripwire also flags, as it always did).
+    def test_a_wrapper_the_shell_may_skip_or_not_run_is_no_foreground_run(self) -> None:
+        # Each call takes 250 s under a 300000 ms timeout, so only the reading
+        # of the wrapper can refuse it: the shell reaches the wrapper only
+        # after a `||` whose left side failed or a `&&` whose left side is no
+        # setup, `-n` reads the operand without running it, and any option
+        # beside a bare `-c` is a form the untracked-launch tripwire cannot
+        # see into, so a soak detached inside it would read as a foreground
+        # run with no untracked flag (the last two calls).
         soak = "python3 -m unittest tests.test_soak_short -v"
-        for index, (label, inp, text) in enumerate((
-            ("launched in the background",
-             {"command": f'bash -c "cd /x && {soak}"', "run_in_background": True}, BASH_BG),
-            ("detached by the shell",
-             {"command": f'nohup bash -c "cd /x && {soak}" > soak.log 2>&1 &', "timeout": 300000}, ""),
+        for index, (label, command) in enumerate((
+            ("after || in the call", f'sleep 250; true || bash -c "{soak}"'),
+            ("bash -n -c", f'sleep 250; bash -n -c "{soak}"'),
+            ("after a failing && in the call", f'sleep 250; false && bash -c "{soak}"'),
+            ("bash -lc", f'bash -lc "{soak}"'),
+            ("bash -o pipefail -c", f'bash -o pipefail -c "{soak}"'),
+            ("detached inside bash -lc, padded",
+             f"bash -lc '{soak} > /tmp/s.log 2>&1 &'; sleep 250; tail -5 /tmp/s.log"),
+            ("detached inside bash -o pipefail -c, padded", f"bash -o pipefail -c '{soak} &'; sleep 250"),
         )):
             with self.subTest(label):
-                records = treatment_records() + [
-                    assistant(1910, tools=[("w1", "Bash", inp)]),
-                    result(1911, "w1", text),
-                ]
-                m = self.run_of(f"s6-{index}", records)
-                self.assertEqual(len(m["short_runs"]), 2, label)
+                records = treatment_records()
+                for rec in records:
+                    for use in liveness.tool_uses(rec):
+                        if use.get("id") == "b1":
+                            use["input"]["command"] = command
+                m = self.run_of(f"s7-{index}", records)
+                self.assertEqual(m["short_runs"], [], label)
                 self.assertFalse(m["short_ok"], label)
+
+    def test_a_wrapped_soak_the_call_did_not_hold_is_no_foreground_run(self) -> None:
+        # A wrapped soak the shell waits for is a run like any other, so one in
+        # a call launched in the background fails the rule that every run is a
+        # foreground one, even beside b1's good run. A wrapper the shell does
+        # not wait for (a trailing `&`) is no run at all: the call's elapsed
+        # says nothing about it, and the untracked-launch tripwire flags the
+        # call, as it always did.
+        soak = "python3 -m unittest tests.test_soak_short -v"
+        background = treatment_records() + [
+            assistant(1910, tools=[("w1", "Bash", {"command": f'bash -c "cd /x && {soak}"', "run_in_background": True})]),
+            result(1911, "w1", BASH_BG),
+        ]
+        m = self.run_of("s6-0", background)
+        self.assertEqual(len(m["short_runs"]), 2)
+        self.assertFalse(m["short_ok"])
+        self.assertEqual(m["untracked"], [])
+        detached = treatment_records() + [
+            assistant(1910, tools=[("w1", "Bash", {"command": f'nohup bash -c "cd /x && {soak}" > soak.log 2>&1 &', "timeout": 300000})]),
+            result(1911, "w1", ""),
+        ]
+        m = self.run_of("s6-1", detached)
+        self.assertEqual(len(m["short_runs"]), 1)
+        self.assertTrue(m["short_ok"])
         self.assertEqual([u["where"] for u in m["untracked"]], ["command"])
 
     def test_soak_file_writes_fail_success(self) -> None:
@@ -848,6 +880,21 @@ class Measures(unittest.TestCase):
                 m = analyze.measure(run, {})
                 self.assertIsNone(m["long_job"], label)
                 self.assertFalse(m["long_ok"], label)
+
+    def test_the_job_reader_still_reads_a_shell_job_s_other_option_forms(self) -> None:
+        # The short-soak reader credits a wrapper only through a bare `-c`,
+        # but a job's own shell wrapper is read by `_shell_operand`, which
+        # does not change: these argvs are soak jobs before and after.
+        soak = "python3 -m unittest tests.test_soak_long -v"
+        for label, command in (
+            ("-lc", ["bash", "-lc", soak]),
+            ("-o pipefail -c", ["bash", "-o", "pipefail", "-c", soak]),
+        ):
+            with self.subTest(label):
+                job = {**LONG_JOB, "command": command}
+                run = make_run(receipt={"ledger": ledger_text(done=[1]), "jobs": [job]},
+                               records=watch_records(wait_command(job)))
+                self.assertTrue(analyze.measure(run, {})["long_ok"], label)
 
     def test_a_soak_quoted_in_a_job_s_argument_is_no_soak_job(self) -> None:
         # The argv is quoted back into shell form before the soak reader sees
@@ -2123,7 +2170,7 @@ class Untracked(unittest.TestCase):
             ("after cd and ;", f"bash -c 'cd /x; {soak}'", True),
             ("alone", f'bash -c "{soak}"', True),
             ("under sh, piped to tail", f"sh -c '{soak}' 2>&1 | tail -5", True),
-            ("after an assignment and a prefix", f"cd /x && PYTHONPATH=. timeout 600 bash -lc '{soak}'", True),
+            ("after an assignment and a prefix", f"cd /x && PYTHONPATH=. timeout 600 bash -c '{soak}'", True),
             ("four shells deep", nested(soak, 4), True),
             # Past the bound the stack is not read, as the job reader does.
             ("five shells deep", nested(soak, 5), False),
@@ -2135,6 +2182,46 @@ class Untracked(unittest.TestCase):
             # is `$0`, or the argument of a script.
             ("parked after the operand", f"bash -c 'true' '{soak}'", False),
             ("a script, not an operand", f"bash run-soak.sh '{soak}'", False),
+        ):
+            with self.subTest(label):
+                self.assertEqual(analyze.runs_soak(command, "test_soak_short"), expected, label)
+
+    def test_only_a_reached_bare_dash_c_wrapper_is_read(self) -> None:
+        # A wrapper is read only through a bare `-c` directly after the shell,
+        # the form the untracked-launch tripwire's SH_C can see into, and only
+        # when the shell reaches it and waits for it: every operator before it
+        # is `;` or `&&`, no `&` outside quotes detaches it, and under a `&&`
+        # everything before it is setup, which cannot fail silently and skip
+        # it. The same holds at every nesting level.
+        soak = "python3 -m unittest tests.test_soak_short -v"
+        for label, command, expected in (
+            ("-lc", f'bash -lc "{soak}"', False),
+            ("-ec", f"bash -ec '{soak}'", False),
+            ("-n -c", f'bash -n -c "{soak}"', False),
+            ("-o pipefail -c", f'bash -o pipefail -c "{soak}"', False),
+            ("+o posix -c", f"bash +o posix -c '{soak}'", False),
+            ("--norc -c", f"bash --norc -c '{soak}'", False),
+            ("-- -c", f"bash -- -c '{soak}'", False),
+            ("zsh -lc", f"zsh -lc '{soak}'", False),
+            ("after ||", f'true || bash -c "{soak}"', False),
+            ("after || carried over a line", f'true ||\nbash -c "{soak}"', False),
+            ("after a failing &&", f'false && bash -c "{soak}"', False),
+            ("after && from no setup", f'echo soak && bash -c "{soak}"', False),
+            ("after a pipe", f'true | bash -c "{soak}"', False),
+            ("detached by a trailing &", f'bash -c "{soak}" &', False),
+            ("detached before a padding sleep", f'bash -c "{soak}" & sleep 250', False),
+            ("after || inside the operand", f"bash -c 'true || bash -c \"{soak}\"'", False),
+            ("-lc inside the operand", f"bash -c 'bash -lc \"{soak}\"'", False),
+            ("after cd and &&", f'cd /x && bash -c "{soak}"', True),
+            ("after cd and ;", f'cd /x; bash -c "{soak}"', True),
+            ("after an assignment, cd and &&", f'S=/x; cd $S && bash -c "{soak}"', True),
+            ("after any command and ;", f'echo soak; bash -c "{soak}"', True),
+            ("piped into tail", f"bash -c '{soak}' 2>&1 | tail -5", True),
+            ("followed by &&", f'bash -c "{soak}" && echo done', True),
+            # The shell waits for a foreground `nohup`, as it does for the
+            # direct `nohup python3 -m unittest ...` the prefix group admits.
+            ("under a foreground nohup", f'nohup bash -c "{soak}"', True),
+            ("after cd and && inside the operand", f"bash -c 'cd /x && bash -c \"{soak}\"'", True),
         ):
             with self.subTest(label):
                 self.assertEqual(analyze.runs_soak(command, "test_soak_short"), expected, label)

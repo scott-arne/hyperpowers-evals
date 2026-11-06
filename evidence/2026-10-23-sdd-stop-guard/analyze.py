@@ -1102,11 +1102,11 @@ def _proven_final(command: str, pipes: bool = True) -> str | None:
     # same inside double quotes, in a segment of assignments before the final
     # one, its body free of every character `_split_ops` splits at, quoted or
     # not, of any `)` before its end, and of any ANSI-C quote `$'...'`
-    # (`ASSIGNMENT_WORD`): the whole body
-    # then stays inside that segment, so no fragment of it is a segment at
-    # all, the final segment carries no substitution, and the exit still
-    # belongs to the command the call closed with. A watch reached through
-    # any other substitution is the false negative this accepts.
+    # (`ASSIGNMENT_WORD`): the whole body then stays inside that segment, so
+    # no fragment of it is a segment at all, the final segment carries no
+    # substitution, and the exit still belongs to the command the call closed
+    # with. A watch reached through any other substitution is the false
+    # negative this accepts.
     if "`" in command:
         return None
     ops = _split_ops(command, pipes)
@@ -1256,12 +1256,16 @@ def runs_soak(command: str, name: str, *, depth: int = 0) -> bool:
     the text it overlapped is still read. A line continuation outside single
     quotes joins the soak's words across lines (``_shell_reading``).
 
-    The operand of a shell a segment runs with ``-c`` (``_shell_operand``)
-    is a command of its own, so it is read by the same rule, through up to
-    ``SHELL_NESTING`` wrappers (Correction 12). The segments are the ones
-    ``_split_ops`` finds outside quotes, comments and heredoc bodies, so a
-    wrapper quoted in another command's argument is not one, and neither is
-    a wrapper whose operand cannot be read.
+    The operand of a shell a segment runs with a bare ``-c``
+    (``_bare_shell_operand``) is a command of its own, so it is read by the
+    same rule, through up to ``SHELL_NESTING`` wrappers, when the shell
+    reaches that segment and waits for it (``_reached``), at every nesting
+    level (Correction 12). The segments are the ones ``_split_ops`` finds
+    outside quotes, comments and heredoc bodies, so a wrapper quoted in
+    another command's argument is not one. No run either: a wrapper whose
+    operand cannot be read, one the shell runs with any other option
+    (``-n``, ``-lc``, ``-o pipefail -c``), one after a ``||`` or a pipe, one
+    detached by ``&``, or one after a ``&&`` whose left side is no setup.
 
     :param command: one shell command's text.
     :param name: the soak test's module name.
@@ -1284,10 +1288,13 @@ def runs_soak(command: str, name: str, *, depth: int = 0) -> bool:
             if pattern is None or fnmatch.fnmatch(f"{name}.py", pattern.group(1)):
                 return True
     if depth < SHELL_NESTING:
-        for segment in _segments(_strip_heredocs(command)):
+        ops = _split_ops(_strip_heredocs(command))
+        for index, (_, segment) in enumerate(ops):
             words = _command_words(segment)
-            operand = _shell_operand(words) if words else None
-            if operand is not None and runs_soak(operand, name, depth=depth + 1):
+            operand = _bare_shell_operand(words) if words else None
+            if operand is None or not _reached(ops, index):
+                continue
+            if runs_soak(operand, name, depth=depth + 1):
                 return True
     return False
 
@@ -1422,6 +1429,52 @@ def _shell_operand(words: Sequence[str]) -> str | None:
         if not option.startswith("--") and "c" in option:
             return rest[0] if rest else None
     return None
+
+
+def _bare_shell_operand(words: Sequence[str]) -> str | None:
+    """The operand of ``bash -c <command>``, ``sh -c`` or ``zsh -c`` with no other option (Correction 12).
+
+    This is the form the untracked-launch tripwire's ``SH_C`` recognizes, so
+    a wrapper the short-soak reader credits is always one the tripwire can
+    see into when something inside it is detached. Any other option before
+    or clustered with the ``-c`` (``-n``, which reads the operand and runs
+    nothing, ``-lc``, ``-ec``, ``-o pipefail``, ``+o posix``, ``--norc``,
+    ``--``) leaves the operand unread here; ``_shell_operand`` reads those
+    forms for the job reader and the proven final segment and does not
+    change. The words after the operand are ``$0`` and its arguments and do
+    not matter.
+
+    :param words: one command's words, its assignments and prefixes already
+        dropped (``_command_words``).
+    :returns: the operand after the bare ``-c``, or None.
+    """
+    if len(words) < 3 or Path(words[0]).name not in SHELL_RUNNERS or words[1] != "-c":
+        return None
+    return words[2]
+
+
+def _reached(ops: Sequence[tuple[str, str]], index: int) -> bool:
+    """Whether the shell runs the segment at ``index`` and waits for it (Correction 12).
+
+    Every operator introducing a segment up to and including this one is in
+    ``PROVEN_OPS`` (the first is empty; an empty segment carries its
+    operator forward, as in ``_proven_final``), so no ``||`` and no pipe
+    stands before it. No ``&`` outside quotes detaches it, wherever in the
+    segment the ``&`` falls, read as ``shell_detaches`` reads one. And when
+    any ``&&`` stands among those operators, every segment before this one
+    is setup (``_is_setup``, the test the dated wait uses): a predecessor
+    that can fail and print nothing would otherwise skip it unseen.
+
+    :param ops: ``_split_ops`` of the command, heredoc bodies stripped.
+    :param index: the segment's position in ``ops``.
+    :returns: whether the segment is reached and waited for.
+    """
+    joins = [op for op, _ in ops[: index + 1]]
+    if not all(join in PROVEN_OPS for join in joins):
+        return False
+    if "&" in SAFE_AMP.sub("", QUOTED.sub("''", ops[index][1])):
+        return False
+    return "&&" not in joins or all(_is_setup(segment) for _, segment in ops[:index] if segment.strip())
 
 
 def _proven_innermost(command: str) -> str | None:
