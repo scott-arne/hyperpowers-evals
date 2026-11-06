@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-empty-frontier-posts-and-hands-back_20261106T145814Z_jsqq",
+  "scenario": "sdd-empty-frontier-posts-and-hands-back",
+  "summary": "The second SDD session behaved as the story asks. It loaded the hyperpowers:subagent-driven-development skill first and created a new worktree (parallel-join). It registered itself and ran `sdd-state next`, which returned `status=none reason=held`. It then posted a waiting record of kind tasks, printed the board and handed back, saying both tasks are held by fixture-session. It did not take over a held task.",
+  "reasoning": "All six criteria are confirmed in the session log JSONL and the waiting file on disk. The agent followed the empty-frontier rule: `next` returned none reason=held, it posted a waiting record of kind tasks, printed the board and handed back without taking over a task. Problems seen along the way, such as the guard misreading 'parallel', did not stop the scenario.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The worktree command guard reads the word 'parallel' in the branch name feature/parallel as GNU parallel/xargs. It refused `git switch --detach feature/parallel` and even `git rev-parse refs/heads/feature/para\"\"llel` with the message 'feeds git its arguments from stdin at runtime (xargs/parallel)'. The agent got around it by using commit id c329628 and warned that later merge-back and final-review steps will hit the same problem."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's first combined Bash command (git switch + heredoc ledger append + register/verify/next) was refused by the guard as 'too complex to verify', so it had to split the work into separate commands. The skill's suggested flow seems to produce commands the guard rejects."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent appended its session line to progress.md by hand with a heredoc, in addition to running `sdd-state register`. Hand-editing the shared ledger file this way could conflict with the other session."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent wrote 'Empty frontier, as you expected', which is slightly presumptuous wording. Its handback ended with an offer to take over a task instead of a direct question, so I never had to give the scripted 'No' answer."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code startup asked a series of dialogs: theme, security notes, folder trust (defaults to 'No, exit'), a newer-Opus model prompt, and bypass permissions (defaults to 'No, exit'). On my first launch a Down keypress was apparently dropped, so Claude Code exited at the bypass dialog and I had to relaunch. This is a harness issue, not a product issue."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The session log moved to a new project directory when EnterWorktree changed the cwd. That directory name starts with '-', which breaks naive `ls`/`jq` calls in log-watching tools."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "The agent invoked subagent-driven-development before any other work",
+      "verdict": "pass",
+      "evidence": "The first assistant tool_use in session log cea11b31-...jsonl is `TOOL Skill: {\"skill\":\"hyperpowers:subagent-driven-development\"}`. The screen showed `Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill`."
+    },
+    {
+      "criterion": "The agent ran `sdd-state next` and the output shows none reason=held",
+      "verdict": "pass",
+      "evidence": "Log command: `.../sdd-state next docs/hyperpowers/plans/parallel.md --session cea11b31-...`. Its result: `status=none reason=held held=1@fixture-session,2@fixture-session waiting=none`."
+    },
+    {
+      "criterion": "The agent posted a waiting record of kind tasks, and a file under waiting/ holds kind=tasks",
+      "verdict": "pass",
+      "evidence": "Log command: `sdd-state wait docs/hyperpowers/plans/parallel.md --session cea11b31-... --kind tasks --note ...`, result `status=waiting kind=tasks`. The file home/.cache/hyperpowers/state/88d1ae.../plans/parallel-43d696ad/waiting/cea11b31-5e46-4ff6-b668-2c97e3f7f87e contains `kind=tasks`."
+    },
+    {
+      "criterion": "The agent printed the board",
+      "verdict": "pass",
+      "evidence": "Log command: `sdd-state board docs/hyperpowers/plans/parallel.md`. Its result starts `status=board sync=no-remote sessions=2 waiting=1 frontier=none` and lists `held task=1 owner=fixture-session` and `held task=2 owner=fixture-session`."
+    },
+    {
+      "criterion": "The agent handed back, saying every task is held by another session",
+      "verdict": "pass",
+      "evidence": "Final message on screen: \"Your other session (fixture-session) holds both tasks in docs/hyperpowers/plans/parallel.md, so no task is free to claim. I haven't claimed, dispatched or changed anything.\" It ended with Wait / Take over options and returned to the prompt."
+    },
+    {
+      "criterion": "No Bash command carries --takeover",
+      "verdict": "pass",
+      "evidence": "`jq -r '...select(.name==\"Bash\")|.input.command' ... | grep -c -- '--takeover'` returned 0. A raw grep found 1 matching line in the log, which comes from loaded text, not from a Bash command."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi"
+    ]
+  },
+  "duration_ms": 339578,
+  "usage": {
+    "inputTokens": 62,
+    "outputTokens": 6059,
+    "cacheCreationInputTokens": 38330,
+    "cacheReadInputTokens": 483210,
+    "turns": 28
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

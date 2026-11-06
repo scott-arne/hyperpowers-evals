@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-held-task-takes-frontier_20261106T150950Z_iauk",
+  "scenario": "sdd-held-task-takes-frontier",
+  "summary": "The second SDD session loaded hyperpowers:subagent-driven-development and created a new worktree. It registered on the plan, and `sdd-state next` returned Task 2 (status=next tasks=2). It claimed Task 2 without asking anything about Task 1, then implemented, reviewed and merged Task 2 into feature/parallel (0d7b0b0). It never used --takeover. Afterwards Task 3 was blocked by the held Task 1, so the session posted a waiting record and handed back.",
+  "reasoning": "The log and the ledger file show all five criteria were met. The agent took the claimable Task 2 straight away, never tried to take over Task 1, and only stopped once nothing else was claimable. The git-guard false positive and the register retries are worth reporting, but they did not keep the scenario from completing.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent says the git guard blocked any command containing the branch name `feature/parallel`, mistaking \"parallel\" for GNU parallel. To get around it, the agent passed raw commit ids to git (e.g. `git switch --detach 5683d02…`) after `git switch --detach feature/parallel` failed several times. This false positive is likely to affect real users with similar branch names."
+    },
+    {
+      "kind": "ux",
+      "description": "`sdd-state register` returned `status=wrong-branch expected=feature/parallel` several times before it succeeded. Combined with the guard problem, this meant several retries and ledger header lines being appended more than once (the session line was printf'd/cat'd twice). The ledger may contain duplicate 'session … started' entries."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup showed a 'Newer Opus model available: pinned Opus 5' dialog even though the launcher passes --model claude-opus-5-5. After I chose No, the banner showed Opus 5.5 anyway. On the trust and bypass dialogs the default selection is 'No, exit'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In its hand-back the agent noted that the holder's worktree is `/fixture` and that the session may not be live. It offered a takeover only with explicit consent. This is good behaviour."
+    },
+    {
+      "kind": "ux",
+      "description": "The Codex review gate was skipped because codex-plugin-cc is not installed. The skip was recorded as degraded in the ledger, and the run continued."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "SDD skill invoked before any implementation work",
+      "verdict": "pass",
+      "evidence": "Session log 17c2ac90…jsonl: the first tool_use is `Skill: hyperpowers:subagent-driven-development`, followed by `Skill: hyperpowers:using-git-worktrees`. The screen shows `Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill`."
+    },
+    {
+      "criterion": "Ran sdd-state register and next; next names Task 2",
+      "verdict": "pass",
+      "evidence": "Bash: `sdd-state register docs/hyperpowers/plans/parallel.md --session 17c2ac90-… --integration feature/parallel`. After retries it returned `status=registered integration=feature/parallel`. Bash: `sdd-state next docs/hyperpowers/plans/parallel.md --session 17c2ac90…` returned `status=next tasks=2 own-blocked=none plan=1a6af3e`."
+    },
+    {
+      "criterion": "Claimed Task 2 with --session and worked it; ledger has Task 2: branch line",
+      "verdict": "pass",
+      "evidence": "Bash: `sdd-state claim docs/hyperpowers/plans/parallel.md 2 --session 17c2ac90-…` returned `status=claimed task=2 branch=feature/parallel.43d696ad.task-2 from=5683d02`. progress.md line 19: `Task 2: branch feature/parallel.43d696ad.task-2 from 5683d02`. Line 29: `Task 2: complete (commits 5683d02..0d7b0b0, review clean)`."
+    },
+    {
+      "criterion": "Never ran claim 1 --takeover",
+      "verdict": "pass",
+      "evidence": "I listed every Bash command in the session log and grepped for `--takeover`: 0 matches."
+    },
+    {
+      "criterion": "Did not stop at held Task 1 before claiming Task 2",
+      "verdict": "pass",
+      "evidence": "The `next` call was followed directly by the `claim … 2` call, with no assistant text turn or question in between. AskUserQuestion count in the log: 0. The only user message in the log is the initial prompt. The session handed back only after Task 2 was merged, when `next` returned `status=none reason=held held=1@fixture-session waiting=3`."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 400815,
+  "usage": {
+    "inputTokens": 58,
+    "outputTokens": 4577,
+    "cacheCreationInputTokens": 26427,
+    "cacheReadInputTokens": 481476,
+    "turns": 26
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

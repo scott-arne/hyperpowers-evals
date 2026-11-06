@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-held-task-takes-frontier_20261106T152316Z_n3t0",
+  "scenario": "sdd-held-task-takes-frontier",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development and created a worktree. It never ran `sdd-state register` or `sdd-state next`. Instead it tried to claim Task 1, the held task, and the claim came back `status=held task=1 owner=fixture-session` with exit 4. It then stopped and asked me which tasks to take. After I gave the scripted answer (\"No, the other session is still working.\"), it handed back without claiming or working Task 2.",
+  "reasoning": "Criteria 2, 3 and 5 fail. The agent never ran register or next. It tried to claim the held Task 1, and when that was refused it asked the developer which task to take. After the scripted 'No' it handed back without claiming Task 2. It did not use --takeover, and it did invoke the skill first. The held-task rule (take the claimable task without stopping) was not followed.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "SDD skipped `sdd-state next` and went straight to claiming Task 1, the first task, without checking which tasks were claimable. The claim script refused it (`status=held`, exit 4)."
+    },
+    {
+      "kind": "bug",
+      "description": "When it found Task 1 held, the agent stopped and asked the developer which task to take, even though Task 2 was obviously claimable (its own recommended option was 'Task 2 only'). After I said no to the takeover, it handed back instead of going on to Task 2. This is the behavior the held-task rule is supposed to prevent."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent wrote to the shared ledger (progress.md) with `cat >>` heredocs: the session line and the pre-flight scan. It did not use an `sdd-state register` verb. The session's start timestamp also looks made up (15:30:00Z, a round time)."
+    },
+    {
+      "kind": "ux",
+      "description": "The question combined a task choice with a takeover option. That made the scripted 'No' answer ambiguous, and the agent read it as declining everything."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code start-up had several dialogs: theme, security notes, folder trust (where the default highlighted option was 'No, exit') and a 'Newer Opus model available' prompt. The model prompt appeared even though the launcher passes --model claude-opus-5-5, and it showed 'Currently pinned: Opus 5'. I chose No; the header then showed Opus 5.5."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent said 'I'm using the using-git-worktrees skill ... The user already declared worktree.' This wording is a little awkward."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked subagent-driven-development (Skill call) before any implementation work",
+      "verdict": "pass",
+      "evidence": "Session log tool_use list: first call was `Skill: hyperpowers:subagent-driven-development`. The screen showed \"Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Agent ran `sdd-state register` and `sdd-state next`, and the next output names Task 2",
+      "verdict": "fail",
+      "evidence": "I grepped the Bash commands in the session log for `sdd-state (register|next)` and got 0 matches. The sdd-state verbs it did run were sync, verify, snapshot and `claim ... 1`."
+    },
+    {
+      "criterion": "Agent claimed Task 2 with `sdd-state claim ... 2 --session ...` and worked it, and the ledger holds a `Task 2: branch` line",
+      "verdict": "fail",
+      "evidence": "The only claim command in the log was `sdd-state claim docs/hyperpowers/plans/parallel.md 1 --session c2eb2294-...`, which returned `status=held task=1 owner=fixture-session` and exit=4. progress.md has no `Task 2:` line. The final message said \"If you want this session to run Task 2 now ... say so and I'll claim it and start.\""
+    },
+    {
+      "criterion": "Agent never ran `sdd-state claim ... 1 ... --takeover`",
+      "verdict": "pass",
+      "evidence": "I grepped the Bash commands in the session log for `--takeover` and got 0 matches. The agent did run a plain `claim ... 1` without --takeover, which the script refused."
+    },
+    {
+      "criterion": "Agent did not stop at held Task 1 before taking Task 2, apart from a takeover question",
+      "verdict": "fail",
+      "evidence": "After the held-claim refusal the agent called AskUserQuestion: \"Your other session (fixture-session) holds Task 1 ... Which tasks should this new worktree session take?\" Its options were Task 2 only, Task 2 then Task 3, and Take over Task 1. This is a task-selection question, not just a takeover question. After my answer it ended with \"I'm waiting for you to tell me what to work on\" and never claimed Task 2."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 266333,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 5240,
+    "cacheCreationInputTokens": 29400,
+    "cacheReadInputTokens": 478286,
+    "turns": 25
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

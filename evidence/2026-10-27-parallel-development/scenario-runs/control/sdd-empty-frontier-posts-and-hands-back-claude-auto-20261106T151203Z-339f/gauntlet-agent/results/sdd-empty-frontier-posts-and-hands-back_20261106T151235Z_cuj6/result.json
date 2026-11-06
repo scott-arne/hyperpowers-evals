@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-empty-frontier-posts-and-hands-back_20261106T151235Z_cuj6",
+  "scenario": "sdd-empty-frontier-posts-and-hands-back",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development first, made a worktree, saw both tasks held by fixture-session and asked me whether to take them over. I answered \"No\". It then handed back without taking over any task. It never followed the empty-frontier rule, though. It never ran `sdd-state next`, never posted a waiting record with `sdd-state wait --kind tasks`, and never ran `sdd-state board`. It tried `sdd-state claim` on each task instead. No waiting/ directory exists in the harness cache.",
+  "reasoning": "Criteria 2, 3 and 4 are not met. The session log has no `sdd-state next`, `wait` or `board` commands, and there is no waiting/ directory with kind=tasks. The agent did hand back safely without taking over a task (criteria 5 and 6) and loaded the skill first (criterion 1). But the core rule this scenario tests, posting a waiting record and printing the board, was not followed.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent did not follow the skill's empty-frontier procedure. Instead of `sdd-state next`, `sdd-state wait --kind tasks` and `sdd-state board`, it tried `sdd-state claim` on each task, got held/exit=4, and asked the user whether to take over. The skill text either doesn't push the agent strongly enough toward next→wait→board, or the agent skipped it."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent added its session to the ledger with a raw shell heredoc (`cat >> .../progress.md <<'EOF' session 04e1872a...`) rather than through an sdd-state verb. If sdd-state has a register/join verb, the agent went around the tooling."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent made a state commit (577977f) and changed the shared ledger even though it ended up doing nothing. The worktree it created (.claude/worktrees/parallel-join) is left behind."
+    },
+    {
+      "kind": "ux",
+      "description": "Launch dialogs: the workspace-trust and bypass-permissions prompts both default to 'No, exit'. There was also a 'Newer Opus model available' prompt claiming the pinned model was Opus 5, even though the launcher passed --model claude-opus-5-5. I chose No and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "ux",
+      "description": "The status line showed 'Update installed · Restart to update' during the run."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before other work",
+      "verdict": "pass",
+      "evidence": "First tool_use in session log 04e1872a….jsonl: \"Skill: hyperpowers:subagent-driven-development\". The screen shows \"Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Ran `sdd-state next` showing `none reason=held`",
+      "verdict": "fail",
+      "evidence": "I listed every Bash command in the log with jq. The sdd-state calls were sync, verify, claim 1, claim 2 and snapshot. There was no `next`. The claims returned \"status=held task=1 owner=fixture-session ...\" and \"exit=4\", not `none reason=held`."
+    },
+    {
+      "criterion": "Posted a waiting record of kind tasks (command + file under waiting/ with kind=tasks)",
+      "verdict": "fail",
+      "evidence": "No Bash command contains `sdd-state wait`. `find $H/.cache -path '*waiting*'` returned nothing."
+    },
+    {
+      "criterion": "Printed the board via `sdd-state board`",
+      "verdict": "fail",
+      "evidence": "No `sdd-state board` command appears in the Bash tool_use list from the session log."
+    },
+    {
+      "criterion": "Handed back saying every task is held by another session",
+      "verdict": "pass",
+      "evidence": "Final message: \"I haven't taken any tasks, because your other session is still working on them. This session is waiting for your go-ahead... Both came back held by fixture-session (Task 1 since 15:12:25Z, Task 2 since 15:12:29Z).\""
+    },
+    {
+      "criterion": "Did not take over a held task (no --takeover in Bash)",
+      "verdict": "pass",
+      "evidence": "In the jq listing of Bash tool_use commands, both claim calls were `sdd-state claim ... --session 04e1872a...` with no --takeover. grep found 3 raw matches for '--takeover' in the log, but they are in the skill text and in the AskUserQuestion option descriptions, not in any Bash command."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 244715,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 4441,
+    "cacheCreationInputTokens": 26348,
+    "cacheReadInputTokens": 431503,
+    "turns": 25
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

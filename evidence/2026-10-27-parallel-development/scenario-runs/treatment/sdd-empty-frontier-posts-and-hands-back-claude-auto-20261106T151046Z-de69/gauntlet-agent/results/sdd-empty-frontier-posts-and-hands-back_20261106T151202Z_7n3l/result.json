@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-empty-frontier-posts-and-hands-back_20261106T151202Z_7n3l",
+  "scenario": "sdd-empty-frontier-posts-and-hands-back",
+  "summary": "I joined the plan as a second session with hyperpowers:subagent-driven-development from a new worktree (.claude/worktrees/parallel-join). The agent registered the session and ran `sdd-state next`, which returned `status=none reason=held`. It then posted a waiting record of kind tasks, printed the board, and handed back without taking over any task. It never asked me a question, so none of the scripted answers were needed. All six criteria pass.",
+  "reasoning": "The session log and the files on disk confirm every criterion. The skill was loaded first. `next` returned `none reason=held`. A waiting record with kind=tasks exists under waiting/. The board was printed. The final message hands back and says both tasks are held by fixture-session. No Bash command carried --takeover. The git refusals in the worktree sandbox are worth an engineer's attention, but they did not stop this scenario.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The worktree sandbox refused several git commands. One was refused as a runtime-computed command name it couldn't verify. Others were refused with \"feeds git its arguments from stdin at runtime (xargs/parallel)\", apparently because they contained the word 'parallel' (from feature/parallel). For example, `git switch --detach feature/parallel` was refused, and the agent fell back to detaching by commit SHA. Its own refusal guidance says to run git with literal arguments, which is exactly what that command was. This will block later steps such as switching task branches and merging on any plan whose branch name contains 'parallel'."
+    },
+    {
+      "kind": "bug",
+      "description": "The first `sdd-state register` returned `status=wrong-branch expected=feature/parallel repo=plan exit=9`, because the worktree was created on branch worktree-parallel-join. It succeeded only after the agent detached HEAD at the feature/parallel SHA. Joining with the EnterWorktree tool therefore needs a manual detach step first."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent added its session line by appending directly to the ledger's progress.md with `cat >> .../progress.md <<EOF`, not through an sdd-state verb. If the skill tells the agent to do this, it is fragile. If the skill doesn't, the agent went outside the tooling."
+    },
+    {
+      "kind": "ux",
+      "description": "During onboarding, Claude Code offered to update from 'Currently pinned: Opus 5' to Opus 5.5 even though the launcher passes --model claude-opus-5-5. I chose No. The banner then showed 'Opus 5.5 · Google Vertex AI'. In both the folder-trust and bypass-permissions dialogs, 'No, exit' is preselected."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In the board output, the note field is URL-encoded (`note=held=1@fixture-session,2@fixture-session%20waiting=none`), which makes it slightly harder to read."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before any other work",
+      "verdict": "pass",
+      "evidence": "The first tool_use in session log 854ab918-....jsonl is {\"name\":\"Skill\",\"input\":\"hyperpowers:subagent-driven-development\"}. The using-git-worktrees skill and the Bash calls come after it."
+    },
+    {
+      "criterion": "Ran `sdd-state next` and output shows `none reason=held`",
+      "verdict": "pass",
+      "evidence": "Bash: `sdd-state next docs/hyperpowers/plans/parallel.md --session 854ab918-...`. Its tool result was `status=none reason=held held=1@fixture-session,2@fixture-session waiting=none`."
+    },
+    {
+      "criterion": "Posted a waiting record of kind tasks; a file under waiting/ holds kind=tasks",
+      "verdict": "pass",
+      "evidence": "Bash: `sdd-state wait docs/hyperpowers/plans/parallel.md --session 854ab918-... --kind tasks --note ...`, which returned `status=waiting kind=tasks`. The file home/.cache/hyperpowers/state/c3f855.../plans/parallel-43d696ad/waiting/854ab918-6090-4075-b460-09c0a2f8501a contains `kind=tasks`."
+    },
+    {
+      "criterion": "Printed the board via `sdd-state board`",
+      "verdict": "pass",
+      "evidence": "Bash: `sdd-state board docs/hyperpowers/plans/parallel.md` returned `status=board sync=no-remote sessions=2 waiting=1 frontier=none`, followed by `held task=1 owner=fixture-session` and `held task=2 owner=fixture-session`. The board was also shown in the final message."
+    },
+    {
+      "criterion": "Handed back saying every task is held by another session",
+      "verdict": "pass",
+      "evidence": "The final message on screen says: \"Your other session (fixture-session) holds both tasks in docs/hyperpowers/plans/parallel.md, so I've handed back without starting any work.\""
+    },
+    {
+      "criterion": "Did not take over a held task (no --takeover in Bash)",
+      "verdict": "pass",
+      "evidence": "I ran `jq ... select(.name==\"Bash\") | .input.command | grep -c -- '--takeover'` on the session log and it returned 0. A plain grep of the whole log found `--takeover` only once, on line 31, which is the user-type entry holding the loaded skill text, not a command."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 196572,
+  "usage": {
+    "inputTokens": 54,
+    "outputTokens": 4797,
+    "cacheCreationInputTokens": 24689,
+    "cacheReadInputTokens": 426609,
+    "turns": 24
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

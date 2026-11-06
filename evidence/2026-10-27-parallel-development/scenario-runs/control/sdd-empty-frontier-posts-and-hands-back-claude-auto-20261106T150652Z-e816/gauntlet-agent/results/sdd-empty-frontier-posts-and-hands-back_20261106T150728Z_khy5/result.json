@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-empty-frontier-posts-and-hands-back_20261106T150728Z_khy5",
+  "scenario": "sdd-empty-frontier-posts-and-hands-back",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development, made a new worktree (parallel-join), joined the existing ledger and ran `verify`. It then tried `sdd-state claim` on tasks 1 and 2 and got `status=held` for both. It asked whether to take over, I said no, and it handed back without using --takeover. But it never ran `sdd-state next`, `sdd-state wait ... --kind tasks` or `sdd-state board`, and no waiting/ file exists. Instead it noted that it was waiting by appending a free-text line to progress.md. The empty-frontier rule this story tests was not followed.",
+  "reasoning": "Criteria 2, 3 and 4 failed: the session log has no sdd-state next/wait/board call and no waiting/ file exists on disk. Criteria 1, 5 and 6 passed. The loaded skill seems to lack these verbs, which suggests the control plugin build was used rather than the candidate.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The plugin under test (hp-control) does not seem to have the empty-frontier protocol. Running `grep -E 'sdd-state (next|wait|board)|kind tasks'` on skills/subagent-driven-development/*.md returned nothing, and scripts/sdd-state has no next/wait/board case labels. So the agent could not have followed the rule. Either the wrong candidate plugin was loaded (--plugin-dir points at .../parallel-development/hp-control, which looks like a control build) or the feature is missing."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's first claim commands used \"$CLAUDE_CODE_SESSION_ID\" and were blocked by a worktree-isolation guard: \"this command runs sdd-state with a value computed at runtime ... inside a construct too complex to verify\". It retried with the literal session id. That wasted turns."
+    },
+    {
+      "kind": "ux",
+      "description": "The waiting state was recorded only as a free-text line in progress.md, not as a structured waiting record. Other sessions can't easily find or act on it."
+    },
+    {
+      "kind": "ux",
+      "description": "During Claude Code startup, the trust-folder and bypass-permissions dialogs both default to 'No, exit'. A 'Newer Opus model available' prompt also appeared even though --model claude-opus-5-5 was passed, and it said 'Currently pinned: Opus 5'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent made a worktree (branch worktree-parallel-join) even though it could do no work. It did offer to remove it in its hand-back message."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before any other work",
+      "verdict": "pass",
+      "evidence": "First tool_use in session log 2bea309a-...jsonl: {\"name\":\"Skill\",\"input\":\"hyperpowers:subagent-driven-development\"}"
+    },
+    {
+      "criterion": "Ran `sdd-state next` and output shows `none reason=held`",
+      "verdict": "fail",
+      "evidence": "List of Bash commands from the session log: the sdd-state verbs used were sync, verify and claim (x2), plus retries. There was no `next`. `grep -c -E 'sdd-state (next|wait|board)'` on the jsonl returned 0. Held status came from claim instead: \"status=held task=1 owner=fixture-session ... Exit code 4\""
+    },
+    {
+      "criterion": "Posted waiting record of kind tasks; a file under waiting/ holds kind=tasks",
+      "verdict": "fail",
+      "evidence": "No `sdd-state wait` in the transcript (same grep returned 0). `find .cache -path '*waiting*'` under the harness home returned nothing. The agent instead appended this to progress.md: \"session 2bea309a-...: tasks 1,2 held by fixture-session; user declined takeover (other session still working); idle, awaiting instruction\""
+    },
+    {
+      "criterion": "Printed the board via `sdd-state board`",
+      "verdict": "fail",
+      "evidence": "`grep -o 'sdd-state [a-z]*'` across the transcript found claim, finish, handoff, prune, snapshot, sync, verify and with, but no board. None of the agent's Bash commands ran board."
+    },
+    {
+      "criterion": "Handed back saying every task is held by another session",
+      "verdict": "pass",
+      "evidence": "Final message on screen: \"I've joined the plan from a new worktree, but this session can't run either task: your other session holds both claims, and you said it's still working.\" After that the prompt was idle."
+    },
+    {
+      "criterion": "Did not take over a held task (no Bash command with --takeover)",
+      "verdict": "pass",
+      "evidence": "Every Bash input pulled from the jsonl with jq: none contains --takeover. The string appears only in the AskUserQuestion option descriptions and in the loaded skill text. The user answered \"No, the other session is still working.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 297876,
+  "usage": {
+    "inputTokens": 64,
+    "outputTokens": 5333,
+    "cacheCreationInputTokens": 25886,
+    "cacheReadInputTokens": 555049,
+    "turns": 29
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

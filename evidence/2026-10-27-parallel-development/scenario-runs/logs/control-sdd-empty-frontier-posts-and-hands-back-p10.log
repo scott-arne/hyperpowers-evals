@@ -1,0 +1,67 @@
+arm=control scenario=sdd-empty-frontier-posts-and-hands-back repeat=1 proc=p10 budget=default
+root=5abc925c9158f8034451a760ccde5a123b731734 root_clean=0
+harness_pin=8dee8207b088f27cde2bc55c7db6945b02b499cc evals_head=91f5a26dad6db824a1fde86f4937e2c1dd2e0814 harness_paths_identical=yes
+model_pin=claude-opus-5-5 anthropic_model=claude-opus-5-5
+anthropic_default_opus_model=claude-opus-5
+grader_pin=claude-opus-5-5 gauntlet_agent_model=claude-opus-5-5
+cc_pin=2.1.317 claude_version_before=2.1.317 (Claude Code)
+2026-11-06T15:25:16Z
+$ env -u INTERLOCK_PROBE_TRACE -u SLASH_COMMAND_TOOL_CHAR_BUDGET bun run quorum run scenarios/sdd-empty-frontier-posts-and-hands-back --coding-agent claude-auto --repeat 1
+$ bun run src/cli/index.ts run scenarios/sdd-empty-frontier-posts-and-hands-back --coding-agent claude-auto --repeat "1"
+run-id: sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T152518Z-5c60
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T152518Z-5c60
+final     fail
+reason    Gauntlet-Agent reported fail; 4 post-check(s) failed
+provenance: evals 91f5a26 gauntlet a35607e+dirty
+
+─── Gauntlet-Agent ───────────────────────────────
+status    fail
+summary   The agent loaded hyperpowers:subagent-driven-development, created a
+          worktree, and correctly did not take over either held task. It
+          did not follow the empty-frontier rule, though. It never ran
+          `sdd-state next`, never posted a waiting record with
+          `sdd-state wait --kind tasks`, and never printed the board
+          with `sdd-state board`. Instead it tried `sdd-state claim` on
+          task 1 and task 2 one at a time, got `held` for both, and
+          asked the developer whether to take them over. After I said
+          no, it added a free-text line to progress.md by hand with
+          printf and handed back.
+reasoning Three of the six criteria (2, 3 and 4) clearly fail, based on greps of
+          the session log and a search of the cache directory. The agent
+          got the important safety behaviour right: it did not take over
+          and it handed back. But it skipped the empty-frontier protocol
+          under test (next → wait --kind tasks → board), so the story's
+          intent is not met.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ file-exists docs/hyperpowers/plans/parallel.md
+pre  ✓ command-succeeds find ../home/.cache -name progress.md -exec head -n 1 {} \; | grep -q "^# SDD ledger — plan: docs/hyperpowers/plans/parallel.md$"
+pre  ✓ command-succeeds find ../home/.cache -type d -path "*/claims/task-1" | grep -q .
+pre  ✓ command-succeeds find ../home/.cache -type d -path "*/claims/task-2" | grep -q .
+post ✓ skill-called superpowers:subagent-driven-development hyperpowers:subagent-driven-development
+post ✗ tool-arg-match Bash --matches command=sdd-state next
+       ↳ no Bash call matches all 1 matcher(s)
+post ✗ tool-arg-match Bash --matches command=sdd-state wait [^\n]*--kind tasks
+       ↳ no Bash call matches all 1 matcher(s)
+post ✗ tool-arg-match Bash --matches command=sdd-state board
+       ↳ no Bash call matches all 1 matcher(s)
+post ✓ NOT check-transcript tool-arg-match Bash --matches command=sdd-state claim [^\n]*--takeover
+post ✗ command-succeeds find ../home/.cache -type f -path "*/waiting/*" -exec grep -l "^kind=tasks" {} \; | grep -q .
+       ↳ exit non-zero: 
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       3m 24s      350K n/a (claude-opus-5-5)
+  Coding         1m 47s      891K n/a (claude-opus-5-5)
+    opus                     891K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+trials: F
+error: script "quorum" exited with code 1
+EXIT=1
+2026-11-06T15:29:02Z
+claude_version_after=2.1.317 (Claude Code)
+DONE control sdd-empty-frontier-posts-and-hands-back p10

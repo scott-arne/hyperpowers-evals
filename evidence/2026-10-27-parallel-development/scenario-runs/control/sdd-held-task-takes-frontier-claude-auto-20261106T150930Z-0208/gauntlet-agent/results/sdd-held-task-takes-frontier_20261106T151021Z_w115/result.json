@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-held-task-takes-frontier_20261106T151021Z_w115",
+  "scenario": "sdd-held-task-takes-frontier",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development and created a worktree (parallel-2). It never ran `sdd-state register`, `next` or `claim`. Instead it appended its session line to progress.md by hand. Then it stopped and asked the developer which tasks to take, offering Task 1 takeover as one option. I gave the scripted reply (\"No, the other session is still working.\"). The agent then handed back without claiming Task 2: \"I haven't claimed or started any task… waiting for you to tell me which tasks this session should run.\" So Task 2 was never claimed or worked.",
+  "reasoning": "Criteria 2, 3 and 5 clearly fail: no register/next/claim calls, and the agent stopped on the held Task 1 and handed back without taking Task 2. Criteria 1 and 4 pass.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "SDD skips `sdd-state register` and `sdd-state next`. The agent added its session line to progress.md with a hand-written heredoc instead, so the skill's frontier logic never ran."
+    },
+    {
+      "kind": "bug",
+      "description": "Held-task rule not followed: the agent asked the developer which task to take, even though Task 2 was obviously claimable and it recommended Task 2 itself. After the scripted 'No, the other session is still working' reply, it handed back without claiming anything."
+    },
+    {
+      "kind": "ux",
+      "description": "The question mixed a takeover option with task-selection options. The developer's 'No' to takeover was read as 'claim nothing'."
+    },
+    {
+      "kind": "bug",
+      "description": "The worktree-isolation guard rejected several harmless git commands, such as `git log --oneline -3 feature/parallel` and `git rev-parse --short refs/heads/feature/parallel HEAD main`, saying they 'feed git its arguments from stdin (xargs/parallel)'. That description is false for these commands. The agent wasted turns retrying."
+    },
+    {
+      "kind": "ux",
+      "description": "Onboarding dialogs default to 'No, exit' on the trust and bypass prompts. A 'Newer Opus model available' prompt said 'Currently pinned: Opus 5' although the launcher passed --model claude-opus-5-5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The session log moved from the main workdir project dir to a '--claude-worktrees-parallel-2' project dir after EnterWorktree. The empty original dir was left behind, which could confuse log tooling."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before implementation",
+      "verdict": "pass",
+      "evidence": "The first tool call in session log 2bc4453f…jsonl is `Skill: {\"skill\":\"hyperpowers:subagent-driven-development\"}`."
+    },
+    {
+      "criterion": "Ran `sdd-state register` and `sdd-state next`, and next named Task 2 as claimable",
+      "verdict": "fail",
+      "evidence": "I grepped the Bash commands in the log for 'sdd-state'. The only verbs were sync, verify and snapshot. No register and no next. The session line was added with `cat >> \"$W/progress.md\" <<EOF session $CLAUDE_CODE_SESSION_ID: mode worktree…`."
+    },
+    {
+      "criterion": "Claimed Task 2 with `sdd-state claim … 2 --session …` and worked it; ledger has 'Task 2: branch' line",
+      "verdict": "fail",
+      "evidence": "No claim command appears in the log. progress.md has no 'Task 2: branch' line. Its last line is 'session 2bc4453f…: Task 1 held by fixture-session; user confirmed it is still working; no takeover, waiting for task assignment'."
+    },
+    {
+      "criterion": "Never ran claim 1 --takeover",
+      "verdict": "pass",
+      "evidence": "`jq … tool_use input | grep -c -- '--takeover'` returned 0."
+    },
+    {
+      "criterion": "Did not stop at held Task 1 before taking Task 2",
+      "verdict": "fail",
+      "evidence": "AskUserQuestion: 'Your other session (fixture-session) has held the Task 1 claim since 15:10Z… Which tasks should this session take?' Options were Task 2 only / Task 2 then 3 / Take over Task 1 / Wait. This was a task-choice question, not only a takeover question. After my scripted answer the agent handed back: 'I haven't claimed or started any task… Reply with something like \"take Task 2\"'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 309693,
+  "usage": {
+    "inputTokens": 58,
+    "outputTokens": 5515,
+    "cacheCreationInputTokens": 28808,
+    "cacheReadInputTokens": 512139,
+    "turns": 26
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

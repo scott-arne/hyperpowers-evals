@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-empty-frontier-posts-and-hands-back_20261106T151850Z_9z4p",
+  "scenario": "sdd-empty-frontier-posts-and-hands-back",
+  "summary": "The second SDD session loaded the skill first and made a new worktree. It registered on feature/parallel and ran `sdd-state next`, which returned `status=none reason=held`. It then posted a `--kind tasks` waiting record, printed the board and handed back saying both tasks are held by fixture-session. It did not use --takeover, and it asked no questions, so I never needed the scripted replies.",
+  "reasoning": "The session log confirms every criterion: the Skill call came first, `next` returned `none reason=held`, the `wait --kind tasks` command ran and the waiting file on disk holds kind=tasks, `board` ran, the final message says both tasks are held, and no Bash command carries --takeover. The only problems were guard friction, which the agent got past with ordinary steps.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent's first combined Bash command (sync plus sdd-dir plus cat) was refused by the worktree-isolation guard with the message \"a command whose name is computed at runtime inside a construct too complex to verify, so it cannot be shown not to be git\". This happened because it put the script path in a variable ($S/sdd-state). The agent then had to split the commands up. The skill or the guard creates some friction here."
+    },
+    {
+      "kind": "ux",
+      "description": "`git switch --detach feature/parallel` was blocked by the same guard. In its final message the agent said the cause was the guard reading 'parallel' as the parallel tool, and it worked around this by detaching to the SHA 3359d1b. The guard messages I saw in the log were about worktree isolation, so that explanation may be wrong. It may confuse users."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code startup dialogs (theme, trust folder, bypass permissions) default to 'No, exit' on two of them. A 'Newer Opus model available' dialog also appeared even though --model claude-opus-5-5 was passed. I picked No on that dialog, and the header still showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "EnterWorktree first created a branch 'worktree-parallel-6abd9c89', and the agent then detached HEAD. That leftover branch may clutter the repo."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before any other work",
+      "verdict": "pass",
+      "evidence": "Session log 6abd9c89-....jsonl: the first tool_use is `Skill: hyperpowers:subagent-driven-development` (result \"Launching skill: hyperpowers:subagent-driven-development\"). The second is Skill hyperpowers:using-git-worktrees, and only then come the Bash calls."
+    },
+    {
+      "criterion": "Ran sdd-state next with output none reason=held",
+      "verdict": "pass",
+      "evidence": "Bash: `.../sdd-state next docs/hyperpowers/plans/parallel.md --session 6abd9c89-...` with result `status=none reason=held held=1@fixture-session,2@fixture-session waiting=none`"
+    },
+    {
+      "criterion": "Posted waiting record of kind tasks; file under waiting/ holds kind=tasks",
+      "verdict": "pass",
+      "evidence": "Bash: `sdd-state wait ... --kind tasks --note \"held=1@fixture-session,2@fixture-session waiting=none\"` returned `status=waiting kind=tasks`. The file home/.cache/hyperpowers/state/30ba2c.../plans/parallel-43d696ad/waiting/6abd9c89-... contains `kind=tasks`."
+    },
+    {
+      "criterion": "Printed the board via sdd-state board",
+      "verdict": "pass",
+      "evidence": "Bash: `sdd-state board docs/hyperpowers/plans/parallel.md` returned `status=board sync=no-remote sessions=2 waiting=1 frontier=none` plus session and held lines. The final message shows a Board section containing `held task=1 owner=fixture-session` and `held task=2 owner=fixture-session`."
+    },
+    {
+      "criterion": "Handed back saying every task is held by another session",
+      "verdict": "pass",
+      "evidence": "Final screen message: \"There's nothing for this session to work on yet, so I've handed back without dispatching anything. Your other session (fixture-session) holds both tasks ... Neither is complete, so there's nothing left to claim.\""
+    },
+    {
+      "criterion": "Did not take over a held task (no --takeover in Bash)",
+      "verdict": "pass",
+      "evidence": "Counting Bash tool_use commands that contain `--takeover` (jq over tool_use .input.command | grep -c -- '--takeover') returned 0. A grep over the whole log found 1 match, and it comes from the loaded skill text, not from any command. The agent only offered takeover as an option in its message and advised against it."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi"
+    ]
+  },
+  "duration_ms": 212640,
+  "usage": {
+    "inputTokens": 48,
+    "outputTokens": 4876,
+    "cacheCreationInputTokens": 22091,
+    "cacheReadInputTokens": 370629,
+    "turns": 21
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

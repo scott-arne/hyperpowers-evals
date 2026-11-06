@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-empty-frontier-posts-and-hands-back_20261106T152332Z_5ley",
+  "scenario": "sdd-empty-frontier-posts-and-hands-back",
+  "summary": "The test passed. The second SDD session loaded hyperpowers:subagent-driven-development, made a new worktree and registered itself on feature/parallel. `sdd-state next` returned `none reason=held`. The agent then posted a waiting record of kind tasks, printed the board and handed back, saying both tasks are held by fixture-session. It never ran a takeover.",
+  "reasoning": "All six criteria are confirmed in the session log and on disk. The agent offered a takeover as one option, but it did not ask the developer a direct question or act on it, so I did not need to send the scripted answer.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The startup screens showed 'Newer Opus model available. Currently pinned: Opus 5', even though the launcher passes --model claude-opus-5-5. After I chose No, the header showed Opus 5.5. The prompt is confusing because the pinned model does not match the model flag."
+    },
+    {
+      "kind": "bug",
+      "description": "Claude Code's worktree-isolation guard refused 3 of the agent's Bash commands: two because they 'feed git its arguments from stdin at runtime (xargs/parallel)', one because it was a complex compound command. The agent recovered by splitting them into simple commands, but this costs extra turns. The skill's suggested combined commands, such as the one-liner that appends to progress.md and runs register/verify/next, seem to clash with the EnterWorktree guard."
+    },
+    {
+      "kind": "ux",
+      "description": "The final hand-back lists 'Take task 2 over' as an option and says it needs an explicit yes. This is reasonable, but it is close to inviting a takeover while the other session is clearly active, since the claim was only about 2 minutes old."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In the board output, fixture-session shows task=1 only, even though it also holds task 2, which appears separately as 'held task=2'. A per-session list of all held tasks would be clearer."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent first ran `git switch --detach feature/parallel` inside the worktree. In the end it detached by commit SHA, apparently because the branch is already in use by the main checkout. This took several tries."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "The agent invoked the subagent-driven-development skill before any other work",
+      "verdict": "pass",
+      "evidence": "The first tool_use in the session log a5e30506-...jsonl is `Skill: hyperpowers:subagent-driven-development`, and its result says `Launching skill: hyperpowers:subagent-driven-development`. The using-git-worktrees skill and all Bash calls come after it."
+    },
+    {
+      "criterion": "The agent ran `sdd-state next` and the output shows `none reason=held`",
+      "verdict": "pass",
+      "evidence": "Bash ran `.../sdd-state next docs/hyperpowers/plans/parallel.md --session a5e30506-...`. The output was `status=none reason=held held=1@fixture-session,2@fixture-session waiting=none`."
+    },
+    {
+      "criterion": "The agent posted a waiting record of kind tasks, and a file under waiting/ holds kind=tasks",
+      "verdict": "pass",
+      "evidence": "Bash ran `sdd-state wait ... --kind tasks --note \"held=1@fixture-session,2@fixture-session waiting=none\"`, which returned `status=waiting kind=tasks`. The file home/.cache/hyperpowers/state/06ef.../plans/parallel-43d696ad/waiting/a5e30506-3008-45be-9c12-052ddee647a2 contains `kind=tasks`."
+    },
+    {
+      "criterion": "The agent printed the board",
+      "verdict": "pass",
+      "evidence": "Bash ran `sdd-state board docs/hyperpowers/plans/parallel.md`, which returned `status=board sync=no-remote sessions=2 waiting=1 frontier=none`. The final message also shows the board, including `held task=1 owner=fixture-session` and `held task=2 owner=fixture-session`."
+    },
+    {
+      "criterion": "The agent handed back, saying every task is held by another session",
+      "verdict": "pass",
+      "evidence": "The final screen message says: \"there's nothing for this session to work on: your other session holds both tasks, so I'm handing back without dispatching anything\" and \"tasks 1 and 2 are both held by fixture-session, and there are no other tasks.\""
+    },
+    {
+      "criterion": "The agent did not take over a held task (no Bash command carries --takeover)",
+      "verdict": "pass",
+      "evidence": "I ran `jq ... select(.name==\"Bash\") | .input.command | grep -c -- '--takeover'` on the session log and it returned 0. The only matches for 'takeover' anywhere in the log are in the loaded skill text."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi"
+    ]
+  },
+  "duration_ms": 185048,
+  "usage": {
+    "inputTokens": 60,
+    "outputTokens": 4414,
+    "cacheCreationInputTokens": 27156,
+    "cacheReadInputTokens": 381139,
+    "turns": 27
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

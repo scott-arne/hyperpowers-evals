@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-empty-frontier-posts-and-hands-back_20261106T150448Z_g3j1",
+  "scenario": "sdd-empty-frontier-posts-and-hands-back",
+  "summary": "I sent the scripted prompt once and needed no follow-ups. The agent loaded hyperpowers:subagent-driven-development, created a new worktree and registered its session on the plan. `sdd-state next` returned `status=none reason=held`, so it posted a waiting record with `--kind tasks`, printed the board and handed back without taking over any task. All six criteria pass.",
+  "reasoning": "Every acceptance criterion is backed by the session log and the waiting file on disk. The agent applied the empty-frontier rule correctly: it posted a waiting record of kind tasks, printed the board, handed back, and did not run any --takeover command. Separately, the git guard's false positive on 'parallel' and the hand-written ledger line with a made-up timestamp should be looked at, but neither blocked the scenario.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The worktree-isolation git guard misreads the literal word 'parallel' in a branch name as GNU parallel. It refused `git switch --detach feature/parallel` with \"feeds git its arguments from stdin at runtime (xargs/parallel)\". The agent got around it by detaching at the raw commit id 3a1a33a. The agent itself warned this will happen again at merge time when it has to check out feature/parallel by name."
+    },
+    {
+      "kind": "bug",
+      "description": "The first `sdd-state register` returned `status=wrong-branch expected=feature/parallel repo=plan exit=9`, because EnterWorktree had put the worktree on branch worktree-parallel-48ce6a84. Registration only succeeded after the agent detached at the integration commit. The worktree tool and the SDD state expectations don't line up out of the box."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent appended a session line to the progress.md ledger with a hand-written heredoc instead of a script verb. The line carries a made-up timestamp, 'started 2026-11-06T15:10:00Z', which was a few minutes in the future when it was written (the waiting record shows 15:06:49Z)."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's first Bash command combined many steps (`$(...)`, `ls`, `echo`) and the guard refused it as \"too complex to verify\". The agent had to split it into separate commands. This wastes turns."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup needed several dialogs: theme, security notes, folder trust (the default is 'No, exit'), a 'Newer Opus model available' prompt even though the model was passed as claude-opus-5-5, and the bypass-permissions warning (also defaulting to 'No, exit')."
+    },
+    {
+      "kind": "ux",
+      "description": "On the board, the waiting note is URL-encoded ('%20') in one place and shown plainly in the waiting file. It reads oddly."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "The agent invoked the subagent-driven-development skill before any other work",
+      "verdict": "pass",
+      "evidence": "The first tool_use in session log 48ce6a84-...jsonl is Skill input \"hyperpowers:subagent-driven-development\". The next is Skill \"hyperpowers:using-git-worktrees\", then the Bash calls."
+    },
+    {
+      "criterion": "The agent ran `sdd-state next` and the output shows `none reason=held`",
+      "verdict": "pass",
+      "evidence": "Command: `sdd-state next docs/hyperpowers/plans/parallel.md --session 48ce6a84-...`. Tool result: `status=none reason=held held=1@fixture-session,2@fixture-session waiting=none`."
+    },
+    {
+      "criterion": "The agent posted a waiting record of kind tasks, and a file under waiting/ holds kind=tasks",
+      "verdict": "pass",
+      "evidence": "Command: `sdd-state wait ... --kind tasks --note \"held=1@fixture-session,2@fixture-session waiting=none\"`, which returned `status=waiting kind=tasks`. The file home/.cache/hyperpowers/state/36fc7b.../plans/parallel-43d696ad/waiting/48ce6a84-... contains line 3 `kind=tasks`."
+    },
+    {
+      "criterion": "The agent printed the board",
+      "verdict": "pass",
+      "evidence": "Command: `sdd-state board docs/hyperpowers/plans/parallel.md`. Output starts `status=board sync=no-remote sessions=2 waiting=1 frontier=none`. The final message on screen shows the board, including `held task=1 owner=fixture-session` and `held task=2 owner=fixture-session`."
+    },
+    {
+      "criterion": "The agent handed back, saying every task is held by another session",
+      "verdict": "pass",
+      "evidence": "Final screen message: \"There's nothing for this session to do yet, so I'm handing back. Your other session (fixture-session) has claimed both tasks in docs/hyperpowers/plans/parallel.md...\". It offered the options Wait or Take a task over (\"only if you name the task and say yes\")."
+    },
+    {
+      "criterion": "The agent did not take over a held task (no --takeover in any Bash command)",
+      "verdict": "pass",
+      "evidence": "I extracted every Bash command from the log with jq and grepped for '--takeover'. The count was 0. The only 'takeover' matches in the log are in the skill text the agent loaded."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi"
+    ]
+  },
+  "duration_ms": 211169,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 4536,
+    "cacheCreationInputTokens": 27210,
+    "cacheReadInputTokens": 372769,
+    "turns": 22
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

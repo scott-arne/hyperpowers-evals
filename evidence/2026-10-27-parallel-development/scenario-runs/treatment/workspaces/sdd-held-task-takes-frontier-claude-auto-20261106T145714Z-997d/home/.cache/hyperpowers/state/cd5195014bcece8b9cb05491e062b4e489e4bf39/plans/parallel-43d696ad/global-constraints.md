@@ -1,0 +1,1 @@
+- **Merge-expected files:** `CHANGELOG.md`

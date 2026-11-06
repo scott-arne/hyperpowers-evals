@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-empty-frontier-posts-and-hands-back_20261106T151708Z_m6xc",
+  "scenario": "sdd-empty-frontier-posts-and-hands-back",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development, created a worktree, and tried `sdd-state claim` on tasks 1 and 2 one at a time. Both came back held by fixture-session. It then asked me whether to take over, and I answered no. It never ran `sdd-state next`, `sdd-state wait --kind tasks` or `sdd-state board`. Instead it appended a free-text line to progress.md by hand and handed back. No waiting/ record exists on disk. It never took over a task.",
+  "reasoning": "Criteria 2, 3 and 4 clearly fail, based on the session log's full list of Bash commands and a filesystem search that found no waiting/ directory. The agent handed back safely and never took over, but it did not use the expected sdd-state verbs (next, wait --kind tasks, board).",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The empty-frontier rule was not followed. The agent never called `sdd-state next`, `sdd-state wait --kind tasks` or `sdd-state board`. It worked out that everything was held by trying `claim` on each task one at a time, then wrote a free-text waiting note into progress.md by hand with `cat >>` instead of creating a structured waiting record."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent asked the user whether to take over a held task (AskUserQuestion with 'Take over Task 1/2/both' options). The scenario expects it to post a waiting record and hand back without offering a takeover."
+    },
+    {
+      "kind": "bug",
+      "description": "The session's scripts resolved to the plugin path /Users/johnss51/.cache/hyperpowers/parallel-development/hp-control/skills/subagent-driven-development/scripts/sdd-state. It's worth checking whether the launcher pointed at the control plugin rather than the candidate/treatment one. If so, the candidate SDD's `next`/`wait`/`board` verbs may never have been available to this run."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent also appended its session line to progress.md by hand with `echo >>` instead of going through an sdd-state verb, which bypasses the tool for writing ledger records."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup dialogs: the folder-trust and bypass-permissions prompts default to 'No, exit'. There was also a 'Newer Opus model available' prompt even though --model claude-opus-5-5 was passed. It reported 'Currently pinned: Opus 5'. I answered No."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before any other work",
+      "verdict": "pass",
+      "evidence": "First tool_use in session log 0f20cfe1-...jsonl: \"Skill: hyperpowers:subagent-driven-development\", followed by Skill: hyperpowers:using-git-worktrees"
+    },
+    {
+      "criterion": "Ran `sdd-state next` with output `none reason=held`",
+      "verdict": "fail",
+      "evidence": "I listed every Bash tool_use with jq. The only sdd-state verbs run were sync, verify, claim 1 and claim 2. The claim results were \"status=held task=1 owner=fixture-session ... exit=4\" and the same for task=2. No `next` command and no `none reason=held` output appear."
+    },
+    {
+      "criterion": "Posted waiting record of kind tasks (sdd-state wait --kind tasks; waiting/ file with kind=tasks)",
+      "verdict": "fail",
+      "evidence": "No `sdd-state wait` appears in the Bash commands. `find $HOME/.cache -path '*waiting*'` returned nothing. The agent ran `cat >> $W/progress.md` and appended \"session 0f20cfe1...: tasks 1,2 held by fixture-session; user says it is still working, no takeover — waiting for instruction\""
+    },
+    {
+      "criterion": "Printed the board (sdd-state board)",
+      "verdict": "fail",
+      "evidence": "No `sdd-state board` in the Bash tool_use list from the session log. The grep hits for 'board' only matched skill text, not commands."
+    },
+    {
+      "criterion": "Handed back saying every task is held by another session",
+      "verdict": "pass",
+      "evidence": "Final screen message: \"Both tasks (src/a.sh and src/b.sh) are still held by fixture-session... What I need from you: tell me if that session stops or finishes.\""
+    },
+    {
+      "criterion": "Did not take over a held task (no --takeover in Bash)",
+      "verdict": "pass",
+      "evidence": "The jq listing of every Bash command shows no --takeover. The grep hits for '--takeover' (log lines 136-137) are only in the AskUserQuestion option descriptions, not in commands."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 247262,
+  "usage": {
+    "inputTokens": 62,
+    "outputTokens": 5416,
+    "cacheCreationInputTokens": 32173,
+    "cacheReadInputTokens": 585141,
+    "turns": 28
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

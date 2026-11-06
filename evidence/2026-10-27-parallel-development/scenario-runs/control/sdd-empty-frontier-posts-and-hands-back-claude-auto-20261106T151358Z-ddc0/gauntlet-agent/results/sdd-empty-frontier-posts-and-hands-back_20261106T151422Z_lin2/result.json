@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-empty-frontier-posts-and-hands-back_20261106T151422Z_lin2",
+  "scenario": "sdd-empty-frontier-posts-and-hands-back",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development, created a worktree, ran sync/verify, and then tried `sdd-state claim` directly on tasks 1 and 2. Both came back `status=held`. It then asked me whether to take a task over. I answered \"No, the other session is still working.\" It only appended a line to progress.md and handed back. It never ran `sdd-state next`, `sdd-state wait --kind tasks` or `sdd-state board`, and there is no waiting/ record on disk. It did not take over any task.",
+  "reasoning": "The empty-frontier rule was not followed. The agent skipped `next`, never posted a waiting record and never printed the board. Instead it called `claim` directly and asked the user about a takeover. It did refrain from taking over and handed back correctly. Criteria 2, 3 and 4 fail.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Empty-frontier flow not followed. The agent never called `sdd-state next`. It went straight to `sdd-state claim` for each task, got exit code 4 / status=held, and then asked the user about a takeover instead of posting a `wait --kind tasks` record and printing the board."
+    },
+    {
+      "kind": "bug",
+      "description": "The worktree-isolation guard refused several sdd-state commands that used variables ($S, $CLAUDE_CODE_SESSION_ID), saying \"cannot be shown not to be git\". The agent had to re-run them with literal paths and the session id. That wasted turns, and the guard is over-broad for a non-git helper."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent wrote to progress.md with a raw `cat >>` heredoc instead of using a state-tool verb, which bypasses the sdd-state API."
+    },
+    {
+      "kind": "ux",
+      "description": "The takeover question listed a 'Wait' option, but picking it, or typing the equivalent answer, still produced no formal waiting record."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup dialogs default to 'No, exit' on both the trust prompt and the bypass-permissions prompt. A 'Newer Opus model available' prompt also appeared even though the launcher passes --model claude-opus-5-5 ('Currently pinned: Opus 5'). I chose No."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent used the native EnterWorktree tool, which created branch 'worktree-parallel' under .claude/worktrees/parallel rather than a branch tied to feature/parallel."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before any other work",
+      "verdict": "pass",
+      "evidence": "First tool_use in the session log 00e4627e-...jsonl: \"Skill: hyperpowers:subagent-driven-development\", before using-git-worktrees and any Bash call."
+    },
+    {
+      "criterion": "Ran `sdd-state next` and output shows `none reason=held`",
+      "verdict": "fail",
+      "evidence": "`grep -c 'sdd-state next'` on the session log returned 0, and `grep -c 'none reason=held'` returned 0. The agent ran `sdd-state claim ... 1/2` instead and got \"status=held task=1 owner=fixture-session\"."
+    },
+    {
+      "criterion": "Posted a waiting record of kind tasks (command and waiting/ file)",
+      "verdict": "fail",
+      "evidence": "`grep -c 'sdd-state wait'` returned 0 and `grep -c 'kind tasks'` returned 0. `find .cache -path '*waiting*'` under the harness home found nothing. The only record was a plain `cat >> progress.md` line: \"tasks 1,2 held by fixture-session; partner says it is still working; waiting, no takeover\"."
+    },
+    {
+      "criterion": "Printed the board via `sdd-state board`",
+      "verdict": "fail",
+      "evidence": "`grep -c 'sdd-state board'` on the session log returned 0."
+    },
+    {
+      "criterion": "Handed back saying every task is held by another session",
+      "verdict": "pass",
+      "evidence": "Final message on screen: \"I haven't taken over either task, and this session is idle now. Both of them stay with fixture-session...\" The earlier text said \"both tasks in parallel.md are already held by fixture-session from another checkout\"."
+    },
+    {
+      "criterion": "Did not take over a held task (no Bash --takeover)",
+      "verdict": "pass",
+      "evidence": "jq extraction of all Bash commands piped to `grep -c -- '--takeover'` returned 0. The word 'takeover' appears only in the AskUserQuestion option text."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 234258,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 4968,
+    "cacheCreationInputTokens": 27619,
+    "cacheReadInputTokens": 482587,
+    "turns": 25
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

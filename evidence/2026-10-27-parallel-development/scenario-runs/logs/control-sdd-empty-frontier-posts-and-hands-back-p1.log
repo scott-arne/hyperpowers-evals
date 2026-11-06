@@ -1,0 +1,64 @@
+arm=control scenario=sdd-empty-frontier-posts-and-hands-back repeat=1 proc=p1 budget=default
+root=5abc925c9158f8034451a760ccde5a123b731734 root_clean=0
+harness_pin=8dee8207b088f27cde2bc55c7db6945b02b499cc evals_head=91f5a26dad6db824a1fde86f4937e2c1dd2e0814 harness_paths_identical=yes
+model_pin=claude-opus-5-5 anthropic_model=claude-opus-5-5
+anthropic_default_opus_model=claude-opus-5
+grader_pin=claude-opus-5-5 gauntlet_agent_model=claude-opus-5-5
+cc_pin=2.1.317 claude_version_before=2.1.317 (Claude Code)
+2026-11-06T14:57:13Z
+$ env -u INTERLOCK_PROBE_TRACE -u SLASH_COMMAND_TOOL_CHAR_BUDGET bun run quorum run scenarios/sdd-empty-frontier-posts-and-hands-back --coding-agent claude-auto --repeat 1
+$ bun run src/cli/index.ts run scenarios/sdd-empty-frontier-posts-and-hands-back --coding-agent claude-auto --repeat "1"
+run-id: sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T145714Z-18ba
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T145714Z-18ba
+final     fail
+reason    Gauntlet-Agent reported fail; 4 post-check(s) failed
+provenance: evals 91f5a26 gauntlet a35607e+dirty
+
+─── Gauntlet-Agent ───────────────────────────────
+status    fail
+summary   The agent loaded hyperpowers:subagent-driven-development, made a new
+          worktree, found both tasks held by fixture-session, and
+          correctly did not take any over. It skipped the skill's
+          empty-frontier protocol, though. It never ran `sdd-state
+          next`, never posted a `--kind tasks` waiting record, and never
+          ran `sdd-state board`. Instead it tried `sdd-state claim` on
+          both tasks, asked me what to do with AskUserQuestion, and
+          handed back without the board or a waiting record.
+reasoning Criteria 2, 3 and 4 fail. The session log has no `sdd-state next`,
+          `wait` or `board` commands, and there's no waiting/ directory
+          in the harness home's cache. The agent behaved safely: it took
+          no tasks over and handed back. But it did not carry out the
+          empty-frontier protocol the scenario tests.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ file-exists docs/hyperpowers/plans/parallel.md
+pre  ✓ command-succeeds find ../home/.cache -name progress.md -exec head -n 1 {} \; | grep -q "^# SDD ledger — plan: docs/hyperpowers/plans/parallel.md$"
+pre  ✓ command-succeeds find ../home/.cache -type d -path "*/claims/task-1" | grep -q .
+pre  ✓ command-succeeds find ../home/.cache -type d -path "*/claims/task-2" | grep -q .
+post ✓ skill-called superpowers:subagent-driven-development hyperpowers:subagent-driven-development
+post ✗ tool-arg-match Bash --matches command=sdd-state next
+       ↳ no Bash call matches all 1 matcher(s)
+post ✗ tool-arg-match Bash --matches command=sdd-state wait [^\n]*--kind tasks
+       ↳ no Bash call matches all 1 matcher(s)
+post ✗ tool-arg-match Bash --matches command=sdd-state board
+       ↳ no Bash call matches all 1 matcher(s)
+post ✓ NOT check-transcript tool-arg-match Bash --matches command=sdd-state claim [^\n]*--takeover
+post ✗ command-succeeds find ../home/.cache -type f -path "*/waiting/*" -exec grep -l "^kind=tasks" {} \; | grep -q .
+       ↳ exit non-zero: 
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       5m 21s      420K n/a (claude-opus-5-5)
+  Coding         3m 36s      715K n/a (claude-opus-5-5)
+    opus                     715K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+trials: F
+error: script "quorum" exited with code 1
+EXIT=1
+2026-11-06T15:03:34Z
+claude_version_after=2.1.317 (Claude Code)
+DONE control sdd-empty-frontier-posts-and-hands-back p1

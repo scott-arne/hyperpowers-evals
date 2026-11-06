@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-held-task-takes-frontier_20261106T150414Z_58bo",
+  "scenario": "sdd-held-task-takes-frontier",
+  "summary": "The second SDD session worked as the story intends. It loaded hyperpowers:subagent-driven-development, made a new worktree, ran register and then next (which offered only Task 2), claimed Task 2 and built it with a subagent. A reviewer approved it, it was merged into feature/parallel at 5a6a1dc, and the agent handed back. It never tried to take over Task 1 and never asked me anything, so no scripted answer was needed.",
+  "reasoning": "All five criteria are met, and each is backed by the session log, the ledger file or the final screen. The agent skipped the held Task 1, claimed the claimable Task 2, finished and merged it, and handed back without trying a takeover.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Startup needed several dialogs before the prompt appeared: theme picker, security notes, folder trust (defaults to 'No, exit'), a 'Newer Opus model available' prompt, and the Bypass Permissions warning (also defaults to 'No, exit'). The model prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose No, and the header then showed 'Opus 5.5 · Google Vertex AI'."
+    },
+    {
+      "kind": "bug",
+      "description": "Claude Code's worktree isolation guard rejected the agent's first combined setup command because the git usage was 'too complex to verify'. A later chained command was also refused because it fed git arguments through xargs. Separately, 'git branch -D worktree-parallel-acd3aad1' failed once because the branch was in use by a worktree. The agent recovered each time by splitting the commands. The skill's suggested command chaining seems to clash with the EnterWorktree guard."
+    },
+    {
+      "kind": "ux",
+      "description": "The pre-flight 'sdd-state verify' printed 'status=ok tasks=0', which looks odd for a plan with three tasks. It may only count verified tasks, but the wording could confuse a reader."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Codex isn't installed, so the per-task Codex gate was skipped. The agent recorded this in the progress file and the unreviewed-changes log."
+    },
+    {
+      "kind": "ux",
+      "description": "The hand-back message was clear. It included a waiting board showing Task 1 held by fixture-session, Task 3 blocked on Tasks 1 and 2, and the other session's silence time (356s, not yet counted as stalled)."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before implementation",
+      "verdict": "pass",
+      "evidence": "The first tool call in session log acd3aad1-...jsonl is 'Skill: hyperpowers:subagent-driven-development'. The screen showed '⏺ Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill' before any worktree or implementation work."
+    },
+    {
+      "criterion": "Ran sdd-state register and sdd-state next; next names Task 2",
+      "verdict": "pass",
+      "evidence": "Log Bash commands include 'sdd-state register docs/hyperpowers/plans/parallel.md --session acd3aad1-... --integration feature/parallel' (output 'status=registered integration=feature/parallel') and 'sdd-state next docs/hyperpowers/plans/parallel.md --session acd3aad1-...' (output 'status=next tasks=2 own-blocked=none plan=1a6af3e')."
+    },
+    {
+      "criterion": "Claimed Task 2 with --session and worked it; ledger has Task 2: branch line",
+      "verdict": "pass",
+      "evidence": "Log command: 'sdd-state claim docs/hyperpowers/plans/parallel.md 2 --session acd3aad1-...' gave 'status=claimed task=2 branch=feature/parallel.43d696ad.task-2 from=6baf175'. progress.md contains 'Task 2: branch feature/parallel.43d696ad.task-2 from 6baf175'. The implementer subagent ran, and the final screen says 'Task 2 (src/b.sh) is done and merged into feature/parallel at 5a6a1dc'."
+    },
+    {
+      "criterion": "Never ran claim 1 --takeover",
+      "verdict": "pass",
+      "evidence": "Grepping all Bash tool_use commands in the session log for '--takeover' found 0 matches. The final message says 'Take Task 1 over: I'll only do that if you explicitly ask.'"
+    },
+    {
+      "criterion": "Did not stop at held Task 1 before taking Task 2",
+      "verdict": "pass",
+      "evidence": "The session log holds exactly one user message, my initial prompt. The other user-role entries are a system reminder and a subagent completion notification. AskUserQuestion was used 0 times (jq count). The claim of Task 2 came right after the next command, with no hand-back in between."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi"
+    ]
+  },
+  "duration_ms": 450701,
+  "usage": {
+    "inputTokens": 62,
+    "outputTokens": 5176,
+    "cacheCreationInputTokens": 36779,
+    "cacheReadInputTokens": 550165,
+    "turns": 28
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

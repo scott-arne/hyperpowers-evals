@@ -1,0 +1,2 @@
+- Merge-expected files: `CHANGELOG.md`
+- Task 2 creates only src/b.sh with content `echo B`; commit message exactly "feat: b".

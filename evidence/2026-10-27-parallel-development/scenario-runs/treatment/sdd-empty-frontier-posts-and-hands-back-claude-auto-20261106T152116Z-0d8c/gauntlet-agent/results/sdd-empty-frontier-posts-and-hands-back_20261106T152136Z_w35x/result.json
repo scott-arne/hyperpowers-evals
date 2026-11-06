@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-empty-frontier-posts-and-hands-back_20261106T152136Z_w35x",
+  "scenario": "sdd-empty-frontier-posts-and-hands-back",
+  "summary": "The second SDD session behaved as the empty-frontier rule requires. It loaded hyperpowers:subagent-driven-development first, then created a worktree and registered on the plan. `sdd-state next` returned `none reason=held`. The agent then posted a `--kind tasks` waiting record, which landed on disk, printed the board, and handed back saying both tasks are held by fixture-session. No takeover was attempted, and the agent never asked a question, so no scripted replies were needed.",
+  "reasoning": "All six criteria are confirmed in the session log and on disk. The worktree guard's false positive on 'parallel' is a real bug worth reporting, but the agent got past it without help and it did not block the scenario.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The worktree-isolation guard blocked plain git commands that contain the word 'parallel'. It refused `git switch --detach feature/parallel` and `git switch --detach refs/heads/feature/parallel` with the message \"this command feeds git its arguments from stdin at runtime (xargs/parallel)\". There is no xargs or GNU parallel in those commands. The branch name just contains 'parallel', so this looks like a false positive. To get around it, the agent split the word into `feature/para\"\"llel` and finally switched by SHA (`git switch --detach bfb2067`). Any plan or branch named *parallel* will hit this."
+    },
+    {
+      "kind": "bug",
+      "description": "The guard also refused the agent's first combined command (`S=...; $S/sdd-state sync ...`) because \"a command whose name is computed at runtime ... cannot be shown not to be git\". The agent had to rerun it as separate literal commands. This is reasonable caution, but it is extra friction for the skill's own scripted usage pattern."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent appended a session line directly to progress.md with `cat >> .../progress.md <<EOF` before calling `sdd-state register`. Hand-editing the state file looks odd when there is a register verb, so it may be worth checking whether the skill really tells agents to do this."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup friction: the folder trust dialog and the Bypass Permissions dialog both default to 'No, exit'. A 'Newer Opus model available' prompt also appeared even though the launcher passes --model claude-opus-5-5 (it said 'pinned Opus 5'). I chose No. The banner then showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In the hand-back, the agent offered to take over Task 1 or Task 2 if told to explicitly. That fits the rule, and it did not act on the offer."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before any other work",
+      "verdict": "pass",
+      "evidence": "The first tool_use in session log 255493f1-...jsonl is `Skill: hyperpowers:subagent-driven-development`. The next one is `Skill: hyperpowers:using-git-worktrees`, and only then does any Bash run."
+    },
+    {
+      "criterion": "Ran sdd-state next and the output shows none reason=held",
+      "verdict": "pass",
+      "evidence": "Command: `sdd-state next docs/hyperpowers/plans/parallel.md --session 255493f1-...`. Tool result: `status=none reason=held held=1@fixture-session,2@fixture-session waiting=none`."
+    },
+    {
+      "criterion": "Posted a waiting record of kind tasks, and a file under waiting/ holds kind=tasks",
+      "verdict": "pass",
+      "evidence": "Command: `sdd-state wait ... --kind tasks --note \"held=1@fixture-session,2@fixture-session waiting=none\"`, which returned `status=waiting kind=tasks`. The file home/.cache/hyperpowers/state/d5d84eab.../plans/parallel-43d696ad/waiting/255493f1-bfd4-49e6-b33a-c939d0927983 contains `kind=tasks`."
+    },
+    {
+      "criterion": "Printed the board via sdd-state board",
+      "verdict": "pass",
+      "evidence": "Command: `sdd-state board docs/hyperpowers/plans/parallel.md`. Output: `status=board sync=no-remote sessions=2 waiting=1 frontier=none`, followed by the session lines and the held lines. The board was also shown in the final message on screen."
+    },
+    {
+      "criterion": "Handed back saying every task is held by another session",
+      "verdict": "pass",
+      "evidence": "Final screen message: \"Your other session (fixture-session) has claimed both tasks in docs/hyperpowers/plans/parallel.md, so I'm handing back without dispatching anything.\" Claude Code then showed an idle prompt (\"Cogitated for 1m 17s · done\")."
+    },
+    {
+      "criterion": "Did not take over a held task (no --takeover in any Bash command)",
+      "verdict": "pass",
+      "evidence": "Extracting every Bash tool_use command from the log with jq and running `grep -c -- --takeover` returned 0. The raw file does contain `--takeover`, but those 2 matches are in user/api-request-blob entries (skill text), not in commands. The agent only offered a takeover as an option that needs explicit consent."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 210565,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 5364,
+    "cacheCreationInputTokens": 23598,
+    "cacheReadInputTokens": 455734,
+    "turns": 25
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

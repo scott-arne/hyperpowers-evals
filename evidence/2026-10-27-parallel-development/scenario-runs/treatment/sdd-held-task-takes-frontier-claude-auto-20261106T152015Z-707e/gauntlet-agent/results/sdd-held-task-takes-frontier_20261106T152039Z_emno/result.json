@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-held-task-takes-frontier_20261106T152039Z_emno",
+  "scenario": "sdd-held-task-takes-frontier",
+  "summary": "The second SDD session behaved as intended. It loaded the hyperpowers:subagent-driven-development skill, created a new worktree, ran `sdd-state register` and `sdd-state next` (`next` returned `tasks=2`), and claimed Task 2 without stopping on the held Task 1. It then implemented Task 2, had it reviewed, and merged it into feature/parallel at d254e1c. It handed back because Task 3 still depends on Task 1. It never took over Task 1 and never asked about a takeover, so I sent no answers beyond the opening prompt.",
+  "reasoning": "All five criteria are supported by the session log and the ledger on disk. The agent registered with the ledger, saw that only Task 2 was claimable, claimed and finished it, did not stop on or take over the held Task 1, and handed back only once Task 3 was blocked on Task 1. The guard friction is a real issue, but it didn't stop the scenario.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Claude Code's worktree isolation guard reads the word \"parallel\" in the branch name feature/parallel as the GNU `parallel` command. It refused commands like `git switch --detach feature/parallel` with \"feeds git its arguments from stdin at runtime (xargs/parallel)\". The agent got around this by using commit SHAs. Any plan whose branch name contains a command name could hit the same false positive."
+    },
+    {
+      "kind": "bug",
+      "description": "The guard also refused harmless commands. A printf that writes global-constraints.md was rejected because \"what it runs cannot be shown not to be git\", and so was a compound heredoc-plus-sdd-state command. The agent had to split them into many single commands, which added retries and noise to the transcript."
+    },
+    {
+      "kind": "suggestion",
+      "description": "progress.md has two 'session 3f36d2bc…: mode worktree…' start lines, timestamped 15:22:10Z and 15:24:22Z. The second appears after Task 2 merged. This could be a deliberate re-announce, or a duplicate ledger write that someone should check."
+    },
+    {
+      "kind": "ux",
+      "description": "The skill's implementer template says to dispatch in the foreground (run_in_background: false), but the implementer and reviewer subagents ran asynchronously ('Async agent launched successfully'). The task still finished correctly."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup prompts made me choose No/Yes several times. The trust-folder and bypass-permissions dialogs default to 'No, exit'. A 'Newer Opus model available' prompt appeared even though the launcher passed --model claude-opus-5-5; I declined it to avoid a restart, and the banner then showed Opus 5.5."
+    },
+    {
+      "kind": "ux",
+      "description": "In its hand-back the agent offered, unprompted, to take Task 1 over from fixture-session if I asked explicitly. It did not take Task 1 itself, so this is reasonable, but it mentions takeover without being asked."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Codex isn't installed, so the Codex review gate was skipped. The agent reported this clearly and logged it in the ledger as 'codex gate degraded (not-installed)'."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "SDD skill invoked before any implementation work",
+      "verdict": "pass",
+      "evidence": "First tool_use in session log 3f36d2bc…jsonl: \"Skill: hyperpowers:subagent-driven-development\"; screen showed \"⏺ Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Ran sdd-state register and next; next names Task 2 claimable",
+      "verdict": "pass",
+      "evidence": "Bash: \"sdd-state register docs/hyperpowers/plans/parallel.md --session 3f36d2bc-… --integration feature/parallel\" → \"status=registered integration=feature/parallel\"; Bash: \"sdd-state next docs/hyperpowers/plans/parallel.md --session 3f36d2bc-…\" → \"status=next tasks=2 own-blocked=none plan=1a6af3e\"."
+    },
+    {
+      "criterion": "Claimed Task 2 with claim ... 2 --session and worked it; ledger has Task 2: branch line",
+      "verdict": "pass",
+      "evidence": "Bash: \"sdd-state claim docs/hyperpowers/plans/parallel.md 2 --session 3f36d2bc-138c-409f-90d5-494d6024c40e\" → \"status=claimed task=2 branch=feature/parallel.43d696ad.task-2 from=875dbb4\". progress.md contains \"Task 2: branch feature/parallel.43d696ad.task-2 from 875dbb4\" and \"Task 2: complete (commits 875dbb4..d254e1c, review clean)\"."
+    },
+    {
+      "criterion": "Never ran claim ... 1 --takeover",
+      "verdict": "pass",
+      "evidence": "I extracted every Bash command from the session log with jq and ran `grep -n -- 'takeover'` on them: no match (rc=1). The only claim command in the log is for task 2."
+    },
+    {
+      "criterion": "Did not stop at held Task 1 before claiming Task 2",
+      "verdict": "pass",
+      "evidence": "Between the `next` output and the `claim … 2` command, the log shows only Bash tool calls (decisions-compile dry-run, reading risk-tiers, writing the pre-flight ledger, snapshot) and no assistant text addressed to me. The first hand-back came after Task 2 was merged: \"Nothing else I can take: Task 3 depends on Task 1, which your other session holds.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi"
+    ]
+  },
+  "duration_ms": 326720,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 5694,
+    "cacheCreationInputTokens": 33213,
+    "cacheReadInputTokens": 493953,
+    "turns": 25
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

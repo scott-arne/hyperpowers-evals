@@ -226,3 +226,136 @@ Holds. The spec asked for a read of every `hp_lock` call site before Task 1. The
 - Session 2 wrote round-minute times in its session lines (14:00:00Z, 14:01:00Z, 14:03:00Z, 14:04:00Z) instead of reading the clock. Session 1 used `date -u`.
 - `finish` printed `push=origin/hyperpowers/state` in a repository with no remote, where `sync` had said `no-remote`. The line predates this branch: `task-13-runs/push-line-provenance.txt` shows it at the merge base `5abc925` (`sdd-state:758`) and at the candidate `d53ddf5` (`sdd-state:1512`), with the commands that printed them.
 - Both sessions ran the Codex companion commands with the sandbox disabled after an EPERM writing under `~/.claude/plugins/data`.
+
+## Task 14: the held-task scenarios
+
+Both held-task scenarios separate the two arms completely. On this branch (treatment) 10 of 10 sessions passed each scenario, and on `main` before it (control) 0 of 10 did; the two-sided Fisher exact p-value is 0.000011 for each. All 40 attempt 2 rows ended with a verdict, so no replacement runs were needed. The control sessions had no `register`, `next`, `wait` or `board` to call, and only one control session claimed Task 2 (after an unscripted confirmation) and none posted a waiting record.
+
+## What each scenario measures
+
+Both measure the subagent-driven-development skill text for a second session that joins a plan another session is already running.
+
+- `evals/scenarios/sdd-held-task-takes-frontier/` (`story.md`, `setup.sh`, `checks.sh`): Task 1 is claimed by a fixture session and Task 2 is claimable. The second session should register, ask `next`, take Task 2, and neither stop at the held Task 1 nor take it over.
+- `evals/scenarios/sdd-empty-frontier-posts-and-hands-back/` (`story.md`, `setup.sh`, `checks.sh`): the fixture session holds every task. The second session should see `next` answer `none reason=held`, post a `tasks` waiting record, print the board and hand back without taking anything over.
+
+## Pins and launch
+
+- Harness: hyperpowers-evals at `8dee8207b088f27cde2bc55c7db6945b02b499cc` (the scenarios; the scaffold commit `91f5a26dad6db824a1fde86f4937e2c1dd2e0814` added only the launcher files). Coding agent `claude-auto` under Claude Code 2.1.317.
+- Control: `main` before this branch, `5abc925c9158f8034451a760ccde5a123b731734`. Treatment: this branch, `d53ddf5cf630a055e0aff6e37009f17c526aaf7f`.
+- Model: `claude-opus-5-5` for the coding agent (`ANTHROPIC_MODEL=claude-opus-5-5`, the manifest `model` row, checked by `logs/measure-launch.sh`). Grader: `claude-opus-5-5` (`GAUNTLET_AGENT_MODEL`).
+- Launch: `launch-all.sh` over `manifest.tsv` at concurrency 8, run from the evals clone outside the controller's command sandbox: `ANTHROPIC_MODEL=claude-opus-5-5 bash evidence/2026-10-27-parallel-development/scenario-runs/launch-all.sh evidence/2026-10-27-parallel-development/scenario-runs/manifest.tsv 8`. The manifest holds 40 trial rows, 10 per arm and scenario, and the 4 pin rows.
+- Attempt 2 started at 14:57:13Z and its last row finished at 15:29:02Z on 2026-11-06 (first and last timestamps in the row logs). All 40 rows ended `DONE`.
+
+## Departures from the brief
+
+- The coding agent is `--coding-agent claude-auto`, not `claude`: the `claude` adapter fails at setup on this Vertex-only host. `claude-auto` with `ANTHROPIC_MODEL=claude-opus-5-5` runs Opus 5.5.
+- The grader is pinned to `claude-opus-5-5`.
+- The arm test in both `setup.sh` files was corrected before the campaign (controller ruling 1 in the task report).
+
+Attempt 1 started about 14:55Z inside the controller's command sandbox, and all 40 rows were voided at setup. `git init -b main` could not copy git's hook templates into `results/workspaces/<run>/coding-agent-workdir/.git/hooks` ("Operation not permitted"). A setup void is an instrument failure, so it was relaunched without counting against any cap. The controller moved the 40 row logs to `scenario-runs/logs/attempt-1/` so attempt 2 could reuse the same manifest rows without overwriting a log. Each attempt 1 run keeps only `verdict.json`, `phase.json` and `provenance.json` under `scenario-runs/attempt-1/<arm>/<run>/`; every `verdict.json` has `gauntlet` null and `error.stage` `setup`, the setup-void shape.
+
+## Assumption check
+
+The brief assumed that the harness home's cache (`../home/.cache`) is where the candidate's `sdd-dir` places the state checkout, and said to validate it through case one's `pre()` on the first run. The four case-one runs of the first wave (`sdd-held-task-takes-frontier-claude-auto-20261106T145714Z-{997d,eed2,91e1,26d8}`) reached quorum's `agent` phase, so `pre()` passed, and each run home held `home/.cache/hyperpowers/state/<key>/plans/parallel-43d696ad/progress.md` with the identity line and `claims/task-1`. `pre()` then passed on all 40 rows.
+
+## Results
+
+Passes by final verdict, from the `final` line of each row log (`logs/<arm>-<scenario>-p<n>.log`):
+
+| Scenario | Control | Treatment | Fisher p (two-sided) |
+|---|---|---|---|
+| `sdd-held-task-takes-frontier` | 0/10 | 10/10 | 0.000011 |
+| `sdd-empty-frontier-posts-and-hands-back` | 0/10 | 10/10 | 0.000011 |
+
+The p-value is the two-sided Fisher exact test on the 2x2 table of passes and fails, computed with `python3` and `math.comb` (the hypergeometric probability of the observed table, summed over every table at most as probable).
+
+Per-check passes, from the `pre` and `post` lines of the row logs (a `NOT` check passes when the forbidden call is absent). The four or five `pre` checks passed on all 40 rows and are omitted.
+
+`sdd-held-task-takes-frontier`:
+
+| Check | Control | Treatment |
+|---|---|---|
+| skill-called subagent-driven-development | 10/10 | 10/10 |
+| ran `sdd-state register` | 0/10 | 10/10 |
+| ran `sdd-state next` | 0/10 | 10/10 |
+| ran `sdd-state claim` on Task 2 | 1/10 | 10/10 |
+| did not run a takeover claim | 10/10 | 10/10 |
+| ledger has `Task 2: branch` | 0/10 | 10/10 |
+
+`sdd-empty-frontier-posts-and-hands-back`:
+
+| Check | Control | Treatment |
+|---|---|---|
+| skill-called subagent-driven-development | 10/10 | 10/10 |
+| ran `sdd-state next` | 0/10 | 10/10 |
+| ran `sdd-state wait --kind tasks` | 0/10 | 10/10 |
+| ran `sdd-state board` | 0/10 | 10/10 |
+| did not run a takeover claim | 10/10 | 10/10 |
+| `tasks` waiting record on disk | 0/10 | 10/10 |
+
+## What the sessions did
+
+Case one, treatment (`sdd-held-task-takes-frontier`): all ten registered, got Task 2 back from `next`, claimed it and recorded `Task 2: branch` in the ledger, without touching Task 1. Treatment p1 implemented and merged Task 2, then posted a wait for Task 1 and handed back. Grader excerpt: "It never tried to take over Task 1. When `next` returned nothing more for it, it posted a wait for Task 1 (Task 3 needs it) and handed back."
+
+Case one, control: none ran `register` or `next`, and nine of ten never claimed Task 2. In the summaries of p1 to p3, the sessions tried `sdd-state claim` on the held Task 1 (p2, p3) or stopped after `sync`, `verify` and `snapshot` (p1), got `status=held` (exit 4) where they tried, stopped to ask which task to take, and after the scripted "No, the other session is still working." handed back with Task 2 unclaimed. Grader excerpt from p1: "It then stopped and asked the developer what to work on because Task 1 was held. After I gave the scripted answer ("No, the other session is still working."), it did not claim anything and handed back to wait for instructions."
+
+Control p3 (`control-sdd-held-task-takes-frontier-p3.log`) is the one control session that claimed Task 2. It handed back twice, and took Task 2 only after the Gauntlet-Agent sent an unscripted "yes, go ahead" past the scripted answer. It still failed on the absent `register` and `next` calls and the missing `Task 2: branch` ledger line. Grader excerpt: "It took Task 2 only after an extra confirmation. The ledger also lacks a 'Task 2: branch' line."
+
+Case two, treatment (`sdd-empty-frontier-posts-and-hands-back`): all ten ran `next`, which returned `none reason=held`, posted a `tasks` waiting record, printed the board and handed back without taking a task over. Grader excerpt from p1: "It registered itself and ran `sdd-state next`, which returned `status=none reason=held`. It then posted a waiting record of kind tasks, printed the board and handed back, saying both tasks are held by fixture-session."
+
+Case two, control: none ran `next`, `wait --kind tasks` or `board`, and no waiting record exists on disk. In the p1 and p2 summaries the sessions tried `sdd-state claim` on both tasks, got `status=held`, asked the developer what to do, and handed back. All ten correctly avoided a takeover, so the control failure here is the missing protocol, not unsafe behavior. Grader excerpt from p1: "The agent behaved safely: it took no tasks over and handed back. But it did not carry out the empty-frontier protocol the scenario tests."
+
+## Scrub and strip notes
+
+- `scripts/strip-runs --min-age-minutes 0 --run <run>` ran over all 40 attempt 2 runs first. In the copies, `home/.claude/plugins/` and `home/.codex/` were deleted where present.
+- Every `.git` entry under `scenario-runs/` (96: the 40 fixture repositories at `coding-agent-workdir/.git`, the state checkouts' gitfiles at `home/.cache/hyperpowers/state/<key>/.git`, and the worktree gitfiles the agents' sessions created) was renamed `git-dir`.
+- Dollar amounts: 22 money amounts in the row logs were replaced with `<cost>`, and the numeric value of every key whose name contains `cost` (`costUSD`, `totalCostUSD`, `est_cost_usd`, `total_est_cost_usd`, `lastCost`) was set to `null` in the JSON and JSONL copies (283 values). A search afterward found no amount and no numeric cost value left; the remaining `$` matches are shell parameters such as `$1` and `${2:-8}`. Only `.log` files had text replaced.
+- Every committed file passed `realval-scan.py` with `hits: 0` individually, so no file was withheld.
+- Attempt 2 copies of `results/<run>/` are under `scenario-runs/<arm>/<run>/` and of `results/workspaces/<run>/` under `scenario-runs/<arm>/workspaces/<run>/`; `results/` is untouched apart from the strip.
+
+## Row to run map
+
+Every attempt 2 row. `<arm>/` is `control/` or `treatment/` under `scenario-runs/`; the run record is `<arm>/<run>/` and the agent's workspace is `<arm>/workspaces/<run>/`.
+
+| Arm | Scenario | Row | Run id | Verdict | Path |
+|---|---|---|---|---|---|
+| control | `sdd-held-task-takes-frontier` | p1 | `sdd-held-task-takes-frontier-claude-auto-20261106T145714Z-26d8` | fail | `control/sdd-held-task-takes-frontier-claude-auto-20261106T145714Z-26d8/` |
+| control | `sdd-held-task-takes-frontier` | p2 | `sdd-held-task-takes-frontier-claude-auto-20261106T145714Z-91e1` | fail | `control/sdd-held-task-takes-frontier-claude-auto-20261106T145714Z-91e1/` |
+| control | `sdd-held-task-takes-frontier` | p3 | `sdd-held-task-takes-frontier-claude-auto-20261106T150341Z-a06a` | fail | `control/sdd-held-task-takes-frontier-claude-auto-20261106T150341Z-a06a/` |
+| control | `sdd-held-task-takes-frontier` | p4 | `sdd-held-task-takes-frontier-claude-auto-20261106T150501Z-a898` | fail | `control/sdd-held-task-takes-frontier-claude-auto-20261106T150501Z-a898/` |
+| control | `sdd-held-task-takes-frontier` | p5 | `sdd-held-task-takes-frontier-claude-auto-20261106T150930Z-0208` | fail | `control/sdd-held-task-takes-frontier-claude-auto-20261106T150930Z-0208/` |
+| control | `sdd-held-task-takes-frontier` | p6 | `sdd-held-task-takes-frontier-claude-auto-20261106T151246Z-25d0` | fail | `control/sdd-held-task-takes-frontier-claude-auto-20261106T151246Z-25d0/` |
+| control | `sdd-held-task-takes-frontier` | p7 | `sdd-held-task-takes-frontier-claude-auto-20261106T151545Z-7a03` | fail | `control/sdd-held-task-takes-frontier-claude-auto-20261106T151545Z-7a03/` |
+| control | `sdd-held-task-takes-frontier` | p8 | `sdd-held-task-takes-frontier-claude-auto-20261106T151813Z-1153` | fail | `control/sdd-held-task-takes-frontier-claude-auto-20261106T151813Z-1153/` |
+| control | `sdd-held-task-takes-frontier` | p9 | `sdd-held-task-takes-frontier-claude-auto-20261106T152032Z-8fa2` | fail | `control/sdd-held-task-takes-frontier-claude-auto-20261106T152032Z-8fa2/` |
+| control | `sdd-held-task-takes-frontier` | p10 | `sdd-held-task-takes-frontier-claude-auto-20261106T152303Z-6c40` | fail | `control/sdd-held-task-takes-frontier-claude-auto-20261106T152303Z-6c40/` |
+| treatment | `sdd-held-task-takes-frontier` | p1 | `sdd-held-task-takes-frontier-claude-auto-20261106T145714Z-eed2` | pass | `treatment/sdd-held-task-takes-frontier-claude-auto-20261106T145714Z-eed2/` |
+| treatment | `sdd-held-task-takes-frontier` | p2 | `sdd-held-task-takes-frontier-claude-auto-20261106T145714Z-997d` | pass | `treatment/sdd-held-task-takes-frontier-claude-auto-20261106T145714Z-997d/` |
+| treatment | `sdd-held-task-takes-frontier` | p3 | `sdd-held-task-takes-frontier-claude-auto-20261106T150341Z-2bc9` | pass | `treatment/sdd-held-task-takes-frontier-claude-auto-20261106T150341Z-2bc9/` |
+| treatment | `sdd-held-task-takes-frontier` | p4 | `sdd-held-task-takes-frontier-claude-auto-20261106T150501Z-d7a4` | pass | `treatment/sdd-held-task-takes-frontier-claude-auto-20261106T150501Z-d7a4/` |
+| treatment | `sdd-held-task-takes-frontier` | p5 | `sdd-held-task-takes-frontier-claude-auto-20261106T150855Z-238e` | pass | `treatment/sdd-held-task-takes-frontier-claude-auto-20261106T150855Z-238e/` |
+| treatment | `sdd-held-task-takes-frontier` | p6 | `sdd-held-task-takes-frontier-claude-auto-20261106T151203Z-dd74` | pass | `treatment/sdd-held-task-takes-frontier-claude-auto-20261106T151203Z-dd74/` |
+| treatment | `sdd-held-task-takes-frontier` | p7 | `sdd-held-task-takes-frontier-claude-auto-20261106T151528Z-185f` | pass | `treatment/sdd-held-task-takes-frontier-claude-auto-20261106T151528Z-185f/` |
+| treatment | `sdd-held-task-takes-frontier` | p8 | `sdd-held-task-takes-frontier-claude-auto-20261106T151728Z-75fe` | pass | `treatment/sdd-held-task-takes-frontier-claude-auto-20261106T151728Z-75fe/` |
+| treatment | `sdd-held-task-takes-frontier` | p9 | `sdd-held-task-takes-frontier-claude-auto-20261106T152015Z-707e` | pass | `treatment/sdd-held-task-takes-frontier-claude-auto-20261106T152015Z-707e/` |
+| treatment | `sdd-held-task-takes-frontier` | p10 | `sdd-held-task-takes-frontier-claude-auto-20261106T152232Z-f7d0` | pass | `treatment/sdd-held-task-takes-frontier-claude-auto-20261106T152232Z-f7d0/` |
+| control | `sdd-empty-frontier-posts-and-hands-back` | p1 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T145714Z-18ba` | fail | `control/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T145714Z-18ba/` |
+| control | `sdd-empty-frontier-posts-and-hands-back` | p2 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T145714Z-e06a` | fail | `control/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T145714Z-e06a/` |
+| control | `sdd-empty-frontier-posts-and-hands-back` | p3 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T150431Z-402a` | fail | `control/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T150431Z-402a/` |
+| control | `sdd-empty-frontier-posts-and-hands-back` | p4 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T150652Z-e816` | fail | `control/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T150652Z-e816/` |
+| control | `sdd-empty-frontier-posts-and-hands-back` | p5 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151203Z-339f` | fail | `control/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151203Z-339f/` |
+| control | `sdd-empty-frontier-posts-and-hands-back` | p6 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151358Z-ddc0` | fail | `control/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151358Z-ddc0/` |
+| control | `sdd-empty-frontier-posts-and-hands-back` | p7 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151658Z-f27d` | fail | `control/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151658Z-f27d/` |
+| control | `sdd-empty-frontier-posts-and-hands-back` | p8 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151846Z-0868` | fail | `control/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151846Z-0868/` |
+| control | `sdd-empty-frontier-posts-and-hands-back` | p9 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T152131Z-241b` | fail | `control/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T152131Z-241b/` |
+| control | `sdd-empty-frontier-posts-and-hands-back` | p10 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T152518Z-5c60` | fail | `control/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T152518Z-5c60/` |
+| treatment | `sdd-empty-frontier-posts-and-hands-back` | p1 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T145714Z-681c` | pass | `treatment/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T145714Z-681c/` |
+| treatment | `sdd-empty-frontier-posts-and-hands-back` | p2 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T145714Z-ac5d` | pass | `treatment/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T145714Z-ac5d/` |
+| treatment | `sdd-empty-frontier-posts-and-hands-back` | p3 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T150409Z-5213` | pass | `treatment/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T150409Z-5213/` |
+| treatment | `sdd-empty-frontier-posts-and-hands-back` | p4 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T150641Z-dca6` | pass | `treatment/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T150641Z-dca6/` |
+| treatment | `sdd-empty-frontier-posts-and-hands-back` | p5 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151046Z-de69` | pass | `treatment/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151046Z-de69/` |
+| treatment | `sdd-empty-frontier-posts-and-hands-back` | p6 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151347Z-94c1` | pass | `treatment/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151347Z-94c1/` |
+| treatment | `sdd-empty-frontier-posts-and-hands-back` | p7 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151645Z-ee4a` | pass | `treatment/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151645Z-ee4a/` |
+| treatment | `sdd-empty-frontier-posts-and-hands-back` | p8 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151831Z-27bd` | pass | `treatment/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T151831Z-27bd/` |
+| treatment | `sdd-empty-frontier-posts-and-hands-back` | p9 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T152116Z-0d8c` | pass | `treatment/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T152116Z-0d8c/` |
+| treatment | `sdd-empty-frontier-posts-and-hands-back` | p10 | `sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T152316Z-339e` | pass | `treatment/sdd-empty-frontier-posts-and-hands-back-claude-auto-20261106T152316Z-339e/` |

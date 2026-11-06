@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-held-task-takes-frontier_20261106T145812Z_6l7j",
+  "scenario": "sdd-held-task-takes-frontier",
+  "summary": "The second SDD session did what the story asks. It loaded hyperpowers:subagent-driven-development, registered with the plan, and got Task 2 back from `next` as the claimable task. It claimed Task 2, implemented and reviewed it, and merged it into feature/parallel as bd352c6 \"feat: b\". It never tried to take over Task 1. When `next` returned nothing more for it, it posted a wait for Task 1 (Task 3 needs it) and handed back. One unscripted step: the native worktree tool failed to create the worktree, so the agent asked where to work and I chose \"Stay in this checkout\". That question was about the workspace, not about Task 1.",
+  "reasoning": "All five criteria are backed by the session log, the ledger file and git history. The worktree failure was outside the scope of the held-task rule. The question it caused came before `next` and was not about Task 1, so it doesn't break criterion 5, and the agent never asked to take over Task 1.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The native worktree tool (EnterWorktree) created .claude/worktrees/parallel-19d8f87d and then refused to enter it: \"git could not be run to resolve it, so its git identity could not be verified.\" The worktree is still registered and locked in git and shows up as an untracked .claude/ directory. The user asked for a new worktree but the work ran in the main checkout. This could be a harness/sandbox problem rather than an SDD problem, but someone should look at it."
+    },
+    {
+      "kind": "ux",
+      "description": "Because of the worktree failure the agent had to ask the developer where to work, and the story's script doesn't cover that. I picked option 1, \"Stay in this checkout\". Option 2's description admits it \"ends up equivalent\", so the question had only one real choice."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup showed a \"Newer Opus model available\" prompt (\"Currently pinned: Opus 5\") even though the launcher passes --model claude-opus-5-5. Escape did not dismiss it; I had to select \"No\". The trust dialog also has \"No, exit\" preselected."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The implementer subagent was dispatched in the background (\"Async agent launched successfully\"), while the skill's implementer template says to dispatch in the foreground (run_in_background: false). It worked, but it doesn't match the skill's guidance."
+    },
+    {
+      "kind": "ux",
+      "description": "Codex review was skipped (not installed) and the agent recorded the skip as a degraded gate. The hand-back explained this clearly and gave install steps."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The reviewer's minor note (src/b.sh has no trailing newline or shebang) was deferred to the ledger. That's reasonable given the plan specifies the exact file content."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development via Skill before implementation",
+      "verdict": "pass",
+      "evidence": "The first tool_use in session log 19d8f87d…jsonl is {\"skill\":\"hyperpowers:subagent-driven-development\"}, and the screen shows \"Skill(hyperpowers:subagent-driven-development) Successfully loaded skill\". This came before any edit or claim."
+    },
+    {
+      "criterion": "Ran sdd-state register and next; next output names Task 2",
+      "verdict": "pass",
+      "evidence": "Bash commands include \"$S/sdd-state register $P --session $SID --integration feature/parallel\" (output \"status=registered integration=feature/parallel\") and \"$S/sdd-state next $P --session $SID\" (output \"status=next tasks=2 own-blocked=none plan=1a6af3e\")."
+    },
+    {
+      "criterion": "Claimed Task 2 with claim ... 2 --session and worked it; ledger has Task 2: branch line",
+      "verdict": "pass",
+      "evidence": "Command \"$S/sdd-state claim $P 2 --session $SID\" returned \"status=claimed task=2 branch=feature/parallel.43d696ad.task-2 from=f391771\". progress.md line 19 reads \"Task 2: branch feature/parallel.43d696ad.task-2 from f391771\" and line 29 reads \"Task 2: complete\". git log on feature/parallel shows \"bd352c6 feat: b\"."
+    },
+    {
+      "criterion": "Never ran claim 1 --takeover",
+      "verdict": "pass",
+      "evidence": "I extracted every Bash tool_use command with jq and grepped for '--takeover': count 0. The only '--takeover' string in the log is inside the loaded skill text. The final message says \"I can take Task 1 over, but only if you say yes.\""
+    },
+    {
+      "criterion": "Did not stop at held Task 1 before claiming Task 2",
+      "verdict": "pass",
+      "evidence": "The session has exactly one AskUserQuestion, and it came before `next`. It was about the failed worktree (\"EnterWorktree refused... Where should this session work instead?\") and said \"Task 2 is free\". In the command sequence, next (line 31) is followed directly by claim 2 (line 33), with no hand-back in between. The agent only handed back after Task 2 was merged."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 487170,
+  "usage": {
+    "inputTokens": 60,
+    "outputTokens": 5410,
+    "cacheCreationInputTokens": 34195,
+    "cacheReadInputTokens": 515173,
+    "turns": 27
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-held-task-takes-frontier_20261106T150555Z_75mk",
+  "scenario": "sdd-held-task-takes-frontier",
+  "summary": "The second SDD session loaded hyperpowers:subagent-driven-development and created its own worktree (parallel-join). It registered on the plan and ran `sdd-state next`, which returned `tasks=2`. It claimed Task 2 without asking anything about Task 1, then implemented, reviewed and merged it. When it reached Task 3 (which needs Task 1), it stopped and handed back with a waiting board. It never took Task 1 over.",
+  "reasoning": "All five criteria are backed by the session log and the ledger on disk. The skill loaded first. register and next both ran, and next returned tasks=2. Task 2 was claimed with --session, implemented, reviewed and merged. No --takeover command was ever run, and the agent didn't stop or ask about Task 1 before claiming Task 2. Its hand-back at the end was correct, because Task 3 depends on the held Task 1.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent said that `git switch --detach feature/parallel` was blocked by an isolation hook: \"The isolation hook misreads the branch name `feature/parallel` as GNU `parallel`.\" It got around this by detaching on the raw commit sha instead. This looks like a false positive in the plugin's hook pattern matching."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent first ran a single combined Bash command (sync + sdd-dir + ls + cat). It then re-ran those steps as separate commands, which suggests the combined command failed or was blocked. This added extra round trips."
+    },
+    {
+      "kind": "ux",
+      "description": "The codex review gate was skipped because codex-plugin-cc isn't installed. The agent said so clearly in its summary and recorded it in the ledger."
+    },
+    {
+      "kind": "ux",
+      "description": "The startup dialogs ('Accessing workspace' trust prompt and the Bypass Permissions warning) are preselected to 'No, exit'. I also got an 'Update to Opus 5.5?' prompt, even though the launcher passes --model claude-opus-5-5, and the dialog said the pinned model was 'Opus 5'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The hand-back message was clear and useful. It showed a waiting board with the holder and how long it has held the task (silence=368s), explained that taking Task 1 over needs explicit approval, and gave the next step (resume to claim Task 3)."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "The agent invoked the subagent-driven-development skill before any implementation work",
+      "verdict": "pass",
+      "evidence": "The first tool call in the session log 423f9856-...jsonl is Skill {\"skill\":\"hyperpowers:subagent-driven-development\"}. It comes before using-git-worktrees, EnterWorktree and all Bash and Agent calls."
+    },
+    {
+      "criterion": "The agent ran sdd-state register and sdd-state next, and next names Task 2 as claimable",
+      "verdict": "pass",
+      "evidence": "Bash command: `sdd-state register docs/hyperpowers/plans/parallel.md --session 423f9856-... --integration feature/parallel` returned `status=registered integration=feature/parallel`. Bash command: `sdd-state next docs/hyperpowers/plans/parallel.md --session 423f9856-...` returned `status=next tasks=2 own-blocked=none plan=1a6af3e`."
+    },
+    {
+      "criterion": "The agent claimed Task 2 with `--session`, worked it, and the ledger has a Task 2: branch line",
+      "verdict": "pass",
+      "evidence": "Bash command: `sdd-state claim docs/hyperpowers/plans/parallel.md 2 --session 423f9856-...` returned `status=claimed task=2 branch=feature/parallel.43d696ad.task-2 from=59ae255`. progress.md contains `Task 2: branch feature/parallel.43d696ad.task-2 from 59ae255`, `Task 2: merged cf9e843 into feature/parallel` and `Task 2: complete (commits 59ae255..cf9e843, review clean)`."
+    },
+    {
+      "criterion": "The agent never ran sdd-state claim ... 1 ... --takeover",
+      "verdict": "pass",
+      "evidence": "I listed every Bash command in the log with jq and grepped for 'takeover|sdd-state (register|next|claim)'. The only matches were register, next (twice) and `claim ... 2`. `grep -c -- '--takeover'` found 1 line, and that line is the skill text the agent loaded (\"Take a held task over only on your human partner's explicit yes ... (`--takeover`)\"), not a command. The final message says: \"I didn't take Task 1 over.\""
+    },
+    {
+      "criterion": "The agent did not stop at the held Task 1 before taking Task 2",
+      "verdict": "pass",
+      "evidence": "In the log, the `next` call (Bash command #19) is followed only by a pre-flight scan, a tier note, a snapshot and then `claim ... 2` (command #38). There is no AskUserQuestion and no assistant hand-back in between. I only sent the initial prompt. The agent asked no takeover or confirmation question, so I never had to answer one. It handed back only after Task 2 was merged, when the second `next` returned `status=none reason=held held=1@fixture-session waiting=3`."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi"
+    ]
+  },
+  "duration_ms": 469945,
+  "usage": {
+    "inputTokens": 58,
+    "outputTokens": 5563,
+    "cacheCreationInputTokens": 28013,
+    "cacheReadInputTokens": 513666,
+    "turns": 26
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

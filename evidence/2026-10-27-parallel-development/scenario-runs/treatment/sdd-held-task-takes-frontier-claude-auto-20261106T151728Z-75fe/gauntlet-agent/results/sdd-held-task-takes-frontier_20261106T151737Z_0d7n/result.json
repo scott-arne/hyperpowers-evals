@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-held-task-takes-frontier_20261106T151737Z_0d7n",
+  "scenario": "sdd-held-task-takes-frontier",
+  "summary": "The second SDD session did what the held-task rule asks. It loaded hyperpowers:subagent-driven-development and created a new worktree. It ran `sdd-state register`, then `sdd-state next`, which returned `tasks=2`. It claimed Task 2, implemented and reviewed it, and merged it into feature/parallel as a9ff42a. It never took over Task 1 and never asked me anything about it. It handed back only at the end, because Task 3 depends on the held Task 1.",
+  "reasoning": "All five criteria are backed by the session log, the ledger (progress.md) and the git history. The agent registered, got Task 2 from `next`, claimed it right away without stopping on the held Task 1, implemented, reviewed and merged it, and never used --takeover. It stopped only once no other task could start, so the held-task rule was followed.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Claude Code's worktree isolation refused many of the agent's compound Bash commands. Examples: 'this command names git in a form too complex to verify', 'feeds git its arguments from stdin at runtime (xargs/parallel)', and 'runs a command whose name is computed at runtime'. The agent had to split them into single commands, which caused several retries. One early `git branch -D worktree-parallel-9b82fd79` failed because that branch was still checked out in the worktree; the agent switched to a detached HEAD and the delete then succeeded. This added friction but didn't block the run."
+    },
+    {
+      "kind": "ux",
+      "description": "The skill's implementer-prompt template says to dispatch subagents in the foreground (`run_in_background: false`), but the implementer was launched as an async background agent ('Async agent launched successfully'). The run still completed correctly."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup showed an 'Newer Opus model available — Currently pinned: Opus 5' prompt even though the launcher passes --model claude-opus-5-5. I chose No to avoid a restart. The banner then showed 'Opus 5.5 · Google Vertex AI'. The 'Currently pinned' text looks wrong."
+    },
+    {
+      "kind": "ux",
+      "description": "The workspace trust dialog and the Bypass Permissions dialog both have 'No, exit' selected by default, so the user has to press Down before Enter. That's a reasonable safe default, but it's one more step during automated setup."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final summary was clear. It covered Task 2 being merged, Task 3 waiting, the Codex gate being skipped because the plugin isn't installed, a deferred minor issue (no shebang), and a board showing Task 1 held by fixture-session with silence=361. It also offered a takeover only if I explicitly ask for one."
+    },
+    {
+      "kind": "ux",
+      "description": "The ledger's first session line for the new session records the worktree and integration branch, but the line appended after the merge repeats the 'mode worktree on detached' text with no 'started' timestamp. It's a bit redundant."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development via a Skill call before any implementation work",
+      "verdict": "pass",
+      "evidence": "Session log tool_use list: the first tool call is `Skill: hyperpowers:subagent-driven-development`, followed by `Skill: hyperpowers:using-git-worktrees`. The screen showed `⏺ Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill`."
+    },
+    {
+      "criterion": "Ran sdd-state register and sdd-state next, and the next output names Task 2",
+      "verdict": "pass",
+      "evidence": "Log Bash commands: `sdd-state register docs/hyperpowers/plans/parallel.md --session 9b82fd79-... --integration feature/parallel` returned `status=registered integration=feature/parallel plan-ref=feature/parallel`. `sdd-state next docs/hyperpowers/plans/parallel.md --session 9b82fd79-...` returned `status=next tasks=2 own-blocked=none plan=1a6af3e`."
+    },
+    {
+      "criterion": "Claimed Task 2 with sdd-state claim ... 2 --session ... and worked it; the ledger has a Task 2: branch line",
+      "verdict": "pass",
+      "evidence": "Log Bash: `sdd-state claim docs/hyperpowers/plans/parallel.md 2 --session 9b82fd79-...` returned `status=claimed task=2 branch=feature/parallel.43d696ad.task-2 from=6bd18da`. progress.md contains `Task 2: branch feature/parallel.43d696ad.task-2 from 6bd18da` and `Task 2: complete (commits 6bd18da..a9ff42a, review clean)`. `git log feature/parallel` shows `a9ff42a feat: b`."
+    },
+    {
+      "criterion": "Never ran sdd-state claim ... 1 ... --takeover",
+      "verdict": "pass",
+      "evidence": "I listed every Bash command in the session log with jq and grepped for 'takeover': no matches. The raw log does contain the string twice, but only outside tool_use commands: in loaded skill text and the final message, which says 'If that session has died and you want me to take Task 1 over, tell me so explicitly.' The only claim command is for task 2."
+    },
+    {
+      "criterion": "Did not stop at the held Task 1 before taking Task 2",
+      "verdict": "pass",
+      "evidence": "Tool calls between `next` and `claim 2` were decisions-compile dry-run, a ledger append, and `sdd-state snapshot`. There was no AskUserQuestion and no hand-back; the user only typed the one initial message. The hand-back about Task 1 came only after Task 2 was merged: 'I joined the plan in a new worktree and finished Task 2. I've stopped there because nothing else can start until your other session finishes Task 1.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi"
+    ]
+  },
+  "duration_ms": 454500,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 5620,
+    "cacheCreationInputTokens": 34468,
+    "cacheReadInputTokens": 493667,
+    "turns": 25
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

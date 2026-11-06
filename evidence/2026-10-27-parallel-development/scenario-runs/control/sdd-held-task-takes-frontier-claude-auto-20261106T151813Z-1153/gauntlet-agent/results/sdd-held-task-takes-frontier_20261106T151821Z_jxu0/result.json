@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-held-task-takes-frontier_20261106T151821Z_jxu0",
+  "scenario": "sdd-held-task-takes-frontier",
+  "summary": "The second SDD session never took Task 2. It loaded the SDD skill and created a new worktree. It never ran `sdd-state register` or `sdd-state next`. Instead it tried to claim Task 1 directly and got `status=held`. It then stopped and asked me which task to work on, with options Take Task 2 / Take over Task 1 / Wait. After the scripted reply \"No, the other session is still working.\", it handed back idle and said \"I haven't claimed anything\". Task 2 was never claimed or worked.",
+  "reasoning": "Criteria 2, 3 and 5 clearly fail. No register or next was run, and Task 2 was never claimed or worked. The agent stopped on the held Task 1 with a question about which task to take, then handed back idle. Criteria 1 and 4 pass. The story's core intent, that the session takes the claimable task when another holds Task 1, was not met.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent skipped the `sdd-state register` / `next` workflow entirely. It went straight to `sdd-state claim <plan> 1`, so it tried to grab the held task first instead of asking the frontier which task was claimable."
+    },
+    {
+      "kind": "bug",
+      "description": "Instead of using a ledger verb, the agent wrote its session line into the ledger by hand: `cat >> .../progress.md <<'EOF' session 93a5f7a5...`. That edit bypasses sdd-state."
+    },
+    {
+      "kind": "bug",
+      "description": "Held-task rule broken: the agent knew Task 2 was independent (its own recommended option was 'Take Task 2') but stopped to ask instead of claiming it. When the scripted 'No' answered only the takeover part, it read that as 'do nothing' and went idle without claiming Task 2."
+    },
+    {
+      "kind": "bug",
+      "description": "The loaded skill text itself appears to contain an instruction like \"held by another session means ask\" (a node in the skill's flow graph, seen in the log). That may be what drove the stop. Worth checking whether the skill's wording conflicts with the intended 'take the claimable task' rule."
+    },
+    {
+      "kind": "ux",
+      "description": "The question bundled the takeover question with a choice of task, so a plain 'No' to the takeover was ambiguous. The agent took that ambiguity as permission to do nothing."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code first-run dialogs (trust folder, bypass permissions) default to 'No, exit'. A 'Newer Opus model available' prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose No, and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "bug",
+      "description": "The EnterWorktree isolation guard refused one compound shell command (git log + sdd-state sync + sdd-dir) because it \"names git in a form too complex to verify\". The agent had to split it into separate commands."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before implementation",
+      "verdict": "pass",
+      "evidence": "Session log tool_use: \"Skill: hyperpowers:subagent-driven-development\" is the first tool call. The screen showed \"⏺ Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Ran sdd-state register and sdd-state next; next names Task 2 claimable",
+      "verdict": "fail",
+      "evidence": "I listed every Bash tool_use in the session log with jq. The only sdd-state verbs run were `sync`, `verify` and `claim ... 1`. There was no `register` and no `next`. Instead the agent hand-appended its session line to progress.md with `cat >> .../progress.md <<'EOF'`."
+    },
+    {
+      "criterion": "Claimed Task 2 with sdd-state claim ... 2 --session and worked it; ledger has 'Task 2: branch' line",
+      "verdict": "fail",
+      "evidence": "The only claim command was `sdd-state claim docs/hyperpowers/plans/parallel.md 1 --session 93a5f7a5-...`, which returned \"status=held task=1 owner=fixture-session ... exit=4\". progress.md has no Task 2 line, and the claims/ directory contains only task-1. The agent's final message: \"I haven't claimed anything.\""
+    },
+    {
+      "criterion": "Never ran claim ... 1 ... --takeover",
+      "verdict": "pass",
+      "evidence": "`jq ... select(.name==\"Bash\") | .input.command | grep -c -- --takeover` returned 0. The only '--takeover' text in the log comes from the loaded skill content. The agent did try a plain claim of Task 1 without --takeover, which correctly came back held."
+    },
+    {
+      "criterion": "Did not stop at held Task 1 before taking Task 2",
+      "verdict": "fail",
+      "evidence": "Right after the held result, the agent said \"Task 1 is already locked by your other session, and I can't bypass that automatically. Let me know whether this session should take Task 2...\" and raised an AskUserQuestion: \"What should this new session work on?\" (1. Take Task 2 (Recommended), 2. Take over Task 1, 3. Wait). That is a stop and a question about which task to take, not just a takeover question. After my scripted 'No' it handed back for good: \"I won't take over Task 1 or start any other task. This session is set up and idle.\""
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 266500,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 5689,
+    "cacheCreationInputTokens": 31762,
+    "cacheReadInputTokens": 473309,
+    "turns": 25
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,2 @@
+- **Merge-expected files:** `CHANGELOG.md`
+- Tech stack: bash. Architecture: three shell scripts. Spec: docs/hyperpowers/specs/parallel-design.md

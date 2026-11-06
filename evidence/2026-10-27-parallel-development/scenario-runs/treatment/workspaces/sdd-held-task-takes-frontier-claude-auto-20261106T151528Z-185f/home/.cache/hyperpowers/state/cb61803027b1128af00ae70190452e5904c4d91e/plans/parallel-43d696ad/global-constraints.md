@@ -1,0 +1,2 @@
+- **Merge-expected files:** `CHANGELOG.md`
+- Architecture: three shell scripts (bash). Task 3 runs `bash src/b.sh` and consumes its stdout.

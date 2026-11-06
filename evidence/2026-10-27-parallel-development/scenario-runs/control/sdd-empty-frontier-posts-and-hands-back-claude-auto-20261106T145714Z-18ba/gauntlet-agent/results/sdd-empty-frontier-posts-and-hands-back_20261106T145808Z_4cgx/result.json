@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-empty-frontier-posts-and-hands-back_20261106T145808Z_4cgx",
+  "scenario": "sdd-empty-frontier-posts-and-hands-back",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development, made a new worktree, found both tasks held by fixture-session, and correctly did not take any over. It skipped the skill's empty-frontier protocol, though. It never ran `sdd-state next`, never posted a `--kind tasks` waiting record, and never ran `sdd-state board`. Instead it tried `sdd-state claim` on both tasks, asked me what to do with AskUserQuestion, and handed back without the board or a waiting record.",
+  "reasoning": "Criteria 2, 3 and 4 fail. The session log has no `sdd-state next`, `wait` or `board` commands, and there's no waiting/ directory in the harness home's cache. The agent behaved safely: it took no tasks over and handed back. But it did not carry out the empty-frontier protocol the scenario tests.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent did not follow the empty-frontier rule. It skipped `sdd-state next` and tried `sdd-state claim` on every task to find out which were free, then asked the user instead of posting a `--kind tasks` waiting record and printing `sdd-state board`. Either the SKILL.md wording doesn't steer the agent to next → wait → board strongly enough, or the agent ignored it."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent added its session line to progress.md by hand with `printf ... >> $W/progress.md`, writing straight into the state cache instead of using an sdd-state verb. It also used `$(date -u +%s)-$RANDOM` as a fallback session ID. Hand-editing the shared ledger could clash with the tooling's own format or locking."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent offered 'Take over Task 2 only' and 'Take over both' while the user had said the other session holds the tasks. A takeover was one keypress away, when the skill's default should be to wait quietly."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent created a worktree on a new branch (worktree-parallel-join) with the native EnterWorktree tool. The integration branch is feature/parallel. It's unclear whether the skill expects the worktree to be based on or tied to the plan's integration branch."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup showed a 'Newer Opus model available' dialog and a Bypass Permissions warning whose default choice is 'No, exit'. The workspace trust dialog also defaults to 'No, exit'. Easy to quit by accident while scripting."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked subagent-driven-development skill before any other work",
+      "verdict": "pass",
+      "evidence": "Tool calls listed from the session log ab1345cd-...jsonl: first tool_use is 'Skill: hyperpowers:subagent-driven-development', then 'Skill: hyperpowers:using-git-worktrees'."
+    },
+    {
+      "criterion": "Ran `sdd-state next` and output shows `none reason=held`",
+      "verdict": "fail",
+      "evidence": "Grepping the log's Bash commands for 'next|wait|board|takeover' found nothing. The agent ran `sdd-state sync`, `sdd-dir`, `sdd-state verify` and `sdd-state claim ... 1/2 --session ab1345cd-...`, but never `next`. The claim output showed 'status=held task=1 owner=fixture-session ...'."
+    },
+    {
+      "criterion": "Posted a waiting record of kind `tasks` (command plus a file under waiting/ holding kind=tasks)",
+      "verdict": "fail",
+      "evidence": "No `sdd-state wait` command appears in the log (same grep, no matches). `find ./.cache -path '*waiting*'` under the harness home returned nothing."
+    },
+    {
+      "criterion": "Printed the board via `sdd-state board`",
+      "verdict": "fail",
+      "evidence": "No `board` command appears in the log's Bash tool_use commands (grep, no matches). The screen showed no board output."
+    },
+    {
+      "criterion": "Handed back saying every task is held by another session",
+      "verdict": "pass",
+      "evidence": "Before asking, the screen said: 'both tasks in parallel.md are already claimed by fixture-session (held since ~14:57Z, no completion lines yet), so nothing's free to pick up.' The final message was: 'Got it. I'm not taking over either task, and this session will stay idle until you tell it what to do next.' It did hand back, though without the board or a waiting record."
+    },
+    {
+      "criterion": "Did not take over a held task (no --takeover)",
+      "verdict": "pass",
+      "evidence": "Grepping all Bash commands in the session log for 'takeover' found nothing. The claim files still show 'status=held task=1 owner=fixture-session' and 'status=held task=2 owner=fixture-session'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi"
+    ]
+  },
+  "duration_ms": 321557,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 4922,
+    "cacheCreationInputTokens": 36785,
+    "cacheReadInputTokens": 378001,
+    "turns": 25
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 2700000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
