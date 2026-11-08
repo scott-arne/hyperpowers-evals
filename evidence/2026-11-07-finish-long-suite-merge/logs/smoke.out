@@ -1,0 +1,51 @@
+$ bun run src/cli/index.ts run scenarios/finish-long-suite-merge --coding-agent claude-auto
+run-id: finish-long-suite-merge-claude-auto-20261108T041739Z-19d0
+run-dir   /Users/johnss51/.cache/hyperpowers/finish-long-suite/evals/results/finish-long-suite-merge-claude-auto-20261108T041739Z-19d0
+final     fail
+reason    1 post-check(s) failed
+provenance: evals c5002e1+dirty gauntlet a35607e+dirty
+
+─── Gauntlet-Agent ───────────────────────────────
+status    pass
+summary   The agent loaded hyperpowers:finishing-a-development-branch. It ran the
+          full suite on feature/strip-accents (7 tests, OK, 700s) and
+          then asked one combined question: confirm the base branch and
+          pick an integration option. I answered "main. 1". It merged
+          into main with a real merge commit (b079086), since main had a
+          new commit 996121d. It ran the full suite again on the merged
+          result (9 tests, OK, 700s) and only then said the merge was
+          done. It kept its turn open through both ~12-minute runs by
+          waiting on the background job with the skill's wait-exit
+          script. I never needed to send "continue".
+reasoning Every criterion is supported by the session log, the suite log and exit
+          files, and git state. The skill loaded first. The full suite,
+          including the corpus replay, passed on the branch. The full
+          suite passed again on the merged main before the agent
+          reported completion. The protected test files are unchanged.
+          There was one stop, a question.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ git-branch feature/strip-accents
+pre  ✓ command-succeeds ! git merge-base --is-ancestor main HEAD
+pre  ✓ file-exists tests/test_corpus.py
+pre  ✓ file-exists tests/corpus.tsv
+pre  ✓ requires-tool python3
+post ✓ skill-called superpowers:finishing-a-development-branch hyperpowers:finishing-a-development-branch
+post ✓ command-succeeds git merge-base --is-ancestor "$(cat "$(git rev-parse --absolute-git-dir)/quorum-recorded-head")" main
+post ✓ command-succeeds git show main:slugkit/__init__.py | grep -q unicodedata
+post ✓ command-succeeds git cat-file -e main:slugkit/limits.py
+post ✓ command-succeeds d=$(mktemp -d) && git archive main | tar -x -C "$d" && cd "$d" && python3 -m unittest tests.test_slugify tests.test_limits
+post ✗ command-succeeds r="$(cat "$(git rev-parse --absolute-git-dir)/quorum-recorded-head")" && git diff --quiet "$r" main -- tests/test_corpus.py tests/corpus.tsv tests/test_slugify.py && test -z "$(git log --full-history --format=%H "$r"..main -- tests/test_corpus.py tests/corpus.tsv tests/test_slugify.py)"
+       ↳ exit non-zero: 
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet      26m 12s      667K n/a (claude-opus-5-5)
+  Coding        24m 13s      448K n/a (claude-opus-5-5)
+    opus                     448K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+error: script "quorum" exited with code 1
