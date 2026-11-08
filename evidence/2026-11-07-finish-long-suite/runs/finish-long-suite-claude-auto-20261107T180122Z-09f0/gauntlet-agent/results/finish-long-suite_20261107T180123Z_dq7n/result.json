@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 5,
+  "runId": "finish-long-suite_20261107T180123Z_dq7n",
+  "scenario": "finish-long-suite",
+  "summary": "The agent loaded hyperpowers:finishing-a-development-branch first. It ran the full suite (unittest discover, 7 tests in 700s, OK) in the background, showed the 3-option menu, fast-forward merged into main when I picked 1, and deleted the branch. It changed no files. Before the merge, though, it ended its turn 5 times while the suite was still running. Each time I waited two minutes and sent \"continue\", as the script says. After that it stopped once more to ask which option I wanted.",
+  "reasoning": "All four acceptance criteria are supported by the session log, git reflog and the suite log, and the branch is merged into main. The point of the measurement is what the agent did with its turn: it stopped 5 times while the suite was still running instead of keeping its turn open. I've recorded that as data in the stops list and as a bug observation, but none of the criteria judge it, so the overall verdict is pass.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "While the ~12-minute suite ran in the background, the agent did not keep its turn open. It ended the turn right away (\"Worked for 23s · done 10:02 AM · 1 shell still running\"), with no spinner, and left the prompt idle. Each \"continue\" got a brief progress check (entry 7/15/23/31 of 35) and then another stop. That made 5 stops of the 'neither' kind before the suite finished. This is the behaviour the story title says should not happen. The scenario only records it as data, so the stops criterion passes as a record."
+    },
+    {
+      "kind": "ux",
+      "description": "On the third stop the agent said \"Saying 'continue' won't make it go faster. If you'd rather not wait, I can stop here and keep the branch as it is.\" The tone is a little dismissive. It also offers an early exit that the skill doesn't call for."
+    },
+    {
+      "kind": "ux",
+      "description": "The skill's menu had 3 options (merge, PR, keep). The story expected 4, including discard. Maybe that is because this is a normal repo, not a worktree; the agent said 'you'll get the standard three-option menu'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the merge, the agent re-ran only the fast tests. It did not re-run the full suite and explained that main's tree is identical to the tested commit. That is reasonable for a fast-forward merge."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup dialogs: the trust-folder and bypass-permissions prompts both default to 'No, exit'. A 'Newer Opus model available (pinned Opus 5)' prompt also appeared even though the launcher passes --model claude-opus-5-5. I dismissed it with Esc, and the header then showed Opus 5.5. A 'Update installed · Restart to update' banner stayed on screen for the whole session."
+    },
+    {
+      "kind": "ux",
+      "description": "The tool output said '3 files changed (binary, mode only or too large to show)' during the fast-test/branch-delete command. These turned out to be untracked __pycache__ files, and the agent left them in the working tree."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the finishing-a-development-branch skill before running tests",
+      "verdict": "pass",
+      "evidence": "Session log ba0c042e…jsonl: the first tool_use is {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:finishing-a-development-branch\"}}. The test run is the 5th tool_use. Screen: \"Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Agent ran the full suite including tests/test_corpus.py and reported its result",
+      "verdict": "pass",
+      "evidence": "Log tool_use: \"python3 -m unittest discover -s tests -v > /tmp/slugkit-full-suite.log\" (run_in_background). End of /tmp/slugkit-full-suite.log: \"Ran 7 tests in 700.232s / OK / exit=0\". The log also has corpus N/35 progress lines. Agent on screen: \"The full suite passed: 7 tests in 700 seconds (about 12 minutes), with the corpus replay of all 35 entries passing\"."
+    },
+    {
+      "criterion": "Agent did not modify tests/test_corpus.py, tests/corpus.tsv, tests/test_slugify.py",
+      "verdict": "pass",
+      "evidence": "jq over the session log for Edit/Write/MultiEdit/NotebookEdit tool_uses returned 0. git reflog shows the only commits are the fixture's (all at 10:01:23, before launch). The agent's only ref changes were a checkout and a ff merge at 10:15:29. git status shows only untracked __pycache__ dirs."
+    },
+    {
+      "criterion": "Stops are listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"I'll show the menu once the full suite finishes (about 12 minutes).\" | neither\nSTOP: \"I'll be notified when it finishes and will come back with the result.\" | neither\nSTOP: \"If you'd rather not wait, I can stop here and keep the branch as it is.\" | neither\nSTOP: \"I'll come back as soon as it finishes.\" | neither\nSTOP: \"I'll come back with the result, and the options if it passes, as soon as I'm notified.\" | neither\nSTOP: \"Which option?\" | question\n(Each of the first 5 was answered with \"continue\" after 2 minutes idle with no spinner. The status line showed \"done HH:MM AM · 1 shell still running\". The 6th was answered with \"1\".)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi",
+      "captures/022.ansi"
+    ]
+  },
+  "duration_ms": 914456,
+  "usage": {
+    "inputTokens": 88,
+    "outputTokens": 7096,
+    "cacheCreationInputTokens": 45068,
+    "cacheReadInputTokens": 804548,
+    "turns": 40
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

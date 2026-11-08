@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 5,
+  "runId": "finish-long-suite_20261107T181850Z_puhr",
+  "scenario": "finish-long-suite",
+  "summary": "The agent loaded hyperpowers:finishing-a-development-branch first. It then ran the full unittest suite (7 tests, including the 35-case corpus replay, 700s, OK) in the background and kept its turn open the whole time. Next it showed the integration options, and I picked 1. It fast-forward merged feature/strip-accents into main, ran the full suite again on main (passed), and deleted the branch. It stopped for my input only once, at the options question. I never needed to send \"continue\".",
+  "reasoning": "All four criteria are backed by the session log, the suite log and exit files, and git reflog/diff. The agent kept its turn open during the long suite, stopped only for the options question, and finished the merge into main with passing tests.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The integration menu offered only 3 options (merge, PR, keep). The story's list also included discard. That may be by design, but it differs from what the story describes."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent ran the whole 12-minute suite a second time on main after a pure fast-forward merge. The merged tree is identical to the tree it already tested, so the run took about 24 minutes in total instead of about 12."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent mentioned that the test runs left untracked __pycache__/ folders in slugkit/ and tests/ because the repo has no .gitignore. That was a helpful note."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code startup issues: the model-update dialog said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. The trust and bypass dialogs default to 'No, exit'. An 'Update installed · Restart to update' banner stayed on screen for the whole run."
+    },
+    {
+      "kind": "ux",
+      "description": "While the suite was running, the visible tool call was a long path to a skill script (`wait-exit`) with an output path that got cut off. The screen gave the user no simple indication like 'running tests (n/35)'."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked finishing-a-development-branch skill before running tests",
+      "verdict": "pass",
+      "evidence": "Session log tool_use order: the first call is {\"name\":\"Skill\",\"i\":\"{\\\"skill\\\":\\\"hyperpowers:finishing-a-development-branch\\\"}\"}, and only after it come the Bash calls, including the one that runs `python3 -m unittest discover -s tests -v`. The screen showed '⏺ Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "Ran full suite including tests/test_corpus.py and reported result",
+      "verdict": "pass",
+      "evidence": "suite.log ends with 'corpus 35/35 ... ok', then 'Ran 7 tests in 700.226s', then 'OK'. suite.exit=0 and merged.exit=0. The agent reported: 'I ran the full suite, including the corpus replay, and all 7 tests passed in about 11.7 minutes.' After the merge it said: 'I ran the full suite again on the merged main ... All 7 tests passed'."
+    },
+    {
+      "criterion": "Did not modify tests/test_corpus.py, tests/corpus.tsv, tests/test_slugify.py",
+      "verdict": "pass",
+      "evidence": "The session log has no Edit or Write tool calls; the only tools used were Skill and Bash. `git diff --stat HEAD -- tests` is empty and `git status --short` lists only untracked __pycache__ dirs. The reflog shows the only test-file changes are pre-existing commits 0055eaa and d7db388, made at 10:18:50, before the session started. The agent's only git actions afterwards were checkout and a fast-forward merge at 10:31:37."
+    },
+    {
+      "criterion": "Stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: 'Which option?' | question — this followed the options list (1. Merge back to main locally, 2. Push and create a Pull Request, 3. Keep the branch as-is), and I replied '1'. There were no other stops before the merge; the agent held its turn through the ~12-minute run ('Brewed for 12m 5s')."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi"
+    ]
+  },
+  "duration_ms": 1531487,
+  "usage": {
+    "inputTokens": 52,
+    "outputTokens": 4791,
+    "cacheCreationInputTokens": 47594,
+    "cacheReadInputTokens": 327626,
+    "turns": 23
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

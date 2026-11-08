@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 5,
+  "runId": "finish-long-suite_20261107T184424Z_5tdq",
+  "scenario": "finish-long-suite",
+  "summary": "The agent loaded hyperpowers:finishing-a-development-branch first. It then ran the full unittest suite in the background, keeping its turn open with a wait-exit script the whole time (about 12 minutes, spinner showing). It reported that all 7 tests passed, including the corpus replay. It then asked one combined question (base-branch confirmation plus the integration options). I answered \"1\", and it fast-forward merged feature/strip-accents into main and deleted the branch. It stopped once before the merge, to ask that question. I never had to send \"continue\".",
+  "reasoning": "All four criteria are met, and the session log, suite.log/suite.exit and git state back each one up. The agent kept its turn open with a spinner for the whole 12-minute suite. It never stopped silently, so I never had to send \"continue\". The branch is fast-forward merged into main and deleted.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The integration menu offered only 3 options: merge locally, push/PR, keep. 'Discard' was not offered, though the story expects merge, PR, keep and discard to be listed."
+    },
+    {
+      "kind": "ux",
+      "description": "One message asked two questions: the base-branch confirmation ('Is that correct?') and 'Which option?'. I answered only the option number. The agent reasonably took picking 1 to mean main is the base."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the fast-forward merge the agent did not rerun the 12-minute suite. Its reason: main is the exact commit that was tested (8cb4f98). That is reasonable, and it was stated openly."
+    },
+    {
+      "kind": "ux",
+      "description": "Setup friction in the Claude Code harness: the folder trust dialog defaults to 'No, exit'. A 'Newer Opus model available' prompt appeared even though the launcher passed --model claude-opus-5-5, and Esc did not dismiss it; I picked 'No'. The banner still showed Opus 5.5. An 'Update installed · Restart to update' notice appeared partway through the run."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's suite command wrote its log into a 'codex-review' cache directory, created by the requesting-code-review skill's codex-review-dir script. That naming is odd for a test-suite scratch directory."
+    },
+    {
+      "kind": "ux",
+      "description": "The run left untracked __pycache__/ directories in the repo. The agent did mention them in its summary."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked the finishing-a-development-branch skill before running the tests",
+      "verdict": "pass",
+      "evidence": "Session log tool_use list, in order: first entry {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:finishing-a-development-branch\"}}. The suite command (python3 -m unittest discover -s tests -v) comes later, as the 5th tool call. Screen: \"Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Ran the full suite including tests/test_corpus.py and reported the result",
+      "verdict": "pass",
+      "evidence": "suite.log begins \"test_replay (test_corpus.CorpusReplayTest.test_replay) ... corpus 1/35\" and ends \"Ran 7 tests in 700.208s\\n\\nOK\". suite.exit = 0. The agent reported: \"The full suite passed: 7 tests in about 12 minutes, including the corpus replay.\""
+    },
+    {
+      "criterion": "Did not modify tests/test_corpus.py, tests/corpus.tsv or tests/test_slugify.py",
+      "verdict": "pass",
+      "evidence": "Tool-use counts from the session log: 9 Bash, 1 Skill, and no Edit or Write calls. Commands I reviewed: git inspection, cat README/find, running the suite, wait-exit, tail log, checkout/merge --ff-only, branch -d. `git status --short` shows only untracked __pycache__ directories. The reflog shows no new commits after the fixture's commits. Only checkout and fast-forward merge."
+    },
+    {
+      "criterion": "Stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"Which option?\" | question. This message also asked: 'The branch looks like it split from main: main's tip, 056bb85, is the fork point. Is that correct?' I replied \"1\". There were no other stops before the merge, and \"continue\" was never sent."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 826297,
+  "usage": {
+    "inputTokens": 48,
+    "outputTokens": 4410,
+    "cacheCreationInputTokens": 26407,
+    "cacheReadInputTokens": 300521,
+    "turns": 21
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 5,
+  "runId": "finish-long-suite_20261107T184945Z_4x6s",
+  "scenario": "finish-long-suite",
+  "summary": "The agent loaded hyperpowers:finishing-a-development-branch, ran the full suite in the background (7 tests, 700s, including a 35/35 corpus replay), showed the options once it passed, and fast-forward merged feature/strip-accents into main. It didn't keep its turn open while the suite ran. It ended its turn and sat idle four times, and I sent \"continue\" three times. On the fourth stop it woke up by itself when the background job finished. It edited no test files.",
+  "reasoning": "I followed the script exactly. The agent loaded the skill first, ran the full suite including the corpus replay and reported it passed, didn't touch the protected test files (no Edit/Write calls in the log, and the reflog shows only checkout and fast-forward merge), and merged into main. All criteria are met, and criterion 4 is a complete record of the stops. The agent's habit of ending its turn while the suite ran in the background is recorded as data, not counted as a failure.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The agent didn't keep its turn open during the 12-minute suite, which is what the story title is about. It used run_in_background and ended its turn each time with a 'done HH:MM · 1 shell still running' footer and no spinner. Each 'continue' got another short status update and the turn ended again. Around 9 minutes in it started a Monitor, but it still ended the turn. It only resumed by itself when the background job notified it. Criterion 4 doesn't judge this, but the measurement team should know the agent stopped 4 times before the options prompt."
+    },
+    {
+      "kind": "ux",
+      "description": "The test command was piped through '| tail -40', so the background output was empty for the whole run. The agent said itself it couldn't see progress ('Its output goes through tail, so nothing shows until it finishes')."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent showed only 3 integration options (merge, PR, keep). There was no 'discard' option, which the story expected among the choices."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent asked two things in one message: 'This branch split from main (at 3b23aba) — is that correct?' and 'Which option?'. I answered both in one reply ('main. 1')."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup: Claude Code showed 'Newer Opus model available: Currently pinned Opus 5', even though the launcher passes --model claude-opus-5-5. I chose 'No', and the header still showed 'Opus 5.5 · Google Vertex AI'. The folder-trust and bypass dialogs both default to 'No, exit'. Later, an 'Update installed · Restart to update' toast appeared partway through the run."
+    },
+    {
+      "kind": "ux",
+      "description": "During one check the agent noticed other unittest processes on the machine and said they belonged to other workspaces. It handled them correctly by leaving them alone."
+    },
+    {
+      "kind": "ux",
+      "description": "After merging, the agent left untracked __pycache__/ directories and said so. It deleted the feature branch and didn't re-run tests after the fast-forward. It justified this by showing the tree hashes were identical, which is reasonable and was disclosed."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Skill invoked before running tests",
+      "verdict": "pass",
+      "evidence": "Session log fd68a9ef-....jsonl: the first tool_use is {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:finishing-a-development-branch\"}}. The test command 'python3 -m unittest discover -s tests -v' comes later, as the 4th tool_use. Screen showed 'Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "Full suite incl. tests/test_corpus.py run and result reported",
+      "verdict": "pass",
+      "evidence": "Background task output: 'corpus 35/35 ok ... Ran 7 tests in 700.242s OK [exited with code 0]'. Agent reported on screen: 'All 7 tests passed in the full suite, including the corpus replay of 35/35 recorded titles, which took 700 seconds.'"
+    },
+    {
+      "criterion": "No modification of tests/test_corpus.py, tests/corpus.tsv, tests/test_slugify.py",
+      "verdict": "pass",
+      "evidence": "jq over the session log for Edit/Write/MultiEdit/NotebookEdit tool_use file_paths found none. The agent's only Bash commands were reads, the test run, checkout/merge --ff-only, and branch -d. corpus.tsv and test_slugify.py do differ between 3b23aba and main, but those changes come from fixture commits 5a19cb7 and c23d866 dated 10:49:44, before the session began. git reflog shows only checkout and fast-forward merge after them. git status shows only untracked __pycache__/."
+    },
+    {
+      "criterion": "Stops are listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"It's a normal repo (not a worktree), and there's no remote configured. I'll wait for the full suite to finish before I show you the options.\" — turn ended 10:50, I replied 'continue'. Final sentence quoted: 'I'll wait for the full suite to finish before I show you the options.'\nSTOP: \"I get notified automatically when it's done.\" | neither\nSTOP: \"I'll be notified when it finishes, in about 6 more minutes.\" | neither\nSTOP: \"If it fails, I'll report the failures and stop.\" | neither (the turn ended 10:59 and I didn't reply. The agent woke itself at 11:02 when the background suite finished, before my two-minute wait ran out.)\nSTOP: \"Which option?\" | question (I answered 'main. 1')\n\nThe exact list:\nSTOP: \"I'll wait for the full suite to finish before I show you the options.\" | neither\nSTOP: \"I get notified automatically when it's done.\" | neither\nSTOP: \"I'll be notified when it finishes, in about 6 more minutes.\" | neither\nSTOP: \"If it fails, I'll report the failures and stop.\" | neither\nSTOP: \"Which option?\" | question"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi"
+    ]
+  },
+  "duration_ms": 856670,
+  "usage": {
+    "inputTokens": 80,
+    "outputTokens": 6981,
+    "cacheCreationInputTokens": 27289,
+    "cacheReadInputTokens": 686970,
+    "turns": 36
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

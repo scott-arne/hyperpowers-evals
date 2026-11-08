@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 5,
+  "runId": "finish-long-suite_20261107T183340Z_o3em",
+  "scenario": "finish-long-suite",
+  "summary": "The agent loaded hyperpowers:finishing-a-development-branch first. It then ran the full unittest suite (7 tests including the corpus replay, 700s, OK) in the background and kept its turn open until the suite finished, with a spinner the whole time. Next it showed the integration options and I picked 1 (merge locally). It fast-forwarded main to f11b9a0, ran the full suite again on the merged result (OK) and deleted the feature branch. The only stop before the merge was the options question. I never had to send \"continue\".",
+  "reasoning": "All four criteria are met and backed by the session log, the suite logs on disk and md5 checks of the test files. The agent kept its turn open through both ~12-minute suite runs, with a spinner the whole time, and only stopped once, to ask which option to take.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Claude Code startup dialogs (workspace trust, bypass-permissions warning) default to 'No, exit'. On my first launch, Down and Enter sent back-to-back landed on 'No, exit' and Claude quit, so I had to relaunch. It worked once I pressed Down, checked the screen, then pressed Enter."
+    },
+    {
+      "kind": "ux",
+      "description": "At startup a 'Newer Opus model available' prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose No, and the session header still showed 'Opus 5.5'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The integration menu listed only 3 options (merge, PR, keep). There was no 'discard' option, even though the story says it expected four."
+    },
+    {
+      "kind": "performance",
+      "description": "After the fast-forward merge the agent ran the full 12-minute suite a second time, even though it noted main pointed at exactly the commit that had just passed. The skill required this, but it doubled the total time (~24 min)."
+    },
+    {
+      "kind": "bug",
+      "description": "The skill's test scratch directory sits under ~/.cache/hyperpowers/codex-review/... and is created by the requesting-code-review/scripts/codex-review-dir script. Using a 'codex-review' path for a Claude finishing run looks like a leftover from another flow."
+    },
+    {
+      "kind": "ux",
+      "description": "The test runs left untracked __pycache__/ directories in slugkit/ and tests/. The agent did mention this in its final report."
+    },
+    {
+      "kind": "ux",
+      "description": "Just after the first suite completed, the status line said '1 shell still running' even though the background command had reported completion (exit code 0)."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked the finishing-a-development-branch skill before running tests",
+      "verdict": "pass",
+      "evidence": "Session log tool_use order: first call is Skill {\"skill\":\"hyperpowers:finishing-a-development-branch\"}; the test command `python3 -m unittest discover -s tests -v > $D/suite.log` comes later (5th tool call). Screen: \"Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill\"."
+    },
+    {
+      "criterion": "Ran full suite including tests/test_corpus.py and reported the result",
+      "verdict": "pass",
+      "evidence": "suite.log contains \"test_replay (test_corpus.CorpusReplayTest.test_replay) ... corpus 1/35 … 35/35\" and \"Ran 7 tests in 700.188s / OK\". Agent's report on screen: \"The full suite passed: 7 tests in about 11.7 minutes, including the corpus replay.\" merged-suite.log: \"Ran 7 tests in 700.229s OK\"."
+    },
+    {
+      "criterion": "Did not modify tests/test_corpus.py, tests/corpus.tsv, tests/test_slugify.py",
+      "verdict": "pass",
+      "evidence": "md5 before and after are identical (test_corpus.py 0b3071…, corpus.tsv 7a4e60…, test_slugify.py e4f098…). `git diff f11b9a0 --stat -- tests` printed nothing. git status shows only untracked __pycache__ directories."
+    },
+    {
+      "criterion": "Stops are listed",
+      "verdict": "pass",
+      "evidence": "STOP: 'Which option?' | question. This was the only time the agent waited for me before the merge. It came right after the first suite passed and it listed the options 1. Merge back to main locally / 2. Push and create a Pull Request / 3. Keep the branch as-is. I answered '1'. There were no other stops and I never sent 'continue'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi"
+    ]
+  },
+  "duration_ms": 1546044,
+  "usage": {
+    "inputTokens": 70,
+    "outputTokens": 5299,
+    "cacheCreationInputTokens": 62515,
+    "cacheReadInputTokens": 658945,
+    "turns": 31
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

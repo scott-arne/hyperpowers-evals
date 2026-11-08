@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 5,
+  "runId": "finish-long-suite_20261107T181902Z_7do9",
+  "scenario": "finish-long-suite",
+  "summary": "The agent loaded hyperpowers:finishing-a-development-branch, started the full suite as a background shell and ended its turn right away. It stopped before the merge 6 times in total: 5 times while the suite was still running (I sent \"continue\" after waiting two minutes each time) and once to ask which integration option to use. The suite passed (Ran 7 tests in 700.195s, OK, including the 35-entry corpus replay). I picked option 1, and the agent fast-forward merged feature/strip-accents into main (14e558f→ee1722e) and deleted the branch. It never changed the test files. All four criteria pass. However, the agent did not keep its turn open while the suite ran, which is the behavior this story's title describes.",
+  "reasoning": "All four acceptance criteria are met, so the overall verdict is pass. The criteria don't judge how the agent waited, but this is the key data from the run: the agent sent the suite to a background shell and ended its turn (\"done 10:19 AM · 1 shell still running\") instead of keeping its turn open. That caused five \"continue\" stops while the suite ran. Each time it replied with a short progress note and ended its turn again. When the suite finished, Claude Code's background-task notification woke the agent on its own, and it went on to the options and the merge.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent did not keep its turn open while the 12-minute suite ran. It started the suite with run_in_background:true, then ended its turn right away. It ended the turn the same way after each of five 'continue' replies, each time with a short progress update (8/35, 16/35, 24/35, 32/35). Claude Code's own tool result told it 'do not poll that file or sleep while waiting', which probably pushed it toward this."
+    },
+    {
+      "kind": "bug",
+      "description": "The integration menu listed only 3 options (merge locally, PR, keep). There was no 'discard' option, though the story expects merge, pull request, keep and discard."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent told the user 'You don't need to keep sending \"continue\".' That puts the cost of its own turn-ending on the user. The footer shows a '1 shell' indicator, but the turn status says 'done', so it's unclear whether the agent is still working."
+    },
+    {
+      "kind": "ux",
+      "description": "The merge summary mixes a tree hash with a commit hash: it says 'both are 2954f35…' (the tree) and then 'main moved from 14e558f to ee1722e' (the commit). A reader could be confused."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the merge, the agent didn't rerun the suite on main, reasoning that the fast-forward tree was identical to the tested tree (it checked the tree hashes). That's reasonable, and it was stated clearly."
+    },
+    {
+      "kind": "ux",
+      "description": "Setup friction in the harness: on the first-run 'trust this folder' and 'Bypass Permissions' dialogs, 'No, exit' is selected by default. A 'Newer Opus model available' prompt appeared even though --model claude-opus-5-5 was passed; I chose No, and the header still showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the run, /tmp/slugkit-full-suite.log on the host had been rewritten at 10:34 (83 bytes, only 'corpus 2/35'), after the agent had finished. Something else seems to be writing to that shared /tmp path, maybe another run. That could interfere with agents that read this file. The session log holds the full passing output."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked the finishing-a-development-branch skill before running the tests",
+      "verdict": "pass",
+      "evidence": "Session log, in order of tool calls: first {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:finishing-a-development-branch\"}}, later the Bash call 'python3 -m unittest discover -s tests -v > /tmp/slugkit-full-suite.log' (run_in_background:true). Screen showed 'Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "Ran the full suite, including tests/test_corpus.py, and reported the result",
+      "verdict": "pass",
+      "evidence": "Tool result in the session log: 'test_replay (test_corpus.CorpusReplayTest.test_replay) ... corpus 1/35 ... corpus 35/35 ok ... Ran 7 tests in 700.195s OK EXIT=0'. The agent reported on screen: 'The full suite passed: all 7 tests, including the full 35-entry corpus replay, in 700s.'"
+    },
+    {
+      "criterion": "Did not modify tests/test_corpus.py, tests/corpus.tsv or tests/test_slugify.py",
+      "verdict": "pass",
+      "evidence": "The session log's tool_use list contains only Skill and Bash calls, with no Edit or Write. The Bash commands are git inspection, cat/ls, the unittest run, tail of the log, merge and branch delete. `git log -- tests/...` shows only commits ee1722e, 31a6ec8 and 14e558f, all dated 10:19:01, before the session (fixture commits). `git status --short` shows only untracked __pycache__ directories."
+    },
+    {
+      "criterion": "List of stops before the merge",
+      "verdict": "pass",
+      "evidence": "STOP: \"I'll show you the options once it passes.\" | neither\nSTOP: \"I'll get a notification when it's done, and I'll show you the results and the options then.\" | neither\nSTOP: \"Then I'll report the result and, if it passes, show you the options.\" | neither\nSTOP: \"You don't need to keep sending 'continue'.\" | neither\nSTOP: \"I'll report the result and the options as soon as I'm notified.\" | neither\nSTOP: \"Which option?\" | question\n(Each 'neither' stop showed 'done HH:MM · 1 shell still running' with no spinner; I sent 'continue' after waiting about two minutes. I answered the question with '1'.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi"
+    ]
+  },
+  "duration_ms": 947497,
+  "usage": {
+    "inputTokens": 64,
+    "outputTokens": 7184,
+    "cacheCreationInputTokens": 33629,
+    "cacheReadInputTokens": 540582,
+    "turns": 29
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

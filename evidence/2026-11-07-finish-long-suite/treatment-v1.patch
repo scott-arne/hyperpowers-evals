@@ -1,0 +1,198 @@
+diff --git a/docs/testing.md b/docs/testing.md
+index 9fc2d7d..3a568f1 100644
+--- a/docs/testing.md
++++ b/docs/testing.md
+@@ -23,7 +23,7 @@ CI. `bash tests/run-offline.sh` runs the documented offline set, one script per
+ | `tests/hooks/` | session-start context injection, the ungated notice, the Codex broker janitor, the heredoc fence (no heredoc or here-string in `hooks/`, no here-string in `tests/`), the SDD stop guard (`test-sdd-stop-guard.sh` runs the node unit matrix, `node --test hooks/lib/stop-guard.test.mjs` with `STOP_GUARD_BENCH=1`, whose four `# bench` lines it prints (the cold no-plan call, the warm no-plan median, the no-plan decision through a real wrapper process, and the with-plan decision), then the wrapper cases: the registration, the fail-open paths, and the bash/node clone-key parity) | each `test-*.sh`, one per `bash` call |
+ | `tests/codex-review-gate/` | gate scripts (`verdict-normalize`, `gate-round`, `gate-telemetry`, `gate-wait`, `ungated-ledger`, preflight, broker health), gate topology, and the gate-split losslessness proof | each `test-*.sh`, one per `bash` call |
+ | `tests/sdd/` | the subagent-driven-development contract, the state library (`sdd-common.sh`), the state branch lifecycle (`sdd-dir`, `sdd-state`), the receipt a finish leaves behind (`sdd-state finish`, `prune --receipts`), the tracked-job helper (`tracked-job`; its process-identity cases skip where `ps` is unavailable, so run it outside a sandbox for the full set), and the re-read-after-compaction paragraph test | `bash tests/sdd/test-sdd-contract.sh`, `bash tests/sdd/test-sdd-common.sh`, `bash tests/sdd/test-sdd-state.sh`, `bash tests/sdd/test-sdd-state-finish-receipt.sh`, `bash tests/sdd/test-tracked-job.sh`, `bash tests/sdd/test-compaction-reread.sh` |
+-| `tests/claude-code/` | offline: SDD workspace derivation (state checkout, plain fallback, pointers), helper stdout and range guards, delivery resolution, worktree path policy, the planning-directory allowlist, the decision compiler; live: skill tests that spawn the real `claude` CLI | offline: `test-sdd-dir-path.sh`, `test-codex-review-dir-path.sh`, `test-delivery-resolution.sh`, `test-worktree-path-policy.sh`, `test-docs-allowlist.sh`, `test-decisions-compile.sh`, one per `bash` call; live: `run-skill-tests.sh` (covers `test-subagent-driven-development.sh`; `--integration` adds `test-subagent-driven-development-integration.sh`), plus `test-worktree-native-preference.sh <phase> [runs]` (phases `green`, `pressure`, `choice`; with no argument it runs the skipped `red` phase and exercises nothing) |
++| `tests/claude-code/` | offline: SDD workspace derivation (state checkout, plain fallback, pointers), helper stdout and range guards, delivery resolution, worktree path policy, the planning-directory allowlist, the decision compiler, the Finish suite wait helper; live: skill tests that spawn the real `claude` CLI | offline: `test-sdd-dir-path.sh`, `test-codex-review-dir-path.sh`, `test-delivery-resolution.sh`, `test-worktree-path-policy.sh`, `test-docs-allowlist.sh`, `test-decisions-compile.sh`, `test-wait-exit.sh`, one per `bash` call; live: `run-skill-tests.sh` (covers `test-subagent-driven-development.sh`; `--integration` adds `test-subagent-driven-development-integration.sh`), plus `test-worktree-native-preference.sh <phase> [runs]` (phases `green`, `pressure`, `choice`; with no argument it runs the skipped `red` phase and exercises nothing) |
+ | `tests/packaging/` | manifest wiring, the orphaned-skill-file guard, skill frontmatter, and the frontmatter rejection fixtures that prove the validator still rejects | each `test-*.sh`, one per `bash` call |
+ | `tests/brainstorm-server/` | the brainstorm server: JavaScript unit tests plus the start/stop and Windows-lifecycle shell tests | `cd tests/brainstorm-server && npm test`; `bash tests/brainstorm-server/windows-lifecycle.test.sh` |
+ | `tests/pi/` | the Pi extension | `node tests/pi/test-pi-extension.mjs` |
+diff --git a/skills/finishing-a-development-branch/SKILL.md b/skills/finishing-a-development-branch/SKILL.md
+index a526e33..2ff8160 100644
+--- a/skills/finishing-a-development-branch/SKILL.md
++++ b/skills/finishing-a-development-branch/SKILL.md
+@@ -82,8 +82,27 @@ has no records: for it, this step is the test run alone.
+    you hand back). Otherwise compose the dispatch from
+    [decision-notes-prompt.md](decision-notes-prompt.md) with the merge-base
+    diff and `<dir>/decision-notes.md` as its output path, and start it in
+-   the background. Then run the project's full test suite in the
+-   foreground (`npm test` / `cargo test` / `pytest` / `go test ./...`).
++   the background. Then run the project's full test suite (`npm test` /
++   `cargo test` / `pytest` / `go test ./...`) and wait for its result in
++   this turn:
++   - A suite expected to finish within 10 minutes runs in the foreground,
++     with an explicit timeout of at least its expected runtime and at most
++     600000 ms.
++   - A suite that may run longer starts through your harness's tracked
++     background option (`run_in_background` on Claude Code, with a timeout
++     above its expected runtime), never with a trailing `&` or `nohup`, as
++     `<suite> > <dir>/suite.log 2>&1; echo $? > <dir>/suite.exit`. `<dir>`
++     is the scratch directory from item 2; when item 2 was skipped, take
++     one the same way now. Then wait in the foreground with repeated
++     `bash <this skill's directory>/scripts/wait-exit <dir>/suite.exit --max-ms 540000`
++     calls, each with a 600000 ms tool timeout: `running` means call it
++     again; `exited code=0` is a green suite; any other code is a failing
++     suite, read from `<dir>/suite.log`. A launch whose timeout passes with
++     no exit file is a failing suite too.
++
++   Ending the turn while the suite runs leaves an editor such as Zed
++   showing the session idle, and there the result goes unreported until
++   your human partner types.
+ 4. **If tests fail**, stop a still-running extractor (TaskStop), report the
+    failures and stop — the menu comes after a green suite. Nothing is
+    compiled; the plan stays.
+diff --git a/skills/finishing-a-development-branch/scripts/wait-exit b/skills/finishing-a-development-branch/scripts/wait-exit
+new file mode 100755
+index 0000000..5b1603d
+--- /dev/null
++++ b/skills/finishing-a-development-branch/scripts/wait-exit
+@@ -0,0 +1,52 @@
++#!/usr/bin/env bash
++# wait-exit — wait in the foreground for a background command's exit file.
++#
++# Finish runs the full suite after the SDD ledger is gone, so tracked-job is
++# not available to it. A suite longer than one foreground tool call runs in
++# the harness's tracked background option as
++#   <suite> > <dir>/suite.log 2>&1; echo $? > <dir>/suite.exit
++# and the session calls this helper until it prints `exited`. A foreground
++# wait keeps the turn open, which is what an editor such as Zed shows as the
++# session working; a turn ended to wait shows it idle.
++#
++# Usage: wait-exit FILE --max-ms N
++#   -> exited code=<n>   (exit 0 when n is 0, 1 otherwise)
++#   -> running           (exit 3: no exit code in FILE when the bound passed)
++# exit 2: usage.
++set -u
++
++usage() { echo 'usage: wait-exit FILE --max-ms N' >&2; exit 2; }
++
++[ $# -eq 3 ] || usage
++file=$1
++[ "$2" = "--max-ms" ] || usage
++max_ms=$3
++case "$max_ms" in ''|*[!0-9]*) usage ;; esac
++[ "$max_ms" -gt 0 ] || usage
++
++# read_code: the integer in FILE, or nothing while the file is absent, empty
++# or still being written.
++read_code() {
++  local text
++  [ -f "$file" ] || return 1
++  text=$(tr -d '[:space:]' < "$file" 2>/dev/null) || return 1
++  case "$text" in ''|*[!0-9]*) return 1 ;; esac
++  printf '%s' "$text"
++}
++
++# Polls every 200 ms; the count of polls sets the bound, so a slow poll
++# lengthens the wait slightly and never shortens it.
++polls=$(( (max_ms + 199) / 200 ))
++i=0
++while :; do
++  if code=$(read_code); then
++    echo "exited code=$code"
++    [ "$code" -eq 0 ] && exit 0
++    exit 1
++  fi
++  [ "$i" -ge "$polls" ] && break
++  sleep 0.2
++  i=$((i + 1))
++done
++echo "running"
++exit 3
+diff --git a/tests/claude-code/test-wait-exit.sh b/tests/claude-code/test-wait-exit.sh
+new file mode 100644
+index 0000000..78a667a
+--- /dev/null
++++ b/tests/claude-code/test-wait-exit.sh
+@@ -0,0 +1,74 @@
++#!/usr/bin/env bash
++# Regression check for skills/finishing-a-development-branch/scripts/wait-exit.
++#
++# Finish runs the full suite after the SDD ledger is gone, so a suite longer
++# than one foreground tool call cannot use tracked-job. It runs in the
++# harness's tracked background option and writes its exit status to a file;
++# the session waits on that file in the foreground with this helper, which
++# keeps the turn open (an editor such as Zed shows the session working).
++
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
++REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
++WAIT_EXIT="$REPO_ROOT/skills/finishing-a-development-branch/scripts/wait-exit"
++
++failures=0
++TEST_ROOT=$(mktemp -d) || { echo "mktemp failed" >&2; exit 1; }
++[ -n "$TEST_ROOT" ] && [ -d "$TEST_ROOT" ] || { echo "no temporary directory" >&2; exit 1; }
++TEST_ROOT=$(cd "$TEST_ROOT" && pwd -P) || exit 1
++case "$TEST_ROOT" in ""|/|"$REPO_ROOT"|"$REPO_ROOT"/*) echo "refusing temporary root $TEST_ROOT" >&2; exit 1 ;; esac
++cleanup() { case "$TEST_ROOT" in ""|/|"$REPO_ROOT"|"$REPO_ROOT"/*) return ;; esac; rm -rf "$TEST_ROOT"; }
++trap cleanup EXIT
++
++pass() { echo "  [PASS] $1"; }
++fail() { echo "  [FAIL] $1"; failures=$((failures + 1)); }
++
++# run <args...>: sets out and rc without tripping errexit.
++run() { rc=0; out=$(bash "$WAIT_EXIT" "$@" 2>/dev/null) || rc=$?; }
++
++echo "=== wait-exit ==="
++
++run
++if [ "$rc" -eq 2 ]; then pass "no arguments is a usage error (exit 2)"; else fail "no arguments (rc=$rc out=$out)"; fi
++run "$TEST_ROOT/x"
++if [ "$rc" -eq 2 ]; then pass "a missing --max-ms is a usage error"; else fail "missing --max-ms (rc=$rc out=$out)"; fi
++for bad in 0 -5 abc 1.5 ""; do
++    run "$TEST_ROOT/x" --max-ms "$bad"
++    if [ "$rc" -eq 2 ]; then pass "--max-ms '$bad' is a usage error"; else fail "--max-ms '$bad' (rc=$rc out=$out)"; fi
++done
++
++f="$TEST_ROOT/zero.exit"; printf '0\n' > "$f"
++run "$f" --max-ms 1000
++if [ "$rc" -eq 0 ] && [ "$out" = "exited code=0" ]; then pass "an exit file holding 0 prints 'exited code=0', exit 0"; else fail "zero (rc=$rc out=$out)"; fi
++
++f="$TEST_ROOT/three.exit"; printf '3' > "$f"
++run "$f" --max-ms 1000
++if [ "$rc" -eq 1 ] && [ "$out" = "exited code=3" ]; then pass "an exit file holding 3 prints 'exited code=3', exit 1"; else fail "three (rc=$rc out=$out)"; fi
++
++f="$TEST_ROOT/spaced.exit"; printf '  7 \n\n' > "$f"
++run "$f" --max-ms 1000
++if [ "$rc" -eq 1 ] && [ "$out" = "exited code=7" ]; then pass "surrounding whitespace is ignored"; else fail "spaced (rc=$rc out=$out)"; fi
++
++start=$(date +%s)
++run "$TEST_ROOT/absent.exit" --max-ms 600
++elapsed=$(( $(date +%s) - start ))
++if [ "$rc" -eq 3 ] && [ "$out" = "running" ]; then pass "no exit file by the bound prints 'running', exit 3"; else fail "absent (rc=$rc out=$out)"; fi
++if [ "$elapsed" -le 3 ]; then pass "returns at the bound (${elapsed}s for 600 ms)"; else fail "took ${elapsed}s for a 600 ms bound"; fi
++
++f="$TEST_ROOT/empty.exit"; : > "$f"
++run "$f" --max-ms 400
++if [ "$rc" -eq 3 ] && [ "$out" = "running" ]; then pass "an empty exit file (write in progress) reads as running"; else fail "empty (rc=$rc out=$out)"; fi
++
++f="$TEST_ROOT/late.exit"
++( sleep 1; printf '0\n' > "$f.tmp" && mv "$f.tmp" "$f" ) &
++writer=$!
++start=$(date +%s)
++run "$f" --max-ms 20000
++elapsed=$(( $(date +%s) - start ))
++wait "$writer" || true
++if [ "$rc" -eq 0 ] && [ "$out" = "exited code=0" ]; then pass "an exit file written mid-wait ends the wait"; else fail "late (rc=$rc out=$out)"; fi
++if [ "$elapsed" -le 5 ]; then pass "returns soon after the write (${elapsed}s)"; else fail "took ${elapsed}s after a 1s write"; fi
++
++echo
++if [ "$failures" -eq 0 ]; then echo "PASSED"; else echo "FAILED ($failures)"; exit 1; fi
+diff --git a/tests/run-offline.sh b/tests/run-offline.sh
+index 0e08f7f..aa2f0b2 100755
+--- a/tests/run-offline.sh
++++ b/tests/run-offline.sh
+@@ -21,7 +21,7 @@ for t in tests/hooks/test-*.sh tests/codex-review-gate/test-*.sh tests/sdd/test-
+   case "$t" in tests/opencode/test-tools.sh|tests/opencode/test-priority.sh) continue ;; esac
+   [ -f "$t" ] && run "$t"
+ done
+-for t in tests/claude-code/test-sdd-dir-path.sh tests/claude-code/test-codex-review-dir-path.sh tests/claude-code/test-delivery-resolution.sh tests/claude-code/test-worktree-path-policy.sh tests/claude-code/test-docs-allowlist.sh tests/claude-code/test-decisions-compile.sh; do run "$t"; done
++for t in tests/claude-code/test-sdd-dir-path.sh tests/claude-code/test-codex-review-dir-path.sh tests/claude-code/test-delivery-resolution.sh tests/claude-code/test-worktree-path-policy.sh tests/claude-code/test-docs-allowlist.sh tests/claude-code/test-decisions-compile.sh tests/claude-code/test-wait-exit.sh; do run "$t"; done
+ ( cd tests/brainstorm-server && npm test > "$OUT/brainstorm-npm.log" 2>&1 ) || { echo "FAILED: tests/brainstorm-server npm test (log: $OUT/brainstorm-npm.log)"; fails=$((fails + 1)); }
+ run tests/brainstorm-server/windows-lifecycle.test.sh
+ node tests/pi/test-pi-extension.mjs > "$OUT/pi.log" 2>&1 || { echo "FAILED: tests/pi/test-pi-extension.mjs (log: $OUT/pi.log)"; fails=$((fails + 1)); }

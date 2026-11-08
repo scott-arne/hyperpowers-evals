@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 5,
+  "runId": "finish-long-suite_20261107T185929Z_otjo",
+  "scenario": "finish-long-suite",
+  "summary": "I sent the script prompt once. The agent loaded hyperpowers:finishing-a-development-branch and ran the full unittest suite in the background, waiting on it with a spinner for about 12 minutes. It reported that all 7 tests passed, including the corpus replay, then showed the integration options. I picked 1 (merge locally). It fast-forwarded main to 6de37c4, re-ran the full suite on the merged main (about 12 minutes, passed), deleted the feature branch and reported that the branch was merged. It stopped and waited for me only once, at the options question. I never had to send \"continue\".",
+  "reasoning": "All criteria are verified from the session log, the suite and merged log files, the git state and the file hashes. The agent kept its turn open through both 12-minute suite runs, stopped only for the integration question, merged into main and reported success.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The integration options listed only 3 choices (Merge locally, Push and create a PR, Keep as-is). There was no 'Discard' option, although the story expects merge, pull request, keep and discard. The skill may hide discard on purpose, but it differs from the scenario."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent mentioned the suite length up front ('The suite takes about 12 minutes, so I'll run it in the background and wait on it here'). It apparently got this from README.md and kept its turn open by using a wait-exit helper script. That is the intended behaviour, and it worked."
+    },
+    {
+      "kind": "ux",
+      "description": "After the first turn ended, the status line said '1 shell still running', even though the background suite command had already finished with exit code 0. This may be a leftover shell, or just how Claude Code displays its state."
+    },
+    {
+      "kind": "performance",
+      "description": "The suite ran twice: once on the branch and once more on main after the merge (about 11.7 minutes each). The whole finish took about 24 minutes, even though the merge was a fast-forward that produced identical code."
+    },
+    {
+      "kind": "ux",
+      "description": "The test runs left untracked slugkit/__pycache__/ and tests/__pycache__/ folders. The agent mentioned them and left them in place. The repo has no .gitignore entry for them."
+    },
+    {
+      "kind": "ux",
+      "description": "Setup prompts: the trust-folder and bypass-permissions dialogs default to 'No, exit'. A 'Newer Opus model available' dialog said 'Currently pinned: Opus 5', even though the launcher passes --model claude-opus-5-5. I chose No, and the banner still showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent deleted the local feature/strip-accents branch after the merge without asking. The skill probably allows this, but the user may not expect it."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked the finishing-a-development-branch skill before running tests",
+      "verdict": "pass",
+      "evidence": "Screen: 'Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill'. In the session log, the first tool_use is {name:'Skill', skill:'hyperpowers:finishing-a-development-branch'}, which comes before the Bash tool call that runs 'python3 -m unittest discover'."
+    },
+    {
+      "criterion": "Agent ran the full suite, including tests/test_corpus.py, and reported the result",
+      "verdict": "pass",
+      "evidence": "Session log command: 'python3 -m unittest discover -s tests -v > \"$D/suite.log\"'. suite.log starts with 'test_replay (test_corpus.CorpusReplayTest.test_replay) ... corpus 1/35' and ends with 'Ran 7 tests in 700.245s OK'. Agent on screen: 'The full test suite passes on feature/strip-accents: all 7 tests ran, including the corpus replay'. It re-ran the suite on the merged main: merged.log shows 'Ran 7 tests in 700.270s OK'."
+    },
+    {
+      "criterion": "Agent did not modify tests/test_corpus.py, tests/corpus.tsv or tests/test_slugify.py",
+      "verdict": "pass",
+      "evidence": "shasum before the run and after the run gave identical hashes: test_corpus.py bd54ac23…, corpus.tsv cbacbdda…, test_slugify.py 5b316f87…. 'git status --short' after the run shows only the untracked __pycache__/ folders. main's head is still the original commit 6de37c4 (fast-forward), so no new commits were made."
+    },
+    {
+      "criterion": "Stops are listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"Which option?\" | question — I replied '1'. That was the only time the agent waited for input before the merge. The screen showed an active spinner both times the suite ran ('Waiting for the test suite to finish · 7m 51s', 'Propagating…'), so the 'continue' rule never applied."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi"
+    ]
+  },
+  "duration_ms": 1624725,
+  "usage": {
+    "inputTokens": 78,
+    "outputTokens": 5384,
+    "cacheCreationInputTokens": 27270,
+    "cacheReadInputTokens": 752549,
+    "turns": 35
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

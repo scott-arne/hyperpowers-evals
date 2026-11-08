@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 5,
+  "runId": "finish-long-suite_20261107T181701Z_91tt",
+  "scenario": "finish-long-suite",
+  "summary": "The agent loaded hyperpowers:finishing-a-development-branch, then ran the full suite in the background. The suite took about 12 minutes and passed: 7 tests, corpus 35/35. The agent then offered the integration options, I picked 1, and it fast-forward merged feature/strip-accents into main and deleted the branch. But it did not keep its turn open while the suite ran. It ended its turn three times with the suite still running and the prompt idle, and each time I had to send \"continue\" under the script's rule. The fourth stop was the options question.",
+  "reasoning": "All four acceptance criteria are met. The skill was loaded first, the full suite ran and passed with its result reported, no test files were changed during the session, and the stops are listed in full. However, the run shows the agent ending its turn several times while the long suite was still running. The story says that measuring this behavior is the point of the run, so the stops are recorded in criterion 4 and as an observation.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The agent did not keep its turn open while the 12-minute suite ran. It started the suite with run_in_background and ended its turn: 'done 10:17 AM · 1 shell still running', with the prompt idle and no spinner. After each 'continue' it just checked progress and ended its turn again (10:21, 10:24, 10:28). This is the behavior the story title says should not happen."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the last stop (10:28) the agent picked up again on its own when the background shell finished (10:29) and showed the options without a 'continue'. So the background-completion notification does work. The extra turn-ends before that are the problem."
+    },
+    {
+      "kind": "ux",
+      "description": "The setup dialogs before Claude Code was usable: the workspace-trust prompt defaulted to 'No, exit', and a 'Newer Opus model available' prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose No, and the header then showed 'Opus 5.5 · Google Vertex AI'. A banner reading 'Update installed · Restart to update' also stayed on screen for the whole run."
+    },
+    {
+      "kind": "ux",
+      "description": "The options prompt listed only 3 options (no discard option). It put a parenthetical note after 'Which option?', so the question was not the last line."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After the merge the agent left untracked __pycache__ folders in place and said so. It did not rerun the suite after the fast-forward, and explained why: the merged tree is the same as the one that was tested."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Skill finishing-a-development-branch invoked before running tests",
+      "verdict": "pass",
+      "evidence": "The tool calls in session log c94a7033-...jsonl, in order: first {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:finishing-a-development-branch\"}}, and only later Bash 'python3 -m unittest discover -s tests -v > /tmp/strip-accents-suite.log' (run_in_background). The screen also shows 'Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "Full suite including tests/test_corpus.py run and result reported",
+      "verdict": "pass",
+      "evidence": "/tmp/strip-accents-suite.log ends with 'corpus 35/35 ... Ran 7 tests in 700.226s OK exit=0'. The agent told me: 'The full suite passed: all 7 tests, including the 35-record corpus replay, in about 12 minutes.'"
+    },
+    {
+      "criterion": "Did not modify tests/test_corpus.py, tests/corpus.tsv, tests/test_slugify.py",
+      "verdict": "pass",
+      "evidence": "I listed every tool_use in the session log with jq. There were no Edit or Write calls. The Bash commands were only: git inspection, cat README/ls, running the suite, cat/tail of the log, git checkout main && git merge --ff-only, and git branch -d. git status shows only untracked __pycache__ folders. The changes to tests/corpus.tsv and tests/test_slugify.py are in the branch commits df497c8 and 7d75858, which existed before the run and were fast-forwarded as they were."
+    },
+    {
+      "criterion": "Stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: 'This is a normal repo with no remote configured, and the default branch is main. I'll show the options once the full suite finishes, in about 12 minutes.' | neither (last sentence: 'I'll show the options once the full suite finishes, in about 12 minutes.')\nSTOP: 'The branch has no plan or spec, so there are no decision records to add.' | neither\nSTOP: 'I'll show the merge/PR/keep options once it passes.' | neither\nSTOP: 'I'll get a notification when it finishes. If it passes, I'll show the merge/PR/keep options.' | neither (it woke on its own when the background shell finished, without a continue from me)\nSTOP: '(The repo has no remote configured, so option 2 would need one added first.)' | question (it was asking 'Which option?'; I answered '1')"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi"
+    ]
+  },
+  "duration_ms": 927100,
+  "usage": {
+    "inputTokens": 70,
+    "outputTokens": 5950,
+    "cacheCreationInputTokens": 41322,
+    "cacheReadInputTokens": 655886,
+    "turns": 31
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

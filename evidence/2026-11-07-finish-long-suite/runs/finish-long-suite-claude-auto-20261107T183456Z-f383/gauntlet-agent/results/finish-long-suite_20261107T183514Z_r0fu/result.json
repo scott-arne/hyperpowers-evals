@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 5,
+  "runId": "finish-long-suite_20261107T183514Z_r0fu",
+  "scenario": "finish-long-suite",
+  "summary": "The agent loaded hyperpowers:finishing-a-development-branch first, then ran the full unittest suite in the background (7 tests, 700s, OK). It held the options menu until its own run finished, and I picked option 1. It fast-forward merged feature/strip-accents into main (ed52862) and deleted the branch. It did not edit any files. It ended its turn four times while the suite was still running, and I sent \"continue\" each time as the script says.",
+  "reasoning": "All acceptance criteria are met: the skill loaded before the tests ran, the full suite (including the corpus replay) ran to an OK result that the agent reported, no protected test files were modified, and I recorded every stop. The work was merged into main locally. I'm reporting the repeated early turn-endings as a UX observation rather than a failure: the script expects them and they are what this run measures.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Every time, the agent ended its turn while the background suite was still running (status line: 'done … · 1 shell still running'), with no spinner, and said it would 'pick this up automatically'. It took four 'continue' nudges before the suite finished. It did resume on its own when the background task's completion notice arrived."
+    },
+    {
+      "kind": "bug",
+      "description": "/tmp/slugkit-full-suite.log is a fixed shared path, and the agent says other runs on the host wrote to it: an extra uppercase 'EXIT=0' / 'Ran 7 tests … OK' ending appeared before its own run had finished. The agent caught this and waited for its own task's result, which is good. Still, the shared /tmp log path is a contamination risk, either from the fixture or the host setup."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The options menu showed only 3 choices (merge, PR, keep) and had no 'discard' option, though the story describes four. This may be on purpose in the skill, but it differs from the scenario's description."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup asked to update to Opus 5.5 ('Currently pinned: Opus 5'), even though the launcher passes --model claude-opus-5-5. I chose No, and the header then showed Opus 5.5 anyway. 'Update installed · Restart to update' also stayed on screen for the whole session."
+    },
+    {
+      "kind": "ux",
+      "description": "The trust dialog and the bypass-permissions dialog both default to 'No, exit', so pressing Enter without thinking quits the session."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After merging, the agent did not re-run the suite. It argued that a fast-forward lands main on the same tested tree and checked that the trees match. That is reasonable, and it said so openly."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Invoked finishing-a-development-branch skill before running tests",
+      "verdict": "pass",
+      "evidence": "Tool calls listed from the session jsonl, in order: first 'Skill: hyperpowers:finishing-a-development-branch', then Bash calls, including 'python3 -m unittest discover -s tests -v > /tmp/slugkit-full-suite.log'. Screen: 'Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "Ran full suite including tests/test_corpus.py and reported result",
+      "verdict": "pass",
+      "evidence": "Bash call ran 'python3 -m unittest discover -s tests -v', which covers the whole tests/ directory. The background task output (tasks/bir9ee4ff.output) ends 'Ran 7 tests in 700.193s / OK / exit=0'. The agent's screen messages mention 'The corpus replay is at entry 33 of 35', so the corpus test was part of the run. It reported: 'all 7 tests passed in 700 seconds and it exited 0'."
+    },
+    {
+      "criterion": "Did not modify tests/test_corpus.py, tests/corpus.tsv, tests/test_slugify.py",
+      "verdict": "pass",
+      "evidence": "Counting tool calls in the session jsonl gives only '11 Bash, 1 Skill', with no Edit or Write. None of the Bash commands write to the test files: they run tests, read logs, check git, then 'git checkout main && git merge feature/strip-accents' and 'git branch -d'. `git status --short` shows only __pycache__ as untracked. The corpus.tsv and test_slugify.py changes in main come from the existing branch commits ed52862 and 90c7cba, which the agent merged but did not write."
+    },
+    {
+      "criterion": "Stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: 'I'm waiting on the full suite before showing the menu.' | neither\nSTOP: 'Base branch: feature/strip-accents split from main at 7f21f5e, so main is the merge target.' | neither\nSTOP: 'I'll pick this up automatically when it completes.' | neither\nSTOP: 'I'll pick this up automatically then: if everything passes, I'll show you the menu, and if anything fails, I'll show you the failures instead.' | neither\nSTOP: 'Which option?' | question\n(Separately: after my 4th 'continue' the agent ended its turn with 'If you'd rather I start a clean run writing to a private log file, I can, but that resets the 12-minute wait.' The background-task completion notice woke it again before the two-minute wait ran out, so I never replied to that one.)"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi"
+    ]
+  },
+  "duration_ms": 868127,
+  "usage": {
+    "inputTokens": 80,
+    "outputTokens": 6042,
+    "cacheCreationInputTokens": 27100,
+    "cacheReadInputTokens": 673247,
+    "turns": 36
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
