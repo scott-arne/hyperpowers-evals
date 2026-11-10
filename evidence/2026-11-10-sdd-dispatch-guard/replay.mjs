@@ -35,10 +35,12 @@ const textOf = (rec) => { const c = rec?.message?.content; if (typeof c === 'str
 // scan stops at the first record stamped after the cutoff. `all` keeps every
 // line's offsets, parseable or not, because the live reader's cap counts
 // every byte.
-export function scanSession(buf, { cutoff = CUTOFF, windowStart = WINDOW_START } = {}) {
+// `trace`, when given, receives one entry per hashed line (running counts,
+// hash and malformed total) so freeze.mjs can find where a row's state holds.
+export function scanSession(buf, { cutoff = CUTOFF, windowStart = WINDOW_START, trace } = {}) {
   const h = createHash('sha256');
   const all = []; const calls = []; const context = [];
-  let agent = 0; let send = 0; let start = 0;
+  let agent = 0; let send = 0; let start = 0; let malformed = 0;
   while (start < buf.length) {
     const nl = buf.indexOf(0x0a, start);
     const end = nl === -1 ? buf.length : nl + 1;
@@ -71,23 +73,27 @@ export function scanSession(buf, { cutoff = CUTOFF, windowStart = WINDOW_START }
           }
         }
       }
+      if (trace) trace.push({ index, end, agent, send, sha: h.copy().digest('hex').slice(0, 12), malformed });
     } else {
+      malformed++;
       all.push({ start, end });
     }
     start = end;
   }
-  return { agent, send, sha: h.digest('hex').slice(0, 12), all, calls, context };
+  return { agent, send, malformed, sha: h.digest('hex').slice(0, 12), all, calls, context };
 }
 
 // The transcript up to and including the call's own line, newest first, as
 // linesFromEnd yields it: whole lines while they fit under the cap, then null
-// when the cap stops the read before the file's start.
+// when the cap stops the read before the file's start. The live reader yields
+// a line only once it has read the newline before it, so a line that fills the
+// window exactly is yielded only when it starts the file.
 export function* prefixLines(buf, all, index, cap = TAIL_CAP) {
   let read = 0;
   for (let i = index; i >= 0; i--) {
     const { start, end } = all[i];
     read += end - start;
-    if (read > cap) { yield null; return; }
+    if (read > cap || (read === cap && start !== 0)) { yield null; return; }
     yield buf.subarray(start, end).toString('utf8').replace(/\n$/, '');
   }
 }
@@ -114,26 +120,37 @@ export function replaySession(mod, row, buf, scan, { cap = TAIL_CAP } = {}) {
 
 const tsv = (cols, rows) => [cols.join('\t'), ...rows.map((r) => cols.map((c) => cell(r[c])).join('\t'))].join('\n') + '\n';
 
-export async function main(argv) {
+// A session is usable only when its recomputed state is the manifest row's and
+// every line it read parses, so every byte a decision can read was hashed.
+const problemOf = (row, s) => {
+  if (s.agent !== row.agent || s.send !== row.send || s.sha !== row.sha) return `${row.session}: manifest ${row.agent}/${row.send}/${row.sha}, recomputed ${s.agent}/${s.send}/${s.sha}`;
+  if (s.malformed > 0) return `${row.session}: ${s.malformed} unparseable line(s) before the stop point`;
+  return null;
+};
+
+export async function main(argv, { readFile = readFileSync } = {}) {
   const args = {};
   for (let i = 0; i < argv.length; i += 2) args[String(argv[i]).replace(/^--/, '')] = argv[i + 1];
   for (const k of ['module', 'manifest', 'projects', 'out']) if (!args[k]) { console.error(`replay: missing --${k}`); return 2; }
   const mod = await import(pathToFileURL(realpathSync(args.module)).href);
-  const rows = parseManifest(readFileSync(args.manifest, 'utf8'));
+  const rows = parseManifest(readFile(args.manifest, 'utf8'));
   const pathOf = (row) => join(args.projects, row.projectDir, `${row.session}.jsonl`);
   // Pass 1 verifies the whole corpus, holding one transcript at a time.
   const problems = [];
   for (const row of rows) {
-    let buf; try { buf = readFileSync(pathOf(row)); } catch (err) { problems.push(`${row.session}: unreadable (${err.code})`); continue; }
-    const s = scanSession(buf);
-    if (s.agent !== row.agent || s.send !== row.send || s.sha !== row.sha) problems.push(`${row.session}: manifest ${row.agent}/${row.send}/${row.sha}, recomputed ${s.agent}/${s.send}/${s.sha}`);
+    let buf; try { buf = readFile(pathOf(row)); } catch (err) { problems.push(`${row.session}: unreadable (${err.code})`); continue; }
+    const p = problemOf(row, scanSession(buf));
+    if (p) problems.push(p);
   }
   if (problems.length) { for (const p of problems) console.error(`replay: manifest mismatch: ${p}`); return 1; }
-  // Pass 2 decides every call.
+  // Pass 2 reads each transcript again, so it re-verifies the buffer it
+  // decides from; a file that changed between passes stops the replay.
   const calls = []; const context = [];
   for (const row of rows) {
-    const buf = readFileSync(pathOf(row));
+    let buf; try { buf = readFile(pathOf(row)); } catch (err) { console.error(`replay: ${row.session}: unreadable in pass 2 (${err.code})`); return 1; }
     const s = scanSession(buf);
+    const p = problemOf(row, s);
+    if (p) { console.error(`replay: changed between passes: ${p}`); return 1; }
     calls.push(...replaySession(mod, row, buf, s));
     context.push(...s.context.map((c) => ({ session: row.session, ...c })));
   }

@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -10,6 +11,7 @@ import { CUTOFF, main, parseManifest, prefixLines, replaySession, scanSession } 
 
 if (!process.env.HP_MODULE) throw new Error('set HP_MODULE to hooks/lib/dispatch-guard.mjs in an hp checkout');
 const mod = await import(pathToFileURL(process.env.HP_MODULE).href);
+const { linesFromEnd } = await import(pathToFileURL(join(dirname(process.env.HP_MODULE), 'stop-guard.mjs')).href);
 
 const call = (ts, id, name, input, extra = {}) => ({ type: 'assistant', timestamp: ts, isSidechain: false, message: { role: 'assistant', content: [{ type: 'tool_use', id, name, input }] }, ...extra });
 const result = (ts, id, toolUseResult) => ({ type: 'user', timestamp: ts, isSidechain: false, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: [{ type: 'text', text: 'ok' }] }] }, toolUseResult });
@@ -87,5 +89,47 @@ test('main stops on a manifest mismatch and writes nothing; on a match it writes
   assert.equal(refusals.length, 3);
   for (const f of ['calls.tsv', 'context.tsv', 'summary.txt']) assert.ok(existsSync(join(out, f)));
   assert.match(readFileSync(join(out, 'summary.txt'), 'utf8'), /^calls 4 \(agent 3, sendmessage 1\)$/m);
+});
+test('scanSession counts the unparseable lines it read before its stop point', () => {
+  const recs = session().map((r) => JSON.stringify(r));
+  const after = JSON.stringify(call('2026-11-10T18:10:01.000Z', 'ty', 'Agent', BG));
+  assert.equal(scanSession(toBuf(recs)).malformed, 0);
+  assert.equal(scanSession(toBuf([recs[0], 'not json', ...recs.slice(1), after, 'also not json'])).malformed, 1);
+});
+test('main refuses a session with an unparseable line before the cutoff and writes nothing', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'replay-'));
+  const projects = join(root, 'projects'); mkdirSync(join(projects, 'dir'), { recursive: true });
+  const lines = session().map((r) => JSON.stringify(r));
+  writeFileSync(join(projects, 'dir', 'sid.jsonl'), [lines[0], 'not json', ...lines.slice(1)].join('\n') + '\n');
+  const good = join(root, 'good.tsv'); writeFileSync(good, `dir\tsid\t3\t1\t${expectedSha(lines)}\n`);
+  const out = join(root, 'out');
+  assert.equal(await main(['--module', process.env.HP_MODULE, '--manifest', good, '--projects', projects, '--out', out]), 1);
+  assert.equal(existsSync(out), false);
+});
+test('prefixLines matches the live linesFromEnd at every cap', () => {
+  const root = mkdtempSync(join(tmpdir(), 'replay-'));
+  const lines = ['{"a":1}', '{"b":22}', '{"c":"\u00e9\u00e9"}', '{"d":4444}'];
+  const buf = toBuf(lines); const s = scanSession(buf);
+  const caps = new Set([1, 5, buf.length]);
+  for (const a of s.all) { caps.add(a.start); caps.add(a.end); caps.add(a.start + 3); caps.add(buf.length - a.start); }
+  for (let last = 0; last < lines.length; last++) {
+    const file = join(root, `t${last}.jsonl`); writeFileSync(file, buf.subarray(0, s.all[last].end));
+    for (const cap of caps) {
+      if (cap < 1) continue;
+      assert.deepEqual([...prefixLines(buf, s.all, last, cap)], [...linesFromEnd(file, cap, 7)], `last ${last} cap ${cap}`);
+    }
+  }
+});
+test('main re-verifies in pass 2 and writes nothing when the bytes changed between passes', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'replay-'));
+  const projects = join(root, 'projects'); mkdirSync(join(projects, 'dir'), { recursive: true });
+  const lines = session().map((r) => JSON.stringify(r));
+  const other = [...lines.slice(0, 6), JSON.stringify(call(T(6), 'tu9', 'Agent', { prompt: 'x', run_in_background: false }))];
+  const good = join(root, 'good.tsv'); writeFileSync(good, `dir\tsid\t3\t1\t${expectedSha(lines)}\n`);
+  writeFileSync(join(projects, 'dir', 'sid.jsonl'), toBuf(lines));
+  let n = 0; const readFile = (p, enc) => (enc || p === good ? readFileSync(p, enc) : (++n === 1 ? toBuf(lines) : toBuf(other)));
+  const out = join(root, 'out');
+  assert.equal(await main(['--module', process.env.HP_MODULE, '--manifest', good, '--projects', projects, '--out', out], { readFile }), 1);
+  assert.equal(existsSync(out), false);
 });
 test('the cutoff is the spec\'s', () => { assert.equal(CUTOFF, '2026-11-10T18:10:00Z'); });
