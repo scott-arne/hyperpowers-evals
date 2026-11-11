@@ -2,8 +2,8 @@
 # launch.sh <treatment|fork> <count> [<first-index>]: starts <count> quorum
 # runs of the arm's scenario at once, one process each, 20 s apart, each
 # writing logs/<arm>-<index>.log (the root, its pin, the Claude Code version,
-# the start time, then quorum's own output with its run-id: and trials:
-# lines), and waits for all of them. `wait` with no operand waits for every
+# the start time, then quorum's own output with its run-id: line), and
+# waits for all of them. `wait` with no operand waits for every
 # child, so no pid is waited on after it could have been reused.
 set -uo pipefail
 arm="${1:-}"; count="${2:-}"; first="${3:-1}"

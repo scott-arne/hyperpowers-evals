@@ -66,7 +66,14 @@ line (the `SendMessage` at 01:16:14Z). The controller passed
 The two `Agent` calls whose transcript input carried `"true"` (01:15:53Z and
 01:16:54Z) left no guard line, although the guard writes a line for every
 call its screen passes. Either their hook payload did not carry `true` or
-`"true"`, or the hook did not run for them; no payload was captured. Fork mode does not change how the criteria read this.
+`"true"`, or the hook did not run for them; no payload was captured. The
+probe points to the first reading: with fork mode on, its check C1 found
+`run_in_background` undefined in all three `Agent` payloads, including the two
+the probe prompt set to true (`task-1-probe/check-b.txt`; fork mode off,
+`check-a.txt`, carried false, true, true). The guard's screen passes only
+`true` or `"true"`, so such calls stop there without a log line. The probe
+does not show what happened in the campaign's fork run. Fork mode does not
+change how the criteria read this.
 
 The field replay, in `task-6-replay/summary.txt`, decided 329 calls and 59
 refusals: 48 expected, 11 outside a plan, 0 false.
@@ -98,4 +105,9 @@ runs `quorum run` without `--repeat`, and quorum prints `trials:` only under
 run is one sample. Every fork-mode dispatch returned async, so the
 background-or-foreground distinction does not show in the result, and the two
 `"true"` calls that left no guard line leave open whether their payload
-dropped the key or the hook did not run. The Zed run and the field re-scan after release are owed.
+dropped the key or the hook did not run; the probe's C1 check favours the
+payload. The Zed run is in `task-10-zed/`: the tally is `verdict=PASS
+counted=1`, with one `background-agent` and one `sendmessage-resume` refusal,
+both paired. The run ended on a hand-back after Claude Code's worktree
+isolation check refused `sdd-state complete`, so the plan did not finish
+(`task-10-zed/observation.md`). The field re-scan after release is owed.

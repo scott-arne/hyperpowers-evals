@@ -8,7 +8,7 @@ in hyperpowers (plan `docs/hyperpowers/plans/2026-11-10-sdd-dispatch-guard.md`).
 - `replay.mjs`, `replay.test.mjs`: the offline field replay.
 - `task-6-replay/`: the replay's output and the hand classification of every refusal.
 - `tally.mjs`, `tally.test.mjs`, `archive-runs.sh`, `archive-runs.test.sh`, `launch.sh`: the scenario campaign's tooling.
-- `logs/`: one launch log per quorum run, with its `run-id:` and `trials:` lines.
+- `logs/`: one launch log per quorum run, with its `run-id:` line.
 - `task-9-runs/`: the archived scenario runs (`treatment/`, `fork/`) and their tallies.
 - `task-10-zed/`: the manual Zed run's logs, transcript and tally.
 
