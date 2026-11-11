@@ -99,7 +99,18 @@ so what the campaign measures is the controller's behaviour after a refusal,
 and five runs cannot bound a rare divergence. The fixture contradicts itself
 (plan code against a required test), which makes quorum's grade fail
 independently of the guard; the grade says nothing about the guard in either
-direction. The logs carry `run-id:` lines and no `trials:` lines: `launch.sh`
+direction. The scenario never exercised a fix-round resume. In each of
+the five treatment runs and in the Zed run, the only `SendMessage` call was
+the opening message's Task 1 docstring follow-up, so every
+`sendmessage-resume` refusal answers that scripted follow-up and none
+answers reviewer findings. The guard's decision does not read the message
+(it refuses when the target is the session's own subagent and the dispatch
+was synchronous), and the preregistered Criteria count any such refusal and
+name the follow-up as part of the scenario, so the PASS stands as
+preregistered. What the runs do not show is a controller re-dispatching a
+fix round, with its findings, in the foreground after a refusal. The field
+replay classed ec562ba3's 18:02Z fix-round `SendMessage` an expected
+refusal. The logs carry `run-id:` lines and no `trials:` lines: `launch.sh`
 runs `quorum run` without `--repeat`, and quorum prints `trials:` only under
 `--repeat`; `archive-runs.sh` and `tally.mjs` read only `run-id:`. The fork
 run is one sample. Every fork-mode dispatch returned async, so the
