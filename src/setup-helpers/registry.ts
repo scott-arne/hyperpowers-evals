@@ -27,6 +27,7 @@ import {
 import {
   addSddAuthPlan,
   scaffoldSddBrokenPlan,
+  scaffoldSddDispatchGuard,
   scaffoldSddGoFractalsGpt55,
   scaffoldSddGoFractalsOpus48,
   scaffoldSddQualityDefectPlan,
@@ -117,6 +118,7 @@ export const REGISTRY: Record<string, RegistryEntry> = {
   scaffold_sdd_spec_constraint_plan: { fn: scaffoldSddSpecConstraintPlan },
   scaffold_sdd_yagni_plan: { fn: scaffoldSddYagniPlan },
   scaffold_sdd_turn_liveness: { fn: scaffoldSddTurnLiveness },
+  scaffold_sdd_dispatch_guard: { fn: scaffoldSddDispatchGuard },
   setup_pressure_worktree_conditions: {
     fn: setupPressureWorktreeConditions,
   },

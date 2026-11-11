@@ -7,6 +7,7 @@ import { runGit } from '../src/setup-helpers/git.ts';
 import {
   addSddAuthPlan,
   scaffoldSddBrokenPlan,
+  scaffoldSddDispatchGuard,
   scaffoldSddGoFractalsGpt55,
   scaffoldSddQualityDefectPlan,
   scaffoldSddSpecConstraintPlan,
@@ -48,6 +49,26 @@ describe('sdd fixtures', () => {
         'tests/test_soak_long.py',
       ]) {
         expect(runGit(['ls-files', '--error-unmatch', f], dir).trim()).toBe(f);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('scaffoldSddDispatchGuard copies the tree and commits it', () => {
+    const dir = tmp();
+    try {
+      scaffoldSddDispatchGuard({ workdir: dir } as never);
+      expect(runGit(['log', '--format=%s'], dir).trim()).toBe(
+        'initial: design, plan and package skeleton',
+      );
+      for (const f of [
+        'design.md',
+        'plan.md',
+        'textstats/__init__.py',
+        'tests/__init__.py',
+      ]) {
+        expect(existsSync(join(dir, f))).toBe(true);
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -36,6 +36,11 @@ import { repoRoot } from '../src/paths.ts';
 // `sdd-turn-liveness-fork` is that scenario with Claude Code's fork subagent
 // mode left on, the stop-guard campaign's terminal smoke, and it measures the
 // same Claude Code behavior.
+// `sdd-dispatch-guard` measures what the SDD dispatch guard, a Claude Code
+// PreToolUse hook, refuses during SDD and what the controller does next, and
+// asserts on Claude Code's `Agent` dispatch tool; `sdd-dispatch-guard-fork`
+// is the same scenario with fork subagent mode left on, where the guard must
+// refuse nothing. Both measure Claude Code behavior only.
 // `sdd-compaction-reread` measures what Claude Code's SDD controller does after a
 // mid-run context compaction and asserts on its `Agent` dispatch tool, so it is
 // pinned to claude-auto for the same reason.
@@ -70,6 +75,8 @@ const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'executing-plans-keeps-inline-request',
   'sdd-compaction-reread',
   'sdd-de-minimis-carveout',
+  'sdd-dispatch-guard',
+  'sdd-dispatch-guard-fork',
   'sdd-fix-loop-refutes-wrong-finding',
   'sdd-plan-scoped-scratch',
   'sdd-spec-context-consumed',
@@ -129,6 +136,36 @@ test('the sdd-turn-liveness-fork claude-env directive is read inside the window'
     repoRoot(),
     'scenarios',
     'sdd-turn-liveness-fork',
+    'checks.sh',
+  );
+  expect(parseClaudeEnvDirective(checksSh)).toEqual({
+    CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+  });
+});
+
+// The dispatch guard's scenario must run with fork mode off and the task
+// tools on, as the field's SDK sessions do; a directive pushed out of the
+// 21-line window would run it in fork mode, where the guard refuses nothing.
+test('the sdd-dispatch-guard claude-env directive is read inside the window', () => {
+  const checksSh = join(
+    repoRoot(),
+    'scenarios',
+    'sdd-dispatch-guard',
+    'checks.sh',
+  );
+  expect(parseClaudeEnvDirective(checksSh)).toEqual({
+    CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+    CLAUDE_CODE_FORK_SUBAGENT: '0',
+  });
+});
+
+// The fork copy leaves fork mode on by design, so its directive sets the task
+// tools alone.
+test('the sdd-dispatch-guard-fork claude-env directive is read inside the window', () => {
+  const checksSh = join(
+    repoRoot(),
+    'scenarios',
+    'sdd-dispatch-guard-fork',
     'checks.sh',
   );
   expect(parseClaudeEnvDirective(checksSh)).toEqual({

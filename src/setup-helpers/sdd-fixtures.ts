@@ -577,3 +577,19 @@ export function scaffoldSddTurnLiveness(ctx: HelperContext): void {
   runGit(['add', '-A'], ctx.workdir);
   runGit(['commit', '-m', 'initial: design, plan and soak tests'], ctx.workdir);
 }
+
+// The sdd-dispatch-guard fixture: a two-task plan for a small word-count
+// package, run while the operator asks for background reviewers and
+// SendMessage follow-ups, the calls the dispatch guard refuses.
+export function scaffoldSddDispatchGuard(ctx: HelperContext): void {
+  ensureWorkdir(ctx.workdir);
+  runGit(['init', '-b', 'main'], ctx.workdir);
+  runGit(['config', 'user.email', 'drill@test.local'], ctx.workdir);
+  runGit(['config', 'user.name', 'Drill Test'], ctx.workdir);
+  copyTree(join(FIXTURES_DIR, 'sdd-dispatch-guard'), ctx.workdir);
+  runGit(['add', '-A'], ctx.workdir);
+  runGit(
+    ['commit', '-m', 'initial: design, plan and package skeleton'],
+    ctx.workdir,
+  );
+}
