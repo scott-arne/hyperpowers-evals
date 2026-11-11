@@ -14,9 +14,11 @@
 # <run-id>.partial and renamed once complete. A setup void may have no
 # workspace; its record is archived alone. Then every named run is checked
 # against the outcome shapes in ../README.md ("Before committing a run", step
-# 4): no .git entry left, and a result with a transcript, a transport void
-# with its run.jsonl and a transcript, or a setup void with its phase.json and
-# provenance.json and no transcript.
+# 4): no .git entry left, then by the shape verdict.json states: a completed
+# run (non-null gauntlet.run_id) has exactly one result.json and a transcript,
+# a transport void (null run_id) has a run.jsonl, no result.json and a
+# transcript, a setup void (null gauntlet) has phase.json and provenance.json,
+# no gauntlet-agent directory and no transcript.
 # Adapted from ../2026-10-23-sdd-stop-guard/archive-runs.sh.
 set -euo pipefail
 arm="$1"; task_dir="$2"
@@ -85,20 +87,37 @@ archive() {
 # workspace) from failing the pipeline under pipefail.
 count() { { find "$@" 2>/dev/null || true; } | wc -l | tr -d ' '; }
 
+# shape <verdict.json>: prints setup, transport or completed by the verdict
+# fields ../README.md step 4 names, and fails for anything else.
+shape() {
+  node -e '
+    let v; try { v = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); } catch { process.exit(1); }
+    const g = v && v.gauntlet;
+    if (g === null && v.error && v.error.stage === "setup") console.log("setup");
+    else if (g && typeof g === "object" && g.run_id === null && "status" in g) console.log("transport");
+    else if (g && typeof g === "object" && typeof g.run_id === "string" && g.run_id) console.log("completed");
+    else process.exit(1);
+  ' "$1"
+}
+
 check() {
-  local id=$1 n t
+  local id=$1 n t kind
   n=$(count "$out/$id" "$out/workspaces/$id" -name .git)
   [ "$n" = 0 ] || { echo "check $id: $n .git entries left" >&2; return 1; }
+  kind=$(shape "$out/$id/verdict.json") || { echo "check $id: verdict.json is unparseable or not a setup void, a transport void or a completed run" >&2; return 1; }
   t=$(count "$out/workspaces/$id/home/.claude/projects" -name '*.jsonl' -type f)
-  if [ ! -d "$out/$id/gauntlet-agent" ]; then
-    { [ -f "$out/$id/phase.json" ] && [ -f "$out/$id/provenance.json" ] && [ "$t" = 0 ]; } || { echo "check $id: a setup void needs phase.json and provenance.json and no transcript" >&2; return 1; }
-    return 0
-  fi
-  [ "$t" -ge 1 ] || { echo "check $id: no transcript" >&2; return 1; }
-  n=$(count "$out/$id/gauntlet-agent/results" -name result.json -type f)
-  [ "$n" = 1 ] && return 0
-  [ "$n" = 0 ] || { echo "check $id: $n Gauntlet result.json files" >&2; return 1; }
-  [ "$(count "$out/$id/gauntlet-agent" -name run.jsonl -type f)" -ge 1 ] || { echo "check $id: a transport void without its run.jsonl" >&2; return 1; }
+  case "$kind" in
+    setup)
+      { [ -f "$out/$id/phase.json" ] && [ -f "$out/$id/provenance.json" ] && [ ! -e "$out/$id/gauntlet-agent" ] && [ "$t" = 0 ]; } || { echo "check $id: a setup void needs phase.json and provenance.json, no gauntlet-agent directory and no transcript" >&2; return 1; } ;;
+    transport)
+      [ "$(count "$out/$id/gauntlet-agent" -name run.jsonl -type f)" -ge 1 ] || { echo "check $id: a transport void without its run.jsonl" >&2; return 1; }
+      [ "$(count "$out/$id/gauntlet-agent" -name result.json -type f)" = 0 ] || { echo "check $id: a transport void has a result.json" >&2; return 1; }
+      [ "$t" -ge 1 ] || { echo "check $id: no transcript" >&2; return 1; } ;;
+    completed)
+      n=$(count "$out/$id/gauntlet-agent/results" -name result.json -type f)
+      [ "$n" = 1 ] || { echo "check $id: $n Gauntlet result.json files, a completed run needs exactly one" >&2; return 1; }
+      [ "$t" -ge 1 ] || { echo "check $id: no transcript" >&2; return 1; } ;;
+  esac
 }
 
 for id in $ids; do archive "$id"; done

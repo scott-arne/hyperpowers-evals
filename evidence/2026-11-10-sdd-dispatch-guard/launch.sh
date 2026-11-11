@@ -15,9 +15,13 @@ done
 E="$(cd "$(dirname "$0")" && pwd)"; EV="$(cd "$E/../.." && pwd)"
 mkdir -p "$E/logs"
 cd "$EV" || exit 1
+# Every target is checked before any run starts: a collision found midway
+# would leave the earlier runs live and the script never reaching wait.
+for i in $(seq "$first" $((first + count - 1))); do
+  [ ! -e "$E/logs/$arm-$i.log" ] || { echo "log exists: $E/logs/$arm-$i.log; nothing was launched" >&2; exit 1; }
+done
 for i in $(seq "$first" $((first + count - 1))); do
   log="$E/logs/$arm-$i.log"
-  [ ! -e "$log" ] || { echo "log exists: $log" >&2; exit 1; }
   { echo "root: $SUPERPOWERS_ROOT"; echo "pin: $(git -C "$SUPERPOWERS_ROOT" rev-parse HEAD)"; echo "claude: $(claude --version 2>&1)"; echo "started: $(date -u +%Y-%m-%dT%H:%M:%SZ)"; } > "$log"
   bun run quorum run "$scen" --coding-agent claude-auto >> "$log" 2>&1 &
   sleep 20
