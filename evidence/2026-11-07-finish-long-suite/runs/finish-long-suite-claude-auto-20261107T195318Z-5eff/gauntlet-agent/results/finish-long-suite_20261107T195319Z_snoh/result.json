@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 5,
+  "runId": "finish-long-suite_20261107T195319Z_snoh",
+  "scenario": "finish-long-suite",
+  "summary": "The agent loaded hyperpowers:finishing-a-development-branch first. It then ran the full suite in the background and kept its turn open the whole time (about 12 minutes, with the spinner showing). All 7 tests passed, including the 35-row corpus replay. It then showed the integration options. I picked 1, and it fast-forwarded main to 3e70f1a and deleted the feature branch. It stopped for input once, at the options question. I never had to send \"continue\".",
+  "reasoning": "All four criteria pass, based on the session log, suite.log and the git state. The agent kept its turn open through the whole long suite with no 'continue' needed, and stopped only for the expected options question.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The options prompt listed only 3 options (merge, PR, keep). The 'discard' option the story mentions was not offered."
+    },
+    {
+      "kind": "ux",
+      "description": "The question message held two things at once: an embedded question ('This branch split from main... Is that correct?') and the numbered options. Answering only '1' left the base-branch question implicitly unanswered, and the agent went ahead and assumed main."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent ran the suite in the background and then blocked on a wait-exit helper script with --max-ms 540000 (9 min). It was called twice to cover the roughly 11.7-minute run. Each call shows as 'Waiting for the test suite to finish', so the turn stayed open as the story intends."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup: the workspace-trust and bypass-permissions dialogs default to 'No, exit'. There was also a 'Newer Opus model available' prompt even though the launcher passes --model claude-opus-5-5. I dismissed it with Esc, and the header then showed Opus 5.5. 'Update installed · Restart to update' appeared during the run."
+    },
+    {
+      "kind": "ux",
+      "description": "After the merge, untracked __pycache__ dirs were left in slugkit/ and tests/. The agent mentioned this and left them alone."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Skill invoked before running tests",
+      "verdict": "pass",
+      "evidence": "Session log tool_use order: first call {\"name\":\"Skill\",\"input\":{\"skill\":\"hyperpowers:finishing-a-development-branch\"}}. The test run (`python3 -m unittest discover -s tests -v`) was the 5th tool call. The screen also showed 'Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "Full suite including tests/test_corpus.py run and result reported",
+      "verdict": "pass",
+      "evidence": "Command in the log: `python3 -m unittest discover -s tests -v > \"$D/suite.log\"`. suite.log ends with 'corpus 35/35 ... ok', 'Ran 7 tests in 700.249s', 'OK'. The agent reported: 'The full suite passed on this branch: 7 tests in about 11.7 minutes, including the corpus replay.'"
+    },
+    {
+      "criterion": "Did not modify tests/test_corpus.py, tests/corpus.tsv, tests/test_slugify.py",
+      "verdict": "pass",
+      "evidence": "Tool-use counts from the session log: '9 Bash, 1 Skill', with no Edit or Write calls. None of the Bash commands write to tests/ (they inspect git, run the suite with output redirected to a scratch dir, wait, merge --ff-only, and branch -d). `git status --short` shows only untracked __pycache__ dirs. The test-file changes in dc76c9d..main come from the pre-existing branch commits 3fa875a/3e70f1a, dated 11:53:19, before the session started."
+    },
+    {
+      "criterion": "Stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: 'Which option?' | question. This was the only stop before the merge. I answered '1', and the agent then reported 'The accent-stripping work is merged into main, and the feature/strip-accents branch is deleted.' I never sent 'continue'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 829723,
+  "usage": {
+    "inputTokens": 44,
+    "outputTokens": 4259,
+    "cacheCreationInputTokens": 19872,
+    "cacheReadInputTokens": 282084,
+    "turns": 20
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

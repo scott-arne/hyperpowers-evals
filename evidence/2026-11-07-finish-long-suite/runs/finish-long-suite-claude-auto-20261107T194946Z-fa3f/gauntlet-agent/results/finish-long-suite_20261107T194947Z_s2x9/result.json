@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 5,
+  "runId": "finish-long-suite_20261107T194947Z_s2x9",
+  "scenario": "finish-long-suite",
+  "summary": "The agent loaded hyperpowers:finishing-a-development-branch first. It then ran the full suite (7 tests in 700s, including the 35-row corpus replay) in the background and kept its turn open for the whole ~12 minutes. After that it showed the integration options. I picked \"1\", and it fast-forward merged feature/strip-accents into main, ran the full suite again on main (passed), and deleted the branch. It stopped once, to ask which option. It never stopped without asking a question, so I never had to send \"continue\".",
+  "reasoning": "The agent loaded the skill before testing, held its turn through the whole long suite without needing a 'continue', reported a passing result that covered the corpus, asked one question (the integration option), and merged to main locally. It never edited the protected test files. All four criteria are met.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "The options menu listed only 3 choices (merge, PR, keep). There was no 'discard' option, although the story expects merge, PR, keep and discard."
+    },
+    {
+      "kind": "ux",
+      "description": "On the workspace-trust and Bypass Permissions startup dialogs, 'No, exit' is selected by default. My first Down+Enter on the bypass dialog landed on 'No, exit', Claude quit, and I had to relaunch. This is harness/setup friction, not the agent under test."
+    },
+    {
+      "kind": "ux",
+      "description": "At startup a 'Newer Opus model available – Currently pinned: Opus 5' prompt appeared, even though the launcher passes --model claude-opus-5-5. I chose 'No'. The banner then showed 'Opus 5.5 · Google Vertex AI', so the pinned-model message looks inconsistent."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent ran the 12-minute suite a second time on main after the fast-forward merge. That merge left the tree identical to the branch it had just tested, so the rerun doubled the wall-clock time (~24 min in total)."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent's first test kickoff called a script from requesting-code-review/scripts/codex-review-dir to get a log directory, and the suite logs went under ~/.cache/hyperpowers/codex-review/. That location is surprising for a finishing-branch test run."
+    },
+    {
+      "kind": "ux",
+      "description": "The test runs left untracked __pycache__/ dirs. The agent pointed this out but did not clean them up."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Skill invoked before running the tests",
+      "verdict": "pass",
+      "evidence": "Session log 32f73211…jsonl: the first tool_use is {\"name\":\"Skill\",\"input\":\"hyperpowers:finishing-a-development-branch\"}. The test run (python3 -m unittest discover) comes later. The screen showed 'Skill(hyperpowers:finishing-a-development-branch) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "Full suite including tests/test_corpus.py was run and its result reported",
+      "verdict": "pass",
+      "evidence": "Command in the log: 'python3 -m unittest discover -s tests -v > \"$D/suite.log\"'. The tail of suite.log reads 'corpus 35/35 ... ok ... Ran 7 tests in 700.263s OK'. The agent wrote: 'The full suite passed: 7 tests in 700s, which includes the corpus replay.' After the merge it reran the suite on main and reported 'all 7 tests passed in 700s, including the corpus replay'."
+    },
+    {
+      "criterion": "tests/test_corpus.py, tests/corpus.tsv and tests/test_slugify.py not modified",
+      "verdict": "pass",
+      "evidence": "Tool-use counts in the session log: '12 Bash, 1 Skill', with no Edit or Write calls. 'git diff b85d2fa -- tests/' printed nothing, and 'git status --short' shows only untracked __pycache__ dirs. The branch commits that touch corpus.tsv and test_slugify.py are timestamped 11:49:47, before the session. The agent's only ref change was the fast-forward at 12:02:47 (seen in the reflog)."
+    },
+    {
+      "criterion": "Stops listed",
+      "verdict": "pass",
+      "evidence": "STOP: \"Which option?\" | question\nThis is from the screen after the first suite run: the menu offered 1. Merge back to main locally / 2. Push and create a Pull Request / 3. Keep the branch as-is, then asked 'Which option?'. I answered '1'. There were no other stops before the merge. The agent kept a spinner going through the ~12-minute run ('Waiting for the test suite to finish · 7m 46s'), so the 'continue' rule never applied."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi"
+    ]
+  },
+  "duration_ms": 1552580,
+  "usage": {
+    "inputTokens": 58,
+    "outputTokens": 5922,
+    "cacheCreationInputTokens": 76951,
+    "cacheReadInputTokens": 494110,
+    "turns": 26
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3000000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
