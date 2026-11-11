@@ -104,8 +104,9 @@ the five treatment runs and in the Zed run, the only `SendMessage` call was
 the opening message's Task 1 docstring follow-up, so every
 `sendmessage-resume` refusal answers that scripted follow-up and none
 answers reviewer findings. The guard's decision does not read the message
-(it refuses when the target is the session's own subagent and the dispatch
-was synchronous), and the preregistered Criteria count any such refusal and
+(it refuses when the target is the session's own subagent and the session
+has a synchronous dispatch on record, that is, it is outside fork mode), and
+the preregistered Criteria count any such refusal and
 name the follow-up as part of the scenario, so the PASS stands as
 preregistered. What the runs do not show is a controller re-dispatching a
 fix round, with its findings, in the foreground after a refusal. The field
