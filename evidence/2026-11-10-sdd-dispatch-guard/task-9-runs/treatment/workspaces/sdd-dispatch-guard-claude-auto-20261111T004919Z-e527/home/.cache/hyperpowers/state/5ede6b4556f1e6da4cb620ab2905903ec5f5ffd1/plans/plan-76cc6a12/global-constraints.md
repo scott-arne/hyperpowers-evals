@@ -1,0 +1,3 @@
+- Standard library only.
+- Tests run with `python3 -m unittest discover -s tests`.
+- Plan text governs count_words: implement exactly `len(text.split(" "))` (user decision at pre-flight, over design.md Req 1).

@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-dispatch-guard_20261111T004941Z_9v9p",
+  "scenario": "sdd-dispatch-guard",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development and finished Task 1 (count_words plus the requested docstring). Task 2 came back BLOCKED: the plan's Task 1 code (split(\" \")) contradicts design.md and Task 2's test. Per the script I replied \"understood, thanks\" and stopped driving. Nothing was merged to main, and the test suite fails (1 of 2 tests).",
+  "reasoning": "I followed the script exactly. The agent hit a real conflict between the plan and the spec, asked about it, got the scripted answer that favored the plan, and Task 2 came back BLOCKED. Per the rules I replied \"understood, thanks\" and stopped. Criterion 1 passes. Criteria 2 and 3 fail: nothing reached main, and 1 of the 2 tests fails. The fixture's contradictory plan, combined with the scripted answer, is the root cause.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "The fixture plan contradicts itself. Task 1's code uses len(text.split(\" \")), but design.md requires splitting on any whitespace, and Task 2's own test (\"one two\\nthree four\" -> 4 words) can't pass with Task 1 as written. The agent caught this up front and asked which should govern."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent asked \"Which one governs?\" with the options 'Spec governs (Recommended)' / 'Plan text governs'. The script made me answer \"go ahead with what the plan says\", which the agent read as 'plan text governs'. It had predicted this would lead to BLOCKED, and it did. The script's generic answer for 'anything else' pushed the run into a dead end."
+    },
+    {
+      "kind": "bug",
+      "description": "A PreToolUse hook refused SendMessage with: \"SDD plan plan.md is in progress in this session. On this harness a SendMessage resume runs in the background ... Dispatch a fresh subagent in the foreground (run_in_background: false)\". The agent then sent the docstring request to a fresh foreground Haiku implementer. It also said background reviewers were refused, so the Task 1 reviewer ran in the foreground. The agent told the user plainly that both operator instructions were overridden and why."
+    },
+    {
+      "kind": "ux",
+      "description": "After I said \"understood, thanks\", the SDD stop hook fired: \"Stop hook error: SDD stop guard: plan plan.md is not finished ...\". The agent then ran the handback script and repeated its 1/2/3 options. The stop hook appears on screen as an 'error', which looks alarming."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent said the step that records design decisions would be skipped because \"Its script refuses a spec at the repo root, and design.md lives at the root.\" This is a tooling limitation that users can run into."
+    },
+    {
+      "kind": "ux",
+      "description": "Codex review gate skipped: \"codex-plugin-cc isn't installed\"."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup dialogs: on the workspace-trust and bypass-permissions prompts, the default selection is 'No, exit'. There was also an 'Update to Opus 5.5? Claude Code will restart' prompt, which I declined because the launcher already passes --model claude-opus-5-5."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent put the Task 1 reviewer's two Important findings (the split(\" \") spec violation) aside as 'already decided by user', so a known spec violation was approved."
+    },
+    {
+      "kind": "suggestion",
+      "description": "pytest isn't installed for the system python3.15. Tests run under unittest."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "SDD skill invoked before implementation",
+      "verdict": "pass",
+      "evidence": "Screen: \"⏺ Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill\" was the first tool action, before any implementer Agent dispatch."
+    },
+    {
+      "criterion": "Both tasks completed and work on main checkout",
+      "verdict": "fail",
+      "evidence": "`git log --oneline main` → only \"5020d83 initial: design, plan and package skeleton\". Task 1 commits (fe31121, 5d509c9, 487c607) are on the textstats branches only. Task 2's textstats/report.py and tests/test_report.py are untracked on textstats.76cc6a12.task-2. Agent: \"Task 2 is blocked ... Task 1 is merged into textstats.\""
+    },
+    {
+      "criterion": "Package tests pass on main",
+      "verdict": "fail",
+      "evidence": "In the checkout (currently on textstats.76cc6a12.task-2), `python3 -m unittest -q` → \"Ran 2 tests ... FAILED (failures=1)\". main itself has no implementation commits. Agent report: test expects {'words': 4, 'lines': 2}, count_words gives 3 because split(\" \") keeps \"two\\nthree\" as one word."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi",
+      "captures/021.ansi"
+    ]
+  },
+  "duration_ms": 572194,
+  "usage": {
+    "inputTokens": 76,
+    "outputTokens": 5722,
+    "cacheCreationInputTokens": 28510,
+    "cacheReadInputTokens": 645488,
+    "turns": 34
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

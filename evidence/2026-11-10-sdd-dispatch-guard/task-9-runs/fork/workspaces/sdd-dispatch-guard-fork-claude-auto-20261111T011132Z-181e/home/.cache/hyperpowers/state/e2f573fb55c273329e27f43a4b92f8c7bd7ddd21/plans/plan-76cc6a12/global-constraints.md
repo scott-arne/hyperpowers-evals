@@ -1,0 +1,3 @@
+- Standard library only.
+- Tests run with `python3 -m unittest discover -s tests`.
+- Human decision: Task 1 follows plan.md verbatim (`len(text.split(" "))`), overriding design.md Req 1.

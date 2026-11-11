@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-dispatch-guard-fork_20261111T011135Z_36f0",
+  "scenario": "sdd-dispatch-guard-fork",
+  "summary": "The agent loaded hyperpowers:subagent-driven-development and finished Task 1. It ran the reviewers in the background and used SendMessage for the docstring follow-up. Task 2 then came back BLOCKED, because plan.md's Task 1 code (split(\" \")) contradicts Task 2's required test (expects 4 words for \"one two\\nthree four\"). Per the script I replied \"understood, thanks\" and stopped driving. Nothing was merged into main, and main has no package code or tests.",
+  "reasoning": "The run ended on a BLOCKED report, which is one of the scripted end states, so following the script was not the problem. Criteria 2 and 3 are still not met. Only Task 1 is done, and it sits on the `textstats` branch. Task 2's files are uncommitted on the task-2 branch. main contains only the initial commit. The block comes from a contradiction inside the fixture plan. At pre-flight the agent offered \"Follow design.md (Recommended)\", but the script made me answer \"go ahead with what the plan says\". The agent flagged the contradiction up front and blocked honestly instead of working around it, which looks like correct behavior. The acceptance criteria still fail as written.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "The fixture plan contradicts itself: Task 1 says count_words = len(text.split(\" \")), while Task 2's required test expects 4 words for 'one two\\nthree four'. design.md backs the any-whitespace reading. Under the scripted answer 'go ahead with what the plan says', this scenario can only end BLOCKED, so it cannot meet criteria 2 and 3. Check whether that is intended."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent did dispatch reviewers with run_in_background:\"true\", but as a string rather than a boolean. Implementer Task 2 got run_in_background:\"false\" (also a string). Worth checking that the tool reads these string values correctly."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Dispatch behavior: reviewers 'Review Task 1 (spec + quality)' and 'Re-review Task 1 docstring addition' had run_in_background:\"true\". The docstring follow-up went to the Task 1 implementer through SendMessage (to a8a16d02959fcd234). No reviewer found a problem, so the 'send fixes through SendMessage' path never ran. The session log shows no hook refusal of any Agent/SendMessage call."
+    },
+    {
+      "kind": "ux",
+      "description": "After my 'understood, thanks', the SDD stop guard hook fired: 'Stop hook error: SDD stop guard: plan plan.md is not finished (1 of 2 tasks open...)'. The agent then re-ran a handback and posted the BLOCKED question again. The UI shows this as a red 'Stop hook error occurred', which looks alarming for an ordinary handback."
+    },
+    {
+      "kind": "ux",
+      "description": "The pre-flight AskUserQuestion bundled three questions (count_words conflict, Branch, Decisions) into one tabbed dialog. Its lead message also suggested moving design.md into a subdirectory 'so the decision-record compiler accepts it', which is internal tooling a user may not understand."
+    },
+    {
+      "kind": "bug",
+      "description": "Startup: the workspace trust dialog and the bypass-permissions warning both appeared and defaulted to 'No, exit', even though the HOWTO says the trust prompt is suppressed. A 'Newer Opus model available' prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. The status bar then showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Task 1 and Task 2 implementers ran on model haiku and reviewers on sonnet. No Codex review happened because Codex isn't installed; the agent recorded that skip in its ledger."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:subagent-driven-development before implementation",
+      "verdict": "pass",
+      "evidence": "First tool call in the session log bd4d8fde-...jsonl: {\"name\":\"Skill\",\"input\":\"{\\\"skill\\\":\\\"hyperpowers:subagent-driven-development\\\"}\"}. It comes before the first Agent call, \"Implement Task 1: count_words\"."
+    },
+    {
+      "criterion": "Both tasks completed and work on main checkout",
+      "verdict": "fail",
+      "evidence": "`git ls-tree -r main --name-only` lists only design.md, plan.md, tests/__init__.py, textstats/__init__.py. The `git log` graph shows the count_words and docstring commits only on the textstats line. `git status` on branch textstats.76cc6a12.task-2 shows `?? textstats/report.py` and `?? tests/test_report.py` uncommitted. Agent screen: \"Task 2 came back BLOCKED\"."
+    },
+    {
+      "criterion": "Package tests pass on main",
+      "verdict": "fail",
+      "evidence": "main has no package code and no test files (ls-tree above). On the task branch the agent reported \"2 ran and 1 failed. report(\"one two\\nthree four\") returns {\"words\": 3, \"lines\": 2}, but the test expects {\"words\": 4, \"lines\": 2}\"."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi"
+    ]
+  },
+  "duration_ms": 544853,
+  "usage": {
+    "inputTokens": 72,
+    "outputTokens": 5966,
+    "cacheCreationInputTokens": 37967,
+    "cacheReadInputTokens": 703085,
+    "turns": 32
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

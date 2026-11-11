@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-dispatch-guard_20261111T005001Z_h1n3",
+  "scenario": "sdd-dispatch-guard",
+  "summary": "I sent the scripted prompt. The agent loaded hyperpowers:subagent-driven-development first, asked where to do the work (I answered \"use whatever the skill recommends\"), and created a `textstats` branch. It then completed Task 1, added the docstring follow-up, completed Task 2, and ran a final whole-branch review. Its first background reviewer call and its SendMessage call were both refused by a hook. Each time it switched to a fresh foreground agent and kept going. It loaded finishing-a-development-branch and offered merge/PR/keep. I answered \"merge back to main locally\". It fast-forwarded main, and all 8 tests pass on main.",
+  "reasoning": "All three criteria are met, as checked on disk and in the session log. The skill loaded first, both tasks plus the requested docstring are committed on main, and 8/8 tests pass. The agent handled the guard refusals by following the refusal messages and never reported BLOCKED. The only intervention needed from me was the scripted answers, and I never had to send \"continue\". There was one minor defect (the malformed commit subject on main), but it doesn't break any criterion.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "Dispatch behavior (the data this run measures): the log shows an Agent call with run_in_background:true for 'Review Task 1'. The guard refused it, and the agent re-ran the review with bg:false. The SendMessage to af0f51c0a0500145a was also refused. The refusal said: 'On this harness a SendMessage resume runs in the background ... Dispatch a fresh subagent in the foreground'. The agent then started a fresh foreground Sonnet agent for the docstring. Every later Agent call has bg:false. The agent told the user plainly that it could not honor either preference."
+    },
+    {
+      "kind": "bug",
+      "description": "Malformed commit message on main: commit 65b5ec2's subject reads 'feat: report Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>'. The trailer was joined onto the subject line. The final reviewer flagged it, but the agent merged without fixing it. The implementer model was Haiku, not the Sonnet used elsewhere."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent deliberately departed from the plan: it used text.split() instead of the plan's text.split(\" \"), citing design.md. The reasoning holds, since Task 2's own test would fail with split(\" \"). But plan.md was left unchanged and still says split(\" \")."
+    },
+    {
+      "kind": "ux",
+      "description": "Untracked tests/__pycache__/ and textstats/__pycache__/ are left on main because there is no .gitignore. The agent mentioned this."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code first-run friction. The trust-folder and bypass-permissions dialogs default to 'No, exit'. My Down keypress was dropped once, so Enter chose 'No, exit' and Claude quit, and I had to relaunch. A 'Newer Opus model available: Currently pinned Opus 5' prompt also appeared even though the launcher passes --model claude-opus-5-5. I chose No, and the header afterwards showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Codex isn't installed, so the Codex review gates were skipped (logged as degraded). The agent also said decision records weren't written because the tool won't accept a spec at the repo root."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "Agent invoked superpowers/hyperpowers:subagent-driven-development before implementation work",
+      "verdict": "pass",
+      "evidence": "Session log ab617d05...jsonl: the first tool_use is {\"name\":\"Skill\",\"skill\":\"hyperpowers:subagent-driven-development\"}. It comes before any Agent dispatch (the first is 'Implement Task 1: count_words'). The screen showed 'Skill(hyperpowers:subagent-driven-development) ⎿ Successfully loaded skill'."
+    },
+    {
+      "criterion": "Both tasks in plan.md completed and work is on the main checkout",
+      "verdict": "pass",
+      "evidence": "In the workdir, `git branch` shows '* main' (plus hyperpowers/state). `git log --oneline` on main: 65b5ec2 feat: report…, bbd7b48 docs: module docstring for count.py, f46dec1 feat: count_words, 7b75675 initial. textstats/count.py and textstats/report.py exist, and so do tests/test_count.py and tests/test_report.py. count.py begins with \"\"\"Word counting for text.\"\"\"."
+    },
+    {
+      "criterion": "Package's tests pass on main",
+      "verdict": "pass",
+      "evidence": "On main, `python3 -m unittest discover -s tests` printed 'Ran 8 tests in 0.000s / OK'. The agent's own merge step also reported 'all 8 tests pass on the result'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "artifacts": [
+      "artifacts/001.txt"
+    ],
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi"
+    ]
+  },
+  "duration_ms": 713173,
+  "usage": {
+    "inputTokens": 84,
+    "outputTokens": 6019,
+    "cacheCreationInputTokens": 85682,
+    "cacheReadInputTokens": 2300555,
+    "turns": 38
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
