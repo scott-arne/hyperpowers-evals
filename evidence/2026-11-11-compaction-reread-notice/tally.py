@@ -32,22 +32,40 @@ Rules:
 * A setup or grader void in the verdict is void; so is a run whose reading is
   invalid (kind ``instrument``): an invalid run is a void. Voids occupy no
   trial slot.
-* Re-read counting credits only the lines the session saw. An SDD re-read is
-  a successful Read, or a plain ``cat``, of the skill's ``SKILL.md`` after a
-  compaction and before the next stop event (the next Agent dispatch or
-  compaction). It counts where its non-error tool result arrives, and only
-  when the union of the line ranges read covers the cut text: from the line
-  holding character 20,000 of the arm's pinned ``SKILL.md`` (where Claude
-  Code's re-attached copy ends) to the last line. Whole-file reads and offset
-  reads that cover the cut text both count, and are reported separately
-  (``followed`` and ``whole``).
+* Re-read counting credits only the lines the session saw, and fails closed:
+  when the tally cannot establish that the session saw the text, it gives no
+  SDD credit. An SDD re-read is a successful Read, or a plain ``cat``, of the
+  skill's ``SKILL.md`` after a compaction and before the next stop event (the
+  next Agent dispatch or compaction). It counts where its non-error tool
+  result arrives, and only when the union of the line ranges read covers the
+  cut text: from the line holding character 20,000 of the arm's pinned
+  ``SKILL.md`` (where Claude Code's re-attached copy ends) to the last line.
+  Whole-file reads and offset reads that cover the cut text both count, and
+  are reported separately (``followed`` and ``whole``).
 * A Read that Claude Code cut at its 25,000-token cap (a following
   ``read_truncation_notice`` attachment) counts only the range its banner
-  shows, ``lines A-B``, and is not whole; a banner that does not parse leaves
-  the read unchanged and is reported as ``truncation_unparsed``. A ``cat``
-  whose output Claude Code persisted to a file (``<persisted-output>``, a 2 KB
-  preview) gets no SDD credit, nor does a piped ``cat`` or any other shell
-  reader (``cat -n``, ``head``, ``tail``, ``sed -n``, ``less``, ``more``).
+  shows, ``lines A-B``, and is not whole. The notice is matched to a Read by
+  its ``parentUuid`` first, then by path. A banner that does not parse
+  removes all credit from the Read it targets (by parent, else a Read whose
+  path the banner names, else the most recent credited Read) and is counted
+  as ``truncation_unparsed``; a parsed banner that matches no Read is counted
+  as ``truncation_unmatched``. Both warn on stderr and show on the run line.
+* A shell read is recognized only where a reader actually runs and its
+  stdout reaches the session. The command is split, quote-aware, into simple
+  commands on ``;``, ``&&``, ``||``, ``|``, ``&`` and newlines, skipping
+  here-document bodies; one that cannot be tokenized (an unbalanced quote or
+  substitution, an unterminated here-document) reads nothing. In each,
+  the command word after any ``VAR=value`` assignments must be ``cat``,
+  ``head``, ``tail``, ``less``, ``more`` or ``sed -n``, the ``SKILL.md`` path
+  must be a non-option argument, and stdout must not be redirected (``>``,
+  ``>>``, ``>|``, ``&>``, ``1>``; ``2>&1`` and ``2>/dev/null`` are fine). A
+  command inside ``$( )``, backticks or a process substitution, and a path
+  merely mentioned by ``echo``, ``printf`` or a quoted argument, is not a
+  read. Only a command that is exactly ``cat <path>`` (optionally ``2>&1``)
+  is a plain ``cat``, and it gets no SDD credit when Claude Code persisted its
+  output to a file (``<persisted-output>``, a 2 KB preview). Every other
+  shell read (``cat -n``, a piped or compound ``cat``, ``head``, ``tail``,
+  ``sed -n``, ``less``, ``more``) gets no SDD credit.
 * SDD validity (the 6.16.2 rule): an automatic compaction falls after task 1's
   review returns and before the first final review is dispatched; the first
   such compaction is the measured one. Outcome passes when every task whose
@@ -102,14 +120,18 @@ NOSKILL = "compaction-no-skill"
 RUN_ROOTS: tuple[str, ...] = ("task-6-runs",)
 NOTIF_ID = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>")
 NOTIF_STATUS = re.compile(r"<status>([^<]+)</status>")
-CAT_SKILL = re.compile(r"\bcat\s+['\"]?([^\s'\"]*/skills/[^/\s'\"]+/SKILL\.md)")
-# Any shell reader of a SKILL.md, flags allowed, within one pipeline segment.
-# Only the sentinel uses it, where the attempt is the failure; SDD coverage
-# credits a Read or a plain cat alone, so these readers never count there.
-READER_SKILL = re.compile(
-    r"(?:^|[\s;&|(`])(?:cat|head|tail|less|more|sed\s+-n)(?=\s)[^;&|\n]*?"
-    r"['\"]?([^\s'\"]*/skills/[^/\s'\"]+/SKILL\.md)"
+# Shell operators, longest first so ``&&`` is not read as two ``&``. A
+# separator ends one simple command; a redirection takes the next word as its
+# target.
+SHELL_OPERATORS = (
+    "&>>", ";;", "&&", "||", "|&", "&>", ">>", ">|", ">&", "<<<", "<<-", "<<", "<&", "<>",
+    ";", "|", "&", "\n", "(", ")", ">", "<",
 )
+REDIRECTIONS = frozenset({"&>>", "&>", ">>", ">|", ">&", "<<<", "<<-", "<<", "<&", "<>", ">", "<"})
+# The shell commands that print a file to stdout. ``sed`` prints only with
+# ``-n`` and an address; without it the tally cannot tell an edit from a read.
+READERS = frozenset({"cat", "head", "tail", "less", "more", "sed"})
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 # Claude Code 2.1.317 cuts a Read over 25,000 tokens and writes this banner in
 # a separate attachment entry; the separator is an em dash.
 TRUNCATION_BANNER = re.compile(r"PARTIAL view \u2014 (.+): showing lines (\d+)-(\d+) of (\d+) total")
@@ -180,46 +202,368 @@ def result_text(content: Any) -> str:
 def apply_truncation(found: list[dict[str, Any]], parent: Any, banner: str) -> None:
     """Narrow a Read that Claude Code cut at its token cap to the lines the banner says it showed.
 
-    The notice is matched to the most recent Read of the banner's path,
-    preferring the one whose result entry is the notice's parent, and falls
-    back to the parent alone when no Read has that path. A banner
-    that does not parse leaves the read unchanged, marks it
-    ``truncation_unparsed`` and warns on stderr.
+    The notice is matched to the most recent Read whose result entry is the
+    notice's parent, preferring one with the banner's path, and falls back to
+    the most recent Read of that path. A matched read keeps its credit for
+    ``lines A-B`` only. Both failures fail closed and append a counted
+    ``note`` event: a banner that does not parse removes the credit of the
+    Read it targets (by parent, else a Read whose path the banner names, else
+    the most recent credited Read), ``truncation_unparsed``; a parsed banner
+    that matches no Read is ``truncation_unmatched``. Each warns on stderr.
     """
     reads = [e for e in found if e["kind"] == "read" and e["via"] == "read"]
+    # The parent link is exact even when the banner writes the path another
+    # way (a symlink, a relative path) or does not parse at all.
+    parented = [e for e in reads if parent and e.get("uuid") == parent]
     match = TRUNCATION_BANNER.search(banner)
     if match is None:
-        target = next((e for e in reversed(reads) if parent and e.get("uuid") == parent), reads[-1] if reads else None)
-        if target is not None:
-            target["truncation_unparsed"] = True
-        where = target["path"] if target is not None else "no read"
-        print(f"tally: truncation_unparsed: read left unchanged ({where}): {banner[:120]!r}", file=sys.stderr)
+        named = [e for e in reads if e["path"] and e["path"] in banner]
+        credited = [e for e in reads if e["credited"]]
+        targets = parented or named or credited
+        found.append({"kind": "note", "note": "truncation_unparsed"})
+        if targets:
+            targets[-1].update(credited=False, whole=False, truncation_unparsed=True)
+        where = targets[-1]["path"] if targets else "no read"
+        print(f"tally: truncation_unparsed: credit removed ({where}): {banner[:120]!r}", file=sys.stderr)
         return
     path, first, last = match.group(1), int(match.group(2)), int(match.group(3))
     same = [e for e in reads if e["path"] == path]
-    parented = [e for e in reads if parent and e.get("uuid") == parent]
-    # The parent link is exact when the paths agree; a path written two ways
-    # (a symlink, a relative path) still has the parent to go on.
-    both = [e for e in same if parent and e.get("uuid") == parent]
-    candidates = both or same or parented
+    both = [e for e in parented if e["path"] == path]
+    candidates = both or parented or same
     if not candidates:
-        print(f"tally: truncation notice matched no Read: {banner[:120]!r}", file=sys.stderr)
+        found.append({"kind": "note", "note": "truncation_unmatched"})
+        print(f"tally: truncation_unmatched: notice matched no Read: {banner[:120]!r}", file=sys.stderr)
         return
     candidates[-1].update(offset=first, limit=last - first + 1, whole=False)
 
 
+def _substitution_end(command: str, start: int) -> int:
+    """The index just past the ``)`` closing the substitution whose ``(`` is at ``start``.
+
+    :raises ValueError: When the substitution is not closed.
+    """
+    depth, i = 0, start
+    while i < len(command):
+        ch = command[i]
+        if ch == "\\":
+            i += 2
+            continue
+        if ch == "'":
+            close = command.find("'", i + 1)
+            if close < 0:
+                raise ValueError("unbalanced quote")
+            i = close + 1
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    raise ValueError("unbalanced substitution")
+
+
+def _backtick_end(command: str, start: int) -> int:
+    """The index just past the backtick closing the one at ``start``.
+
+    :raises ValueError: When the backtick is not closed.
+    """
+    i = start + 1
+    while i < len(command):
+        if command[i] == "\\":
+            i += 2
+            continue
+        if command[i] == "`":
+            return i + 1
+        i += 1
+    raise ValueError("unbalanced backtick")
+
+
+def _heredoc_end(command: str, start: int, heredocs: list[tuple[str, bool]]) -> int:
+    """The index just past the delimiter line of the last of ``heredocs``, whose bodies begin at ``start``.
+
+    :raises ValueError: When a body has no delimiter line.
+    """
+    i = start
+    for delimiter, strip_tabs in heredocs:
+        while True:
+            if i >= len(command):
+                raise ValueError("unterminated here-document")
+            newline = command.find("\n", i)
+            end = len(command) if newline < 0 else newline
+            line = command[i:end]
+            i = end + 1
+            if (line.lstrip("\t") if strip_tabs else line) == delimiter:
+                break
+    return min(i, len(command))
+
+
+def shell_tokens(command: str) -> list[tuple[str, str, bool]]:
+    """Split a shell command into words and operators, quote-aware.
+
+    Quotes are removed from words. A word holding a ``$( )``, backtick or
+    process substitution is marked hidden: what runs inside it never reaches
+    the session directly. A redirection's file descriptor is folded into its
+    operator (``2>``). A here-document's body is stdin, not commands, so it is
+    skipped up to its delimiter line.
+
+    :param command: The Bash tool's command string.
+    :returns: ``(kind, text, hidden)`` tuples, ``kind`` being ``word`` or ``op``.
+    :raises ValueError: On an unbalanced quote or substitution, or a
+        here-document with no delimiter word or no delimiter line.
+    """
+    tokens: list[tuple[str, str, bool]] = []
+    word: list[str] = []
+    in_word = hidden = quoted = False
+    # ``want_delimiter`` holds the ``<<-`` tab-stripping flag while the next
+    # word is awaited as a delimiter; bodies start after the line ends.
+    want_delimiter: bool | None = None
+    heredocs: list[tuple[str, bool]] = []
+
+    def flush() -> None:
+        nonlocal word, in_word, hidden, quoted, want_delimiter
+        if in_word:
+            tokens.append(("word", "".join(word), hidden))
+            if want_delimiter is not None:
+                heredocs.append(("".join(word), want_delimiter))
+                want_delimiter = None
+        word, in_word, hidden, quoted = [], False, False, False
+
+    i, n = 0, len(command)
+    while i < n:
+        ch = command[i]
+        if ch in " \t\r":
+            flush()
+            i += 1
+        elif ch == "#" and not in_word:
+            newline = command.find("\n", i)
+            i = n if newline < 0 else newline
+        elif (ch == "$" and command.startswith("$(", i)) or (ch in "<>" and command.startswith("(", i + 1)):
+            end = _substitution_end(command, i + 1)
+            word.append(command[i:end])
+            in_word = hidden = True
+            i = end
+        elif ch == "`":
+            end = _backtick_end(command, i)
+            word.append(command[i:end])
+            in_word = hidden = True
+            i = end
+        elif ch == "\\":
+            if i + 1 >= n:
+                raise ValueError("trailing backslash")
+            if command[i + 1] != "\n":
+                word.append(command[i + 1])
+                in_word = quoted = True
+            i += 2
+        elif ch == "'":
+            close = command.find("'", i + 1)
+            if close < 0:
+                raise ValueError("unbalanced quote")
+            word.append(command[i + 1:close])
+            in_word = quoted = True
+            i = close + 1
+        elif ch == '"':
+            i += 1
+            while True:
+                if i >= n:
+                    raise ValueError("unbalanced quote")
+                c = command[i]
+                if c == '"':
+                    i += 1
+                    break
+                if c == "\\" and i + 1 < n:
+                    word.append(command[i + 1] if command[i + 1] in '$`"\\\n' else command[i:i + 2])
+                    i += 2
+                elif c == "$" and command.startswith("$(", i):
+                    end = _substitution_end(command, i + 1)
+                    word.append(command[i:end])
+                    hidden = True
+                    i = end
+                elif c == "`":
+                    end = _backtick_end(command, i)
+                    word.append(command[i:end])
+                    hidden = True
+                    i = end
+                else:
+                    word.append(c)
+                    i += 1
+            in_word = quoted = True
+        else:
+            op = next((o for o in SHELL_OPERATORS if command.startswith(o, i)), None)
+            if op is None:
+                word.append(ch)
+                in_word = True
+                i += 1
+                continue
+            fd = ""
+            if op in REDIRECTIONS and in_word and not quoted and not hidden and "".join(word).isdigit():
+                fd, word, in_word = "".join(word), [], False
+            flush()
+            if want_delimiter is not None:
+                raise ValueError("here-document without a delimiter")
+            tokens.append(("op", fd + op, False))
+            i += len(op)
+            if op in ("<<", "<<-"):
+                want_delimiter = op == "<<-"
+            elif op == "\n" and heredocs:
+                i = _heredoc_end(command, i, heredocs)
+                heredocs.clear()
+    flush()
+    if want_delimiter is not None or heredocs:
+        raise ValueError("unterminated here-document")
+    return tokens
+
+
+def stdout_redirected(redirects: list[tuple[str, str]]) -> bool:
+    """Whether a simple command's redirections send its stdout anywhere but the session.
+
+    ``2>&1``, ``2>/dev/null`` and ``>&2`` leave stdout visible: Claude Code
+    shows stderr too.
+    """
+    for op, target in redirects:
+        fd = op[: len(op) - len(op.lstrip("0123456789"))]
+        base = op[len(fd):]
+        if base in ("&>", "&>>"):
+            return True
+        if fd in ("", "1") and (base in (">", ">>", ">|") or (base == ">&" and target not in ("1", "2"))):
+            return True
+    return False
+
+
+def shell_segments(command: str) -> list[dict[str, Any]] | None:
+    """The simple commands of a shell command, or None when it cannot be tokenized.
+
+    Each segment holds ``words`` (``(text, hidden)`` pairs), ``redirects``
+    (``(operator, target)`` pairs), ``grouped`` (inside a ``( )`` subshell)
+    and ``hidden_output`` (the subshell's stdout is redirected away).
+    """
+    try:
+        tokens = shell_tokens(command)
+    except ValueError:
+        return None
+    segments: list[dict[str, Any]] = []
+    groups: list[int] = []
+
+    def fresh(closes: int | None = None) -> dict[str, Any]:
+        return {"words": [], "redirects": [], "grouped": bool(groups), "hidden_output": False, "closes": closes}
+
+    current = fresh()
+    target_of: str | None = None
+    for kind, text, hidden in tokens:
+        if target_of is not None:
+            if kind != "word":
+                return None
+            current["redirects"].append((target_of, text))
+            target_of = None
+        elif kind == "word":
+            current["words"].append((text, hidden))
+        elif text.lstrip("0123456789") in REDIRECTIONS:
+            target_of = text
+        else:
+            # A redirection after ``)`` applies to every command in the group.
+            if current["closes"] is not None and stdout_redirected(current["redirects"]):
+                for segment in segments[current["closes"]:]:
+                    segment["hidden_output"] = True
+            if current["words"] or current["redirects"]:
+                segments.append(current)
+            closes = None
+            if text == "(":
+                groups.append(len(segments))
+            elif text == ")":
+                if not groups:
+                    return None
+                closes = groups.pop()
+            current = fresh(closes)
+    if target_of is not None or groups:
+        return None
+    if current["closes"] is not None and stdout_redirected(current["redirects"]):
+        for segment in segments[current["closes"]:]:
+            segment["hidden_output"] = True
+    if current["words"] or current["redirects"]:
+        segments.append(current)
+    return segments
+
+
+def segment_skill_reads(segment: dict[str, Any]) -> list[str]:
+    """The ``SKILL.md`` paths a simple command prints to the session.
+
+    The command word, after any leading ``VAR=value`` assignments, must be a
+    reader (``sed`` only with ``-n`` and never with ``-i``), its stdout must
+    reach the session, and the path must be one of its non-option arguments
+    outside any substitution.
+    """
+    if segment["hidden_output"] or stdout_redirected(segment["redirects"]):
+        return []
+    words = segment["words"]
+    k = 0
+    while k < len(words) and ASSIGNMENT.match(words[k][0]):
+        k += 1
+    if k >= len(words) or words[k][1]:
+        return []
+    name = words[k][0].rsplit("/", 1)[-1]
+    if name not in READERS:
+        return []
+    options: list[str] = []
+    operands: list[str] = []
+    ended = False
+    for text, hidden in words[k + 1:]:
+        if not ended and text == "--":
+            ended = True
+        elif not ended and text.startswith("-") and len(text) > 1:
+            options.append(text)
+        elif not hidden:
+            operands.append(text)
+    if name == "sed" and (
+        not any(o in ("-n", "--quiet", "--silent") for o in options)
+        or any(o.startswith(("-i", "--in-place")) for o in options)
+    ):
+        return []
+    return [text for text in operands if SKILL_PATH.search(text)]
+
+
+def shell_skill_reads(command: str) -> list[tuple[str, str]]:
+    """The ``SKILL.md`` reads a Bash command shows the session, each with its ``via``.
+
+    Only a command that is exactly ``cat <path>`` (optionally ``2>&1``) is
+    ``cat``, which may earn SDD credit; every other reader is ``bash-other``,
+    a sentinel read with no SDD credit. A command that cannot be tokenized
+    reads nothing.
+
+    :param command: The Bash tool's command string.
+    :returns: ``(path, via)`` pairs in command order.
+    """
+    segments = shell_segments(command)
+    if segments is None:
+        return []
+    paths = [path for segment in segments for path in segment_skill_reads(segment)]
+    if len(segments) == 1 and len(paths) == 1:
+        only = segments[0]
+        if (
+            not only["grouped"]
+            and [text for text, _ in only["words"]] == ["cat", paths[0]]
+            and only["redirects"] in ([], [("2>&", "1")])
+        ):
+            return [(paths[0], "cat")]
+    return [(path, "bash-other") for path in paths]
+
+
 def events(transcripts: list[Path]) -> list[dict[str, Any]]:
-    """Main-thread events in file order: compact, dispatch, done, read, skill, ask, reply.
+    """Main-thread events in file order: compact, dispatch, done, read, skill, ask, reply, note.
 
     A ``read`` carries ``via`` (``read``, ``cat`` or ``bash-other``),
     ``persisted`` (Claude Code moved the Bash output to a file and showed a
     2 KB preview) and ``credited`` (it may count as SDD coverage: a Read, or a
-    plain ``cat`` whose output was not persisted).
+    plain ``cat`` whose output was not persisted, and not stripped by an
+    unparsable truncation banner). A Bash command emits one ``read`` per
+    ``SKILL.md`` it shows. A ``note`` (``truncation_unparsed`` or
+    ``truncation_unmatched``) records a truncation notice the tally could not
+    apply.
     """
     found: list[dict[str, Any]] = []
     # A Read counts where its result arrives: calls composed in the same
     # message as the Read were chosen before the model saw the file.
-    pending_reads: dict[str, tuple[str, Any, Any, str]] = {}
+    pending_reads: dict[str, list[tuple[str, Any, Any, str]]] = {}
     for path in transcripts:
         for line in path.read_text(encoding="utf-8").splitlines():
             try:
@@ -261,23 +605,17 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                             {"kind": "dispatch", "class": kind, "task": task, "id": block.get("id"), "takeover": takeover}
                         )
                     elif name == "Read":
-                        pending_reads[str(block.get("id"))] = (
-                            str(args.get("file_path") or ""), args.get("offset"), args.get("limit"), "read"
-                        )
+                        pending_reads[str(block.get("id"))] = [
+                            (str(args.get("file_path") or ""), args.get("offset"), args.get("limit"), "read")
+                        ]
                     elif name == "Skill":
                         found.append({"kind": "skill", "skill": str(args.get("skill") or "")})
                     elif name == "AskUserQuestion":
                         found.append({"kind": "ask"})
                     elif name == "Bash":
-                        command = str(args.get("command") or "")
-                        cat = CAT_SKILL.search(command)
-                        other = READER_SKILL.search(command)
-                        # A piped cat hands the session only what the next
-                        # command prints, so it is not a plain cat.
-                        if cat and "|" not in command[cat.end():]:
-                            pending_reads[str(block.get("id"))] = (cat.group(1), None, None, "cat")
-                        elif other:
-                            pending_reads[str(block.get("id"))] = (other.group(1), None, None, "bash-other")
+                        shown = shell_skill_reads(str(args.get("command") or ""))
+                        if shown:
+                            pending_reads[str(block.get("id"))] = [(p, None, None, via) for p, via in shown]
             elif entry.get("type") == "attachment":
                 attachment = entry.get("attachment") or {}
                 if attachment.get("type") == "read_truncation_notice":
@@ -300,17 +638,17 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                             continue
                         ident = str(block.get("tool_use_id"))
                         if ident in pending_reads:
-                            path_read, offset, limit, via = pending_reads.pop(ident)
-                            # Output over 30,000 characters is saved to a file
-                            # and the session sees a 2 KB preview of its start.
-                            persisted = via != "read" and PERSISTED in result_text(block.get("content"))
-                            credited = via == "read" or (via == "cat" and not persisted)
-                            found.append({
-                                "kind": "read", "path": path_read, "offset": offset, "limit": limit,
-                                "whole": credited and offset is None and limit is None,
-                                "via": via, "persisted": persisted, "credited": credited,
-                                "uuid": entry.get("uuid"),
-                            })
+                            for path_read, offset, limit, via in pending_reads.pop(ident):
+                                # Output over 30,000 characters is saved to a
+                                # file and the session sees a 2 KB preview.
+                                persisted = via != "read" and PERSISTED in result_text(block.get("content"))
+                                credited = via == "read" or (via == "cat" and not persisted)
+                                found.append({
+                                    "kind": "read", "path": path_read, "offset": offset, "limit": limit,
+                                    "whole": credited and offset is None and limit is None,
+                                    "via": via, "persisted": persisted, "credited": credited,
+                                    "uuid": entry.get("uuid"),
+                                })
                         # A launch is never a completion; the structured marker
                         # is primary and the text is the fallback.
                         elif not structured_launch and "Async agent launched" not in json.dumps(
@@ -698,7 +1036,8 @@ def read_run(arm: str, scenario: str, proc: str, run_id: str, launch_ok: bool = 
         "void_kind": kind, "valid": valid, "outcome": outcome, "mechanism": mechanism,
         "final": final_reading(verdict),
         "classes": dispatch_counts(found),
-        "truncation_unparsed": sum(1 for e in found if e["kind"] == "read" and e.get("truncation_unparsed")),
+        "truncation_unparsed": sum(1 for e in found if e["kind"] == "note" and e["note"] == "truncation_unparsed"),
+        "truncation_unmatched": sum(1 for e in found if e["kind"] == "note" and e["note"] == "truncation_unmatched"),
         **extra,
     }
     print_run(run)
@@ -725,8 +1064,9 @@ def print_run(run: dict[str, Any]) -> None:
         line += f"\tcompactions={run['compactions']} followed={run['followed']} whole={run['whole']}"
     if "failed" in run:
         line += f"\tfailed={run['failed']} reads={','.join(run['reads']) or '-'}"
-    if run.get("truncation_unparsed"):
-        line += f"\ttruncation_unparsed={run['truncation_unparsed']}"
+    for note in ("truncation_unparsed", "truncation_unmatched"):
+        if run.get(note):
+            line += f"\t{note}={run[note]}"
     print(line)
 
 
