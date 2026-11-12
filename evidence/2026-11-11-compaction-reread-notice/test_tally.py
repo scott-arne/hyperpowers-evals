@@ -641,7 +641,157 @@ class CoverageTests(unittest.TestCase):
         found = [{"kind": "skill", "skill": "hyperpowers:subagent-driven-development"},
                  {"kind": "compact"}, self.read(400, None), {"kind": "dispatch"},
                  {"kind": "compact"}, self.read(None, None), {"kind": "dispatch"}]
+        for event in found:
+            if event["kind"] == "read":
+                event.update(via="read", persisted=False, credited=True)
         self.assertEqual(tally.compaction_follow(found, self.CUT), {"compactions": 2, "followed": 1, "whole": 1})
+
+
+SDD_LOAD = skill("hyperpowers:subagent-driven-development")
+REAL_CUT = (250, 1035)
+NO_CREDIT = {"compactions": 1, "followed": 0, "whole": 0}
+WHOLE_CREDIT = {"compactions": 1, "followed": 1, "whole": 1}
+BANNER = (
+    "[Truncated: PARTIAL view \u2014 " + SDD_SKILL + ": showing lines 1-820 of 1035 total "
+    "(26795 tokens, cap 25000). Call Read with offset=821 limit=820 for the next page, or Grep to find a "
+    "specific section."
+)
+
+
+def bash(command: str, ident: str) -> dict[str, Any]:
+    return tool_use("Bash", {"command": command}, ident)
+
+
+def persisted_result(ident: str, as_blocks: bool = False) -> dict[str, Any]:
+    """A successful Bash result Claude Code moved to a file, leaving a 2 KB preview."""
+    text = (
+        "<persisted-output>\nOutput too large (74.7KB). Full output saved to: /h/tool-results/b1.txt\n\n"
+        "Preview (first 2KB):\n---\nname: subagent-driven-development\n"
+    )
+    content: Any = [{"type": "text", "text": text}] if as_blocks else text
+    block = {"type": "tool_result", "tool_use_id": ident, "content": content}
+    return {"type": "user", "message": {"content": [block]}}
+
+
+def uuid_result(ident: str, uuid: str) -> dict[str, Any]:
+    entry = result(ident)
+    entry["uuid"] = uuid
+    return entry
+
+
+def truncation(parent: str | None, banner: str = BANNER) -> dict[str, Any]:
+    """The separate entry Claude Code 2.1.317 writes after a Read it cut at the token cap."""
+    return {
+        "type": "attachment", "parentUuid": parent, "isSidechain": False,
+        "attachment": {"type": "read_truncation_notice", "banner": banner},
+    }
+
+
+def follow_cut(entries: list[dict[str, Any]], cut: tuple[int, int] = REAL_CUT) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory() as tmp:
+        record = make_run(Path(tmp), "r", entries)
+        return tally.compaction_follow(tally.events(transcripts(record)), cut)
+
+
+def noskill_of(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory() as tmp:
+        record = make_run(Path(tmp), "r", entries)
+        return tally.noskill_reading(tally.events(transcripts(record)))
+
+
+class SeenText(unittest.TestCase):
+    """Credit only the lines the session saw (F1 persisted cat, F2 truncated Read, F3 other readers)."""
+
+    def test_persisted_cat_gets_no_sdd_credit(self) -> None:
+        for as_blocks in (False, True):
+            with self.subTest(as_blocks=as_blocks):
+                entries = [SDD_LOAD, compact(), bash(f"cat {SDD_SKILL}", "b1"), persisted_result("b1", as_blocks)]
+                self.assertEqual(follow_cut(entries), NO_CREDIT)
+
+    def test_persisted_cat_fails_the_sentinel(self) -> None:
+        for as_blocks in (False, True):
+            with self.subTest(as_blocks=as_blocks):
+                entries = [compact(), bash(f"cat {SDD_SKILL}", "b1"), persisted_result("b1", as_blocks), reply("done")]
+                got = noskill_of(entries)
+                self.assertEqual((got["valid"], got["failed"]), (True, True))
+
+    def test_plain_cat_is_credited_as_whole(self) -> None:
+        entries = [SDD_LOAD, compact(), bash(f"cat {SDD_SKILL}", "b1"), result("b1")]
+        self.assertEqual(follow_cut(entries), WHOLE_CREDIT)
+
+    def test_truncated_read_does_not_cover(self) -> None:
+        entries = [
+            SDD_LOAD, compact(), tool_use("Read", {"file_path": SDD_SKILL}, "r1"), uuid_result("r1", "u1"),
+            truncation("u1"),
+        ]
+        self.assertEqual(follow_cut(entries), NO_CREDIT)
+
+    def test_truncated_read_matched_by_path_without_parent(self) -> None:
+        entries = [
+            SDD_LOAD, compact(), tool_use("Read", {"file_path": SDD_SKILL}, "r1"), result("r1"), truncation(None),
+        ]
+        self.assertEqual(follow_cut(entries), NO_CREDIT)
+
+    def test_truncated_read_matched_by_parent_when_the_path_differs(self) -> None:
+        alias = "/alias/skills/subagent-driven-development/SKILL.md"
+        entries = [
+            SDD_LOAD, compact(), tool_use("Read", {"file_path": alias}, "r1"), uuid_result("r1", "u1"),
+            truncation("u1"),
+        ]
+        self.assertEqual(follow_cut(entries), NO_CREDIT)
+
+    def test_truncated_read_then_next_page_covers(self) -> None:
+        entries = [
+            SDD_LOAD, compact(), tool_use("Read", {"file_path": SDD_SKILL}, "r1"), uuid_result("r1", "u1"),
+            truncation("u1"),
+            tool_use("Read", {"file_path": SDD_SKILL, "offset": 821, "limit": 820}, "r2"), result("r2"),
+        ]
+        self.assertEqual(follow_cut(entries), {"compactions": 1, "followed": 1, "whole": 0})
+
+    def test_truncated_read_fails_sdd_mechanism(self) -> None:
+        entries = full_trial()
+        at = entries.index(next(e for e in entries if "r-" in json.dumps(e))) + 2
+        entries[at:at] = [truncation(None)]
+        with tempfile.TemporaryDirectory() as tmp:
+            record = make_run(Path(tmp), "r", entries)
+            reading = tally.sdd_reading(tally.events(transcripts(record)), REAL_CUT)
+        self.assertTrue(reading["valid"])
+        self.assertFalse(reading["mechanism"])
+
+    def test_unparsable_banner_leaves_the_read_and_warns(self) -> None:
+        entries = [
+            SDD_LOAD, compact(), tool_use("Read", {"file_path": SDD_SKILL}, "r1"), uuid_result("r1", "u1"),
+            truncation("u1", "[Truncated: something new]"),
+        ]
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            got = follow_cut(entries)
+        self.assertEqual(got, WHOLE_CREDIT)
+        self.assertIn("truncation_unparsed", err.getvalue())
+
+    def test_other_readers_of_an_uninvoked_skill_fail_the_sentinel(self) -> None:
+        path = "/p/skills/brainstorming/SKILL.md"
+        for command in (
+            f"cat -n {path}", f"head -50 {path}", f"sed -n '1,400p' {path}", f"tail -n 20 '{path}'",
+            f"less {path}", f"more {path}", f"cd /p && head {path} | wc -l",
+        ):
+            with self.subTest(command=command):
+                got = noskill_of([compact(), bash(command, "b1"), result("b1"), reply("done")])
+                self.assertEqual((got["valid"], got["failed"]), (True, True))
+
+    def test_non_reading_commands_do_not_fail_the_sentinel(self) -> None:
+        path = "/p/skills/brainstorming/SKILL.md"
+        for command in (f"wc -l {path}", f"ls {path}", f"concatenate {path}", f"sed -i s/a/b/ {path}"):
+            with self.subTest(command=command):
+                got = noskill_of([compact(), bash(command, "b1"), result("b1"), reply("done")])
+                self.assertEqual((got["valid"], got["failed"]), (True, False))
+
+    def test_other_readers_of_the_sdd_skill_get_no_sdd_credit(self) -> None:
+        for command in (f"head {SDD_SKILL}", f"cat -n {SDD_SKILL}", f"sed -n '1,2000p' {SDD_SKILL}",
+                        f"cat {SDD_SKILL} | head -50"):
+            with self.subTest(command=command):
+                entries = [SDD_LOAD, compact(), bash(command, "b1"), result("b1")]
+                self.assertEqual(follow_cut(entries), NO_CREDIT)
 
 
 class RerunsTests(unittest.TestCase):

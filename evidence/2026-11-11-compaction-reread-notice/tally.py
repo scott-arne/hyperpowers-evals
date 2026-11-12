@@ -32,14 +32,22 @@ Rules:
 * A setup or grader void in the verdict is void; so is a run whose reading is
   invalid (kind ``instrument``): an invalid run is a void. Voids occupy no
   trial slot.
-* Re-read counting: a successful Read, or a ``cat``, of the skill's
-  ``SKILL.md`` after a compaction and before the next stop event (SDD: the
-  next Agent dispatch or compaction). A Read or ``cat`` counts where its
-  non-error tool result arrives. For SDD it counts only when the union of the
-  line ranges read covers the cut text: from the line holding character 20,000
-  of the arm's pinned ``SKILL.md`` (where Claude Code's re-attached copy ends)
-  to the last line. Whole-file reads and offset reads that cover the cut text
-  both count, and are reported separately (``followed`` and ``whole``).
+* Re-read counting credits only the lines the session saw. An SDD re-read is
+  a successful Read, or a plain ``cat``, of the skill's ``SKILL.md`` after a
+  compaction and before the next stop event (the next Agent dispatch or
+  compaction). It counts where its non-error tool result arrives, and only
+  when the union of the line ranges read covers the cut text: from the line
+  holding character 20,000 of the arm's pinned ``SKILL.md`` (where Claude
+  Code's re-attached copy ends) to the last line. Whole-file reads and offset
+  reads that cover the cut text both count, and are reported separately
+  (``followed`` and ``whole``).
+* A Read that Claude Code cut at its 25,000-token cap (a following
+  ``read_truncation_notice`` attachment) counts only the range its banner
+  shows, ``lines A-B``, and is not whole; a banner that does not parse leaves
+  the read unchanged and is reported as ``truncation_unparsed``. A ``cat``
+  whose output Claude Code persisted to a file (``<persisted-output>``, a 2 KB
+  preview) gets no SDD credit, nor does a piped ``cat`` or any other shell
+  reader (``cat -n``, ``head``, ``tail``, ``sed -n``, ``less``, ``more``).
 * SDD validity (the 6.16.2 rule): an automatic compaction falls after task 1's
   review returns and before the first final review is dispatched; the first
   such compaction is the measured one. Outcome passes when every task whose
@@ -55,9 +63,11 @@ Rules:
   limit. Rates pool followed over compactions across valid runs.
 * compaction-no-skill validity: an automatic compaction lands before the
   session's last reply, and no skill is invoked before the first compaction.
-  A valid run fails when, after the first compaction, it reads (Read or
-  ``cat``) the ``SKILL.md`` of a skill it never invoked; ``using-hyperpowers``
-  is exempt because the bootstrap injects it. Gauntlet outcome is not used.
+  A valid run fails when, after the first compaction, it reads the
+  ``SKILL.md`` of a skill it never invoked, by Read or by any of the shell
+  readers above, persisted or not, since the attempt is the failure;
+  ``using-hyperpowers`` is exempt because the bootstrap injects it. Gauntlet
+  outcome is not used.
 * A replacement (``sentinel-reruns.tsv``) may replace only a void, in the same
   arm and scenario, at most three per cell; the replacement counts.
 
@@ -93,6 +103,17 @@ RUN_ROOTS: tuple[str, ...] = ("task-6-runs",)
 NOTIF_ID = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>")
 NOTIF_STATUS = re.compile(r"<status>([^<]+)</status>")
 CAT_SKILL = re.compile(r"\bcat\s+['\"]?([^\s'\"]*/skills/[^/\s'\"]+/SKILL\.md)")
+# Any shell reader of a SKILL.md, flags allowed, within one pipeline segment.
+# Only the sentinel uses it, where the attempt is the failure; SDD coverage
+# credits a Read or a plain cat alone, so these readers never count there.
+READER_SKILL = re.compile(
+    r"(?:^|[\s;&|(`])(?:cat|head|tail|less|more|sed\s+-n)(?=\s)[^;&|\n]*?"
+    r"['\"]?([^\s'\"]*/skills/[^/\s'\"]+/SKILL\.md)"
+)
+# Claude Code 2.1.317 cuts a Read over 25,000 tokens and writes this banner in
+# a separate attachment entry; the separator is an em dash.
+TRUNCATION_BANNER = re.compile(r"PARTIAL view \u2014 (.+): showing lines (\d+)-(\d+) of (\d+) total")
+PERSISTED = "<persisted-output>"
 SKILL_PATH = re.compile(r"/skills/([^/]+)/SKILL\.md$")
 
 
@@ -147,12 +168,58 @@ def notified_ids(text: str) -> list[str]:
     return ids
 
 
+def result_text(content: Any) -> str:
+    """The text of a tool_result's content, a string or a list of text blocks."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(str(b.get("text") or "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+    return ""
+
+
+def apply_truncation(found: list[dict[str, Any]], parent: Any, banner: str) -> None:
+    """Narrow a Read that Claude Code cut at its token cap to the lines the banner says it showed.
+
+    The notice is matched to the most recent Read of the banner's path,
+    preferring the one whose result entry is the notice's parent, and falls
+    back to the parent alone when no Read has that path. A banner
+    that does not parse leaves the read unchanged, marks it
+    ``truncation_unparsed`` and warns on stderr.
+    """
+    reads = [e for e in found if e["kind"] == "read" and e["via"] == "read"]
+    match = TRUNCATION_BANNER.search(banner)
+    if match is None:
+        target = next((e for e in reversed(reads) if parent and e.get("uuid") == parent), reads[-1] if reads else None)
+        if target is not None:
+            target["truncation_unparsed"] = True
+        where = target["path"] if target is not None else "no read"
+        print(f"tally: truncation_unparsed: read left unchanged ({where}): {banner[:120]!r}", file=sys.stderr)
+        return
+    path, first, last = match.group(1), int(match.group(2)), int(match.group(3))
+    same = [e for e in reads if e["path"] == path]
+    parented = [e for e in reads if parent and e.get("uuid") == parent]
+    # The parent link is exact when the paths agree; a path written two ways
+    # (a symlink, a relative path) still has the parent to go on.
+    both = [e for e in same if parent and e.get("uuid") == parent]
+    candidates = both or same or parented
+    if not candidates:
+        print(f"tally: truncation notice matched no Read: {banner[:120]!r}", file=sys.stderr)
+        return
+    candidates[-1].update(offset=first, limit=last - first + 1, whole=False)
+
+
 def events(transcripts: list[Path]) -> list[dict[str, Any]]:
-    """Main-thread events in file order: compact, dispatch, done, read, skill, ask, reply."""
+    """Main-thread events in file order: compact, dispatch, done, read, skill, ask, reply.
+
+    A ``read`` carries ``via`` (``read``, ``cat`` or ``bash-other``),
+    ``persisted`` (Claude Code moved the Bash output to a file and showed a
+    2 KB preview) and ``credited`` (it may count as SDD coverage: a Read, or a
+    plain ``cat`` whose output was not persisted).
+    """
     found: list[dict[str, Any]] = []
     # A Read counts where its result arrives: calls composed in the same
     # message as the Read were chosen before the model saw the file.
-    pending_reads: dict[str, tuple[str, Any, Any]] = {}
+    pending_reads: dict[str, tuple[str, Any, Any, str]] = {}
     for path in transcripts:
         for line in path.read_text(encoding="utf-8").splitlines():
             try:
@@ -195,7 +262,7 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                         )
                     elif name == "Read":
                         pending_reads[str(block.get("id"))] = (
-                            str(args.get("file_path") or ""), args.get("offset"), args.get("limit")
+                            str(args.get("file_path") or ""), args.get("offset"), args.get("limit"), "read"
                         )
                     elif name == "Skill":
                         found.append({"kind": "skill", "skill": str(args.get("skill") or "")})
@@ -203,13 +270,20 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                         found.append({"kind": "ask"})
                     elif name == "Bash":
                         command = str(args.get("command") or "")
-                        match = CAT_SKILL.search(command)
-                        if match:
-                            pending_reads[str(block.get("id"))] = (match.group(1), None, None)
+                        cat = CAT_SKILL.search(command)
+                        other = READER_SKILL.search(command)
+                        # A piped cat hands the session only what the next
+                        # command prints, so it is not a plain cat.
+                        if cat and "|" not in command[cat.end():]:
+                            pending_reads[str(block.get("id"))] = (cat.group(1), None, None, "cat")
+                        elif other:
+                            pending_reads[str(block.get("id"))] = (other.group(1), None, None, "bash-other")
             elif entry.get("type") == "attachment":
+                attachment = entry.get("attachment") or {}
+                if attachment.get("type") == "read_truncation_notice":
+                    apply_truncation(found, entry.get("parentUuid"), str(attachment.get("banner") or ""))
                 # A notification that lands while the controller is mid-turn is
                 # delivered as a queued_command attachment, not a user message.
-                attachment = entry.get("attachment") or {}
                 queued = attachment.get("prompt") if attachment.get("type") == "queued_command" else None
                 if isinstance(queued, str):
                     found.extend({"kind": "done", "id": i} for i in notified_ids(queued))
@@ -226,10 +300,16 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                             continue
                         ident = str(block.get("tool_use_id"))
                         if ident in pending_reads:
-                            path_read, offset, limit = pending_reads.pop(ident)
+                            path_read, offset, limit, via = pending_reads.pop(ident)
+                            # Output over 30,000 characters is saved to a file
+                            # and the session sees a 2 KB preview of its start.
+                            persisted = via != "read" and PERSISTED in result_text(block.get("content"))
+                            credited = via == "read" or (via == "cat" and not persisted)
                             found.append({
                                 "kind": "read", "path": path_read, "offset": offset, "limit": limit,
-                                "whole": offset is None and limit is None,
+                                "whole": credited and offset is None and limit is None,
+                                "via": via, "persisted": persisted, "credited": credited,
+                                "uuid": entry.get("uuid"),
                             })
                         # A launch is never a completion; the structured marker
                         # is primary and the text is the fallback.
@@ -343,7 +423,7 @@ def sdd_reading(found: list[dict[str, Any]], cut: tuple[int, int]) -> dict[str, 
     reading["mechanism"] = covers_cut(
         [
             e for e in after[:first_dispatch]
-            if e["kind"] == "read" and e["path"].endswith("subagent-driven-development/SKILL.md")
+            if e["kind"] == "read" and e["credited"] and e["path"].endswith("subagent-driven-development/SKILL.md")
         ],
         cut,
     )
@@ -354,7 +434,8 @@ def covers_cut(reads: list[dict[str, Any]], cut: tuple[int, int]) -> bool:
     """Whether the union of read line ranges covers lines ``cut[0]`` through ``cut[1]``.
 
     A read with no limit runs to the end of the file; a read with no offset
-    starts at line 1; a ``cat`` is stored with neither.
+    starts at line 1; a ``cat`` is stored with neither. Callers pass only
+    credited reads; a truncated Read already carries the banner's range.
     """
     first, last = cut
     spans = sorted(
@@ -385,7 +466,10 @@ def compaction_follow(found: list[dict[str, Any]], cut: tuple[int, int]) -> dict
             continue
         result["compactions"] += 1
         stop = next((j for j in range(i + 1, len(found)) if found[j]["kind"] in ("dispatch", "compact")), len(found))
-        reads = [e for e in found[i + 1:stop] if e["kind"] == "read" and e["path"].endswith(f"{skill}/SKILL.md")]
+        reads = [
+            e for e in found[i + 1:stop]
+            if e["kind"] == "read" and e["credited"] and e["path"].endswith(f"{skill}/SKILL.md")
+        ]
         result["followed"] += covers_cut(reads, cut)
         result["whole"] += any(e["whole"] for e in reads)
     return result
@@ -427,7 +511,8 @@ def noskill_reading(found: list[dict[str, Any]]) -> dict[str, Any]:
     Valid when an automatic compaction lands before the last reply and no
     skill was invoked before the first compaction. A valid trial fails when,
     after the first compaction, it reads the ``SKILL.md`` of a skill it never
-    invoked; ``using-hyperpowers`` is exempt because the bootstrap injects it.
+    invoked, by any reader, credited or not; ``using-hyperpowers`` is exempt
+    because the bootstrap injects it.
 
     :param found: The run's events.
     :returns: ``valid``, ``failed`` and ``reads`` (the offending paths).
@@ -613,6 +698,7 @@ def read_run(arm: str, scenario: str, proc: str, run_id: str, launch_ok: bool = 
         "void_kind": kind, "valid": valid, "outcome": outcome, "mechanism": mechanism,
         "final": final_reading(verdict),
         "classes": dispatch_counts(found),
+        "truncation_unparsed": sum(1 for e in found if e["kind"] == "read" and e.get("truncation_unparsed")),
         **extra,
     }
     print_run(run)
@@ -639,6 +725,8 @@ def print_run(run: dict[str, Any]) -> None:
         line += f"\tcompactions={run['compactions']} followed={run['followed']} whole={run['whole']}"
     if "failed" in run:
         line += f"\tfailed={run['failed']} reads={','.join(run['reads']) or '-'}"
+    if run.get("truncation_unparsed"):
+        line += f"\ttruncation_unparsed={run['truncation_unparsed']}"
     print(line)
 
 
