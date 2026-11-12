@@ -47,9 +47,9 @@ three valid control runs show the mechanism, since that count cannot fall.
 | Pin | Value | Source |
 | --- | --- | --- |
 | harness | `474ea8c8dff4038337ef759ff410be8b9332b494` | the commit after the `compaction-no-skill` scenario commit `d0992ddb60`; harness paths (`src scenarios coding-agents package.json bun.lock`) must stay identical to it |
-| control | filled in Task 5 | B, detached worktree `/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/control` |
-| treatment | filled in Task 5 | B plus the notice, detached worktree `/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/treatment` |
-| shipped | filled in Task 5 | the slice commit, detached worktree `/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/shipped` |
+| control | `c149134f54c22031df5c46e3a62674192485adcc` | B, detached worktree `/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/control` |
+| treatment | `cff2528683d66f0971528fbe64f0ad599a569098` | B plus the notice, detached worktree `/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/treatment` |
+| shipped | `ffb81ef8484cfeb4dcde76a4a2eacfd73054d53c` | the slice commit, detached worktree `/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/shipped` |
 | model | `claude-opus-5-5` | `ANTHROPIC_MODEL` must equal it in the launch shell |
 | grader | `claude-opus-5-5` | `GAUNTLET_AGENT_MODEL` must equal it (`GRADER_PIN` in the launcher) |
 | Claude Code | `2.1.317` | `CC_PIN` in `logs/measure-launch.sh`; the host's `claude --version` when the plan was written. Re-check before the campaign and update the pin here and in the script, in one commit, if the host has moved. |
