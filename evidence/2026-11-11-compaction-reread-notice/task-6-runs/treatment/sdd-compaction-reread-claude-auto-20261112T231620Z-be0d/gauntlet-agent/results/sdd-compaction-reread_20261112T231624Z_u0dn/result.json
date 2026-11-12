@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T231624Z_u0dn",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The controller never started Task 1. Auto-compaction hit during SDD setup, before any task. After each compaction the controller re-read the full SDD SKILL.md (plus the ledger and git log), which filled the context back up. After 3 compactions in a row, Claude Code stopped the turn with \"Autocompact is thrashing\". No subagents were dispatched, no code was written, there were no reviews, and the session never reached the finishing step.",
+  "reasoning": "None of the acceptance criteria are met. On disk nothing changed: src/textstats.js is still `module.exports = {};`, test/ is empty and there are no new commits. The session log shows only setup and repeated re-reads of SKILL.md, no subagent dispatches, and 3 back-to-back auto-compactions that ended in Claude Code's 'Autocompact is thrashing' stop. The agent asked no questions I could answer, and the story says not to steer it, so the run was over at that point.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Compaction loop that stopped the run: the log has 3 auto compact_boundary events (preTokens 69249→postTokens 15286, then 66847→14977, then 66296→14995). After each one the controller said \"Re-reading the SDD skill in full, plus the ledger and git log, before going further\" and issued several Read calls on SKILL.md (some full, some with an offset) plus cat calls on ledger/plan files. That refilled the context to the threshold right away, and Claude Code stopped the turn. Re-reading after compaction undoes the compaction when the skill and plan are this large (plan.md is 27.6KB; autoCompactWindow is 100000)."
+    },
+    {
+      "kind": "bug",
+      "description": "Compaction hit before Task 1 started, during setup (worktree decision, ledger creation, pre-flight conflict scan), not after the first task as the scenario intended. The setup phase alone (skill load + plan + ledger + scan) uses most of a 100k window."
+    },
+    {
+      "kind": "ux",
+      "description": "After thrashing stopped the turn, the agent left no message for the user saying the plan wasn't executed or what to do next. The only explanation is Claude Code's generic yellow warning, and the prompt just sits idle."
+    },
+    {
+      "kind": "ux",
+      "description": "The setup did write some state: a `hyperpowers/state` branch exists (`git branch` shows `+ hyperpowers/state`). It's left behind even though no work happened."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup showed onboarding dialogs (theme, security notes, folder trust, bypass-permissions warning) and a 'Newer Opus model available — Currently pinned: Opus 5, Latest: Opus 5.5' prompt, even though the launcher passes --model claude-opus-5-5. I chose 'No' so it wouldn't restart; the header then showed 'Opus 5.5 · Google Vertex AI'. The 'pinned Opus 5' message contradicts the --model flag."
+    },
+    {
+      "kind": "suggestion",
+      "description": "After a compaction, the controller could re-read only the parts of the skill it needs (or a short summary/checklist) instead of the full SKILL.md, so the re-read doesn't push context straight back over the threshold."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions implemented/exported from src/textstats.js with test files; npm test passes",
+      "verdict": "fail",
+      "evidence": "`cat src/textstats.js` → `module.exports = {};`; `ls test` → empty; `git log --oneline` top commit is still the fixture commit `0867661 Add textstats fixture and implementation plan`; `git status --short` shows nothing changed."
+    },
+    {
+      "criterion": "Each task reviewed before next task starts",
+      "verdict": "fail",
+      "evidence": "No task ever started. Listing every tool_use in session log b092d5ed-....jsonl gives only Skill, Bash and Read calls. There are no Agent/Task dispatches (`grep -c '\"name\":\"Task\"'` → 0, and the jq listing of tool_use names shows no Agent)."
+    },
+    {
+      "criterion": "Final whole-branch review after last task",
+      "verdict": "fail",
+      "evidence": "There was no last task and no review dispatch. The jq tool_use listing shows no Agent calls. The session ended with a warning on screen: \"Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row.\""
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "fail",
+      "evidence": "The final screen shows the thrashing warning, then \"Worked for 3m 25s · done 3:21 PM\" with an idle prompt. The finishing skill was never loaded: the only Skill calls in the log are subagent-driven-development and using-git-worktrees."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi"
+    ]
+  },
+  "duration_ms": 348513,
+  "usage": {
+    "inputTokens": 54,
+    "outputTokens": 4737,
+    "cacheCreationInputTokens": 34614,
+    "cacheReadInputTokens": 402083,
+    "turns": 24
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

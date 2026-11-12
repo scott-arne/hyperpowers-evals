@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T231624Z_kljh",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The controller never started Task 1. Right after it loaded subagent-driven-development, its context compacted. Then it kept re-reading the 76 KB, 1032-line SKILL.md plus plan.md, which refilled the context each time. After 4 compactions, Claude Code stopped with \"Autocompact is thrashing … 3 times in a row\" and went back to an idle prompt. No subagents ran, nothing was implemented or committed, and src/textstats.js still has only `module.exports = {};`.",
+  "reasoning": "I sent the prompt exactly as written and did not steer. The agent never asked a question, so none of the scripted answers came up. The controller got stuck re-reading its huge skill file after each compaction, and Claude Code stopped the run before any task was dispatched. None of the four acceptance criteria were met, which I confirmed from the repo state and the session log.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Compaction loop in setup: after each compaction the controller re-reads subagent-driven-development/SKILL.md in full (76 KB, 1032 lines, read with allow_large and again at offset 824), plus progress.md and parts of plan.md. That refills the 100k autoCompactWindow within a few turns. The log has 4 compact summaries, and Claude Code stopped with 'Autocompact is thrashing'. The skill's re-read-after-compaction behaviour can't fit in this window."
+    },
+    {
+      "kind": "bug",
+      "description": "Compaction happened before Task 1 even started, during the pre-flight scan, not after the first task as the scenario expected. The skill file alone uses a large share of the window."
+    },
+    {
+      "kind": "performance",
+      "description": "SKILL.md for subagent-driven-development is about 76 KB (1032 lines). That's very large for a file the controller is expected to reload after compaction."
+    },
+    {
+      "kind": "ux",
+      "description": "After the thrashing error the agent just stopped at an idle prompt. It didn't tell the user that no work was done or suggest a way to recover."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The pre-flight scan wrote useful findings to progress.md (e.g. PASSAGE is defined but unused, and the 'passage test' and 'multi-paragraph test' the prose mentions don't exist). None of it got acted on because of the loop."
+    },
+    {
+      "kind": "ux",
+      "description": "At launch there were several dialogs: theme, security notes, a trust-folder dialog defaulting to 'No, exit', a 'Newer Opus model available' prompt (said pinned Opus 5 even though --model claude-opus-5-5 was passed; I chose No), and a bypass-permissions warning defaulting to 'No, exit'. The header afterwards showed 'Opus 5.5 · Google Vertex AI'."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, and npm test passes",
+      "verdict": "fail",
+      "evidence": "`grep -n \"export\\|function\" src/textstats.js` → `1:module.exports = {};`. `ls test` shows nothing. `git log --oneline` shows the fixture commit `0867661 Add textstats fixture and implementation plan` as the newest commit, and `git status --short` shows nothing to commit."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "fail",
+      "evidence": "No task ran at all. Counting Agent/Task tool_use calls in session log e1dd3687-….jsonl with jq gave 0. No subagent session files exist under projects/ (only the main jsonl and memory/)."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "fail",
+      "evidence": "The log has 0 Agent/Task dispatches, so no final review ran. The last assistant text in the log is \"Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row...\""
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "fail",
+      "evidence": "The session ended on the autocompact-thrashing error and an idle prompt (screen: \"Churned for 3m 52s · done 3:21 PM\"). The agent never reached a finishing step and never asked about merge, push, keep or discard."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi"
+    ]
+  },
+  "duration_ms": 382408,
+  "usage": {
+    "inputTokens": 60,
+    "outputTokens": 4689,
+    "cacheCreationInputTokens": 39000,
+    "cacheReadInputTokens": 507234,
+    "turns": 27
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

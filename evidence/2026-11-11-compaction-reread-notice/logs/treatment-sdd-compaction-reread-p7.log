@@ -1,0 +1,67 @@
+arm=treatment scenario=sdd-compaction-reread repeat=1 proc=p7 budget=default
+root=cff2528683d66f0971528fbe64f0ad599a569098 root_clean=0
+harness_pin=474ea8c8dff4038337ef759ff410be8b9332b494 evals_head=66ee6212702a2461446ffbdf59cdbbe7d8e875ec harness_paths_identical=yes
+model_pin=claude-opus-5-5 anthropic_model=claude-opus-5-5
+anthropic_default_opus_model=claude-opus-5
+grader_pin=claude-opus-5-5 gauntlet_agent_model=claude-opus-5-5
+cc_pin=2.1.317 claude_version_before=2.1.317 (Claude Code)
+2026-11-12T23:16:19Z
+$ env -u INTERLOCK_PROBE_TRACE -u SLASH_COMMAND_TOOL_CHAR_BUDGET bun run quorum run scenarios/sdd-compaction-reread --coding-agent claude-auto --repeat 1
+$ bun run src/cli/index.ts run scenarios/sdd-compaction-reread --coding-agent claude-auto --repeat "1"
+run-id: sdd-compaction-reread-claude-auto-20261112T231620Z-59e5
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/sdd-compaction-reread-claude-auto-20261112T231620Z-59e5
+final     fail
+reason    Gauntlet-Agent reported fail; 1 post-check(s) failed
+provenance: evals 66ee621 gauntlet a35607e+dirty
+
+─── Gauntlet-Agent ───────────────────────────────
+status    fail
+summary   The test failed: the agent never started Task 1. It loaded the
+          subagent-driven-development (SDD) skill, read plan.md, set up
+          its progress ledger on the current branch, and then got stuck.
+          Auto-compaction ran 5 times during setup. After each one the
+          agent re-read the 76 KB SDD SKILL.md file in full, which
+          filled the 100k compaction window again right away. Claude
+          Code then stopped the turn with "Autocompact is thrashing". No
+          code was written, no subagents ran, and the agent never asked
+          me anything, so none of the scripted answers could be used.
+reasoning Every criterion depends on the agent working through the plan, and it
+          never got to Task 1. The session ended idle at the prompt with
+          a warning from Claude Code about a compaction loop. The loop
+          seems to come from the controller's own re-read step after
+          compaction: it re-reads the whole SKILL.md (1032 lines, 75,982
+          bytes), sometimes several times. With "autoCompactWindow":
+          100000 set, that is too much to fit. The scenario expected
+          compaction after the first task, but it happened during setup
+          and then kept happening. Sending the prompt again or typing
+          /clear would be steering the session, which the scenario
+          doesn't allow, so I stopped and am reporting this as a
+          failure.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ git-branch feature/textstats
+pre  ✓ file-exists plan.md
+pre  ✓ file-exists .claude/settings.json
+pre  ✓ requires-tool node
+pre  ✓ requires-tool npm
+post ✓ skill-called superpowers:subagent-driven-development hyperpowers:subagent-driven-development
+post ✗ tool-called Agent
+       ↳ Agent never called
+post ✓ command-succeeds npm test
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       6m 26s      554K n/a (claude-opus-5-5)
+  Coding         4m 18s      980K n/a (claude-opus-5-5)
+    opus                     980K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+trials: F
+error: script "quorum" exited with code 1
+EXIT=1
+2026-11-12T23:22:51Z
+claude_version_after=2.1.317 (Claude Code)
+DONE treatment sdd-compaction-reread p7

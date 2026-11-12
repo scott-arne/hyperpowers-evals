@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T224054Z_frh0",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The agent ran plan.md with subagent-driven development. Auto-compaction happened 11 times, both before Task 1 and between tasks. After each one, the agent re-read its skill, ledger and git log, then picked the loop back up. It ran implement → review for each of the four tasks in order, then a final whole-branch review, and finished in the finishing-a-development-branch step. I answered \"Keep the branch as-is\" and it left the branch as it was. npm test passes 59/59.",
+  "reasoning": "I checked all four criteria against files on disk, npm test output, git log and the session/subagent JSONL timestamps. The controller kept the implement → review loop going in order through many compactions, ran the final review, and ended in the finishing step.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "Compaction happened far more often than the story suggests. The main log has 11 compact boundaries (22 entries, logged in pairs), from 22:43 to 23:02, and the first came during setup, before Task 1 was dispatched. The controller kept its loop through every one, saying things like 'Re-reading the ledger, git log, and the full skill text', but the test isn't the 'one compaction after the first task' case the story describes."
+    },
+    {
+      "kind": "ux",
+      "description": "The controller asked one multi-question AskUserQuestion: what to do about the unused PASSAGE constants, behaviours that have no tests, and the missing 270-word test. Because it was a picker with options, I couldn't type the scripted 'Proceed as you recommend.' word for word. I chose the (Recommended) option for every question, which means the same thing."
+    },
+    {
+      "kind": "ux",
+      "description": "At finish, the agent detached HEAD at 4d9c095 ('released the plan's lease on the branch') even though the user chose 'Keep the branch as-is'. A user might be surprised to end up in detached HEAD rather than on feature/textstats. The agent did say how to get back (git switch feature/textstats)."
+    },
+    {
+      "kind": "ux",
+      "description": "The finishing message included a notice that codex-plugin-cc is not installed, with install commands. That's noise for a user who didn't ask for it. The wording 'this review will run without an additional Codex review' also showed up after the review had already finished."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Each task review subagent ran very briefly, about 11–15 seconds (e.g. Review T3 22:56:42–22:56:54). The reviews did happen, but it's worth checking how thorough they were."
+    },
+    {
+      "kind": "ux",
+      "description": "During startup, Claude Code showed a prompt saying 'Currently pinned: Opus 5' and offering to update to Opus 5.5, even though the launcher passes --model claude-opus-5-5. I chose No. The banner then showed Opus 5.5. The default selection on both the trust dialog and the bypass-permissions dialog is 'No, exit'. On my first launch an extra Enter hit 'No, exit' and closed Claude, so I relaunched (my own mistake, but an easy trap)."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each with a test file, committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder has wordCount, sentenceCount, topWords and readingTimeMinutes .test.js. git log shows 6ae97c3 feat: add wordCount, 9b87b03 sentenceCount, e5f3bd4 topWords, 4d9c095 readingTimeMinutes. npm test: `ℹ tests 59 ℹ pass 59 ℹ fail 0`. git status is clean."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Start/end times from the subagent logs: Impl T1 22:47:38–22:48:09, Review T1 22:48:47–22:49:02, Impl T2 22:52:30–22:52:54, Review T2 22:53:36–22:53:51, Impl T3 22:55:17, Review T3 22:56:42–22:56:54, Impl T4 22:58:08, Review T4 22:59:27–22:59:38. Each review ended before the next implementer was dispatched."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Main log: `2026-11-12T23:01:31Z Agent Final whole-branch code review`, after Review T4. That subagent ran 23:01:31–23:02:18. Screen: 'The final review of the whole branch against main (a4ad960..4d9c095) found nothing and called it ready to merge.'"
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Main log: `23:03:09Z Skill hyperpowers:finishing-a-development-branch`. The screen showed the options '1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. I replied 'Keep the branch as-is', and the agent answered 'I've left feature/textstats as it was at 4d9c095: nothing merged, nothing pushed.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi"
+    ]
+  },
+  "duration_ms": 1516756,
+  "usage": {
+    "inputTokens": 88,
+    "outputTokens": 7285,
+    "cacheCreationInputTokens": 46593,
+    "cacheReadInputTokens": 861795,
+    "turns": 40
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

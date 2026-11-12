@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T231624Z_pjee",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The run failed before Task 1 started. The SDD controller loaded the skill and set up the branch and ledger, and its context hit the compaction threshold before it dispatched any subagent. After each compaction it re-read the whole 76KB subagent-driven-development SKILL.md, which filled the context again. After 9 compactions, Claude Code stopped with \"Autocompact is thrashing\" and returned to an idle prompt. No subagents ran, no code was written and nothing was committed.",
+  "reasoning": "None of the acceptance criteria were met. The controller loaded the skill, picked current-branch mode on feature/textstats and started a ledger. Then, after each compaction, it re-read the full 76KB SKILL.md into a 100k compaction window, which caused compaction again. Claude Code detected the thrashing and stopped. The session log shows zero subagent dispatches and the repo shows zero new commits. The agent asked no questions, so the story gave me no reply to send, and sending anything else would have been steering. This is a clear failure: the controller cannot recover its task loop after compaction under these conditions, because its recovery step (reading the whole skill file) is bigger than the space compaction frees.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Compaction recovery loops forever. The session log has 9 'compact_boundary Conversation compacted' entries. After each one, the controller ran Read on SKILL.md (allow_large:true, the full 75,982-byte file), then Read again with offset 824/limit 210, plus a ledger cat. With the repo's autoCompactWindow of 100000, that re-read alone takes the context back to the threshold, so compaction triggers again almost at once. The controller's messages showed it: 'Re-reading the skill in full after compaction.' / 'Re-reading the SDD skill, the ledger and git log before acting.'"
+    },
+    {
+      "kind": "bug",
+      "description": "The story expects compaction after the first task, but it happened during setup before any task was dispatched. The controller's first steps already filled most of the context: reading all of plan.md (27.6KB), running scratch checks of the plan's code in /tmp/sddchk, and loading the full skill."
+    },
+    {
+      "kind": "bug",
+      "description": "Each compaction also restored skills on its own ('Skills restored (hyperpowers:using-git-worktrees, hyperpowers:subagent-driven-development)'), and the controller then read SKILL.md again by hand. That probably loads the large skill text twice per cycle."
+    },
+    {
+      "kind": "ux",
+      "description": "The session stopped silently at an idle prompt and asked the user nothing. Only Claude Code's 'Autocompact is thrashing' warning remained on screen. A user would not know whether to retry or how to recover, short of /clear, which would lose state."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup prompts: the workspace-trust and bypass-permissions dialogs both default to 'No, exit'. A 'Newer Opus model available' prompt said 'Currently pinned: Opus 5', even though the launcher passed --model claude-opus-5-5 and the banner later showed Opus 5.5. I chose No on the model prompt to avoid a restart."
+    },
+    {
+      "kind": "ux",
+      "description": "The screen kept showing a percentage until auto-compact ('7% until auto-compact', '6% until auto-compact') while the thrashing was going on."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are implemented and committed, each with a test file, and npm test passes",
+      "verdict": "fail",
+      "evidence": "`git log --oneline` shows only the fixture commits; the newest is '0867661 Add textstats fixture and implementation plan'. `git status --short` printed nothing (no changes). `ls test` printed nothing (empty directory)."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "fail",
+      "evidence": "No task ever started. I listed every tool_use in session log 6fbb6430-...jsonl with jq: there are only Skill, Bash and Read calls, and grepping for Agent/Task calls returned 0."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "fail",
+      "evidence": "No Agent or Task calls appear anywhere in the session log (grep count 0). The session stopped before Task 1."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "fail",
+      "evidence": "The session ended on this screen: 'Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row... Try reading in smaller chunks, or use /clear to start fresh.' followed by 'Crunched for 7m 35s · done 3:24 PM' and an idle prompt. The finishing step never started and no finishing question was asked."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 568118,
+  "usage": {
+    "inputTokens": 56,
+    "outputTokens": 4644,
+    "cacheCreationInputTokens": 34139,
+    "cacheReadInputTokens": 381583,
+    "turns": 25
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

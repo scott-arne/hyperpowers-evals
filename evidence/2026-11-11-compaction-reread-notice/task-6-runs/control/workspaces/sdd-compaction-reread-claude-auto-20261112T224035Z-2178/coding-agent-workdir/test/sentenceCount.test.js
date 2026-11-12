@@ -1,0 +1,126 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { sentenceCount } = require('../src/textstats');
+
+// Eight sentences, counted by hand: the question and the exclamation each end
+// one, while the "Mr." and "Dr." titles and the decimal inside the fourth
+// sentence must not.
+const PASSAGE = [
+  'Mr. Alder opened the shop at nine. Nobody came in until noon! When the first',
+  'customer arrived, Dr. Wren asked whether the prices had changed. They had',
+  'risen by 3.5 percent since spring. "Is that all?" she said. He nodded, and',
+  'the afternoon went by quietly. By closing time the till held forty dollars.',
+].join('\n');
+
+const CASES = [
+  ["", 0],
+  [" ", 0],
+  [".", 0],
+  ["a", 1],
+  ["a.", 1],
+  ["a. b.", 2],
+  ["a! b? c.", 3],
+  ["a!? b", 2],
+];
+
+test('returns 0 for the empty string', () => {
+  assert.equal(sentenceCount(''), 0);
+});
+
+test('returns 0 for whitespace only', () => {
+  assert.equal(sentenceCount('  \n\t  '), 0);
+});
+
+test('returns 0 for terminators with no words', () => {
+  assert.equal(sentenceCount('... ?! . ! ?'), 0);
+});
+
+test('counts one sentence with a final period', () => {
+  assert.equal(sentenceCount('The tide came in.'), 1);
+});
+
+test('counts one sentence with no terminator at all', () => {
+  assert.equal(sentenceCount('The tide came in'), 1);
+});
+
+test('counts a trailing fragment after the last terminator', () => {
+  assert.equal(sentenceCount('The tide came in. Then it left'), 2);
+});
+
+test('throws a TypeError naming the function for a non-string', () => {
+  for (const bad of [undefined, null, 7, {}, ['One.']]) {
+    assert.throws(() => sentenceCount(bad), (err) => {
+      assert.ok(err instanceof TypeError);
+      assert.ok(err.message.startsWith('sentenceCount:'));
+      return true;
+    });
+  }
+});
+
+test('matches every row of the reference table', () => {
+  for (const [text, expected] of CASES) {
+    assert.equal(sentenceCount(text), expected, JSON.stringify(text));
+  }
+});
+
+test('counts the eight sentences in the passage', () => {
+  assert.equal(sentenceCount(PASSAGE), 8);
+});
+
+test('does not break a sentence at a decimal point', () => {
+  assert.equal(sentenceCount('Pi is 3.14 and e is 2.72. Both are constants.'), 2);
+});
+
+test('does not break a sentence inside a dotted name', () => {
+  assert.equal(sentenceCount('Visit example.com for details. Then leave.'), 2);
+  assert.equal(sentenceCount('The id a.b.c is valid. Use it.'), 2);
+});
+
+test('does not end a sentence at a listed abbreviation followed by a period', () => {
+  const abbreviations = ['Mr', 'Mrs', 'Ms', 'Dr', 'Prof', 'St', 'Sr', 'Jr', 'vs', 'e.g', 'i.e'];
+  for (const abbr of abbreviations) {
+    const text = `Ask ${abbr}. Smith about it`;
+    assert.equal(sentenceCount(text), 1, JSON.stringify(text));
+  }
+});
+
+test('compares abbreviations without regard to case', () => {
+  for (const abbr of ['MR', 'mr', 'DR', 'dr', 'Prof', 'PROF', 'E.G', 'I.E', 'VS', 'Vs']) {
+    const text = `Ask ${abbr}. Smith about it`;
+    assert.equal(sentenceCount(text), 1, JSON.stringify(text));
+  }
+});
+
+test('does not end a sentence at an abbreviation after an opening bracket or quote', () => {
+  for (const text of ['Ask (Mr. Smith about it', 'Ask "Dr. Smith about it', "Ask 'Prof. Smith about it", 'Ask [e.g. Smith about it', 'Ask “Dr. Smith about it']) {
+    assert.equal(sentenceCount(text), 1, JSON.stringify(text));
+  }
+});
+
+test('ends a sentence at a word that is not a listed abbreviation', () => {
+  assert.equal(sentenceCount('Ask Bob. Smith knows'), 2);
+});
+
+test('ends a sentence at an ellipsis or interrobang after an abbreviation', () => {
+  assert.equal(sentenceCount('Ask Mr... Smith knows'), 2);
+  assert.equal(sentenceCount('Ask Dr?! Smith knows'), 2);
+  assert.equal(sentenceCount('Ask Dr! Smith knows'), 2);
+});
+
+test('keeps closing quotes and brackets with the terminator', () => {
+  assert.equal(sentenceCount('He said "Go." Then he left'), 2);
+  assert.equal(sentenceCount('(It rained.) Then it stopped'), 2);
+  assert.equal(sentenceCount('Did she say [yes?] No one knows'), 2);
+  assert.equal(sentenceCount('“Stop!” Then silence'), 2);
+});
+
+test('returns equal values when called twice with the same text', () => {
+  assert.equal(sentenceCount(PASSAGE), sentenceCount(PASSAGE));
+});
+
+test('does not change its argument', () => {
+  const text = 'Mr. Alder left. "Why?" she asked';
+  const copy = text.slice();
+  sentenceCount(text);
+  assert.equal(text, copy);
+});

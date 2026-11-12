@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T224054Z_9zg6",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The subagent-driven-development (SDD) controller finished all four plan tasks on feature/textstats, even though its context was compacted 6 times during the run. Each task was implemented and then reviewed before the next one started. A final whole-branch review ran on opus, and the session ended in the finishing-a-development-branch step, where I chose \"Keep the branch as-is\". `npm test` shows 89 of 89 passing.",
+  "reasoning": "All four criteria are met, based on the git history, the test output and the timestamps in the session logs. The task loop stayed intact through two compactions in the middle of the plan, so the story's goal (SDD keeps its task loop after compaction) is met.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "After the 'Keep the branch as-is' answer, the finishing step detached HEAD: \"I detached the checkout from the branch and released this session's lock on it... you're now on a detached HEAD\". The user asked to keep the branch as-is, so leaving them on a detached HEAD is surprising, even though the commits are unchanged."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Compaction happened 6 times: 22:44:20, 22:45:21, 22:48:44, 22:52:04, 22:55:28 and 22:57:55. The first came before Task 1 started, right after the pre-flight question. After compaction the controller re-read SKILL.md, at 22:44+, and task-reviewer-prompt.md, at 22:52+. Both were read from ~/.cache/hyperpowers/compaction-reread-notice/arms/control/..., which suggests this run was the 'control' arm."
+    },
+    {
+      "kind": "ux",
+      "description": "A pre-flight question pointed out that the plan's test files don't cover the behaviour the plan describes, and that the PASSAGE constants are never used. That is a useful catch, but it means the plan fixture is internally inconsistent. The agent also reported that a test comment says 'storm' ranks fifth when it actually ranks last."
+    },
+    {
+      "kind": "ux",
+      "description": "During startup, the trust-folder and bypass-permissions dialogs both defaulted to 'No, exit'. A 'Newer Opus model available' prompt said the session was pinned to Opus 5 even though the launcher passed --model claude-opus-5-5. I dismissed that prompt, and the banner then showed Opus 5.5."
+    },
+    {
+      "kind": "ux",
+      "description": "The controller said \"Task 3 is merged into feature/textstats\" even though it was in current-branch mode. The git log shows linear commits, so the word 'merged' is misleading."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent noted that commit 439f74b adds .claude/settings.json (autoCompactWindow), which the plan doesn't mention. So the agent noticed the fixture's compaction setting, though it didn't act on it."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions exported from src/textstats.js, each with its own test file, committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 has `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ holds readingTimeMinutes.test.js, sentenceCount.test.js, topWords.test.js and wordCount.test.js. git log shows the commits 2b6dda6 feat: add wordCount, 9d5a3c3 feat: add sentenceCount, 5347771 feat: add topWords and b3b3c3f feat: add readingTimeMinutes. `git status --short` is clean. `npm test` reports `tests 89 / pass 89 / fail 0`."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatch timestamps in the main session log: Implement T1 22:45:54, Review T1 22:47:15, Implement T2 22:48:12, Review T2 22:49:37, Implement T3 22:50:49, Review T3 22:52:37, Implement T4 22:53:39, Review T4 22:55:02. In each case the review subagent's log ends before the next implementer's log begins. For example, the T1 review runs 22:47:15.9 to 22:47:30.2, then T2 starts at 22:48:12. This order held across compactions at 22:48:44 and 22:52:04, which fell in the middle of the task loop."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Log entry `Agent: Final whole-branch code review opus` was dispatched at 22:56:22, after the Task 4 review finished at 22:55:16. Its prompt reviewed the range a4ad960..b3b3c3f. On screen: \"The final whole-branch review (opus) found nothing Critical or Important.\""
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Log entry `Skill: hyperpowers:finishing-a-development-branch`. On screen: \"Implementation complete. What would you like to do? 1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is\". I replied \"Keep the branch as-is\" and the agent confirmed it left feature/textstats at b3b3c3f."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi"
+    ]
+  },
+  "duration_ms": 1192806,
+  "usage": {
+    "inputTokens": 80,
+    "outputTokens": 6944,
+    "cacheCreationInputTokens": 57796,
+    "cacheReadInputTokens": 675565,
+    "turns": 36
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

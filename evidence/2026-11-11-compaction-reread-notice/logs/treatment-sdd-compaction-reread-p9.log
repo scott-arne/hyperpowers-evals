@@ -1,0 +1,61 @@
+arm=treatment scenario=sdd-compaction-reread repeat=1 proc=p9 budget=default
+root=cff2528683d66f0971528fbe64f0ad599a569098 root_clean=0
+harness_pin=474ea8c8dff4038337ef759ff410be8b9332b494 evals_head=66ee6212702a2461446ffbdf59cdbbe7d8e875ec harness_paths_identical=yes
+model_pin=claude-opus-5-5 anthropic_model=claude-opus-5-5
+anthropic_default_opus_model=claude-opus-5
+grader_pin=claude-opus-5-5 gauntlet_agent_model=claude-opus-5-5
+cc_pin=2.1.317 claude_version_before=2.1.317 (Claude Code)
+2026-11-12T23:16:19Z
+$ env -u INTERLOCK_PROBE_TRACE -u SLASH_COMMAND_TOOL_CHAR_BUDGET bun run quorum run scenarios/sdd-compaction-reread --coding-agent claude-auto --repeat 1
+$ bun run src/cli/index.ts run scenarios/sdd-compaction-reread --coding-agent claude-auto --repeat "1"
+run-id: sdd-compaction-reread-claude-auto-20261112T231620Z-582b
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/sdd-compaction-reread-claude-auto-20261112T231620Z-582b
+final     fail
+reason    Gauntlet-Agent reported fail; 1 post-check(s) failed
+provenance: evals 66ee621 gauntlet a35607e+dirty
+
+─── Gauntlet-Agent ───────────────────────────────
+status    fail
+summary   The controller never got to Task 1. After loading the SDD skill and
+          running its pre-flight scan, it kept re-reading the 76 KB /
+          1032-line subagent-driven-development SKILL.md. Each read
+          filled the 100k auto-compact window again. Claude Code then
+          stopped the turn with "Autocompact is thrashing: the context
+          refilled to the limit within 3 turns of the previous compact,
+          3 times in a row." No subagents were dispatched, nothing was
+          implemented, no commits were made, and it never reached the
+          finishing step.
+reasoning None of the acceptance criteria were met: no code, no tests, no commits,
+          no reviews and no finishing step. The cause I observed was the
+          controller repeatedly re-reading a very large skill file after
+          compaction, which set off Claude Code's autocompact-thrashing
+          stop. I did not steer the session; the agent stopped on its
+          own and asked no questions.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ git-branch feature/textstats
+pre  ✓ file-exists plan.md
+pre  ✓ file-exists .claude/settings.json
+pre  ✓ requires-tool node
+pre  ✓ requires-tool npm
+post ✓ skill-called superpowers:subagent-driven-development hyperpowers:subagent-driven-development
+post ✗ tool-called Agent
+       ↳ Agent never called
+post ✓ command-succeeds npm test
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       5m 45s      332K n/a (claude-opus-5-5)
+  Coding         3m 23s      748K n/a (claude-opus-5-5)
+    opus                     748K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+trials: F
+error: script "quorum" exited with code 1
+EXIT=1
+2026-11-12T23:22:14Z
+claude_version_after=2.1.317 (Claude Code)
+DONE treatment sdd-compaction-reread p9

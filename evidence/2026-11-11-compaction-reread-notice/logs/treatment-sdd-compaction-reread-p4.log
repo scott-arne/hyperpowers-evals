@@ -1,0 +1,60 @@
+arm=treatment scenario=sdd-compaction-reread repeat=1 proc=p4 budget=default
+root=cff2528683d66f0971528fbe64f0ad599a569098 root_clean=0
+harness_pin=474ea8c8dff4038337ef759ff410be8b9332b494 evals_head=66ee6212702a2461446ffbdf59cdbbe7d8e875ec harness_paths_identical=yes
+model_pin=claude-opus-5-5 anthropic_model=claude-opus-5-5
+anthropic_default_opus_model=claude-opus-5
+grader_pin=claude-opus-5-5 gauntlet_agent_model=claude-opus-5-5
+cc_pin=2.1.317 claude_version_before=2.1.317 (Claude Code)
+2026-11-12T23:16:19Z
+$ env -u INTERLOCK_PROBE_TRACE -u SLASH_COMMAND_TOOL_CHAR_BUDGET bun run quorum run scenarios/sdd-compaction-reread --coding-agent claude-auto --repeat 1
+$ bun run src/cli/index.ts run scenarios/sdd-compaction-reread --coding-agent claude-auto --repeat "1"
+run-id: sdd-compaction-reread-claude-auto-20261112T231620Z-e339
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/sdd-compaction-reread-claude-auto-20261112T231620Z-e339
+final     fail
+reason    Gauntlet-Agent reported fail; 1 post-check(s) failed
+provenance: evals 66ee621 gauntlet a35607e+dirty
+
+─── Gauntlet-Agent ───────────────────────────────
+status    fail
+summary   The controller never started Task 1. Right after it loaded
+          subagent-driven-development, its context compacted. Then it
+          kept re-reading the 76 KB, 1032-line SKILL.md plus plan.md,
+          which refilled the context each time. After 4 compactions,
+          Claude Code stopped with "Autocompact is thrashing … 3 times
+          in a row" and went back to an idle prompt. No subagents ran,
+          nothing was implemented or committed, and src/textstats.js
+          still has only `module.exports = {};`.
+reasoning I sent the prompt exactly as written and did not steer. The agent never
+          asked a question, so none of the scripted answers came up. The
+          controller got stuck re-reading its huge skill file after each
+          compaction, and Claude Code stopped the run before any task
+          was dispatched. None of the four acceptance criteria were met,
+          which I confirmed from the repo state and the session log.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ git-branch feature/textstats
+pre  ✓ file-exists plan.md
+pre  ✓ file-exists .claude/settings.json
+pre  ✓ requires-tool node
+pre  ✓ requires-tool npm
+post ✓ skill-called superpowers:subagent-driven-development hyperpowers:subagent-driven-development
+post ✗ tool-called Agent
+       ↳ Agent never called
+post ✓ command-succeeds npm test
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       6m 22s      551K n/a (claude-opus-5-5)
+  Coding         3m 59s      856K n/a (claude-opus-5-5)
+    opus                     856K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+trials: F
+error: script "quorum" exited with code 1
+EXIT=1
+2026-11-12T23:22:47Z
+claude_version_after=2.1.317 (Claude Code)
+DONE treatment sdd-compaction-reread p4

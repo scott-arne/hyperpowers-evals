@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T224054Z_q9ah",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The agent finished the whole plan even though its context was compacted 6 times along the way. All four tasks were implemented, committed and reviewed one at a time. A final whole-branch review ran, and the session ended in the finishing step. `npm test` passes 73 of 73 tests.",
+  "reasoning": "I checked the session log and found 6 compaction points. They fell between tasks, at 22:44, 22:45, 22:49, 22:52, 22:55 and 22:57. Even so, the agent kept the same loop every time: implementer, then reviewer, then the next task. After the last task it ran a final review, then loaded finishing-a-development-branch. The git log has one commit per task, the module exports all four functions, there is a test file for each, and the tests pass.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "After the 'Keep the branch as-is' choice, the checkout was left on a detached HEAD at be3ba2d instead of on feature/textstats. The agent said so itself ('Run git switch feature/textstats to go back to the branch'). That's a surprising side effect for an option meant to leave things alone."
+    },
+    {
+      "kind": "ux",
+      "description": "Before any task started, the agent stopped to ask a long multiple-choice question about gaps in the plan's tests: add tests, keep the plan word for word, or drop the PASSAGE constants. I answered 'Proceed as you recommend.' It then added tests beyond what the plan specified (73 tests in total, while the plan's totals were 8/16/24/32)."
+    },
+    {
+      "kind": "performance",
+      "description": "The first compaction happened before Task 1 even started, right after the pre-flight question. That's earlier than the story expected ('after the first task'). In total there were 6 compactions in a run of about 17 minutes."
+    },
+    {
+      "kind": "bug",
+      "description": "The final review found an open issue that wasn't fixed: the TERMINATOR_PATTERN regex slows down roughly with the square of the input length ('.'.repeat(40000)+'x' takes about 5s in sentenceCount). It was left in because the plan specifies that regex word for word."
+    },
+    {
+      "kind": "ux",
+      "description": "Several messages came up during setup: the trust-folder dialog had 'No, exit' selected by default, and there was a prompt to switch to a newer Opus model even though the launcher already sets claude-opus-5-5. I declined the switch. The final summary also mentioned that Codex reviews were skipped because Codex isn't installed, and that '5 unreviewed items' were waiting. That was confusing to read alongside the earlier statement that all reviews had passed."
+    },
+    {
+      "kind": "ux",
+      "description": "Internal file paths showed up on screen (e.g. '.cache/hyperpowers/compaction-reread-notice/arms/control/skills/...'), along with a 'Skills restored' notice after the compaction. That's internal detail most users don't need to see."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, everything is committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js line 141: `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder has wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. git log shows be3ba2d feat: add readingTimeMinutes, d5f2a0a topWords, 22b1ed9 sentenceCount and 10e088b wordCount. npm test: `ℹ tests 73 ℹ pass 73 ℹ fail 0`. git status --short printed nothing."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent calls in the session log (jq), in order: 22:45:43 Implement Task 1, 22:46:53 Review Task 1, 22:47:50 Implement Task 2, 22:48:50 Review Task 2, 22:50:33 Implement Task 3, 22:51:46 Review Task 3, 22:53:11 Implement Task 4, 22:54:22 Review Task 4. This held after the compaction points at 22:49 and 22:52."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Session log: `2026-11-12T22:55:56.508Z Agent Final whole-branch code review`, after Review Task 4 and before finishing. The screen also showed the result of the final review: the slow TERMINATOR_PATTERN regex finding."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Session log: `22:57:18 Skill hyperpowers:finishing-a-development-branch`. Screen: 'Implementation complete. What would you like to do? 1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. I replied 'Keep the branch as-is' and the agent confirmed: 'I've left feature/textstats as it is, at be3ba2d'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi"
+    ]
+  },
+  "duration_ms": 1179280,
+  "usage": {
+    "inputTokens": 76,
+    "outputTokens": 5627,
+    "cacheCreationInputTokens": 45666,
+    "cacheReadInputTokens": 607258,
+    "turns": 34
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

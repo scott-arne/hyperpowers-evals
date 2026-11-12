@@ -131,3 +131,19 @@ per-compaction totals. `tally.py --run RUN_ID --arm ARM --scenario NAME`
 tallies a single run (the smoke); `ARM` picks the pin whose cut an SDD run is
 read against. `python3 -m unittest test_tally -v` runs the tally's tests,
 which need no pins, network or live run.
+
+## Outcome (2026-11-12): campaign stopped after wave 2
+
+Wave 1 (control) gave 10 valid runs: all 10 finished the plan, none re-read
+the skill (4 of 93 compactions followed). Wave 2 (treatment) gave 10 voids:
+every run ended in Claude Code's "Autocompact is thrashing" stop with no
+subagent dispatched, so `sdd_reading` has no task loop to time and marks each
+one `instrument`. In the traced run (`...231620Z-11c2`) the first compaction
+came during SDD setup at about 68K tokens. After it the session followed the
+notice, read SKILL.md (truncated banner, then offset 824) and compacted again
+35 to 40 seconds later at about 66K; that repeated nine times. In this
+scenario's 100K window, one full read of the 76K-character SDD skill after a
+compaction refills the context. No replacements were launched, since each
+would repeat the loop, and waves 3 (shipped) and 4 (sentinel) were not run.
+The notice goes back to design. `tally.txt` and `task-6-runs/` hold waves 1
+and 2; `manifest-wave3.tsv` and `manifest-wave4.tsv` are the unrun waves.

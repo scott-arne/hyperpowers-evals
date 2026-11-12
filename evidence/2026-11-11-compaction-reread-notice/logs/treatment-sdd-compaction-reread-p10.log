@@ -1,0 +1,61 @@
+arm=treatment scenario=sdd-compaction-reread repeat=1 proc=p10 budget=default
+root=cff2528683d66f0971528fbe64f0ad599a569098 root_clean=0
+harness_pin=474ea8c8dff4038337ef759ff410be8b9332b494 evals_head=66ee6212702a2461446ffbdf59cdbbe7d8e875ec harness_paths_identical=yes
+model_pin=claude-opus-5-5 anthropic_model=claude-opus-5-5
+anthropic_default_opus_model=claude-opus-5
+grader_pin=claude-opus-5-5 gauntlet_agent_model=claude-opus-5-5
+cc_pin=2.1.317 claude_version_before=2.1.317 (Claude Code)
+2026-11-12T23:16:19Z
+$ env -u INTERLOCK_PROBE_TRACE -u SLASH_COMMAND_TOOL_CHAR_BUDGET bun run quorum run scenarios/sdd-compaction-reread --coding-agent claude-auto --repeat 1
+$ bun run src/cli/index.ts run scenarios/sdd-compaction-reread --coding-agent claude-auto --repeat "1"
+run-id: sdd-compaction-reread-claude-auto-20261112T231620Z-11ec
+run-dir   /Users/johnss51/Development/agents/hyperpowers/evals/results/sdd-compaction-reread-claude-auto-20261112T231620Z-11ec
+final     fail
+reason    Gauntlet-Agent reported fail; 1 post-check(s) failed
+provenance: evals 66ee621 gauntlet a35607e+dirty
+
+─── Gauntlet-Agent ───────────────────────────────
+status    fail
+summary   The SDD controller never started Task 1. Auto-compaction kicked in
+          during setup, before any task began. After each compaction the
+          controller re-read the whole subagent-driven-development
+          SKILL.md (66 KB) and then lines 824+ again, which refilled the
+          context right away. Claude Code halted with "Autocompact is
+          thrashing" and returned to the prompt with no question for me.
+          No code was written or committed.
+reasoning Every acceptance criterion depends on the plan being executed, and none
+          of it was. The run stalled in a compaction loop before Task 1.
+          The story expected compaction after the first task, but it
+          happened during setup, and the controller re-read its skill
+          file after each compaction, so its context never recovered.
+          Claude itself stopped with a thrashing warning and didn't ask
+          me anything. The story says not to steer, so I had nothing
+          allowed to send and ended the session.
+
+─── Deterministic checks ─────────────────────────
+pre  ✓ git-repo
+pre  ✓ git-branch feature/textstats
+pre  ✓ file-exists plan.md
+pre  ✓ file-exists .claude/settings.json
+pre  ✓ requires-tool node
+pre  ✓ requires-tool npm
+post ✓ skill-called superpowers:subagent-driven-development hyperpowers:subagent-driven-development
+post ✗ tool-called Agent
+       ↳ Agent never called
+post ✓ command-succeeds npm test
+
+─── Economics ────────────────────────────────────
+               duration    tokens  est cost
+  Gauntlet       6m 55s      582K n/a (claude-opus-5-5)
+  Coding         4m 31s      956K n/a (claude-opus-5-5)
+    opus                     956K       n/a
+  total                             partial
+  pricing: as of 2026-06-08 · UnpricedModel
+
+see docs/superpowers/skills/triaging-a-failing-eval.md for triage.
+trials: F
+error: script "quorum" exited with code 1
+EXIT=1
+2026-11-12T23:23:21Z
+claude_version_after=2.1.317 (Claude Code)
+DONE treatment sdd-compaction-reread p10

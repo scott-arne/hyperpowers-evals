@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T224054Z_2qye",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent \"Execute plan.md with subagent-driven development.\" Claude Code loaded the subagent-driven-development skill. Before Task 1 it asked three questions about inconsistencies in the plan, and I answered each one \"Proceed as you recommend.\" It then ran implement → review for Tasks 1–4 in strict order, ran a final whole-branch review, and opened finishing-a-development-branch. I answered \"Keep the branch as-is.\" Context compaction happened 11 times during the run, and the task loop kept its order through all of them. npm test passes 38/38.",
+  "reasoning": "All four criteria are backed by the session log, git history and a fresh npm test run. The per-task implement→review ordering held through 11 compactions, the final review ran after Task 4, and the session ended in the finishing skill with the branch kept.",
+  "observations": [
+    {
+      "kind": "performance",
+      "description": "Compaction happened very often: there are 11 compact_boundary events in the session log, the first at 22:43:09, before any task had started. 'Skills restored' notices appear repeatedly on screen. Even so, the loop stayed coherent and in order."
+    },
+    {
+      "kind": "ux",
+      "description": "After 'Keep the branch as-is', the agent left the checkout on a detached HEAD at 2281df9 and told the user to run `git switch feature/textstats`. A user who asked to keep the branch as it is would probably not expect their checkout to end up detached."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The agent added tests beyond the plan: passage tests and RangeError tests, which I approved with 'Proceed as you recommend'. So the totals are 9/18/28/38, not the 8/16/24/32 the plan states. It reported that plan.md still has the old totals but did not update it."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup showed a series of prompts: theme, security notes, trust-folder (default 'No, exit'), a 'Newer Opus model available' prompt that says 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5 (I chose No), and a bypass-permissions warning (default 'No, exit'). The model prompt contradicts the --model flag."
+    },
+    {
+      "kind": "ux",
+      "description": "Inside the plan folder, the agent's final summary said the branch has '5 commits', which includes the plan commit. There are 4 feature commits."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final summary mentions that the Codex review was skipped because Codex is not installed. This is logged as a degraded gate."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has its own test file, they are committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ contains wordCount, sentenceCount, topWords and readingTimeMinutes .test.js. git log shows 6838328 feat: add wordCount, c78bd78 sentenceCount, fb17ad7 topWords, 2281df9 readingTimeMinutes. git status is clean. npm test: `ℹ tests 38 ℹ pass 38 ℹ fail 0`."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent tool calls in the main session log (jq) run in this order: 22:47:20 Implement Task 1, 22:48:33 Review Task 1, 22:50:38 Implement Task 2, 22:51:35 Review Task 2, 22:53:03 Implement Task 3, 22:54:03 Review Task 3, 22:55:36 Implement Task 4, 22:57:22 Review Task 4. The ledger text in the log reads 'Task N: review approved (spec compliant, 0 critical, 0 important)' for N=1..4, and each task was approved before the next implementer was dispatched."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Log: 22:59:11 Agent 'Final whole-branch review', which comes after Review Task 4. The ledger says 'Final review: ready to merge, 0 critical/important; one minor (plan.md lines ... stale test totals)'."
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Log: 23:00:53 Skill hyperpowers:finishing-a-development-branch. The screen showed 'Implementation complete. What would you like to do? 1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. After I replied 'Keep the branch as-is', it said: 'I kept the branch feature/textstats as it is ... Nothing was merged or pushed'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi"
+    ]
+  },
+  "duration_ms": 1420310,
+  "usage": {
+    "inputTokens": 86,
+    "outputTokens": 6659,
+    "cacheCreationInputTokens": 39177,
+    "cacheReadInputTokens": 908733,
+    "turns": 39
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

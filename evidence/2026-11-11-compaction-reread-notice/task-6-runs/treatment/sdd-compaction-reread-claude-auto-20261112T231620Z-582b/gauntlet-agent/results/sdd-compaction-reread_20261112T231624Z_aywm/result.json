@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T231624Z_aywm",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The controller never got to Task 1. After loading the SDD skill and running its pre-flight scan, it kept re-reading the 76 KB / 1032-line subagent-driven-development SKILL.md. Each read filled the 100k auto-compact window again. Claude Code then stopped the turn with \"Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row.\" No subagents were dispatched, nothing was implemented, no commits were made, and it never reached the finishing step.",
+  "reasoning": "None of the acceptance criteria were met: no code, no tests, no commits, no reviews and no finishing step. The cause I observed was the controller repeatedly re-reading a very large skill file after compaction, which set off Claude Code's autocompact-thrashing stop. I did not steer the session; the agent stopped on its own and asked no questions.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Compaction loop: the session log has 3 compact_boundary events. After each one the controller ran Read on subagent-driven-development/SKILL.md again: a full read, then offset 824 limit 210, then another full read, then a full read with allow_large:true. At 75,982 bytes the skill file plus plan.md (27.6 KB) is too big for a 100k autoCompactWindow, so every re-read filled the context again. Claude Code's thrash guard stopped the turn before any task work started. The reread-after-compaction behaviour this scenario measures produces a loop when the skill itself is this large."
+    },
+    {
+      "kind": "bug",
+      "description": "Claude Code's own \"Skills restored (hyperpowers:communication, hyperpowers:subagent-driven-development)\" ran after each compaction. The controller still did a manual Read of SKILL.md on top of that, so the skill content was likely loaded twice per cycle."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent went idle after the thrashing message without telling the user anything about where things stood or what to do next. From a developer's point of view the session just stopped."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup: the workspace trust dialog has \"No, exit\" selected by default. A \"Newer Opus model available (Currently pinned: Opus 5)\" prompt also appeared even though --model claude-opus-5-5 was passed on the command line. I chose No, and the banner then showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Consider shrinking the SDD SKILL.md, or having the reread step read only the relevant section and only once per compaction. As it stands, a reread instruction combined with a small compaction window can never make progress."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions exported from src/textstats.js with test files, committed, and npm test passes",
+      "verdict": "fail",
+      "evidence": "`cat src/textstats.js` → `module.exports = {};`. `ls test` is empty. `git log --oneline` HEAD is still `0867661 Add textstats fixture and implementation plan` (no new commits). npm test passes only because there are no tests."
+    },
+    {
+      "criterion": "Each task reviewed before the next starts",
+      "verdict": "fail",
+      "evidence": "Running jq over the session log 26b2aa22-….jsonl for tool_use names shows only Skill, Bash and Read calls. There are no Agent/Task dispatches, so no implementer or reviewer subagents ever ran."
+    },
+    {
+      "criterion": "Final whole-branch review after last task",
+      "verdict": "fail",
+      "evidence": "No tasks were done and the log has no Agent calls, so no final review happened."
+    },
+    {
+      "criterion": "Session ends in finishing step",
+      "verdict": "fail",
+      "evidence": "The session ended on the screen message \"Autocompact is thrashing: ... A file being read or a tool output is likely too large for the context window\" followed by \"Baked for 3m 15s\". It never offered a finishing step (merge/keep/discard), and the agent asked no questions."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi"
+    ]
+  },
+  "duration_ms": 345770,
+  "usage": {
+    "inputTokens": 52,
+    "outputTokens": 3831,
+    "cacheCreationInputTokens": 29808,
+    "cacheReadInputTokens": 298264,
+    "turns": 23
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

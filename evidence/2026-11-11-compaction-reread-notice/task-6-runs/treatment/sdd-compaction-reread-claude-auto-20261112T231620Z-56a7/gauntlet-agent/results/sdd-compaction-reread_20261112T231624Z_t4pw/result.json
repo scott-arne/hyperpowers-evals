@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261112T231624Z_t4pw",
+  "scenario": "sdd-compaction-reread",
+  "summary": "Claude loaded the subagent-driven-development skill and set up its ledger and current-branch mode. Then it got stuck compacting over and over before Task 1 even started. Claude Code stopped the turn with \"Autocompact is thrashing...\" and returned to an idle prompt with no question. No implementation subagents were dispatched, nothing was written or committed, and no review or finishing step happened.",
+  "reasoning": "I sent the required prompt only. Claude never asked a question and stopped by itself after Claude Code reported autocompact thrashing. No tasks were implemented, reviewed or finished, so all four criteria fail. I did not steer the session, as the story instructs.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Before Task 1, Claude got stuck compacting over and over. After each compaction it re-read SKILL.md and plan.md (27,595 bytes) and printed \"Skills restored\" and \"Referenced file plan.md\" again. That refilled the 100k autoCompactWindow within a few turns. After 3 rounds Claude Code gave up with \"Autocompact is thrashing\" and stopped. The story expected compaction after the first task, but here it happened during setup and stopped the run completely."
+    },
+    {
+      "kind": "bug",
+      "description": "After the thrashing warning, Claude ended its turn and sat at an idle prompt without asking anything. A user who wasn't watching would not know the plan was abandoned, and there was no guidance beyond the generic \"/clear\" hint."
+    },
+    {
+      "kind": "ux",
+      "description": "The screen fills with repeated \"Skills restored (hyperpowers:using-git-worktrees, hyperpowers:subagent-driven-development)\" and \"Referenced file .../SKILL.md\" lines, many times over, which hides real progress."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup dialogs: the folder-trust and bypass-permissions prompts both default to \"No, exit\". There was also a \"Newer Opus model available\" prompt (pinned Opus 5 vs claude-opus-5-5), even though the launcher already passed --model claude-opus-5-5. I dismissed it with Esc, and the header then showed \"Opus 5.5 · Google Vertex AI\"."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before the failure, the controller had written its ledger, picked current-branch mode on feature/textstats, and confirmed a green baseline (0 tests). The setup state survived. The run stopped because of how context was rebuilt after compaction."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js with test files, and npm test passes",
+      "verdict": "fail",
+      "evidence": "`cat src/textstats.js` → `module.exports = {};`. `ls test` showed an empty directory. `git log --oneline` is still at `0867661 Add textstats fixture and implementation plan` with no new commits, and `git diff --stat` is empty."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "fail",
+      "evidence": "No task ever started. Listing the tool_use names in session log 4cdf3dbc-...jsonl with jq shows only Skill, Bash and Read calls (mostly repeated Reads of subagent-driven-development/SKILL.md and `cat plan.md`). There are no Agent/Task dispatches, so no implementer or reviewer ran."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "fail",
+      "evidence": "The same jq tool_use listing has no review dispatch. The session ended early with the screen showing \"Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row.\""
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "fail",
+      "evidence": "The final screen shows the thrashing warning, then \"Worked for 5m 45s · done 3:23 PM\" and an empty prompt. Claude never asked about merge, push, keep or discard. The log has 6 compact summaries (grep -c isCompactSummary) and no finishing skill load."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi"
+    ]
+  },
+  "duration_ms": 490433,
+  "usage": {
+    "inputTokens": 50,
+    "outputTokens": 4368,
+    "cacheCreationInputTokens": 36726,
+    "cacheReadInputTokens": 387487,
+    "turns": 22
+  },
+  "status": "fail",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
