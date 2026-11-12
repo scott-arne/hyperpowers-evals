@@ -44,6 +44,10 @@ import { repoRoot } from '../src/paths.ts';
 // `sdd-compaction-reread` measures what Claude Code's SDD controller does after a
 // mid-run context compaction and asserts on its `Agent` dispatch tool, so it is
 // pinned to claude-auto for the same reason.
+// `compaction-no-skill` measures what Claude Code does after an automatic
+// compaction in a session that follows no skill, under the SessionStart
+// hook's compaction notice, so it is pinned to claude-auto for the same
+// reason.
 const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'brainstorming-asks-tooling-question',
   'brainstorming-bounded-companion-after-compaction',
@@ -72,6 +76,7 @@ const INTENTIONAL_PINNED_SCENARIOS = new Set<string>([
   'codex-plan-gate-algorithm-locked-after-round1',
   'codex-subagent-wait-mapping',
   'codex-tool-mapping-comprehension',
+  'compaction-no-skill',
   'executing-plans-keeps-inline-request',
   'sdd-compaction-reread',
   'sdd-de-minimis-carveout',
