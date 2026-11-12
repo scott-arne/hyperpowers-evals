@@ -833,12 +833,52 @@ class SeenText(unittest.TestCase):
         self.assertEqual((reads[SDD_SKILL]["offset"], reads[SDD_SKILL]["whole"]), (None, True))
         self.assertEqual((reads[alias]["offset"], reads[alias]["limit"], reads[alias]["whole"]), (1, 820, False))
 
-    def test_parsed_banner_matching_no_read_is_a_counted_note(self) -> None:
-        banner = BANNER.replace(SDD_SKILL, "/w/notes/big.txt")
+    def test_parsed_banner_matching_no_read_removes_credit_and_is_counted(self) -> None:
+        # Neither the parent link nor the path finds the Read, so the tally
+        # cannot tell which lines the session saw.
+        alias = BANNER.replace(SDD_SKILL, "/alias/skills/subagent-driven-development/SKILL.md")
+        elsewhere = BANNER.replace(SDD_SKILL, "/w/notes/big.txt")
+        for label, parent, banner in (
+            ("alias path, unknown parent", "zz", alias),
+            ("alias path, no parent", None, alias),
+            ("no candidate at all", "zz", elsewhere),
+            ("no candidate at all, no parent", None, elsewhere),
+        ):
+            with self.subTest(label):
+                entries = [
+                    SDD_LOAD, compact(), tool_use("Read", {"file_path": SDD_SKILL}, "r1"), uuid_result("r1", "u1"),
+                    truncation(parent, banner),
+                ]
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    got = follow_cut(entries)
+                    found = events_of(entries)
+                self.assertEqual(got, NO_CREDIT)
+                self.assertIn("truncation_unmatched", err.getvalue())
+                read_event = next(e for e in found if e["kind"] == "read")
+                self.assertEqual((read_event["credited"], read_event["whole"]), (False, False))
+                self.assertEqual(notes(found), ["truncation_unmatched"])
+
+    def test_unmatched_banner_prefers_the_read_of_the_same_skill(self) -> None:
+        # The later Read of another skill is the latest credited one, but the
+        # banner names the SDD skill under another path.
+        alias = BANNER.replace(SDD_SKILL, "/alias/skills/subagent-driven-development/SKILL.md")
         entries = [
-            SDD_LOAD, compact(), tool_use("Read", {"file_path": SDD_SKILL}, "r1"), uuid_result("r1", "u1"),
-            truncation("zz", banner),
+            SDD_LOAD, compact(),
+            tool_use("Read", {"file_path": SDD_SKILL}, "r1"), uuid_result("r1", "u1"),
+            tool_use("Read", {"file_path": UNINVOKED}, "r2"), uuid_result("r2", "u2"),
+            truncation("zz", alias),
         ]
+        with contextlib.redirect_stderr(io.StringIO()):
+            got = follow_cut(entries)
+            found = events_of(entries)
+        self.assertEqual(got, NO_CREDIT)
+        reads = {e["path"]: e for e in found if e["kind"] == "read"}
+        self.assertEqual((reads[SDD_SKILL]["credited"], reads[SDD_SKILL]["whole"]), (False, False))
+        self.assertEqual((reads[UNINVOKED]["credited"], reads[UNINVOKED]["whole"]), (True, True))
+
+    def test_unmatched_banner_with_no_read_is_only_a_counted_note(self) -> None:
+        entries = [SDD_LOAD, compact(), truncation("zz")]
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             found = events_of(entries)

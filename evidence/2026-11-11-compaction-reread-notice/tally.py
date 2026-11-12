@@ -48,8 +48,10 @@ Rules:
   its ``parentUuid`` first, then by path. A banner that does not parse
   removes all credit from the Read it targets (by parent, else a Read whose
   path the banner names, else the most recent credited Read) and is counted
-  as ``truncation_unparsed``; a parsed banner that matches no Read is counted
-  as ``truncation_unmatched``. Both warn on stderr and show on the run line.
+  as ``truncation_unparsed``; a parsed banner that matches no Read removes
+  all credit from the most recent credited Read of the skill its path names,
+  else from the most recent credited Read, and is counted as
+  ``truncation_unmatched``. Both warn on stderr and show on the run line.
 * A shell read is recognized only where a reader actually runs and its
   stdout reaches the session. The command is split, quote-aware, into simple
   commands on ``;``, ``&&``, ``||``, ``|``, ``&`` and newlines, skipping
@@ -209,7 +211,9 @@ def apply_truncation(found: list[dict[str, Any]], parent: Any, banner: str) -> N
     ``note`` event: a banner that does not parse removes the credit of the
     Read it targets (by parent, else a Read whose path the banner names, else
     the most recent credited Read), ``truncation_unparsed``; a parsed banner
-    that matches no Read is ``truncation_unmatched``. Each warns on stderr.
+    that matches no Read removes the credit of the most recent credited Read
+    of the skill its path names, else of the most recent credited Read,
+    ``truncation_unmatched``. Each warns on stderr.
     """
     reads = [e for e in found if e["kind"] == "read" and e["via"] == "read"]
     # The parent link is exact even when the banner writes the path another
@@ -231,8 +235,21 @@ def apply_truncation(found: list[dict[str, Any]], parent: Any, banner: str) -> N
     both = [e for e in parented if e["path"] == path]
     candidates = both or parented or same
     if not candidates:
+        # Some Read was cut and the tally cannot tell which, so a Read keeps
+        # no credit it cannot verify. The banner may write the path another
+        # way (a symlink), so the skill name is the best remaining link.
+        credited = [e for e in reads if e["credited"]]
+        named_skill = SKILL_PATH.search(path)
+        same_skill = [
+            e for e in credited
+            if named_skill and (m := SKILL_PATH.search(e["path"])) and m.group(1) == named_skill.group(1)
+        ]
+        targets = same_skill or credited
         found.append({"kind": "note", "note": "truncation_unmatched"})
-        print(f"tally: truncation_unmatched: notice matched no Read: {banner[:120]!r}", file=sys.stderr)
+        if targets:
+            targets[-1].update(credited=False, whole=False, truncation_unmatched=True)
+        where = targets[-1]["path"] if targets else "no read"
+        print(f"tally: truncation_unmatched: credit removed ({where}): {banner[:120]!r}", file=sys.stderr)
         return
     candidates[-1].update(offset=first, limit=last - first + 1, whole=False)
 
@@ -555,7 +572,7 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
     ``persisted`` (Claude Code moved the Bash output to a file and showed a
     2 KB preview) and ``credited`` (it may count as SDD coverage: a Read, or a
     plain ``cat`` whose output was not persisted, and not stripped by an
-    unparsable truncation banner). A Bash command emits one ``read`` per
+    unparsable or unmatched truncation banner). A Bash command emits one ``read`` per
     ``SKILL.md`` it shows. A ``note`` (``truncation_unparsed`` or
     ``truncation_unmatched``) records a truncation notice the tally could not
     apply.
