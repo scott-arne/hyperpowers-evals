@@ -1159,11 +1159,15 @@ AGENT_FAILED = [{"phase": "post", "check": "tool-called", "passed": False}]
 
 
 def revision_row(
-    arm: str, entries: list[dict[str, Any]], final: str = "pass", checks: list[dict[str, Any]] | None = None
+    arm: str,
+    entries: list[dict[str, Any]],
+    final: str = "pass",
+    checks: list[dict[str, Any]] | None = None,
+    verdict_extra: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str]:
     """Read one synthetic run as a revision arm; returns its row and the printed line."""
     with tempfile.TemporaryDirectory() as tmp:
-        record = make_run(Path(tmp), "r", entries, final=final, checks=checks)
+        record = make_run(Path(tmp), "r", entries, final=final, checks=checks, verdict_extra=verdict_extra)
         old = tally.run_paths
         tally.run_paths = lambda arm, run_id: (record, transcripts(record))
         out = io.StringIO()
@@ -1184,6 +1188,27 @@ class RevisionRuns(unittest.TestCase):
                 self.assertEqual((row["thrash"], row["valid"], row["outcome"]), (1, True, False))
                 self.assertIn("thrash=1", line)
                 self.assertEqual(row["compactions"], 2)
+
+    def test_thrash_stop_under_a_grader_void_is_a_valid_failure(self) -> None:
+        entries = [SDD_LOAD, compact(), agent("Implement Task 1: a", "i1"), notif("i1"), compact(), THRASH_ENTRY]
+        for arm in ("baseline-6181", "slice"):
+            with self.subTest(arm=arm):
+                row, line = revision_row(
+                    arm, entries, final="indeterminate", verdict_extra={"gauntlet": {"status": "investigate"}}
+                )
+                self.assertEqual(
+                    (row["valid"], row["void_kind"], row["thrash"], row["outcome"]), (True, None, 1, False)
+                )
+                self.assertIn("void=-", line)
+
+    def test_grader_void_without_a_thrash_stays_void(self) -> None:
+        entries = [SDD_LOAD, compact(), agent("Implement Task 1: a", "i1"), notif("i1"), compact()]
+        for arm in ("baseline-6181", "slice"):
+            with self.subTest(arm=arm):
+                row, _ = revision_row(
+                    arm, entries, final="indeterminate", verdict_extra={"gauntlet": {"status": "investigate"}}
+                )
+                self.assertEqual((row["void_kind"], row["valid"]), ("grader", False))
 
     def test_thrash_fails_an_otherwise_passing_run(self) -> None:
         entries = [SDD_LOAD, compact(), agent("Implement Task 1: a", "i1"), notif("i1"), compact(), THRASH_ENTRY]

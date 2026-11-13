@@ -30,8 +30,8 @@ without it; each mode skips the other's logs without a line.
   the SDD skill event). Every other run is valid. Outcome passes when the
   final verdict is ``pass``, every post check passed, and the run dispatched
   at least one ``implement`` subagent. A run ending in the thrash stop (any
-  thrash entry, even after a passing verdict), or with no dispatch, is valid
-  and fails its outcome.
+  thrash entry, even after a passing verdict, and a grader void does not
+  apply to it), or with no dispatch, is valid and fails its outcome.
 * Thrash: a main-thread assistant entry whose ``message.model`` is
   ``<synthetic>`` and whose text holds ``Autocompact is thrashing``; the run
   row shows ``thrash=1``.
@@ -1297,10 +1297,15 @@ def read_run(arm: str, scenario: str, proc: str, run_id: str, launch_ok: bool = 
         # SDD skill event. A thrash stop or a run with no dispatch is a valid
         # failure, so neither is a void.
         follows = step_follows(found, transcript_session(transcripts) or "")
+        thrash = any(e["kind"] == "thrash" for e in found)
+        # The stop leaves the Gauntlet-Agent unable to judge the finishing
+        # step, so its "investigate" status says nothing about the run. This
+        # runs before the compaction test so a thrash run still gets it.
+        if thrash and kind == "grader":
+            kind = None
         if kind is None and follows["compactions"] == 0:
             kind = "no-compaction"
         valid = kind is None
-        thrash = any(e["kind"] == "thrash" for e in found)
         if valid:
             outcome = (
                 final_reading(verdict) == "pass"
