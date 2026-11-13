@@ -50,6 +50,7 @@ three valid control runs show the mechanism, since that count cannot fall.
 | control | `c149134f54c22031df5c46e3a62674192485adcc` | B, detached worktree `/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/control` |
 | treatment | `cff2528683d66f0971528fbe64f0ad599a569098` | B plus the notice, detached worktree `/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/treatment` |
 | shipped | `ffb81ef8484cfeb4dcde76a4a2eacfd73054d53c` | the slice commit, detached worktree `/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/shipped` |
+| slice | `d00c689ff2addd5438a09e35f0bd355f7bd83b96` | the integration branch head after Tasks 7-10 (the compact controller and the notice), detached worktree `/Users/johnss51/.cache/hyperpowers/compaction-reread-notice/arms/slice` |
 | model | `claude-opus-5-5` | `ANTHROPIC_MODEL` must equal it in the launch shell |
 | grader | `claude-opus-5-5` | `GAUNTLET_AGENT_MODEL` must equal it (`GRADER_PIN` in the launcher) |
 | Claude Code | `2.1.317` | `CC_PIN` in `logs/measure-launch.sh`; the host's `claude --version` when the plan was written. Re-check before the campaign and update the pin here and in the script, in one commit, if the host has moved. |
