@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261113T224806Z_rdyk",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent \"Execute plan.md with subagent-driven development.\" The controller worked through all 4 tasks in order: implement, then review, then fix and re-review where needed. It then ran a final whole-branch review with a fix and re-review pass, and reached the finishing-branch menu. There I replied \"Keep the branch as-is\". Auto-compaction happened 23 times (compact_boundary entries in the session log), starting during Task 1. After each one the controller re-read its skill files (\"Skills restored ...\") and picked the loop back up. npm test passes with 133 tests.",
+  "reasoning": "All four criteria are backed by evidence from the repo state, the npm test output and the session log's ordered Agent calls. The controller kept its implement → review → fix loop for every task despite repeated compactions and finished in the finishing step. The issues I saw (detached HEAD, trailers in commit subjects, a stray file) are worth reporting, but they don't break any acceptance criterion.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "I chose 'Keep the branch as-is', but the agent left the main checkout on a detached HEAD at bdb16c1 instead of on feature/textstats. git status says 'HEAD detached at bdb16c1'. The agent mentioned it and told me to run `git switch feature/textstats`, but leaving the user detached doesn't match 'keep as-is'. Earlier it also said the 'next come the detach, the branch delete and the completion' step was coming."
+    },
+    {
+      "kind": "bug",
+      "description": "Two commit subjects have the Co-Authored-By trailer pasted into the subject line instead of the body (41f8005 'feat: add wordCount Co-Authored-By: Claude Opus 5.5 ...' and a8a3c4f). Two more (ff5a4d9, 8e236f0) carry Haiku Co-Authored-By trailers. The agent pointed this out itself at the finishing step."
+    },
+    {
+      "kind": "bug",
+      "description": "A stray untracked file, test_output_red.txt, was left in the repo root. A subagent appears to have created it during a red-test step."
+    },
+    {
+      "kind": "ux",
+      "description": "The finishing step says 'Ledger notes: I couldn't record this hand-back or the wait... status=no-workspace because the final step already deleted the plan's workspace'. That suggests the bookkeeping steps run in the wrong order."
+    },
+    {
+      "kind": "ux",
+      "description": "The finishing menu was preceded by a yes/no question ('This branch split from main. Is that correct?') that runs straight into the menu. Two questions at once is confusing."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup was not fully headless. I had to get past a theme picker, security notes, a folder-trust prompt that defaulted to 'No, exit', and a 'Newer Opus model available / Currently pinned: Opus 5' prompt, even though --model claude-opus-5-5 was passed. I declined the model prompt and the banner then showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before starting, the controller asked two multiple-choice questions (unused PASSAGE fixtures; untested behaviours). I answered 'Proceed as you recommend.' to both. As a result it went beyond the plan: 133 tests instead of the plan's 32."
+    },
+    {
+      "kind": "performance",
+      "description": "The run took about 50 minutes ('Cogitated for 50m 26s'), with 23 auto-compactions (small window by design). Every task needed at least one fix round. Several bugs involved typographic quote and apostrophe handling, where the implementer's own tests used straight ASCII characters and so passed anyway."
+    },
+    {
+      "kind": "ux",
+      "description": "Partway through Task 3 the controller printed a status summary ('Task 3 (topWords) isn't done yet...') while a background fix agent was still running. It looked like the turn had ended, but it resumed on its own when the agent finished."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has its own test file, all are committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ contains wordCount.test.js, sentenceCount.test.js, topWords.test.js and readingTimeMinutes.test.js. `git log main..feature/textstats` shows feat commits for all 4 functions plus fixes, ending at bdb16c1. `npm test`: tests 133, pass 133, fail 0."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Order of Agent tool calls in session log 03bc5082...jsonl: Implement Task 1 → Review Task 1 → Task 1 fix round 1 → Re-review Task 1 → Implement Task 2 → Review Task 2 → Fix → Re-review x2 → Implement Task 3 → Review Task 3 → Fix → Re-review → Implement Task 4 → Review Task 4 → Fix → Re-review."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Session log Agent calls after Task 4: 'Final whole-branch review', 'Fix final review findings', 'Re-review final fix wave'. The screen showed `Agent(Final whole-branch review) Opus 5.5`."
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Screen: 'Implementation complete. What would you like to do? 1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. Skills restored included hyperpowers:finishing-a-development-branch. After my reply the agent said: 'I've left feature/textstats as it is at bdb16c1 (nothing merged or pushed)'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi"
+    ]
+  },
+  "duration_ms": 3202203,
+  "usage": {
+    "inputTokens": 120,
+    "outputTokens": 7292,
+    "cacheCreationInputTokens": 52207,
+    "cacheReadInputTokens": 1418700,
+    "turns": 53
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

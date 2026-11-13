@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261113T224806Z_l54v",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The controller finished all four plan tasks. Its context was compacted more than once along the way, and after each compaction it kept the same loop: implement, review, fix and re-review when needed, then merge. After Task 4 it ran a final whole-branch review, fixed the one issue it found and re-reviewed the fix. It then reached the finishing step, and I answered \"Keep the branch as-is\". On feature/textstats, npm test passes 32/32.",
+  "reasoning": "Every criterion is supported by evidence from the files on disk, the session log and the screen. The session log contains 20 matches for 'compact_boundary' or 'isCompactSummary', and the screen showed 'Compacting conversation…' after Task 1 and again during Task 3. Even so, the controller kept running the task loop in order every time.",
+  "observations": [
+    {
+      "kind": "bug",
+      "description": "Commit 5688040, made by a Haiku implementer subagent, has a malformed message. The subject line reads 'feat: add wordCount Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>' because there is no blank line before the trailer. The agent noticed this itself and left it unfixed."
+    },
+    {
+      "kind": "bug",
+      "description": "The agent says Haiku implementers corrupted the non-ASCII curly apostrophe (U+2019) in Task 1, which needed fix commit 94e734a. The final review then found another wrong-quote bug at src/textstats.js:46. The agent switched to Sonnet for later fixes for this reason."
+    },
+    {
+      "kind": "ux",
+      "description": "After 'Keep the branch as-is', the main checkout was left on a detached HEAD at 2b5796d instead of on feature/textstats. The agent did tell the user to run 'git switch feature/textstats', but a user who chose 'keep as-is' would probably expect to still be on the branch."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent asked a pre-flight question about contradictions in plan.md: unused PASSAGE constants, and tests the prose describes but the code blocks leave out. I answered 'Proceed as you recommend.' It also flagged that a comment copied from the plan is wrong (the 5th word is 'climbed', not 'storm x1')."
+    },
+    {
+      "kind": "ux",
+      "description": "The Task 1 re-review finished in about 8 seconds, which seems very short for a real review."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup notes: the trust-folder and bypass-permissions dialogs both default to 'No, exit'. A 'Newer Opus model available' prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose No, and the header still showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The Codex final gate was recorded as degraded because Codex isn't installed. The agent reported this clearly."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, the work is committed and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ contains wordCount, sentenceCount, topWords and readingTimeMinutes .test.js. `git log main..feature/textstats` shows commits 'feat: add wordCount', 'feat: add sentenceCount', 'feat: add topWords', 'feat: add readingTimeMinutes' and two fix commits. npm test reports 'tests 32, pass 32, fail 0'."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatch descriptions from session log 3c7d1195...jsonl, in order: Implement Task 1 → Review Task 1 → Re-review Task 1 fix round 1 → Implement Task 2 → Review Task 2 → Fix Task 2 round 1 → Re-review Task 2 fix round 1 → Implement Task 3 → Review Task 3 → Implement Task 4 → Review Task 4. On screen after compaction: 'Task 1 is merged. Reading task-loop.md before claiming Task 2.'"
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Log shows 'Final whole-branch review' dispatched after 'Review Task 4', then 'Fix final-review findings' and 'Re-review final fix wave'. Screen: 'The final review found one Important bug: the quote class on src/textstats.js:46 is copied wrong'; the fix landed as commit 2b5796d."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Screen: 'I'm using the finishing-a-development-branch skill...' followed by options '1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. After I answered 'Keep the branch as-is', it replied: 'I've left feature/textstats as it is, ending at commit 2b5796d'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi"
+    ]
+  },
+  "duration_ms": 1863580,
+  "usage": {
+    "inputTokens": 98,
+    "outputTokens": 6135,
+    "cacheCreationInputTokens": 46094,
+    "cacheReadInputTokens": 1054558,
+    "turns": 44
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

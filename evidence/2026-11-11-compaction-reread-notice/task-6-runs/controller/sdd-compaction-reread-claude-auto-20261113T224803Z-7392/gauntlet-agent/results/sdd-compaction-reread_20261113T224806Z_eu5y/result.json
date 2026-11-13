@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261113T224806Z_eu5y",
+  "scenario": "sdd-compaction-reread",
+  "summary": "Claude Code ran plan.md with subagent-driven development. The context was compacted several times, starting during Task 1. Even so, the agent kept its loop of implement → review for each task, in order, for all four tasks. It then ran a final whole-branch review and reached the finishing step. I answered \"Keep the branch as-is\". All 74 tests pass.",
+  "reasoning": "The context was compacted repeatedly, about 4 or more times, beginning partway through Task 1. After each compaction the controller restored its skills and kept to the same per-task implement → review order. It completed all four tasks, ran the final whole-branch review and reached the finishing step. I checked all of this against the files on disk, git log, npm test output and the session-log timestamps. The issues I found are minor UX points, so every criterion passes.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "I chose 'Keep the branch as-is', but the agent then detached HEAD in the main checkout: `git status` shows 'HEAD detached at 391b213'. The agent said it did this to release its lock on the branch. The branch ref itself is unchanged. Still, a user who asked to keep the branch would not expect to be left on a detached HEAD."
+    },
+    {
+      "kind": "ux",
+      "description": "At launch, Claude Code showed a 'Newer Opus model available — Currently pinned: Opus 5' prompt, even though the launcher passes --model claude-opus-5-5. I chose No, and the header then read 'Opus 5.5'. The prompt contradicts the flag that was passed."
+    },
+    {
+      "kind": "ux",
+      "description": "Before Task 1, the agent asked a two-part multiple-choice question: about the unused PASSAGE constants, and about Behaviour rules that have no tests. I answered both with 'Proceed as you recommend.' typed into the free-text option. The agent then added extra tests, so the suite has 74 tests rather than the plan's 32."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Each per-task review subagent ran for only about 13–15 seconds. That seems short for a combined spec and quality review. It may be worth checking how thorough these reviews are."
+    },
+    {
+      "kind": "bug",
+      "description": "The trust-folder dialog defaults to 'No, exit', which is easy to accept by mistake when pressing Enter through the onboarding screens. This is pre-existing onboarding behaviour and not part of the system under test."
+    },
+    {
+      "kind": "suggestion",
+      "description": "The final reviewer pointed out that the fixture commit removed \"main\" from package.json, which leaves src/index.js and src/utils.js unreferenced. This is a quirk of the fixture, not of the agent's work."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ holds wordCount, sentenceCount, topWords and readingTimeMinutes .test.js. npm test output: `ℹ tests 74 ℹ pass 74 ℹ fail 0`. git log shows commits da36d98 (wordCount), 98dffab (sentenceCount), fbd5742 (topWords) and 391b213 (readingTimeMinutes)."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "From the Agent dispatches in the session log plus the start/end times of the subagent files: Task 1 implementer 22:52:26–22:52:55 → Review Task 1 22:53:56–22:54:10 → Task 2 implementer 22:57:05 → Review 22:58:17–22:58:32 → Task 3 implementer 23:00:58 → Review 23:02:25–23:02:39 → Task 4 implementer 23:04:38 → Review 23:06:52–23:07:05. Every review finished before the next implementer was dispatched. Compact boundaries in the log fall at 22:52:55, 22:54:35, 22:56:35, 22:58:50 and later."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Session log: `2026-11-13T23:09:20.628Z Agent Final whole-branch review` (subagent agent-a3a47731d9b873d42 ran 23:09:20–23:10:41, prompt 'You are a Senior Code Reviewer...'). This came after the Task 4 review. On screen the agent summarised 'Two notes from the final review. Neither blocks a merge'."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Log: `23:11:09 Skill hyperpowers:finishing-a-development-branch`. Screen offered '1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. I replied 'Keep the branch as-is' and the agent answered 'I've left feature/textstats as it is, at 391b213. Nothing was merged or pushed.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi"
+    ]
+  },
+  "duration_ms": 1542746,
+  "usage": {
+    "inputTokens": 88,
+    "outputTokens": 6589,
+    "cacheCreationInputTokens": 43140,
+    "cacheReadInputTokens": 885317,
+    "turns": 40
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

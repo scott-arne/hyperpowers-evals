@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261113T224806Z_kdy3",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The test passes. The controller worked through all four tasks in order (implement → review → fix → re-review for each one), then ran a final whole-branch review on opus, a fix wave and a re-review, and presented the finishing menu. Auto-compaction happened 20 times during the run, and the task loop kept going after every one. All 41 tests pass. I answered \"Keep the branch as-is\", and the session ended in the finishing step.",
+  "reasoning": "I checked every acceptance criterion against the session JSONL, git and npm test output. The controller kept a correct implement → review → fix → re-review loop through all four tasks despite 20 compactions, ran a final opus review, and reached the finishing menu. The detached HEAD left after 'Keep the branch as-is' is odd and worth noting, but it doesn't break any criterion.",
+  "observations": [
+    {
+      "kind": "suggestion",
+      "description": "Compaction happened often: the session log has 20 compact_boundary entries between 22:52 and 23:33, and the screen showed 'Skills restored (...)' after compactions. After each one the controller re-read the skill files (task-reviewer-prompt.md, review-and-complete.md, risk-tiers.md, re-review-prompt.md) and its ledger, then picked up the loop where it left off."
+    },
+    {
+      "kind": "bug",
+      "description": "I chose 'Keep the branch as-is', but the agent left the working checkout on a detached HEAD at a368dd7 instead of on feature/textstats. It said: 'This checkout is now on a detached HEAD... To keep working on it, run git switch feature/textstats.' A user who asked to keep the branch would likely expect to still be on it."
+    },
+    {
+      "kind": "ux",
+      "description": "The plan says to work on the current branch, but the controller created per-task branches (e.g. feature/textstats.76cc6a12.task-3) and merged them back. It also left a 'hyperpowers/state' branch in the repo. This is extra branch clutter the user didn't ask for."
+    },
+    {
+      "kind": "bug",
+      "description": "Some commits are badly formed. In 667919b and 75c8e31 the 'Co-Authored-By: Claude Opus 5.5' trailer is part of the subject line. 9966dfd and 55b5fb8 credit 'Haiku 4.5'. The agent pointed this out itself and recommended a squash merge."
+    },
+    {
+      "kind": "ux",
+      "description": "The startup flow showed a workspace trust prompt with 'No, exit' as the default, plus a 'Newer Opus model available' prompt, even though the HOWTO says the trust prompt is suppressed and the launcher passes --model claude-opus-5-5. The banner said 'Currently pinned: Opus 5' even with that flag. I answered No, and the header then showed Opus 5.5."
+    },
+    {
+      "kind": "ux",
+      "description": "Up front, the controller asked two plan-clarification questions in a multi-question form: unused PASSAGE constants, and missing RangeError tests. The final test count (41) differs from the plan's stated 32. The agent noted that 'that count is out of date'."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Codex review was logged as skipped/reduced because Codex isn't installed, and the agent says 5 unreviewed items remain 'waiting for a review sweep'. The meaning of that may not be clear to a user."
+    },
+    {
+      "kind": "performance",
+      "description": "The whole run took about 44 minutes of controller time ('Cogitated for 44m 22s') for four small functions."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each with its own test file, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 reads `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ contains readingTimeMinutes.test.js, sentenceCount.test.js, topWords.test.js and wordCount.test.js. `npm test` printed `ℹ tests 41 … ℹ pass 41 ℹ fail 0`. The git log has the commits feat: add wordCount, feat: add sentenceCount, feat: add topWords and feat: add readingTimeMinutes."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatch order in the session JSONL (jq over tool_use Agent descriptions): Implement Task 1 → Review Task 1 → Fix round 1 Task 1 → Re-review Task 1 → Implement Task 2 → Review Task 2 → Fix/Re-review ×2 → Implement Task 3 → Review Task 3 → Fix/Re-review → Implement Task 4 → Review Task 4 → Fix/Re-review. No task started before the previous task's review finished."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "The dispatch list continues after Task 4 with 'Final whole-branch review [opus]', 'Fix findings for final review wave [sonnet]' and 'Re-review final fix wave [sonnet]'. On screen: 'the final whole-branch review asked for fixes. One fix round followed, and the re-review confirmed every finding was fixed.'"
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Screen showed 'Implementation complete. What would you like to do? 1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. I replied 'Keep the branch as-is', and the agent answered 'I've kept the feature/textstats branch at a368dd7.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi",
+      "captures/019.ansi",
+      "captures/020.ansi"
+    ]
+  },
+  "duration_ms": 2884216,
+  "usage": {
+    "inputTokens": 120,
+    "outputTokens": 7837,
+    "cacheCreationInputTokens": 52265,
+    "cacheReadInputTokens": 1407482,
+    "turns": 54
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

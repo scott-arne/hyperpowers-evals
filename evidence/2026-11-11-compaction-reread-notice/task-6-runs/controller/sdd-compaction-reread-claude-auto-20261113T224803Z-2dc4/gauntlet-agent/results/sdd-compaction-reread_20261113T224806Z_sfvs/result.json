@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261113T224806Z_sfvs",
+  "scenario": "sdd-compaction-reread",
+  "summary": "Claude Code ran the 4-task textstats plan with subagent-driven development. Each task got an implementer subagent and then a reviewer subagent, and every review came back Approved before the next task started. A final whole-branch review ran, then the finishing-a-development-branch skill. I answered \"Keep the branch as-is\". Auto-compaction happened 12 times starting during Task 1, and the task loop kept going without a break. npm test passes 78/78.",
+  "reasoning": "I checked all four criteria against git, npm test and the session JSONL logs. The task loop held up across many compactions: implement, then review (Approved), then the next task, then a final whole-branch review, then the finishing skill. The issues I noticed (plan fixture inconsistency, inconsistent commit attribution, creating a branch without asking) are worth reporting but don't break any criterion.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "Several onboarding dialogs default to the negative or unsafe choice. On the folder trust prompt and the bypass-permissions prompt the cursor starts on 'No, exit'. A 'Newer Opus model available' prompt also appeared even though the launcher passed --model claude-opus-5-5. It reported 'Currently pinned: Opus 5'. I chose No, and the header still showed Opus 5.5."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Before Task 1 the agent asked a pre-flight question with an AskUserQuestion menu. It said the plan's code blocks leave out tests its own prose describes (unused PASSAGE constants, missing passage tests in Tasks 2-4) and that Task 3's expected 5th word ('storm') is wrong because of a tie ('climbed'). I typed 'Proceed as you recommend.' This looks like a real inconsistency in the plan.md fixture. The test count went to 78 instead of the plan's 32."
+    },
+    {
+      "kind": "bug",
+      "description": "Commits are attributed inconsistently. The agent reported that commit fe48552 (sentenceCount) has a 'Co-Authored-By: Claude Sonnet 5.5' trailer while the other three credit Opus 5.5. The final reviewer flagged this and it was left unfixed."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent created and checked out a feature/textstats branch (and a hyperpowers/state branch) without asking about a worktree or branch. The story expected it might ask, and I would have answered 'Stay on the current branch'. Work ended up on a new branch, not on the branch that was checked out at the start. At finish it said it skipped the 'detach checkout' step of the procedure and suggested running `git switch --detach` before another session."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent adds bookkeeping commits ('sdd plan: Task N complete', 'sdd plan: snapshot...') to a hyperpowers/state branch. git log --all shows them mixed in with the feature commits, which could confuse users."
+    },
+    {
+      "kind": "performance",
+      "description": "Auto-compaction ran 12 times in about 18 minutes (compact_boundary entries in the session log). The controller kept its place each time, apparently by re-reading task-loop.md and the brief files. The screen showed 'The board shows no task held, so I'm working from task-loop.md' and 'Skills restored'. The whole run took 21m 25s."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each with its test file, all committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. The test/ folder has wordCount, sentenceCount, topWords and readingTimeMinutes .test.js files. Commits on feature/textstats: 2aa2981 feat: add wordCount, fe48552 feat: add sentenceCount, d915504 feat: add topWords, 64862ba feat: add readingTimeMinutes. `npm test`: `ℹ tests 78 ℹ pass 78 ℹ fail 0`."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatch order in the main session log 1bbb1cc9...jsonl: Implement Task 1 22:52:14, Review Task 1 22:53:47, Implement Task 2 22:57:24, Review Task 2 22:58:38, Implement Task 3 23:01:16, Review Task 3 23:02:37, Implement Task 4 23:05:09, Review Task 4 23:06:36. All four reviewer subagent logs end with `**Task quality:** Approved`."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Log entry `2026-11-13T23:08:31 Agent Final whole-branch review` comes after Review Task 4. Its subagent (agent-a2aa9ff0...) concludes: 'The suite passes 78/78. The only finding that might need action is the attribution trailer on one commit.'"
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Log entry `23:09:44 Skill hyperpowers:finishing-a-development-branch`. The screen showed the options 'Merge back to main locally / Push and create a Pull Request / Keep the branch as-is'. After my reply the agent said: 'I've kept the branch as you asked. feature/textstats is still checked out... all 78 tests pass.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi"
+    ]
+  },
+  "duration_ms": 1507519,
+  "usage": {
+    "inputTokens": 76,
+    "outputTokens": 6194,
+    "cacheCreationInputTokens": 37041,
+    "cacheReadInputTokens": 742898,
+    "turns": 34
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

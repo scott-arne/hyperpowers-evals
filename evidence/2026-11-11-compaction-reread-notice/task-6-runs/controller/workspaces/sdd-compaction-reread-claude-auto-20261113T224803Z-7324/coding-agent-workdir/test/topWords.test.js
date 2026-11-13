@@ -1,0 +1,73 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { topWords } = require('../src/textstats');
+
+const CASES = [
+  ["apple", 1, [{"word": "apple", "count": 1}]],
+  ["apple apple", 1, [{"word": "apple", "count": 2}]],
+  ["apple banana", 5, [{"word": "apple", "count": 1}, {"word": "banana", "count": 1}]],
+  ["banana apple", 5, [{"word": "apple", "count": 1}, {"word": "banana", "count": 1}]],
+  ["fig fig pear", 1, [{"word": "fig", "count": 2}]],
+  ["fig fig pear", 2, [{"word": "fig", "count": 2}, {"word": "pear", "count": 1}]],
+  ["kiwi kiwi lime lime", 2, [{"word": "kiwi", "count": 2}, {"word": "lime", "count": 2}]],
+  ["x y z", 2, [{"word": "x", "count": 1}, {"word": "y", "count": 1}]],
+];
+
+test('returns an empty array for the empty string', () => {
+  assert.deepEqual(topWords('', 5), []);
+});
+
+test('returns an empty array for punctuation and whitespace only', () => {
+  assert.deepEqual(topWords(' ... -- ?! \n', 5), []);
+});
+
+test('returns an empty array when every word is a stop word', () => {
+  assert.deepEqual(topWords('the and of the to a in it', 5), []);
+});
+
+test('returns an empty array when n is 0', () => {
+  assert.deepEqual(topWords('apple banana apple', 0), []);
+});
+
+test('returns word and count pairs', () => {
+  assert.deepEqual(topWords('apple', 1), [{ word: 'apple', count: 1 }]);
+});
+
+test('orders words by count, highest first', () => {
+  assert.deepEqual(topWords('pear apple apple fig fig fig', 3), [
+    { word: 'fig', count: 3 },
+    { word: 'apple', count: 2 },
+    { word: 'pear', count: 1 },
+  ]);
+});
+
+test('folds the typographic apostrophe into the straight one when counting', () => {
+  assert.deepEqual(topWords("keeper’s keeper’s", 5), [{ word: "keeper's", count: 2 }]);
+  assert.deepEqual(topWords("keeper’s keeper's", 5), [{ word: "keeper's", count: 2 }]);
+});
+
+test('throws a TypeError naming the function for a non-string', () => {
+  for (const bad of [undefined, null, 3, {}, ['apple']]) {
+    assert.throws(() => topWords(bad, 3), (err) => {
+      assert.ok(err instanceof TypeError);
+      assert.ok(err.message.startsWith('topWords:'));
+      return true;
+    });
+  }
+});
+
+test('throws a RangeError naming the function when n is not a non-negative integer', () => {
+  for (const bad of [undefined, NaN, '3', 1.5, -1]) {
+    assert.throws(() => topWords('apple', bad), (err) => {
+      assert.ok(err instanceof RangeError);
+      assert.ok(err.message.startsWith('topWords:'));
+      return true;
+    });
+  }
+});
+
+test('matches every row of the reference table', () => {
+  for (const [text, n, expected] of CASES) {
+    assert.deepEqual(topWords(text, n), expected, JSON.stringify([text, n]));
+  }
+});

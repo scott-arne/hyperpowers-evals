@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261113T224806Z_2d67",
+  "scenario": "sdd-compaction-reread",
+  "summary": "The controller ran all four tasks through the subagent-driven-development (SDD) loop, one at a time: implement, then review, for each task. After that it ran a final review of the whole branch, a fix pass, and a re-review, then reached the finishing step. Context was compacted 9 times during the run, and the loop held its order through every one. All 39 tests pass and the work is committed on feature/textstats. One surprise at the end: after I chose \"Keep the branch as-is\", the agent left the checkout detached from the branch.",
+  "reasoning": "Every criterion is backed by what's on disk (exports, test files, commits, npm test with 39/39 passing) and by the order of Agent and Skill calls in the session log. Through 9 compactions, each implement step was followed by its review before the next task began. The final whole-branch review ran, and the session ended in finishing-a-development-branch. The detached HEAD is worth a look but doesn't break any criterion.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "When I chose 'Keep the branch as-is', the agent also detached HEAD. git status shows 'HEAD detached at e26fbb1', and the agent said 'I detached the checkout from the branch... Run git switch feature/textstats to go back.' A user who asks to keep the branch as-is would not expect their checkout to move off the branch."
+    },
+    {
+      "kind": "ux",
+      "description": "Before Task 1 started, the agent asked a two-part question about gaps in the plan: an unused PASSAGE fixture, and validation behaviour with no tests. Each part had a '(Recommended)' option. I answered 'Proceed as you recommend.' in the free-text field, and it added the extra tests (39 tests instead of the plan's 32). That's reasonable, but it is an extra stop before any work begins."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Compaction happened 9 times (log lines 150, 268, 372, 482, 585, 683, 785, 910, 968), roughly once per step. After compaction, Claude Code restored task-loop.md, review-and-complete.md, task-reviewer-prompt.md and re-review-prompt.md from ~/.cache/hyperpowers/compaction-reread-notice/arms/controller/..., and the screen showed 'Skills restored (...)'. The loop survived every compaction."
+    },
+    {
+      "kind": "ux",
+      "description": "The agent noted that 'Codex isn't installed, so the extra Codex review on each task and on the whole branch was skipped.' It disclosed this openly, but it means one layer of review never ran."
+    },
+    {
+      "kind": "ux",
+      "description": "Claude Code's start-up prompts have the cautious answer selected by default: the folder-trust prompt and the bypass-permissions prompt both default to 'No, exit'. A 'Newer Opus model available' prompt also appeared even though the launcher passed --model claude-opus-5-5 (it said 'Currently pinned: Opus 5'). I chose No, and the banner then showed 'Opus 5.5'. The prompt contradicts the launch flag, which is confusing."
+    },
+    {
+      "kind": "bug",
+      "description": "In its final summary the agent flagged a possible spec issue: sentenceCount('I live on Main St. It is nice.') returns 1, because plan.md:199 treats 'St.' as an abbreviation. It also said the plan's Completion section still says 32 tests when there are 39. Both come from the fixture plan, not the controller."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, the work is committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ has wordCount.test.js, sentenceCount.test.js, topWords.test.js and readingTimeMinutes.test.js. npm test: `ℹ tests 39 ℹ pass 39 ℹ fail 0`. git log has 'feat: add wordCount', 'feat: add sentenceCount', 'feat: add topWords', 'feat: add readingTimeMinutes', plus 'test: pin tokenizer rules and apostrophe folding'. git status: 'working tree clean'."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent calls in the session log b3b3fad6...jsonl, in order: Implement Task 1 (line 132), Review Task 1 (205), Implement Task 2 (318), Review Task 2 (364), Implement Task 3 (469), Review Task 3 (545), Implement Task 4 (641), Review Task 4 (670). None of the 11 Agent calls used run_in_background (jq count: '11 false'). Compactions fell between these steps (log lines 150, 268, 372, 482, 585, 683) and the order still held."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Log line 757: Agent 'Final whole-branch review', after Review Task 4 at line 670. It was followed by 'Fix final review findings' (841) and 'Re-review final fix wave' (864). The screen said: 'The branch review asked for two fixes... Both are in e26fbb1, and a re-review confirmed them.'"
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Log line 896: Skill hyperpowers:finishing-a-development-branch. The screen showed 'Implementation complete. What would you like to do? 1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. I replied 'Keep the branch as-is' and the agent said: 'I've kept branch feature/textstats as it is, with nothing merged or pushed.'"
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi"
+    ]
+  },
+  "duration_ms": 1513188,
+  "usage": {
+    "inputTokens": 86,
+    "outputTokens": 6767,
+    "cacheCreationInputTokens": 38844,
+    "cacheReadInputTokens": 736704,
+    "turns": 39
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261113T224806Z_8s6m",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent \"Execute plan.md with subagent-driven development.\" and the controller loaded hyperpowers:subagent-driven-development. It stayed on feature/textstats without asking. It asked one question about how to handle the test files, and I answered \"Proceed as you recommend.\" It then ran four implement→review pairs one after another and a final whole-branch review, and presented the finishing menu (merge / PR / keep). I replied \"Keep the branch as-is\". The controller's context was auto-compacted 11 times during the run (22 compaction entries in the log, recorded in pairs), several of them mid-plan. Each time it restored its skills and re-read its reference files, then carried on with the task loop. All 4 functions are committed and npm test passes 75/75.",
+  "reasoning": "All four criteria are backed by the git log, the npm test output, the order of dispatches in the session log and the final screens. Auto-compaction hit the controller many times mid-plan and it never lost the implement→review loop, so the scenario's intent is met.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "After 'Keep the branch as-is', the repo was left on a detached HEAD at be966dd instead of on feature/textstats (`git branch` shows '* (HEAD detached at be966dd)'). The agent explained that the finishing step does this before releasing a branch lock. For a user who asked to keep the branch, ending up detached is surprising."
+    },
+    {
+      "kind": "ux",
+      "description": "The controller stopped to ask an extra question (test files: add tests / verbatim / verbatim minus PASSAGE) before starting Task 1. The scenario expected the plan to be executed as written, and it was asked to execute it. With 'Proceed as you recommend' it chose to add tests, so test counts went above what the plan specified (75 tests in total)."
+    },
+    {
+      "kind": "ux",
+      "description": "Each per-task review subagent ran only about 12–14 seconds. That is fast for a combined spec and quality review, though the reviewers did return findings (for example, a minor comment note on Task 3)."
+    },
+    {
+      "kind": "bug",
+      "description": "A stop-hook message at 22:53:38 said 'plan plan.md is not finished (4 of 4 tasks open; nothing tracked is live)'. That was right after the Task 1 review had finished, so the task tracking may lag behind the actual state."
+    },
+    {
+      "kind": "ux",
+      "description": "Startup dialogs (trust folder and Bypass Permissions) have 'No, exit' selected by default. The launcher also showed a 'Newer Opus model available' prompt even though --model claude-opus-5-5 was passed. I chose No and the header showed Opus 5.5 anyway."
+    },
+    {
+      "kind": "ux",
+      "description": "The UI showed 'Backgrounded agent' for each Agent dispatch, but the log's tool inputs show run_in_background=false. The screen sometimes said the Task 2 implementer was 'still running in the background' while the controller sat idle at the prompt."
+    },
+    {
+      "kind": "suggestion",
+      "description": "In its final summary the controller pointed out that the fixture commit adds .claude/settings.json with autoCompactWindow, so it noticed the test setup. That is useful honesty, but it may bias future runs of this test."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each with a test file, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ holds wordCount, sentenceCount, topWords and readingTimeMinutes .test.js. git log shows 11ba02d wordCount, 0cdd9d1 sentenceCount, 641ddba topWords, be966dd readingTimeMinutes. npm test: `ℹ tests 75 ℹ pass 75 ℹ fail 0`."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatches in the main session log, in order: Implement T1 22:51:56 → Review T1 22:53:22 → Implement T2 22:55:30 → Review T2 22:57:32 → Implement T3 22:59:30 → Review T3 23:00:51 → Implement T4 23:03:19 → Review T4 23:04:27. Start/end times of the subagent logs show no overlap; for example, the T1 review ended at 22:53:36, before T2 started at 22:55:30. This order held through compactions at 22:54, 22:56, 22:58, 23:01 and 23:02."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Log dispatch at 2026-11-13T23:06:40Z 'Final whole-branch review', with the subagent running 23:06:41–23:07:03. On screen: 'The final reviewer approved the branch with no Critical or Important findings.'"
+    },
+    {
+      "criterion": "Session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Screen showed 'Implementation complete. What would you like to do? 1. Merge back to main locally 2. Push and create a Pull Request 3. Keep the branch as-is'. After I replied 'Keep the branch as-is', the agent said: 'I've left feature/textstats as it was, with all five commits up to be966dd. Nothing was merged or pushed'."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi",
+      "captures/015.ansi",
+      "captures/016.ansi",
+      "captures/017.ansi",
+      "captures/018.ansi"
+    ]
+  },
+  "duration_ms": 1415397,
+  "usage": {
+    "inputTokens": 84,
+    "outputTokens": 6357,
+    "cacheCreationInputTokens": 51362,
+    "cacheReadInputTokens": 765914,
+    "turns": 38
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}

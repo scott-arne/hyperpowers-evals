@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 5,
+  "runId": "sdd-compaction-reread_20261113T224806Z_fna1",
+  "scenario": "sdd-compaction-reread",
+  "summary": "I sent \"Execute plan.md with subagent-driven development.\" Claude Code loaded the SDD skill, stayed on feature/textstats, and ran implement → review for each of the four tasks in order. It then ran a final whole-branch review and loaded the finishing-a-development-branch skill. The context compacted 10 times during the run, and the task loop kept going in order after every compaction. All 4 functions are committed and exported, and npm test passes 87/87. I answered \"Keep the branch as-is\" at the finishing step.",
+  "reasoning": "I checked every criterion against the files on disk, git, npm test output and the session log. The task loop stayed intact through repeated compactions, and the final review and finishing step both happened.",
+  "observations": [
+    {
+      "kind": "ux",
+      "description": "On the workspace trust and Bypass Permissions dialogs, 'No, exit' is selected by default. Pressing Enter without looking ends the session."
+    },
+    {
+      "kind": "ux",
+      "description": "A 'Newer Opus model available' prompt said 'Currently pinned: Opus 5' even though the launcher passes --model claude-opus-5-5. I chose No, and the banner then showed Opus 5.5."
+    },
+    {
+      "kind": "bug",
+      "description": "After 'Keep the branch as-is', the agent left the checkout on a detached HEAD at 26e52e8 instead of on feature/textstats. It also created an extra 'hyperpowers/state' branch, which git branch lists with a '+' (checked out in another worktree). That is surprising for 'keep as-is'. The agent did say this and gave the commands to switch back."
+    },
+    {
+      "kind": "ux",
+      "description": "Before Task 1, the agent asked whether to add tests the plan didn't include (PASSAGE constants and rule coverage). I answered 'Proceed as you recommend.', and it added them. The suite has 87 tests where the plan expected 32, so the plan's test counts are now out of date (the final reviewer noted this)."
+    },
+    {
+      "kind": "suggestion",
+      "description": "Compaction happened 10 times (about every 1–2 minutes) and the controller visibly re-read the skill files afterwards ('Skills restored …'). It kept the loop with no repeated or skipped tasks. One final-review note: the fixture commit 907d092 includes .claude/settings.json."
+    },
+    {
+      "kind": "ux",
+      "description": "The final message mentions that the last Codex check didn't run because Codex isn't installed. That's informational, but it may confuse users who don't use Codex."
+    }
+  ],
+  "criteria": [
+    {
+      "criterion": "All four functions are exported from src/textstats.js, each has a test file, the work is committed, and npm test passes",
+      "verdict": "pass",
+      "evidence": "src/textstats.js:141 `module.exports = { wordCount, sentenceCount, topWords, readingTimeMinutes };`. test/ has wordCount, sentenceCount, topWords and readingTimeMinutes .test.js. git log shows commits 93c32a8 wordCount, 720afc7 sentenceCount, 8d564e6 topWords, 26e52e8 readingTimeMinutes. git status is clean. npm test: `tests 87 … pass 87 fail 0`."
+    },
+    {
+      "criterion": "Each task is reviewed before the next task starts",
+      "verdict": "pass",
+      "evidence": "Agent dispatches in the session log (jq on 09880e56…jsonl): 22:51:57 Implement Task 1 → 22:53:26 Review Task 1 → 22:55:47 Implement Task 2 → 22:57:49 Review Task 2 → 22:59:54 Implement Task 3 → 23:01:26 Review Task 3 → 23:04:01 Implement Task 4 → 23:05:19 Review Task 4. Compactions at 22:52:27 (during Task 1), 22:54:27, 22:57:08, 22:59:12 and later did not break this order."
+    },
+    {
+      "criterion": "A final whole-branch review runs after the last task",
+      "verdict": "pass",
+      "evidence": "Log: `2026-11-13T23:07:26 Agent Final whole-branch review`, after Review Task 4 (23:05:19). Screen: \"the final reviewer approved the branch for merge\"."
+    },
+    {
+      "criterion": "The session ends in the finishing step",
+      "verdict": "pass",
+      "evidence": "Log: `23:08:44 Skill hyperpowers:finishing-a-development-branch`. Screen showed \"Implementation complete. What would you like to do? 1. Merge… 2. Push… 3. Keep the branch as-is\". After my answer it said: \"I've left feature/textstats as it is, at 26e52e8\"."
+    }
+  ],
+  "evidence": {
+    "screenshots": [],
+    "log": "run.jsonl",
+    "captures": [
+      "captures/000.ansi",
+      "captures/001.ansi",
+      "captures/002.ansi",
+      "captures/003.ansi",
+      "captures/004.ansi",
+      "captures/005.ansi",
+      "captures/006.ansi",
+      "captures/007.ansi",
+      "captures/008.ansi",
+      "captures/009.ansi",
+      "captures/010.ansi",
+      "captures/011.ansi",
+      "captures/012.ansi",
+      "captures/013.ansi",
+      "captures/014.ansi"
+    ]
+  },
+  "duration_ms": 1429921,
+  "usage": {
+    "inputTokens": 74,
+    "outputTokens": 5393,
+    "cacheCreationInputTokens": 37576,
+    "cacheReadInputTokens": 636521,
+    "turns": 33
+  },
+  "status": "pass",
+  "config": {
+    "target": "claude",
+    "model": "claude-opus-5-5",
+    "adapter": "tui",
+    "budgetMs": 3600000,
+    "viewport": {
+      "width": 120,
+      "height": 40
+    }
+  }
+}
