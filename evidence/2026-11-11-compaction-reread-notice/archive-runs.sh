@@ -22,7 +22,7 @@
 # Adapted from ../2026-11-10-sdd-dispatch-guard/archive-runs.sh; the arms differ.
 set -euo pipefail
 arm="$1"; task_dir="$2"
-case "$arm" in control|treatment|shipped) ;; *) echo "arm must be control, treatment or shipped" >&2; exit 2 ;; esac
+case "$arm" in control|treatment|shipped|slice|baseline-6181) ;; *) echo "arm must be control, treatment, shipped, slice or baseline-6181" >&2; exit 2 ;; esac
 E="$(cd "$(dirname "$0")" && pwd)"
 EV="${EVALS_DIR:-$(cd "$E/../.." && pwd)}"
 logs="${LOGS:-$E/logs}"

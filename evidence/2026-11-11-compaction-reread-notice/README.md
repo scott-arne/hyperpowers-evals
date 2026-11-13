@@ -54,8 +54,8 @@ three valid control runs show the mechanism, since that count cannot fall.
 | grader | `claude-opus-5-5` | `GAUNTLET_AGENT_MODEL` must equal it (`GRADER_PIN` in the launcher) |
 | Claude Code | `2.1.317` | `CC_PIN` in `logs/measure-launch.sh`; the host's `claude --version` when the plan was written. Re-check before the campaign and update the pin here and in the script, in one commit, if the host has moved. |
 
-Until Task 5 fills the three arm pins, `manifest.tsv` holds `<pin>` for each
-and the launcher refuses every row. `tally.py` reads each SDD run's cut line
+The launcher refuses a row whose arm pin in `manifest.tsv` is missing or
+still a `<pin>` placeholder. `tally.py` reads each SDD run's cut line
 from the arm's pin in `manifest.tsv` (`git show <pin>:skills/subagent-driven-development/SKILL.md`
 in the hyperpowers repository), never from a live checkout.
 
@@ -121,10 +121,12 @@ run", step 4). `results/` is left as quorum wrote it.
 ## Tallying
 
 ```bash
-cd evidence/2026-11-11-compaction-reread-notice && python3 tally.py > tally.txt
+cd evidence/2026-11-11-compaction-reread-notice && python3 tally.py --waves-1-2 > tally.txt
 ```
 
-`tally.py` prints one line per run (SDD runs end
+`python3 tally.py --waves-1-2` reads the control, treatment and shipped logs
+and reproduces `tally.txt`; plain `python3 tally.py` prints the revision (see
+"Revision (2026-11-12)" below). Under `--waves-1-2`, `tally.py` prints one line per run (SDD runs end
 `compactions=N followed=F whole=W`; sentinel runs end `failed=... reads=...`),
 one count line per cell, the eight bar lines, and each SDD arm's pooled
 per-compaction totals. `tally.py --run RUN_ID --arm ARM --scenario NAME`
@@ -147,3 +149,74 @@ compaction refills the context. No replacements were launched, since each
 would repeat the loop, and waves 3 (shipped) and 4 (sentinel) were not run.
 The notice goes back to design. `tally.txt` and `task-6-runs/` hold waves 1
 and 2; `manifest-wave3.tsv` and `manifest-wave4.tsv` are the unrun waves.
+
+## Revision (2026-11-12)
+
+The SDD skill was redesigned as a compact controller (`SKILL.md` under
+20,000 characters) with a step table that sends a resumed session to one of
+five step files: `setup.md`, `task-loop.md`, `review-and-complete.md`,
+`fix-loop.md` and `final-and-finish.md`. The spec's "Revision (2026-11-12): a
+compact SDD controller" section and "Testing (revised)" govern; `python3
+tally.py` prints this reading.
+
+Arms:
+
+- `baseline-6181` (control): released v6.18.1
+  `7f7c399ca1eef6e931d01fa47c02303eef32f44a`, logs `logs/baseline-6181-p<k>.log`
+  from the 2026-11-12 baseline, and replacements
+  `logs/baseline-6181-sdd-compaction-reread-r<n>.log` from `measure-launch.sh`.
+- `slice` on `sdd-compaction-reread` (treatment) and on `compaction-no-skill`
+  (sentinel), logs `logs/slice-<scenario>-<proc>.log`.
+
+The old arms (`control`, `treatment`, `shipped`) are read only under
+`--waves-1-2`.
+
+The 2026-11-12 baseline is the control. Its harness paths at its evals head
+`b59b12e16c` are identical to the pin `474ea8c8df`; it ran on Claude Code
+2.1.317 with controller and grader `claude-opus-5-5` (checked 2026-11-12).
+Its logs predate the launcher and carry no scenario in their names, so
+`measure-launch.sh` launches `baseline-6181` only as a replacement
+(`r<n>` on `sdd-compaction-reread`). The `slice` pin row is added to
+`manifest.tsv` before the campaign; `tally.py` exits 1 when a `slice` log
+exists without it, since it reads each step file's line count from that pin.
+
+SDD validity (both SDD arms; replaces the 6.16.2 window rule): void kinds
+`launch`, `setup`, `grader`, `instrument` (as `void_kind` and the log rules
+read them today) and `no-compaction` (no automatic compaction after the SDD
+skill event). Every other run is valid. Outcome passes when
+`final_reading(verdict) == "pass"`, `post_checks_pass(verdict)`, and the run
+dispatched at least one `implement` subagent. A run ending in the thrash stop,
+or with no dispatch, is valid and fails its outcome. Thrash: a main-thread
+assistant entry whose `message.model` is `<synthetic>` and whose text holds
+`Autocompact is thrashing`; the run row shows `thrash=1`.
+
+Treatment per compaction (each automatic compaction after the SDD skill
+event): the state is `step_state` over this session's ledger lines written
+before it; the compaction is followed when, before the next governed action,
+(a) the session made a credited Read covering the step file that state names
+(a whole Read, or Reads whose ranges cover every line of that file at the
+`slice` pin), and (b) when a ledger existed, an `sdd-state board` call
+returned a result holding `status=board`, and a `grep` over `progress.md`
+returned a result holding this session's `session <sid>: setup complete` line
+and, when a task is held, at least one `Task <N>:` line of that task. Governed
+actions: an Agent dispatch, a compaction, or a Bash call that writes the
+ledger (`>>` and `progress.md`) or runs an `sdd-state` subcommand other than
+`board`. An unreadable state (`step_state` returns None) is not followed.
+Bash evidence is read where the call's result arrives: a call with an error
+result writes no ledger lines and earns no recovery credit, but still counts
+as a governed action. Each `slice` SDD run line ends
+`compactions=N followed=F any_step=S ledger_parts=L skill=K` (any step file
+read; board and grep both credited; SDD `SKILL.md` read), and the cell line
+pools them over valid runs.
+
+Bars:
+
+1. `slice` SDD outcome at least 8 of 10 valid and more than `baseline-6181`'s.
+2. No valid `slice` SDD run with `thrash=1`.
+3. At least 85% of pooled `slice` SDD compactions followed.
+4. Median `slice` SDD compactions per run at most 16.
+5. Sentinel failures at most 1 of 10.
+
+A cell with fewer than ten valid runs reads `incomplete` and its bars read
+`incomplete`. The sentinel is read as before (`noskill_reading`). Replacements
+go in `sentinel-reruns.tsv` as above, at most three per cell (`r1`-`r3`).

@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -1012,6 +1013,320 @@ class BarTests(unittest.TestCase):
     def test_median_compactions(self) -> None:
         runs = [{"valid": True, "compactions": c} for c in (7, 12, 13, 14, 16, 16, 17, 18, 18, 20)]
         self.assertEqual(tally.median_compactions(runs), 16)
+
+
+SID = "s1"
+SETUP = [(f"session:{SID}", "setup complete")]
+
+
+class StepState(unittest.TestCase):
+    def test_rows(self) -> None:
+        cases = [
+            ([], "setup.md"),
+            ([("1", "branch")], "setup.md"),
+            ([("session:other", "setup complete")], "setup.md"),
+            ([("session:$CLAUDE_CODE_SESSION_ID", "setup complete")], "task-loop.md"),
+            ([("session:%s", "setup complete")], "task-loop.md"),
+            (SETUP, "task-loop.md"),
+            (SETUP + [("1", "branch"), ("1", "implementer")], "task-loop.md"),
+            (SETUP + [("1", "branch"), ("1", "report")], "task-loop.md"),
+            (SETUP + [("1", "branch"), ("1", "review approved")], "review-and-complete.md"),
+            (SETUP + [("1", "branch"), ("1", "gate approved")], "review-and-complete.md"),
+            (SETUP + [("1", "branch"), ("1", "approved")], "review-and-complete.md"),
+            (SETUP + [("1", "branch"), ("1", "merged")], "review-and-complete.md"),
+            (SETUP + [("1", "branch"), ("1", "review blocking")], "fix-loop.md"),
+            (SETUP + [("1", "branch"), ("1", "gate blocking")], "fix-loop.md"),
+            (SETUP + [("1", "branch"), ("1", "fix round")], "fix-loop.md"),
+            (SETUP + [("1", "branch"), ("1", "complete")], "task-loop.md"),
+            (SETUP + [(str(t), w) for t in range(1, 5) for w in ("branch", "complete")], "final-and-finish.md"),
+            (SETUP + [("final", "branch")], "final-and-finish.md"),
+        ]
+        for lines, want in cases:
+            with self.subTest(lines=lines):
+                self.assertEqual(tally.step_state(lines, 4, SID), want)
+
+    def test_held_task(self) -> None:
+        self.assertEqual(tally.held_task(SETUP + [("1", "branch"), ("1", "complete"), ("2", "branch")]), "2")
+        self.assertIsNone(tally.held_task(SETUP + [("1", "branch"), ("1", "complete")]))
+
+
+class LedgerParse(unittest.TestCase):
+    def test_heredoc_and_printf_lines(self) -> None:
+        cmd = "cat >> /w/progress.md <<'EOF'\nTask 2: review blocking a1 (sonnet) two findings\nEOF"
+        self.assertEqual(tally.ledger_lines(cmd), [("2", "review blocking")])
+        cmd = "printf 'Task 3: codex gate round 1 approved clean\\n' >> /w/progress.md"
+        self.assertEqual(tally.ledger_lines(cmd), [("3", "gate approved")])
+        cmd = "printf 'session abc: setup complete\\n' >> /w/progress.md"
+        self.assertEqual(tally.ledger_lines(cmd), [("session:abc", "setup complete")])
+
+    def test_sdd_state_calls(self) -> None:
+        self.assertEqual(tally.ledger_lines("bash scripts/sdd-state claim plan.md 2 --session s"), [("2", "branch")])
+        self.assertEqual(tally.ledger_lines("scripts/sdd-state claim plan.md final --session s"), [("final", "branch")])
+        self.assertEqual(tally.ledger_lines("scripts/sdd-state merge-back plan.md 2"), [("2", "merged")])
+        self.assertEqual(tally.ledger_lines("scripts/sdd-state complete plan.md 2 --commits a..b"), [("2", "complete")])
+        self.assertEqual(tally.ledger_lines("scripts/sdd-state board plan.md"), [])
+
+    def test_failed_call_writes_nothing(self) -> None:
+        e = tally.bash_event("printf 'Task 1: report DONE x\\n' >> /w/progress.md", ok=False, output="")
+        self.assertEqual((e["ledger_lines"], e["governed"]), ([], True))
+
+
+STEP = "/arms/slice/skills/subagent-driven-development"
+BOARD_OUT = "status=board sync=offline sessions=1\nheld task=1 owner=s1"
+SETUP_LINE = f"session {SID}: setup complete"
+
+
+class StepFollow(unittest.TestCase):
+    def setUp(self) -> None:
+        tally.STEP_LINES = {f: 10 for f in tally.STEP_FILES}
+
+    def follow(self, after: list[dict], before: list[dict] | None = None) -> dict:
+        found = [{"kind": "skill", "skill": "hyperpowers:subagent-driven-development"}]
+        if before is None:
+            before = [tally.bash_event(f"printf '{SETUP_LINE}\\n' >> /w/progress.md", ok=True, output="")]
+        found += before + [{"kind": "compact"}] + after + [{"kind": "dispatch", "class": "implement", "task": 1}]
+        return tally.step_follows(found, SID)
+
+    def read(self, name: str) -> dict:
+        return {"kind": "read", "path": f"{STEP}/{name}", "offset": None, "limit": None,
+                "whole": True, "via": "read", "persisted": False, "credited": True}
+
+    def board(self, ok: bool = True) -> dict:
+        return tally.bash_event("scripts/sdd-state board plan.md", ok=ok, output=BOARD_OUT if ok else "")
+
+    def grep(self, output: str = SETUP_LINE) -> dict:
+        return tally.bash_event("grep -E '^(session s1: setup complete)' /w/progress.md", ok=True, output=output)
+
+    def test_followed(self) -> None:
+        r = self.follow([self.board(), self.grep(), self.read("task-loop.md")])
+        self.assertEqual((r["compactions"], r["followed"]), (1, 1))
+
+    def test_wrong_file(self) -> None:
+        r = self.follow([self.board(), self.grep(), self.read("fix-loop.md")])
+        self.assertEqual((r["followed"], r["any_step"]), (0, 1))
+
+    def test_skill_only(self) -> None:
+        r = self.follow([self.board(), self.grep(), {**self.read("x"), "path": f"{STEP}/SKILL.md"}])
+        self.assertEqual((r["followed"], r["skill"]), (0, 1))
+
+    def test_ledger_parts_skipped(self) -> None:
+        r = self.follow([self.read("task-loop.md")])
+        self.assertEqual((r["followed"], r["ledger_parts"]), (0, 0))
+
+    def test_failed_board_earns_nothing(self) -> None:
+        r = self.follow([self.board(ok=False), self.grep(), self.read("task-loop.md")])
+        self.assertEqual(r["followed"], 0)
+
+    def test_grep_without_the_setup_line_earns_nothing(self) -> None:
+        r = self.follow([self.board(), self.grep(output="no match"), self.read("task-loop.md")])
+        self.assertEqual(r["followed"], 0)
+
+    def test_grep_must_show_the_held_task(self) -> None:
+        before = [
+            tally.bash_event(f"printf '{SETUP_LINE}\\n' >> /w/progress.md", ok=True, output=""),
+            tally.bash_event("scripts/sdd-state claim plan.md 1 --session s1", ok=True, output="status=claimed"),
+        ]
+        r = self.follow([self.board(), self.grep(), self.read("task-loop.md")], before=before)
+        self.assertEqual(r["followed"], 0)
+        r = self.follow([self.board(), self.grep(output=SETUP_LINE + "\nTask 1: branch t1"), self.read("task-loop.md")],
+                        before=before)
+        self.assertEqual(r["followed"], 1)
+
+    def test_no_ledger_needs_only_setup(self) -> None:
+        r = self.follow([self.read("setup.md")], before=[])
+        self.assertEqual(r["followed"], 1)
+
+    def test_partial_read_without_a_line_count_fails_closed(self) -> None:
+        tally.STEP_LINES = {}
+        partial = {**self.read("task-loop.md"), "offset": 1, "limit": 5, "whole": False}
+        r = self.follow([self.board(), self.grep(), partial])
+        self.assertEqual(r["followed"], 0)
+
+    def test_governed_action_stops_the_window(self) -> None:
+        r = self.follow([tally.bash_event("printf 'Task 1: report DONE x\\n' >> /w/progress.md", ok=True, output=""),
+                         self.board(), self.grep(), self.read("task-loop.md")])
+        self.assertEqual(r["followed"], 0)
+
+
+THRASH_ENTRY = {
+    "type": "assistant",
+    "message": {
+        "model": "<synthetic>",
+        "content": [{"type": "text", "text": "Autocompact is thrashing: the context refilled to the limit."}],
+    },
+}
+AGENT_FAILED = [{"phase": "post", "check": "tool-called", "passed": False}]
+
+
+def revision_row(
+    arm: str, entries: list[dict[str, Any]], final: str = "pass", checks: list[dict[str, Any]] | None = None
+) -> tuple[dict[str, Any], str]:
+    """Read one synthetic run as a revision arm; returns its row and the printed line."""
+    with tempfile.TemporaryDirectory() as tmp:
+        record = make_run(Path(tmp), "r", entries, final=final, checks=checks)
+        old = tally.run_paths
+        tally.run_paths = lambda arm, run_id: (record, transcripts(record))
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out):
+                row = tally.read_run(arm, SDD, "p1", "r")
+        finally:
+            tally.run_paths = old
+    return row, out.getvalue()
+
+
+class RevisionRuns(unittest.TestCase):
+    def test_thrash_stop_is_a_valid_failure(self) -> None:
+        entries = [SDD_LOAD, compact(), *read(SDD_SKILL), compact(), THRASH_ENTRY]
+        for arm in ("baseline-6181", "slice"):
+            with self.subTest(arm=arm):
+                row, line = revision_row(arm, entries, final="fail", checks=AGENT_FAILED)
+                self.assertEqual((row["thrash"], row["valid"], row["outcome"]), (1, True, False))
+                self.assertIn("thrash=1", line)
+                self.assertEqual(row["compactions"], 2)
+
+    def test_passing_verdict_without_a_dispatch_fails_the_outcome(self) -> None:
+        row, _ = revision_row("slice", [SDD_LOAD, compact(), reply("done")])
+        self.assertEqual((row["valid"], row["void_kind"], row["outcome"], row["thrash"]), (True, None, False, 0))
+
+    def test_passing_verdict_with_an_implement_dispatch_passes(self) -> None:
+        row, _ = revision_row("slice", [SDD_LOAD, compact(), agent("Implement Task 1: a", "i1"), notif("i1")])
+        self.assertEqual((row["valid"], row["outcome"]), (True, True))
+
+    def test_no_compaction_after_the_skill_load_is_void(self) -> None:
+        entries = [compact(), SDD_LOAD, agent("Implement Task 1: a", "i1"), notif("i1")]
+        row, line = revision_row("slice", entries)
+        self.assertEqual((row["void_kind"], row["valid"], row["outcome"]), ("no-compaction", False, None))
+        self.assertIn("void=no-compaction", line)
+
+    def test_errored_bash_result_is_a_failed_bash_event(self) -> None:
+        cmd = "printf 'Task 1: report DONE x\\n' >> /w/progress.md"
+        found = events_of([bash(cmd, "b1"), result("b1", is_error=True)])
+        (event,) = [e for e in found if e["kind"] == "bash"]
+        self.assertEqual((event["ok"], event["ledger_lines"], event["governed"]), (False, [], True))
+        found = events_of([bash(cmd, "b2"), result("b2")])
+        (event,) = [e for e in found if e["kind"] == "bash"]
+        self.assertEqual((event["ok"], event["ledger_lines"], event["output"]), (True, [("1", "report")], "text"))
+
+    def test_transcript_session(self) -> None:
+        entries = [{**SDD_LOAD, "sessionId": "abc-1"}, {**compact(), "sessionId": "abc-1"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            record = make_run(Path(tmp), "r", entries)
+            self.assertEqual(tally.transcript_session(transcripts(record)), "abc-1")
+
+
+class RevisionPlumbing(unittest.TestCase):
+    def with_here(self, manifest: str, logs: dict[str, str]) -> tempfile.TemporaryDirectory[str]:
+        tmp = tempfile.TemporaryDirectory()
+        here = Path(tmp.name)
+        (here / "manifest.tsv").write_text(manifest, encoding="utf-8")
+        (here / "logs").mkdir()
+        for name, text in logs.items():
+            (here / "logs" / name).write_text(text, encoding="utf-8")
+        old = tally.HERE
+        tally.HERE = here
+        self.addCleanup(setattr, tally, "HERE", old)
+        self.addCleanup(tmp.cleanup)
+        return tmp
+
+    def test_manifest_pins_reads_the_revision_arms(self) -> None:
+        self.with_here("harness\th\ncontrol\tc\nbaseline-6181\tb6\nslice\tsl\nmodel\tm\n", {})
+        pins = tally.manifest_pins()
+        self.assertEqual((pins["baseline-6181"], pins["slice"], pins["control"]), ("b6", "sl", "c"))
+        self.assertNotIn("model", pins)
+
+    def test_main_refuses_a_slice_log_without_a_slice_pin(self) -> None:
+        self.with_here("baseline-6181\tb6\n", {"slice-sdd-compaction-reread-p1.log": "run-id: x\nDONE\n"})
+        old_argv = sys.argv
+        sys.argv = ["tally.py"]
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+                code = tally.main()
+        finally:
+            sys.argv = old_argv
+        self.assertEqual(code, 1)
+        self.assertIn("slice", err.getvalue())
+
+    def test_log_names(self) -> None:
+        for name in ("baseline-6181-p1", "baseline-6181-sdd-compaction-reread-r1", "slice-compaction-no-skill-p10"):
+            with self.subTest(name=name):
+                self.assertIsNotNone(tally.LOG_NAME.match(name))
+        for name in ("slice-sdd-compaction-reread-r4", "baseline-6181-p11", "baseline-6181-sdd-compaction-reread-p1"):
+            with self.subTest(name=name):
+                self.assertIsNone(tally.LOG_NAME.match(name))
+
+    def test_collect_maps_baseline_logs_and_each_mode_reads_its_own_arms(self) -> None:
+        tmp = self.with_here("", {
+            "baseline-6181-p1.log": "run-id: b1\nDONE baseline-6181 p1\n",
+            "control-sdd-compaction-reread-p1.log": "run-id: c1\nDONE control sdd-compaction-reread p1\n",
+        })
+        here = Path(tmp.name)
+        make_run(here / "results", "b1", [SDD_LOAD, compact()])
+        old = tally.RUN_ROOTS, tally.EVALS, tally.arm_cut
+        tally.RUN_ROOTS, tally.EVALS = (), here
+        tally.arm_cut = lambda arm: (1, 1)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                revision = tally.collect(here / "logs", revision=True)
+                waves = tally.collect(here / "logs")
+        finally:
+            tally.RUN_ROOTS, tally.EVALS, tally.arm_cut = old
+        (row,) = revision.values()
+        self.assertEqual((row["arm"], row["scenario"], row["proc"], row["run"]), ("baseline-6181", SDD, "p1", "b1"))
+        self.assertEqual([r["arm"] for r in waves.values()], ["control"])
+
+
+def revision_cell(arm: str, scenario: str, n: int, **fields: Any) -> dict[str, dict[str, Any]]:
+    rows = {}
+    for k in range(n):
+        rows[f"{arm}-{scenario}-{k}"] = {
+            "run": f"{arm}-{scenario}-{k}", "arm": arm, "scenario": scenario, "proc": f"p{k + 1}",
+            "void": False, "void_kind": None, "valid": True, **fields,
+        }
+    return rows
+
+
+class RevisionSummary(unittest.TestCase):
+    def test_nine_valid_runs_read_incomplete(self) -> None:
+        runs = {
+            **revision_cell("baseline-6181", SDD, 10, outcome=False, thrash=1, compactions=9, followed=0),
+            **revision_cell("slice", SDD, 9, outcome=True, thrash=0, compactions=5, followed=5,
+                            any_step=5, ledger_parts=5, skill=5),
+            **revision_cell("slice", NOSKILL, 10, failed=False, reads=[]),
+        }
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            tally.summarize_revision(runs, set())
+        lines = out.getvalue().splitlines()
+        (cell,) = [line for line in lines if line.startswith(f"slice {SDD}:")]
+        self.assertIn("valid=9", cell)
+        self.assertIn("incomplete", cell)
+        (baseline,) = [line for line in lines if line.startswith(f"baseline-6181 {SDD}:")]
+        self.assertNotIn("incomplete", baseline)
+        self.assertIn("thrash=10", baseline)
+        bars = [line for line in lines if line.rstrip().endswith(("PASS", "FAIL", "incomplete")) and "(" in line
+                and not line.startswith(("slice ", "baseline-6181 "))]
+        self.assertEqual(len(bars), 5)
+        self.assertEqual([b.rsplit(" ", 1)[1] for b in bars],
+                         ["incomplete", "incomplete", "incomplete", "incomplete", "PASS"])
+
+    def test_complete_cells_read_each_bar(self) -> None:
+        runs = {
+            **revision_cell("baseline-6181", SDD, 10, outcome=False, thrash=1, compactions=9, followed=0),
+            **revision_cell("slice", SDD, 10, outcome=True, thrash=0, compactions=20, followed=17,
+                            any_step=20, ledger_parts=17, skill=3),
+            **revision_cell("slice", NOSKILL, 10, failed=True, reads=["/p/skills/x/SKILL.md"]),
+        }
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            tally.summarize_revision(runs, set())
+        text = out.getvalue()
+        bars = [line.rsplit(" ", 1)[1] for line in text.splitlines()
+                if line.rstrip().endswith(("PASS", "FAIL", "incomplete"))
+                and not line.startswith(("slice ", "baseline-6181 "))]
+        # 17 of 20 is exactly 85%; a median of 20 compactions exceeds 16.
+        self.assertEqual(bars, ["PASS", "PASS", "PASS", "FAIL", "FAIL"])
 
 
 if __name__ == "__main__":

@@ -1,15 +1,72 @@
-"""Tally the compaction re-read notice campaign: control, treatment and shipped.
+"""Tally the compaction re-read notice campaign: the revision, or waves 1-2.
 
 Usage::
 
-    python3 tally.py                                   # every campaign log
+    python3 tally.py                                   # the revision (2026-11-12)
+    python3 tally.py --waves-1-2                       # reproduces tally.txt
     python3 tally.py --run RUN_ID --arm ARM --scenario NAME   # one run (smoke)
 
 It exits 0, or 1 when ``sentinel-reruns.tsv`` (original, replacement; tab
-separated) breaks a rule.
+separated) breaks a rule, or when the revision cannot read the step files'
+line counts (a ``slice`` log with no ``slice`` pin in ``manifest.tsv``, or a
+``git show`` of a step file at that pin failing).
 
 Spec: ``docs/hyperpowers/specs/2026-11-11-compaction-reread-notice-design.md``
-in the hyperpowers repository, Testing and Evidence section. Three arms:
+in the hyperpowers repository: "Testing (revised)" for the default reading,
+Testing and Evidence for ``--waves-1-2``.
+
+Revision (the default). Arms: ``baseline-6181`` (control, released v6.18.1
+``7f7c399ca1eef6e931d01fa47c02303eef32f44a``; logs
+``logs/baseline-6181-p<k>.log`` from the 2026-11-12 baseline, and replacements
+``logs/baseline-6181-sdd-compaction-reread-r<n>.log`` from
+``measure-launch.sh``) and ``slice`` on ``sdd-compaction-reread`` (treatment)
+and on ``compaction-no-skill`` (sentinel), logs ``logs/slice-<scenario>-<proc>.log``.
+The old arms are read only under ``--waves-1-2``, and the revision arms only
+without it; each mode skips the other's logs without a line.
+
+* SDD validity (both SDD arms; replaces the 6.16.2 window rule): void kinds
+  ``launch``, ``setup``, ``grader``, ``instrument`` (as ``void_kind`` and the
+  log rules read them) and ``no-compaction`` (no automatic compaction after
+  the SDD skill event). Every other run is valid. Outcome passes when the
+  final verdict is ``pass``, every post check passed, and the run dispatched
+  at least one ``implement`` subagent. A run ending in the thrash stop, or
+  with no dispatch, is valid and fails its outcome.
+* Thrash: a main-thread assistant entry whose ``message.model`` is
+  ``<synthetic>`` and whose text holds ``Autocompact is thrashing``; the run
+  row shows ``thrash=1``.
+* Session: the controller's id is the ``sessionId`` of the main transcript's
+  entries. Only its ``setup complete`` line counts (one written through
+  ``$CLAUDE_CODE_SESSION_ID`` or a ``%s`` argument is its own); the held task
+  is the newest task it claimed (``sdd-state claim``) without a completion
+  line.
+* Bash evidence is read where the call's result arrives: a call with an
+  error result writes no ledger lines and earns no recovery credit, but still
+  counts as a governed action if its command is one.
+* Treatment per compaction (each automatic compaction after the SDD skill
+  event): the state is ``step_state`` over the session's ledger lines written
+  before it; the compaction is followed when, before the next governed
+  action, (a) the session made a credited Read covering the step file that
+  state names (a whole Read, or Reads covering every line of that file at the
+  ``slice`` pin), and (b) when a ledger existed, an ``sdd-state board`` call
+  returned ``status=board`` and a ``grep`` over ``progress.md`` returned the
+  session's ``setup complete`` line and, when a task is held, a ``Task <N>:``
+  line of that task. Governed actions: an Agent dispatch, a compaction, or a
+  Bash call that writes the ledger or runs an ``sdd-state`` subcommand other
+  than ``board``. An unreadable state is not followed. Reported per run and
+  pooled: compactions, followed, any step file read (``any_step``), board and
+  grep both credited (``ledger_parts``), SDD ``SKILL.md`` read (``skill``).
+* Sentinel: unchanged (``noskill_reading``, below).
+* Bars: (1) ``slice`` SDD outcome at least 8 of 10 valid and more than
+  ``baseline-6181``'s; (2) no valid ``slice`` SDD run with ``thrash=1``; (3)
+  at least 85% of pooled ``slice`` SDD compactions followed; (4) median
+  ``slice`` SDD compactions per run at most 16; (5) sentinel failures at most
+  1 of 10. A cell with fewer than ten valid runs reads ``incomplete`` and its
+  bars read ``incomplete``.
+* Replacements: ``sentinel-reruns.tsv`` as below, at most three per cell
+  (``r1``-``r3``); a row whose two runs both belong to the other mode is set
+  aside.
+
+Waves 1-2 (``--waves-1-2``, which prints what ``tally.txt`` holds). Three arms:
 ``control`` (B, the pin-only commit that removes the "After every context
 compaction" paragraph from SDD and brainstorming), ``treatment`` (B plus the
 notice) and ``shipped`` (the slice commit: the notice on top of ``main``, with
@@ -139,6 +196,19 @@ ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 TRUNCATION_BANNER = re.compile(r"PARTIAL view \u2014 (.+): showing lines (\d+)-(\d+) of (\d+) total")
 PERSISTED = "<persisted-output>"
 SKILL_PATH = re.compile(r"/skills/([^/]+)/SKILL\.md$")
+STEP_FILES = ("setup.md", "task-loop.md", "review-and-complete.md", "fix-loop.md", "final-and-finish.md")
+STEP_PATH = re.compile(r"/skills/subagent-driven-development/(" + "|".join(map(re.escape, STEP_FILES)) + r")$")
+STEP_LINES: dict[str, int] = {}  # filled from the slice pin by load_step_lines()
+THRASH = "Autocompact is thrashing"
+N_TASKS = 4  # the sdd-compaction-reread fixture plan has four tasks
+LEDGER_TEXT = re.compile(
+    r"(?<![^\s'\"])(?:session (?P<sid>\S+): (?P<setup>setup complete)"
+    r"|Task (?P<task>\d+): (?P<what>branch|base|implementer|report|review (?:approved|blocking)"
+    r"|codex gate round \d+(?:/\d+)? (?:approved|blocking)|fix round|approved|merged|complete)\b)"
+)
+SDD_STATE = re.compile(r"sdd-state\s+(?P<sub>[a-z-]+)(?:\s+(?:--\S+\s+)*\S+\s+(?P<arg>\d+|final)\b)?")
+OLD_ARMS = ("control", "treatment", "shipped")
+REVISION_ARMS = ("baseline-6181", "slice")
 
 
 def run_paths(arm: str, run_id: str) -> tuple[Path, list[Path]]:
@@ -581,6 +651,9 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
     # A Read counts where its result arrives: calls composed in the same
     # message as the Read were chosen before the model saw the file.
     pending_reads: dict[str, list[tuple[str, Any, Any, str]]] = {}
+    # Bash evidence is read where the result arrives too, error results
+    # included: a failed call still counts as a governed action.
+    pending_bash: dict[str, str] = {}
     for path in transcripts:
         for line in path.read_text(encoding="utf-8").splitlines():
             try:
@@ -604,6 +677,12 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                     b.get("type") == "text" and str(b.get("text") or "").strip() for b in blocks
                 ):
                     found.append({"kind": "reply"})
+                # Claude Code records its thrash stop as a synthetic assistant
+                # message, not as a system entry.
+                if message.get("model") == "<synthetic>" and any(
+                    b.get("type") == "text" and THRASH in str(b.get("text") or "") for b in blocks
+                ):
+                    found.append({"kind": "thrash"})
                 for block in content:
                     if not isinstance(block, dict) or block.get("type") != "tool_use":
                         continue
@@ -630,6 +709,7 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                     elif name == "AskUserQuestion":
                         found.append({"kind": "ask"})
                     elif name == "Bash":
+                        pending_bash[str(block.get("id"))] = str(args.get("command") or "")
                         shown = shell_skill_reads(str(args.get("command") or ""))
                         if shown:
                             pending_reads[str(block.get("id"))] = [(p, None, None, via) for p, via in shown]
@@ -647,13 +727,14 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                 structured_launch = isinstance(result, dict) and result.get("status") == "async_launched"
                 if isinstance(content, list):
                     for block in content:
-                        if (
-                            not isinstance(block, dict)
-                            or block.get("type") != "tool_result"
-                            or block.get("is_error")
-                        ):
+                        if not isinstance(block, dict) or block.get("type") != "tool_result":
                             continue
                         ident = str(block.get("tool_use_id"))
+                        command = pending_bash.pop(ident, None)
+                        if block.get("is_error"):
+                            if command is not None:
+                                found.append(bash_event(command, ok=False, output=""))
+                            continue
                         if ident in pending_reads:
                             for path_read, offset, limit, via in pending_reads.pop(ident):
                                 # Output over 30,000 characters is saved to a
@@ -672,6 +753,8 @@ def events(transcripts: list[Path]) -> list[dict[str, Any]]:
                             block.get("content")
                         ):
                             found.append({"kind": "done", "id": ident})
+                        if command is not None:
+                            found.append(bash_event(command, ok=True, output=result_text(block.get("content"))))
                 text = content if isinstance(content, str) else json.dumps(content)
                 found.extend({"kind": "done", "id": i} for i in notified_ids(text))
     return found
@@ -830,14 +913,180 @@ def compaction_follow(found: list[dict[str, Any]], cut: tuple[int, int]) -> dict
     return result
 
 
+def ledger_lines(command: str) -> list[tuple[str, str]]:
+    """Ledger lines a Bash command writes, as ``(key, what)`` pairs.
+
+    The key is the task number, ``final``, or ``session:<sid>`` for a Setup
+    line. Text lines count only when the command appends to ``progress.md``;
+    ``sdd-state`` calls count as the lines their helper writes (``claim`` a
+    branch line, ``merge-back`` merged, ``complete`` complete).
+    """
+    found: list[tuple[str, str]] = []
+    if ">>" in command and "progress.md" in command:
+        for m in LEDGER_TEXT.finditer(command):
+            if m.group("setup"):
+                found.append((f"session:{m.group('sid')}", "setup complete"))
+                continue
+            what = m.group("what")
+            if what.startswith("codex gate round"):
+                what = "gate " + what.rsplit(" ", 1)[1]
+            found.append((m.group("task"), what))
+    for m in SDD_STATE.finditer(command):
+        mapped = {"claim": "branch", "merge-back": "merged", "complete": "complete"}.get(m.group("sub"))
+        if mapped and m.group("arg"):
+            found.append((m.group("arg"), mapped))
+    return found
+
+
+def bash_event(command: str, ok: bool, output: str) -> dict[str, Any]:
+    """The ``bash`` event for one Bash call, built where its result arrives.
+
+    A failed call (``ok`` False) writes no ledger lines and earns no recovery
+    credit, but a ledger write or an ``sdd-state`` call still ends the
+    recovery window, since the session acted.
+    """
+    subs = [m.group("sub") for m in SDD_STATE.finditer(command)]
+    writes = ">>" in command and "progress.md" in command
+    return {
+        "kind": "bash",
+        "ok": ok,
+        "output": output if ok else "",
+        "ledger_lines": ledger_lines(command) if ok else [],
+        "ledger_create": ok and "progress.md" in command and "SDD ledger" in command,
+        "board": ok and "board" in subs and "status=board" in output,
+        "ledger_grep": ok and "grep" in command and "progress.md" in command and not writes,
+        "governed": writes or any(s != "board" for s in subs),
+    }
+
+
+def own_setup(key: str, sid: str) -> bool:
+    """Whether a Setup line's key is this session's.
+
+    SDD writes the id through ``$CLAUDE_CODE_SESSION_ID`` or a ``%s``
+    argument as often as literally; the command text then holds the
+    expansion, not the id, and in a one-controller run it is this session's.
+    """
+    named = key.removeprefix("session:")
+    return named == sid or named[:1] in ("$", "%")
+
+
+def held_task(lines: list[tuple[str, str]]) -> str | None:
+    """The newest task this session claimed that has no completion line, or None."""
+    done = {key for key, what in lines if what == "complete"}
+    held = [key for key, what in lines if what == "branch" and key != "final" and key not in done]
+    return held[-1] if held else None
+
+
+def step_state(lines: list[tuple[str, str]], n_tasks: int, sid: str) -> str | None:
+    """The step file SDD's step table names for this session's ledger lines so far, or None if unreadable."""
+    if not any(what == "setup complete" and own_setup(key, sid) for key, what in lines):
+        return "setup.md"
+    if ("final", "branch") in lines:
+        return "final-and-finish.md"
+    held = held_task(lines)
+    if held is None:
+        done = {key for key, what in lines if what == "complete"}
+        return "final-and-finish.md" if len(done) >= n_tasks else "task-loop.md"
+    newest = [what for key, what in lines if key == held][-1]
+    if newest in ("branch", "base", "implementer", "report"):
+        return "task-loop.md"
+    if newest in ("review approved", "gate approved", "approved", "merged"):
+        return "review-and-complete.md"
+    if newest in ("fix round", "review blocking", "gate blocking"):
+        return "fix-loop.md"
+    return None
+
+
+def step_follows(found: list[dict[str, Any]], sid: str) -> dict[str, int]:
+    """Per-compaction recovery for the slice arm: the step file the table names, plus the board and grep."""
+    skill = "subagent-driven-development"
+    load = next((i for i, e in enumerate(found) if e["kind"] == "skill" and e["skill"].endswith(skill)), None)
+    result = {"compactions": 0, "followed": 0, "any_step": 0, "ledger_parts": 0, "skill": 0}
+    if load is None:
+        return result
+    for i, event in enumerate(found):
+        if event["kind"] != "compact" or i <= load:
+            continue
+        result["compactions"] += 1
+        before = [e for e in found[:i] if e["kind"] == "bash"]
+        lines = [p for e in before for p in e["ledger_lines"]]
+        want = step_state(lines, N_TASKS, sid)
+        held = held_task(lines)
+        ledger = any(e["ledger_create"] or e["ledger_lines"] for e in before)
+        stop = next(
+            (j for j in range(i + 1, len(found))
+             if found[j]["kind"] in ("dispatch", "compact") or (found[j]["kind"] == "bash" and found[j]["governed"])),
+            len(found),
+        )
+        window = found[i + 1:stop]
+        reads = [e for e in window if e["kind"] == "read" and e["credited"]]
+        step = [(STEP_PATH.search(e["path"]), e) for e in reads]
+        hits = [e for m, e in step if m and m.group(1) == want]
+        board = any(e["kind"] == "bash" and e["board"] for e in window)
+        grep = any(
+            e["kind"] == "bash" and e["ledger_grep"]
+            and f"session {sid}: setup complete" in e["output"]
+            and (held is None or f"Task {held}:" in e["output"])
+            for e in window
+        )
+        # A partial Read earns coverage only against a known line count, so a
+        # missing count fails closed instead of covering an empty range.
+        file_ok = want is not None and bool(hits) and (
+            any(e["whole"] for e in hits) or (want in STEP_LINES and covers_cut(hits, (1, STEP_LINES[want])))
+        )
+        result["followed"] += file_ok and (board and grep or not ledger)
+        result["any_step"] += any(m for m, _ in step)
+        result["ledger_parts"] += board and grep
+        result["skill"] += any(e["path"].endswith(f"{skill}/SKILL.md") for e in reads)
+    return result
+
+
+def transcript_session(transcripts: list[Path]) -> str | None:
+    """The controller's session id: the first ``sessionId`` in the main transcripts' entries, or None."""
+    for path in transcripts:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(entry, dict) and entry.get("sessionId"):
+                return str(entry["sessionId"])
+    return None
+
+
 def manifest_pins() -> dict[str, str]:
-    """The arm pins from the two-field ``control``, ``treatment`` and ``shipped`` rows of ``manifest.tsv``."""
+    """The arm pins from the two-field arm rows of ``manifest.tsv`` (old and revision arms)."""
     pins: dict[str, str] = {}
     for line in (HERE / "manifest.tsv").read_text(encoding="utf-8").splitlines():
         fields = line.split("\t")
-        if len(fields) == 2 and fields[0] in ("control", "treatment", "shipped"):
+        if len(fields) == 2 and fields[0] in (*OLD_ARMS, *REVISION_ARMS):
             pins[fields[0]] = fields[1]
     return pins
+
+
+def load_step_lines() -> None:
+    """Fill ``STEP_LINES`` with each step file's line count at the ``slice`` pin.
+
+    Coverage of a partial Read is measured against these counts, read from
+    the pinned commit in the hyperpowers repository, never from a live
+    checkout. Without a ``slice`` pin it leaves ``STEP_LINES`` empty, so
+    partial Reads fail closed; ``main()`` refuses to tally a ``slice`` log in
+    that case.
+
+    :raises ValueError: When ``git show`` fails for a step file.
+    """
+    pin = manifest_pins().get("slice")
+    if pin is None:
+        return
+    for name in STEP_FILES:
+        shown = subprocess.run(
+            ["git", "-C", str(HP_REPO), "show", f"{pin}:skills/subagent-driven-development/{name}"],
+            check=False, capture_output=True, text=True,
+        )
+        if shown.returncode != 0:
+            raise ValueError(f"git show {pin}:skills/subagent-driven-development/{name} failed: {shown.stderr.strip()}")
+        text = shown.stdout
+        STEP_LINES[name] = text.count("\n") + (0 if text.endswith("\n") else 1)
 
 
 def arm_cut(arm: str) -> tuple[int, int]:
@@ -905,12 +1154,17 @@ def median_compactions(runs: list[dict[str, Any]]) -> float:
     return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
 
 
-def load_reruns(path: Path, runs: dict[str, dict[str, Any]]) -> dict[str, str]:
+def load_reruns(
+    path: Path, runs: dict[str, dict[str, Any]], other: set[str] | frozenset[str] = frozenset()
+) -> dict[str, str]:
     """Read ``sentinel-reruns.tsv`` (original, replacement) and enforce the replacement rules.
 
     A replacement that is itself void may be replaced in turn by a later row
     naming it as the original (``original -> r1``, ``r1 -> r2``); every link
-    counts toward the cell's cap of three.
+    counts toward the cell's cap of three. A row whose two runs both belong
+    to the other tally mode (``other``, the run ids of the logs ``collect``
+    skipped) is set aside, so the revision's replacements do not break the
+    waves 1-2 reading, nor the reverse.
 
     :raises ValueError: On a row without exactly two non-empty fields, an
         unknown run, an original replaced twice, a
@@ -928,6 +1182,8 @@ def load_reruns(path: Path, runs: dict[str, dict[str, Any]]) -> dict[str, str]:
                 if len(row) != 2 or not all(row):
                     raise ValueError(f"sentinel-reruns.tsv line {n}: expected two non-empty tab-separated run ids")
                 original, replacement = row[0], row[1]
+                if original in other and replacement in other:
+                    continue
                 if original not in runs or replacement not in runs:
                     raise ValueError(f"unknown run in sentinel-reruns.tsv: {original} {replacement}")
                 o, r = runs[original], runs[replacement]
@@ -951,7 +1207,12 @@ def load_reruns(path: Path, runs: dict[str, dict[str, Any]]) -> dict[str, str]:
 
 RUN_ID = re.compile(r"^run-id: (\S+)$", re.MULTILINE)
 SCENARIOS = (SDD, NOSKILL)
-LOG_NAME = re.compile(r"^(control|treatment|shipped)-(" + "|".join(SCENARIOS) + r")-(p(?:[1-9]|10)|r[1-3])$")
+# The 2026-11-12 baseline logs predate the launcher's naming and carry no
+# scenario; its replacements come from measure-launch.sh and do.
+LOG_NAME = re.compile(
+    r"^(?:(control|treatment|shipped|slice)-(" + "|".join(SCENARIOS) + r")-(p(?:[1-9]|10)|r[1-3])"
+    r"|baseline-6181-(p(?:[1-9]|10))|baseline-6181-" + SDD + r"-(r[1-3]))$"
+)
 EXPECTED_VALID = 10
 
 
@@ -1011,7 +1272,7 @@ def placeholder(arm: str, scenario: str, proc: str, kind: str) -> dict[str, Any]
 def read_run(arm: str, scenario: str, proc: str, run_id: str, launch_ok: bool = True) -> dict[str, Any]:
     """Read one run and print its line.
 
-    :param arm: ``control``, ``treatment`` or ``shipped``.
+    :param arm: ``control``, ``treatment``, ``shipped``, ``baseline-6181`` or ``slice``.
     :param scenario: One of the two campaign scenarios.
     :param proc: The row's proc id.
     :param run_id: The quorum run id.
@@ -1030,7 +1291,26 @@ def read_run(arm: str, scenario: str, proc: str, run_id: str, launch_ok: bool = 
     kind = "launch" if not launch_ok else void_kind(verdict)
     outcome: bool | None = None
     mechanism: bool | None = None
-    if scenario == SDD:
+    if scenario == SDD and arm in REVISION_ARMS:
+        # The revised validity: no timing window, only a compaction after the
+        # SDD skill event. A thrash stop or a run with no dispatch is a valid
+        # failure, so neither is a void.
+        follows = step_follows(found, transcript_session(transcripts) or "")
+        if kind is None and follows["compactions"] == 0:
+            kind = "no-compaction"
+        valid = kind is None
+        if valid:
+            outcome = (
+                final_reading(verdict) == "pass"
+                and post_checks_pass(verdict)
+                and dispatch_counts(found)["implement"] >= 1
+            )
+        extra: dict[str, Any] = {
+            "thrash": int(any(e["kind"] == "thrash" for e in found)), "compactions": follows["compactions"],
+        }
+        if arm == "slice":
+            extra.update(follows)
+    elif scenario == SDD:
         cut = arm_cut(arm)
         timing = sdd_reading(found, cut)
         if kind is None and not timing["valid"]:
@@ -1039,7 +1319,7 @@ def read_run(arm: str, scenario: str, proc: str, run_id: str, launch_ok: bool = 
         if valid:
             outcome = bool(timing["outcome"]) and post_checks_pass(verdict)
             mechanism = bool(timing["mechanism"])
-        extra: dict[str, Any] = compaction_follow(found, cut)
+        extra = compaction_follow(found, cut)
     else:
         # The sentinel is read from the transcript alone; the Gauntlet verdict
         # matters only through void_kind, so its outcome bars are skipped.
@@ -1071,6 +1351,9 @@ def dispatch_counts(found: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def print_run(run: dict[str, Any]) -> None:
+    if "thrash" in run:
+        print_revision_run(run)
+        return
     line = (
         f"{run['arm']}\t{run['scenario']}\t{run['proc']}\t{run['run']}"
         f"\tvoid={run['void_kind'] or '-'}\toutcome={run['outcome']}\tmechanism={run['mechanism']}"
@@ -1087,24 +1370,59 @@ def print_run(run: dict[str, Any]) -> None:
     print(line)
 
 
-def collect(logs: Path) -> dict[str, dict[str, Any]]:
+def print_revision_run(run: dict[str, Any]) -> None:
+    """Print a revision SDD row: validity, outcome, thrash, dispatches and the per-compaction counts."""
+    line = (
+        f"{run['arm']}\t{run['scenario']}\t{run['proc']}\t{run['run']}"
+        f"\tvoid={run['void_kind'] or '-'}\toutcome={run['outcome']}\tthrash={run['thrash']}"
+        "\tdispatches=" + ",".join(f"{k}:{v}" for k, v in run["classes"].items())
+        + f"\tcompactions={run['compactions']}"
+    )
+    if "followed" in run:
+        line += (
+            f" followed={run['followed']} any_step={run['any_step']}"
+            f" ledger_parts={run['ledger_parts']} skill={run['skill']}"
+        )
+    for note in ("truncation_unparsed", "truncation_unmatched"):
+        if run.get(note):
+            line += f"\t{note}={run[note]}"
+    print(line)
+
+
+def collect(logs: Path, revision: bool = False, skipped: set[str] | None = None) -> dict[str, dict[str, Any]]:
     """Read every campaign log's runs, keyed by run id.
 
     A log that does not end ``DONE`` yields only void ``launch`` runs; a log
-    naming no run id yields a placeholder keyed by the log's name.
+    naming no run id yields a placeholder keyed by the log's name. Only the
+    mode's arms are read: the revision arms (``baseline-6181``, ``slice``)
+    with ``revision``, else the old arms; the other mode's logs are skipped
+    without a line.
 
     :param logs: The log directory.
+    :param revision: Read the revision arms instead of the old ones.
+    :param skipped: When given, receives the run ids the other mode's logs
+        name, so ``load_reruns`` can set their replacement rows aside.
     :returns: The runs keyed by run id.
     """
+    arms = REVISION_ARMS if revision else OLD_ARMS
     runs: dict[str, dict[str, Any]] = {}
     for log in sorted(logs.glob("*.log")):
         match = LOG_NAME.match(log.stem)
+        mine = log.stem.startswith(tuple(f"{a}-" for a in arms))
         if not match:
-            if log.stem.startswith(("control-", "treatment-", "shipped-")):
+            if mine:
                 print(f"skipped log with an unrecognized name (not counted): {log.name}")
             continue
-        arm, scenario, proc = match.groups()
+        old_arm, old_scenario, old_proc, baseline_proc, baseline_rerun = match.groups()
+        if old_arm:
+            arm, scenario, proc = old_arm, old_scenario, old_proc
+        else:
+            arm, scenario, proc = "baseline-6181", SDD, baseline_proc or baseline_rerun
         text = log.read_text(encoding="utf-8")
+        if arm not in arms:
+            if skipped is not None:
+                skipped.update(RUN_ID.findall(text))
+            continue
         lines = [line for line in text.splitlines() if line.strip()]
         done = bool(lines) and lines[-1].startswith("DONE ")
         ids = RUN_ID.findall(text)
@@ -1204,26 +1522,105 @@ def print_compaction_summary(runs: dict[str, dict[str, Any]], replaced: set[str]
         )
 
 
+REVISION_CELLS = (("baseline-6181", SDD), ("slice", SDD), ("slice", NOSKILL))
+
+
+def summarize_revision(runs: dict[str, dict[str, Any]], replaced: set[str]) -> None:
+    """Print each revision cell's counts and the five revised bars.
+
+    A cell with fewer than ten valid runs reads ``incomplete``, and so does
+    every bar that reads it.
+    """
+
+    def valid_in(arm: str, scenario: str) -> list[dict[str, Any]]:
+        return [
+            r for r in runs.values()
+            if (r["arm"], r["scenario"]) == (arm, scenario) and r["valid"] and r["run"] not in replaced
+        ]
+
+    def count(cell: list[dict[str, Any]], key: str) -> int:
+        return sum(1 for r in cell if r[key])
+
+    def complete(*cells: list[dict[str, Any]]) -> bool:
+        return all(len(cell) >= EXPECTED_VALID for cell in cells)
+
+    for arm, scenario in REVISION_CELLS:
+        mine = [r for r in runs.values() if (r["arm"], r["scenario"]) == (arm, scenario)]
+        valid = valid_in(arm, scenario)
+        voids = Counter(r["void_kind"] for r in mine if r["void"])
+        line = f"{arm} {scenario}: runs={len(mine)} valid={len(valid)} voids={dict(voids) or '-'}"
+        if scenario == SDD:
+            line += (
+                f" outcome={count(valid, 'outcome')} thrash={count(valid, 'thrash')}"
+                f" compactions={sum(r['compactions'] for r in valid)}"
+                f" median-compactions={median_compactions(valid):g}"
+            )
+            if arm == "slice":
+                line += (
+                    f" followed={sum(r['followed'] for r in valid)} ({100 * pooled_rate(valid):.0f}%)"
+                    f" any_step={sum(r['any_step'] for r in valid)}"
+                    f" ledger_parts={sum(r['ledger_parts'] for r in valid)}"
+                    f" skill={sum(r['skill'] for r in valid)}"
+                )
+        else:
+            line += f" failed={count(valid, 'failed')}"
+        if not complete(valid):
+            line += " incomplete"
+        print(line)
+
+    baseline, treatment, sentinel = (valid_in(arm, scenario) for arm, scenario in REVISION_CELLS)
+    print("bar 1, slice SDD outcome (at least 8 of 10 valid, and more than baseline-6181's):",
+          bar(None if not complete(treatment, baseline)
+              else count(treatment, "outcome") >= 8
+              and rate(count(treatment, "outcome"), len(treatment)) > rate(count(baseline, "outcome"), len(baseline))))
+    print("bar 2, slice SDD thrash (no valid run with thrash=1):",
+          bar(None if not complete(treatment) else count(treatment, "thrash") == 0))
+    print("bar 3, slice SDD compactions followed (at least 85%, valid runs pooled):",
+          bar(None if not complete(treatment) else pooled_rate(treatment) >= 0.85))
+    print("bar 4, slice SDD median compactions per run (at most 16):",
+          bar(None if not complete(treatment) else median_compactions(treatment) <= 16))
+    print("bar 5, sentinel failures (at most 1 of 10):",
+          bar(None if not complete(sentinel) else count(sentinel, "failed") <= 1))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--waves-1-2", action="store_true", help="reproduce tally.txt: the old arms' waves 1-2")
     parser.add_argument("--run", help="read one run by id (smoke)")
-    # The arm picks the pinned SKILL.md whose cut an SDD run is read against,
-    # so a smoke is read as one of the three arms.
-    parser.add_argument("--arm", default="control", choices=("control", "treatment", "shipped"), help="arm of --run")
+    # The arm picks the pinned SKILL.md whose cut an old-arm SDD run is read
+    # against, and the revised reading for baseline-6181 and slice.
+    parser.add_argument("--arm", default="control", choices=(*OLD_ARMS, *REVISION_ARMS), help="arm of --run")
     parser.add_argument("--scenario", choices=SCENARIOS, help="scenario of --run")
     args = parser.parse_args()
+    logs = HERE / "logs"
+    if not args.waves_1_2 and (not args.run or args.arm == "slice"):
+        # The revision is never tallied without the step files' line counts:
+        # a partial Read would otherwise be judged against no file at all.
+        has_slice = any(LOG_NAME.match(p.stem) for p in logs.glob("slice-*.log"))
+        if (has_slice or args.run) and "slice" not in manifest_pins():
+            print("tally: a slice run needs the slice pin in manifest.tsv to count step-file lines", file=sys.stderr)
+            return 1
+        try:
+            load_step_lines()
+        except ValueError as error:
+            print(f"tally: {error}", file=sys.stderr)
+            return 1
     if args.run:
         if not args.scenario:
             parser.error("--run needs --scenario")
         read_run(args.arm, args.scenario, "p90", args.run)
         return 0
-    runs = collect(HERE / "logs")
+    other: set[str] = set()
+    runs = collect(logs, revision=not args.waves_1_2, skipped=other)
     try:
-        pairs = load_reruns(HERE / "sentinel-reruns.tsv", runs)
+        pairs = load_reruns(HERE / "sentinel-reruns.tsv", runs, other)
     except ValueError as error:
         print(f"sentinel-reruns.tsv: {error}")
         return 1
-    summarize(runs, set(pairs))
+    if args.waves_1_2:
+        summarize(runs, set(pairs))
+    else:
+        summarize_revision(runs, set(pairs))
     return 0
 
 
