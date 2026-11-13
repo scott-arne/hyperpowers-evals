@@ -56,6 +56,11 @@ fi
 if [ "$arm" = controller ] && [ "$scen" != sdd-compaction-reread ]; then
   echo "controller runs only on sdd-compaction-reread" >&2; exit 2
 fi
+# tally.py's LOG_NAME counts only p1-p10 and r1-r3 (the replacement cap), so a
+# controller log under any other id would be a live run the tally discards.
+if [ "$arm" = controller ]; then
+  case "$proc" in p[1-9]|p10|r[1-3]) ;; *) echo "controller proc must be p1-p10 or r1-r3, the ids tally.py counts" >&2; exit 2 ;; esac
+fi
 case "$budget" in default) ;; *) echo "budget must be default" >&2; exit 2 ;; esac
 # A row's log is evidence: a relaunch must be a recorded replacement (r<n>),
 # never a silent overwrite of the preregistered trial's log.

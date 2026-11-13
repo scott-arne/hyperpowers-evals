@@ -51,6 +51,9 @@ while IFS= read -r line || [ -n "$line" ]; do
   arm="${f[0]}"; scen="${f[1]}"; rep="${f[2]}"; proc="${f[3]}"; budget="${f[4]}"
   case "$arm" in control|treatment|shipped|slice|baseline-6181|controller) ;; *) echo "malformed arm '$arm' in row '$line'" >&2; bad=1; continue ;; esac
   case "$proc" in p[0-9]|p[0-9][0-9]) ;; *) echo "malformed proc id '$proc' in row $arm $scen" >&2; bad=1; continue ;; esac
+  # tally.py counts controller rows only as p1-p10, so any other id would be a
+  # live run spent on a log the tally discards.
+  if [ "$arm" = controller ]; then case "$proc" in p[1-9]|p10) ;; *) echo "controller proc must be p1-p10, the ids tally.py counts; row $arm $scen $proc" >&2; bad=1; continue ;; esac; fi
   case "$rep" in [1-9]|[1-9][0-9]) ;; *) echo "malformed repeat '$rep' in row $arm $scen $proc" >&2; bad=1; continue ;; esac
   case "$budget" in default) ;; *) echo "malformed budget '$budget' in row $arm $scen $proc" >&2; bad=1; continue ;; esac
   case "$keys" in *" $arm-$scen-$proc "*) echo "duplicate row $arm $scen $proc" >&2; bad=1; continue ;; esac
